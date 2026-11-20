@@ -1,4 +1,6 @@
+import { existsSync } from "node:fs";
 import { join } from "node:path";
+import fastifyStatic from "@fastify/static";
 import rateLimit from "@fastify/rate-limit";
 import secureSession from "@fastify/secure-session";
 import Fastify, { type FastifyInstance } from "fastify";
@@ -7,9 +9,11 @@ import type { Config } from "./config.js";
 import { ApiError } from "./errors.js";
 import { appTokenSource } from "./git/appAuth.js";
 import { GitError, GitGateway } from "./git/gateway.js";
+import { ImageServer } from "./images/serve.js";
 import { VaultIndex } from "./index/build.js";
 import { authRoutes } from "./routes/auth.js";
 import { entryRoutes } from "./routes/entries.js";
+import { imageRoutes } from "./routes/images.js";
 import { statusRoutes } from "./routes/status.js";
 import { webhookRoutes } from "./routes/webhook.js";
 import { StateFiles } from "./state/files.js";
@@ -29,6 +33,7 @@ export interface Services {
   status: StatusService;
   files: StateFiles;
   settings: SettingsStore;
+  images: ImageServer;
   /** Fetches `main`, resets the working copy and rebuilds the index. */
   sync(): Promise<void>;
 }
@@ -47,6 +52,8 @@ export interface BuildOptions {
   /** Used by tests to watch Git commands. */
   onGitCommand?: (args: readonly string[]) => void;
   logger?: boolean;
+  /** Folder of the built web app. When it holds a build, the server also serves the interface. */
+  webDir?: string;
 }
 
 /** Builds the server. The caller decides when to clone, sync and listen. */
@@ -66,6 +73,7 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
   const status = new StatusService(index);
   const files = new StateFiles();
   const settings = new SettingsStore(stateDir, files);
+  const images = new ImageServer(vaultDir, config.dataDir);
 
   const services: Services = {
     config,
@@ -74,6 +82,7 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
     status,
     files,
     settings,
+    images,
     async sync() {
       const result = await git.fetch();
       status.fetched(result.current);
@@ -161,14 +170,24 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
     return send(500, "merge_failed", "The server hit an unexpected error.");
   });
 
-  app.setNotFoundHandler((_request, reply) =>
-    reply
+  const webDir = options.webDir;
+  const serveWeb = webDir !== undefined && existsSync(join(webDir, "index.html"));
+  if (serveWeb) await app.register(fastifyStatic, { root: webDir, wildcard: false });
+
+  app.setNotFoundHandler((request, reply) => {
+    const path = request.url.split("?")[0] ?? "";
+    // The interface handles its own addresses: any page address gets the app, which then routes.
+    if (serveWeb && request.method === "GET" && !path.startsWith("/api/") && path !== "/health") {
+      return reply.header("cache-control", "no-cache").sendFile("index.html");
+    }
+    return reply
       .status(404)
-      .send({ error: { code: "not_found", message: "There is nothing at this address." } }),
-  );
+      .send({ error: { code: "not_found", message: "There is nothing at this address." } });
+  });
 
   authRoutes(app, services);
   entryRoutes(app, services);
+  imageRoutes(app, services);
   statusRoutes(app, services);
   webhookRoutes(app, services);
 

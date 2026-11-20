@@ -87,7 +87,8 @@ export class VaultIndex {
       const raw = readFileSync(join(this.root, path), "utf8");
       const text = normaliseLineEndings(raw);
       const headings = extractHeadings(text);
-      const title = headings.find((h) => h.level === 1)?.text || stem(path);
+      // A note's title is its file name, as in Obsidian. Notes often use first-level headings for sections.
+      const title = stem(path);
       const links = findLinks(text).map((link) => ({
         link,
         resolution: resolver.resolve(link, path),

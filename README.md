@@ -10,18 +10,18 @@ The full design is in [docs/designs/frontier.md](docs/designs/frontier.md).
 
 Stage 1 of nine is in progress. What exists so far:
 
-| Part                                                                                                | State            |
-| --------------------------------------------------------------------------------------------------- | ---------------- |
-| `packages/vault`: reading notes, frontmatter, line endings, links, link resolution, rename planning | Built and tested |
-| `packages/schema`: types and validation shared by server and web                                    | Built and tested |
-| `apps/server`: configuration, Git gateway, in-memory index, login, status, webhook, timer fetch     | Built and tested |
-| `apps/server`: drafts, Publish, image serving, backup and restore                                   | Not started      |
-| `apps/web`: reader, editor, Publish screens                                                         | Not started      |
+| Part                                                                                                           | State            |
+| -------------------------------------------------------------------------------------------------------------- | ---------------- |
+| `packages/vault`: reading notes, frontmatter, line endings, links, link resolution, rename planning            | Built and tested |
+| `packages/schema`: types and validation shared by server and web                                               | Built and tested |
+| `apps/server`: configuration, Git gateway, in-memory index, login, status, webhook, timer fetch, image serving | Built and tested |
+| `apps/web`: login, folder tree, entry reader with links, embeds and backlinks, status page                     | Built; read-only |
+| `apps/server`: drafts, Publish, backup and restore                                                             | Not started      |
+| `apps/web`: editor, unpublished list, Publish and conflict screens                                             | Not started      |
 
-The server can clone the vault, index it and serve entries to a logged-in browser. It can build and push
-a commit, but no route uses that yet.
+The app can be read but not written with: no route can change the vault yet.
 
-No route can write to the vault yet.
+A preview on made-up sample content runs with `FRONTIER_SAMPLE_VAULT=1`; see the Dockerfile.
 
 ## Working on it
 
@@ -77,6 +77,6 @@ to the vault yourself.
 packages/vault    Markdown and frontmatter parsing, link resolution, rename (no server or browser code)
 packages/schema   Shared types and validators for the API and for stored files
 apps/server       Fastify API, Git gateway, index; drafts and Publish still to come
-apps/web          (planned) React app: reader, editor, Publish
+apps/web          React app: reader today; editor and Publish still to come
 docs/designs      The design, and later one design per stage
 ```

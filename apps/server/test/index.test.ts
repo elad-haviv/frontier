@@ -33,16 +33,18 @@ describe("the published index", () => {
     expect(t.services.index.note("03 Things/Rope.md")!.text).not.toContain("\r");
     expect(t.services.index.note("03 Things/Knot.md")!.lineEnding).toBe("mixed");
     expect(t.services.index.note(".obsidian/Hidden.md")).toBeUndefined();
-    expect(t.services.index.note("README.md")!.title).toBe("Fixture vault");
+    expect(t.services.index.note("README.md")!.title).toBe("README");
     expect(t.services.index.note("03 Things/Scalar.md")!.aliases).toEqual([]);
     expect(t.services.index.hasFile("notes.json")).toBe(true);
     expect(t.services.index.commit).toBe(t.repo.remoteHead());
   });
 
-  it("uses the file name as title when a note has no first-level heading", async () => {
-    t.repo.pushFromOutside({ "03 Things/Untitled.md": "No heading here.\n" });
+  it("uses the file name as the title, whatever headings the note has", async () => {
+    t.repo.pushFromOutside({
+      "03 Things/Sections.md": "# First Section\n\ntext\n\n# Second Section\n",
+    });
     await t.services.sync();
-    expect(t.services.index.note("03 Things/Untitled.md")!.title).toBe("Untitled");
+    expect(t.services.index.note("03 Things/Sections.md")!.title).toBe("Sections");
   });
 
   it("lists backlinks with the line of each link", () => {
