@@ -116,7 +116,8 @@ Each goal states how it is checked.
 *   **G14. Characters speak from a profile the author approved.** A character profile (voice, knowledge,
     beliefs, what the character does not know, the moment in time they speak from) is proposed by AI from
     the character's entries and approved by the author like any other proposal. It is a file in the
-    repository. Check: a character asked about an event after their time of speaking, or outside their
+    repository, in `99 Appendices/09 Agents/`, where one profile (`Yagon.md`) already exists and is kept
+    as the model for the format. Check: a character asked about an event after their time of speaking, or outside their
     knowledge, does not answer as if they knew it.
 *   **G15. Discovery produces proposals, never canon.** While the author wanders a map, AI generates
     places, characters, creatures and items that fit the surrounding canon. Each discovery is checked
@@ -147,8 +148,8 @@ Each goal states how it is checked.
     is where AI session logs already live.
 *   **Unprompted generation.** AI does not invent lore in the background or fill gaps on its own. Discovery
     runs only while the author is exploring.
-*   **Replacing Hindsight.** The memory bank and its sync agent stay as they are, apart from one change to
-    ignore frontmatter-only edits.
+*   **Replacing Hindsight.** The memory bank and its sync agent stay as they are, apart from one change:
+    the sync is switched off for formatting-only changes. The bank holds canon only.
 *   **Drawing base maps.** Map images are still made in outside tools and imported. Frontier draws markers,
     paths, zones and labels on top of them.
 *   **Editing `99 Appendices`.** That folder is append-only by vault rule. Frontier shows it and can add new
@@ -156,27 +157,37 @@ Each goal states how it is checked.
 
 ## Open Questions
 
-*   **Q1. Hindsight sync change.** The sync agent re-ingests a note on any byte change. Adding an `id` and
-    time fields to frontmatter would re-ingest most of the bank. Either the sync is changed to ignore
-    frontmatter-only changes before stage 3, or one full re-ingest is accepted. The sync agent's code is
-    outside this repository and has not been read.
-*   **Q2. Duplicate note names.** `Yagon.md` and `Common Ezobian.md` each exist twice, so links to them are
-    ambiguous. The author needs to say which is meant, or the notes need renaming, before the link baseline
-    (G4) is fixed.
-*   **Q3. Existing map file.** `99 Appendices/06 Interactive Maps/Main.json` is an earlier map format with
-    empty arrays. Adopt it, or replace it with the format defined here.
-*   **Q4. Third-party game icons.** 182 images are icons from commercial games. They are fine in a private
-    app. They cannot be included in a web export. A replacement marker icon set is needed before stage 9.
-*   **Q5. Export targets.** "Web" and "presentations on different topics" need a definition: which content,
-    chosen how, in what form.
-
-*   **Q6. Access to Hindsight.** Lore conversations and contradiction checks need the Frontier server to
-    query the `worldbuilding` bank directly. The bank's address, credentials and query limits need
-    confirming.
-*   **Q7. Discovered material and the bank.** Rejected discoveries are deleted. Whether discoveries the
-    author neither approved nor rejected are kept, and for how long, is undecided.
 *   **Q8. Images in discovery.** Whether a discovery should come with generated concept art is undecided.
     It multiplies cost and adds a second kind of asset to review.
+
+### Answered by the author
+
+*   **Hindsight sync and formatting changes (was Q1).** The sync is switched off for formatting-only
+    changes. A change that touches only frontmatter, whitespace or line endings does not re-ingest the
+    note. Adding an `id` or time fields therefore does not churn the bank. The sync agent lives outside
+    this repository; changing it is a task in stage 3.
+*   **Notes with the same name (was Q2).** The folder structure carries meaning, so two notes with the same
+    name are two different things. Frontier identifies an entry by its full path and its `id`, never by
+    name alone. The two cases today are a lore entry and a non-lore file: `04 Inhabitants/Archdemons/Yagon.md`
+    and the chat profile `99 Appendices/09 Agents/Yagon.md`; the live `Common Ezobian.md` and a copy in the
+    recycle bin. A link written as a bare name resolves to the note outside `99 Appendices` when exactly
+    one candidate is outside it. If more than one lore note shares the name, the link is shown as
+    ambiguous and the author picks; Frontier then writes the link with its path.
+*   **Existing map file (was Q3).** `99 Appendices/06 Interactive Maps/Main.json` is replaced by the map
+    format defined in this document.
+*   **Marker icons (was Q4).** The Skyrim icon set already in the vault is the first marker set. Frontier
+    has marker set management: several sets can exist side by side, each a folder of icons with a
+    manifest, and each map chooses which sets it uses. New sets are added later. Note: the Skyrim icons
+    belong to a commercial game, so an export meant for the public needs a different set selected.
+*   **Export targets (was Q5).** Three kinds beyond plain files: styled web pages, presentations, and map
+    renders (an image of a map as currently shown, with its markers, layers and chosen moment in time).
+    Markdown, docx, PDF and JSON remain.
+*   **Access to Hindsight (was Q6).** Frontier connects to the bank itself. A settings screen holds the
+    bank address, bank name and access key, with a "test connection" button and the limits applied. The
+    same screen holds the AI provider key, model choices and the monthly spending cap.
+*   **Discovered material and the bank (was Q7).** Only canon is registered in the bank. Discoveries,
+    proposals, drafts and chats are never sent to it. A discovery stays in Frontier's own store until the
+    author approves or rejects it; it reaches the bank only by becoming a published entry.
 
 ## Critical User Journeys (CUJs)
 
