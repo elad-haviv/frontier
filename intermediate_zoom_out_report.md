@@ -95,3 +95,23 @@ stacked on another.
 * **N7.** The risks table should list the dependence of G8 on the sync, which is code outside this
   repository.
 * **N8.** Item number 11 is missing.
+
+--------------------------------------------------------------------------------
+
+## Actions taken
+
+All seven Major findings and the nits were applied to the design:
+
+* M1: the limit is stated in goal G8, in the Quarantine section and in the risks table; which agents can
+  have their own identity is established in the stage 3 design.
+* M2: the sync's own account is allowed and it ignores its own pushes; the list records the last commit
+  processed, and Frontier's AI features read a commit only once the list covers it.
+* M3: the browser drops its copy of a draft once the server confirms the revision; the records of
+  published and discarded drafts are removed.
+* M4: the publish journal is replaced by resetting the working copy to `main` and clearing drafts that
+  already equal `main`.
+* M5: no automatic retry after a rejected push.
+* M6: one ordered link resolution rule; ambiguous images are listed for renaming.
+* M7: stages are defined by journeys; rename-following for appendix links is left to stage 3.
+* Nits: `.frontier/` is created in stage 3; the sanitiser lives in the web app; glossary and data table
+  corrected; a skeleton is deployed early; the dependence of G8 on the sync is in the risks table.
