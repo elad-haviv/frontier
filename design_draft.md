@@ -794,3 +794,258 @@ they are tested against the real vault on their own.
 
 *   Nightly copy of `/data/state`, `/data/assets/originals` and `/data/assets/generated` to a second
     location. A restore is tested once before stage 2 is called done.
+
+--------------------------------------------------------------------------------
+
+## Detailed Implementation Plan
+
+This plan covers stage 1 (foundation) and stage 2 (reader and editor). Stages 3 to 9 each get their own
+design document under `docs/designs/` before they are built.
+
+### Tooling decisions (mechanical)
+
+*   Node 22, TypeScript in strict mode, npm workspaces.
+*   Server: Fastify. Git through the `git` program, called from one module. YAML through the `yaml`
+    package's document interface, which keeps untouched lines as they were. Image resizing with `sharp`.
+    Password hashing with `argon2`.
+*   Web: React 19 with Vite, React Router, CodeMirror 6, `unified`/`remark` for the read-only rendering,
+    MiniSearch for full-text search (the index is built on the server and queried there).
+*   Tests: Vitest for packages and server, Playwright for the browser at desktop and 375 px phone sizes.
+*   Lint and format: ESLint and Prettier. Prettier is never run on vault files.
+
+### Target Files to Create/Modify
+
+Paths are relative to the `frontier` repository unless they start with `avalymia/`.
+
+#### Repository root
+
+1.  `package.json` (Create). Workspace list, shared scripts (`build`, `test`, `lint`, `dev`, `e2e`), Node
+    version. Needed so one command builds and tests every package.
+2.  `tsconfig.base.json` (Create). Strict compiler settings shared by all packages.
+3.  `eslint.config.js`, `.prettierrc`, `.prettierignore` (Create). One style for the codebase; the ignore
+    file excludes fixtures that copy vault text.
+4.  `.gitignore`, `.dockerignore` (Create). Keep `node_modules`, builds, `/data` and env files out of Git
+    and out of the image.
+5.  `.env.example` (Create). Lists the environment variables with no values: `GITHUB_TOKEN`, `VAULT_REPO`,
+    `WEBHOOK_SECRET`, `SETTINGS_KEY`, `SESSION_SECRET`, `DATA_DIR`, `PUBLIC_URL`.
+6.  `Dockerfile` (Create). Two steps: build all workspaces; then a slim Node image with `git` installed, the
+    server build, the web build, and `/data` declared as a volume. Runs as a non-root user.
+7.  `README.md` (Modify). Replace the one-line file with: what Frontier is, how to run it locally against a
+    vault checkout, how to deploy on Coolify, how to restore from backup.
+8.  `concepts_brief.md` (Delete, after the design is saved). Its content is carried into the design.
+9.  `design_draft.md` (Delete, after it is saved as `docs/designs/frontier.md`).
+10. `docs/designs/frontier.md` (Create). This document, final.
+11. `docs/designs/SITEMAP.md` (Create). Index of design documents, starting with this one, so later stage
+    designs are registered in one place.
+12. `.github/workflows/ci.yml` (Create). On every push: install, lint, type-check, unit tests, build,
+    Playwright tests against the fixture vault. Needed so goals G2 and G4 are checked on every change.
+
+#### `packages/schema` (shared types and validators)
+
+13. `packages/schema/package.json`, `tsconfig.json` (Create). Package setup.
+14. `packages/schema/src/api.ts` (Create). Types and validators for every API request and response in
+    stages 1 and 2 (entries, drafts, publish, search, status, login). One definition used by server and
+    web so they cannot drift.
+15. `packages/schema/src/status.ts` (Create). The sync status shape: last fetch, last push, unpublished
+    count, conflicts, index commit, failed push.
+16. `packages/schema/src/index.ts` (Create). Exports.
+
+#### `packages/vault` (parsing, links, rename; no server or browser code)
+
+17. `packages/vault/package.json`, `tsconfig.json` (Create). Package setup.
+18. `packages/vault/src/frontmatter.ts` (Create). Split a note into frontmatter and body without changing
+    either; read keys; set or remove one key while leaving every other line, the key order, comments and
+    line endings as they were. Serves goal G2.
+19. `packages/vault/src/links.ts` (Create). Find every wikilink and embed in a note with its exact
+    position: target, path part, heading part, display text, embed flag. Also standard Markdown image
+    links with angle-bracket paths.
+20. `packages/vault/src/resolve.ts` (Create). The resolution rules from the Technical Plan: path links,
+    bare names against note names and aliases ignoring case and surrounding spaces, the `99 Appendices`
+    tie-break, ambiguity, heading links, image embeds by bare name. Returns resolved, unresolved or
+    ambiguous with candidates. Serves goal G4.
+21. `packages/vault/src/rename.ts` (Create). Given a rename or move, produce the edited text of every note
+    whose links must change, touching only the link characters. Handles folder notes and folder moves.
+22. `packages/vault/src/paths.ts` (Create). Path rules: which files are entries, which folders are excluded
+    (`.obsidian`, `.claude`, `.gemini`, `.frontier`), which are append-only (`99 Appendices`), entry type
+    from the top-level folder.
+23. `packages/vault/src/headings.ts` (Create). Extract headings for the outline and for heading links.
+24. `packages/vault/src/index.ts` (Create). Exports.
+25. `packages/vault/test/fixture-vault/**` (Create). A small made-up vault, about 20 notes, containing one
+    of every case found in the real vault: aliased links, heading links, path links, case-only matches,
+    padded links, unresolved links, two notes with one name, embeds, a CRLF file, a note with unknown
+    frontmatter keys, a folder note, an appendix file. No real lore.
+26. `packages/vault/test/frontmatter.test.ts` (Create). Round trip of every fixture note is byte-identical;
+    setting one key changes only that key's lines; CRLF survives.
+27. `packages/vault/test/links.test.ts`, `resolve.test.ts`, `rename.test.ts` (Create). One test per rule and
+    per case in the fixture.
+28. `packages/vault/test/real-vault.test.ts` (Create). Runs only when `VAULT_PATH` is set. Round-trips every
+    note in the real vault and expects no change (G2). Resolves every link and compares with the baseline
+    (G4).
+29. `packages/vault/test/baseline/links.json` (Create). The resolved, unresolved and ambiguous link lists
+    for the real vault at a recorded commit, generated by a script and reviewed by the author once.
+30. `scripts/make-link-baseline.ts` (Create). Regenerates the baseline from a vault checkout and prints what
+    changed, so a baseline update is a reviewed diff.
+
+#### `apps/server`
+
+31. `apps/server/package.json`, `tsconfig.json` (Create). Package setup.
+32. `apps/server/src/main.ts` (Create). Starts Fastify, loads configuration, opens the working copy, builds
+    the index, registers routes, serves the web build.
+33. `apps/server/src/config.ts` (Create). Reads and validates environment variables; fails at start with a
+    clear message if one is missing.
+34. `apps/server/src/git/gateway.ts` (Create). The only module that runs Git: clone on first start, fetch,
+    fast-forward, read a file at `main`, blob hash of a file, commit a set of file changes with a message,
+    push, detect rejection. A lock makes operations run one at a time. Never passes `--force`.
+35. `apps/server/src/git/webhook.ts` (Create). Route for GitHub push events: checks the signature, then
+    asks the gateway to fetch and the index to update.
+36. `apps/server/src/git/poll.ts` (Create). Timer that fetches every few minutes in case a webhook is missed.
+37. `apps/server/src/state/files.ts` (Create). Safe file writing for `/data/state`: write to a temporary
+    name, then rename. JSON read and write helpers.
+38. `apps/server/src/state/drafts.ts` (Create). Create, read, update, delete and list drafts; each draft is
+    a text file plus a record with path, base blob hash, kind (edit, create, delete, rename) and time.
+39. `apps/server/src/state/settings.ts` (Create). Read and write `settings.json`; stage 1 holds only the
+    password hash. Encryption helper for secrets added in later stages.
+40. `apps/server/src/index/build.ts` (Create). Reads the working copy into memory: entries, aliases,
+    headings, links with resolution, backlinks. Applies drafts on top so the author sees his unpublished
+    state. Updates one file at a time on change.
+41. `apps/server/src/index/search.ts` (Create). MiniSearch index over titles, aliases, headings and body;
+    query function returning entries with a snippet.
+42. `apps/server/src/publish/publish.ts` (Create). The Publish flow from the Technical Plan: fetch, compare
+    base hashes, write files, one commit, push, one retry on rejection, mark conflicts.
+43. `apps/server/src/publish/conflict.ts` (Create). Builds the data for the conflict screen: the draft, the
+    base version and the current `main` version of a file.
+44. `apps/server/src/images/serve.ts` (Create). Serves a vault image resized to a requested width, cached
+    under `/data/assets/thumbs` by content hash and width; detects the real file type from content
+    (`ezob-satellite.png` is a JPEG).
+45. `apps/server/src/images/upload.ts` (Create). Accepts an image, stores it as a draft file creation under
+    `99 Appendices/01 Images`, returns the embed text.
+46. `apps/server/src/auth/password.ts` (Create). Hash and verify with argon2id.
+47. `apps/server/src/auth/session.ts` (Create). Signed session cookie, login rate limit, a guard that
+    rejects every route except login, webhook and health.
+48. `apps/server/src/status/status.ts` (Create). Gathers the status facts and sends changes to browsers over
+    server-sent events.
+49. `apps/server/src/routes/auth.ts` (Create). Login, logout, current session.
+50. `apps/server/src/routes/entries.ts` (Create). List the folder tree; read an entry (text, resolved links,
+    backlinks, headings, state); quick-switcher lookup; hover preview.
+51. `apps/server/src/routes/drafts.ts` (Create). Save a draft, discard a draft, create an entry, rename or
+    move (returns the list of notes that will change), delete.
+52. `apps/server/src/routes/publish.ts` (Create). List unpublished changes, publish selected ones with a
+    message, read a conflict, resolve a conflict.
+53. `apps/server/src/routes/search.ts` (Create). Full-text search.
+54. `apps/server/src/routes/images.ts` (Create). Image serving and upload.
+55. `apps/server/src/routes/status.ts` (Create). Status snapshot, the event stream, and `/health`.
+56. `apps/server/src/cli/set-password.ts` (Create). Command to set the single account's password, run once
+    in the container. There is no sign-up page.
+57. `apps/server/src/cli/rebuild-index.ts` (Create). Command that rebuilds the index and prints counts, for
+    diagnosis.
+58. `apps/server/test/helpers/repo.ts` (Create). Makes a temporary Git remote and working copy from the
+    fixture vault, so Git behaviour is tested without GitHub.
+59. `apps/server/test/gateway.test.ts` (Create). Fetch, commit, push; a push after the remote moved is
+    rejected and retried; no force push is ever issued.
+60. `apps/server/test/publish.test.ts` (Create). One commit per Publish; no commit without Publish (G6); a
+    file changed on the remote produces a conflict and is not published (G7); rename publishes all link
+    rewrites in one commit.
+61. `apps/server/test/drafts.test.ts` (Create). Drafts survive a restart; a crash during a write leaves the
+    previous file intact; appendix files cannot be drafted.
+62. `apps/server/test/index.test.ts` (Create). Index over the fixture matches expected links and backlinks;
+    drafts overlay the index; deleting everything in memory and rebuilding gives the same result (G1).
+63. `apps/server/test/auth.test.ts` (Create). Every route refuses without a session; rate limit works;
+    webhook rejects a bad signature.
+
+#### `apps/web`
+
+64. `apps/web/package.json`, `tsconfig.json`, `vite.config.ts`, `index.html` (Create). Package setup.
+65. `apps/web/src/main.tsx`, `src/App.tsx`, `src/routes.tsx` (Create). App start and routes: login, entry
+    (read and edit), search, unpublished changes, conflict, status. Every view has a URL.
+66. `apps/web/src/api/client.ts` (Create). Typed calls to the server using `packages/schema`.
+67. `apps/web/src/api/events.ts` (Create). Subscribes to the status stream.
+68. `apps/web/src/layout/Shell.tsx` (Create). Desktop layout: folder tree, main pane, right panel.
+69. `apps/web/src/layout/PhoneBar.tsx` (Create). Bottom bar for phone: search, entries, unpublished, status.
+    Map, inbox and chat buttons are added by their stages.
+70. `apps/web/src/layout/StatusArea.tsx` (Create). Shows the status facts and failures (G12).
+71. `apps/web/src/tree/FolderTree.tsx` (Create). The vault's folders and notes, with create, rename, move
+    and delete.
+72. `apps/web/src/reader/Reader.tsx` (Create). Rendered entry.
+73. `apps/web/src/reader/render.ts` (Create). Markdown to elements with wikilinks, embeds, heading links and
+    tables; unresolved links styled as such; ambiguous links marked.
+74. `apps/web/src/reader/HoverPreview.tsx` (Create). Preview of a linked entry on hover or long-press.
+75. `apps/web/src/reader/Backlinks.tsx`, `Outline.tsx` (Create). Right-panel lists.
+76. `apps/web/src/editor/Editor.tsx` (Create). CodeMirror 6 on the note's text.
+77. `apps/web/src/editor/livePreview.ts` (Create). Hides Markdown syntax away from the cursor line and
+    shows images inline, as Obsidian's live preview does.
+78. `apps/web/src/editor/wikilinks.ts` (Create). Link highlighting, click to follow, `[[` autocomplete over
+    names, aliases and headings.
+79. `apps/web/src/editor/tables.ts` (Create). Cell navigation and column alignment for Markdown tables.
+80. `apps/web/src/editor/images.ts` (Create). Paste, drop and pick an image; calls upload; inserts the embed.
+81. `apps/web/src/editor/PhoneToolbar.tsx` (Create). Buttons above the phone keyboard: link, heading, list,
+    image, undo.
+82. `apps/web/src/editor/Properties.tsx` (Create). Panel to view and edit frontmatter keys; edits go through
+    the same one-key-at-a-time rule as the server.
+83. `apps/web/src/drafts/buffer.ts` (Create). Saves each change to IndexedDB at once and to the server
+    about a second later; resends when the connection returns (G6).
+84. `apps/web/src/drafts/EntryState.tsx` (Create). The per-entry badge: published, unpublished, conflict,
+    waiting to send.
+85. `apps/web/src/publish/Unpublished.tsx` (Create). List of unpublished changes with differences, a message
+    box and the Publish button.
+86. `apps/web/src/publish/Conflict.tsx` (Create). Side-by-side view of the draft and the new `main` version,
+    with the draft editable.
+87. `apps/web/src/publish/RenameDialog.tsx` (Create). Shows which notes will change before a rename.
+88. `apps/web/src/search/QuickSwitcher.tsx` (Create). Keyboard-opened jump to any entry by name or alias.
+89. `apps/web/src/search/Search.tsx` (Create). Full-text search with snippets.
+90. `apps/web/src/links/CreateFromLink.tsx` (Create). Dialog shown when an unresolved link is followed:
+    suggests a folder, creates the draft entry.
+91. `apps/web/src/auth/Login.tsx` (Create). Password form.
+92. `apps/web/src/styles/tokens.css`, `styles/app.css` (Create). Colours, type and spacing for light and
+    dark, sized for a 375 px screen first.
+93. `apps/web/e2e/fixtures.ts` (Create). Starts the server against a temporary copy of the fixture vault.
+94. `apps/web/e2e/write-publish.spec.ts` (Create). CUJ 1: edit, close the tab, reopen, publish; one commit.
+95. `apps/web/e2e/links.spec.ts` (Create). CUJ 2 and autocomplete, hover preview, backlinks.
+96. `apps/web/e2e/rename.spec.ts` (Create). CUJ 3.
+97. `apps/web/e2e/conflict.spec.ts` (Create). CUJ 4.
+98. `apps/web/e2e/offline.spec.ts` (Create). Connection dropped while typing; text is kept and sent later.
+99. `apps/web/e2e/phone.spec.ts` (Create). The same flows at 375 px with touch.
+
+#### Outside this repository
+
+100. `avalymia/.frontier/README.md` (Create, in stage 2). One paragraph saying what the folder is and that
+     Frontier owns it, so agents and the author's future self know not to hand-edit it. This is the only
+     change to the vault in stages 1 and 2. It is a `.md` file inside a dot-folder; the Hindsight sync's
+     handling of dot-folders is confirmed before this file is added, and it is renamed to `README.txt` if
+     the sync would ingest it.
+101. Coolify (configuration, not a file). One project: the container, a persistent volume at `/data`, the
+     environment variables, the domain, the health check on `/health`, and a nightly backup of
+     `/data/state` and `/data/assets/originals`.
+102. GitHub (configuration, not a file). A fine-grained token for `avalymia` with contents read and write;
+     a push webhook to Frontier.
+
+### Order of work
+
+1.  Root setup, `packages/schema`, `packages/vault` with the fixture vault and its tests.
+2.  The link baseline against the real vault; the author reviews the ambiguous and unresolved lists once.
+3.  Server: configuration, Git gateway, working files, index, search, login.
+4.  Server: drafts and Publish with conflict handling.
+5.  Web: shell, reader, folder tree, search, quick switcher. First deploy to Coolify, read-only.
+6.  Web: editor, draft buffer, unpublished list, Publish, conflict screen, rename.
+7.  Phone layout and toolbar, image upload and resizing.
+8.  Backup and restore test. Stage 2 is done when the author has written and published from desktop and
+    phone for a week without opening Obsidian for anything in the parity list.
+
+### Verification Plan
+
+*   **Compilation/Build**: `npm run build` builds every workspace; `docker build .` produces the image.
+*   **Unit Tests**: `npm test` runs Vitest for `packages/vault`, `packages/schema` and `apps/server`.
+*   **Real-vault tests**: `VAULT_PATH=<checkout> npm test -w packages/vault` runs the round-trip (G2) and
+    link baseline (G4) tests against the actual vault. Run before each release and after any change to
+    `packages/vault`.
+*   **Static Analysis & Linting**: `npm run lint` (ESLint) and `tsc --noEmit` in every workspace.
+*   **Test Coverage Requirement**: 90% of branches in `packages/vault` and in `apps/server/src/git` and
+    `apps/server/src/publish`, the code that can damage canon. No fixed figure elsewhere.
+*   **E2E/Integration**: `npm run e2e` runs Playwright at desktop and 375 px sizes with tracing off,
+    covering CUJ 1 to 4 and the offline case.
+*   **Goal checks for these stages**: G1 (index rebuild test), G2, G3 (open the vault in Obsidian after a
+    week of use and confirm links resolve as before; manual), G4, G5 (one e2e test per parity item), G6,
+    G7, G11 (phone spec plus a timed page load), G12 (each failure triggered in a test).
+
+--------------------------------------------------------------------------------
+
+*Drafted with EGM*
