@@ -625,3 +625,172 @@ they are tested against the real vault on their own.
 4.  GitHub: a webhook from `avalymia` to Frontier, and a fine-grained token.
 5.  `99 Appendices/06 Interactive Maps/Main.json` is removed when the first map file exists. This is the
     one edit to an appendix file, approved by the author in the open questions.
+
+## Alternatives Considered
+
+### From the brainstorm
+
+#### Hosted worldbuilding tools (World Anvil, LegendKeeper, Kanka)
+
+*   **Pros**: Maps, timelines and wikis exist today with no build effort.
+*   **Cons**: Data lives in the vendor's storage. No cross-calendar overlap, no time dilation, no approval
+    flow for AI, no link to Hindsight.
+*   **Reason for Rejection**: Rejected by author: he wants a custom tool, and these do not keep Markdown in
+    Git as canon.
+
+#### Staying on Obsidian with plugins
+
+*   **Pros**: No new app. The Leaflet, timeline and calendar plugins cover simple cases.
+*   **Cons**: No overlap across calendars, no maps that change with time, no review inbox, weak on a phone.
+    The installed Leaflet plugin was never used.
+*   **Reason for Rejection**: Rejected by author: plugins do not cover cross-calendar overlap or time-aware
+    maps.
+
+#### Frontier as a reading companion first, editor later
+
+*   **Pros**: The first release would deliver what Obsidian lacks (a timeline or a map) and skip the hardest
+    part, an editor good enough to replace Obsidian.
+*   **Cons**: Two tools in daily use for longer. Writing stays outside the app.
+*   **Reason for Rejection**: Rejected by author: the app must contain everything, with the editor in the
+    first usable release.
+
+#### Canon in Frontier's own database
+
+*   **Pros**: Fast queries, easy structured fields, no Git handling.
+*   **Cons**: Breaks the Hindsight sync, Obsidian access, Git history and the agents' workflow.
+*   **Reason for Rejection**: Rejected by author: GitHub stays the source of truth.
+
+#### Time data on maps, or map data on entries
+
+*   **Pros**: Everything about a place in one file.
+*   **Cons**: Entries fill with coordinates and styling. The same time facts are kept twice and drift apart.
+*   **Reason for Rejection**: Rejected by author: maps are standalone and refer to entries; entries carry
+    time.
+
+#### Mandatory conversion between calendars
+
+*   **Pros**: One shared axis for every event. Simple timeline maths.
+*   **Cons**: Needs canon numbers that do not exist (pulse rates, anchors, leap rules) and would force them
+    to be invented before any date could be stored.
+*   **Reason for Rejection**: Rejected by author: dates stay in their own calendar and convert only on
+    request, where numbers exist.
+
+#### Each autosave is a commit
+
+*   **Pros**: No draft storage. Every keystroke is in Git.
+*   **Cons**: Floods the history, breaks the vault rule of one logical change per commit, and triggers a
+    Hindsight ingestion of half-written text on every pause.
+*   **Reason for Rejection**: Rejected in Goldfish review (six of seven reviewers); the author proceeded on
+    that basis.
+
+#### A block-style WYSIWYG editor (TipTap, BlockNote, Milkdown)
+
+*   **Pros**: A polished writing surface with little effort.
+*   **Cons**: These convert Markdown to their own model and write it back in their own style, changing lines
+    the author did not touch. That breaks goal G2 and triggers needless re-ingestion.
+*   **Reason for Rejection**: Rejected in Goldfish review; the author proceeded on that basis.
+
+#### Embedding the `map-reprojector` app as it is
+
+*   **Pros**: Reprojection available at once.
+*   **Cons**: Its interface is tied to mouse and keyboard, has no touch input, no tests, and assumes a
+    full-globe image.
+*   **Reason for Rejection**: Rejected in Goldfish review: only its projection maths is reused. The author's
+    later choice of a custom renderer builds on that maths.
+
+### From drafting
+
+#### Working state in Postgres or SQLite
+
+*   **Pros**: A query language, transactions, built-in full-text search. Postgres matches the author's
+    other apps.
+*   **Cons**: Postgres is a second service to run and back up. SQLite ties data to one file and one
+    process. Both hold pending proposals only on the server.
+*   **Reason for Rejection**: Rejected by author: he first chose SQLite, then changed to files only, with
+    proposals and discoveries as branches.
+
+#### All working files on the server, or in a second private repository
+
+*   **Pros**: Server-only keeps the canon repo free of invented material. A second repository gives history
+    and an off-server copy.
+*   **Cons**: Server-only loses pending proposals and discoveries with the disk. A second repository adds
+    another set of Git operations and many small autosave commits.
+*   **Reason for Rejection**: Rejected by author: drafts, chats and settings on the server disk; AI proposals
+    and discoveries as branches in `avalymia`.
+
+#### Agents submit proposals to a Frontier endpoint
+
+*   **Pros**: One inbox and one format for every proposal. No branches in the repo.
+*   **Cons**: Every agent needs access to the author's server and a tool for it; agents in restricted
+    networks cannot reach it.
+*   **Reason for Rejection**: Rejected by author: agents push branches.
+
+#### Agents keep pushing to `main`, reviewed afterwards
+
+*   **Pros**: No change for the agents.
+*   **Cons**: Unreviewed text is canon and in Hindsight before the author sees it, which contradicts goal G8.
+*   **Reason for Rejection**: Rejected by author: agents push branches.
+
+#### MapLibre GL
+
+*   **Pros**: Fast, good touch handling, flat and globe views from the same data, drawing add-ons exist.
+*   **Cons**: Knows only Mercator and globe. World images must be re-cut to Mercator, the poles are cut off
+    in the flat view, and other projections stay a separate tool.
+*   **Reason for Rejection**: Rejected by author: custom renderer.
+
+#### Leaflet with a separate view-only globe
+
+*   **Pros**: The shortest path to working flat maps, with a mature drawing plugin.
+*   **Cons**: Two renderers to keep in agreement. No editing on the globe. Slows with thousands of markers.
+*   **Reason for Rejection**: Rejected by author: custom renderer.
+
+#### Interface and API as two deployments, or Next.js
+
+*   **Pros**: Two deployments keep interface changes from restarting the data server. Next.js gives
+    server-rendered pages that load fast on a phone.
+*   **Cons**: Two deployments need cross-domain login and version matching. Next.js fits long Git, AI and
+    tiling work poorly.
+*   **Reason for Rejection**: Rejected by author: one container.
+
+--------------------------------------------------------------------------------
+
+## Non-Functional Requirements
+
+### Security and privacy
+
+*   The server holds a token that can push to canon, so the whole app is behind login. No page or API route
+    is public except the login page, the GitHub webhook (signature-checked) and `/health` (no content).
+*   Vault text is sent to OpenRouter models and to the self-hosted Hindsight bank, and nowhere else. The
+    settings screen lists which models receive text.
+*   Secrets are encrypted at rest and never reach the browser.
+*   Text from the vault and from agent branches is treated as data, never as instructions, in every AI
+    prompt.
+
+### Performance
+
+*   Server start, including the index build over 500 notes: under 5 seconds.
+*   Entry page on a phone over 4G: under 2 seconds, with resized images.
+*   Typing: no visible lag in a 50,000-word note (the largest file in the vault is the compiled book).
+*   Search results while typing: under 100 ms.
+*   Map frame rate target and tile sizes: set in the stage 4 design.
+
+### Cost
+
+*   AI spend is capped monthly. Field proposals use a small model. Image generation is the largest cost and
+    is made on opening a discovery unless the author changes the setting.
+*   Hindsight ingestion cost stays as today: one ingestion per published note, none for formatting-only
+    changes, none for branches.
+
+### Rollout and rollback
+
+*   Stages 1 and 2 change nothing in the vault except adding `.frontier/`. Obsidian keeps working
+    throughout.
+*   The `id` batch commit and the `AGENTS.md` change come with stage 3 and are ordinary commits that can be
+    reverted.
+*   Rollback at any time: stop the container. The vault, with all published work, is intact in GitHub and
+    opens in Obsidian. Unpublished drafts and chats are in the `/data/state` backup as plain files.
+
+### Backup
+
+*   Nightly copy of `/data/state`, `/data/assets/originals` and `/data/assets/generated` to a second
+    location. A restore is tested once before stage 2 is called done.
