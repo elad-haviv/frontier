@@ -1,7 +1,7 @@
 # Frontier
 
 *   **Author:** Elad Haviv
-*   **Status:** Proposed
+*   **Status:** Approved
 *   **Date:** 2026-11-20
 
 --------------------------------------------------------------------------------
@@ -1588,10 +1588,7 @@ Paths are relative to the `frontier` repository.
 *   **Vault.** In stage 1 the author commits `.frontier/baseline/links.json` after reviewing it.
 *   **Backup against a real bucket** is tried once by hand at the first deploy, since the automated test
     uses a folder.
-*   **This repository's review files.** `zoom_out_report.md`, `comprehension_report.md`, `critic_report.md`,
-    `intermediate_zoom_out_report.md`, `implementation_readiness_report.md` and
-    `goldfish_review_report.md` are removed when the design review ends, and this document's status is
-    set to Approved. `docs/designs/SITEMAP.md` gains a row for each later stage design.
+*   **Design index.** `docs/designs/SITEMAP.md` gains a row for each later stage design.
 
 ### Order of work
 
