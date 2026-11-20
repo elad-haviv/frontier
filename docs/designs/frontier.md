@@ -435,8 +435,9 @@ equals the last fetched `main`: Frontier never makes a local commit in it.
     1.  Frontier fetches.
     2.  Each draft is classified. If the file on `main` still has the draft's base hash, the draft is
         ready. If the file changed on `main`, Frontier runs a three-way merge of base, draft and `main`;
-        a clean result is shown to the author with the incoming changes marked and is used only after he
-        confirms it. If the changes overlap, or the draft deletes a file that changed, the draft is in
+        a clean result is shown to the author with the incoming changes marked. When he confirms, the
+        merged text becomes the draft's content and the version on `main` becomes its base, as when he
+        resolves a conflict. If the changes overlap, or the draft deletes a file that changed, the draft is in
         conflict.
     3.  Each rename intent is turned into link rewrites against the fetched `main`. If the list of notes
         to change differs from what the author was shown, it is shown again.
@@ -448,8 +449,8 @@ equals the last fetched `main`: Frontier never makes a local commit in it.
 *   **Crash safety.** The commit is built without changing the working copy, and drafts live outside it,
     so the working copy can always be thrown away. At start and after every fetch Frontier resets the
     working copy to the fetched `main`, then clears finished work: a draft whose content equals the file
-    on `main` has been published and is removed, and so is a rename intent whose new path exists and whose
-    old path is gone. This recovers from a stop at any point of a Publish without a separate record.
+    on `main` has been published and is removed; so is a delete draft whose file is gone, and a rename
+    intent whose new path exists and whose old path is gone. This recovers from a stop at any point of a Publish without a separate record.
 *   **Rejected push.** If the push is rejected because `main` moved meanwhile, Publish stops and the drafts
     stay unpublished. The author is told that `main` changed and presses Publish again, which fetches and
     asks for any new confirmations. There is no automatic retry, because a retry could apply a merge the
@@ -465,10 +466,10 @@ equals the last fetched `main`: Frontier never makes a local commit in it.
     document, so changing one key is meant to rewrite only that key's lines; the real-vault test checks
     this on every note that has frontmatter. Unknown keys, key order and comments are preserved. The body
     is never re-serialised: the editor edits the text itself.
-*   **Line endings.** 18 files use Windows line endings. One function in `packages/vault` restores a
-    file's original line endings when a commit is built; every publish goes through it, so the real-vault
-    test covers it. A file with mixed endings has the draft applied to the original as changed ranges, so
-    untouched lines keep their bytes, and is listed for the author.
+*   **Line endings.** About 20 notes use Windows line endings and none mixes the two kinds (counted on
+    2026-11-20). One function in `packages/vault` restores a file's original line endings when a commit
+    is built; every publish goes through it, so the real-vault test covers it. A file that mixes the two
+    kinds is opened read-only in Frontier and listed for the author to fix.
 *   **Link resolution.** One ordered rule:
     1.  A link with a path resolves to that path.
     2.  A bare name is matched against note file names, ignoring case and surrounding spaces. One match:
@@ -479,12 +480,12 @@ equals the last fetched `main`: Frontier never makes a local commit in it.
         picks; the link is then rewritten with its path. Frontier does not guess which one Obsidian would
         choose.
 
-    Aliases are not link targets: as in Obsidian, autocomplete offers them and writes `[[Note|Alias]]`.
+    Aliases are not link targets; autocomplete offers them and writes `[[Note|Alias]]`. This assumes
+    Obsidian does the same, which is checked once in stage 1.
     When several notes share a name, autocomplete writes the link with its path. Heading links resolve to
     a heading in the target, or in the same note when no target is given. Image embeds resolve by bare
     file name; the 11 image names that exist more than once are shown as ambiguous and listed for the
-    author to rename, so that Frontier and Obsidian cannot show different images. Whether a bare alias
-    resolves in Obsidian is checked once in stage 1.
+    author to rename, so that Frontier and Obsidian cannot show different images.
 *   **Rename and move.** Renaming rewrites every link that pointed to the old name or path, in one commit.
     Folder notes (a note named after its folder, 77 today) move with their folder. Files under
     `99 Appendices` are never rewritten: a link from one of them to a renamed or moved entry stays as
@@ -577,19 +578,22 @@ code path that goal G8 tests.
 
 ### Quarantine
 
-`main` is not protected in GitHub, because Obsidian pushes to it directly, so an agent can push to `main`
+`main` is not protected in GitHub: Obsidian pushes to it directly, and whether GitHub offers a rule with
+an exception for the author on this private repository has not been confirmed. The stage 3 design checks
+this once, since such a rule would stop the breach at its source. Until then an agent can push to `main`
 against the vault rules. This section is the one statement of how that is handled.
 
 *   **One owner.** The sync decides quarantine. It already receives GitHub's notification of every push,
     which names the account that pushed; Git itself does not record this. The allowed accounts are the
     author's, Frontier's App and the sync's own. A note changed by a push from any other account is
     quarantined by the sync: it is not ingested, even when a later allowed push touches the same note.
-*   **The list.** The sync writes `.frontier/quarantine.json` in the vault and pushes it. The file holds
-    the quarantined notes, each with the commit that caused it, and the last commit on `main` the sync has
-    processed. The sync ignores its own pushes.
-*   **Frontier's side.** Frontier reads that file. It marks the listed notes as "arrived unreviewed". Its
-    AI features read a commit's changes only once the file says the sync has processed that commit; until
-    then they use the previous version of the changed notes. Frontier never works out who pushed.
+*   **The list.** The sync writes `.frontier/quarantine.json` in the vault and pushes it, only when the
+    list changes, so ordinary pushes cause no extra commit. The file holds the quarantined notes, each
+    with the commit that caused it. The sync ignores its own pushes.
+*   **Frontier's side.** Frontier reads that file. It marks the listed notes as "arrived unreviewed", and
+    its AI features leave them out. Frontier never works out who pushed.
+*   **Gap.** Between an agent's push and the sync's list arriving, usually seconds, Frontier can read the
+    new text as canon. The stage 3 design decides whether to close this gap and how.
 *   **Release.** The author accepts the change or reverts it in Frontier. Frontier records the decision in
     `.frontier/review-state.json` and publishes it. When the sync sees that file change in a push by
     Frontier, it removes the note from quarantine and ingests it. Frontier never writes to the bank.
@@ -628,10 +632,11 @@ scripted, reviewed commits.
 
 A relation inside a `when` refers to another entry by wikilink, as in the example. It is resolved like any
 other link, and a rename in Frontier rewrites it, in frontmatter as in the body. A rename made in Obsidian
-or by an agent may not rewrite it: Obsidian is not known to update a link that is part of a sentence
-inside a nested list. So after every fetch Frontier looks for relations whose target no longer resolves,
-finds the new name through Git's rename detection, and offers the rewrite as a draft. The stage 3 design
-tests Obsidian's behaviour and may move the target into a key of its own. Obsidian's properties panel is
+or by an agent may not rewrite it:
+Obsidian is not known to update a link that is part of a sentence inside a nested list. Such a relation
+then shows as unresolved, in the same list as other unresolved links, and the author picks the new target.
+The stage 3 design tests Obsidian's behaviour; if these breaks prove frequent it may add automatic repair
+or move the target into a key of its own. Obsidian's properties panel is
 also not known to edit nested lists such as `time`; in Obsidian these are edited in source view. Map
 features and profiles, which are not Markdown, refer to entries by `id`.
 
@@ -729,7 +734,7 @@ features and profiles, which are not Markdown, refer to entries by `id`.
 *   **Grounding.** For lore questions and contradiction checks: recall from the bank, then read the actual
     files for the entries recalled, then answer from the file text. Recall from the bank is combined with a search of
     Frontier's own index by time, alias and entry type, because confirmed dates and aliases reach the bank
-    late. A bank result that names a path since renamed is followed through Git's rename history. Grounding
+    late. A bank result that names a path which no longer exists is dropped. Grounding
     reads published text only, never drafts. Claims cite entries, which the interface shows as links. This follows the vault rule that lore is never quoted from the bank.
 *   **Field proposals.** Run on Publish for the changed entries, or on request for one entry or one
     folder. A folder run shows a cost estimate first and stops at the monthly cap. Its results are
@@ -774,7 +779,7 @@ features and profiles, which are not Markdown, refer to entries by `id`.
 
 *   A status area shows: unpublished drafts, last fetch and push, a failed push, the commit the index was
     built from and whether it is stale, agent branches waiting, quarantined notes, entries with a
-    duplicate `id` and references to an `id` no entry has, files with mixed line endings, links from
+    duplicate `id` and references to an `id` no entry has, files with mixed line endings (read-only), links from
     appendix files to renamed entries, last backup, AI spend this month, and whether the bank can be
     reached.
 *   The server pushes status changes to the browser over server-sent events.
@@ -825,12 +830,13 @@ they are tested against the real vault on their own.
 | No database, no query language | Each new kind of question about the data needs a function written for it; start-up indexing grows with the vault. | Index functions live in tested packages. Revisit the index if a build passes 5 seconds or the vault passes about 5,000 entries. | 1 |
 | An agent pushes to `main` | Unreviewed text is on `main`, visible in Obsidian and to other agents. | Quarantine keeps it out of the bank and out of Frontier's AI answers until the author decides. | 3 |
 | An agent pushes under the author's own account | Quarantine cannot see it; its text is treated as the author's. | The `AGENTS.md` rule to push `proposal/` branches; separate identities wherever the agent allows one. | 3 |
+| Gap before the quarantine list arrives | For some seconds after an agent's push to `main`, Frontier's AI features may read the new text as canon. | Accepted for now; the stage 3 design decides whether to close it. | 3 |
 | Goal G8 depends on the sync | The sync is code outside this repository; if its changes are not made, quarantine does not exist. | The sync changes are a stage 3 deliverable, with a test push before stage 3 is called done. | 3 |
-| The sync skips frontmatter-only changes | Confirmed dates and new aliases reach the bank only when the entry's text next changes; renames leave old paths in the bank. | Frontier's answers combine bank recall with its own index and follow renames through Git history. | 3, 8 |
-| Obsidian does not rewrite links inside time fields | A time relation points at an old name after a rename made outside Frontier. | Frontier detects it after each fetch and offers the rewrite. | 3 |
+| The sync skips frontmatter-only changes | Confirmed dates and new aliases reach the bank only when the entry's text next changes; renames leave old paths in the bank. | Frontier's answers combine bank recall with its own index and drop results whose path is gone. | 3, 8 |
+| Obsidian may not rewrite links inside time fields | A time relation points at an old name after a rename made outside Frontier. | It shows as unresolved and the author picks the target; tested in the stage 3 design, which may add automatic repair. | 3 |
 | Custom map renderer | Seams where a projection splits the map; slow panning on phones; the largest stage of work. | Settle seams, grid density and a frame-rate target in the stage 4 design; fallback to flat and globe views only. | 4 |
 | One password guards an account that can push to canon | A guessed or stolen password allows publishing and AI spending. | Rate-limited login from stage 1; passkey in stage 3; the AI spending limit on the provider key bounds the cost. | 1, 3 |
-| Image tiling and backup run in the API process | A large import could slow the app while it runs. | Both run one job at a time at low priority; tiling moves to a separate process if an import takes over a minute. | 1, 4 |
+| Image tiling and backup run in the API process | A large import could slow the app while it runs. | Both run one job at a time at low priority; whether tiling needs its own process is decided in the stage 4 design. | 1, 4 |
 | AI cost | Spending grows with conversations, discovery and images. | First estimate: under 10 US dollars a month for field proposals and conversations, more with heavy image use; not priced against live rates. A cap in Frontier and a hard limit on the provider key. | 3, 8 |
 | Untrusted text from agents | Script in a proposal could act with the author's session. | Sanitised rendering and a content security policy. | 1 |
 
@@ -1065,7 +1071,7 @@ Paths are relative to the `frontier` repository unless they start with `avalymia
     and out of the image.
 5.  `.env.example` (Create). Lists the environment variables with no values: `GITHUB_APP_ID`,
     `GITHUB_APP_PRIVATE_KEY`, `GITHUB_APP_INSTALLATION_ID`, `VAULT_REPO`,
-    `WEBHOOK_SECRET`, `SETTINGS_KEY`, `SESSION_SECRET`, `DATA_DIR`, `PUBLIC_URL`, `BACKUP_TARGET` and its
+    `WEBHOOK_SECRET`, `SESSION_SECRET`, `DATA_DIR`, `PUBLIC_URL`, `BACKUP_TARGET` and its
     credentials.
 6.  `Dockerfile` (Create). Two steps: build all workspaces; then a slim Node image with `git` installed, the
     server build, the web build, and `/data` declared as a volume. Runs as a non-root user.
@@ -1103,8 +1109,7 @@ Paths are relative to the `frontier` repository unless they start with `avalymia
     position: target, path part, heading part, display text, embed flag. Also standard Markdown image
     links with angle-bracket paths.
 20. `packages/vault/src/resolve.ts` (Create). The resolution rules from the Technical Plan: path links,
-    bare names against note file names ignoring case and surrounding spaces, shortest path among
-    same-named notes, the `99 Appendices` tie-break, ambiguity, heading links, image embeds by bare name. Returns resolved, unresolved or
+    bare names against note file names ignoring case and surrounding spaces, the `99 Appendices` tie-break, ambiguity, heading links, image embeds by bare name. Returns resolved, unresolved or
     ambiguous with candidates. Serves goal G4.
 21. `packages/vault/src/rename.ts` (Create). Given a rename or move, produce the edited text of every note
     whose links must change, touching only the link characters. Handles folder notes and folder moves.
@@ -1153,7 +1158,7 @@ Paths are relative to the `frontier` repository unless they start with `avalymia
     an older revision and keeps it as a second version. At start and after each fetch, removes drafts
     whose content equals the file on `main` and rename intents already carried out. A rename or move is stored as an intent with the old and new path.
 39. `apps/server/src/state/settings.ts` (Create). Read and write `settings.json`; stage 1 holds only the
-    password hash. The encryption of secrets is added in stage 3 with the AI key.
+    password hash. The encryption of secrets, and the `SETTINGS_KEY` variable it needs, are added in stage 3 with the AI key.
 40. `apps/server/src/index/build.ts` (Create). Reads the working copy into memory as the published layer:
     entries, aliases, headings, links with resolution, backlinks. Builds the draft layer from the drafts
     and keeps the two apart, so each reader can ask for published only or published plus drafts. Updates
@@ -1163,8 +1168,8 @@ Paths are relative to the `frontier` repository unless they start with `avalymia
 42. `apps/server/src/publish/publish.ts` (Create). The Publish flow from the Technical Plan: fetch; compare
     base hashes; three-way merge where a file changed, returning clean merges for the author to confirm;
     turn rename intents into link rewrites against the fetched `main`; hold back conflicted drafts; keep
-    a rename and its rewrites together; restore original line endings; build one commit; push; one retry
-    on rejection, then stop with the drafts kept.
+    a rename and its rewrites together; restore original line endings; build one commit; push; on
+    rejection, stop with the drafts kept.
 43. `apps/server/src/publish/conflict.ts` (Create). Builds the data for the conflict screen: the draft, the
     base version and the current `main` version of a file.
 44. `apps/server/src/images/serve.ts` (Create). Serves a vault image resized to a requested width, cached
@@ -1194,11 +1199,12 @@ Paths are relative to the `frontier` repository unless they start with `avalymia
 58. `apps/server/test/helpers/repo.ts` (Create). Makes a temporary Git remote and working copy from the
     fixture vault, so Git behaviour is tested without GitHub.
 59. `apps/server/test/gateway.test.ts` (Create). Fetch, commit, push; a push after the remote moved is
-    rejected and retried; no force push is ever issued.
+    rejected and reported; no force push is ever issued.
 60. `apps/server/test/publish.test.ts` (Create). One commit per Publish; no commit without Publish (G6); a
     file changed on the remote in the same place produces a conflict and is held back while other drafts
     publish (G7); a change elsewhere in the file gives a clean merge that waits for confirmation; a
-    rename publishes all link rewrites in one commit; a push rejected twice stops with drafts kept; a
+    rename publishes all link rewrites in one commit; a rejected push stops Publish with drafts kept; a draft published through a confirmed merge is
+    cleared afterwards; a
     delete of a changed file is a conflict.
 61. `apps/server/test/drafts.test.ts` (Create). Drafts survive a restart; a crash during a write leaves the
     previous file intact; appendix files cannot be drafted; a save with an older revision is kept as a
@@ -1212,7 +1218,8 @@ Paths are relative to the `frontier` repository unless they start with `avalymia
     copies to the bucket named by `BACKUP_TARGET` and records the last successful copy.
 63b. `apps/server/test/recovery.test.ts` (Create). A server stopped after the commit is built, after the
     push, and before the drafts are removed each comes back at start with the working copy equal to
-    `main` and no published draft left over.
+    `main` and no published draft left over, including a draft published through a confirmed merge and a
+    delete draft.
 63d. `apps/server/test/backup.test.ts` (Create). A change is copied within the set delay to a local
     stand-in bucket; a restore from it gives the same drafts.
 63e. `apps/server/test/status.test.ts` (Create). Each failure in goal G12 that belongs to stage 1 is
@@ -1255,7 +1262,7 @@ Paths are relative to the `frontier` repository unless they start with `avalymia
 82. `apps/web/src/editor/Properties.tsx` (Create). Panel to view and edit frontmatter keys; edits go through
     the same one-key-at-a-time rule as the server.
 83. `apps/web/src/drafts/buffer.ts` (Create). Saves each change to IndexedDB at once and to the server
-    about a second later; resends when the connection returns; keeps each draft until it is published and
+    about a second later; resends when the connection returns; keeps each revision until the server confirms it and then
     drops it once the server confirms it holds that revision (G6).
 84. `apps/web/src/drafts/EntryState.tsx` (Create). The per-entry badge: published, unpublished, conflict,
     waiting to send.
@@ -1279,10 +1286,11 @@ Paths are relative to the `frontier` repository unless they start with `avalymia
 98. `apps/web/e2e/offline.spec.ts` (Create). Connection dropped while typing; text is kept and sent later.
 99. `apps/web/e2e/phone.spec.ts` (Create). The same flows at 375 px with touch.
 99a. `apps/web/e2e/line-endings.spec.ts` (Create). One keystroke in the fixture file with Windows line
-    endings gives a one-line difference after Publish; the same for the file with mixed endings (G2).
+    endings gives a one-line difference after Publish; the fixture file with mixed endings opens
+    read-only (G2).
 99b. `packages/vault/src/lineEndings.ts` and `packages/vault/test/lineEndings.test.ts` (Create, S1). Records
     a file's line-ending style, normalises text for editing, and restores the original endings when a
-    commit is built; for mixed endings, applies the draft to the original as changed ranges. The
+    commit is built; reports a file that mixes the two kinds so it is opened read-only. The
     real-vault test (item 28) applies a one-character edit to every note and expects a one-line
     difference, and sets one frontmatter key on every note that has frontmatter and expects only that
     key's lines to change.

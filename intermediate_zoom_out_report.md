@@ -115,3 +115,23 @@ All seven Major findings and the nits were applied to the design:
 * M7: stages are defined by journeys; rename-following for appendix links is left to stage 3.
 * Nits: `.frontier/` is created in stage 3; the sanitiser lives in the web app; glossary and data table
   corrected; a skeleton is deployed early; the dependence of G8 on the sync is in the risks table.
+
+--------------------------------------------------------------------------------
+
+## Stage 8 re-audit (after revisions)
+
+One fresh `egm-zoom-out` reviewer ran on the revised document: 1 Blocker, 3 Major, 6 Nit. This is the one
+re-audit the process allows for this stage. All were applied except the renumbering of plan items.
+
+| Finding | Severity | Action |
+| --- | --- | --- |
+| The stage 1 plan still described a push retry, a "shortest path" link tie-break and a self-contradicting browser buffer rule | Blocker | Plan items 20, 42, 59, 60 and 83 now match the architecture. |
+| Crash clean-up did not clear a draft published through a confirmed merge, or a delete draft | Major | Confirming a merge replaces the draft's content and base; a delete draft is cleared when its file is gone; both added to the recovery test. |
+| A "last commit processed" pointer on `main` would add a sync commit after every push | Major | The pointer is removed. The sync commits the list only when it changes. The short gap before the list arrives is recorded as an accepted risk for the stage 3 design. |
+| Automatic rename repair was committed before its premise was tested | Major | Broken relations and bank paths are shown as unresolved or dropped; automatic repair is left to the stage 3 design if the test shows a need. |
+| Two line-ending mechanisms, one for files that mix endings | Nit | The vault has no such file (counted). A file that mixes endings opens read-only and is listed. |
+| Reasons for not protecting `main` differed | Nit | Reconciled; the stage 3 design checks once whether a GitHub rule is available. |
+| Alias behaviour asserted, then called unverified | Nit | Stated as an assumption until the stage 1 check. |
+| `SETTINGS_KEY` required in stage 1 but unused until stage 3 | Nit | Deferred to stage 3. |
+| Speculative trigger for a separate tiling process | Nit | Left to the stage 4 design. |
+| Plan item numbering has gaps and inserted letters | Nit | Not changed: numbers are referenced from the verification plan and will be regenerated when the plan is next revised. |
