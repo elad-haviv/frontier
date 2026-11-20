@@ -1,6 +1,8 @@
 // Starts the built server on the sample vault, in a data folder that is emptied first.
+import { Buffer } from "node:buffer";
 import { rmSync } from "node:fs";
 import { dirname, join } from "node:path";
+import process from "node:process";
 import { fileURLToPath } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
