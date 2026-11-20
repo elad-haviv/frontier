@@ -27,6 +27,14 @@ One place for what is being built, what is waiting, and ideas. The design in
 - 2026-11-21: The idea, as said. (Notes: which stage it probably belongs to, open questions.)
 -->
 
+- 2026-11-21: **A lightbox view of images. Gallery.**
+  - Lightbox: tapping an image in an entry opens it large over the page, with zoom and swipe to
+    the entry's other images, in place of today's "opens in a new tab". Small, and fits stage 2
+    (reader) with no dependencies.
+  - Gallery: a page for browsing the vault's images. Open: all images or only those used in
+    entries (about 80 of 284 are used; most of the rest are icon sets); grouping by folder or by
+    the entry that uses them; whether an image links back to its entries.
+
 ## Now: finishing stages 1 and 2
 
 - [ ] Backup of drafts to a storage bucket, and a restore command
