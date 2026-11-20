@@ -227,8 +227,8 @@ None at present.
 
 *   **Given**: The author publishes an entry containing "two centuries after the First Landing".
 *   **When**: Frontier's AI proposes a time field: "after First Landing, about 200 years, Era of Man".
-*   **Then**: The proposal appears as a chip on the entry and in the inbox, with the source sentence
-    highlighted. Publishing was not blocked. He accepts with one tap, the field is added to the entry's
+*   **Then**: The proposal appears as a chip on the entry, in the inbox, and on the timeline as an
+    unconfirmed event in a distinct style, with the source sentence highlighted. Publishing was not blocked. He accepts with one tap, the field is added to the entry's
     frontmatter, and it enters the next Publish. If he rejects it, it is not proposed again unless the
     sentence changes.
 
@@ -254,6 +254,7 @@ None at present.
 *   **Then**: Events appear in order, each drawn as wide as its uncertainty. Events with no conversion to
     the shared axis appear in their own lane, placed by their relative links, labelled "no conversion
     defined". Two events whose links contradict each other are flagged.
+    Events that come from unconfirmed AI proposals are drawn outlined; one switch hides them.
 
 ### CUJ 9: Move a map through time
 
@@ -515,6 +516,13 @@ version number. Changes to the schema are scripted, reviewed commits.
     them are shown in their own lane, ordered by relations.
 *   **Views**: timeline with lanes by place, culture or entry type, each event drawn as wide as its
     interval; an overlap view for a chosen span; a list of contradictions.
+*   **Unconfirmed proposals in views.** Timelines and time-aware maps also show time fields that AI has
+    proposed and the author has not yet decided. The index reads them from the `frontier/proposal`
+    branches and keeps them apart from confirmed fields. They are drawn in a distinct style (outlined, not
+    filled, with a marker), can be hidden with one switch, and never take part in contradiction reports or
+    in narrowing confirmed intervals. Tapping one shows the source sentence with confirm, edit and reject.
+    Confirming writes the field into a draft of the entry. Lore conversations, character chat and
+    discovery read confirmed fields only.
 
 ### Maps
 
