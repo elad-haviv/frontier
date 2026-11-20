@@ -1,5 +1,7 @@
 # Goldfish Annotated Review Report
 
+**Status: resolved** (auto accept: 22 fixes applied, 2 nits declined, 0 contested, 0 escalated)
+
 **Target:** `docs/designs/frontier.md` (Detailed Implementation Plan), findings from Stage 9
 (`implementation_readiness_report.md`). The earlier report on Stages 6 and 7 is in Git history.
 
