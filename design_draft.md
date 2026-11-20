@@ -296,3 +296,288 @@ Each goal states how it is checked.
     appear on the map as provisional markers in a distinct style. He edits the settlement, approves it and
     discards the rest. The settlement becomes a draft entry with a marker, and enters canon at the next
     Publish.
+
+## Technical Plan (Architecture)
+
+### Decisions made by the author
+
+| Decision | Choice | Consequence accepted |
+| --- | --- | --- |
+| Working state | SQLite, one file on the server disk | API and data share one machine and one process. |
+| Agent proposals | Agents push branches; Frontier lists them and commits what is approved | `AGENTS.md` and each agent's instructions must change. |
+| Map drawing | Custom renderer built on the `map-reprojector` maths | The map stage is the largest in the project. Pan, zoom, touch, hit testing, labels, tiling and drawing tools are all built here. |
+| Deployment | One container: Fastify serves the API and the built React app | Every interface change restarts the server. |
+
+### Shape of the system
+
+```text
+ Browser (desktop / phone)                      Server: one container on Coolify
++----------------------------------+           +------------------------------------------------+
+| React app                        |   HTTPS   | Fastify                                        |
+|  Reader / Editor (CodeMirror 6)  | <-------> |  API + serves the built React app              |
+|  Review inbox                    |   + SSE   |                                                |
+|  Map renderer (WebGL + canvas)   |           |  Vault service --- Git gateway --+             |
+|  Timeline                        |           |   parse, links,    pull, commit, |             |
+|  Chat / Explore                  |           |   rename           push, branches|             |
+|  Draft buffer (IndexedDB)        |           |                                  v             |
++----------------------------------+           |  Index + state    /data/vault  (Git clone)     |
+                                               |  (SQLite)         /data/frontier.db            |
+                                               |                   /data/assets (tiles, thumbs) |
+                                               |  AI service ----> OpenRouter                   |
+                                               |              \--> Hindsight `worldbuilding`    |
+                                               +------------------------|-----------------------+
+                                                                        | push / fetch
+   Obsidian (obsidian-git) ---- push main ----> GitHub: elad-haviv/avalymia <---- agents push branches
+                                                        |
+                                                        +-- webhook --> Frontier (fetch, reindex)
+                                                        +-- webhook --> Hindsight sync (main only)
+```
+
+One persistent disk is mounted at `/data`. It holds the Git working copy of `avalymia`, the SQLite file and
+derived assets. Losing the disk loses unpublished drafts, pending proposals, chats and unapproved
+discoveries. It does not lose canon.
+
+### Where each kind of data lives
+
+| Data | Home | In Hindsight |
+| --- | --- | --- |
+| Entries (Markdown, frontmatter fields) | `avalymia` repo, existing folders | Yes, on push to `main` |
+| Calendars, maps, marker set manifests, field schema | `avalymia` repo, `.frontier/` | No (not `.md`) |
+| Character chat profiles | `avalymia` repo, `99 Appendices/09 Agents/` | As today |
+| Saved chat logs (on request) | `avalymia` repo, `99 Appendices/04 AI Conversations/` | As today |
+| Existing images | `avalymia` repo, unchanged | No |
+| New large map images | `/data/assets/originals`, with a manifest in `.frontier/assets.json` | No |
+| Index: links, backlinks, search text, parsed fields | SQLite, rebuilt from the repo | No |
+| Drafts, own-AI proposals, discoveries, chats, cost log, settings | SQLite | No |
+| Agent proposals | Branches in the `avalymia` repo | No (not `main`) |
+| Tiles, thumbnails | `/data/assets`, regenerated from originals | No |
+
+`.frontier/` is a dot-folder, so Obsidian does not show it and the Hindsight sync, which reads `.md` files,
+does not ingest it.
+
+**One exception to goal G1.** New large map images are kept outside Git, so a fresh clone alone does not
+restore them. The manifest in the repo records each image's name, size and content hash, and `/data/assets/originals`
+must be included in the server backup. Everything else in G1 holds.
+
+### Git gateway
+
+One module owns every Git operation. Nothing else touches the working copy.
+
+*   **Fetch.** A GitHub webhook on the `avalymia` repo calls Frontier on every push. Frontier fetches,
+    fast-forwards its copy of `main` when it has no local commits, and reindexes the changed files. A timer
+    fetches every few minutes in case a webhook is missed.
+*   **Drafts are not commits.** A draft is a row in SQLite: file path, full text, and the Git blob hash of
+    the version it was based on. Renames, moves, creations and deletions are draft operations too.
+*   **Publish.** The author selects drafts (all by default) and writes a message. Frontier fetches; for each
+    draft it compares the base hash with the file now on `main`. If none differ, it writes the files, makes
+    one commit and pushes. If the push is rejected because `main` moved meanwhile, it repeats once from the
+    fetch. It never force-pushes and never rewrites history.
+*   **Conflict.** If a file changed on `main` since the draft was started, that draft is not published.
+    The interface shows both versions side by side with differences marked. The author edits his draft into
+    the merged result and confirms, which resets its base hash.
+*   **Credential.** A fine-grained GitHub token limited to the `avalymia` repo, held in a server environment
+    variable.
+*   **Commit identity.** Commits carry the author's name. Commits that include approved AI content add a
+    trailer naming the model and the proposal.
+
+### Vault service
+
+*   **Parsing.** Entries are read as text. Frontmatter is parsed with a YAML library that keeps the original
+    document, so changing one key rewrites only that key's lines. Unknown keys, key order, comments and line
+    endings (18 files use CRLF) are preserved. The body is never re-serialised: the editor edits the text
+    itself, which satisfies goal G2 by construction.
+*   **Link resolution.** Rules, in order: a link with a path resolves to that path; a bare name matches a
+    note name or a declared alias, ignoring case and surrounding spaces; among several matches, the one
+    outside `99 Appendices` wins when it is the only one outside; otherwise the link is ambiguous. Heading
+    links resolve to a heading in the target, or in the same note when no target is given. Image embeds
+    resolve by bare file name across the vault; the 11 duplicated image names resolve to the nearest folder
+    and are listed for the author. The resolver runs over the real vault in a test with a checked-in
+    baseline (goal G4).
+*   **Rename and move.** Renaming rewrites every link that pointed to the old name or path, as draft changes
+    to those files, published together in one commit. Folder notes (a note named after its folder, 77
+    today) move with their folder.
+*   **Entry identity.** Each entry gets an `id` in frontmatter, a short random string that never changes.
+    Maps, timelines, proposals and profiles refer to entries by `id`. Ids are added when an entry is first
+    edited or referenced, and in one planned batch commit before stage 4. The Hindsight sync is switched off
+    for formatting-only changes first, so the batch does not re-ingest the bank.
+*   **Append-only guard.** Existing files under `99 Appendices` cannot be drafted. New files can be added.
+
+### Index and state (SQLite)
+
+*   **Index tables**: entries, links, aliases, headings, full-text search (SQLite FTS5), parsed fields, time
+    intervals and relations, map features by entry. Each row records the commit it was built from. A
+    command drops and rebuilds all of them from the working copy. At 500 notes this takes seconds.
+*   **State tables**: drafts, proposals, discoveries, conversations, character sessions, AI call log with
+    cost, settings, login sessions. These are the only data not recoverable from the repo. The SQLite file
+    is copied to a backup location nightly.
+*   Secrets in settings (AI key, Hindsight key) are encrypted with a key from an environment variable and
+    are never sent to the browser.
+
+### Reader and editor
+
+*   **Editor**: CodeMirror 6 editing the Markdown source, with live preview that hides the syntax of the
+    line the cursor is not on, as Obsidian does. Extensions: wikilink autocomplete over names, aliases and
+    headings; click-to-follow; create from unresolved link; table editing; image paste and upload to
+    `99 Appendices/01 Images`; a properties panel for frontmatter.
+*   **Reader**: rendered Markdown with hover previews, backlinks, outline, and panels "appears on maps" and
+    "on timeline" that come from the index.
+*   **Drafts**: typing saves to the browser's IndexedDB at once and to the server about a second later.
+    With no connection, text stays in the browser and is sent when the connection returns. Each entry shows
+    one of: published, unpublished, conflict, waiting to send.
+*   **Images**: the server returns resized versions by requested width and caches them on disk. Originals
+    up to 9 MB are never sent to a phone unless opened at full size.
+*   **Phone layout**: a bottom bar with search, entries, maps, inbox and chat; a toolbar above the keyboard
+    with link, heading, list and image buttons.
+
+### Review inbox and proposals
+
+Three sources, one inbox:
+
+1.  **Agent branches.** Any branch in `avalymia` other than `main` is listed as a proposal: its name, the
+    commit messages, and each changed file as a readable difference against `main`. The author accepts,
+    edits or rejects per file. Accepting writes the accepted versions as drafts and publishes them as one
+    commit on `main`. The branch is deleted when every file is decided. `AGENTS.md` changes to: agents push
+    to a branch named `proposal/<agent>/<topic>` and never to `main`.
+2.  **Frontier's own AI.** Field proposals, drafted entries, profile proposals and lines sent from chat are
+    rows in SQLite, each with the source text it was based on.
+3.  **Discoveries.** Rows in SQLite with the canon they drew on and the result of the contradiction check.
+
+Accepting any proposal produces drafts. Nothing reaches `main` except through Publish. This is the single
+code path that goal G8 tests.
+
+`main` is not protected in GitHub, because Obsidian pushes to it directly. An agent that pushes to `main`
+against the rule is therefore not blocked. Frontier lists any commit on `main` that it did not create and
+that Obsidian did not author as "arrived unreviewed", so the breach is visible.
+
+### Structured fields
+
+Fields live in the entry's frontmatter as readable text, so the note still reads sensibly in Obsidian.
+Illustrative shape, to be fixed in the stage 3 and stage 5 designs:
+
+```yaml
+id: k3f9x2ab
+aliases: [The White City]
+type: settlement            # optional; otherwise taken from the folder
+time:
+  - what: founded
+    when: "c. 340 EM"
+  - what: destroyed
+    when: "after [[The Nirani Exodus]], within a generation"
+```
+
+A schema file, `.frontier/schema.yaml`, lists field names, the allowed `what` values per entry type, and a
+version number. Changes to the schema are scripted, reviewed commits.
+
+### Time
+
+*   **Calendar definitions** are files in `.frontier/calendars/`, one per calendar, each linked to its lore
+    note. A definition lists eras, units, month names and lengths, and leap rules. A leap rule may be
+    "unspecified" or a list of leap years the author declares. The Ezob calendar's nameless month is a
+    month with an empty name.
+*   **Stored form.** Each `when` keeps the author's text. The parser turns it into an interval, earliest to
+    latest, in that calendar's own units, at the precision given: day, month, year, era, or open-ended.
+    Text the parser cannot read is kept and marked unparsed.
+*   **Relations.** "Before", "after", "during", "at the same time as", with an optional gap, are links
+    between dated things. A solver narrows intervals along these links and reports cycles and impossible
+    combinations as contradictions. It never changes a field.
+*   **Common axis.** A calendar may declare an anchor (one of its dates equals a pulse count) and a rate
+    (pulses per unit). A plane may declare a table of rates over time for dilation. Only calendars with
+    both can be placed on one axis; a conversion gives a range and is labelled derived. Calendars without
+    them are shown in their own lane, ordered by relations.
+*   **Views**: timeline with lanes by place, culture or entry type, each event drawn as wide as its
+    interval; an overlap view for a chosen span; a list of contradictions.
+
+### Maps
+
+*   **Map files** are JSON in `.frontier/maps/`, one per map, with a format version. A map has: a title; a
+    coordinate space; one or more source images with their extent and projection; layers; features; and
+    links to child maps.
+*   **Coordinate spaces.** `sphere`: longitude and latitude, radius optional. `cylinder`: angle, height and
+    layer number, for Derdama. `flat`: x and y in the image's own units, with an optional scale. `schematic`:
+    x and y with no measuring. Each space supplies its own distance and area functions, or none.
+*   **Features** are GeoJSON points, lines and polygons in the map's space. A feature may carry an entry
+    `id`, a marker set and icon, a style, a label, and a link to a child map. It carries no dates: when it
+    is visible comes from its entry's time interval. A path may list several positions with entry events,
+    which gives movement.
+*   **Marker sets** are folders of icons with a manifest in `.frontier/marker-sets/`. The first set points
+    at the Skyrim icons already in `99 Appendices/07 Icons/Skyrim`. A map selects the sets it uses.
+*   **Renderer.** A package of pure functions holds the projections and inverse projections, taken from
+    `map-reprojector` (`projections.ts`, `reprojection.worker.ts`, `pixelMapper.ts`) and extended with the
+    cylinder and flat spaces. The view is drawn in WebGL: for each screen pixel the shader computes which
+    point of the map's space is shown there and reads the colour from the source image, which the server
+    has cut into a pyramid of tiles in the image's own projection. Markers, paths, zones and labels are
+    projected on the processor and drawn on a canvas above. Pan, zoom, rotate, pinch, hit testing, label
+    placement and the drawing and measuring tools work in space coordinates, so they behave the same in
+    every projection, including the globe.
+*   **Order of building**, because this stage is the largest: flat space with markers first; then sphere in
+    equirectangular and globe views; then paths, zones, layers and measuring; then cylinder and schematic;
+    then the remaining projections. The stage 4 design sets a frame-rate target on a mid-range phone and a
+    fallback (lower-resolution tiles while moving) before any drawing tool is built.
+*   **Risk accepted.** No existing library is used for interaction or drawing. If phone performance or the
+    volume of work blocks later stages, the fallback is to ship flat and globe views only and defer the rest.
+
+### AI service
+
+*   **Provider.** All model calls go through one interface to OpenRouter, with model names per task
+    (extraction, conversation, character, discovery) set in the settings screen. Every call is logged with
+    tokens and cost. A monthly cap stops calls with a clear message.
+*   **Hindsight.** A client for the `worldbuilding` bank, configured in settings (address, bank name, key,
+    test button). Frontier only reads from the bank. It never writes to it; the bank is fed by the existing
+    sync from `main`.
+*   **Grounding.** For lore questions and contradiction checks: recall from the bank, then read the actual
+    files for the entries recalled, then answer from the file text. Claims cite entries by `id`, which the
+    interface shows as links. This follows the vault rule that lore is never quoted from the bank.
+*   **Field proposals.** Run on Publish for the changed entries, or on request, against the changed text
+    and the schema. Results are cached by content hash. `99 Appendices` and `.frontier/` are excluded.
+*   **Character chat.** The system prompt is built from the approved profile file and the character's
+    entries. The profile states the moment the character speaks from; entries and events dated after it
+    are left out of the context.
+*   **Discovery.** Input: the tapped position, nearby features and their entries, the region's cultures,
+    the selected moment. Output: structured candidates (kind, name, description, position, the entries it
+    drew on). Each candidate is checked against the bank and files before it is shown.
+*   Stage 8 gets its own design, including prompts, context limits and the marking of improvised lines.
+
+### Login and security
+
+*   One account. Password stored as an argon2id hash; a session cookie that is HTTP-only, secure and
+    same-site. Login attempts are rate-limited. Passkeys can be added later.
+*   The GitHub token, AI key and Hindsight key stay on the server.
+*   Webhook calls from GitHub are verified by their signature.
+
+### Seeing failures
+
+*   A status area shows: unpublished drafts, last fetch and push, a failed push, index built from which
+    commit, agent branches waiting, AI spend this month, and Hindsight reachability.
+*   The server pushes status changes to the browser over server-sent events.
+*   `/health` reports the same facts for Coolify's health check.
+
+### Export
+
+Stage 9 gets its own design. The planned mechanisms: Pandoc in the container for docx and PDF; styled web
+pages generated from selected entries with a theme; presentations as HTML slide decks and, through Pandoc,
+pptx; map renders produced by the same renderer at a chosen size, moment and projection.
+
+### Code layout
+
+A single repository, `elad-haviv/frontier`, with workspaces:
+
+```text
+apps/server      Fastify API, Git gateway, index, AI service, static file serving
+apps/web         React app: reader, editor, inbox, maps, timeline, chat
+packages/vault   Markdown and frontmatter parsing, link resolution, rename (used by server and web)
+packages/time    Calendar definitions, date parsing, intervals, relation solver
+packages/geo     Coordinate spaces, projections, measuring (from map-reprojector)
+packages/schema  Shared types and validators for API and file formats
+```
+
+`packages/vault`, `packages/time` and `packages/geo` have no dependency on the server or the browser, so
+they are tested against the real vault on their own.
+
+### Changes outside this repository
+
+1.  `avalymia/AGENTS.md`: agents push to `proposal/<agent>/<topic>` branches, never to `main`.
+2.  Hindsight sync agent: skip changes that touch only frontmatter, whitespace or line endings.
+3.  `avalymia`: add the `.frontier/` folder; later, one batch commit adding `id` to every entry.
+4.  GitHub: a webhook from `avalymia` to Frontier, and a fine-grained token.
+5.  `99 Appendices/06 Interactive Maps/Main.json` is removed when the first map file exists. This is the
+    one edit to an appendix file, approved by the author in the open questions.
