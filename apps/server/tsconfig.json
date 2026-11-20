@@ -1,0 +1,14 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "../..",
+    "outDir": "dist",
+    "types": ["node"],
+    "paths": {
+      "@frontier/vault": ["../../packages/vault/src/index.ts"],
+      "@frontier/schema": ["../../packages/schema/src/index.ts"]
+    }
+  },
+  "include": ["src", "test"],
+  "exclude": ["dist"]
+}

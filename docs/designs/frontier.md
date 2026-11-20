@@ -1451,8 +1451,10 @@ Paths are relative to the `frontier` repository.
 44. `apps/server/src/state/backup.ts` (Create, S1). The backup rule above; writes `backup.json`.
 45. `apps/server/src/state/queue.ts` (Create, S1). Runs background jobs one at a time (backup, resizing).
 46. `apps/server/src/index/build.ts` (Create, S1). The published layer from the working copy and the draft
-    layer from drafts and rename intents, kept apart; updates per file; re-resolves links when a note is
-    added or removed.
+    layer from drafts and rename intents, kept apart. As built, the published layer is rebuilt in full
+    after each fetch that moved `main`, not file by file: a full build of a 500-note vault takes well
+    under a second, and a full build cannot leave a stale link behind. Per-file updates are added only
+    if the timing test ever needs them.
 47. `apps/server/src/index/attention.ts` (Create, S1). Builds the attention lists.
 48. `apps/server/src/index/search.ts` (Create, S2). MiniSearch over the published layer plus drafts, with
     the weights above.
