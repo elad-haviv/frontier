@@ -14,7 +14,14 @@ One place for what is being built, what is waiting, and ideas. The design in
 
 ## Ideas inbox
 
-Nothing yet.
+- 2026-11-21: **AI co-editing, in the editor.** Highlight text and add a comment for me or the AI
+  to work on; ask the AI to change the length or style of a selection; consult the AI about a
+  passage without leaving the editor.
+  - Probably stage 8 (AI companion), with the AI basics from stage 3 as a prerequisite.
+  - Open: where comments are stored, since they are not lore (a file in `.frontier/`, or with the
+    draft on the server); whether a comment can stay on published text or only on a draft.
+  - Fits the existing rule: an AI change to a selection is a proposal shown as a difference, which
+    you accept or reject before it enters the draft.
 
 <!-- Format:
 - 2026-11-21: The idea, as said. (Notes: which stage it probably belongs to, open questions.)
