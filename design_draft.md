@@ -157,10 +157,12 @@ Each goal states how it is checked.
 
 ## Open Questions
 
-*   **Q8. Images in discovery.** Whether a discovery should come with generated concept art is undecided.
-    It multiplies cost and adds a second kind of asset to review.
+None at present.
 
 ### Answered by the author
+
+*   **Images in discovery (was Q8).** Yes: a discovery comes with generated concept art. The art is part of
+    the proposal and is approved, replaced or dropped with it.
 
 *   **Hindsight sync and formatting changes (was Q1).** The sync is switched off for formatting-only
     changes. A change that touches only frontmatter, whitespace or line endings does not re-ingest the
@@ -294,7 +296,8 @@ Each goal states how it is checked.
     and the era selected on the time slider, and proposes one or more discoveries: a fishing settlement, a
     creature, a named local. Each shows what canon it was based on and any contradiction found. Discoveries
     appear on the map as provisional markers in a distinct style. He edits the settlement, approves it and
-    discards the rest. The settlement becomes a draft entry with a marker, and enters canon at the next
+    discards the rest. The settlement's concept art was generated when he opened it; he regenerates it once
+    and keeps the second image. The settlement becomes a draft entry with a marker, and enters canon at the next
     Publish.
 
 ## Technical Plan (Architecture)
@@ -354,6 +357,7 @@ because those are branches on GitHub.
 | Agent proposals | Branches `proposal/...` in the `avalymia` repo | No (not `main`) |
 | Frontier's own AI proposals and discoveries | Branches `frontier/...` in the `avalymia` repo | No (not `main`) |
 | Tiles, thumbnails | `/data/assets`, regenerated from originals | No |
+| Generated concept art, until approved | `/data/assets/generated` | No |
 
 `.frontier/` is a dot-folder, so Obsidian does not show it and the Hindsight sync, which reads `.md` files,
 does not ingest it.
@@ -423,7 +427,8 @@ One module owns every Git operation. Nothing else touches the working copy.
         browser.
 *   Files are written by writing a temporary file and renaming it, so a crash cannot leave half a file.
     One server process is the only writer.
-*   `/data/state` is copied to a backup location nightly. It is the only data not recoverable from GitHub.
+*   `/data/state`, `/data/assets/originals` and `/data/assets/generated` are copied to a backup location
+    nightly. They are the only data not recoverable from GitHub.
 *   **Limit accepted.** There is no query language. Each new kind of question about the data needs a
     function written for it. If the vault grows past several thousand entries, or start-up indexing passes
     a few seconds, the index is the part to revisit.
@@ -559,6 +564,14 @@ version number. Changes to the schema are scripted, reviewed commits.
 *   **Discovery.** Input: the tapped position, nearby features and their entries, the region's cultures,
     the selected moment. Output: structured candidates (kind, name, description, position, the entries it
     drew on). Each candidate is checked against the bank and files before it is shown.
+*   **Concept art.** A discovery gets one generated image, made through the same provider interface with an
+    image model chosen in settings. The prompt is built from the discovery's description and the visual
+    details of the entries it drew on. A setting chooses when art is made: for every discovery, only when
+    the author opens one (the starting value), or never. Image calls count toward the monthly cap and are
+    priced in the cost log; they are expected to be the largest part of discovery cost. Unapproved art is
+    kept in `/data/assets/generated`, not on the discovery branch, so rejected images never enter Git
+    history. On approval the image is added to `99 Appendices/01 Images` and embedded in the new entry, in
+    the same Publish. The author can regenerate or remove the image before approving.
 *   Stage 8 gets its own design, including prompts, context limits and the marking of improvised lines.
 
 ### Login and security
