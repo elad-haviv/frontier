@@ -4,6 +4,7 @@ import ReactMarkdown from "react-markdown";
 import { Link } from "react-router-dom";
 import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
 import remarkGfm from "remark-gfm";
+import { useLightbox } from "../components/Lightbox.tsx";
 import { wikilinks } from "./wikilinks.ts";
 
 /**
@@ -46,9 +47,15 @@ function Anchor({ href, children, title, ...rest }: ComponentProps<"a"> & Extra)
 }
 
 function Picture({ src, alt, width }: ComponentProps<"img"> & Extra) {
-  const full = typeof src === "string" ? src.replace(/&w=\d+$/, "") : undefined;
+  const open = useLightbox();
+  const address = typeof src === "string" ? src : "";
   return (
-    <a href={full} target="_blank" rel="noopener noreferrer" className="figure">
+    <button
+      type="button"
+      className="figure"
+      onClick={() => open(address)}
+      aria-label={`Open image${alt ? `: ${alt}` : ""}`}
+    >
       <img
         src={src}
         alt={alt ?? ""}
@@ -56,7 +63,7 @@ function Picture({ src, alt, width }: ComponentProps<"img"> & Extra) {
         decoding="async"
         {...(width ? { width } : {})}
       />
-    </a>
+    </button>
   );
 }
 

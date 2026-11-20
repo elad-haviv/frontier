@@ -94,7 +94,14 @@ export function wikilinks(options: WikilinkOptions) {
         } else if (info?.kind === "outside") {
           out.push(linkNode("#", "outside", label(p), "A file outside the vault's notes"));
         } else {
-          out.push(linkNode("#", "unresolved", label(p), "Not written yet"));
+          out.push(
+            linkNode(
+              "#",
+              "unresolved",
+              label(p),
+              embed ? "This image is not in the vault" : "Not written yet",
+            ),
+          );
         }
       }
       if (out.length === 0) return;
@@ -118,9 +125,20 @@ export function wikilinks(options: WikilinkOptions) {
       } else if (info.kind === "resolved" && info.target) {
         n.url = entryUrl(info.target);
         n.data = { hProperties: { dataKind: "resolved" } };
+      } else if (n.type === "image") {
+        // A picture that cannot be found is shown as a missing link, not as a broken picture.
+        const missing = n as unknown as Link;
+        const text = n.alt || n.url.split("/").pop() || "image";
+        missing.type = "link";
+        missing.url = "#";
+        missing.title = "This image is not in the vault";
+        missing.children = [{ type: "text", value: text }];
+        missing.data = {
+          hProperties: { dataKind: info.kind === "image" ? "unresolved" : info.kind },
+        };
       } else {
         n.url = "#";
-        n.data = { hProperties: { dataKind: info.kind === "image" ? "unresolved" : info.kind } };
+        n.data = { hProperties: { dataKind: info.kind } };
       }
     });
   };

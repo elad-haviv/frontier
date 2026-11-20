@@ -518,7 +518,12 @@ button.tree-folder {
 
 .figure {
   display: block;
+  width: 100%;
   margin: 1.5em 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: zoom-in;
 }
 
 .prose img {
@@ -1041,4 +1046,123 @@ button.big {
   border-radius: 4px;
   background: var(--paper-raised);
   font-size: 1rem;
+}
+
+/* ---- Lightbox ----------------------------------------------------------------------------- */
+
+.lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  grid-template-rows: auto 1fr;
+  background: rgba(14, 12, 9, 0.94);
+  color: #f1ece2;
+  font-family: var(--sans);
+  font-style: normal;
+  line-height: 1.4;
+  animation: lightbox-in 140ms ease-out;
+}
+
+@keyframes lightbox-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lightbox {
+    animation: none;
+  }
+}
+
+.lightbox-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 0.5rem 0.5rem 1rem;
+  padding-top: max(0.5rem, env(safe-area-inset-top));
+  font-size: 0.85rem;
+}
+
+.lightbox-caption {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lightbox-count {
+  opacity: 0.6;
+  font-variant-numeric: tabular-nums;
+}
+
+.lightbox-link {
+  color: inherit;
+  opacity: 0.75;
+}
+
+.lightbox-button {
+  width: 2.75rem;
+  height: 2.75rem;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 99px;
+  background: rgba(255, 255, 255, 0.1);
+  color: inherit;
+  font-size: 1.3rem;
+  line-height: 1;
+}
+
+.lightbox-button:focus-visible,
+.lightbox-link:focus-visible {
+  outline-color: #f1ece2;
+}
+
+.lightbox-stage {
+  min-height: 0;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  padding: 0 0.5rem max(0.75rem, env(safe-area-inset-bottom));
+}
+
+.lightbox-stage img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  cursor: zoom-in;
+  border-radius: 2px;
+}
+
+/* Full size: the image keeps its own size and the stage scrolls in both directions. */
+.is-zoomed .lightbox-stage {
+  display: block;
+  overflow: auto;
+  padding: 0;
+  -webkit-overflow-scrolling: touch;
+}
+
+.is-zoomed .lightbox-stage img {
+  max-width: none;
+  max-height: none;
+  cursor: zoom-out;
+}
+
+.lightbox-prev,
+.lightbox-next {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 1.8rem;
+}
+
+.lightbox-prev {
+  left: 0.5rem;
+}
+
+.lightbox-next {
+  right: 0.5rem;
 }

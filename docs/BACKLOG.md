@@ -27,13 +27,10 @@ One place for what is being built, what is waiting, and ideas. The design in
 - 2026-11-21: The idea, as said. (Notes: which stage it probably belongs to, open questions.)
 -->
 
-- 2026-11-21: **A lightbox view of images. Gallery.**
-  - Lightbox: tapping an image in an entry opens it large over the page, with zoom and swipe to
-    the entry's other images, in place of today's "opens in a new tab". Small, and fits stage 2
-    (reader) with no dependencies.
-  - Gallery: a page for browsing the vault's images. Open: all images or only those used in
-    entries (about 80 of 284 are used; most of the rest are icon sets); grouping by folder or by
-    the entry that uses them; whether an image links back to its entries.
+- 2026-11-21: **Gallery.** A page for browsing the vault's images. Open: all images or only those
+  used in entries (about 80 of 284 are used; most of the rest are icon sets); grouping by folder or
+  by the entry that uses them; whether an image links back to its entries. (The lightbox half of
+  this idea is built; see Done.)
 
 ## Now: finishing stages 1 and 2
 
@@ -45,7 +42,6 @@ One place for what is being built, what is waiting, and ideas. The design in
 - [ ] Hover preview of linked entries; outline of an entry's headings
 - [ ] Search and quick switcher
 - [ ] Image upload and sizing; table editing; properties panel
-- [ ] Show a link to a missing image as a missing link, not a broken picture
 - [ ] Accept a GitHub token as an alternative to a GitHub App
 - [ ] Phone toolbar above the keyboard (link, heading, list, image, undo)
 
@@ -80,3 +76,6 @@ Each gets a short design of its own before it is built.
 - Reader: folder tree, entries with links, embeds and backlinks, status page
 - Editor: autosave, new and delete, unpublished list, Publish, merge and conflict screens
 - Sample preview at frontier.haviv.pro
+- Lightbox for images in an entry: large view, next and previous, full-size zoom, swipe, keyboard
+  (from the ideas inbox, moved up on 2026-11-21 at Elad's request; it displaced nothing)
+- A link to a missing image shows as a missing link, not a broken picture

@@ -2,6 +2,7 @@ import { aliasesOf, splitFrontmatter } from "@frontier/vault";
 import { useEffect, useMemo } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { api, editUrl, entryUrl } from "../api.ts";
+import { LightboxProvider } from "../components/Lightbox.tsx";
 import { currentEntryPath } from "../components/Shell.tsx";
 import { Markdown } from "../render/Markdown.tsx";
 import { useAsync } from "../useAsync.ts";
@@ -121,7 +122,9 @@ export function EntryPage({ onSessionLost }: { onSessionLost: () => void }) {
         {view!.text.trim() === "" ? (
           <p className="muted">This entry is empty.</p>
         ) : (
-          <Markdown text={view!.text} links={e.links} />
+          <LightboxProvider scope=".prose">
+            <Markdown text={view!.text} links={e.links} />
+          </LightboxProvider>
         )}
       </div>
 
