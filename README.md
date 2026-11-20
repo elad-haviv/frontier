@@ -4,7 +4,7 @@ A web app for one author to write, read and explore Avalymia, a fantasy multiver
 notes in the `elad-haviv/avalymia` repository. The Markdown files stay the source of truth; Frontier is
 a way of working on them.
 
-The full design is in [docs/designs/frontier.md](docs/designs/frontier.md).
+The full design is in [docs/designs/frontier.md](docs/designs/frontier.md). What is next, and the place for new ideas, is [docs/BACKLOG.md](docs/BACKLOG.md).
 
 ## Status
 
