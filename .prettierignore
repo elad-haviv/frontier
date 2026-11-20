@@ -1,0 +1,7 @@
+# Fixture files copy the byte-level forms of vault files and must never be reformatted.
+packages/vault/test/fixture-vault
+packages/vault/test/.big-fixture
+dist
+coverage
+package-lock.json
+docs

@@ -1,0 +1,34 @@
+import { z } from "zod";
+
+/** `GET /api/status`, and the data of each `status` server-sent event. */
+export const StatusSnapshot = z.object({
+  lastFetchAt: z.string().datetime().nullable(),
+  lastPushAt: z.string().datetime().nullable(),
+  /** The message of the last failed push, cleared by the next successful one. */
+  failedPush: z.string().nullable(),
+  unpublished: z.number().int().min(0),
+  conflicts: z.number().int().min(0),
+  /** The commit the index was built from. */
+  indexCommit: z.string().nullable(),
+  /** True when the index was built from a commit older than the fetched `main`. */
+  indexStale: z.boolean(),
+  lastBackupAt: z.string().datetime().nullable(),
+  backupError: z.string().nullable(),
+  attention: z.object({
+    ambiguousLinks: z.number().int().min(0),
+    duplicateImages: z.number().int().min(0),
+    mixedEndings: z.number().int().min(0),
+    brokenAppendixLinks: z.number().int().min(0),
+    nearFolderNotes: z.number().int().min(0),
+  }),
+});
+export type StatusSnapshot = z.infer<typeof StatusSnapshot>;
+
+/** `GET /health`. Times and a commit hash; no vault content. */
+export const Health = z.object({
+  ok: z.boolean(),
+  indexCommit: z.string().nullable(),
+  lastFetchAt: z.string().datetime().nullable(),
+  lastBackupAt: z.string().datetime().nullable(),
+});
+export type Health = z.infer<typeof Health>;

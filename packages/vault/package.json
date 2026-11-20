@@ -1,0 +1,24 @@
+{
+  "name": "@frontier/vault",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --coverage",
+    "baseline": "tsx scripts/make-link-baseline.ts",
+    "big-fixture": "tsx scripts/make-big-fixture.ts"
+  },
+  "dependencies": {
+    "yaml": "^2.6.0"
+  }
+}

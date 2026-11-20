@@ -488,7 +488,7 @@ equals the last fetched `main`: Frontier never makes a local commit in it.
     file name; the 12 image names that exist more than once, ignoring letter case, are shown as ambiguous and listed for the
     author to rename, so that Frontier and Obsidian cannot show different images.
 *   **Rename and move.** Renaming rewrites every link that pointed to the old name or path, in one commit.
-    Folder notes (a note named after its folder, 73 today) move with their folder. Files under
+    Folder notes (a note named after its folder, 77 today) move with their folder. Files under
     `99 Appendices` are never rewritten: a link from one of them to a renamed or moved entry stays as
     written and becomes unresolved, as it would in Obsidian. These links are listed for the author.
     Following them to the renamed entry is left to the stage 3 design.
@@ -1187,7 +1187,8 @@ JSON in and out, under `/api`. Every route except `POST /api/login`, `POST /api/
 (503), `push_failed` (502), `merge_failed` (500), `invalid` (400).
 
 Shapes not shown in the table are fixed in `packages/schema` as follows. `GET /api/tree`:
-`{ folders: [{ path, folders, notes: [{ path, title, state }] }] }`. `state` is `published`,
+`{ folders: [{ path, folders, notes }], notes: [{ path, title, state }] }`, where the outer `notes` are
+the notes at the vault root and each folder nests the same way. `state` is `published`,
 `unpublished`, `conflict` or `quarantined` (from stage 3). In `GET /api/entries`, `links` is
 `[{ raw, from, to, kind, target?, candidates? }]` with `kind` one of `resolved`, `unresolved`,
 `ambiguous`, `outside`, `image`; `backlinks` is `[{ path, title, line }]`; `headings` is
@@ -1262,7 +1263,9 @@ joins the rename's group.
 ### Rules settled here
 
 *   **Link resolution, rule 1 in full.** A link with a path: a trailing `.md` is ignored; letter case is
-    ignored, and if two files then match the link is ambiguous; a path to a file that is not a note, or
+    ignored, and if two files then match the link is ambiguous; the path may be the full path from the
+    vault root or its last folders, as Obsidian allows (`[[Harbor/Old Quay]]` for
+    `01 Places/Harbor/Old Quay.md`), with the appendix tie-break applied when it matches twice; a path to a file that is not a note, or
     inside an excluded folder, is shown as a reference to an outside file and not as a missing entry. A
     standard Markdown image with a relative path resolves against the folder of the note containing it.
 *   **What is not a link, and one more link form.** A wikilink inside inline code or a code block is text,
@@ -1270,7 +1273,8 @@ joins the rename's group.
     such as `[Core Themes & Tone](00%20Overview/Core%20Themes%20%26%20Tone.md)` in the vault's README, is
     a link: its address is URL-decoded, resolved against the containing note's folder, and rewritten on
     rename.
-*   **Folder note.** A note whose file name equals its folder's name. 73 exist. A folder move takes its
+*   **Folder note.** A note whose file name equals its folder's name. 77 exist (counted by the code on
+    2026-11-20). A folder move takes its
     folder note with it; a rename of the folder renames the folder note. Five notes look like folder notes
     under a slightly different name (`Orphans/The Orphans.md`, `Ru'una/Ru'una (Moon).md`,
     `Ataemmia/Ataemia.md`, `Scorched Realm/The Scorched Realm.md`, `Derdaman Sun/The Derdaman Sun.md`);
@@ -1328,6 +1332,8 @@ joins the rename's group.
 | `03 Things/Knot.md` | Mixed line endings (opens read-only) |
 | `03 Things/Ledger.md` | A table; unknown frontmatter keys, a comment and unusual key order |
 | `03 Things/Broken.md` | Malformed frontmatter |
+| `03 Things/Scalar.md`, `03 Things/Empty.md`, `03 Things/Unclosed.md`, `03 Things/Plain.md` | Frontmatter that is a sentence, an empty block, a block that never closes, and no block |
+| `.obsidian/Hidden.md` | A Markdown file in an excluded folder, which is not a note |
 | `03 Things/Long.md` | 50,000 words, for the typing target |
 | `03 Things/Gallery.md` | Embeds `![[lamp.png]]`, `![[lamp.png|200]]`, a duplicated image name, and `![x](<../99 Appendices/Images/map one.png>)` |
 | `99 Appendices/Images/lamp.png`, `99 Appendices/Icons/Lamp.png` | Duplicated image name differing in case |
@@ -1404,6 +1410,9 @@ Paths are relative to the `frontier` repository.
 25. `packages/vault/src/headings.ts`, `packages/vault/test/headings.test.ts` (Create, S1). Headings for the
     outline and heading links, with their test.
 26. `packages/vault/src/index.ts` (Create, S1). Exports.
+26a. `packages/vault/src/baseline.ts`, `packages/vault/test/baseline.test.ts` (Create, S1). Builds the link
+    baseline for a vault and reports the difference between two baselines; used by the script and by the
+    real-vault test.
 27. `packages/vault/test/fixture-vault/**` (Create, S1). The files in the fixture table.
 28. `packages/vault/test/frontmatter.test.ts` (Create, S1). Splitting and joining every fixture note is
     byte-identical; setting one key changes only that key's lines; malformed frontmatter is reported.
