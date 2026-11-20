@@ -271,7 +271,8 @@ Build order (each stage is usable on its own; the specification designs all of t
 5. Time: calendar definitions, intervals, relative order, timelines and overlap views, contradiction reports.
 6. Time-aware maps: appearance, disappearance and movement driven by entry time.
 7. Globe, space views and reprojection.
-8. AI writing assistance beyond field proposals.
+8. AI companion: writing assistance; lore conversations with associative search over the Hindsight bank;
+   character profiles and character chat; map exploration that generates discoveries for approval.
 9. Export: Markdown, docx, PDF, web, JSON, presentations.
 
 Working assumptions, used unless the author says otherwise:

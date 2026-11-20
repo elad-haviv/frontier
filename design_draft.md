@@ -12,7 +12,7 @@ Frontier is a web app for one author. In it he writes, reads and explores Avalym
 kept as about 500 Markdown notes in the `elad-haviv/avalymia` GitHub repository. It runs in desktop and
 phone browsers and is hosted on the author's own server.
 
-Frontier does four jobs in one place:
+Frontier does five jobs in one place:
 
 1.  **Write and read entries** at the level of Obsidian, the tool used today: wikilinks, backlinks, search,
     images, folders.
@@ -21,6 +21,11 @@ Frontier does four jobs in one place:
     cosmological map down to a city, including a globe view and reprojection.
 4.  **Explore time**: entries carry dates in several calendars, vague dates and relative order; timelines
     show overlaps; maps can show a chosen moment.
+
+5.  **Talk with the world and discover more of it**, with AI: hold conversations about the lore that draw
+    on the Hindsight memory bank; talk with characters through profiles built from their entries; and
+    wander a map to discover places, characters, creatures and items that are not yet in the lore, then
+    edit, approve and add the ones he wants to canon.
 
 It also exports the work to other formats.
 
@@ -103,6 +108,26 @@ Each goal states how it is checked.
     a stale index and failed AI calls. Check: each failure is triggered in a test and appears in the
     interface.
 
+*   **G13. Lore conversations are grounded and cited.** A lore conversation retrieves from the Hindsight
+    bank by association, then reads the actual files, and every claim about canon links to the entry it
+    came from. Anything the AI adds beyond canon is marked as invention. Check: in a test conversation,
+    each canon claim carries a working link, and a question with no answer in the vault gets "not in the
+    lore" and an offer to invent, not an unmarked invention.
+*   **G14. Characters speak from a profile the author approved.** A character profile (voice, knowledge,
+    beliefs, what the character does not know, the moment in time they speak from) is proposed by AI from
+    the character's entries and approved by the author like any other proposal. It is a file in the
+    repository. Check: a character asked about an event after their time of speaking, or outside their
+    knowledge, does not answer as if they knew it.
+*   **G15. Discovery produces proposals, never canon.** While the author wanders a map, AI generates
+    places, characters, creatures and items that fit the surrounding canon. Each discovery is checked
+    against the bank for contradictions, shown with what it was based on, and kept outside the repository's
+    `main` branch and outside Hindsight until approved. Approved discoveries become entries, and markers
+    where relevant, through the review inbox. Check: an unapproved discovery never appears in search of
+    canon, in a lore conversation as fact, or in the bank.
+*   **G16. AI spending is capped and visible.** All AI calls go through one key with a monthly limit, and
+    the interface shows what each conversation and discovery session cost. Check: calls stop with a clear
+    message when the limit is reached.
+
 ## Non-Goals
 
 *   **More than one user.** No collaborators, readers, sharing or permissions. There is one login.
@@ -116,6 +141,12 @@ Each goal states how it is checked.
     become canon one confirmation at a time.
 *   **Deciding canon.** Frontier does not need, and does not invent, pulse rates, calendar anchors, leap
     rules or the radius of Ezob. It works with whatever the author has defined.
+*   **Chat as canon.** What a character or the AI says in a conversation is not lore. Nothing said in chat
+    enters canon unless the author turns it into a proposal and approves it. Conversations are kept on the
+    server as working material, and can be saved on request as a session log under `99 Appendices`, which
+    is where AI session logs already live.
+*   **Unprompted generation.** AI does not invent lore in the background or fill gaps on its own. Discovery
+    runs only while the author is exploring.
 *   **Replacing Hindsight.** The memory bank and its sync agent stay as they are, apart from one change to
     ignore frontmatter-only edits.
 *   **Drawing base maps.** Map images are still made in outside tools and imported. Frontier draws markers,
@@ -138,6 +169,14 @@ Each goal states how it is checked.
     app. They cannot be included in a web export. A replacement marker icon set is needed before stage 9.
 *   **Q5. Export targets.** "Web" and "presentations on different topics" need a definition: which content,
     chosen how, in what form.
+
+*   **Q6. Access to Hindsight.** Lore conversations and contradiction checks need the Frontier server to
+    query the `worldbuilding` bank directly. The bank's address, credentials and query limits need
+    confirming.
+*   **Q7. Discovered material and the bank.** Rejected discoveries are deleted. Whether discoveries the
+    author neither approved nor rejected are kept, and for how long, is undecided.
+*   **Q8. Images in discovery.** Whether a discovery should come with generated concept art is undecided.
+    It multiplies cost and adds a second kind of asset to review.
 
 ## Critical User Journeys (CUJs)
 
@@ -216,3 +255,33 @@ Each goal states how it is checked.
 *   **When**: The author measures between two cities.
 *   **Then**: The result is given as an angle and as a fraction of the circumference. Once a radius is
     entered in the map's settings, the same measurement shows a distance.
+
+### CUJ 11: Ask the lore a question
+
+*   **Given**: The author opens a lore conversation on his phone.
+*   **When**: He asks how the Nirani keep time and what else in the setting relates to it.
+*   **Then**: The answer quotes the relevant entries with links, and lists associated entries the bank
+    surfaced that he did not ask about. A follow-up about something the vault does not cover gets "this
+    is not in the lore", with an offer to draft a proposal. If he accepts, the draft goes to the review
+    inbox, not into the vault.
+
+### CUJ 12: Talk with a character
+
+*   **Given**: A character has several entries but no profile.
+*   **When**: The author chooses "talk with" on the character's entry.
+*   **Then**: Frontier proposes a profile built from the entries, with each trait linked to its source and
+    gaps marked as unknown. He edits and approves it, and it is saved as a file. The chat then opens. The
+    character answers in voice, from the moment in time set in the profile, and does not know what happened
+    later. When the character says something that is not in canon, the line is marked as improvised. He
+    can select any line and send it to the inbox as a proposed addition to the character's entry.
+
+### CUJ 13: Wander and discover
+
+*   **Given**: The map of a continent is open, with an empty stretch of coast between two known cities.
+*   **When**: The author switches to explore mode and taps the coast.
+*   **Then**: Frontier describes what is found there, drawing on the nearby entries, the region's cultures
+    and the era selected on the time slider, and proposes one or more discoveries: a fishing settlement, a
+    creature, a named local. Each shows what canon it was based on and any contradiction found. Discoveries
+    appear on the map as provisional markers in a distinct style. He edits the settlement, approves it and
+    discards the rest. The settlement becomes a draft entry with a marker, and enters canon at the next
+    Publish.
