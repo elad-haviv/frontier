@@ -221,3 +221,35 @@ match the vault notes, and the rules match `AGENTS.md`.
   never reach the bank. State this as an accepted limit.
 * **N12. Low-level detail in architecture sections** (`egm-zoom-out`): temp-file rename, the one-second
   delay and cookie flags belong in the implementation plan.
+
+--------------------------------------------------------------------------------
+
+# Stage 5 re-audit (after revisions)
+
+The design was revised and both reviewers ran once more on the full file. This is the one re-audit the
+process allows for this stage.
+
+| Reviewer | Status | Blocker | Major | Nit |
+| --- | --- | --- | --- | --- |
+| `egm-zoom-out` | completed | 0 | 7 | 6 |
+| `egm-inventive-catalyst` | completed | 0 | 6 | 5 |
+
+Merged findings and what was done. All were applied to the design; none needed a new author decision.
+
+| Finding | Lens | Action |
+| --- | --- | --- |
+| The "who pushed" gate was not buildable: Git does not record the pusher, no channel existed to mark a commit reviewed, and a later allowed push would carry unreviewed text into the bank | both | Rewritten as a per-note quarantine: a push log, allowed pushers, a review-state file in `.frontier/` that the sync reads. Frontier pushes as its own machine account or GitHub App. |
+| Saved chat logs under `99 Appendices/04 AI Conversations` would be ingested, breaking "the bank holds canon only" | zoom-out | Saved chat logs now go to `.frontier/chat-logs/`. |
+| The browser resending a draft could bring back one already published from another device | both | Drafts carry an id and revision; the server keeps a record of published and discarded drafts. |
+| Publish was not safe against a restart between write, commit and push | catalyst | The commit is built without touching the working copy; a publish journal is reconciled at start. |
+| Partial publish could split changes that depend on each other; pending proposals caused `id` writes | catalyst | Dependent drafts publish as a group. Ids are written only on acceptance. |
+| Backup had no runner or destination | both | The server process runs it; target is an S3-compatible bucket; the settings key's keeping is stated. |
+| Line-ending logic sat in the browser, outside the real-vault test | zoom-out | Moved to `packages/vault`; the real-vault test edits every note. CI claim corrected. |
+| Time relations referred by name while identity is by `id` | zoom-out | Relations are wikilinks, rewritten on rename in frontmatter too; ids are for maps and profiles. |
+| `d3-geo` claims overstated; reverse projection is needed for taps; non-equirectangular sources; clipping | both | Both libraries named; images converted to equirectangular tiles at import; cells culled or split at horizon and seam; reverse direction listed under known difficulties. |
+| Confirmed dates and renames reach the bank late, weakening grounding | catalyst | Grounding also searches Frontier's own index and follows renames. |
+| Nits: cost log writing, CUJ 9 for unconvertible calendars, grounding and drafts, goal mapping for G12 and G5, `AGENTS.md` and README changes, search timing wording | both | Applied. |
+
+Left as they are, by choice: the settings encryption helper, the `rebuild-index` command and server-sent
+events for status. Unverified and noted in the design: whether Obsidian's properties panel edits nested
+lists (the design says it does not, and that they are edited in source view).
