@@ -297,7 +297,7 @@ None at present.
     creature, a named local. Each shows what canon it was based on and any contradiction found. Discoveries
     appear on the map as provisional markers in a distinct style. He edits the settlement, approves it and
     discards the rest. The settlement's concept art was generated when he opened it; he regenerates it once
-    and keeps the second image. The settlement becomes a draft entry with a marker, and enters canon at the next
+    in a different predefined style and keeps the second image. The settlement becomes a draft entry with a marker, and enters canon at the next
     Publish.
 
 ## Technical Plan (Architecture)
@@ -347,7 +347,7 @@ because those are branches on GitHub.
 | Data | Home | In Hindsight |
 | --- | --- | --- |
 | Entries (Markdown, frontmatter fields) | `avalymia` repo, existing folders | Yes, on push to `main` |
-| Calendars, maps, marker set manifests, field schema | `avalymia` repo, `.frontier/` | No (not `.md`) |
+| Calendars, maps, marker set manifests, art styles, field schema | `avalymia` repo, `.frontier/` | No (not `.md`) |
 | Character chat profiles | `avalymia` repo, `99 Appendices/09 Agents/` | As today |
 | Saved chat logs (on request) | `avalymia` repo, `99 Appendices/04 AI Conversations/` | As today |
 | Existing images | `avalymia` repo, unchanged | No |
@@ -565,13 +565,19 @@ version number. Changes to the schema are scripted, reviewed commits.
     the selected moment. Output: structured candidates (kind, name, description, position, the entries it
     drew on). Each candidate is checked against the bank and files before it is shown.
 *   **Concept art.** A discovery gets one generated image, made through the same provider interface with an
-    image model chosen in settings. The prompt is built from the discovery's description and the visual
-    details of the entries it drew on. A setting chooses when art is made: for every discovery, only when
+    image model chosen in settings. The prompt is built from the discovery's description, the visual
+    details of the entries it drew on, and an art style. A setting chooses when art is made: for every discovery, only when
     the author opens one (the starting value), or never. Image calls count toward the monthly cap and are
     priced in the cost log; they are expected to be the largest part of discovery cost. Unapproved art is
     kept in `/data/assets/generated`, not on the discovery branch, so rejected images never enter Git
     history. On approval the image is added to `99 Appendices/01 Images` and embedded in the new entry, in
     the same Publish. The author can regenerate or remove the image before approving.
+*   **Art styles.** The author defines styles in a settings screen. A style has a name, a style
+    description that is added to every prompt, things to avoid, optional reference images, an image model,
+    and an aspect ratio. Styles are files in `.frontier/art-styles/` in the vault, so they are versioned
+    with the rest of his work; reference images follow the same rule as other new images. A default style
+    can be set per kind of discovery (place, character, creature, item) and overridden per map. When
+    generating or regenerating, the author can pick any style. The style used is recorded with the image.
 *   Stage 8 gets its own design, including prompts, context limits and the marking of improvised lines.
 
 ### Login and security
