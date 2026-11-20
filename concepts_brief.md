@@ -2,7 +2,7 @@
 
 * **Author:** Elad Haviv
 * **Date:** 2026-11-20
-* **Status:** Draft after first Goldfish review. Open decisions are listed at the end.
+* **Status:** Reviewed once by Goldfish reviewers. Scope and build order decided by the author.
 
 ## Overview
 
@@ -81,8 +81,8 @@ editor until Frontier's editor is good enough to switch.
 A related observation: since agents write most of the lore, a view for reviewing and approving proposed
 changes on a phone may matter more than matching Obsidian's editor.
 
-This conflicts with the author's stated first priority (write and view as in Obsidian). It is an open
-decision.
+The author rejected this: the editor stays in the first usable release. The review inbox is kept as an
+early stage because of the observation above.
 
 ### 4. "As good as Obsidian" has no acceptance list
 
@@ -234,7 +234,8 @@ for time and maps specifically.
 * **A block-style WYSIWYG editor.** Rejected in review: such editors rewrite Markdown files they open.
 * **Embedding the `map-reprojector` app as it is.** Rejected in review: only its projection maths is
   reusable.
-* **Frontier as a read-only companion first, editor later.** Not decided. See open decisions.
+* **Frontier as a read-only companion first, editor later.** Rejected by author: the app must contain
+  everything, with the editor in the first usable release.
 
 ## Key Decisions & Staging for Next Steps
 
@@ -254,11 +255,31 @@ Proposed by review, awaiting the author:
 4. Time stored as intervals plus relative links, with contradiction reporting.
 5. Each map declares its coordinate space.
 
-Open decisions:
+Decided by the author after review:
 
-1. Does the first stage include the editor, or is it a reading companion with one new capability while
-   Obsidian remains the editor?
-2. Is Obsidian retired at a cutover date, or kept in parallel as a fallback and for offline writing?
-3. Do confirmed fields go into frontmatter, and may the Hindsight sync be changed to ignore frontmatter?
-4. Where do large map images live: Git LFS, or storage outside Git?
-5. Hosting on Coolify with AI through OpenRouter, and "phone needs a connection": assumed, not confirmed.
+1. Frontier is one app containing everything in this brief. The specification covers the whole scope.
+2. The editor is part of the first stage. The reading-companion-first proposal (Analysis 3) is rejected by
+   the author: he wants a full writing environment, not a companion to Obsidian.
+
+Build order (each stage is usable on its own; the specification designs all of them):
+
+1. Foundation: login, Git gateway with drafts and Publish, rebuildable index, link resolution tested
+   against the vault.
+2. Reader and editor at Obsidian parity (Analysis 4), on desktop and phone.
+3. Review inbox for AI and agent proposals, with structured fields and stable ids.
+4. Maps: coordinate spaces, markers, paths, zones, layers, labels, drill-down, measuring.
+5. Time: calendar definitions, intervals, relative order, timelines and overlap views, contradiction reports.
+6. Time-aware maps: appearance, disappearance and movement driven by entry time.
+7. Globe, space views and reprojection.
+8. AI writing assistance beyond field proposals.
+9. Export: Markdown, docx, PDF, web, JSON, presentations.
+
+Working assumptions, used unless the author says otherwise:
+
+1. Obsidian is not retired. Because all data is files in the repository, it keeps working as a fallback and
+   for writing without a connection.
+2. Confirmed fields are written to frontmatter. The Hindsight sync is changed to ignore frontmatter-only
+   changes, or one planned full re-ingest is accepted.
+3. Large map images are stored outside Git on the server, with a checked-in manifest.
+4. Hosted on the author's Coolify server under its own domain; AI through OpenRouter; a phone needs a
+   connection, apart from a local draft buffer.
