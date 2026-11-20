@@ -989,7 +989,8 @@ they are tested against the real vault on their own.
 ### Security and privacy
 
 *   The server holds a token that can push to canon, so the whole app is behind login. No page or API route
-    is public except the login page, the GitHub webhook (signature-checked) and `/health` (no content).
+    is public except the login page, the GitHub webhook (signature-checked) and `/health`, which returns
+    times and a commit hash and no vault content.
     Rendering rules for untrusted text are under "Login and security".
 *   Vault text is sent to OpenRouter models and to the self-hosted Hindsight bank, and nowhere else. The
     settings screen lists which models receive text.
@@ -1061,16 +1062,19 @@ Versions are pinned in `package-lock.json` at the time of the first install.
 | `packages/schema` | `zod` | Types and validation shared by server and web |
 | `packages/vault` | `yaml` | Reading frontmatter and editing one key |
 | `apps/server` | `fastify`, `@fastify/static`, `@fastify/secure-session`, `@fastify/rate-limit` | API, serving the web build, signed session cookie, login limit |
-| `apps/server` | `argon2`, `sharp`, `file-type`, `minisearch` | Password hash, image resizing, image type detection, full-text search |
+| `apps/server` | `argon2`, `sharp`, `file-type`, `fastify-raw-body` | Password hash, image resizing, image type detection, the unparsed webhook body for its signature check |
+| `apps/server` (S2) | `minisearch` | Full-text search; the snippet is cut by `search.ts` |
 | `apps/server` | `@octokit/auth-app`, `@aws-sdk/client-s3` | GitHub App tokens, backup bucket |
 | `apps/server` (S2) | `@fastify/multipart` | Image upload |
 | `apps/web` | `react`, `react-dom`, `react-router`, `vite` | Interface and build |
-| `apps/web` | `unified`, `remark-parse`, `remark-gfm`, `remark-rehype`, `rehype-sanitize`, `rehype-react` | Rendering Markdown, tables, sanitising |
-| `apps/web` | `codemirror`, `@codemirror/lang-markdown`, `@codemirror/autocomplete` | Editor |
+| `apps/web` | `unified`, `remark-parse`, `remark-gfm`, `remark-rehype`, `rehype-sanitize`, `rehype-react`, `unist-util-visit` | Rendering Markdown, tables, sanitising; wikilinks and embeds are turned into links by Frontier's own remark plugin |
+| `apps/web` | `codemirror`, `@codemirror/state`, `@codemirror/view`, `@codemirror/language`, `@codemirror/lang-markdown`, `@codemirror/autocomplete`, `@lezer/markdown` | Editor and live preview |
 | `apps/web` | `idb`, `diff` | Browser draft store, showing differences |
 | `apps/web` | `@playwright/test` | Browser tests |
 
-Git is used through the `git` program, not a library. Node 22, TypeScript strict mode, npm workspaces.
+Git is used through the `git` program, not a library. The server sends vault text to the browser as it
+is; rendering, sanitising and showing differences all happen in the web app, so those libraries are not
+needed on the server. Node 22, TypeScript strict mode, npm workspaces.
 Prettier is never run on vault files or on fixture files that copy vault forms.
 
 ### Settings and environment variables
@@ -1082,38 +1086,53 @@ Prettier is never run on vault files or on fixture files that copy vault forms.
 | `VAULT_REPO` | `elad-haviv/avalymia` | S1 |
 | `GITHUB_APP_ID`, `GITHUB_APP_PRIVATE_KEY`, `GITHUB_APP_INSTALLATION_ID` | Frontier's GitHub App | S1 |
 | `WEBHOOK_SECRET` | Checks GitHub's webhook signature | S1 |
-| `SESSION_SECRET` | Signs the session cookie | S1 |
+| `SESSION_KEY` | 32 random bytes, base64, for the session cookie | S1 |
 | `COMMIT_AUTHOR_NAME`, `COMMIT_AUTHOR_EMAIL` | The author's name and email on commits | S1 |
-| `BACKUP_S3_ENDPOINT`, `BACKUP_S3_BUCKET`, `BACKUP_S3_ACCESS_KEY`, `BACKUP_S3_SECRET_KEY` | Backup bucket | S1 |
+| `COMMIT_BOT_NAME`, `COMMIT_BOT_EMAIL` | The App's bot name and its GitHub no-reply address, used as committer | S1 |
+| `BACKUP_S3_ENDPOINT`, `BACKUP_S3_REGION`, `BACKUP_S3_BUCKET`, `BACKUP_S3_ACCESS_KEY`, `BACKUP_S3_SECRET_KEY`, `BACKUP_S3_PATH_STYLE` | Backup bucket | S1 |
+| `VAULT_REMOTE_URL` | Optional. A Git address used in place of GitHub, for tests and local runs; the three App variables and `WEBHOOK_SECRET` are then not required | S1 |
+| `BACKUP_LOCAL_DIR` | Optional. A folder used in place of the bucket, for tests and local runs; the bucket variables are then not required | S1 |
 
 Fixed values: a session lasts 30 days. Login allows 5 attempts per 15 minutes per network address. The
 session cookie is HTTP-only, secure, same-site `lax`. The content security policy is
 `default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'`.
-The timer fetch runs every 5 minutes. A missing variable stops the server at start with a message naming
-the variable.
+The timer fetch runs every 5 minutes. A missing required variable stops the server at start with a message
+naming the variable. Fastify runs with `trustProxy` on, because Coolify's proxy sits in front of it; the
+login limit and the secure cookie depend on that.
 
 ### Git operations
 
 All run in `apps/server/src/git/gateway.ts`, one at a time under a lock. An operation that waits more than
 60 seconds for the lock fails with the error code `git_busy`.
 
-*   **Authentication.** `@octokit/auth-app` exchanges the App's key for an installation token and renews
-    it 5 minutes before it expires. The token is passed to each `git` call as an `http.extraheader`
-    setting on the command line of that call. It is never written to disk or to Git's configuration.
-*   **Fetch.** `git fetch origin main`, then `git reset --hard origin/main` in the working copy. The
-    working copy holds no local changes, so nothing is lost.
+*   **Authentication.** `@octokit/auth-app` supplies an installation token and renews it itself. For each
+    `git` call that talks to GitHub the token is passed through the environment variables
+    `GIT_CONFIG_COUNT=1`, `GIT_CONFIG_KEY_0=http.https://github.com/.extraheader` and
+    `GIT_CONFIG_VALUE_0=Authorization: Basic <base64 of "x-access-token:TOKEN">`. It is never put on a
+    command line, written to disk or stored in Git's configuration. With `VAULT_REMOTE_URL` set, no token
+    is used.
+*   **Clone.** On first start: `git clone https://github.com/<VAULT_REPO>.git /data/vault`, or the address
+    in `VAULT_REMOTE_URL`.
+*   **Fetch.** `git fetch origin main`, then `git reset --hard origin/main` and `git clean -fd` in the
+    working copy. The working copy holds no local changes, so nothing is lost. The files to reindex come
+    from `git diff --name-status -z <previous commit> origin/main`.
 *   **Read.** `git show <commit>:<path>` for a file at a commit; `git rev-parse <commit>:<path>` for its
     blob hash.
 *   **Commit without touching the working copy.** With `GIT_INDEX_FILE` set to a temporary file:
-    `git read-tree origin/main`; for each changed file `git hash-object -w` and
-    `git update-index --add --cacheinfo`; for each deletion `git update-index --remove`;
-    `git write-tree`; `git commit-tree` with `origin/main` as parent, the author from
-    `COMMIT_AUTHOR_NAME` and `COMMIT_AUTHOR_EMAIL`, and the committer set to the App's bot identity.
-*   **Push.** `git push origin <commit>:refs/heads/main`, never with `--force`. A rejection is reported
-    as the error code `main_moved`.
-*   **Three-way merge of one file.** The base, the draft and the `main` version are written to temporary
-    files with line endings normalised and passed to `git merge-file -p --diff3`. Exit code 0 is a clean
-    merge. Any other result is an overlap, and the draft is in conflict.
+    `git read-tree origin/main`; for each changed file, its bytes piped to
+    `git hash-object -w --no-filters --stdin`, then
+    `git update-index --add --cacheinfo 100644,<blob>,<path>`; for each deletion and for the old path of
+    a rename, `git update-index --force-remove -- <path>`; `git write-tree`; `git commit-tree` with
+    `origin/main` as parent, the author from `COMMIT_AUTHOR_NAME` and `COMMIT_AUTHOR_EMAIL`, and the
+    committer from `COMMIT_BOT_NAME` and `COMMIT_BOT_EMAIL`.
+*   **Push.** `git push --porcelain origin <commit>:refs/heads/main`. Never `--force`,
+    `--force-with-lease` or a `+` before the reference. A line marked `! [rejected]` is reported as
+    `main_moved`. Any other failure, such as the network or authentication, is reported as `push_failed`.
+*   **Three-way merge of one text file.** The draft, the base and the `main` version are written to
+    temporary files with line endings normalised and passed, in that order, to
+    `git merge-file -p --diff3 <draft> <base> <main>`. Exit code 0 is a clean merge. Exit codes 1 to 127
+    mean overlapping changes, and the draft is in conflict. Any other exit is an error, reported as
+    `merge_failed`; the draft is left as it was.
 
 ### Stored form of working files
 
@@ -1143,14 +1162,21 @@ A draft record:
 }
 ```
 
-`kind` is `edit`, `create` or `delete`. `baseBlob` is empty for `create`. `lineEnding` is `lf` or `crlf`.
-Ids are 12 random characters from lower-case letters and digits. A save carries the revision the client
-last saw; if it equals the stored revision the content is replaced and the revision increases; if it is
-lower the content is written as `content.v2` and the author is asked to merge the two, after which the
-`.v2` files are removed.
+`kind` is `edit`, `create` or `delete`. `baseBlob` is empty for `create`; the content of a `delete` draft
+is empty. `lineEnding` is `lf` or `crlf`.
+
+*   **Ids** are 12 random characters from lower-case letters and digits, made by the browser, so a draft
+    started with no connection already has its key. Rename intent and plan ids are made by the server.
+*   **One draft per path.** If a save arrives with a new id for a path that already has a draft, the
+    server treats it as an older revision of the existing draft.
+*   **Revisions** start at 0. A save carries the revision the client last saw. If it equals the stored
+    revision, the content is replaced and the revision increases by 1. If it is lower, the server writes
+    the content as `content.v2`, keeps the stored content, and answers `stale_revision` with the id of
+    the stored draft. The browser then fetches both versions and shows them; the author produces one text
+    by hand, which is saved through `merge-versions`, and the `.v2` files are removed.
 
 The browser store (IndexedDB, through `idb`) has one table, `drafts`, keyed by draft id:
-`{ id, path, text, revision, sent }`. A row is removed once the server confirms that revision.
+`{ id, path, kind, text, revision, sent }`. A row is removed once the server confirms that revision.
 
 ### API
 
@@ -1158,7 +1184,17 @@ JSON in and out, under `/api`. Every route except `POST /api/login`, `POST /api/
 `GET /health` needs a session. An error is `{ "error": { "code": "...", "message": "..." } }`. Codes:
 `unauthenticated` (401), `rate_limited` (429), `not_found` (404), `append_only` (403), `read_only_file`
 (403, mixed line endings), `stale_revision` (409), `main_moved` (409), `plan_expired` (410), `git_busy`
-(503), `invalid` (400).
+(503), `push_failed` (502), `merge_failed` (500), `invalid` (400).
+
+Shapes not shown in the table are fixed in `packages/schema` as follows. `GET /api/tree`:
+`{ folders: [{ path, folders, notes: [{ path, title, state }] }] }`. `state` is `published`,
+`unpublished`, `conflict` or `quarantined` (from stage 3). In `GET /api/entries`, `links` is
+`[{ raw, from, to, kind, target?, candidates? }]` with `kind` one of `resolved`, `unresolved`,
+`ambiguous`, `outside`, `image`; `backlinks` is `[{ path, title, line }]`; `headings` is
+`[{ level, text, line }]`; `draft` is `{ id, revision, kind }` or null. `GET /api/attention`:
+`{ ambiguousLinks, duplicateImages, mixedEndings, brokenAppendixLinks, nearFolderNotes }`, each a list of
+paths with the detail needed to show it. Status events are server-sent events named `status`, whose data
+is the whole snapshot. The webhook route reads the unparsed body to check GitHub's signature.
 
 | Method and path | Body | Response | Stage |
 | --- | --- | --- | --- |
@@ -1167,14 +1203,15 @@ JSON in and out, under `/api`. Every route except `POST /api/login`, `POST /api/
 | `GET /api/session` | none | `{ loggedIn }` | S1 |
 | `GET /api/tree` | none | folders and notes with each note's state | S1 |
 | `GET /api/entries?path=` | none | `{ path, text, lineEnding, readOnly, state, links, backlinks, headings, draft }` | S1 |
-| `PUT /api/drafts` | `{ id?, path, kind, text, revision }` | `{ id, revision }` or `stale_revision` | S1 |
+| `PUT /api/drafts` | `{ id, path, kind, text, revision }` | `{ id, revision }`, or `stale_revision` with `{ id }` of the stored draft | S1 |
+| `GET /api/drafts/:id/versions` | none | `{ current: { text, revision }, other: { text } }` | S1 |
 | `DELETE /api/drafts/:id` | none | `{ ok }` | S1 |
 | `POST /api/drafts/:id/merge-versions` | `{ text }` | `{ id, revision }` | S1 |
-| `GET /api/unpublished` | none | drafts and rename intents with differences against `main` | S1 |
+| `GET /api/unpublished` | none | `{ drafts: [{ id, path, kind, text, mainText }], renames: [{ id, from, to, affected }] }`; the browser shows the differences | S1 |
 | `POST /api/publish/plan` | `{ draftIds, renameIds }` | the plan (below) | S1 |
 | `POST /api/publish/confirm` | `{ planId, confirmedMergeIds, message }` | `{ commit }` or `main_moved`, `plan_expired` | S1 |
 | `POST /api/drafts/:id/resolve` | `{ text }` | `{ id, revision }`; sets the draft's base to current `main` | S1 |
-| `GET /api/images?path=&w=` | none | the image, resized to width `w` | S1 |
+| `GET /api/images?path=&w=&draft=` | none | the image in its own format; `w` is 320, 640, 1280 or absent for the original; never enlarged; `path` must lie inside the vault; with `draft`, the unpublished image of that draft | S1 |
 | `GET /api/status` | none | the status snapshot | S1 |
 | `GET /api/status/events` | none | server-sent events with status changes | S1 |
 | `GET /api/attention` | none | lists: ambiguous links, duplicated image names, mixed-ending files, appendix links broken by a rename | S1 |
@@ -1182,9 +1219,9 @@ JSON in and out, under `/api`. Every route except `POST /api/login`, `POST /api/
 | `GET /health` | none | `{ ok, indexCommit, lastFetchAt, lastBackupAt }` | S1 |
 | `POST /api/renames` | `{ from, to }` | `{ id, affected: [paths] }` | S1 server, S2 screen |
 | `DELETE /api/renames/:id` | none | `{ ok }` | S1 server, S2 screen |
-| `GET /api/search?q=` | none | entries with a snippet, draft-only results marked | S2 |
-| `GET /api/switcher?q=` | none | entries by name or alias | S2 |
-| `GET /api/preview?path=` | none | the first 600 characters, rendered | S2 |
+| `GET /api/search?q=&appendices=` | none | `{ results: [{ path, title, snippet, draftOnly }] }`; `appendices=1` includes `99 Appendices` | S2 |
+| `GET /api/switcher?q=` | none | `{ results: [{ path, title, alias? }] }` | S2 |
+| `GET /api/preview?path=` | none | `{ path, text }`, the first 600 characters of the body as Markdown | S2 |
 | `POST /api/images` | multipart file | `{ path, embed }`; creates a draft | S2 |
 
 **Publish in two calls.** `POST /api/publish/plan` fetches, classifies each selected draft and returns:
@@ -1194,7 +1231,7 @@ JSON in and out, under `/api`. Every route except `POST /api/login`, `POST /api/
   "planId": "p7d2k1m9x0aa",
   "mainCommit": "4e1b...",
   "ready": ["draftId"],
-  "merges": [{ "id": "m1", "draftId": "...", "path": "...", "mergedText": "...", "incoming": "diff" }],
+  "merges": [{ "id": "m1", "draftId": "...", "path": "...", "mergedText": "...", "mainText": "...", "baseText": "..." }],
   "conflicts": [{ "draftId": "...", "path": "...", "mine": "...", "theirs": "...", "base": "..." }],
   "renames": [{ "id": "...", "from": "...", "to": "...", "affected": ["paths"] }],
   "groups": [["draftId", "renameId"]]
@@ -1205,8 +1242,22 @@ The server keeps a plan in memory for 15 minutes and nothing else between the tw
 `POST /api/publish/confirm` is refused with `main_moved` when `main` is no longer at `mainCommit`, and with
 `plan_expired` after 15 minutes; the browser then asks for a new plan. Otherwise the server publishes the
 ready drafts, the merges named in `confirmedMergeIds` and the renames, leaving out any group that contains
-a conflict or an unconfirmed merge, as one commit. After the push it fetches, which resets the working
-copy and clears the published drafts.
+a conflict or an unconfirmed merge, as one commit. For each confirmed merge it first writes the merged
+text into the draft and sets the draft's base to the `main` version, and only then builds the commit.
+After the push it fetches, which resets the working copy and clears the published drafts. "Equals `main`"
+is judged on the bytes after line endings are restored.
+
+**Classification, all cases.** For a text file: unchanged on `main`, ready; changed on `main`, three-way
+merge, giving a merge to confirm or a conflict. A `create` draft whose path now exists on `main` is a
+conflict. An `edit` draft whose file is gone from `main` is a conflict; the author chooses to recreate the
+file or discard the draft. A `delete` draft whose file changed on `main` is a conflict. An image changed
+both in a draft and on `main` is a conflict; the author chooses one.
+
+**Renames and drafts.** `POST /api/renames` takes a note or a folder; a folder is one intent. Until
+Publish, a draft of a renamed note keeps its old path in storage, and the tree and index show the note
+under its new path. At Publish the draft's content is written at the new path. Link rewrites are applied
+to the draft text of a linking note when it has a draft, and to its `main` text otherwise, and that note
+joins the rename's group.
 
 ### Rules settled here
 
@@ -1214,6 +1265,11 @@ copy and clears the published drafts.
     ignored, and if two files then match the link is ambiguous; a path to a file that is not a note, or
     inside an excluded folder, is shown as a reference to an outside file and not as a missing entry. A
     standard Markdown image with a relative path resolves against the folder of the note containing it.
+*   **What is not a link, and one more link form.** A wikilink inside inline code or a code block is text,
+    not a link, as in Obsidian; 68 such cases exist in appendix files. A standard Markdown link to a note,
+    such as `[Core Themes & Tone](00%20Overview/Core%20Themes%20%26%20Tone.md)` in the vault's README, is
+    a link: its address is URL-decoded, resolved against the containing note's folder, and rewritten on
+    rename.
 *   **Folder note.** A note whose file name equals its folder's name. 73 exist. A folder move takes its
     folder note with it; a rename of the folder renames the folder note. Five notes look like folder notes
     under a slightly different name (`Orphans/The Orphans.md`, `Ru'una/Ru'una (Moon).md`,
@@ -1237,14 +1293,18 @@ copy and clears the published drafts.
 *   **Search:** title and aliases weigh 3, headings 2, body 1; a snippet is 160 characters around the
     first match. These are starting values.
 *   **Backup:** every write to `/data/state` sets a "changed" mark; a copy to `latest/` in the bucket runs
-    5 minutes after the first unsaved change. At 03:00 server time a full copy goes to `nightly/<date>/`,
+    5 minutes after the first unsaved change and mirrors deletions, so a restore does not bring back
+    published drafts. At 03:00 server time a full copy goes to `nightly/<date>/`,
     and nights older than 14 days are removed. Backup and image resizing share one queue that runs a
     single job at a time.
 *   **Link baseline location.** The baseline lists real note titles, so it is kept in the vault
     repository at `.frontier/baseline/links.json`, with the vault commit it was made from recorded inside
-    it. This is the one file in `.frontier/` before stage 3. The author commits it by hand after
-    reviewing it. When the vault is at another commit, the real-vault test says so and lists the
-    differences without failing on links in notes changed since.
+    it. Its shape is `{ vaultCommit, resolved: [{ note, link, target }], unresolved: [{ note, link }],
+    ambiguous: [{ note, link, candidates }], outside: [{ note, link }] }`. This is the one file in
+    `.frontier/` before stage 3. The author commits it by hand after
+    reviewing it. The test compares its result with the file. When the checkout is at
+    another commit than `vaultCommit`, it prints the differences and passes, and says the baseline needs
+    regenerating; at the same commit any difference fails.
 *   **Obsidian attachment folder.** Obsidian has none set, so images pasted there land in the vault root.
     Frontier uploads to `99 Appendices/01 Images`. Setting Obsidian's attachment folder to match is
     recommended and is the author's change to make.
@@ -1257,7 +1317,7 @@ copy and clears the published drafts.
 | --- | --- |
 | `README.md`, `AGENTS.md` | Notes at the vault root |
 | `01 Places/Harbor/Harbor.md` | Folder note; frontmatter with `aliases`; target of most links |
-| `01 Places/Harbor/Old Quay.md` | Bare link, aliased link `[[Harbor|the port]]`, heading link `[[Harbor#History]]`, same-note heading link `[[#Tides]]`, padded link `[[ Harbor]]`, case-only match `[[harbor]]` |
+| `01 Places/Harbor/Old Quay.md` | Bare link, aliased link `[[Harbor|the port]]`, heading link `[[Harbor#History]]`, heading link with display text `[[Harbor#History|its past]]`, same-note heading link `[[#Tides]]`, padded link `[[ Harbor]]`, case-only match `[[harbor]]`, a wikilink inside inline code and one inside a code block, a standard Markdown link `[Harbor](../Harbor/Harbor.md)` with URL-encoded spaces |
 | `01 Places/Marsh/The Marsh.md` | Near-miss folder note |
 | `01 Places/Unwritten.md` | Unresolved links, one of them repeated |
 | `02 People/Mira.md` | Path link, path link ending in `.md`, path link with wrong letter case, link to a file in an excluded folder, link to a file that is not a note |
@@ -1277,7 +1337,8 @@ copy and clears the published drafts.
 | `99 Appendices/Recycle Bin/Harbor.md` | Recycle-bin copy of a live note |
 | `.obsidian/app.json`, `.frontier/baseline/links.json`, `notes.json` | Excluded folders; a file that is not a note |
 
-A script, `packages/vault/scripts/make-big-fixture.ts`, copies the fixture to 500 notes for timing tests.
+A script, `packages/vault/scripts/make-big-fixture.ts`, copies the fixture to 500 notes for timing tests,
+into `packages/vault/test/.big-fixture/`, which is not committed.
 
 ### Target Files to Create/Modify
 
@@ -1330,7 +1391,8 @@ Paths are relative to the `frontier` repository.
     `mixed`); normalises for editing; restores the original kind when a commit is built.
 21. `packages/vault/src/links.ts` (Create, S1). Finds every wikilink and embed with its exact position:
     target, path part, heading part, display text, size part, embed flag; also standard Markdown images
-    with angle-bracket and relative paths.
+    and links to notes, with angle-bracket, relative and URL-encoded paths. Skips inline code and code
+    blocks.
 22. `packages/vault/src/resolve.ts` (Create, S1). The four-step resolution rule with rule 1 in full, image
     resolution, and the result kinds: resolved, unresolved, ambiguous with candidates, outside file.
 23. `packages/vault/src/rename.ts` (Create, S1). Given a rename or move and the current notes, returns the
@@ -1339,7 +1401,8 @@ Paths are relative to the `frontier` repository.
 24. `packages/vault/src/paths.ts` (Create, S1). Which files are notes, which folders are excluded, which
     paths are append-only, entry type from the top-level folder, folder-note detection, next free image
     name.
-25. `packages/vault/src/headings.ts` (Create, S1). Headings for the outline and heading links.
+25. `packages/vault/src/headings.ts`, `packages/vault/test/headings.test.ts` (Create, S1). Headings for the
+    outline and heading links, with their test.
 26. `packages/vault/src/index.ts` (Create, S1). Exports.
 27. `packages/vault/test/fixture-vault/**` (Create, S1). The files in the fixture table.
 28. `packages/vault/test/frontmatter.test.ts` (Create, S1). Splitting and joining every fixture note is
@@ -1395,10 +1458,11 @@ Paths are relative to the `frontier` repository.
     check; session cookie; login limit; the guard on every other route.
 54. `apps/server/src/status/status.ts` (Create, S1). Gathers the snapshot; sends changes as server-sent
     events.
-55. `apps/server/src/routes/auth.ts`, `routes/entries.ts`, `routes/drafts.ts`, `routes/publish.ts`,
-    `routes/images.ts`, `routes/status.ts`, `routes/attention.ts`, `routes/renames.ts` under
-    `apps/server/src/` (Create, S1). The S1 rows of the API table.
-56. `apps/server/src/routes/search.ts`, `apps/server/src/routes/preview.ts`,
+55. `apps/server/src/routes/auth.ts`, `routes/entries.ts` (also `/api/tree`), `routes/drafts.ts`,
+    `routes/publish.ts`, `routes/images.ts`, `routes/status.ts` (also `/health`), `routes/attention.ts`,
+    `routes/renames.ts`, `routes/webhook.ts` under `apps/server/src/` (Create, S1). The S1 rows of the
+    API table.
+56. `apps/server/src/routes/search.ts` (also `/api/switcher`), `apps/server/src/routes/preview.ts`,
     `apps/server/src/routes/upload.ts` (Create, S2). The S2 rows of the API table.
 57. `apps/server/src/cli/set-password.ts` (Create, S1). Sets the single account's password. There is no
     sign-up page.
@@ -1408,13 +1472,17 @@ Paths are relative to the `frontier` repository.
     fixture vault, so Git behaviour is tested without GitHub.
 60. `apps/server/test/helpers/bucket.ts` (Create, S1). A local folder standing in for the bucket.
 61. `apps/server/test/gateway.test.ts` (Create, S1). Fetch resets the working copy; a commit is built with
-    the working copy unchanged; a push after the remote moved returns `main_moved`; the test fails if any
-    `git` call contains `--force`; the lock times out with `git_busy`.
+    the working copy unchanged; a deletion and a rename's old path are absent from the commit; a push
+    after the remote moved returns `main_moved` and a push to an unreachable remote returns `push_failed`;
+    the test fails if any `git` call contains `--force`, `--force-with-lease` or a `+` reference; a merge
+    tool error is `merge_failed`, not a conflict; the lock times out with `git_busy`.
 62. `apps/server/test/publish.test.ts` (Create, S1). One commit per confirm; no commit without confirm
     (G6); an overlapping change is a conflict and is held back while other drafts publish (G7); a change
     elsewhere in the file is a merge that is published only when confirmed; a rename publishes all link
     rewrites in one commit and leaves appendix files alone; a plan against an older `main` is refused; a
-    delete of a changed file is a conflict; Windows line endings survive.
+    delete of a changed file, a create over an existing path, an edit of a file gone from `main` and an
+    image changed on both sides are conflicts; a draft of a renamed note is published at the new path;
+    Windows line endings survive.
 63. `apps/server/test/drafts.test.ts` (Create, S1). Drafts survive a restart; a stop during a write leaves
     the previous file intact; append-only and read-only paths are refused; an older revision becomes a
     second version; a draft equal to `main` is removed after a fetch.
@@ -1452,7 +1520,10 @@ Paths are relative to the `frontier` repository.
 75. `apps/web/src/layout/Attention.tsx` (Create, S1). The attention lists.
 76. `apps/web/src/tree/FolderTree.tsx` (Create, S1). Folders and notes with create and delete; rename and
     move are added in S2.
-77. `apps/web/src/reader/Reader.tsx`, `apps/web/src/reader/render.ts` (Create, S1). Rendered entry:
+77. `apps/web/src/reader/Reader.tsx`, `apps/web/src/reader/render.ts`,
+    `apps/web/src/reader/wikilinkPlugin.ts` (Create, S1). The plugin walks the parsed Markdown with
+    `unist-util-visit` and turns `[[...]]` and `![[...]]` in text into link and image nodes, using the
+    resolution the server sent. Rendered entry:
     wikilinks, embeds with size, heading links, tables; unresolved, ambiguous and outside-file links each
     styled differently and labelled in a tooltip.
 78. `apps/web/src/reader/sanitize.ts`, `apps/web/src/reader/sanitize.test.ts` (Create, S1). Raw HTML in
@@ -1515,6 +1586,8 @@ Paths are relative to the `frontier` repository.
 *   **Coolify.** One project: the container, a persistent volume at `/data`, the variables, the domain,
     the health check on `/health`, and an S3-compatible bucket for backup.
 *   **Vault.** In stage 1 the author commits `.frontier/baseline/links.json` after reviewing it.
+*   **Backup against a real bucket** is tried once by hand at the first deploy, since the automated test
+    uses a folder.
 *   **This repository's review files.** `zoom_out_report.md`, `comprehension_report.md`, `critic_report.md`,
     `intermediate_zoom_out_report.md`, `implementation_readiness_report.md` and
     `goldfish_review_report.md` are removed when the design review ends, and this document's status is

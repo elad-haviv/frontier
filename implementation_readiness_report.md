@@ -172,3 +172,39 @@ escaped-pipe links exist. 20 files use Windows line endings and none mixes the t
 * **N8.** Entries that are not files (items 8, 9, 100) belong in prose; "two steps" in the Dockerfile item
   should not reuse a word used for project stages (`egm-style`).
 * **N9.** `SITEMAP.md` is marked Modify but stages 1 and 2 give it no change (`egm-implementation-readiness`).
+
+--------------------------------------------------------------------------------
+
+# Stage 9 re-audit (after the plan was rewritten)
+
+Two fresh reviewers ran on the rewritten plan. This is the one re-audit the process allows for this stage.
+
+| Reviewer | Status | Blocker | Major | Nit |
+| --- | --- | --- | --- | --- |
+| `egm-implementation-readiness` | completed | 0 | 7 | 4 |
+| `egm-codebase-details` | completed | 1 | 11 | 9 |
+
+Both reported the temporary-index commit, the push of a bare commit, the stored draft form, the fixture
+and the file list as sound, and both still judged the plan "not ready" on details. All findings below were
+applied to the plan. Git and library claims by the reviewer were from knowledge, not from running anything.
+
+| Finding | Severity | Action |
+| --- | --- | --- |
+| The deletion command would not remove a file that exists in the working copy | Blocker | Changed to `git update-index --force-remove`; a test checks a deletion and a rename's old path are absent from the commit. |
+| `hash-object` input and file mode unstated; `merge-file` argument order wrong and errors treated as conflicts | Major | Commands written out in full; a tool error is `merge_failed`. |
+| Token header form unstated, and a command-line setting would show the token in the process list | Major | Passed through `GIT_CONFIG_*` environment variables as a Basic header for github.com only. |
+| No clone command; no command for the list of changed files; every push failure reported as `main_moved` | Major | Added; `push_failed` added for other failures. |
+| Draft ids assigned by the server, so an offline first edit had no key; stale save both refused and stored | Major | The browser makes ids; one draft per path; the stale-save sequence and a route for the two versions are defined. |
+| Publish cases missing: create over an existing path, edit of a deleted file, images | Major | All cases listed; when a confirmed merge is written to the draft is stated. |
+| Rename intents and drafts | Major | Folder renames, the path a draft keeps, and how rewrites combine with drafts are stated. |
+| No way to run tests without GitHub and a bucket | Major | `VAULT_REMOTE_URL` and `BACKUP_LOCAL_DIR` added; region and path-style variables added. |
+| Rendering and differences split unclearly between server and web | Major | The server sends text; the web app renders and shows differences. |
+| Unpublished images could not be displayed | Major | The image route serves a draft's image; widths, format and path checks stated. |
+| Wikilinks inside code, and standard Markdown links to notes, were not covered | Major | Both rules added, with fixture cases. |
+| No library for wikilinks in rendered text; editor packages undeclared | Major | Frontier's own plugin with `unist-util-visit`; packages listed. |
+| Webhook needs the unparsed body; proxy trust | Major | `fastify-raw-body` and `trustProxy` stated. |
+| API shapes given in prose | Major | Shapes added for the tree, entries, unpublished, attention, search and status. |
+| Nits | Nit | Backup mirrors deletions; baseline file shape; committer variables; session key format; `git clean`; routes for `/api/tree`, `/api/switcher`, `/health`; heading test; fixture additions; stricter force-push check. |
+
+Not changed: `rehype-sanitize` adds a prefix to heading ids, which the reader's heading links must allow
+for. This is left to the implementer and noted here.
