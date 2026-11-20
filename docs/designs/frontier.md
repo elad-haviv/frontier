@@ -12,7 +12,7 @@ Frontier is a web app for one author. In it he writes, reads and explores Avalym
 kept as about 500 Markdown notes in the `elad-haviv/avalymia` GitHub repository. It runs in desktop and
 phone browsers and is hosted on the author's own server.
 
-Frontier does five jobs in one place:
+Frontier does six jobs in one place:
 
 1.  **Write and read entries** at the level of Obsidian, the tool used today: wikilinks, backlinks, search,
     images, folders.
@@ -27,7 +27,7 @@ Frontier does five jobs in one place:
     wander a map to discover places, characters, creatures and items that are not yet in the lore, then
     edit, approve and add the ones he wants to canon.
 
-It also exports the work to other formats.
+6.  **Export** the work to other formats: documents, styled web pages, presentations and map images.
 
 The Markdown files in the `avalymia` repository remain the source of truth. Frontier is a way of working on
 those files. It does not own them.
@@ -42,15 +42,44 @@ asked for and what the architecture must not block; the stage designs settle the
 
 | Stage | Name | Delivers | Goals closed |
 | --- | --- | --- | --- |
-| 1 | Foundation | Login, Git gateway with drafts and Publish, in-memory index, link resolution tested on the vault | G1, G2, G4, G6, G7, G12 for sync, index and backup failures (AI failures in stage 8) |
+| 1 | Foundation | Login, Git gateway with drafts and Publish, in-memory index, link resolution tested on the vault | G1, G2, G4, G6, G7, G12 (sync, index and backup failures) |
 | 2 | Reader and editor | Reading and writing at Obsidian parity on desktop and phone | G3, G5, G11 |
-| 3 | Review inbox | Agent proposal branches, Frontier's own field proposals, structured fields, entry ids, the Hindsight sync changes | G8 |
+| 3 | Review inbox | Agent proposal branches; the AI basics (provider connection, key, cost log, spending cap); Frontier's own field proposals; structured fields; the entry id mechanism; the sync changes and quarantine | G8, G16 |
 | 4 | Maps | Flat and sphere maps, markers, paths, zones, layers, labels, marker sets, drill-down, measuring | G10 |
 | 5 | Time | Calendar definitions, intervals, relations, timelines, overlap views, contradiction reports | G9 |
-| 6 | Time-aware maps | Features appearing, disappearing and moving with the time slider | (extends G9, G10) |
-| 7 | More map views | Other projections, cylinder and schematic spaces, space views | (extends G10) |
-| 8 | AI companion | Writing help, lore conversations, character chat, discovery with concept art | G13, G14, G15, G16 |
-| 9 | Export | Markdown, docx, PDF, JSON, styled web pages, presentations, map renders | none |
+| 6 | Time-aware maps | Features appearing, disappearing and moving with the time slider | none new |
+| 7 | More map views | Other projections; cylinder and schematic spaces, designed and built here; views of the space between worlds | none new |
+| 8 | AI companion | Writing help, lore conversations, character chat, discovery with concept art | G12 (AI failures), G13, G14, G15 |
+| 9 | Export | Markdown, docx, PDF, JSON, styled web pages, presentations, map renders | none; export has no goal by intent and is specified in its stage design |
+
+## Terms used in this document
+
+*   **Vault**: the folder of Markdown notes and images that holds Avalymia, opened today in Obsidian and
+    mirrored to the GitHub repository `elad-haviv/avalymia`.
+*   **Entry**: one Markdown note of lore in the vault. "Note" means any Markdown file, including logs.
+*   **Canon**: what is on the `main` branch of the vault repository and approved by the author.
+*   **Vault rules**: the rules in `AGENTS.md` at the root of the vault repository. The ones this design
+    depends on: AI proposes and the author approves; `99 Appendices` is append-only; one logical change
+    per commit; no force-push; lore is quoted from files, never from the bank.
+*   **Agents**: AI programs, run by the author outside Frontier, that read and write the vault repository.
+    Examples are his Hermes agent and cloud coding sessions.
+*   **The bank**: a Hindsight memory bank named `worldbuilding`, running on the author's server. Hindsight
+    is a self-hosted service that stores facts extracted from text and returns the ones related to a
+    question, with the path of the note each came from. It is used to find related lore by meaning.
+*   **The sync**: a separate agent, outside this repository, that runs on each push to `main` and feeds
+    changed notes into the bank. The author owns its code.
+*   **Coolify**: the self-hosted deployment platform on the author's server.
+*   **Draft**: unpublished text of one file, held by Frontier. **Publish**: the action that turns drafts
+    into one commit on `main`.
+*   **Proposal**: a suggested change from AI or an agent, waiting for the author's decision.
+*   **Quarantined**: said of a note changed on `main` by someone other than the author or Frontier, and
+    held out of the bank until the author decides.
+*   **Exploring session**: one sitting of wandering a map and generating discoveries.
+*   **Pulse**: the setting's own universal unit of time (the Nexus Pulse), counted from Pulse Zero. It is
+    lore, not something Frontier invents. **Era of Man (EM)**: the everyday calendar of the world Ezob.
+*   **Ezob**: the main world, a sphere. **Derdama**: the underworld, a stack of cylinder-shaped layers.
+
+Counts of files and links in this document were taken from the vault on 2026-11-20.
 
 ## The Problem
 
@@ -68,7 +97,7 @@ That setup fails him in four ways:
     entry about that place. The Obsidian Leaflet plugin is installed and holds no markers.
 3.  **AI-written lore has no review surface.** Agents made 48 of the vault's 55 commits. The vault rules
     require that AI proposes and the author approves, but approval today happens in chat sessions, away from
-    the text and awkward on a phone.
+    the text, with no view of what changed.
 4.  **The work is spread over tools.** Writing is in Obsidian, maps in image editors, AI work in chat,
     recall in Hindsight. No single place shows the world.
 
@@ -84,7 +113,7 @@ standalone maps as further files in the same repository, and keeps a rebuildable
 Each goal states how it is checked.
 
 *   **G1. Canon stays in the repository.** Every piece of content the author creates (entries, fields, maps,
-    calendars) is a text file in `elad-haviv/avalymia`. Check: delete Frontier's index and server state,
+    calendars, images) is a file in `elad-haviv/avalymia`. Check: delete Frontier's index and server state,
     rebuild from a fresh clone, and no published content is missing.
 *   **G2. Frontier never damages a file.** Opening and saving a note without edits leaves it byte-for-byte
     unchanged, and an edit changes only the lines edited, including in files with Windows line endings. Check: an automated test opens and saves every note in the vault and expects an empty Git
@@ -92,31 +121,38 @@ Each goal states how it is checked.
 *   **G3. Obsidian keeps working on the same vault.** Frontier writes only syntax Obsidian reads, and stores
     its own data where Obsidian ignores it. Check: the vault opens in Obsidian with all links resolving as
     before.
-*   **G4. Links resolve the way Obsidian resolves them.** Check: a test runs Frontier's link resolver over
-    the real vault and compares the resolved and unresolved lists with a checked-in baseline.
+*   **G4. Links resolve as in Obsidian, with one stated exception** (the `99 Appendices` tie-break,
+    described under Link resolution). Check: a test runs Frontier's link resolver over the real vault and
+    compares the result with a checked-in baseline. The author compares that baseline once with Obsidian:
+    the full list of unresolved links, and a sample of 50 resolved links.
 *   **G5. Writing is at Obsidian parity for the listed features**, on desktop and phone: live editing, `[[`
     autocomplete with aliases and headings, create an entry from an unresolved link, rename and move with
     link rewriting, quick switcher, full-text search, backlinks, outline, hover preview, table editing,
     image upload. Check: each item has an acceptance test.
-*   **G6. No keystroke is lost and no draft becomes canon by accident.** Drafts save automatically on the
-    server and in the browser. Only an explicit Publish creates a commit. Check: closing the tab, locking the
-    phone or losing the connection mid-sentence loses nothing; no commit appears without Publish.
+*   **G6. Typed text is not lost, and no draft becomes canon by accident.** Drafts save automatically in
+    the browser and on the server. Only an explicit Publish creates a commit. Check: closing the tab,
+    locking the phone or losing the connection mid-sentence loses nothing; no commit appears without
+    Publish. Loss of the server disk loses at most the 5 minutes since the last backup.
 *   **G7. Concurrent writers never overwrite each other.** Obsidian and agents may push to `main` while
-    Frontier is in use. Frontier pulls before it pushes, never force-pushes, and stops with a readable
-    conflict screen when branches diverge. Check: a test pushes a conflicting change from outside and
-    Frontier refuses to publish until the author resolves it.
-*   **G8. AI never changes canon without approval.** Every AI or agent proposal waits in a review inbox with
-    the source text shown. Check: no code path writes AI output to `main` without an approval record.
+    Frontier is in use. Frontier pulls before it pushes, never force-pushes, never applies a merge the
+    author has not confirmed, and shows a conflict screen when changes overlap. Check: a test pushes an
+    overlapping change from outside and Frontier holds that draft back until the author resolves it.
+*   **G8. No AI text is treated as canon without approval.** Frontier itself writes no AI output to `main`
+    without the author accepting it. Text that an agent pushes to `main` against the rules is quarantined:
+    it does not reach the bank or Frontier's AI answers until the author accepts it. Check: no code path
+    writes AI output to a draft without a recorded acceptance; a test push by a non-allowed identity
+    leaves the note out of the bank and out of AI answers.
 *   **G9. Time works without canon numbers.** An entry can hold exact, partial, vague and relative time
     references in any defined calendar. Timelines show order and overlap. Contradictions are reported, not
     fixed. Conversion between calendars appears only where the author has supplied an anchor and a rate.
     Check: a timeline renders from entries that have only relative references.
 *   **G10. Maps link to the lore.** A map declares its coordinate space. Flat and sphere are required;
-    cylinder and schematic follow in stage 7. Markers, paths and zones link to entries and survive
+    cylinder and schematic are designed and built in stage 7. Markers, paths and zones link to entries and survive
     renames. Check: one working flat map and one working sphere map, each with a marker that opens its
     entry and an entry that lists the maps it appears on.
-*   **G11. Usable on a phone.** Every screen works at 375 px width with touch only, and images are served
-    resized. Check: entry pages load under 2 seconds on a 4G connection.
+*   **G11. Usable on a phone.** Every screen can be operated at 375 px width with touch only, with no
+    sideways scrolling, and images are served resized. Check: the browser tests for every journal run at
+    375 px with touch; entry pages load under 2 seconds on a 4G connection.
 *   **G12. Failures are visible.** The app shows unpublished changes, the last pull and push, failed pushes,
     a stale index and failed AI calls. Check: each failure is triggered in a test and appears in the
     interface.
@@ -162,50 +198,37 @@ Each goal states how it is checked.
     contains improvised lines.
 *   **Unprompted generation.** AI does not invent lore in the background or fill gaps on its own. Discovery
     runs only while the author is exploring.
-*   **Replacing Hindsight.** The memory bank and its sync agent stay as they are, apart from two changes
-    to the sync: it skips formatting-only changes, and it ingests a commit on `main` only when it was
-    pushed by the author or by Frontier. The bank holds canon only.
+*   **Replacing Hindsight.** The memory bank and its sync agent stay as they are, apart from the changes to the
+    sync listed under "Changes outside this repository". The bank holds canon only.
 *   **Drawing base maps.** Map images are still made in outside tools and imported. Frontier draws markers,
     paths, zones and labels on top of them.
 *   **Editing `99 Appendices`.** That folder is append-only by vault rule. Frontier shows it and can add new
     files to it, and cannot edit existing ones.
 
-## Open Questions
+## Resolved decisions
 
-None at present.
+No questions are open. These were raised during drafting and settled by the author.
 
-### Answered by the author
-
-*   **Images in discovery (was Q8).** Yes: a discovery comes with generated concept art. The art is part of
-    the proposal and is approved, replaced or dropped with it.
-
-*   **Hindsight sync and formatting changes (was Q1).** The sync is switched off for formatting-only
-    changes. A change that touches only frontmatter, whitespace or line endings does not re-ingest the
-    note. Adding an `id` or time fields therefore does not churn the bank. The sync agent lives outside
-    this repository; changing it is a task in stage 3. After the stage 5 review the author added a second
-    change: the sync ingests a commit on `main` only when it was pushed by him or by Frontier.
-*   **Notes with the same name (was Q2).** The folder structure carries meaning, so two notes with the same
-    name are two different things. Frontier identifies an entry by its full path and its `id`, never by
-    name alone. The two cases today are a lore entry and a non-lore file: `04 Inhabitants/Archdemons/Yagon.md`
-    and the chat profile `99 Appendices/09 Agents/Yagon.md`; the live `Common Ezobian.md` and a copy in the
-    recycle bin. A link written as a bare name resolves to the note outside `99 Appendices` when exactly
-    one candidate is outside it. If more than one lore note shares the name, the link is shown as
-    ambiguous and the author picks; Frontier then writes the link with its path.
-*   **Existing map file (was Q3).** `99 Appendices/06 Interactive Maps/Main.json` is replaced by the map
-    format defined in this document.
-*   **Marker icons (was Q4).** The Skyrim icon set already in the vault is the first marker set. Frontier
-    has marker set management: several sets can exist side by side, each a folder of icons with a
-    manifest, and each map chooses which sets it uses. New sets are added later. Note: the Skyrim icons
-    belong to a commercial game, so an export meant for the public needs a different set selected.
-*   **Export targets (was Q5).** Three kinds beyond plain files: styled web pages, presentations, and map
-    renders (an image of a map as currently shown, with its markers, layers and chosen moment in time).
-    Markdown, docx, PDF and JSON remain.
-*   **Access to Hindsight (was Q6).** Frontier connects to the bank itself. A settings screen holds the
-    bank address, bank name and access key, with a "test connection" button and the limits applied. The
-    same screen holds the AI provider key, model choices and the monthly spending cap.
-*   **Discovered material and the bank (was Q7).** Only canon is registered in the bank. Discoveries,
-    proposals, drafts and chats are never sent to it. A discovery stays in Frontier's working files on the server
-    until the author approves or rejects it; it reaches the bank only by becoming a published entry.
+*   **Concept art in discovery.** A discovery comes with generated concept art. The art is part of the
+    proposal and is approved, replaced or dropped with it.
+*   **Sync and formatting changes.** The sync skips a change that touches only frontmatter, whitespace or
+    line endings, so adding an `id` or time fields does not re-ingest the note.
+*   **Notes with the same name.** The folder structure carries meaning, so two notes with the same name are
+    two different things. Frontier identifies an entry by its full path, and by `id` where it has one,
+    never by name alone. The two cases today are a lore entry and a non-lore file:
+    `04 Inhabitants/Archdemons/Yagon.md` and the older chat profile `99 Appendices/09 Agents/Yagon.md`;
+    the live `Common Ezobian.md` and a copy in the recycle bin.
+*   **Existing map file.** `99 Appendices/06 Interactive Maps/Main.json` is replaced by the map format
+    defined here.
+*   **Marker icons.** The Skyrim icon set already in the vault is the first marker set, and several sets
+    can exist side by side.
+*   **Export targets.** Markdown, docx, PDF and JSON, plus styled web pages, presentations and map renders
+    (an image of a map as currently shown, with its markers, layers and chosen moment in time).
+*   **Access to the bank.** Frontier connects to the bank itself. A settings screen holds the bank address,
+    bank name and access key, with a "test connection" button, the number of results asked for per
+    question and the time allowed per request. The same screen holds the AI provider key, model choices
+    and the monthly spending cap.
+*   **Discovered material and the bank.** Only canon is registered in the bank.
 
 ## Critical User Journeys (CUJs)
 
@@ -236,15 +259,18 @@ None at present.
 
 *   **Given**: The author has an unpublished draft of a note. An agent pushes a change to the same note.
 *   **When**: He presses Publish.
-*   **Then**: Frontier does not publish. It shows his version beside the new version from `main`, marks the
-    differences, and lets him merge by hand. It never merges or overwrites on its own.
+*   **Then**: If the two changes are in different parts of the note, Frontier shows the combined text with
+    the agent's change marked and asks him to confirm. If they overlap, it holds the draft back, shows his
+    version beside the version from `main` with the overlapping parts marked, and lets him merge by hand.
+    It never applies a merge he has not confirmed and never overwrites.
 
 ### CUJ 5: Approve a proposed date
 
 *   **Given**: The author publishes an entry containing "two centuries after the First Landing".
 *   **When**: Frontier's AI proposes a time field: "after First Landing, about 200 years, Era of Man".
 *   **Then**: The proposal appears as a chip on the entry, in the inbox, and on the timeline as an
-    unconfirmed event in a distinct style, with the source sentence highlighted. Publishing was not blocked. He accepts with one tap, the field is added to the entry's
+    unconfirmed event in a distinct style, with the source sentence highlighted. (The chip and inbox
+    work from stage 3; the timeline part from stage 5.) Publishing was not blocked. He accepts with one tap, the field is added to the entry's
     frontmatter, and it enters the next Publish. If he rejects it, it is not proposed again unless the
     sentence changes.
 
@@ -328,7 +354,7 @@ None at present.
 | Build order | The editor comes in the first usable release (stages 1 and 2) | The main pain, following places and events, is not addressed until stages 4 and 5. |
 | Working state | Files only, no database: an in-memory index; drafts, proposals, discoveries, chats and settings as files on the server disk | Every query is hand-built on the in-memory index. Pending work exists only on the server and depends on backup. |
 | Agent proposals | Outside agents push `proposal/` branches; Frontier lists them and the author approves | `AGENTS.md` and each agent's instructions must change. |
-| Agents pushing to `main` | The Hindsight sync ingests a commit on `main` only if it was pushed by the author or by Frontier | Unreviewed text can still sit on `main` until the author deals with it. Agents need their own GitHub identity for the check to work. |
+| Agents pushing to `main` | The sync quarantines any note changed by a push from someone other than the author or Frontier (see "Quarantine") | Unreviewed text can still sit on `main` until the author deals with it. Frontier and the agents each need their own GitHub identity. |
 | Map drawing | Custom renderer, mesh method, using the `d3-geo` library for projection | The map stage is the largest in the project. Seams at map edges and phone performance need tuning. |
 | Character profiles | Files in `.frontier/profiles/` | Profiles are read and edited only in Frontier. |
 | Deployment | One container: Fastify serves the API and the built React app | Every interface change restarts the server. |
@@ -355,14 +381,13 @@ None at present.
    Obsidian (obsidian-git) ---- push main ----> GitHub: elad-haviv/avalymia <---- agents push proposal/ branches
                                                         |
                                                         +-- webhook --> Frontier (fetch, reindex)
-                                                        +-- webhook --> Hindsight sync (main only,
-                                                                        commits by author or Frontier)
+                                                        +-- webhook --> the sync (main only; quarantines
+                                                                        notes pushed by anyone else)
 ```
 
 One persistent disk is mounted at `/data`. It holds the Git working copy of `avalymia`, a folder of
-working files and derived assets. There is no database. Losing the disk loses whatever unpublished work
-was created since the last backup: drafts, pending proposals, discoveries, chats, the cost log and
-settings. It does not lose canon.
+working files and derived assets. There is no database. Losing the disk does not lose canon; what it can
+lose is covered under "Risks and mitigations".
 
 ### Where each kind of data lives
 
@@ -378,112 +403,129 @@ settings. It does not lose canon.
 | Tiles, thumbnails | `/data/assets`, regenerated from the repo | No |
 | Generated concept art, until approved | `/data/assets/generated` | No |
 
-`.frontier/` is a dot-folder, so Obsidian does not show it. The Hindsight sync must not ingest it; this is
-confirmed against the sync agent before the folder is first used.
+`.frontier/` is a dot-folder, so Obsidian does not show it. The sync must not ingest it; this is confirmed
+against the sync before the folder is first used.
 
-Map images are stored in the repository like the existing images, so goal G1 holds without exception.
-Whether large ones use Git LFS is decided in the stage 4 design, when the real sizes are known.
+Map images are stored in the repository like the existing images, so goal G1 covers them. Whether large
+ones use Git LFS is decided in the stage 4 design, when the real sizes are known.
 
 ### Git gateway
 
-One module owns every Git operation. Nothing else touches the working copy.
+One module owns every Git operation. Nothing else touches the working copy, and the working copy always
+equals the last fetched `main`: Frontier never makes a local commit in it.
 
+*   **Identity.** Frontier pushes as its own GitHub App, installed on the `avalymia` repository only and
+    created in stage 1. Its credential is held in server environment variables. A token of the author's
+    own account is not used, because Frontier's pushes would then be indistinguishable from his. This is
+    the one statement of Frontier's identity; other sections refer to it.
 *   **Fetch.** A GitHub webhook on the `avalymia` repo calls Frontier on every push. Frontier fetches,
-    fast-forwards its copy of `main` when it has no local commits, and reindexes the changed files. A timer
-    fetches every few minutes in case a webhook is missed.
-*   **Drafts are not commits.** A draft is a pair of files in `/data/state/drafts`: the full text, and a
-    small record with the file path and the Git blob hash of the version it was based on. Creations and
-    deletions are drafts too. A rename or move is stored as an intent (old path, new path), not as edited
-    copies of the linking notes.
-*   **Publish.** The author selects drafts (all by default) and writes a message. Frontier fetches, then
-    handles each draft:
-    *   If the file on `main` still has the draft's base hash, the draft is ready.
-    *   If the file changed on `main`, Frontier runs a three-way merge of base, draft and `main`. When the
-        merge is clean, the merged text is shown to the author with the incoming changes marked, and is
-        used only after he confirms it. Nothing is merged unseen.
-    *   If the merge has overlapping changes, the draft is in conflict (see below).
-    *   A rename intent is turned into link rewrites now, against the fetched `main`. If the list of notes
+    moves its working copy forward to the new `main`, and reindexes the changed files. A timer also
+    fetches every 5 minutes in case a webhook is missed.
+*   **Drafts are not commits.** A draft is held in `/data/state/drafts` as the file's content plus a
+    record: an id, a revision number, the file path, the Git blob hash of the version it was based on, and
+    the kind (edit, create, delete). A draft of a new image is the image file itself. A rename or move is
+    stored as an intent (old path, new path), not as edited copies of the linking notes.
+*   **Text form.** The editor, the browser buffer and the draft file hold text with line endings
+    normalised, together with a record of the file's original line-ending style. Merging is done on
+    normalised text. The original line endings are restored once, when Publish builds the commit.
+*   **Publish.** The author selects drafts (all by default) and writes a message. Then:
+    1.  Frontier fetches.
+    2.  Each draft is classified. If the file on `main` still has the draft's base hash, the draft is
+        ready. If the file changed on `main`, Frontier runs a three-way merge of base, draft and `main`;
+        a clean result is shown to the author with the incoming changes marked and is used only after he
+        confirms it. If the changes overlap, or the draft deletes a file that changed, the draft is in
+        conflict.
+    3.  Each rename intent is turned into link rewrites against the fetched `main`. If the list of notes
         to change differs from what the author was shown, it is shown again.
-    Ready and confirmed drafts are published as one commit. Drafts in conflict are held back and the rest
-    go ahead. Drafts that depend on each other form a group that is published together or not at all: a
-    rename with its link rewrites; the files of one accepted proposal; an entry's new `id` with the map
-    or profile that refers to it.
-    The commit is built without touching the working copy, which always equals the last fetched `main`.
-    After a successful push the working copy is moved forward and the drafts are removed. Each Publish is
-    written to a journal in `/data/state` before it starts; at start the server reads the journal and
-    finishes or abandons an interrupted Publish, so a restart in the middle leaves neither a half-written
-    working copy nor an unpushed commit. If the push is rejected because `main` moved meanwhile, Frontier repeats once from the fetch. It
-    never force-pushes and never rewrites history.
+    4.  Ready and confirmed drafts are published as one commit. Drafts in conflict are held back and the
+        rest go ahead.
+*   **Groups.** Drafts that depend on each other are published together or not at all: a rename with its
+    link rewrites; the files of one accepted proposal; an entry's new `id` with the map or profile that
+    refers to it.
+*   **Crash safety.** The commit is built without changing the working copy. After a successful push the
+    working copy is moved forward and the drafts are removed. A journal entry in `/data/state` is written
+    just before the commit is built and cleared after the working copy has moved; the pause for the
+    author's confirmations is before it. At start, a journal entry whose commit is on the remote is
+    finished (working copy moved, drafts removed); any other is abandoned and its drafts stay.
+*   **Rejected push.** If the push is rejected because `main` moved meanwhile, Frontier repeats once from
+    step 1. If it is rejected again, Publish stops, the drafts stay unpublished, and the author is told
+    that `main` is changing and to try again; confirmations are asked again next time. Frontier never
+    force-pushes and never rewrites history.
 *   **Conflict.** The interface shows the author's version beside the version from `main`, with the
     overlapping parts marked. He edits his draft into the result and confirms, which resets its base hash.
-*   **Credential.** Frontier pushes as its own GitHub machine account or GitHub App, limited to the
-    `avalymia` repo, with the credential held in a server environment variable. A token of the author's
-    own account would make Frontier's pushes indistinguishable from his.
 *   **Commit identity.** Commits carry the author's name as author. Commits that include approved AI
     content add a trailer naming the model and the proposal.
 
 ### Vault service
 
 *   **Parsing.** Entries are read as text. Frontmatter is parsed with a YAML library that keeps the original
-    document, so changing one key rewrites only that key's lines. Unknown keys, key order and comments are
-    preserved. The body is never re-serialised: the editor edits the text itself.
-*   **Line endings.** 18 files use Windows line endings. The editor works on normalised text internally, so
-    each file's line ending is detected when it is opened and restored when it is saved. A file with mixed
-    endings is saved through a map of changed ranges, so untouched lines keep their bytes, and is listed
-    for the author. This logic lives in `packages/vault`, as the one function every save goes through, so
-    the real-vault test covers it. A browser test confirms the editor uses it.
-*   **Link resolution.** Rules, in order: a link with a path resolves to that path; a bare name matches a
-    note name or a declared alias, ignoring case and surrounding spaces; among several matches, the one
-    outside `99 Appendices` wins when it is the only one outside; otherwise the link is ambiguous. Heading
-    links resolve to a heading in the target, or in the same note when no target is given. Image embeds
-    resolve by bare file name across the vault; the 11 duplicated image names resolve to the nearest folder
-    and are listed for the author. The tie-break is Frontier's rule, not Obsidian's, and is the one
-    intended difference. The resolver runs over the real vault in a test with a checked-in baseline, which
-    the author compares once with Obsidian's own list of unresolved links (goal G4).
+    document, so changing one key is meant to rewrite only that key's lines; the real-vault test checks
+    this on every note that has frontmatter. Unknown keys, key order and comments are preserved. The body
+    is never re-serialised: the editor edits the text itself.
+*   **Line endings.** 18 files use Windows line endings. One function in `packages/vault` restores a
+    file's original line endings when a commit is built; every publish goes through it, so the real-vault
+    test covers it. A file with mixed endings has the draft applied to the original as changed ranges, so
+    untouched lines keep their bytes, and is listed for the author.
+*   **Link resolution.** Obsidian's rule, as understood and to be confirmed by the comparison in goal G4:
+    a link with a path resolves to that path; a bare name resolves to the note with that file name,
+    ignoring case and surrounding spaces; among several notes with that name, the one with the shortest
+    path. Frontier follows it with one exception: among several notes with the same name, the one outside
+    `99 Appendices` wins when it is the only one outside, and otherwise the link is ambiguous and the
+    author picks. Aliases are not link targets: as in Obsidian, autocomplete offers them and writes
+    `[[Note|Alias]]`. Heading links resolve to a heading in the target, or in the same note when no target
+    is given. Image embeds resolve by bare file name across the vault; among the 11 duplicated image
+    names, the one the fewest folder steps from the linking note is used, and they are listed for the
+    author. Whether a bare alias resolves in Obsidian is checked once in stage 1.
 *   **Rename and move.** Renaming rewrites every link that pointed to the old name or path, in one commit.
     Folder notes (a note named after its folder, 77 today) move with their folder. Files under
-    `99 Appendices` are never rewritten: when one of them links to the renamed entry, the old name is added
-    to the entry's `aliases`, so the old link still resolves.
-*   **Entry identity.** An entry gets an `id` in frontmatter, a short random string that never changes, when
-    a map feature or a profile that refers to it is accepted. Pending proposals refer to entries by path
-    and do not cause an `id` to be written. This starts in stage 3. There is no batch commit adding ids to every note. When the index is built, entries
-    that share an `id` (a note duplicated in Obsidian) are listed for the author, and references to an
-    `id` that no entry carries are shown as broken.
-*   **Append-only guard.** Existing files under `99 Appendices` cannot be drafted. New files can be added.
+    `99 Appendices` are never rewritten: a link from one of them to a renamed or moved entry stays as
+    written and becomes unresolved, as it would in Obsidian. Frontier's reader follows such a link through
+    Git's rename history and marks it "renamed since"; these links are listed for the author.
+*   **Deleting.** A deleted entry is removed in the commit and remains in Git history. Frontier does not
+    use the vault's recycle bin folder.
+*   **Entry identity.** An entry is identified by its path. It also gets an `id` in frontmatter, a short
+    random string that never changes, when a map feature or a profile that refers to it is accepted.
+    Pending proposals refer to entries by path and do not cause an `id` to be written. Stage 3 builds the
+    mechanism; the first ids are written in stage 4. There is no batch commit adding ids to every note.
+    When the index is built, entries that share an `id` (a note duplicated in Obsidian) are listed for the
+    author, and references to an `id` that no entry carries are shown as broken.
+*   **Append-only guard.** Existing files under `99 Appendices` cannot be drafted. New files can be added;
+    a new image whose name already exists gets a number added to its name.
 
 ### Index and working files
 
-*   **Index.** Held in server memory and built at start by reading the working copy: entries, links,
-    aliases, headings, parsed fields, time intervals and relations, map features by entry, and a full-text
-    search index. It is updated file by file after each fetch, publish or draft save. A rebuild takes
-    seconds at 500 notes. Nothing in it is saved, so it cannot go stale across restarts. Timeline overlap
-    and "which markers are visible at this moment" are functions over these in-memory structures, written
-    and tested in `packages/time` and `packages/geo`.
-*   **Working files** in `/data/state`, all plain JSON or Markdown:
-    *   `drafts/`: unpublished text and its base record.
+*   **Index.** Held in server memory and built at start by reading the working copy. It has two layers.
+    The published layer is built from `main`: entries, links, aliases, headings, parsed fields, time
+    intervals and relations, map features by entry, and a full-text search index. The draft layer holds
+    the same for the author's drafts and pending rename intents. Nothing in the index is saved to disk.
+    The target for a full build at 500 notes is under 5 seconds. The index is stale when it was built from
+    a commit older than the fetched `main`; this is shown in the status area.
+*   **Who reads which layer.** The author's own reading, search, backlinks, autocomplete and timeline read
+    published plus drafts, with draft-only results marked. Lore conversations, character chat, discovery
+    and contradiction checks read the published layer only, without quarantined notes.
+*   **Working files** in `/data/state`, all JSON, Markdown or uploaded images:
+    *   `drafts/`: unpublished content and its record, and a record of each draft that was published or
+        discarded.
     *   `proposals/`: Frontier's own AI proposals, and the list of rejected proposals with the hash of the
         sentence each was based on.
     *   `discoveries/`: one file per exploring session.
     *   `chats/`: one file per conversation or character session.
     *   `ai-log/`: one line per AI call with tokens and cost, a file per month, written by appending.
     *   `ai-cache/`: field-proposal results by content hash.
-    *   `settings.json`: model choices, spending cap, Hindsight address, the password hash, and the AI and
-        Hindsight keys encrypted with a key from an environment variable. Secrets are never sent to the
-        browser.
-*   Files are written by writing a temporary file and renaming it, so a crash cannot leave half a file.
-    One server process is the only writer.
-*   **Backup.** The server process itself copies `/data/state` and `/data/assets/generated` to an
-    S3-compatible storage bucket, named in an environment variable, a few minutes after any change and in
-    full every night. It records the time of the last successful copy. The key that encrypts the secrets
-    in settings is kept in Coolify's environment and in the author's password manager; a restore needs it. The status area shows the time of the last backup.
-    The browser also keeps its own copy of each draft until that draft is published. Every draft has an id
-    and a revision number, and the server keeps a short record of each draft that was published or
-    discarded. The browser sends its copy again only when the server has neither the draft nor such a
-    record, so a draft published from another device is not brought back. Together these bring the worst-case loss of typed text down from a day to
-    minutes.
-*   **Limit accepted.** There is no query language. Each new kind of question about the data needs a
-    function written for it. If the vault grows past several thousand entries, or start-up indexing passes
-    a few seconds, the index is the part to revisit.
+    *   `settings.json`: model choices, spending cap, bank address, the password hash, and the AI and
+        bank keys encrypted with a key from an environment variable. Secrets are never sent to the browser.
+    *   Files other than the log are written by writing a temporary file and renaming it, so a crash
+        cannot leave half a file. One server process is the only writer.
+*   **Draft revisions.** The server accepts a save only when it carries the revision number the server
+    holds, and then increases it. A save carrying an older revision, such as a phone reconnecting after
+    the desktop has moved on, is kept as a second version; both are shown for the author to merge, as in
+    a Publish conflict. The browser keeps its copy of a draft until the draft is published, and sends it
+    again only when the server has neither the draft nor a record that it was published or discarded.
+*   **Backup.** The server process copies `/data/state` and `/data/assets/generated` to an S3-compatible
+    storage bucket, named in an environment variable, within 5 minutes of any change and in full every
+    night, and records the time of the last successful copy. The key that encrypts the secrets in
+    settings is kept in Coolify's environment and in the author's password manager; a restore needs it.
+    This is the one statement of the backup schedule; other sections refer to it.
 
 ### Reader and editor
 
@@ -496,10 +538,11 @@ One module owns every Git operation. Nothing else touches the working copy.
 *   **Drafts**: typing saves to the browser's IndexedDB at once and to the server about a second later.
     With no connection, text stays in the browser and is sent when the connection returns. Each entry shows
     one of: published, unpublished, conflict, waiting to send.
-*   **Images**: the server returns resized versions by requested width and caches them on disk. Originals
-    up to 9 MB are never sent to a phone unless opened at full size.
-*   **Phone layout**: a bottom bar with search, entries, maps, inbox and chat; a toolbar above the keyboard
-    with link, heading, list and image buttons.
+*   **Images**: the server returns resized versions by requested width and caches them on disk. An original
+    (the largest today is 9 MB) is sent only when the author opens it at full size.
+*   **Phone layout**: a bottom bar with search, entries, unpublished changes and status in stages 1 and 2;
+    maps, inbox and chat are added by their stages, and status then moves into a menu. A toolbar above the
+    keyboard has link, heading, list, image and undo buttons.
 
 ### Review inbox and proposals
 
@@ -524,27 +567,33 @@ Three sources, one inbox:
 Accepting any proposal produces drafts. Nothing reaches `main` except through Publish. This is the single
 code path that goal G8 tests.
 
-**Agents that push to `main` anyway.** `main` is not protected in GitHub, because Obsidian pushes to it
-directly. The guard is in the Hindsight sync, and it works per note, not per commit:
+### Quarantine
 
-*   **Who pushed.** Git does not record who pushed a commit; only GitHub's push notification does. Both the
-    sync and Frontier receive that notification. Frontier keeps a log of pushes (commit range and pusher)
-    in `/data/state`. A commit that arrived by the timer fetch with no notification has an unknown pusher
-    and is treated as unreviewed.
-*   **Allowed pushers** are the author's account and Frontier's own account. Frontier therefore pushes as
-    a separate GitHub machine account or GitHub App, not with a token of the author's account, and outside
-    agents use a third identity.
-*   **Quarantine.** A note changed by a commit from any other pusher is quarantined. The sync does not
-    ingest a quarantined note, even when a later allowed push touches the same note, because it ingests
-    whole notes. Frontier's index marks the note as unreviewed, and lore conversations, character chat
-    and discovery do not use its text as canon.
-*   **Release.** Frontier keeps the list of quarantined notes, each with the commit up to which it has been
-    reviewed, in a file in the vault, `.frontier/review-state.json`. The author accepts the change or
-    reverts it; either way Frontier updates that file in a commit of its own. The sync reads the file to
-    decide what to ingest. Frontier still never writes to the bank.
-*   Until the author deals with it, the text is on `main` and visible to Obsidian and to other agents.
+`main` is not protected in GitHub, because Obsidian pushes to it directly, so an agent can push to `main`
+against the vault rules. This section is the one statement of how that is handled.
 
-The exact format of the push log and the review-state file is settled in the stage 3 design.
+*   **One owner.** The sync decides quarantine. It already receives GitHub's notification of every push,
+    which names the account that pushed; Git itself does not record this. The allowed accounts are the
+    author's and Frontier's App. A note changed by a push from any other account is quarantined by the
+    sync: it is not ingested, even when a later allowed push touches the same note.
+*   **The list.** The sync writes the list of quarantined notes, each with the commit that caused it, to
+    `.frontier/quarantine.json` in the vault. Frontier reads that file. It marks those notes as "arrived
+    unreviewed" and leaves them out of its AI answers. Frontier does not work out the pusher itself, so a
+    restart or a missed notification on Frontier's side cannot quarantine the author's own pushes.
+*   **Missed notification.** If the sync misses a notification, it asks GitHub's record of repository
+    activity who pushed the commits it has not seen.
+*   **Release.** The author accepts the change or reverts it in Frontier. Frontier records the decision in
+    `.frontier/review-state.json` and publishes it. When the sync sees that file change in a push by
+    Frontier, it removes the note from quarantine and ingests it. Frontier never writes to the bank.
+*   **Order of events for an agent push to `main`:** GitHub notifies the sync and Frontier; the sync
+    quarantines the changed notes and pushes the updated list; Frontier fetches and shows them; the author
+    decides; Frontier publishes the decision; the sync ingests or drops. Between the agent's push and the
+    sync's list arriving, Frontier may briefly treat the text as canon; the stage 3 design sets how
+    Frontier holds new foreign commits until the list for them has arrived.
+*   Until the author decides, the text is on `main` and visible to Obsidian and to other agents.
+
+File formats are settled in the stage 3 design. The sync changes are listed under "Changes outside this
+repository".
 
 ### Structured fields
 
@@ -567,14 +616,13 @@ A schema file, `.frontier/schema.yaml`, lists field names, the allowed `what` va
 scripted, reviewed commits.
 
 A relation inside a `when` refers to another entry by wikilink, as in the example. It is resolved like any
-other link, and renaming the target rewrites it, in frontmatter as in the body. Obsidian also rewrites links
-in frontmatter when it renames a note. Obsidian's properties panel does not edit nested lists such as
-`time`; in Obsidian these are edited in source view. Map features and profiles, which are not Markdown,
-refer to entries by `id`.
-
-**Accepted limit.** Because the Hindsight sync skips changes that touch only frontmatter, confirmed dates
-and new aliases do not reach the bank until the entry's text next changes. Frontier's answers are not
-affected, since it reads the files, but recall from the bank by date will lag.
+other link, and a rename in Frontier rewrites it, in frontmatter as in the body. A rename made in Obsidian
+or by an agent may not rewrite it: Obsidian is not known to update a link that is part of a sentence
+inside a nested list. So after every fetch Frontier looks for relations whose target no longer resolves,
+finds the new name through Git's rename detection, and offers the rewrite as a draft. The stage 3 design
+tests Obsidian's behaviour and may move the target into a key of its own. Obsidian's properties panel is
+also not known to edit nested lists such as `time`; in Obsidian these are edited in source view. Map
+features and profiles, which are not Markdown, refer to entries by `id`.
 
 ### Time
 
@@ -622,7 +670,8 @@ affected, since it reads the files, but recall from the bank by date will lag.
     may list several positions with entry events, which gives movement. Dates stay on entries only. A
     feature that names an event the entry no longer has is shown as unbound.
 *   **Marker sets** are folders of icons with a manifest in `.frontier/marker-sets/`. The first set points
-    at the Skyrim icons already in `99 Appendices/07 Icons/Skyrim`. A map selects the sets it uses.
+    at the Skyrim icons already in `99 Appendices/07 Icons/Skyrim`. A map selects the sets it uses. Those
+    icons belong to a commercial game, so an export meant for the public needs a different set selected.
 *   **Renderer.** Frontier draws its own maps with the mesh method.
     *   The server cuts each source image into a pyramid of tiles in the image's own projection.
     *   In the browser, each visible tile is drawn in WebGL as a small grid of triangles. The corners of
@@ -637,8 +686,9 @@ affected, since it reads the files, but recall from the bank by date will lag.
         projection maths is written. Flat space needs none.
     *   Grid cells behind the globe or across the map's seam are dropped or split before drawing, since
         projecting bare corners does not clip them.
-    *   Markers, lines, zones and labels are projected with `d3-geo` and drawn on a canvas above. It
-        already draws great-circle lines and cuts shapes at the edge of the globe and at the map's seam.
+    *   Markers, lines, zones and labels are projected with `d3-geo` and drawn on a canvas above.
+        `d3-geo` already draws great-circle lines and cuts shapes at the edge of the globe and at the
+        map's seam.
     *   Small libraries without an interface of their own are used for touch gestures and for finding
         which feature was tapped. Pan, zoom, rotate, drawing and measuring tools are built in Frontier
         and work in space coordinates, so they behave the same in every projection.
@@ -653,18 +703,18 @@ affected, since it reads the files, but recall from the bank by date will lag.
     the fallback.
 *   **Order of building**: flat space with markers; then sphere in equirectangular and globe views; then
     paths, zones, layers and measuring; then other projections; then cylinder and schematic spaces.
-*   **Risk accepted.** If phone performance or the volume of work blocks later stages, the fallback is to
-    ship flat and globe views only and defer the rest.
+*   **Fallback.** If phone performance or the volume of work blocks later stages, flat and globe views
+    ship alone and the rest is deferred.
 
 ### AI service
 
 *   **Provider.** All model calls go through one interface to OpenRouter, with model names per task
     (extraction, conversation, character, discovery, image) set in the settings screen. Every call is
     appended to the cost log with tokens and cost. The hard spending limit is set on the OpenRouter key
-    itself; Frontier's own monthly cap stops calls earlier with a clear message and drives the display.
+    itself. Frontier's own monthly cap stops calls earlier, with a message that states the cap, the amount
+    spent and where to change it. The provider connection, key, cost log and cap are built in stage 3.
 *   **Hindsight.** A client for the `worldbuilding` bank, configured in settings (address, bank name, key,
-    test button). Frontier only reads from the bank. It never writes to it; the bank is fed by the existing
-    sync from `main`.
+    test button). Frontier only reads from the bank; the bank is fed by the sync from `main`.
 *   **Grounding.** For lore questions and contradiction checks: recall from the bank, then read the actual
     files for the entries recalled, then answer from the file text. Recall from the bank is combined with a search of
     Frontier's own index by time, alias and entry type, because confirmed dates and aliases reach the bank
@@ -687,7 +737,7 @@ affected, since it reads the files, but recall from the bank by date will lag.
 *   **Concept art.** A discovery gets one generated image, made through the same provider interface with
     an image model chosen in settings, in one of the author's predefined art styles. Unapproved art is
     kept in `/data/assets/generated`. On approval the image is added to `99 Appendices/01 Images` and
-    embedded in the new entry, in the same Publish. Image calls count toward the cap and are expected to
+    embedded in the new entry, in the same Publish. Image calls count toward the cap and are estimated to
     be the largest part of discovery cost.
 *   **Art styles.** The author defines named styles in a settings screen; they are files in
     `.frontier/art-styles/`. What a style contains, how defaults are chosen and when art is generated are
@@ -699,16 +749,23 @@ affected, since it reads the files, but recall from the bank by date will lag.
 ### Login and security
 
 *   One account. Password stored as an argon2id hash; a signed session cookie that is HTTP-only, secure
-    and same-site, so no session store is needed. Login attempts are rate-limited. Passkeys can be added
-    later.
-*   The GitHub token, AI key and Hindsight key stay on the server.
+    and same-site, so no session store is needed. Login attempts are rate-limited. A passkey is added in
+    stage 3, before Frontier holds AI keys.
+*   The GitHub App credential, AI key and bank key stay on the server.
 *   Webhook calls from GitHub are verified by their signature.
+*   **Untrusted text.** Everything rendered from Markdown is treated as untrusted: vault notes, agent
+    branches and AI output. Rendered output is sanitised: no script, no event-handler attributes, no
+    embedded frames, and links limited to web and vault addresses. The app sends a content security policy
+    that forbids inline script and scripts from other origins. This matters because the session that
+    displays an agent's proposal can publish to canon and spend the AI budget.
 
 ### Seeing failures
 
-*   A status area shows: unpublished drafts, last fetch and push, a failed push, index built from which
-    commit, agent branches waiting, commits that arrived unreviewed, entries with a duplicate or missing
-    `id`, files with mixed line endings, last backup, AI spend this month, and Hindsight reachability.
+*   A status area shows: unpublished drafts, last fetch and push, a failed push, the commit the index was
+    built from and whether it is stale, agent branches waiting, quarantined notes, entries with a
+    duplicate `id` and references to an `id` no entry has, files with mixed line endings, links from
+    appendix files to renamed entries, last backup, AI spend this month, and whether the bank can be
+    reached.
 *   The server pushes status changes to the browser over server-sent events.
 *   `/health` reports the same facts for Coolify's health check.
 
@@ -740,168 +797,169 @@ they are tested against the real vault on their own.
     `proposal/<agent>/<topic>` branches, never to `main`, and push with their own GitHub identity; they
     leave `.frontier/` alone and keep an entry's `id`; the "Automation in place" section describes the
     new sync rules.
-2.  Hindsight sync agent, two changes: skip changes that touch only frontmatter, whitespace or line
-    endings; and skip notes quarantined by the rules above, reading `.frontier/review-state.json`. It
-    must also ignore the rest of `.frontier/`.
+2.  The sync, three changes: skip changes that touch only frontmatter, whitespace or line endings;
+    quarantine notes pushed by anyone other than the author or Frontier and publish the list; release and
+    ingest a note when Frontier's review-state file says so. It must also ignore the rest of `.frontier/`.
 3.  `avalymia`: add the `.frontier/` folder.
-4.  GitHub: a webhook from `avalymia` to Frontier; a machine account or GitHub App for Frontier, with
-    access to `avalymia` only; a separate identity and token for outside agents.
-5.  `99 Appendices/06 Interactive Maps/Main.json` is removed when the first map file exists. This is the
-    one edit to an appendix file, approved by the author.
+4.  GitHub: a webhook from `avalymia` to Frontier; Frontier's GitHub App; a separate identity and token
+    for outside agents.
+5.  `99 Appendices/06 Interactive Maps/Main.json` is removed when the first map file exists. The
+    append-only guard forbids this in Frontier, so the author removes it by hand, once.
+
+## Risks and mitigations
+
+| Risk | Impact | Mitigation | Stage |
+| --- | --- | --- | --- |
+| The server disk is lost | Unpublished work since the last backup is gone: drafts, pending proposals, discoveries, chats, cost log, settings. Canon is not affected. | Backup within 5 minutes of a change and nightly; the browser keeps drafts until published; a restore is tested before stage 2 is done. | 1 |
+| No database, no query language | Each new kind of question about the data needs a function written for it; start-up indexing grows with the vault. | Index functions live in tested packages. Revisit the index if a build passes 5 seconds or the vault passes about 5,000 entries. | 1 |
+| An agent pushes to `main` | Unreviewed text is on `main`, visible in Obsidian and to other agents. | Quarantine keeps it out of the bank and out of Frontier's AI answers until the author decides. | 3 |
+| The sync skips frontmatter-only changes | Confirmed dates and new aliases reach the bank only when the entry's text next changes; renames leave old paths in the bank. | Frontier's answers combine bank recall with its own index and follow renames through Git history. | 3, 8 |
+| Obsidian does not rewrite links inside time fields | A time relation points at an old name after a rename made outside Frontier. | Frontier detects it after each fetch and offers the rewrite. | 3 |
+| Custom map renderer | Seams where a projection splits the map; slow panning on phones; the largest stage of work. | Settle seams, grid density and a frame-rate target in the stage 4 design; fallback to flat and globe views only. | 4 |
+| One password guards an account that can push to canon | A guessed or stolen password allows publishing and AI spending. | Rate-limited login from stage 1; passkey in stage 3; the AI spending limit on the provider key bounds the cost. | 1, 3 |
+| Image tiling and backup run in the API process | A large import could slow the app while it runs. | Both run one job at a time at low priority; tiling moves to a separate process if an import takes over a minute. | 1, 4 |
+| AI cost | Spending grows with conversations, discovery and images. | First estimate: under 10 US dollars a month for field proposals and conversations, more with heavy image use; not priced against live rates. A cap in Frontier and a hard limit on the provider key. | 3, 8 |
+| Untrusted text from agents | Script in a proposal could act with the author's session. | Sanitised rendering and a content security policy. | 1 |
 
 ## Alternatives Considered
 
-### From the brainstorm
+### Product
 
 #### Hosted worldbuilding tools (World Anvil, LegendKeeper, Kanka)
 
 *   **Pros**: Maps, timelines and wikis exist today with no build effort.
-*   **Cons**: Data lives in the vendor's storage. No cross-calendar overlap, no time dilation, no approval
-    flow for AI, no link to Hindsight.
-*   **Reason for Rejection**: Rejected by author: he wants a custom tool, and these do not keep Markdown in
-    Git as canon.
+*   **Cons**: Data lives in the vendor's storage. No overlap across calendars, no time dilation, no approval flow for AI, no link to the bank.
+*   **Reason for Rejection**: They cannot keep Markdown in Git as canon, which the sync, Obsidian and the agents all depend on.
 
 #### Staying on Obsidian with plugins
 
 *   **Pros**: No new app. The Leaflet, timeline and calendar plugins cover simple cases.
-*   **Cons**: No overlap across calendars, no maps that change with time, no review inbox, weak on a phone.
-    The installed Leaflet plugin was never used.
-*   **Reason for Rejection**: Rejected by author: plugins do not cover cross-calendar overlap or time-aware
-    maps.
+*   **Cons**: No overlap across calendars, no maps that change with time, no review inbox. The installed Leaflet plugin holds no markers after years of availability.
+*   **Reason for Rejection**: The two things the author most needs, overlap across calendars and maps tied to time, have no plugin.
 
 #### Frontier as a reading companion first, editor later
 
-*   **Pros**: The first release would deliver what Obsidian lacks (a timeline or a map) and skip the hardest
-    part, an editor good enough to replace Obsidian.
-*   **Cons**: Two tools in daily use for longer. Writing stays outside the app.
-*   **Reason for Rejection**: Rejected by author: the app must contain everything, with the editor in the
-    first usable release.
+*   **Pros**: The first release would deliver a timeline or a map and skip the hardest part, an editor fit to replace Obsidian.
+*   **Cons**: Two tools in daily use for longer. Writing, the daily activity, stays outside the app.
+*   **Reason for Rejection**: The author wants one place for all work on the world; a companion leaves the split between tools in place. The cost is recorded in the decisions table.
+
+### Data
 
 #### Canon in Frontier's own database
 
-*   **Pros**: Fast queries, easy structured fields, no Git handling.
-*   **Cons**: Breaks the Hindsight sync, Obsidian access, Git history and the agents' workflow.
-*   **Reason for Rejection**: Rejected by author: GitHub stays the source of truth.
+*   **Pros**: Fast queries, structured fields without frontmatter, no Git handling.
+*   **Cons**: Breaks the sync to the bank, Obsidian access, Git history and the agents' workflow.
+*   **Reason for Rejection**: Every other tool the author uses reads the Markdown files; moving canon would cut all of them off.
+
+#### Working state in Postgres or SQLite
+
+*   **Pros**: A query language, transactions, built-in full-text search.
+*   **Cons**: Postgres is a second service to run and back up. SQLite ties data to one file and one process.
+*   **Reason for Rejection**: At 500 notes the whole vault is indexed in memory in seconds, so a database adds something to run without adding a capability the design needs.
+
+#### Frontier's own proposals and discoveries as Git branches
+
+*   **Pros**: Pending work has a copy off the server and can be browsed on GitHub.
+*   **Cons**: A full copy of an entry on a branch goes stale when `main` changes and can overwrite newer canon when accepted. Every explore tap becomes a push. Invented material sits in the canon repository.
+*   **Reason for Rejection**: Staleness: a proposal must apply to the entry as it is when accepted, which small operation files on the server do and branch snapshots do not.
+
+#### Working files in a second private repository
+
+*   **Pros**: History and an off-server copy with no backup job.
+*   **Cons**: A second set of Git operations and a commit for every autosave.
+*   **Reason for Rejection**: Autosave would create thousands of commits; a storage bucket gives the off-server copy without them.
 
 #### Time data on maps, or map data on entries
 
 *   **Pros**: Everything about a place in one file.
 *   **Cons**: Entries fill with coordinates and styling. The same time facts are kept twice and drift apart.
-*   **Reason for Rejection**: Rejected by author: maps are standalone and refer to entries; entries carry
-    time.
+*   **Reason for Rejection**: Each fact needs one home: dates on entries, positions on maps.
 
 #### Mandatory conversion between calendars
 
-*   **Pros**: One shared axis for every event. Simple timeline maths.
-*   **Cons**: Needs canon numbers that do not exist (pulse rates, anchors, leap rules) and would force them
-    to be invented before any date could be stored.
-*   **Reason for Rejection**: Rejected by author: dates stay in their own calendar and convert only on
-    request, where numbers exist.
-
-#### Each autosave is a commit
-
-*   **Pros**: No draft storage. Every keystroke is in Git.
-*   **Cons**: Floods the history, breaks the vault rule of one logical change per commit, and triggers a
-    Hindsight ingestion of half-written text on every pause.
-*   **Reason for Rejection**: Rejected in Goldfish review (six of seven reviewers); the author proceeded on
-    that basis.
-
-#### A block-style WYSIWYG editor (TipTap, BlockNote, Milkdown)
-
-*   **Pros**: A polished writing surface with little effort.
-*   **Cons**: These convert Markdown to their own model and write it back in their own style, changing lines
-    the author did not touch. That breaks goal G2 and triggers needless re-ingestion.
-*   **Reason for Rejection**: Rejected in Goldfish review; the author proceeded on that basis.
-
-#### Embedding the `map-reprojector` app as it is
-
-*   **Pros**: Reprojection available at once.
-*   **Cons**: Its interface is tied to mouse and keyboard, has no touch input, no tests, and assumes a
-    full-globe image.
-*   **Reason for Rejection**: Rejected in Goldfish review. A later review found that its projection maths
-    comes from the `d3-geo` library, so Frontier uses that library directly and carries over none of the
-    app's code.
-
-### From drafting
-
-#### Working state in Postgres or SQLite
-
-*   **Pros**: A query language, transactions, built-in full-text search. Postgres matches the author's
-    other apps.
-*   **Cons**: Postgres is a second service to run and back up. SQLite ties data to one file and one
-    process. Both hold pending proposals only on the server.
-*   **Reason for Rejection**: Rejected by author: he first chose SQLite, then changed to files only.
-
-#### Frontier's own proposals and discoveries in Git
-
-*   **Pros**: Pending work has a copy off the server. As visible branches it can be browsed on GitHub; as
-    hidden references it stays out of sight of other agents.
-*   **Cons**: A full copy of an entry on a branch goes stale as soon as `main` changes and can overwrite
-    newer canon when accepted. Every explore tap becomes a push. Invented material sits in the canon repo.
-    Hidden references cannot be browsed on GitHub.
-*   **Reason for Rejection**: Rejected by author. He first chose visible branches; after the stage 5 review
-    showed the staleness problem he chose files on the server, with backup within minutes.
-
-#### Working files in a second private repository
-
-*   **Pros**: History and an off-server copy with no backup job.
-*   **Cons**: A second set of Git operations and many small autosave commits.
-*   **Reason for Rejection**: Rejected by author: working files stay on the server disk.
+*   **Pros**: One shared axis for every event and simple timeline arithmetic.
+*   **Cons**: Needs pulse rates, anchors and leap rules that the lore does not define.
+*   **Reason for Rejection**: It would force canon numbers to be invented before any date could be stored.
 
 #### Character profiles in `99 Appendices/09 Agents`
 
 *   **Pros**: Readable in Obsidian, beside the existing `Yagon.md`.
-*   **Cons**: The folder is append-only by vault rule, so a profile could not be revised without changing
-    the rule or piling up versioned files. Hindsight would ingest invented voice and mannerisms as lore.
-*   **Reason for Rejection**: Rejected by author: profiles live in `.frontier/profiles/`.
+*   **Cons**: The folder is append-only, so a profile could not be revised. The sync would ingest invented voice and mannerisms as lore.
+*   **Reason for Rejection**: A profile must be revisable and must stay out of the bank; neither holds in that folder.
 
-#### Blocking agents from `main` with a GitHub rule, or only detecting them afterwards
+### Writing and publishing
 
-*   **Pros**: A rule makes the breach impossible. Detection afterwards needs no setup.
-*   **Cons**: The rule may need a paid GitHub plan on a private repository. Detection afterwards leaves
-    unreviewed text in Hindsight.
-*   **Reason for Rejection**: Rejected by author: the Hindsight sync checks who pushed.
+#### Each autosave is a commit
 
-#### Custom renderer with a per-pixel shader
+*   **Pros**: No draft storage; every change is in Git.
+*   **Cons**: Floods history, breaks the vault rule of one logical change per commit, and makes the sync ingest half-written text.
+*   **Reason for Rejection**: Each commit on `main` triggers a paid ingestion into the bank and becomes canon at once.
 
-*   **Pros**: The sharpest image and no seams.
-*   **Cons**: New shader maths for every projection, none for projections without a closed formula, and an
-    unsolved problem of reading many tiles in one shader.
-*   **Reason for Rejection**: Rejected by author after the stage 5 review: mesh method with `d3-geo`.
+#### A block-style editor (TipTap, BlockNote, Milkdown)
+
+*   **Pros**: A formatted writing surface with less editor code to write.
+*   **Cons**: These convert Markdown to their own model and write it back in their own style, changing lines the author did not touch.
+*   **Reason for Rejection**: It breaks goal G2 and causes needless re-ingestion.
+
+### Agents
 
 #### Agents submit proposals to a Frontier endpoint
 
-*   **Pros**: One inbox and one format for every proposal. No branches in the repo.
-*   **Cons**: Every agent needs access to the author's server and a tool for it; agents in restricted
-    networks cannot reach it.
-*   **Reason for Rejection**: Rejected by author: agents push branches.
+*   **Pros**: One inbox and one format for every proposal; no branches in the repository.
+*   **Cons**: Every agent needs network access to the author's server and a tool for it.
+*   **Reason for Rejection**: Agents in restricted networks, such as cloud coding sessions, can reach GitHub but not the author's server.
 
 #### Agents keep pushing to `main`, reviewed afterwards
 
 *   **Pros**: No change for the agents.
-*   **Cons**: Unreviewed text is canon and in Hindsight before the author sees it, which contradicts goal G8.
-*   **Reason for Rejection**: Rejected by author: agents push branches.
+*   **Cons**: Unreviewed text is canon and in the bank before the author sees it.
+*   **Reason for Rejection**: It contradicts goal G8.
+
+#### Blocking agents from `main` with a GitHub rule
+
+*   **Pros**: The breach becomes impossible.
+*   **Cons**: Depends on a GitHub feature whose availability for this private repository was not confirmed.
+*   **Reason for Rejection**: The quarantine in the sync needs no GitHub feature and keeps the bank clean either way. A rule can be added later.
+
+### Maps
 
 #### MapLibre GL
 
-*   **Pros**: Fast, good touch handling, flat and globe views from the same data, drawing add-ons exist.
-*   **Cons**: Knows only Mercator and globe. World images must be re-cut to Mercator, the poles are cut off
-    in the flat view, and other projections stay a separate tool.
-*   **Reason for Rejection**: Rejected by author: custom renderer.
+*   **Pros**: WebGL speed, built-in touch gestures, flat and globe views from the same data.
+*   **Cons**: Knows only Mercator and globe. World images must be re-cut to Mercator, the poles are cut off in the flat view, and other projections stay a separate tool.
+*   **Reason for Rejection**: The author wants to work, not only export, in other projections and on the whole sphere including the poles.
 
 #### Leaflet with a separate view-only globe
 
-*   **Pros**: The shortest path to working flat maps, with a mature drawing plugin.
-*   **Cons**: Two renderers to keep in agreement. No editing on the globe. Slows with thousands of markers.
-*   **Reason for Rejection**: Rejected by author: custom renderer.
+*   **Pros**: The shortest path to working flat maps; a drawing plugin exists.
+*   **Cons**: Two renderers to keep in agreement, and no editing on the globe.
+*   **Reason for Rejection**: Editing on the globe is required.
 
-#### Interface and API as two deployments, or Next.js
+#### Custom renderer with a per-pixel shader
 
-*   **Pros**: Two deployments keep interface changes from restarting the data server. Next.js gives
-    server-rendered pages that load fast on a phone.
-*   **Cons**: Two deployments need cross-domain login and version matching. Next.js fits long Git, AI and
-    tiling work poorly.
-*   **Reason for Rejection**: Rejected by author: one container.
+*   **Pros**: No seams, and each screen pixel is computed exactly.
+*   **Cons**: New shader maths for every projection, none for projections without a closed formula, and an unsolved problem of reading many tiles in one shader.
+*   **Reason for Rejection**: The mesh method gets every projection from existing libraries with no new projection maths.
+
+#### Embedding the `map-reprojector` app
+
+*   **Pros**: Reprojection available at once.
+*   **Cons**: It redraws every pixel on the processor, assumes a full-globe image, has no touch input and no tests.
+*   **Reason for Rejection**: Nothing in it beyond its choice of libraries carries over to a phone-first, editable map.
+
+### Deployment
+
+#### Interface and API as two deployments
+
+*   **Pros**: Interface changes never restart the server holding the data.
+*   **Cons**: Cross-domain login cookies, which phone browsers restrict, and two versions to keep compatible.
+*   **Reason for Rejection**: A restart costs seconds and loses nothing, because drafts are on disk and in the browser.
+
+#### Next.js
+
+*   **Pros**: Server-rendered pages load fast on a phone.
+*   **Cons**: Long-running Git operations, AI streaming and image tiling fit its request model poorly and would need a second process.
+*   **Reason for Rejection**: The app is mostly interactive tools that gain little from server rendering.
 
 --------------------------------------------------------------------------------
 
@@ -911,6 +969,7 @@ they are tested against the real vault on their own.
 
 *   The server holds a token that can push to canon, so the whole app is behind login. No page or API route
     is public except the login page, the GitHub webhook (signature-checked) and `/health` (no content).
+    Rendering rules for untrusted text are under "Login and security".
 *   Vault text is sent to OpenRouter models and to the self-hosted Hindsight bank, and nowhere else. The
     settings screen lists which models receive text.
 *   Secrets are encrypted at rest and never reach the browser.
@@ -921,7 +980,8 @@ they are tested against the real vault on their own.
 
 *   Server start, including the index build over 500 notes: under 5 seconds.
 *   Entry page on a phone over 4G: under 2 seconds, with resized images.
-*   Typing: no visible lag in a 50,000-word note (the largest file in the vault is the compiled book).
+*   Typing: under 50 ms from keystroke to screen in a 50,000-word note (the largest file in the vault is
+    the compiled book).
 *   Search results while typing: under 100 ms of server time.
 *   Map frame rate target and tile sizes: set in the stage 4 design.
 
@@ -936,15 +996,14 @@ they are tested against the real vault on their own.
 
 *   In stages 1 and 2 Frontier adds `.frontier/` and otherwise writes to the vault only what the author
     publishes: his own edits, renames and uploaded images. Obsidian keeps working throughout.
-*   Entry ids, the `AGENTS.md` change and the Hindsight sync changes come with stage 3. The vault changes
+*   Entry ids, the `AGENTS.md` change and the sync changes come with stage 3. The vault changes
     are ordinary commits that can be reverted.
 *   Rollback at any time: stop the container. The vault, with all published work, is intact in GitHub and
-    opens in Obsidian. Unpublished drafts and chats are in the `/data/state` backup as plain files.
+    opens in Obsidian. Unpublished drafts and chats are in the backup as readable files.
 
 ### Backup
 
-*   `/data/state` and `/data/assets/generated` are copied to a second location within minutes of a change
-    and in full every night. A restore is tested once before stage 2 is called done.
+*   As stated under "Index and working files". A restore is tested once before stage 2 is called done.
 
 --------------------------------------------------------------------------------
 
@@ -952,6 +1011,15 @@ they are tested against the real vault on their own.
 
 This plan covers stage 1 (foundation) and stage 2 (reader and editor). Stages 3 to 9 each get their own
 design document under `docs/designs/` before they are built.
+
+**Which stage each part belongs to.** Stage 1 is everything in `packages/`, everything in `apps/server`,
+and the part of `apps/web` needed to operate it: login, the status area, the folder tree, a read-only
+reader, a source-text editor with the draft buffer, the unpublished list with Publish, and the merge and
+conflict screens. Stage 1 therefore ships a working, unstyled interface, which is why it can close goals
+G6, G7 and G12. Stage 2 is the rest of `apps/web`: live preview, link autocomplete, hover preview,
+backlinks and outline panels, quick switcher, search screen, table editing, image upload, rename dialog,
+create-from-link, the phone layout and toolbar, and styling. Items below are marked (S1) or (S2) where
+the folder alone does not say.
 
 ### Tooling decisions (mechanical)
 
@@ -977,20 +1045,20 @@ Paths are relative to the `frontier` repository unless they start with `avalymia
     file excludes fixtures that copy vault text.
 4.  `.gitignore`, `.dockerignore` (Create). Keep `node_modules`, builds, `/data` and env files out of Git
     and out of the image.
-5.  `.env.example` (Create). Lists the environment variables with no values: `GITHUB_TOKEN`, `VAULT_REPO`,
+5.  `.env.example` (Create). Lists the environment variables with no values: `GITHUB_APP_ID`,
+    `GITHUB_APP_PRIVATE_KEY`, `GITHUB_APP_INSTALLATION_ID`, `VAULT_REPO`,
     `WEBHOOK_SECRET`, `SETTINGS_KEY`, `SESSION_SECRET`, `DATA_DIR`, `PUBLIC_URL`, `BACKUP_TARGET` and its
     credentials.
 6.  `Dockerfile` (Create). Two steps: build all workspaces; then a slim Node image with `git` installed, the
     server build, the web build, and `/data` declared as a volume. Runs as a non-root user.
-7.  `README.md` (Modify). Replace the one-line file with: what Frontier is, how to run it locally against a
+7.  `README.md` (Modify). The repository's README currently holds only the project name. Replace it with: what Frontier is, how to run it locally against a
     vault checkout, how to deploy on Coolify, how to restore from backup.
-8.  `zoom_out_report.md` and the other review reports in the repository root (Delete, when the review
-    ends). They are working files of the design review.
-9.  `docs/designs/frontier.md` (Modify). Set the status to Approved when the review ends.
-10. `docs/designs/SITEMAP.md` (Modify). Register each later stage design as it is written.
-11. `apps/server/src/state/backup.ts` (Create). Copies `/data/state` and `/data/assets/generated` to the
-    S3-compatible bucket named by `BACKUP_TARGET`, a few minutes after a change and nightly; records the
-    last successful copy for the status area.
+8.  `zoom_out_report.md`, `comprehension_report.md`, `critic_report.md` and `goldfish_review_report.md` in
+    the repository root (Delete, when the design review ends). They are working files of the review of
+    this document.
+9.  `docs/designs/frontier.md` (Modify). This document; its status is set to Approved when the review ends.
+10. `docs/designs/SITEMAP.md` (Modify). The existing index of design documents; each later stage design
+    is registered in it.
 12. `.github/workflows/ci.yml` (Create). On every push: install, lint, type-check, unit tests, build,
     Playwright tests against the fixture vault. Needed so the rules behind goals G2 and G4 are checked on
     every change; the checks against the real vault are run by hand before each release, because the
@@ -1003,7 +1071,8 @@ Paths are relative to the `frontier` repository unless they start with `avalymia
     stages 1 and 2 (entries, drafts, publish, search, status, login). One definition used by server and
     web so they cannot drift.
 15. `packages/schema/src/status.ts` (Create). The sync status shape: last fetch, last push, unpublished
-    count, conflicts, index commit, failed push.
+    count, conflicts, index commit and whether it is stale, failed push, last backup, files with mixed
+    line endings.
 16. `packages/schema/src/index.ts` (Create). Exports.
 
 #### `packages/vault` (parsing, links, rename; no server or browser code)
@@ -1016,8 +1085,8 @@ Paths are relative to the `frontier` repository unless they start with `avalymia
     position: target, path part, heading part, display text, embed flag. Also standard Markdown image
     links with angle-bracket paths.
 20. `packages/vault/src/resolve.ts` (Create). The resolution rules from the Technical Plan: path links,
-    bare names against note names and aliases ignoring case and surrounding spaces, the `99 Appendices`
-    tie-break, ambiguity, heading links, image embeds by bare name. Returns resolved, unresolved or
+    bare names against note file names ignoring case and surrounding spaces, shortest path among
+    same-named notes, the `99 Appendices` tie-break, ambiguity, heading links, image embeds by bare name. Returns resolved, unresolved or
     ambiguous with candidates. Serves goal G4.
 21. `packages/vault/src/rename.ts` (Create). Given a rename or move, produce the edited text of every note
     whose links must change, touching only the link characters. Handles folder notes and folder moves.
@@ -1052,17 +1121,21 @@ Paths are relative to the `frontier` repository unless they start with `avalymia
 34. `apps/server/src/git/gateway.ts` (Create). The only module that runs Git: clone on first start, fetch,
     fast-forward, read a file at `main`, blob hash of a file, commit a set of file changes with a message,
     push, detect rejection, and run a three-way merge of three versions of one file. It builds a commit
-    without changing the working copy. Finding where a branch left `main` is added in stage 3. A lock makes operations run one at a time. Never passes `--force`.
+    without changing the working copy, authenticates as the GitHub App, and follows a file through
+    renames in history. Finding where a branch left `main` is added in stage 3. A lock makes operations
+    run one at a time. Never passes `--force`.
 35. `apps/server/src/git/webhook.ts` (Create). Route for GitHub push events: checks the signature, then
     asks the gateway to fetch and the index to update.
-36. `apps/server/src/git/poll.ts` (Create). Timer that fetches every few minutes in case a webhook is missed.
+36. `apps/server/src/git/poll.ts` (Create). Timer that fetches every 5 minutes in case a webhook is missed.
 37. `apps/server/src/state/files.ts` (Create). Safe file writing for `/data/state`: write to a temporary
     name, then rename. JSON read and write helpers.
 38. `apps/server/src/state/drafts.ts` (Create). Create, read, update, delete and list drafts; each draft is
-    a text file plus a record with path, base blob hash, kind (edit, create, delete) and time. A rename or
-    move is stored as an intent with the old and new path.
+    its content (text with normalised line endings, or an image) plus a record with id, revision, path,
+    base blob hash, original line-ending style, kind (edit, create, delete) and time. Rejects a save with
+    an older revision and keeps it as a second version. Keeps a record of each published or discarded
+    draft. A rename or move is stored as an intent with the old and new path.
 39. `apps/server/src/state/settings.ts` (Create). Read and write `settings.json`; stage 1 holds only the
-    password hash. Encryption helper for secrets added in later stages.
+    password hash. The encryption of secrets is added in stage 3 with the AI key.
 40. `apps/server/src/index/build.ts` (Create). Reads the working copy into memory: entries, aliases,
     headings, links with resolution, backlinks. Applies drafts on top so the author sees his unpublished
     state. Updates one file at a time on change.
@@ -1071,7 +1144,8 @@ Paths are relative to the `frontier` repository unless they start with `avalymia
 42. `apps/server/src/publish/publish.ts` (Create). The Publish flow from the Technical Plan: fetch; compare
     base hashes; three-way merge where a file changed, returning clean merges for the author to confirm;
     turn rename intents into link rewrites against the fetched `main`; hold back conflicted drafts; keep
-    a rename and its rewrites together; write files, one commit, push, one retry on rejection.
+    a rename and its rewrites together; restore original line endings; build one commit; push; one retry
+    on rejection, then stop with the drafts kept.
 43. `apps/server/src/publish/conflict.ts` (Create). Builds the data for the conflict screen: the draft, the
     base version and the current `main` version of a file.
 44. `apps/server/src/images/serve.ts` (Create). Serves a vault image resized to a requested width, cached
@@ -1104,14 +1178,33 @@ Paths are relative to the `frontier` repository unless they start with `avalymia
     rejected and retried; no force push is ever issued.
 60. `apps/server/test/publish.test.ts` (Create). One commit per Publish; no commit without Publish (G6); a
     file changed on the remote in the same place produces a conflict and is held back while other drafts
-    publish (G7); a change elsewhere in the file gives a clean merge that waits for confirmation; rename publishes all link
-    rewrites in one commit.
+    publish (G7); a change elsewhere in the file gives a clean merge that waits for confirmation; a
+    rename publishes all link rewrites in one commit; a push rejected twice stops with drafts kept; a
+    delete of a changed file is a conflict.
 61. `apps/server/test/drafts.test.ts` (Create). Drafts survive a restart; a crash during a write leaves the
-    previous file intact; appendix files cannot be drafted.
+    previous file intact; appendix files cannot be drafted; a save with an older revision is kept as a
+    second version; a published draft is not accepted again from a browser.
 62. `apps/server/test/index.test.ts` (Create). Index over the fixture matches expected links and backlinks;
-    drafts overlay the index; deleting everything in memory and rebuilding gives the same result (G1).
+    the draft layer is kept apart from the published layer; a server started on a fresh clone with an
+    empty `/data/state` shows every published entry (G1).
 63. `apps/server/test/auth.test.ts` (Create). Every route refuses without a session; rate limit works;
     webhook rejects a bad signature.
+63a. `apps/server/src/state/backup.ts` (Create). The backup described under "Index and working files":
+    copies to the bucket named by `BACKUP_TARGET` and records the last successful copy.
+63b. `apps/server/src/publish/journal.ts` (Create). Writes the journal entry before a commit is built and
+    reconciles an interrupted Publish at server start.
+63c. `apps/server/test/journal.test.ts` (Create). A stop after the commit is built, after the push, and
+    before the working copy moves each recover to a consistent state at start.
+63d. `apps/server/test/backup.test.ts` (Create). A change is copied within the set delay to a local
+    stand-in bucket; a restore from it gives the same drafts.
+63e. `apps/server/test/status.test.ts` (Create). Each failure in goal G12 that belongs to stage 1 is
+    caused and appears in the status snapshot: failed push, stale index, failed backup, mixed line
+    endings (G12).
+63f. `apps/server/test/images.test.ts` and `poll.test.ts` (Create). Resizing and type detection of images;
+    the timer fetch picks up a push that sent no webhook.
+63g. `apps/server/src/render/sanitize.ts` and `apps/server/test/sanitize.test.ts` (Create). The rule set for
+    cleaning rendered Markdown, shared with the web app, and tests with script, event-handler and frame
+    cases. The content security policy header is set in `main.ts`.
 
 #### `apps/web`
 
@@ -1168,41 +1261,55 @@ Paths are relative to the `frontier` repository unless they start with `avalymia
 99. `apps/web/e2e/phone.spec.ts` (Create). The same flows at 375 px with touch.
 99a. `apps/web/e2e/line-endings.spec.ts` (Create). One keystroke in the fixture file with Windows line
     endings gives a one-line difference after Publish; the same for the file with mixed endings (G2).
-99b. `packages/vault/src/lineEndings.ts` and `packages/vault/test/lineEndings.test.ts` (Create). Detects a
-    file's line ending and restores it on save; for mixed endings, writes back only the changed ranges.
-    Every save, in the browser and on the server, goes through it, and the real-vault test (item 28)
-    applies a one-character edit to every note and expects a one-line difference.
-99d. `apps/server/src/publish/journal.ts` (Create). Records each Publish before it starts and reconciles an
-    interrupted one at server start.
-99e. `apps/web/e2e/parity.spec.ts` (Create). One check per remaining parity item of goal G5: table editing,
-    image upload, quick switcher, outline, move.
-99c. `apps/web/src/publish/MergeConfirm.tsx` (Create). Shows a clean three-way merge with the incoming
+99b. `packages/vault/src/lineEndings.ts` and `packages/vault/test/lineEndings.test.ts` (Create, S1). Records
+    a file's line-ending style, normalises text for editing, and restores the original endings when a
+    commit is built; for mixed endings, applies the draft to the original as changed ranges. The
+    real-vault test (item 28) applies a one-character edit to every note and expects a one-line
+    difference, and sets one frontmatter key on every note that has frontmatter and expects only that
+    key's lines to change.
+99c. `apps/web/src/publish/MergeConfirm.tsx` (Create, S1). Shows a clean three-way merge with the incoming
     changes marked, for the author to confirm before it is published.
+99d. `apps/web/src/drafts/Versions.tsx` (Create, S1). Shows two versions of one draft from two devices for
+    the author to merge.
+99e. `apps/web/e2e/parity.spec.ts` (Create, S2). One check per remaining parity item of goal G5: table
+    editing, image upload, quick switcher, outline, move.
+99f. `apps/web/e2e/two-devices.spec.ts` (Create, S1). CUJ 1 across two browser contexts: a draft published
+    from one is not brought back by the other; an older revision produces two versions (G6).
+99g. `apps/web/e2e/load-time.spec.ts` (Create, S2). An entry page with images loads under 2 seconds with
+    the network throttled to 4G at 375 px (G11).
 
 #### Outside this repository
 
 100. `avalymia/.frontier/README.md` (Create, in stage 2). One paragraph saying what the folder is and that
      Frontier owns it, so agents and the author's future self know not to hand-edit it. This is the only
-     change to the vault in stages 1 and 2. It is a `.md` file inside a dot-folder; the Hindsight sync's
+     change Frontier itself makes to the vault in stages 1 and 2. It is a `.md` file inside a dot-folder; the sync's
      handling of dot-folders is confirmed before this file is added, and it is renamed to `README.txt` if
      the sync would ingest it.
 101. Coolify (configuration, not a file). One project: the container, a persistent volume at `/data`, the
-     environment variables, the domain, the health check on `/health`, and a backup location for
-     `/data/state` and `/data/assets/generated`.
-102. GitHub (configuration, not a file). A fine-grained token for `avalymia` with contents read and write;
-     a push webhook to Frontier.
+     environment variables, the domain, the health check on `/health`, and the S3-compatible bucket
+     that the server's backup writes to.
+102. GitHub (configuration, not a file). Frontier's GitHub App, created by the author in stage 1 and
+     installed on `avalymia` only, with permission to read and write contents; a push webhook from
+     `avalymia` to Frontier.
 
 ### Order of work
 
+Stage 1:
+
 1.  Root setup, `packages/schema`, `packages/vault` with the fixture vault and its tests.
-2.  The link baseline against the real vault; the author reviews the ambiguous and unresolved lists once.
-3.  Server: configuration, Git gateway, working files, index, search, login.
-4.  Server: drafts and Publish with conflict handling.
-5.  Web: shell, reader, folder tree, search, quick switcher. First deploy to Coolify, read-only.
-6.  Web: editor, draft buffer, unpublished list, Publish, conflict screen, rename.
-7.  Phone layout and toolbar, image upload and resizing.
-8.  Backup and restore test. Stage 2 is done when the author has written and published from desktop and
-    phone for a week without opening Obsidian for anything in the parity list.
+2.  The link baseline against the real vault. The author reviews the ambiguous and unresolved lists, makes
+    the one-time comparison with Obsidian (goal G4), and checks whether a bare alias resolves there.
+3.  The GitHub App. Server: configuration, Git gateway, working files, index, search, login, sanitising.
+4.  Server: drafts, Publish with merge, conflict handling and journal; backup and its restore test.
+5.  Web, stage 1 part: login, status area, folder tree, read-only reader, source editor with draft
+    buffer, unpublished list, Publish, merge and conflict screens. First deploy to Coolify.
+
+Stage 2:
+
+6.  Reader panels, live preview, link autocomplete, hover preview, quick switcher, search screen.
+7.  Rename dialog, create-from-link, table editing, image upload and resizing.
+8.  Phone layout and toolbar; styling. Stage 2 is done when the author has written and published from
+    desktop and phone for a week without opening Obsidian for anything in the parity list.
 
 ### Verification Plan
 
@@ -1216,9 +1323,11 @@ Paths are relative to the `frontier` repository unless they start with `avalymia
     `apps/server/src/publish`, the code that can damage canon. No fixed figure elsewhere.
 *   **E2E/Integration**: `npm run e2e` runs Playwright at desktop and 375 px sizes with tracing off,
     covering CUJ 1 to 4 and the offline case.
-*   **Goal checks for these stages**: G1 (index rebuild test), G2, G3 (open the vault in Obsidian after a
-    week of use and confirm links resolve as before; manual), G4, G5 (one e2e test per parity item), G6,
-    G7, G11 (phone spec plus a timed page load), G12 (each failure triggered in a test).
+*   **Goal checks for these stages**: G1 (item 62), G2 (items 26, 28, 99a, 99b), G3 (manual: open the
+    vault in Obsidian after a week of use and confirm links resolve as before), G4 (items 27, 28, and the
+    manual comparison with Obsidian), G5 (items 95, 96, 99e), G6 (items 60, 94, 98, 99f; locking a real
+    phone is checked by hand), G7 (items 60, 97), G11 (items 99, 99g), G12 (item 63e). The search target
+    of 100 ms is measured in item 62's fixture and by hand on the real vault.
 
 --------------------------------------------------------------------------------
 

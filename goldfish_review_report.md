@@ -1,5 +1,7 @@
 # Goldfish Annotated Review Report
 
+**Status: resolved** (auto accept: 27 fixes applied, 6 nits declined, 0 contested, 0 escalated)
+
 **Target:** `docs/designs/frontier.md` (lines 1-950), findings from Stage 6 (`comprehension_report.md`) and
 Stage 7 (`critic_report.md`)
 
