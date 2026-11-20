@@ -1,8 +1,10 @@
+import { autocompletion } from "@codemirror/autocomplete";
 import { markdown } from "@codemirror/lang-markdown";
 import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { basicSetup } from "codemirror";
 import { useEffect, useRef } from "react";
+import { completeLinks } from "./linkComplete.ts";
 
 const theme = EditorView.theme({
   "&": { fontSize: "1rem", backgroundColor: "transparent", color: "var(--ink)" },
@@ -42,6 +44,8 @@ export function CodeEditor({
         extensions: [
           basicSetup,
           markdown(),
+          // Entry names are offered after "[[". This replaces the editor's own word suggestions.
+          autocompletion({ override: [completeLinks], icons: false }),
           EditorView.lineWrapping,
           EditorState.readOnly.of(readOnly),
           theme,

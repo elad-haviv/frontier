@@ -231,6 +231,14 @@ export const SearchResponse = z.object({
   ),
 });
 export const SwitcherResponse = z.object({
-  results: z.array(z.object({ path: VaultPath, title: z.string(), alias: z.string().optional() })),
+  results: z.array(
+    z.object({
+      path: VaultPath,
+      title: z.string(),
+      alias: z.string().optional(),
+      /** True when another note shares this name, so a link to it must be written with its path. */
+      shared: z.boolean().optional(),
+    }),
+  ),
 });
 export const PreviewResponse = z.object({ path: VaultPath, text: z.string() });

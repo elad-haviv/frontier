@@ -34,6 +34,7 @@ npm test          # unit tests in every workspace, with coverage thresholds
 npm run typecheck
 npm run lint
 npm run build
+npm run e2e       # browser tests; build first
 ```
 
 ### Running the server locally

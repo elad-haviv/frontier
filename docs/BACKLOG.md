@@ -35,12 +35,10 @@ One place for what is being built, what is waiting, and ideas. The design in
 ## Now: finishing stages 1 and 2
 
 - [ ] Backup of drafts to a storage bucket, and a restore command
-- [ ] Browser test suite committed to the repo (the flows are checked today by a script outside it)
 - [ ] Rename and move screen (the server side is built)
-- [ ] Link autocomplete while typing `[[`
 - [ ] Live preview in the editor (hide Markdown marks away from the cursor)
 - [ ] Hover preview of linked entries; outline of an entry's headings
-- [ ] Search and quick switcher
+- [ ] Search and quick switcher (the names route they need is built)
 - [ ] Image upload and sizing; table editing; properties panel
 - [ ] Accept a GitHub token as an alternative to a GitHub App
 - [ ] Phone toolbar above the keyboard (link, heading, list, image, undo)
@@ -79,3 +77,5 @@ Each gets a short design of its own before it is built.
 - Lightbox for images in an entry: large view, next and previous, full-size zoom, swipe, keyboard
   (from the ideas inbox, moved up on 2026-11-21 at Elad's request; it displaced nothing)
 - A link to a missing image shows as a missing link, not a broken picture
+- Link autocomplete after `[[`, over names and aliases; an alias is written as `[[Entry|Alias]]`
+- Browser test suite in the repo: 23 tests at phone and desktop size, run in CI

@@ -9,6 +9,8 @@ export default tseslint.config(
       "**/node_modules/**",
       "**/fixture-vault/**",
       "**/.big-fixture/**",
+      ".e2e-data/**",
+      "test-results/**",
     ],
   },
   js.configs.recommended,

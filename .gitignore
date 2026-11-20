@@ -6,3 +6,6 @@ coverage
 !.env.example
 /data
 packages/vault/test/.big-fixture
+.e2e-data
+test-results
+playwright-report

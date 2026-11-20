@@ -1166,3 +1166,36 @@ button.big {
 .lightbox-next {
   right: 0.5rem;
 }
+
+/* ---- Link suggestions in the editor ------------------------------------------------------- */
+
+.cm-tooltip.cm-tooltip-autocomplete {
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  background: var(--paper-raised);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+
+.cm-tooltip.cm-tooltip-autocomplete > ul {
+  font-family: var(--sans);
+  font-size: 0.95rem;
+  max-height: 14rem;
+}
+
+.cm-tooltip.cm-tooltip-autocomplete > ul > li {
+  padding: 0.5rem 0.75rem;
+  color: var(--ink);
+}
+
+.cm-tooltip.cm-tooltip-autocomplete > ul > li[aria-selected] {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.cm-completionDetail {
+  margin-left: 0.6rem;
+  color: var(--ink-faint);
+  font-style: normal;
+  font-size: 0.8rem;
+}

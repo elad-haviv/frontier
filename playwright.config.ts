@@ -1,0 +1,47 @@
+import { defineConfig, devices } from "@playwright/test";
+
+const PORT = 3987;
+const AUTH = "test-results/.auth.json";
+
+/**
+ * Browser tests. They run against the built server on the made-up sample vault, in a data folder
+ * that is wiped at every start. Build first: `npm run build`.
+ */
+export default defineConfig({
+  testDir: "apps/web/e2e",
+  // One server holds one vault, so the tests take turns.
+  workers: 1,
+  fullyParallel: false,
+  timeout: 60_000,
+  expect: { timeout: 10_000 },
+  reporter: [["list"]],
+  use: {
+    baseURL: `http://127.0.0.1:${PORT}`,
+    // Tracing is off to keep runs fast; turn it on with --trace on when a test needs debugging.
+    trace: "off",
+  },
+  projects: [
+    { name: "setup", testMatch: /auth\.setup\.ts/ },
+    // Everything runs at phone size with touch, since the phone is the harder case.
+    {
+      name: "phone",
+      use: { ...devices["iPhone 13"], defaultBrowserType: "chromium", storageState: AUTH },
+      dependencies: ["setup"],
+      testIgnore: /auth\.setup\.ts/,
+    },
+    // Reading is also checked at desktop size, where the layout differs.
+    {
+      name: "desktop",
+      use: { viewport: { width: 1280, height: 800 }, storageState: AUTH },
+      dependencies: ["setup"],
+      testMatch: /reader\.spec\.ts/,
+    },
+  ],
+  webServer: {
+    command: "node apps/web/e2e/server.mjs",
+    url: `http://127.0.0.1:${PORT}/health`,
+    reuseExistingServer: false,
+    timeout: 60_000,
+    env: { PORT: String(PORT) },
+  },
+});

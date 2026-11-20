@@ -22,3 +22,6 @@ jobs:
       #   VAULT_PATH=<checkout> npm test -w packages/vault
       - run: npm test
       - run: npm run build
+      # Browser tests, on the built server and the sample vault, at phone and desktop size.
+      - run: npx playwright install --with-deps chromium
+      - run: npm run e2e
