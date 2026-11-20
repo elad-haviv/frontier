@@ -1262,8 +1262,8 @@ Paths are relative to the `frontier` repository unless they start with `avalymia
 82. `apps/web/src/editor/Properties.tsx` (Create). Panel to view and edit frontmatter keys; edits go through
     the same one-key-at-a-time rule as the server.
 83. `apps/web/src/drafts/buffer.ts` (Create). Saves each change to IndexedDB at once and to the server
-    about a second later; resends when the connection returns; keeps each revision until the server confirms it and then
-    drops it once the server confirms it holds that revision (G6).
+    about a second later; resends when the connection returns; keeps each revision until the server confirms it holds
+    that revision, then drops it (G6).
 84. `apps/web/src/drafts/EntryState.tsx` (Create). The per-entry badge: published, unpublished, conflict,
     waiting to send.
 85. `apps/web/src/publish/Unpublished.tsx` (Create). List of unpublished changes with differences, a message
