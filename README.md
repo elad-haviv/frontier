@@ -10,16 +10,17 @@ The full design is in [docs/designs/frontier.md](docs/designs/frontier.md).
 
 Stage 1 of nine is in progress. What exists so far:
 
-| Part                                                                                                           | State            |
-| -------------------------------------------------------------------------------------------------------------- | ---------------- |
-| `packages/vault`: reading notes, frontmatter, line endings, links, link resolution, rename planning            | Built and tested |
-| `packages/schema`: types and validation shared by server and web                                               | Built and tested |
-| `apps/server`: configuration, Git gateway, in-memory index, login, status, webhook, timer fetch, image serving | Built and tested |
-| `apps/web`: login, folder tree, entry reader with links, embeds and backlinks, status page                     | Built; read-only |
-| `apps/server`: drafts, Publish, backup and restore                                                             | Not started      |
-| `apps/web`: editor, unpublished list, Publish and conflict screens                                             | Not started      |
+| Part                                                                                                           | State                                                                    |
+| -------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| `packages/vault`: reading notes, frontmatter, line endings, links, link resolution, rename planning            | Built and tested                                                         |
+| `packages/schema`: types and validation shared by server and web                                               | Built and tested                                                         |
+| `apps/server`: configuration, Git gateway, in-memory index, login, status, webhook, timer fetch, image serving | Built and tested                                                         |
+| `apps/server`: drafts, two-call Publish with merge and conflicts, renames, crash recovery                      | Built and tested                                                         |
+| `apps/web`: login, folder tree, entry reader, status page                                                      | Built                                                                    |
+| `apps/web`: source editor with autosave, new and delete, unpublished list, Publish, merge and conflict screens | Built; checked by a scripted browser run, not yet a committed test suite |
+| Backup and restore; the browser test suite; rename screen; image upload; search; live preview                  | Not started                                                              |
 
-The app can be read but not written with: no route can change the vault yet.
+The app can now write to its vault: drafts are saved on the server and Publish makes one commit.
 
 A preview on made-up sample content runs with `FRONTIER_SAMPLE_VAULT=1`; see the Dockerfile.
 

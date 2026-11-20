@@ -1,7 +1,7 @@
 import { aliasesOf, splitFrontmatter } from "@frontier/vault";
 import { useEffect, useMemo } from "react";
 import { Link, useLocation } from "react-router-dom";
-import { api, entryUrl } from "../api.ts";
+import { api, editUrl, entryUrl } from "../api.ts";
 import { currentEntryPath } from "../components/Shell.tsx";
 import { Markdown } from "../render/Markdown.tsx";
 import { useAsync } from "../useAsync.ts";
@@ -22,9 +22,10 @@ function Crumbs({ path }: { path: string }) {
 }
 
 export function EntryPage({ onSessionLost }: { onSessionLost: () => void }) {
-  const { pathname, hash } = useLocation();
+  const { pathname, hash, key } = useLocation();
   const path = currentEntryPath(pathname);
-  const entry = useAsync(() => api.entry(path), path);
+  // Keyed by the visit as well as the path, so coming back from the editor shows the new draft.
+  const entry = useAsync(() => api.entry(path), `${path}@${key}`);
 
   useEffect(() => {
     if (entry.state === "failed" && entry.error.status === 401) onSessionLost();
@@ -75,7 +76,24 @@ export function EntryPage({ onSessionLost }: { onSessionLost: () => void }) {
     <article className="entry">
       <header className="entry-head">
         <Crumbs path={e.path} />
-        <h1>{view!.title}</h1>
+        <div className="title-row">
+          <h1>{view!.title}</h1>
+          {!e.readOnly && e.draft?.kind !== "delete" && (
+            <Link to={editUrl(e.path)} className="edit-link">
+              Edit
+            </Link>
+          )}
+        </div>
+        {e.state === "unpublished" && (
+          <p className="draft-note">
+            {e.draft?.kind === "delete"
+              ? "Marked for deletion. "
+              : e.draft?.kind === "create"
+                ? "A new entry, not published yet. "
+                : "You are reading your unpublished draft. "}
+            <Link to="/unpublished">Review and publish</Link>
+          </p>
+        )}
         {(view!.aliases.length > 0 || e.readOnly) && (
           <p className="chips">
             {view!.aliases.map((a) => (

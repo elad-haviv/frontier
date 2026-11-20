@@ -55,7 +55,10 @@ function Folder({
           ))}
           {notes.map((n) => (
             <li key={n.path}>
-              <NavLink to={entryUrl(n.path)} className="tree-note">
+              <NavLink
+                to={entryUrl(n.path)}
+                className={`tree-note${n.state === "unpublished" ? " is-draft" : ""}`}
+              >
                 {nameOf(n.path).replace(/\.md$/i, "")}
               </NavLink>
             </li>
@@ -74,7 +77,10 @@ export function Tree({ tree, current }: { tree: TreeResponse; current: string })
       ))}
       {[...tree.notes].sort(byName).map((n) => (
         <li key={n.path}>
-          <NavLink to={entryUrl(n.path)} className="tree-note">
+          <NavLink
+            to={entryUrl(n.path)}
+            className={`tree-note${n.state === "unpublished" ? " is-draft" : ""}`}
+          >
             {nameOf(n.path).replace(/\.md$/i, "")}
           </NavLink>
         </li>

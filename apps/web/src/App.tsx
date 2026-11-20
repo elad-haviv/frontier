@@ -2,7 +2,11 @@ import { useCallback, useEffect, useState } from "react";
 import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { api } from "./api.ts";
 import { Shell } from "./components/Shell.tsx";
+import { ConflictPage } from "./pages/Conflict.tsx";
+import { EditPage } from "./pages/Edit.tsx";
 import { EntryPage } from "./pages/Entry.tsx";
+import { UnpublishedPage } from "./pages/Unpublished.tsx";
+import { VersionsPage } from "./pages/Versions.tsx";
 import { Home } from "./pages/Home.tsx";
 import { Login } from "./pages/Login.tsx";
 import { StatusPage } from "./pages/Status.tsx";
@@ -38,6 +42,10 @@ export function App() {
       <Routes>
         <Route path="/" element={<Home />} />
         <Route path="/e/*" element={<EntryPage onSessionLost={() => setLoggedIn(false)} />} />
+        <Route path="/edit/*" element={<EditPage />} />
+        <Route path="/unpublished" element={<UnpublishedPage />} />
+        <Route path="/conflict/:id" element={<ConflictPage />} />
+        <Route path="/versions/:id" element={<VersionsPage />} />
         <Route path="/status" element={<StatusPage />} />
         <Route path="/login" element={<Navigate to="/" replace />} />
         <Route

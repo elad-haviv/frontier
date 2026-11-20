@@ -1,9 +1,12 @@
 import type {
   AttentionResponse,
+  DraftKind,
   EntryResponse,
   ErrorBody,
+  PublishPlan,
   StatusSnapshot,
   TreeResponse,
+  UnpublishedResponse,
 } from "@frontier/schema";
 
 export class ApiFailure extends Error {
@@ -15,6 +18,9 @@ export class ApiFailure extends Error {
     super(message);
     this.name = "ApiFailure";
   }
+
+  /** With `stale_revision`: the id of the draft the server holds for the file. */
+  draftId?: string;
 }
 
 async function call<T>(url: string, init?: RequestInit): Promise<T> {
@@ -31,12 +37,22 @@ async function call<T>(url: string, init?: RequestInit): Promise<T> {
   } catch {
     /* not JSON */
   }
-  throw new ApiFailure(
+  const failure = new ApiFailure(
     res.status,
     body?.error.code ?? "unknown",
     body?.error.message ?? `The server answered with status ${res.status}.`,
   );
+  if (body?.error.id) failure.draftId = body.error.id;
+  throw failure;
 }
+
+const send = <T>(method: string, url: string, body?: unknown) =>
+  call<T>(url, {
+    method,
+    ...(body === undefined
+      ? {}
+      : { headers: { "content-type": "application/json" }, body: JSON.stringify(body) }),
+  });
 
 const post = <T>(url: string, body?: unknown) =>
   call<T>(url, {
@@ -54,7 +70,46 @@ export const api = {
   entry: (path: string) => call<EntryResponse>(`/api/entries?path=${encodeURIComponent(path)}`),
   status: () => call<StatusSnapshot>("/api/status"),
   attention: () => call<AttentionResponse>("/api/attention"),
+
+  saveDraft: (draft: {
+    id: string;
+    path: string;
+    kind: DraftKind;
+    text: string;
+    revision: number;
+  }) => send<{ id: string; revision: number }>("PUT", "/api/drafts", draft),
+  discardDraft: (id: string) => send<{ ok: true }>("DELETE", `/api/drafts/${id}`),
+  versions: (id: string) =>
+    call<{ current: { text: string; revision: number }; other: { text: string } }>(
+      `/api/drafts/${id}/versions`,
+    ),
+  mergeVersions: (id: string, text: string) =>
+    post<{ id: string; revision: number }>(`/api/drafts/${id}/merge-versions`, { text }),
+  resolve: (id: string, text: string) =>
+    post<{ id: string; revision: number }>(`/api/drafts/${id}/resolve`, { text }),
+  unpublished: () => call<UnpublishedResponse>("/api/unpublished"),
+  plan: (draftIds: string[], renameIds: string[]) =>
+    post<PublishPlan>("/api/publish/plan", { draftIds, renameIds }),
+  confirm: (planId: string, confirmedMergeIds: string[], message: string) =>
+    post<{ commit: string }>("/api/publish/confirm", { planId, confirmedMergeIds, message }),
+  cancelRename: (id: string) => send<{ ok: true }>("DELETE", `/api/renames/${id}`),
 };
+
+/** A new draft id: 12 lower-case letters and digits, made in the browser. */
+export function newDraftId(): string {
+  const alphabet = "abcdefghijklmnopqrstuvwxyz0123456789";
+  let out = "";
+  while (out.length < 12) {
+    for (const byte of crypto.getRandomValues(new Uint8Array(12))) {
+      if (byte < 252 && out.length < 12) out += alphabet[byte % 36];
+    }
+  }
+  return out;
+}
+
+export function editUrl(path: string): string {
+  return "/edit/" + path.split("/").map(encodeURIComponent).join("/");
+}
 
 /** The address of an entry's page. */
 export function entryUrl(path: string, heading?: string | null): string {

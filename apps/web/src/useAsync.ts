@@ -9,7 +9,8 @@ export function useAsync<T>(fn: () => Promise<T>, key: string): Loaded<T> {
   const [result, setResult] = useState<Loaded<T>>({ state: "loading" });
   useEffect(() => {
     let live = true;
-    setResult({ state: "loading" });
+    // On a re-run the earlier value stays on screen until the new one arrives.
+    setResult((r) => (r.state === "ready" ? r : { state: "loading" }));
     fn().then(
       (value) => live && setResult({ state: "ready", value }),
       (error: unknown) =>
