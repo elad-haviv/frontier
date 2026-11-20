@@ -147,6 +147,8 @@ export const ConflictReason = z.enum([
   "deleted_on_main",
   "delete_of_changed_file",
   "binary_changed_on_both",
+  /** A rename cannot be carried out, for the reason given in `mine`. */
+  "rename_blocked",
 ]);
 
 export const PlannedConflict = z.object({

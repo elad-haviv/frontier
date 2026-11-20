@@ -120,6 +120,21 @@ export class VaultIndex {
     this.commit = commit;
   }
 
+  /**
+   * Headings and resolved links for a text that is not the published one, such as a draft.
+   * `added` and `removed` adjust the file list the links are resolved against.
+   */
+  analyse(path: string, text: string, added: string[] = [], removed: string[] = []) {
+    const resolver =
+      added.length === 0 && removed.length === 0
+        ? this.resolver
+        : createResolver([...this.files.filter((f) => !removed.includes(f)), ...added]);
+    return {
+      headings: extractHeadings(text),
+      links: findLinks(text).map((link) => ({ link, resolution: resolver.resolve(link, path) })),
+    };
+  }
+
   note(path: string): IndexedNote | undefined {
     return this.notes.get(path);
   }

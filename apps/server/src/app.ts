@@ -10,6 +10,9 @@ import { ApiError } from "./errors.js";
 import { appTokenSource } from "./git/appAuth.js";
 import { GitError, GitGateway } from "./git/gateway.js";
 import { ImageServer } from "./images/serve.js";
+import { Publisher } from "./publish/publish.js";
+import { draftRoutes } from "./routes/drafts.js";
+import { DraftStore } from "./state/drafts.js";
 import { VaultIndex } from "./index/build.js";
 import { authRoutes } from "./routes/auth.js";
 import { entryRoutes } from "./routes/entries.js";
@@ -34,6 +37,8 @@ export interface Services {
   files: StateFiles;
   settings: SettingsStore;
   images: ImageServer;
+  drafts: DraftStore;
+  publisher: Publisher;
   /** Fetches `main`, resets the working copy and rebuilds the index. */
   sync(): Promise<void>;
 }
@@ -74,6 +79,8 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
   const files = new StateFiles();
   const settings = new SettingsStore(stateDir, files);
   const images = new ImageServer(vaultDir, config.dataDir);
+  const drafts = new DraftStore(stateDir, files);
+  await drafts.load();
 
   const services: Services = {
     config,
@@ -83,13 +90,24 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
     files,
     settings,
     images,
+    drafts,
+    publisher: undefined as unknown as Publisher,
     async sync() {
       const result = await git.fetch();
       status.fetched(result.current);
       if (index.commit !== result.current) index.build(result.current);
+      await services.publisher.clearPublished();
       status.indexed();
     },
   };
+  services.publisher = new Publisher({
+    vaultDir,
+    git,
+    index,
+    drafts,
+    status,
+    sync: () => services.sync(),
+  });
 
   // Coolify's proxy sits in front, so the client address and protocol come from its headers.
   const app = Fastify({ trustProxy: true, logger: options.logger ?? false });
@@ -187,6 +205,7 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
 
   authRoutes(app, services);
   entryRoutes(app, services);
+  draftRoutes(app, services);
   imageRoutes(app, services);
   statusRoutes(app, services);
   webhookRoutes(app, services);

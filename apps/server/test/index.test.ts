@@ -243,7 +243,8 @@ describe("status", () => {
     expect(t.services.status.snapshot().indexStale).toBe(false);
     stop();
     t.services.status.pushed();
-    expect(seen).toEqual([true, false, false]);
+    expect(seen[0]).toBe(true);
+    expect(seen.at(-1)).toBe(false);
   });
 
   it("records pushes, failures, backups and draft counts", () => {

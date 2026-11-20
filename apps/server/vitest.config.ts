@@ -18,7 +18,7 @@ export default defineConfig({
       provider: "v8",
       include: ["src/**/*.ts"],
       exclude: ["src/main.ts", "src/cli/**", "src/git/appAuth.ts"],
-      thresholds: { "src/git/**": { branches: 90 } },
+      thresholds: { "src/git/**": { branches: 90 }, "src/publish/**": { branches: 90 } },
     },
   },
 });

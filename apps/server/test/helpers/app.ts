@@ -15,6 +15,8 @@ export interface TestApp extends App {
   cookie: string;
   login(password?: string): Promise<LightMyRequestResponse>;
   get(url: string): Promise<LightMyRequestResponse>;
+  put(url: string, body: unknown): Promise<LightMyRequestResponse>;
+  del(url: string): Promise<LightMyRequestResponse>;
   post(
     url: string,
     body?: unknown,
@@ -80,6 +82,14 @@ export async function makeTestApp(extraEnv: Record<string, string> = {}): Promis
         headers: { ...(t.cookie ? { cookie: t.cookie } : {}), ...headers },
         ...(body === undefined ? {} : { payload: body as object }),
       }),
+    put: (url, body) =>
+      built.app.inject({
+        method: "PUT",
+        url,
+        headers: { cookie: t.cookie },
+        payload: body as object,
+      }),
+    del: (url) => built.app.inject({ method: "DELETE", url, headers: { cookie: t.cookie } }),
     async close() {
       await built.app.close();
       repo.cleanup();

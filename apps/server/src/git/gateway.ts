@@ -229,6 +229,15 @@ export class GitGateway {
     });
   }
 
+  /** The bytes of a blob by its hash, or null when the repository does not hold it. */
+  readBlob(hash: string): Promise<Buffer | null> {
+    return this.locked(async () => {
+      if (!/^[0-9a-f]{40,64}$/.test(hash)) return null;
+      const r = await this.run(["cat-file", "blob", hash], { allow: (c) => c === 128 });
+      return r.code === 0 ? r.stdout : null;
+    });
+  }
+
   /** The blob hash of a file at a commit, or null when it does not exist there. */
   blobHash(path: string, commit = "HEAD"): Promise<string | null> {
     return this.locked(async () => {
