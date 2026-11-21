@@ -36,7 +36,7 @@ One place for what is being built, what is waiting, and ideas. The design in
 
 - [x] Live preview in the editor (hide Markdown marks away from the cursor)
 - [x] Image upload (toolbar, paste, drop); Tab between table cells; properties panel (other names, tags)
-- [ ] Image sizing in the editor; adding and removing table rows and columns
+- [x] Image sizing in the editor (drag the image edge); adding and removing table rows and columns
 
 ## Waiting on Elad
 
@@ -48,7 +48,6 @@ One place for what is being built, what is waiting, and ideas. The design in
 - [ ] A storage bucket for backups and a persistent disk on the Coolify app
 - [x] Change the preview password once the real vault is connected
 - [ ] Add a passkey and switch the password off
-- [ ] A storage bucket for backups: the library now exists only on the server's disk
 - [ ] Read the stage 3 design and answer its four questions: an OpenRouter key and model; which
       GitHub account the Hermes agents push with; whether a rule can protect `main`; whether Obsidian
       rewrites links inside a `when` field
@@ -81,7 +80,11 @@ history; notes and media are imported; the library is exported as a vault. Desig
       on `/data`, new password)
 - [x] Bring the real vault in (2026-11-21: from GitHub `main`, in four parts because Cloudflare
       refuses uploads over about 100 MB)
-- [ ] Later: a one-way mirror to GitHub for the memory bank and the agents
+- [ ] Later: a one-way mirror to GitHub for the memory bank and the agents. **Deferred by Elad on
+      2026-11-21: leave the Hindsight bank for now.** Until it is picked up again, nothing written in
+      Frontier reaches the `worldbuilding` bank, so the bank holds the vault as of the import.
+- [ ] Backups to a storage bucket. **Elad, 2026-11-21: fine for now without one.** The library is
+      only on the server's disk; the export zip is the off-server copy.
 
 ## Now: stage 4, maps
 
