@@ -208,7 +208,9 @@ describe("commit and push", () => {
       for (const arg of args) {
         expect(arg).not.toMatch(/^--force/);
         expect(arg).not.toMatch(/^-f$/);
-        expect(arg.startsWith("+")).toBe(false);
+        // A "+" is allowed only when fetching, where it lets the local copy of a proposal branch
+        // follow the remote. It never appears in a push.
+        if (args[0] !== "fetch") expect(arg.startsWith("+")).toBe(false);
       }
     }
     // "clean -fd" is the one command that takes an "f", and it is not a push.

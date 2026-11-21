@@ -81,6 +81,20 @@ interface RunResult {
 
 const MAX_BUFFER = 256 * 1024 * 1024;
 
+/** Only branches under this name are read as proposals from agents. */
+export const PROPOSAL_PREFIX = "proposal/";
+
+function parseNameStatus(out: Buffer): ChangedFile[] {
+  const changed: ChangedFile[] = [];
+  const parts = out.toString("utf8").split("\0");
+  for (let i = 0; i + 1 < parts.length; i += 2) {
+    const letter = parts[i]!;
+    const status = letter === "A" ? "added" : letter === "D" ? "deleted" : "modified";
+    changed.push({ status, path: parts[i + 1]! });
+  }
+  return changed;
+}
+
 export class GitGateway {
   private tail: Promise<unknown> = Promise.resolve();
   private readonly lockTimeoutMs: number;
@@ -192,7 +206,17 @@ export class GitGateway {
 
   private async fetchUnlocked(): Promise<FetchResult> {
     const previous = await this.text(["rev-parse", "HEAD"]);
-    await this.run(["fetch", "origin", "main"], { remote: true });
+    // Agents' proposal branches come with every fetch; a branch removed on the remote goes here too.
+    await this.run(
+      [
+        "fetch",
+        "--prune",
+        "origin",
+        "+refs/heads/main:refs/remotes/origin/main",
+        `+refs/heads/${PROPOSAL_PREFIX}*:refs/remotes/origin/${PROPOSAL_PREFIX}*`,
+      ],
+      { remote: true },
+    );
     const current = await this.text(["rev-parse", "origin/main"]);
     await this.run(["reset", "--hard", "origin/main"]);
     await this.run(["clean", "-fd"]);
@@ -201,14 +225,76 @@ export class GitGateway {
       const out = (
         await this.run(["diff", "--name-status", "--no-renames", "-z", previous, current])
       ).stdout;
-      const parts = out.toString("utf8").split("\0");
-      for (let i = 0; i + 1 < parts.length; i += 2) {
-        const letter = parts[i]!;
-        const status = letter === "A" ? "added" : letter === "D" ? "deleted" : "modified";
-        changed.push({ status, path: parts[i + 1]! });
-      }
+      changed.push(...parseNameStatus(out));
     }
     return { previous, current, changed };
+  }
+
+  /** The proposal branches on the remote as of the last fetch, by name. */
+  proposalBranches(): Promise<{ name: string; tip: string }[]> {
+    return this.locked(async () => {
+      const out = await this.text([
+        "for-each-ref",
+        "--format=%(objectname) %(refname)",
+        `refs/remotes/origin/${PROPOSAL_PREFIX}`,
+      ]);
+      return out
+        .split("\n")
+        .filter((l) => l !== "")
+        .map((l) => {
+          const space = l.indexOf(" ");
+          return {
+            tip: l.slice(0, space),
+            name: l.slice(space + 1 + "refs/remotes/origin/".length),
+          };
+        })
+        .sort((a, b) => a.name.localeCompare(b.name));
+    });
+  }
+
+  /** The commit where a branch left `main`, or null when the two share no history. */
+  forkPoint(commit: string): Promise<string | null> {
+    return this.locked(async () => {
+      const r = await this.run(["merge-base", "origin/main", commit], { allow: (c) => c === 1 });
+      return r.code === 0 ? r.stdout.toString("utf8").trim() : null;
+    });
+  }
+
+  /** The files that differ between two commits. A moved file shows as one removed and one added. */
+  diffFiles(from: string, to: string): Promise<ChangedFile[]> {
+    return this.locked(async () =>
+      parseNameStatus(
+        (await this.run(["diff", "--name-status", "--no-renames", "-z", from, to])).stdout,
+      ),
+    );
+  }
+
+  /** The first lines of the commit messages after `from` up to `to`, oldest first. */
+  subjects(from: string, to: string): Promise<string[]> {
+    return this.locked(async () =>
+      (await this.text(["log", "--reverse", "--format=%s", `${from}..${to}`]))
+        .split("\n")
+        .filter((l) => l !== ""),
+    );
+  }
+
+  /** Removes a proposal branch from the remote. This deletes a branch; it rewrites nothing. */
+  deleteProposalBranch(name: string): Promise<void> {
+    return this.locked(async () => {
+      if (!name.startsWith(PROPOSAL_PREFIX)) {
+        throw new GitError("git_failed", "Only proposal branches are removed.");
+      }
+      const r = await this.run(["push", "--porcelain", "origin", `:refs/heads/${name}`], {
+        remote: true,
+        allow: () => true,
+      });
+      const out = r.stdout.toString("utf8") + r.stderr;
+      // Already gone on the remote counts as removed.
+      if (r.code !== 0 && !/remote ref does not exist/.test(out)) {
+        throw new GitError("push_failed", `The branch could not be removed: ${out.trim()}`);
+      }
+      await this.run(["update-ref", "-d", `refs/remotes/origin/${name}`]);
+    });
   }
 
   /** Every file path at a commit. */

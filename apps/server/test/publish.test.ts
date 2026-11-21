@@ -404,7 +404,10 @@ describe("publish", () => {
     const mine = await save(MIRA, "# Mira\n\nMine.\n");
     await confirm((await plan([mine.id])).planId);
     for (const args of t.gitCommands) {
-      for (const arg of args) expect(arg.startsWith("--force") || arg.startsWith("+")).toBe(false);
+      for (const arg of args) {
+        expect(arg.startsWith("--force")).toBe(false);
+        if (args[0] !== "fetch") expect(arg.startsWith("+")).toBe(false);
+      }
     }
     expect(t.gitCommands.filter((c) => c[0] === "push")).toHaveLength(1);
   });

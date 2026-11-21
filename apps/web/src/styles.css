@@ -1507,3 +1507,12 @@ button.big {
   border: 1px solid var(--rule);
   border-radius: 5px;
 }
+
+/* The editor's own heading style underlines; the size already says it is a heading. */
+.code-editor .cm-lp-h span:not(.cm-lp-link) {
+  text-decoration: none;
+}
+.edit-toolbar button,
+.edit-toolbar-file {
+  min-width: 2.5rem;
+}
