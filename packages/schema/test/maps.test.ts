@@ -1,12 +1,15 @@
 import { describe, expect, it } from "vitest";
 import {
+  extentProblem,
   type MapFeature,
   type MapFile,
   mapIdOf,
   mapPath,
   mergeMaps,
   parseMap,
+  reorderFeature,
   serialiseMap,
+  wholeExtent,
 } from "../src/index.js";
 
 const marker = (
@@ -208,5 +211,61 @@ describe("merging two versions of a map", () => {
     expect(map.layers.map((l) => l.id)).toEqual(["l1"]);
     expect(map.features.find((f) => f.id === "new")!.layer).toBe("l1");
     expect(parseMap(serialiseMap(map)).ok).toBe(true);
+  });
+});
+
+describe("the extent of an image", () => {
+  const sphere = base.space;
+  const flat = { kind: "flat", width: 800, height: 600, scale: null, unit: "km" } as const;
+
+  it("starts as the whole of the map's space", () => {
+    expect(wholeExtent(sphere)).toEqual([-180, -90, 180, 90]);
+    expect(wholeExtent(flat)).toEqual([0, 0, 800, 600]);
+    expect(extentProblem(sphere, wholeExtent(sphere))).toBeNull();
+    expect(extentProblem(flat, wholeExtent(flat))).toBeNull();
+  });
+
+  it("accepts a part of the globe and says what is wrong with anything else", () => {
+    expect(extentProblem(sphere, [-20, 10, 40, 55])).toBeNull();
+    expect(extentProblem(sphere, [-20, 10, 40])).toMatch(/number/);
+    expect(extentProblem(sphere, [-20, Number.NaN, 40, 55])).toMatch(/number/);
+    expect(extentProblem(sphere, [-200, 10, 40, 55])).toMatch(/West and east/);
+    expect(extentProblem(sphere, [-20, 10, 200, 55])).toMatch(/West and east/);
+    expect(extentProblem(sphere, [-20, -100, 40, 55])).toMatch(/South and north/);
+    expect(extentProblem(sphere, [-20, 10, 40, 95])).toMatch(/South and north/);
+    expect(extentProblem(sphere, [40, 10, -20, 55])).toMatch(/West must be less/);
+    expect(extentProblem(sphere, [-20, 55, 40, 55])).toMatch(/South must be less/);
+  });
+
+  it("lets an image of a flat map lie anywhere, as long as it has a size", () => {
+    expect(extentProblem(flat, [-100, -50, 2000, 900])).toBeNull();
+    expect(extentProblem(flat, [100, 0, 100, 50])).toMatch(/Left must be less/);
+    expect(extentProblem(flat, [0, 50, 100, 20])).toMatch(/Top must be less/);
+  });
+});
+
+describe("reordering features", () => {
+  const list: MapFeature[] = [
+    marker("a", [0, 0]),
+    marker("b", [1, 1], { layer: "l2" }),
+    base.features[1]!,
+    marker("c", [2, 2]),
+    marker("d", [3, 3]),
+  ];
+  const order = (features: MapFeature[]) => features.map((f) => f.id).join("");
+
+  it("passes the nearest feature of the same kind in the same layer", () => {
+    expect(order(reorderFeature(list, "a", 1))).toBe("cbf2ad");
+    expect(order(reorderFeature(list, "d", -1))).toBe("abf2dc");
+    expect(order(reorderFeature(list, "c", -1))).toBe("cbf2ad");
+    expect(list.map((f) => f.id)).toEqual(["a", "b", "f2", "c", "d"]);
+  });
+
+  it("returns the same list when there is nothing to pass", () => {
+    expect(reorderFeature(list, "a", -1)).toBe(list);
+    expect(reorderFeature(list, "d", 1)).toBe(list);
+    expect(reorderFeature(list, "b", 1)).toBe(list);
+    expect(reorderFeature(list, "f2", -1)).toBe(list);
+    expect(reorderFeature(list, "nobody", 1)).toBe(list);
   });
 });

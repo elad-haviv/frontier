@@ -13,7 +13,13 @@ import {
   type ViewState,
   zoomAt,
 } from "@frontier/geo";
-import { type MapFeature, type MapFile, mergeMaps } from "@frontier/schema";
+import {
+  type MapFeature,
+  type MapFile,
+  mergeMaps,
+  reorderFeature,
+  wholeExtent,
+} from "@frontier/schema";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { api, ApiFailure, imageUrl, mapImageUrl } from "../api.ts";
@@ -898,6 +904,18 @@ export function MapPage() {
             }
             onActive={setActiveLayer}
             onChange={change}
+            onAddImage={(path) => {
+              const image = {
+                id: newItemId(),
+                // Named after its file, without the folders and the ending.
+                name: path.replace(/^.*\//, "").replace(/\.[^.]+$/, ""),
+                path,
+                extent: wholeExtent(map.space),
+                visible: true,
+              };
+              change({ ...map, images: [...map.images, image] });
+              setShownImages((shown) => new Set(shown).add(image.id));
+            }}
             onKeepAsOpening={() =>
               change({
                 ...map,
@@ -953,6 +971,13 @@ export function MapPage() {
               } as MapFeature);
               setVertex(null);
             }}
+            canMove={{
+              forward: reorderFeature(map.features, feature.id, 1) !== map.features,
+              back: reorderFeature(map.features, feature.id, -1) !== map.features,
+            }}
+            onMove={(by) =>
+              change({ ...map, features: reorderFeature(map.features, feature.id, by) })
+            }
             onClose={() => setSelected(null)}
           />
         )}

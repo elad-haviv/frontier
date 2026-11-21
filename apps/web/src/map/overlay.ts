@@ -9,6 +9,7 @@ import {
   type Shape,
   type Space,
   type View,
+  zoneOnPlate,
 } from "@frontier/geo";
 import type { MapFeature, MapFile } from "@frontier/schema";
 import { geoArea, geoOrthographic, geoPath } from "d3-geo";
@@ -107,8 +108,25 @@ export function drawOverlay(ctx: CanvasRenderingContext2D, input: OverlayInput):
     ctx.fillStyle = colour + (picked ? "55" : "33");
     const drawn = lines(map.space, view, f.points, true);
     if (view.state.kind === "globe") fillOnGlobe(ctx, view, f.points);
+    if (view.state.kind === "plate") {
+      // On a globe laid flat the inside is not simply the closed outline: a zone may be cut by
+      // the edge of the picture, or reach up to a pole across the whole width.
+      const rings = zoneOnPlate(f.points, view.state.lon).map((ring) =>
+        ring.map((p) => view.projectClamped(p).point),
+      );
+      for (const shift of view.repeats()) {
+        ctx.beginPath();
+        for (const ring of rings) {
+          const moved = ring.map(([x, y]): Point => [x + shift, y]);
+          trace(ctx, moved);
+          ctx.closePath();
+          shapes.push({ id: f.id, kind: "zone", points: moved });
+        }
+        ctx.fill();
+      }
+    }
     for (const line of drawn) {
-      if (view.state.kind !== "globe") {
+      if (view.state.kind === "flat") {
         ctx.beginPath();
         trace(ctx, line);
         ctx.fill();
@@ -118,7 +136,7 @@ export function drawOverlay(ctx: CanvasRenderingContext2D, input: OverlayInput):
       ctx.strokeStyle = colour;
       ctx.lineWidth = picked ? 3 : 1.5;
       ctx.stroke();
-      shapes.push({ id: f.id, kind: "zone", points: line });
+      if (view.state.kind !== "plate") shapes.push({ id: f.id, kind: "zone", points: line });
     }
   }
   for (const f of features) {
@@ -137,13 +155,9 @@ export function drawOverlay(ctx: CanvasRenderingContext2D, input: OverlayInput):
     }
   }
 
-  const taken: [number, number, number, number][] = [];
-  ctx.font = "600 13px system-ui, sans-serif";
-  ctx.textAlign = "center";
-  ctx.textBaseline = "top";
-  const markers = features.filter((f) => f.kind === "marker");
-  for (let i = markers.length - 1; i >= 0; i--) {
-    const f = markers[i]!;
+  // Markers in the order of the file, so a later one lies above an earlier one.
+  const labels: { title: string; x: number; y: number; picked: boolean }[] = [];
+  for (const f of features) {
     if (f.kind !== "marker") continue;
     const colour = colours.get(f.layer) ?? INK;
     const spots: Point[] =
@@ -179,22 +193,30 @@ export function drawOverlay(ctx: CanvasRenderingContext2D, input: OverlayInput):
         ctx.stroke();
       }
       shapes.push({ id: f.id, kind: "marker", at: [x, y] });
-
       const title = input.titleOf(f);
-      if (!title) continue;
-      const half = ctx.measureText(title).width / 2 + 3;
-      const box: [number, number, number, number] = [x - half, y + below, x + half, y + below + 16];
-      const clash = taken.some(
-        (t) => box[0] < t[2] && box[2] > t[0] && box[1] < t[3] && box[3] > t[1],
-      );
-      if (clash && !picked) continue;
-      taken.push(box);
-      ctx.strokeStyle = PAPER;
-      ctx.lineWidth = 3;
-      ctx.strokeText(title, x, y + below);
-      ctx.fillStyle = INK;
-      ctx.fillText(title, x, y + below);
+      if (title) labels.push({ title, x, y: y + below, picked });
     }
+  }
+
+  // Labels above every marker, those of later features first, where there is room.
+  const taken: [number, number, number, number][] = [];
+  ctx.font = "600 13px system-ui, sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "top";
+  for (let i = labels.length - 1; i >= 0; i--) {
+    const { title, x, y, picked } = labels[i]!;
+    const half = ctx.measureText(title).width / 2 + 3;
+    const box: [number, number, number, number] = [x - half, y, x + half, y + 16];
+    const clash = taken.some(
+      (t) => box[0] < t[2] && box[2] > t[0] && box[1] < t[3] && box[3] > t[1],
+    );
+    if (clash && !picked) continue;
+    taken.push(box);
+    ctx.strokeStyle = PAPER;
+    ctx.lineWidth = 3;
+    ctx.strokeText(title, x, y);
+    ctx.fillStyle = INK;
+    ctx.fillText(title, x, y);
   }
 
   // Corner handles of the selected path or zone.

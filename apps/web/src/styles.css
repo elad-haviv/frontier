@@ -2089,8 +2089,65 @@ input.map-title {
   border-radius: 50%;
 }
 
+.layer-panel li button.plain {
+  flex: none;
+  min-width: 2.2rem;
+  min-height: 2.2rem;
+}
+.layer-panel li.image-row {
+  flex-wrap: wrap;
+}
+.layer-panel li.image-row input[type="text"] {
+  flex: 1 1 5rem;
+}
+.layer-panel .add-image {
+  width: 100%;
+  min-height: 2.2rem;
+  margin: 0 0 0.9rem;
+  padding: 0.4rem 0.5rem;
+  border: 1px solid var(--rule);
+  border-radius: 5px;
+  background: var(--paper-raised);
+  color: var(--ink);
+  font: inherit;
+}
+.extent-form {
+  display: grid;
+  flex: 0 0 100%;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.35rem;
+  padding: 0.2rem 0 0.5rem;
+}
+.extent-form label {
+  display: grid;
+  gap: 0.15rem;
+  font-size: 0.8rem;
+  color: var(--ink-soft);
+}
+.extent-form input[type="text"] {
+  width: 100%;
+}
+.extent-form button,
+.extent-form .error {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+.order-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
 /* On a phone the panels take the bottom of the screen and leave most of the map free. */
 @media (max-width: 34rem) {
+  .layer-panel li button.plain,
+  .layer-panel .add-image,
+  .extent-form input[type="text"],
+  .extent-form button,
+  .order-buttons button {
+    min-width: 2.75rem;
+    min-height: 2.75rem;
+  }
   .feature-card,
   .layer-panel {
     left: 0;

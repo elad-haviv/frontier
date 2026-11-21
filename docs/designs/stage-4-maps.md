@@ -146,7 +146,9 @@ apply here, with these differences:
 *   **Images.** `extent` is `[west, south, east, north]` on a sphere and `[left, top, right, bottom]` on
     a flat map. A new sphere image starts as the whole globe; the author can change the extent for an
     image that covers a part. Several images are alternatives (political, satellite, height); the viewer
-    shows the visible ones in order.
+    shows the visible ones in order, a later one over an earlier one. A new image on a flat map starts
+    as the whole frame. An extent must have a width and a height; on a sphere it lies within -180 to
+    180 and -90 to 90 with west less than east, so an image does not run across the 180th meridian.
 *   **Layers** group the features and carry a colour. Every feature belongs to one layer.
 *   **`visible`** on an image or a layer is how the map opens. Showing and hiding while reading is kept
     in the address and never changes the file; the layer list in editing mode has "Open the map like
@@ -200,7 +202,12 @@ use; stage 9 must select another set for anything published.
         the disc.
     *   In the flat view the stepped line is drawn through the view at each repeat of the picture, as
         are markers.
-    *   A zone that contains a pole is drawn as an outline in the flat view. That is a known limit.
+    *   The inside of a zone in the flat view is not the closed outline: a zone across the edge of
+        the picture is two pieces, and a zone that contains a pole reaches up to the pole's line
+        across the whole width. One function, `zoneOnPlate`, gives the pieces to fill, cut where the
+        picture repeats; the outline is still drawn as the stepped line. As in the globe view, the
+        inside is the smaller of the two parts the outline divides the globe into. A tap finds a
+        zone by these pieces.
 *   **Gestures.** A drag pans: the view moves by the distance dragged, on and off the globe's disc
     alike. Two fingers or the wheel zoom about the point under them; the globe zooms about its centre.
     Buttons zoom and reset. A press that moves less than 6 pixels (10 on touch) is a tap. No gesture
@@ -232,6 +239,14 @@ The map page has a reading mode and an editing mode. Reading mode is the default
         deleted.
     *   Layers can be added, renamed, recoloured, reordered and deleted. Deleting a layer with features
         asks first and moves them to the layer above.
+    *   Images are in the same list while editing: an image of the vault can be added, renamed, moved
+        up and down, placed by typing the four numbers of its extent (taken as soon as they make an
+        extent; "The whole globe" or "The whole map" puts it back), and taken off the map, which asks
+        first. A map keeps at least one image.
+    *   A feature can be brought forward or sent back. Layers are drawn in their order, and within a
+        layer zones lie under paths and paths under markers, so a feature passes only the features
+        of its own kind in its own layer: it changes places in the file with the nearest of them.
+        A later marker is drawn above an earlier one and is the one a tap finds.
     *   Undo and redo cover every change since the map was opened.
 *   **Saving** follows the editor: each change is saved as a draft about a second later, with the states
     saved, saving and offline. A change from another device is merged as described under "Where maps
@@ -269,7 +284,7 @@ cannot be read.
 | File | What |
 | --- | --- |
 | `packages/schema/src/maps.ts`, `api.ts` | The map file's form, its text form, `mergeMaps`, the shapes above, the image sizes, the new conflict kind |
-| `packages/geo/src/{space,view,measure,mesh,hit}.ts` | Positions, the three views, distances and stepped lines, the grid of an image for a view, finding the feature under a point |
+| `packages/geo/src/{space,view,measure,mesh,hit,zone}.ts` | Positions, the three views, distances and stepped lines, the grid of an image for a view, finding the feature under a point, the inside of a zone on a globe laid flat |
 | `apps/server/src/maps/store.ts` | Reading maps from the vault and from drafts, writing a map as a draft, the one-feature-per-line form, marker sets |
 | `apps/server/src/routes/maps.ts` | The routes above |
 | `apps/server/src/images/serve.ts`, `publish/publish.ts`, `index/build.ts` | The new sizes; merging maps by item and the map-and-id groups; ids in drafts |

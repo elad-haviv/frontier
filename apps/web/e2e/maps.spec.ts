@@ -160,3 +160,163 @@ test("CUJ 10: measures on a globe of unknown size, then with a radius", async ({
   await expect(page.locator(".save-saved")).toBeVisible();
   await discardMap(page);
 });
+
+/** The open map as the server has it. */
+const stored = (page: Page) =>
+  page.evaluate(async () => {
+    const id = location.pathname.split("/").pop();
+    const res = await fetch(`/api/maps/${id}`);
+    return (
+      (await res.json()) as {
+        map: {
+          space: { width: number; height: number };
+          images: { name: string; extent: number[]; visible: boolean }[];
+          features: { label: string | null }[];
+        };
+      }
+    ).map;
+  });
+
+test("adds a second image, places it by its extent, hides it and takes it off", async ({
+  page,
+}, info) => {
+  await makeMap(page, `Two pictures ${info.project.name}`, "flat");
+  const c = await centre(page);
+  // A patch of the map above the panel, which on a phone covers the bottom of the frame.
+  const patch = () =>
+    page.screenshot({ clip: { x: c.x - 30, y: c.y - 50, width: 60, height: 30 } });
+  // The first picture has arrived when the patch stops changing.
+  let alone = await patch();
+  await expect
+    .poll(async () => {
+      const before = alone;
+      alone = await patch();
+      return before.equals(alone);
+    })
+    .toBe(true);
+
+  await page.getByRole("button", { name: "Layers" }).click();
+  const panel = page.locator(".layer-panel");
+  await expect(panel.getByLabel("Image name")).toHaveCount(1);
+  await panel.getByLabel("Add an image").selectOption("99 Appendices/Images/Sample world.png");
+  await expect(panel.getByLabel("Image name")).toHaveCount(2);
+  await expect(panel.getByLabel("Image name").nth(1)).toHaveValue("Sample world");
+  await expect(panel.getByLabel("Show Sample world")).toBeChecked();
+  const { space } = await stored(page);
+  const whole = [0, 0, space.width, space.height];
+  await expect.poll(async () => (await stored(page)).images[1]?.extent).toEqual(whole);
+  // The second picture is drawn over the first.
+  await expect.poll(async () => (await patch()).equals(alone)).toBe(false);
+
+  // Its extent: the right half of the map. A number that makes no extent is refused and said.
+  await panel.getByRole("button", { name: "Place Sample world" }).click();
+  const form = panel.getByRole("group", { name: "Where Sample world sits" });
+  await form.getByLabel("Left").fill(String(space.width / 2));
+  const half = [space.width / 2, 0, space.width, space.height];
+  await expect.poll(async () => (await stored(page)).images[1]?.extent).toEqual(half);
+  await form.getByLabel("Right").fill("-3");
+  await expect(form.getByRole("alert")).toHaveText("Left must be less than right.");
+  await expect(page.locator(".save-saved")).toBeVisible();
+  expect((await stored(page)).images[1]?.extent).toEqual(half);
+  await form.getByRole("button", { name: "The whole map" }).click();
+  await expect(form.getByLabel("Right")).toHaveValue(String(space.width));
+  await expect(form.getByRole("alert")).toHaveCount(0);
+  await expect.poll(async () => (await stored(page)).images[1]?.extent).toEqual(whole);
+
+  // The order of the pictures: moved up, it is drawn first, under the other.
+  await panel.getByRole("button", { name: "Move Sample world up" }).click();
+  await expect.poll(async () => (await stored(page)).images[0]?.name).toBe("Sample world");
+  await panel.getByRole("button", { name: "Move Sample world down" }).click();
+  await expect.poll(async () => (await stored(page)).images[1]?.name).toBe("Sample world");
+
+  // Hiding it is kept in the address and shows the first picture again.
+  await panel.getByLabel("Show Sample world").uncheck();
+  await expect(page).toHaveURL(/img=/);
+  await expect.poll(async () => (await patch()).equals(alone)).toBe(true);
+  await expect(page.locator(".save-saved")).toBeVisible();
+  expect((await stored(page)).images[1]?.visible).toBe(true);
+
+  // Taking it off the map asks first.
+  await panel.getByRole("button", { name: "Take Sample world off the map" }).click();
+  await answerDialog(page, "Take it off");
+  await expect(panel.getByLabel("Image name")).toHaveCount(1);
+  await expect.poll(async () => (await stored(page)).images.length).toBe(1);
+  await expect(panel.getByRole("button", { name: /^Take .* off the map$/ })).toBeDisabled();
+  await discardMap(page);
+});
+
+test("brings one of two markers on the same spot above the other", async ({ page }, info) => {
+  await makeMap(page, `Stacked ${info.project.name}`, "flat");
+  const c = await centre(page);
+  const editor = page.locator(".feature-editor");
+  for (const label of ["First", "Second"]) {
+    await page.getByRole("button", { name: "Marker" }).click();
+    await page.mouse.click(c.x, c.y - 40);
+    await editor.getByLabel(/^Label/).fill(label);
+    await editor.locator(".card-close").click();
+  }
+  const order = async () => (await stored(page)).features.map((f) => f.label);
+  await expect.poll(order).toEqual(["First", "Second"]);
+
+  // The later marker lies above, so a tap finds it. It has nothing to pass going forward.
+  await page.mouse.click(c.x, c.y - 40);
+  await expect(editor.getByLabel(/^Label/)).toHaveValue("Second");
+  await expect(editor.getByRole("button", { name: "Bring forward" })).toBeDisabled();
+  await editor.getByRole("button", { name: "Send back" }).click();
+  await expect.poll(order).toEqual(["Second", "First"]);
+  await expect(editor.getByRole("button", { name: "Send back" })).toBeDisabled();
+  await editor.locator(".card-close").click();
+  await page.mouse.click(c.x, c.y - 40);
+  await expect(editor.getByLabel(/^Label/)).toHaveValue("First");
+
+  // And forward again, which undo then takes back.
+  await editor.locator(".card-close").click();
+  await page.mouse.click(c.x, c.y - 40);
+  await editor.getByRole("button", { name: "Send back" }).click();
+  await expect.poll(order).toEqual(["First", "Second"]);
+  await page.getByRole("button", { name: "Undo" }).click();
+  await expect.poll(order).toEqual(["Second", "First"]);
+  await expect(page.locator(".save-saved")).toBeVisible();
+  await discardMap(page);
+});
+
+test("a zone around a pole is filled up to the pole in the flat view of a globe", async ({
+  page,
+}, info) => {
+  await makeMap(page, `Polar ${info.project.name}`, "sphere");
+  await page.getByRole("button", { name: "Flat", exact: true }).click();
+  await page.getByRole("button", { name: "Zoom out" }).click();
+  await page.getByRole("button", { name: "Zoom out" }).click();
+  // The address says where the view is; from it, where a position falls on the screen.
+  await page.waitForTimeout(600);
+  const [kind, lon0, lat0, k] = new URL(page.url()).searchParams.get("v")!.split(",");
+  expect(kind).toBe("p");
+  const c = await centre(page);
+  const at = (lon: number, lat: number): [number, number] => [
+    c.x + (lon - Number(lon0)) * Number(k),
+    c.y + (Number(lat0) - lat) * Number(k),
+  ];
+  // The whole height of the globe is on screen, with room to tap near the pole.
+  expect(at(0, 90)[1]).toBeGreaterThan(c.box.y + 50);
+
+  await page.getByRole("button", { name: "Zone" }).click();
+  for (const lon of [-100, 0, 100]) await page.mouse.click(...at(lon, 70));
+  await page.locator(".map-hint").getByRole("button", { name: "Done" }).click();
+  const editor = page.locator(".feature-editor");
+  await expect(editor).toBeVisible();
+  await editor.getByLabel(/^Label/).fill("The ice");
+  await editor.locator(".card-close").click();
+  await expect(page.locator(".save-saved")).toBeVisible();
+
+  // Near the pole, between two corners and on the far side from the third: inside.
+  await page.mouse.click(...at(50, 87));
+  await expect(editor.getByLabel(/^Label/)).toHaveValue("The ice");
+  await editor.locator(".card-close").click();
+  await page.mouse.click(...at(-95, 88));
+  await expect(editor.getByLabel(/^Label/)).toHaveValue("The ice");
+  await editor.locator(".card-close").click();
+  // Under the outline: outside.
+  await page.mouse.click(...at(50, 55));
+  await expect(editor).toHaveCount(0);
+  await discardMap(page);
+});

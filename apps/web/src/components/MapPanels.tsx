@@ -1,5 +1,5 @@
 import type { Length } from "@frontier/geo";
-import type { MapFeature, MapFile } from "@frontier/schema";
+import { extentProblem, type MapFeature, type MapFile, wholeExtent } from "@frontier/schema";
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, entryUrl, imageUrl, mapUrl } from "../api.ts";
@@ -140,6 +140,8 @@ export function FeatureEditor({
   onLink,
   onDelete,
   onRemoveVertex,
+  canMove,
+  onMove,
   onClose,
 }: {
   feature: MapFeature;
@@ -154,6 +156,10 @@ export function FeatureEditor({
   onLink: (path: string | null, title: string) => void;
   onDelete: () => void;
   onRemoveVertex: () => void;
+  /** Whether there is a feature of its kind in its layer to pass, forward and back. */
+  canMove: { forward: boolean; back: boolean };
+  /** Moves the feature a step forward (1, drawn above the next) or back (-1). */
+  onMove: (by: 1 | -1) => void;
   onClose: () => void;
 }) {
   const linked = feature.entry ? names[feature.entry]?.title : pendingEntry;
@@ -255,6 +261,29 @@ export function FeatureEditor({
           </div>
         </div>
       )}
+      <div className="field">
+        <span>
+          Order <em className="muted">among the {feature.kind}s of its layer</em>
+        </span>
+        <span className="order-buttons">
+          <button
+            type="button"
+            className="quiet"
+            disabled={!canMove.forward}
+            onClick={() => onMove(1)}
+          >
+            Bring forward
+          </button>
+          <button
+            type="button"
+            className="quiet"
+            disabled={!canMove.back}
+            onClick={() => onMove(-1)}
+          >
+            Send back
+          </button>
+        </span>
+      </div>
       <p className="change-actions">
         {feature.kind !== "marker" && vertex !== null && feature.points.length > minimum && (
           <button type="button" className="quiet" onClick={onRemoveVertex}>
@@ -266,6 +295,67 @@ export function FeatureEditor({
         </button>
       </p>
     </aside>
+  );
+}
+
+const EXTENT_LABELS = {
+  sphere: ["West", "South", "East", "North"],
+  flat: ["Left", "Top", "Right", "Bottom"],
+} as const;
+
+/** Where an image sits in the map's space: four numbers, taken when they make an extent. */
+function ExtentForm({
+  map,
+  image,
+  onChange,
+}: {
+  map: MapFile;
+  image: MapFile["images"][number];
+  onChange: (extent: MapFile["images"][number]["extent"]) => void;
+}) {
+  const [text, setText] = useState(() => image.extent.map(String));
+  const [problem, setProblem] = useState<string | null>(null);
+  // Undo, or a change from another device, shows in the boxes; typing in them does not reset them.
+  const stored = image.extent.join(",");
+  useEffect(() => {
+    setText((now) => (now.map(Number).join(",") === stored ? now : stored.split(",")));
+    setProblem(null);
+  }, [stored]);
+
+  function edit(at: number, value: string) {
+    const next = text.map((t, i) => (i === at ? value : t));
+    setText(next);
+    const numbers = next.map((t) => (t.trim() === "" ? Number.NaN : Number(t)));
+    const wrong = extentProblem(map.space, numbers);
+    setProblem(wrong);
+    if (!wrong && numbers.join(",") !== stored) {
+      onChange(numbers as MapFile["images"][number]["extent"]);
+    }
+  }
+
+  const whole = wholeExtent(map.space);
+  return (
+    <div className="extent-form" role="group" aria-label={`Where ${image.name} sits`}>
+      {EXTENT_LABELS[map.space.kind].map((label, i) => (
+        <label key={label}>
+          <span>{label}</span>
+          <input type="text" value={text[i] ?? ""} onChange={(e) => edit(i, e.target.value)} />
+        </label>
+      ))}
+      <button
+        type="button"
+        className="quiet"
+        disabled={stored === whole.join(",")}
+        onClick={() => onChange(whole)}
+      >
+        {map.space.kind === "sphere" ? "The whole globe" : "The whole map"}
+      </button>
+      {problem && (
+        <p className="error" role="alert">
+          {problem}
+        </p>
+      )}
+    </div>
   );
 }
 
@@ -281,6 +371,7 @@ export function LayerPanel({
   onActive,
   onChange,
   onKeepAsOpening,
+  onAddImage,
 }: {
   map: MapFile;
   hidden: Set<string>;
@@ -292,8 +383,46 @@ export function LayerPanel({
   onActive: (id: string) => void;
   onChange: (next: MapFile) => void;
   onKeepAsOpening: () => void;
+  /** Adds the vault's image at this path to the map, and shows it. */
+  onAddImage: (path: string) => void;
 }) {
   const dialogs = useDialogs();
+  const [placing, setPlacing] = useState<string | null>(null);
+  const [vaultImages, setVaultImages] = useState<string[]>([]);
+  useEffect(() => {
+    if (!editing) return;
+    let live = true;
+    api.mapImages().then(
+      (r) => live && setVaultImages(r.images),
+      () => undefined,
+    );
+    return () => {
+      live = false;
+    };
+  }, [editing]);
+  const setImage = (id: string, change: Partial<MapFile["images"][number]>) =>
+    onChange({ ...map, images: map.images.map((i) => (i.id === id ? { ...i, ...change } : i)) });
+
+  async function removeImage(id: string) {
+    const image = map.images.find((i) => i.id === id);
+    if (!image) return;
+    const ok = await dialogs.confirm({
+      title: `Take "${image.name}" off the map?`,
+      body: "The image stays in the library; only this map stops showing it.",
+      action: "Take it off",
+      danger: true,
+    });
+    if (ok) onChange({ ...map, images: map.images.filter((i) => i.id !== id) });
+  }
+
+  function moveImage(id: string, by: number) {
+    const at = map.images.findIndex((i) => i.id === id);
+    const to = at + by;
+    if (to < 0 || to >= map.images.length) return;
+    const images = [...map.images];
+    [images[at], images[to]] = [images[to]!, images[at]!];
+    onChange({ ...map, images });
+  }
   const setLayer = (id: string, change: Partial<MapFile["layers"][number]>) =>
     onChange({ ...map, layers: map.layers.map((l) => (l.id === id ? { ...l, ...change } : l)) });
 
@@ -330,23 +459,95 @@ export function LayerPanel({
 
   return (
     <aside className="layer-panel" aria-label="Images and layers">
-      {map.images.length > 1 && (
+      {(editing || map.images.length > 1) && (
         <>
           <h3>Images</h3>
           <ul>
-            {map.images.map((image) => (
-              <li key={image.id}>
+            {map.images.map((image, i) => (
+              <li key={image.id} className={editing ? "image-row" : ""}>
                 <label>
                   <input
                     type="checkbox"
+                    aria-label={`Show ${image.name}`}
                     checked={shownImages.has(image.id)}
                     onChange={() => onToggleImage(image.id)}
                   />
-                  {image.name}
+                  {!editing && image.name}
                 </label>
+                {editing && (
+                  <>
+                    <input
+                      type="text"
+                      aria-label="Image name"
+                      value={image.name}
+                      onChange={(e) => setImage(image.id, { name: e.target.value })}
+                    />
+                    <button
+                      type="button"
+                      className="plain"
+                      aria-label={`Place ${image.name}`}
+                      aria-expanded={placing === image.id}
+                      title="Where the image sits on the map"
+                      onClick={() => setPlacing(placing === image.id ? null : image.id)}
+                    >
+                      ⌖
+                    </button>
+                    <button
+                      type="button"
+                      className="plain"
+                      aria-label={`Move ${image.name} up`}
+                      title="Drawn earlier, under the ones below"
+                      disabled={i === 0}
+                      onClick={() => moveImage(image.id, -1)}
+                    >
+                      ↑
+                    </button>
+                    <button
+                      type="button"
+                      className="plain"
+                      aria-label={`Move ${image.name} down`}
+                      title="Drawn later, over the ones above"
+                      disabled={i === map.images.length - 1}
+                      onClick={() => moveImage(image.id, 1)}
+                    >
+                      ↓
+                    </button>
+                    <button
+                      type="button"
+                      className="plain danger"
+                      aria-label={`Take ${image.name} off the map`}
+                      disabled={map.images.length === 1}
+                      onClick={() => removeImage(image.id)}
+                    >
+                      ✕
+                    </button>
+                    {placing === image.id && (
+                      <ExtentForm
+                        map={map}
+                        image={image}
+                        onChange={(extent) => setImage(image.id, { extent })}
+                      />
+                    )}
+                  </>
+                )}
               </li>
             ))}
           </ul>
+          {editing && (
+            <select
+              className="add-image"
+              aria-label="Add an image"
+              value=""
+              onChange={(e) => e.target.value && onAddImage(e.target.value)}
+            >
+              <option value="">+ Add an image…</option>
+              {vaultImages.map((path) => (
+                <option key={path} value={path}>
+                  {path}
+                </option>
+              ))}
+            </select>
+          )}
         </>
       )}
       <h3>Layers</h3>

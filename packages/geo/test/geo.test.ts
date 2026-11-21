@@ -19,6 +19,7 @@ import {
   vertexAt,
   type ViewState,
   wrapLongitude,
+  zoneOnPlate,
   zoomAt,
 } from "../src/index.js";
 
@@ -386,5 +387,104 @@ describe("finding what is under a point", () => {
   it("finds the nearest corner within reach", () => {
     expect(vertexAt(square, [95, 4])).toBe(1);
     expect(vertexAt(square, [50, 50])).toBeNull();
+  });
+});
+
+describe("the inside of a zone on a globe laid flat", () => {
+  const inside = (rings: Position[][], p: Position) => rings.some((r) => pointInPolygon(p, r));
+  const lons = (rings: Position[][]) => rings.flat().map((p) => p[0]);
+
+  it("fills a plain zone as its outline, whichever way it was drawn", () => {
+    const triangle: Position[] = [
+      [10, 0],
+      [20, 0],
+      [20, 10],
+    ];
+    for (const points of [triangle, [...triangle].reverse()]) {
+      const rings = zoneOnPlate(points, 0);
+      expect(rings).toHaveLength(1);
+      expect(inside(rings, [18, 3])).toBe(true);
+      expect(inside(rings, [12, 8])).toBe(false);
+      expect(inside(rings, [-100, 40])).toBe(false);
+    }
+  });
+
+  it("carries a zone that contains the north pole up to the pole, across the whole width", () => {
+    const cap: Position[] = [
+      [0, 70],
+      [120, 70],
+      [-120, 70],
+    ];
+    for (const points of [cap, [...cap].reverse()]) {
+      const rings = zoneOnPlate(points, 0);
+      expect(rings).toHaveLength(1);
+      expect(Math.min(...lons(rings))).toBeCloseTo(-180, 6);
+      expect(Math.max(...lons(rings))).toBeCloseTo(180, 6);
+      expect(Math.max(...rings[0]!.map((p) => p[1]))).toBeCloseTo(90, 6);
+      for (const lon of [-179, -60, 0, 60, 179]) expect(inside(rings, [lon, 89])).toBe(true);
+      // Between two corners the side follows the great circle, which runs nearer the pole.
+      expect(inside(rings, [60, 72])).toBe(false);
+      expect(inside(rings, [60, 82])).toBe(true);
+      expect(inside(rings, [0, 0])).toBe(false);
+      expect(inside(rings, [100, -80])).toBe(false);
+    }
+  });
+
+  it("does the same at the south pole, about any centre", () => {
+    const rings = zoneOnPlate(
+      [
+        [0, -60],
+        [90, -60],
+        [180, -60],
+        [-90, -60],
+      ],
+      50,
+    );
+    expect(Math.min(...lons(rings))).toBeCloseTo(-130, 6);
+    expect(Math.max(...lons(rings))).toBeCloseTo(230, 6);
+    expect(inside(rings, [200, -85])).toBe(true);
+    expect(inside(rings, [-100, -85])).toBe(true);
+    expect(inside(rings, [50, 0])).toBe(false);
+    expect(inside(rings, [50, 85])).toBe(false);
+  });
+
+  it("cuts a zone across the edge of the picture into pieces that join at the repeat", () => {
+    const rings = zoneOnPlate(
+      [
+        [170, 0],
+        [-170, 0],
+        [-170, 10],
+        [170, 10],
+      ],
+      0,
+    );
+    expect(rings).toHaveLength(2);
+    expect(inside(rings, [175, 5])).toBe(true);
+    expect(inside(rings, [-175, 5])).toBe(true);
+    expect(inside(rings, [0, 5])).toBe(false);
+    // Seen from the other side of the globe it is one piece.
+    const whole = zoneOnPlate(
+      [
+        [170, 0],
+        [-170, 0],
+        [-170, 10],
+        [170, 10],
+      ],
+      180,
+    );
+    expect(whole).toHaveLength(1);
+    expect(inside(whole, [185, 5])).toBe(true);
+  });
+
+  it("has nothing to fill for fewer than three corners", () => {
+    expect(
+      zoneOnPlate(
+        [
+          [0, 0],
+          [10, 10],
+        ],
+        0,
+      ),
+    ).toEqual([]);
   });
 });

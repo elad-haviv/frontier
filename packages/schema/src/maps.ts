@@ -196,3 +196,54 @@ export function mergeMaps(base: MapFile, mine: MapFile, theirs: MapFile): MapMer
   };
   return { map, clashes };
 }
+
+// ---- Changes the map page makes -----------------------------------------------------------------
+
+/** The extent of an image that covers the whole of a map's space. */
+export function wholeExtent(space: MapSpace): MapImage["extent"] {
+  return space.kind === "sphere" ? [-180, -90, 180, 90] : [0, 0, space.width, space.height];
+}
+
+/**
+ * Why an extent cannot be used for an image in this space, or null when it can. An extent must
+ * have a width and a height; on a sphere it must also lie on the globe, west of east, and may
+ * not run across the 180th meridian.
+ */
+export function extentProblem(space: MapSpace, extent: readonly number[]): string | null {
+  if (extent.length !== 4 || !extent.every((n) => Number.isFinite(n))) {
+    return "Each of the four needs a number.";
+  }
+  const [x0, y0, x1, y1] = extent as [number, number, number, number];
+  if (space.kind === "sphere") {
+    if (x0 < -180 || x1 > 180) return "West and east must be between -180 and 180.";
+    if (y0 < -90 || y1 > 90) return "South and north must be between -90 and 90.";
+    if (x0 >= x1) return "West must be less than east.";
+    if (y0 >= y1) return "South must be less than north.";
+    return null;
+  }
+  if (x0 >= x1) return "Left must be less than right.";
+  if (y0 >= y1) return "Top must be less than bottom.";
+  return null;
+}
+
+/**
+ * The features with one of them moved a step forward (`by` 1, drawn later and so above) or back
+ * (`by` -1). Layers are drawn in their own order, and within a layer zones lie under paths and
+ * paths under markers, so the only features one can pass are those of its own kind in its own
+ * layer: the feature changes places with the nearest of those. The same list is returned when
+ * there is none to pass.
+ */
+export function reorderFeature(features: MapFeature[], id: string, by: 1 | -1): MapFeature[] {
+  const at = features.findIndex((f) => f.id === id);
+  const feature = features[at];
+  if (!feature) return features;
+  for (let i = at + by; i >= 0 && i < features.length; i += by) {
+    const other = features[i]!;
+    if (other.kind !== feature.kind || other.layer !== feature.layer) continue;
+    const next = [...features];
+    next[at] = other;
+    next[i] = feature;
+    return next;
+  }
+  return features;
+}
