@@ -8,11 +8,21 @@
 import { randomBytes } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { type DraftRecord, makeId, type PublishPlan, type RenameIntent } from "@frontier/schema";
+import {
+  type DraftRecord,
+  makeId,
+  mapIdOf,
+  mergeMaps,
+  parseMap,
+  type PublishPlan,
+  type RenameIntent,
+  serialiseMap,
+} from "@frontier/schema";
 import {
   isNote,
   normaliseLineEndings,
   planRename,
+  readFields,
   RenameError,
   restoreLineEndings,
 } from "@frontier/vault";
@@ -185,8 +195,13 @@ export class Publisher {
 
     const base = await baseText();
     if (base === null) return conflict("overlap", null);
-    const merged = await git.mergeFile(text, base, mainText);
-    if (!merged.clean) return conflict("overlap", base);
+    const merged =
+      mapIdOf(draft.path) === null
+        ? await git.mergeFile(text, base, mainText)
+        : mergeMapTexts(base, text, mainText);
+    if (!merged.clean) {
+      return conflict(mapIdOf(draft.path) === null ? "overlap" : "map_changed_on_both", base);
+    }
     if (merged.text === mainText) return null;
     return {
       draft,
@@ -414,6 +429,25 @@ export class Publisher {
     for (const ids of byBranch.values()) {
       if (ids.length > 1 && ids.some((id) => classified.has(id))) groups.push(ids);
     }
+    // A map and the draft that writes an id its features name go out together, so a map never
+    // reaches `main` pointing at an id that is not there.
+    const idDrafts = new Map<string, string>();
+    for (const draft of this.d.drafts.list()) {
+      if (draft.binary || draft.kind === "delete" || !isNote(draft.path)) continue;
+      const id = readFields(await this.d.drafts.text(draft.id)).id;
+      if (id && !this.d.index.hasId(id)) idDrafts.set(id, draft.id);
+    }
+    if (idDrafts.size > 0) {
+      for (const c of classified.values()) {
+        if (mapIdOf(c.draft.path) === null || c.draft.kind === "delete") continue;
+        const parsed = parseMap(c.merge?.mergedText ?? c.text);
+        if (!parsed.ok) continue;
+        for (const f of parsed.map.features) {
+          const writer = f.entry ? idDrafts.get(f.entry) : undefined;
+          if (writer) groups.push([c.draft.id, writer]);
+        }
+      }
+    }
     // A revert and the draft that undoes the note are one change.
     const decisions = (this.d.reviews?.pendingDecisions() ?? []).filter((d) =>
       decisionIds.includes(d.id),
@@ -575,6 +609,20 @@ export class Publisher {
     );
     return commit;
   }
+}
+
+/** Merges two versions of a map item by item. A clash, or text that is no map, is not clean. */
+function mergeMapTexts(
+  base: string,
+  mine: string,
+  theirs: string,
+): { clean: boolean; text: string } {
+  const b = parseMap(base);
+  const m = parseMap(mine);
+  const t = parseMap(theirs);
+  if (!b.ok || !m.ok || !t.ok) return { clean: false, text: mine };
+  const merged = mergeMaps(b.map, m.map, t.map);
+  return { clean: merged.clashes.length === 0, text: serialiseMap(merged.map) };
 }
 
 /**

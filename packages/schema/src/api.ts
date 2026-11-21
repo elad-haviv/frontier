@@ -104,6 +104,8 @@ export const EntryResponse = z.object({
   /** The entry's id from its frontmatter, when it has one. */
   id: z.string().nullable(),
   fields: EntryFields,
+  /** The maps, drafts included, that have a feature for this entry. */
+  maps: z.array(z.object({ id: z.string(), title: z.string(), feature: z.string() })),
   /** Present while the note waits in quarantine for the author's decision. */
   quarantine: z.object({ commit: z.string(), pushedBy: z.string(), at: z.string() }).optional(),
 });
@@ -199,6 +201,8 @@ export const ConflictReason = z.enum([
   "deleted_on_main",
   "delete_of_changed_file",
   "binary_changed_on_both",
+  /** A map changed here and in the vault in ways that cannot be merged item by item. */
+  "map_changed_on_both",
   /** A rename cannot be carried out, for the reason given in `mine`. */
   "rename_blocked",
 ]);
@@ -260,7 +264,9 @@ export type AttentionResponse = z.infer<typeof AttentionResponse>;
 
 // ---- Images --------------------------------------------------------------------------------
 
-export const IMAGE_WIDTHS = [320, 640, 1280] as const;
+/** The last two are for maps: they bound the longer side, whichever it is. */
+export const IMAGE_WIDTHS = [320, 640, 1280, 2560, 4096] as const;
+export const MAP_IMAGE_SIZES: readonly number[] = [2560, 4096];
 
 /** `GET /api/images?path=&w=&draft=` */
 export const ImageQuery = z.object({

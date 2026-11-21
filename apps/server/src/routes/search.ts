@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { VaultPath } from "@frontier/schema";
-import { isInAppendix, splitFrontmatter, stem } from "@frontier/vault";
+import { isInAppendix, isNote, splitFrontmatter, stem } from "@frontier/vault";
 import { z } from "zod";
 import { ApiError } from "../errors.js";
 import type { Services } from "../app.js";
@@ -50,7 +50,7 @@ export function searchRoutes(app: FastifyInstance, s: Services): void {
         .filter((n) => !removed.has(n.path))
         .map((n) => ({ path: n.path, title: n.title, aliases: n.aliases })),
       ...drafts
-        .filter((d) => d.kind === "create" && !s.index.note(d.path))
+        .filter((d) => d.kind === "create" && isNote(d.path) && !s.index.note(d.path))
         .map((d) => ({ path: d.path, title: stem(d.path), aliases: [] as string[] })),
     ].filter((n) => appendices === "1" || !isInAppendix(n.path));
 

@@ -116,9 +116,9 @@ export class StatusService {
   }
 
   /** The number of quarantined notes waiting, and any trouble reading the list. */
-  quarantine(count: number, problem: string | null): void {
+  quarantine(count: number, problems: string[]): void {
     this.quarantined = count;
-    this.fileProblems = problem ? [problem] : [];
+    this.fileProblems = problems;
     this.changed();
   }
 

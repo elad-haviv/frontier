@@ -10,7 +10,7 @@ import {
   SaveDraftRequest,
   type UnpublishedResponse,
 } from "@frontier/schema";
-import { extension, isEditable, isExcluded } from "@frontier/vault";
+import { extension, isEditable, isExcluded, isNote } from "@frontier/vault";
 import { z } from "zod";
 import { ApiError } from "../errors.js";
 import type { Services } from "../app.js";
@@ -53,6 +53,14 @@ export function draftRoutes(app: FastifyInstance, s: Services): void {
     };
   }
 
+  /** Maps are changed through the map routes, which keep them valid. */
+  function onlyNotes(id: string): void {
+    const draft = s.drafts.get(id);
+    if (draft && !draft.binary && !isNote(draft.path)) {
+      throw new ApiError("invalid", "This is not a note. Change it on its own page.");
+    }
+  }
+
   app.put("/api/drafts", async (request) => {
     const input = SaveDraftRequest.parse(request.body);
     const published = await check(input.path, input.kind);
@@ -79,6 +87,7 @@ export function draftRoutes(app: FastifyInstance, s: Services): void {
   app.post("/api/drafts/:id/merge-versions", async (request) => {
     const { id } = IdParam.parse(request.params);
     const { text } = DraftTextRequest.parse(request.body);
+    onlyNotes(id);
     const record = await s.drafts.mergeVersions(id, text.replace(/\r\n/g, "\n"));
     return { id: record.id, revision: record.revision };
   });
@@ -89,6 +98,7 @@ export function draftRoutes(app: FastifyInstance, s: Services): void {
     const { text } = DraftTextRequest.parse(request.body);
     const draft = s.drafts.get(id);
     if (!draft) throw new ApiError("not_found", "There is no such draft.");
+    onlyNotes(id);
     const blob = (await s.git.blobHash(draft.path)) ?? "";
     const record = await s.drafts.rebase(id, text.replace(/\r\n/g, "\n"), blob, true);
     return { id: record.id, revision: record.revision };
@@ -102,7 +112,8 @@ export function draftRoutes(app: FastifyInstance, s: Services): void {
         kind: d.kind,
         binary: d.binary,
         text: d.binary ? "" : await s.drafts.text(d.id),
-        mainText: s.index.note(d.path)?.text ?? null,
+        // A map is not a note: its published text is read from the file in the vault.
+        mainText: s.index.note(d.path)?.text ?? s.maps.publishedText(d.path),
         origins: d.origins,
       })),
     );

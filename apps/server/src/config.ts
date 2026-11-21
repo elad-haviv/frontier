@@ -41,6 +41,8 @@ export interface Config {
   backup: { kind: "local"; dir: string } | { kind: "s3"; s3: S3Config };
   /** The vault folder new images are put in. */
   uploadFolder: string;
+  /** The vault folder whose subfolders are marker sets. */
+  iconFolder: string;
   /** Encrypts the secrets kept in settings. Without it no secret can be stored there. */
   secretsKey: Buffer | null;
   /** The AI provider key from the environment, used when none is stored in settings. */
@@ -146,6 +148,7 @@ export function loadConfig(env: Env = process.env): Config {
     ),
     webhookSecret,
     sessionKey,
+    iconFolder: (optional("ICON_FOLDER") ?? "99 Appendices/07 Icons").replace(/^\/+|\/+$/g, ""),
     secretsKey,
     openrouterKey: optional("OPENROUTER_API_KEY"),
     openrouterUrl: (optional("OPENROUTER_BASE_URL") ?? "https://openrouter.ai/api/v1").replace(

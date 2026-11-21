@@ -12,6 +12,8 @@ import { AiLog } from "./ai/log.js";
 import { ModelCatalogue } from "./ai/models.js";
 import { AiProvider } from "./ai/provider.js";
 import { LoginLimiter } from "./auth/limit.js";
+import { MapStore } from "./maps/store.js";
+import { mapRoutes } from "./routes/maps.js";
 import { Backup } from "./backup/backup.js";
 import { EntryChanger } from "./entries/change.js";
 import { ProposalStore } from "./proposals/store.js";
@@ -73,6 +75,7 @@ export interface Services {
   fieldJob: FieldJob;
   quarantine: Quarantine;
   loginLimit: LoginLimiter;
+  maps: MapStore;
   backup: Backup;
   search: SearchIndex;
   /** Fetches `main`, resets the working copy and rebuilds the index. */
@@ -184,6 +187,14 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
     ...(options.settleMs !== undefined ? { settleMs: options.settleMs } : {}),
   });
   await quarantine.load();
+  const maps = new MapStore({
+    vaultDir,
+    iconFolder: config.iconFolder,
+    git,
+    index,
+    drafts,
+    changer,
+  });
   const reportAi = async () => status.ai(await ai.ready("extraction"), ai.lastError);
 
   const services: Services = {
@@ -208,15 +219,20 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
     fieldJob: new FieldJob(fields),
     quarantine,
     loginLimit: new LoginLimiter(),
+    maps,
     async sync() {
       const result = await git.fetch();
       status.fetched(result.current);
       if (index.commit !== result.current) index.build(result.current);
       await quarantine.noteFetched(result.previous ?? result.current, result.current);
       await quarantine.refresh();
+      maps.refresh();
       await services.publisher.clearPublished();
       await quarantine.prune();
-      status.quarantine(quarantine.count(), quarantine.problem);
+      status.quarantine(quarantine.count(), [
+        ...(quarantine.problem ? [quarantine.problem] : []),
+        ...maps.problems.map((p) => `${p.path} is not shown as a map. ${p.message}`),
+      ]);
       await proposals.prune();
       status.inbox(await services.branches.count());
       status.indexed();
@@ -366,6 +382,7 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
   quarantineRoutes(app, services);
   settingsRoutes(app, services);
   passkeyRoutes(app, services);
+  mapRoutes(app, services);
   searchRoutes(app, services);
   statusRoutes(app, services);
   webhookRoutes(app, services);

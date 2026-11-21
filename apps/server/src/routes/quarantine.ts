@@ -6,7 +6,10 @@ import type { Services } from "../app.js";
 export function quarantineRoutes(app: FastifyInstance, s: Services): void {
   const report = () => {
     s.status.drafts(s.drafts.count(), 0);
-    s.status.quarantine(s.quarantine.count(), s.quarantine.problem);
+    s.status.quarantine(s.quarantine.count(), [
+      ...(s.quarantine.problem ? [s.quarantine.problem] : []),
+      ...s.maps.problems.map((p) => `${p.path} is not shown as a map. ${p.message}`),
+    ]);
   };
 
   app.post("/api/quarantine", async (request) => {

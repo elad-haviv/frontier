@@ -5,6 +5,7 @@ import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { MAP_IMAGE_SIZES } from "@frontier/schema";
 import sharp from "sharp";
 
 export interface ServedImage {
@@ -49,7 +50,10 @@ export class ImageServer {
     const contentType = TYPES[format] ?? "application/octet-stream";
 
     // Vector images and images that need no shrinking are sent as stored.
-    if (width === undefined || format === "svg" || (meta.width ?? 0) <= width) {
+    // The sizes for maps bound the longer side; the others bound the width.
+    const forMap = width !== undefined && MAP_IMAGE_SIZES.includes(width);
+    const measured = forMap ? Math.max(meta.width ?? 0, meta.height ?? 0) : (meta.width ?? 0);
+    if (width === undefined || format === "svg" || measured <= width) {
       return { body: original, contentType };
     }
 
@@ -58,7 +62,11 @@ export class ImageServer {
     if (existsSync(cached)) return { body: await readFile(cached), contentType };
 
     const body = await sharp(original, { animated: format === "gif" })
-      .resize({ width, withoutEnlargement: true })
+      .resize(
+        forMap
+          ? { width, height: width, fit: "inside", withoutEnlargement: true }
+          : { width, withoutEnlargement: true },
+      )
       .toBuffer();
     await mkdir(this.cacheDir, { recursive: true });
     const temp = `${cached}.${process.pid}.tmp`;

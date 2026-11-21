@@ -6,7 +6,7 @@ import {
   type TreeResponse,
   VaultPath,
 } from "@frontier/schema";
-import { dirname, readFields, stem, typeFromFolder } from "@frontier/vault";
+import { dirname, isNote, readFields, stem, typeFromFolder } from "@frontier/vault";
 import { z } from "zod";
 import { ApiError } from "../errors.js";
 import { type IndexedLink, linkKindOf } from "../index/build.js";
@@ -34,7 +34,10 @@ export function entryRoutes(app: FastifyInstance, s: Services): void {
   const overlay = () => {
     const drafts = s.drafts.list();
     return {
-      added: drafts.filter((d) => d.kind === "create" && !s.index.note(d.path)).map((d) => d.path),
+      added: drafts
+        // Notes and uploaded images, so links and embeds resolve; a map is neither.
+        .filter((d) => d.kind === "create" && (d.binary || isNote(d.path)) && !s.index.note(d.path))
+        .map((d) => d.path),
       removed: drafts.filter((d) => d.kind === "delete").map((d) => d.path),
     };
   };
@@ -65,6 +68,11 @@ export function entryRoutes(app: FastifyInstance, s: Services): void {
         proposed: s.proposals.pendingFor(path),
       },
     };
+  };
+
+  const mapsOf = async (path: string) => {
+    const id = await s.maps.entryId(path);
+    return id ? s.maps.mapsFor(id) : [];
   };
 
   app.get("/api/schema", async (): Promise<SchemaResponse> => ({
@@ -101,6 +109,8 @@ export function entryRoutes(app: FastifyInstance, s: Services): void {
       });
     }
     for (const path of added) {
+      // An uploaded image is not an entry and has no place in the tree.
+      if (!isNote(path)) continue;
       folder(dirname(path)).notes.push({ path, title: stem(path), state: "unpublished" });
     }
     return { folders: root.folders, notes: root.notes };
@@ -108,8 +118,8 @@ export function entryRoutes(app: FastifyInstance, s: Services): void {
 
   app.get("/api/entries", async (request): Promise<EntryResponse> => {
     const query = EntryQuery.parse(request.query);
-    const path = query.path ?? s.index.byId(query.id!);
-    if (path === undefined) {
+    const path = query.path ?? (await s.maps.entryPath(query.id!));
+    if (path === undefined || path === null) {
       throw new ApiError("not_found", `No single entry has the id "${query.id}".`);
     }
     const note = s.index.note(path);
@@ -134,6 +144,7 @@ export function entryRoutes(app: FastifyInstance, s: Services): void {
         headings,
         draft: info,
         ...fieldsOf(path, text),
+        maps: await mapsOf(path),
       };
     }
 
@@ -152,6 +163,7 @@ export function entryRoutes(app: FastifyInstance, s: Services): void {
       headings: note!.headings,
       draft: info,
       ...fieldsOf(note!.path, note!.text),
+      maps: await mapsOf(note!.path),
     };
   });
 }
