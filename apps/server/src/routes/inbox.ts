@@ -9,7 +9,7 @@ export function inboxRoutes(app: FastifyInstance, s: Services): void {
   app.get("/api/inbox", async (): Promise<InboxResponse> => {
     // Opening the inbox looks for new branches. Without a connection it shows the last known ones.
     await s.sync().catch(() => undefined);
-    return { branches: await s.branches.list() };
+    return { branches: await s.branches.list(), proposals: await s.proposals.list() };
   });
 
   app.get("/api/inbox/branch-file", async (request) => {

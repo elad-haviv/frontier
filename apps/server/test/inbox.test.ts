@@ -69,7 +69,7 @@ describe("listing proposal branches", () => {
       [NEW, "added", false],
     ]);
     expect(b.files.every((f) => f.blocked === undefined)).toBe(true);
-    expect((await t.get("/api/status")).json().inbox).toEqual({ branches: 1 });
+    expect((await t.get("/api/status")).json().inbox).toMatchObject({ branches: 1 });
 
     const texts = await t.get(
       `/api/inbox/branch-file?branch=${encodeURIComponent(BRANCH)}&path=${encodeURIComponent(MIRA)}`,
@@ -289,7 +289,7 @@ describe("deciding", () => {
     expect(res.json()).toEqual({ branchRemoved: true });
     expect(t.repo.hasBranch(BRANCH)).toBe(false);
     expect((await t.get("/api/unpublished")).json().drafts).toEqual([]);
-    expect((await t.get("/api/status")).json().inbox).toEqual({ branches: 0 });
+    expect((await t.get("/api/status")).json().inbox).toMatchObject({ branches: 0 });
   });
 
   it("accepts a removal as a delete draft", async () => {

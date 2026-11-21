@@ -164,6 +164,10 @@ export class VaultIndex {
     }
   }
 
+  hasId(id: string): boolean {
+    return this.ids.has(id);
+  }
+
   /** The path of the entry with this id, or undefined when none or more than one carries it. */
   byId(id: string): string | undefined {
     const paths = this.ids.get(id);

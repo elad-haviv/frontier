@@ -38,7 +38,7 @@ describe("state files", () => {
     const path = join(dir, "settings.json");
     expect(await files.readJson(path, Settings)).toBeNull();
     await files.writeJson(path, { passwordHash: "h" });
-    expect(await files.readJson(path, Settings)).toEqual({ passwordHash: "h" });
+    expect(await files.readJson(path, Settings)).toMatchObject({ passwordHash: "h" });
     await files.writeJson(path, { wrong: true });
     await expect(files.readJson(path, Settings)).rejects.toThrow();
   });
@@ -58,7 +58,24 @@ describe("state files", () => {
     const store = new SettingsStore(dir, new StateFiles());
     expect(await store.read()).toBeNull();
     await store.write({ passwordHash: "$argon2id$x" });
-    expect(await store.read()).toEqual({ passwordHash: "$argon2id$x" });
+    // A file from before the AI settings existed reads with their defaults.
+    expect(await store.read()).toEqual({
+      passwordHash: "$argon2id$x",
+      ai: { key: null, models: { extraction: null }, monthlyCapUsd: 10, proposeOnPublish: false },
+    });
+  });
+
+  it("changes one part of the settings and keeps the rest, the password included", async () => {
+    const store = new SettingsStore(dir, new StateFiles());
+    await expect(store.update((s) => s)).rejects.toThrow();
+    await store.write({ passwordHash: "$argon2id$x" });
+    await store.update((s) => ({ ...s, ai: { ...s.ai, monthlyCapUsd: 3 } }));
+    // Setting the password again, as the command does, keeps what was set since.
+    await store.write({ ...(await store.read()), passwordHash: "$argon2id$y" });
+    expect(await store.read()).toMatchObject({
+      passwordHash: "$argon2id$y",
+      ai: { monthlyCapUsd: 3 },
+    });
   });
 });
 

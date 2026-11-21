@@ -26,5 +26,6 @@ if (password.length < 12) {
 
 await mkdir(stateDir, { recursive: true });
 const store = new SettingsStore(stateDir, new StateFiles());
+// Everything else in the settings is kept as it is.
 await store.write({ ...(await store.read()), passwordHash: await hashPassword(password) });
 console.error(`Password set. Stored in ${join(stateDir, "settings.json")}.`);

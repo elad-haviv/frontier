@@ -41,6 +41,11 @@ export interface Config {
   backup: { kind: "local"; dir: string } | { kind: "s3"; s3: S3Config };
   /** The vault folder new images are put in. */
   uploadFolder: string;
+  /** Encrypts the secrets kept in settings. Without it no secret can be stored there. */
+  secretsKey: Buffer | null;
+  /** The AI provider key from the environment, used when none is stored in settings. */
+  openrouterKey: string | null;
+  openrouterUrl: string;
 }
 
 type Env = Record<string, string | undefined>;
@@ -109,6 +114,13 @@ export function loadConfig(env: Env = process.env): Config {
       `Missing environment variable${missing.length > 1 ? "s" : ""}: ${missing.join(", ")}`,
     );
   }
+  const secretsKeyText = optional("SECRETS_KEY");
+  const secretsKey = secretsKeyText ? Buffer.from(secretsKeyText, "base64") : null;
+  if (secretsKey && secretsKey.length !== 32) {
+    throw new ConfigError(
+      "SECRETS_KEY must be 32 bytes in base64. Generate one with: openssl rand -base64 32",
+    );
+  }
   if (sessionKey.length !== 32) {
     throw new ConfigError(
       "SESSION_KEY must be 32 bytes in base64. Generate one with: openssl rand -base64 32",
@@ -134,6 +146,12 @@ export function loadConfig(env: Env = process.env): Config {
     ),
     webhookSecret,
     sessionKey,
+    secretsKey,
+    openrouterKey: optional("OPENROUTER_API_KEY"),
+    openrouterUrl: (optional("OPENROUTER_BASE_URL") ?? "https://openrouter.ai/api/v1").replace(
+      /\/+$/,
+      "",
+    ),
     commitAuthor,
     commitBot,
     backup,

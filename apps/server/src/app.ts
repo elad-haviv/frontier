@@ -6,7 +6,16 @@ import rateLimit from "@fastify/rate-limit";
 import secureSession from "@fastify/secure-session";
 import Fastify, { type FastifyInstance } from "fastify";
 import { ZodError } from "zod";
+import { FieldProposer } from "./ai/fields.js";
+import { FieldJob } from "./ai/job.js";
+import { AiLog } from "./ai/log.js";
+import { ModelCatalogue } from "./ai/models.js";
+import { AiProvider } from "./ai/provider.js";
 import { Backup } from "./backup/backup.js";
+import { EntryChanger } from "./entries/change.js";
+import { ProposalStore } from "./proposals/store.js";
+import { proposalRoutes } from "./routes/proposals.js";
+import { settingsRoutes } from "./routes/settings.js";
 import { FolderTarget, S3Target } from "./backup/targets.js";
 import type { Config } from "./config.js";
 import { ApiError } from "./errors.js";
@@ -47,6 +56,13 @@ export interface Services {
   drafts: DraftStore;
   publisher: Publisher;
   branches: BranchInbox;
+  ai: AiProvider;
+  aiLog: AiLog;
+  models: ModelCatalogue;
+  changer: EntryChanger;
+  proposals: ProposalStore;
+  fields: FieldProposer;
+  fieldJob: FieldJob;
   backup: Backup;
   search: SearchIndex;
   /** Fetches `main`, resets the working copy and rebuilds the index. */
@@ -74,6 +90,8 @@ export interface BuildOptions {
   logger?: boolean;
   /** How long after a change the backup runs. Tests shorten it. */
   backupDelayMs?: number;
+  /** Stands in for the network in tests of the AI provider. */
+  fetch?: typeof fetch;
   /** Folder of the built web app. When it holds a build, the server also serves the interface. */
   webDir?: string;
 }
@@ -116,6 +134,28 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
   const last = await backup.lastState();
   status.backedUp(last.lastSuccessAt, last.lastError);
 
+  const aiLog = new AiLog(stateDir, () => backup.noteChange());
+  const ai = new AiProvider({
+    config,
+    settings,
+    log: aiLog,
+    ...(options.fetch ? { fetch: options.fetch } : {}),
+  });
+  const models = new ModelCatalogue(config, options.fetch);
+  const changer = new EntryChanger({ git, index, drafts, status });
+  const proposals = new ProposalStore({ stateDir, files, index, changer, status });
+  await proposals.load();
+  const fields = new FieldProposer({
+    stateDir,
+    files,
+    index,
+    settings,
+    provider: ai,
+    proposals,
+    models,
+  });
+  const reportAi = async () => status.ai(await ai.ready("extraction"), ai.lastError);
+
   const services: Services = {
     config,
     git,
@@ -129,11 +169,19 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
     search: new SearchIndex(index),
     publisher: undefined as unknown as Publisher,
     branches: undefined as unknown as BranchInbox,
+    ai,
+    aiLog,
+    models,
+    changer,
+    proposals,
+    fields,
+    fieldJob: new FieldJob(fields),
     async sync() {
       const result = await git.fetch();
       status.fetched(result.current);
       if (index.commit !== result.current) index.build(result.current);
       await services.publisher.clearPublished();
+      await proposals.prune();
       status.inbox(await services.branches.count());
       status.indexed();
     },
@@ -154,7 +202,20 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
     drafts,
     status,
     sync: () => services.sync(),
+    onRenamed: (from, to) => proposals.renamed(from, to),
+    onPublished: (paths) => {
+      // Runs after the publish call has answered; a failure shows in the status area.
+      void (async () => {
+        if (!(await settings.read())?.ai.proposeOnPublish || !(await ai.ready("extraction")))
+          return;
+        for (const path of paths) {
+          await fields.propose(path).catch(() => undefined);
+        }
+        await reportAi();
+      })();
+    },
   });
+  await reportAi();
 
   // Coolify's proxy sits in front, so the client address and protocol come from its headers.
   const app = Fastify({ trustProxy: true, logger: options.logger ?? false });
@@ -259,6 +320,8 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
   draftRoutes(app, services);
   imageRoutes(app, services);
   inboxRoutes(app, services);
+  proposalRoutes(app, services);
+  settingsRoutes(app, services);
   searchRoutes(app, services);
   statusRoutes(app, services);
   webhookRoutes(app, services);

@@ -16,6 +16,11 @@ export const ERROR_STATUS = {
   invalid: 400,
   not_allowed: 403,
   proposal_moved: 409,
+  ai_off: 409,
+  ai_cap_reached: 402,
+  ai_failed: 502,
+  ai_bad_answer: 502,
+  secrets_key_missing: 409,
 } as const;
 
 export type ErrorCode = keyof typeof ERROR_STATUS;

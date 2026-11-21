@@ -62,6 +62,10 @@ export interface PublisherDeps {
   /** Fetches `main`, rebuilds the index and clears finished drafts. */
   sync: () => Promise<void>;
   now?: () => number;
+  /** Told when a rename is found published, so that what is kept by path can follow. */
+  onRenamed?: (from: string, to: string) => Promise<void>;
+  /** Told the notes whose own draft was just published. */
+  onPublished?: (paths: string[]) => void;
 }
 
 export class Publisher {
@@ -88,6 +92,7 @@ export class Publisher {
         const moved = movedPath(draft.path, intent.from, intent.to);
         if (moved !== null) await this.d.drafts.movePath(draft.id, moved);
       }
+      await this.d.onRenamed?.(intent.from, intent.to);
       await this.d.drafts.removeRename(intent.id);
     }
     for (const draft of this.d.drafts.list()) {
@@ -521,6 +526,13 @@ export class Publisher {
     this.d.status.pushed(new Date(this.now()));
     this.plans.delete(planId);
     await this.d.sync();
+    this.d.onPublished?.(
+      publishing
+        .filter((p) => !p.draft.binary && p.draft.kind !== "delete")
+        .map((p) =>
+          intents.reduce((path, r) => movedPath(path, r.from, r.to) ?? path, p.draft.path),
+        ),
+    );
     return commit;
   }
 }

@@ -46,12 +46,18 @@ export function testEnv(
 let cachedHash: Promise<string> | null = null;
 
 /** A server on a fresh copy of the fixture vault, cloned and indexed, with a password set. */
-export async function makeTestApp(extraEnv: Record<string, string> = {}): Promise<TestApp> {
+export async function makeTestApp(
+  extraEnv: Record<string, string> = {},
+  options: { fetch?: typeof fetch } = {},
+): Promise<TestApp> {
   const repo = makeTestRepo();
   const config = loadConfig(testEnv(repo, extraEnv));
   mkdirSync(join(config.dataDir, "state"), { recursive: true });
   const gitCommands: string[][] = [];
-  const built = await buildApp(config, { onGitCommand: (args) => gitCommands.push([...args]) });
+  const built = await buildApp(config, {
+    onGitCommand: (args) => gitCommands.push([...args]),
+    ...options,
+  });
   await built.services.git.ensureClone();
   await built.services.sync();
   cachedHash ??= hashPassword(PASSWORD);

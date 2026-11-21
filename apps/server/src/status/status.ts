@@ -14,6 +14,10 @@ export class StatusService {
   private unpublished = 0;
   private conflicts = 0;
   private branches = 0;
+  private operations = 0;
+  private aiOn = false;
+  private aiError: string | null = null;
+  private serverDraftChanges = 0;
   private listeners = new Set<Listener>();
 
   constructor(private readonly index: VaultIndex) {}
@@ -30,7 +34,9 @@ export class StatusService {
       indexStale: this.remoteCommit !== null && this.index.commit !== this.remoteCommit,
       lastBackupAt: this.lastBackupAt,
       backupError: this.backupError,
-      inbox: { branches: this.branches },
+      inbox: { branches: this.branches, operations: this.operations },
+      ai: { on: this.aiOn, lastError: this.aiError },
+      serverDraftChanges: this.serverDraftChanges,
       problems: this.index.schemaProblem ? [this.index.schemaProblem] : [],
       attention: {
         ambiguousLinks: a.ambiguousLinks.length,
@@ -97,6 +103,26 @@ export class StatusService {
   inbox(branches: number): void {
     if (this.branches === branches) return;
     this.branches = branches;
+    this.changed();
+  }
+
+  /** The number of AI-proposed operations waiting for the author. */
+  proposals(operations: number): void {
+    if (this.operations === operations) return;
+    this.operations = operations;
+    this.changed();
+  }
+
+  ai(on: boolean, lastError: string | null): void {
+    if (this.aiOn === on && this.aiError === lastError) return;
+    this.aiOn = on;
+    this.aiError = lastError;
+    this.changed();
+  }
+
+  /** The server changed a draft itself, such as by accepting a proposed field into it. */
+  serverChangedDraft(): void {
+    this.serverDraftChanges++;
     this.changed();
   }
 

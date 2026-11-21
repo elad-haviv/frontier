@@ -130,7 +130,7 @@ export class DraftStore {
       content: string | Buffer;
       baseBlob: string;
       lineEnding: DraftRecord["lineEnding"];
-      origin: Origin;
+      origin?: Origin;
     },
     now = new Date(),
   ): Promise<DraftRecord> {
@@ -146,11 +146,35 @@ export class DraftStore {
       lineEnding: input.lineEnding,
       binary: typeof input.content !== "string",
       updatedAt: now.toISOString(),
-      origins: [input.origin],
+      origins: input.origin ? [input.origin] : [],
     };
     await this.files.write(join(this.folder(record.id), "content"), input.content);
     await this.files.writeJson(join(this.folder(record.id), "record.json"), record);
     this.records.set(record.id, record);
+    return record;
+  }
+
+  /**
+   * Replaces a text draft's content from the server side, such as when a proposed field is
+   * accepted into it. The revision rises like a save, so a device holding the older text is told.
+   */
+  async serverChange(
+    id: string,
+    text: string,
+    origin?: Origin,
+    now = new Date(),
+  ): Promise<DraftRecord> {
+    const existing = this.records.get(id);
+    if (!existing) throw new ApiError("not_found", "This draft no longer exists.");
+    const known = (o: Origin) => origin && o.kind === origin.kind && o.ref === origin.ref;
+    const record: DraftRecord = {
+      ...existing,
+      revision: existing.revision + 1,
+      updatedAt: now.toISOString(),
+      origins:
+        origin && !existing.origins.some(known) ? [...existing.origins, origin] : existing.origins,
+    };
+    await this.put(record, text);
     return record;
   }
 

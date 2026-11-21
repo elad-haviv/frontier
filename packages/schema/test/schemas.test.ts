@@ -175,7 +175,9 @@ describe("API shapes", () => {
       indexStale: false,
       lastBackupAt: null,
       backupError: "bucket unreachable",
-      inbox: { branches: 1 },
+      inbox: { branches: 1, operations: 2 },
+      ai: { on: false, lastError: null },
+      serverDraftChanges: 0,
       problems: [],
       attention: {
         ambiguousLinks: 0,
@@ -201,7 +203,7 @@ describe("errors", () => {
     expect(statusOf("git_busy")).toBe(503);
     expect(statusOf("proposal_moved")).toBe(409);
     expect(statusOf("not_allowed")).toBe(403);
-    expect(Object.keys(ERROR_STATUS)).toHaveLength(14);
+    expect(Object.keys(ERROR_STATUS)).toHaveLength(19);
   });
 
   it("accepts an error body with a known code only", () => {

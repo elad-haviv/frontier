@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { DraftKind, Id, Origin, VaultPath } from "./state.js";
+import { DraftKind, Id, Origin, ProposalOperation, VaultPath } from "./state.js";
 
 const Ok = z.object({ ok: z.literal(true) });
 
@@ -303,8 +303,25 @@ export const InboxBranch = z.object({
 });
 export type InboxBranch = z.infer<typeof InboxBranch>;
 
+/** The operations Frontier's AI proposes for one entry, as the inbox shows them. */
+export const InboxProposal = z.object({
+  id: Id,
+  path: VaultPath,
+  operations: z.array(
+    z.object({
+      operation: ProposalOperation,
+      /** False when the sentence it was taken from is no longer in the entry. */
+      applies: z.boolean(),
+    }),
+  ),
+});
+export type InboxProposal = z.infer<typeof InboxProposal>;
+
 /** `GET /api/inbox` */
-export const InboxResponse = z.object({ branches: z.array(InboxBranch) });
+export const InboxResponse = z.object({
+  branches: z.array(InboxBranch),
+  proposals: z.array(InboxProposal),
+});
 export type InboxResponse = z.infer<typeof InboxResponse>;
 
 /** `POST /api/inbox/branch-file` */
@@ -334,3 +351,64 @@ export const SchemaResponse = z.object({
   what: z.array(z.string()),
 });
 export type SchemaResponse = z.infer<typeof SchemaResponse>;
+
+/** `POST /api/proposals/:id/operations/:op` */
+export const OperationDecision = z.object({
+  decision: z.enum(["accept", "reject", "dismiss"]),
+  /** With `accept`: the author's corrections. */
+  what: z.string().min(1).optional(),
+  when: z.string().min(1).optional(),
+  type: z.string().min(1).optional(),
+});
+
+/** `GET /api/settings`. No secret is ever part of it. */
+export const SettingsResponse = z.object({
+  ai: z.object({
+    keySet: z.boolean(),
+    /** Where the key in use comes from. */
+    keyFrom: z.enum(["settings", "environment", "none"]),
+    keyLast4: z.string().nullable(),
+    /** False when SECRETS_KEY is not set, so a key cannot be stored here. */
+    canStoreKey: z.boolean(),
+    models: z.object({ extraction: z.string().nullable() }),
+    monthlyCapUsd: z.number(),
+    proposeOnPublish: z.boolean(),
+    spentUsd: z.number(),
+  }),
+});
+export type SettingsResponse = z.infer<typeof SettingsResponse>;
+
+/** `PUT /api/settings/ai`. `key: null` removes the stored key. */
+export const AiSettingsRequest = z.object({
+  key: z.string().min(8).nullable().optional(),
+  models: z.object({ extraction: z.string().min(1).nullable() }).optional(),
+  monthlyCapUsd: z.number().min(0).max(10_000).optional(),
+  proposeOnPublish: z.boolean().optional(),
+});
+
+export const ModelsResponse = z.object({
+  models: z.array(
+    z.object({
+      id: z.string(),
+      name: z.string(),
+      /** US dollars per million tokens. */
+      promptPrice: z.number(),
+      completionPrice: z.number(),
+    }),
+  ),
+});
+export type ModelsResponse = z.infer<typeof ModelsResponse>;
+
+/** `GET /api/proposals/job` */
+export const FieldJobState = z.object({
+  state: z.enum(["none", "running", "done", "cancelled", "stopped"]),
+  folder: z.string().optional(),
+  done: z.number().optional(),
+  total: z.number().optional(),
+  /** Operations proposed so far. */
+  made: z.number().optional(),
+  failed: z.array(z.object({ path: VaultPath, message: z.string() })).optional(),
+  /** Why the job stopped early. */
+  stoppedBy: z.string().optional(),
+});
+export type FieldJobState = z.infer<typeof FieldJobState>;

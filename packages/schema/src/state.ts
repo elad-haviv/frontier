@@ -63,11 +63,32 @@ export const RenameIntent = z.object({
 });
 export type RenameIntent = z.infer<typeof RenameIntent>;
 
-/** `/data/state/settings.json` */
+export const Encrypted = z.object({ iv: z.string(), data: z.string(), tag: z.string() });
+export type Encrypted = z.infer<typeof Encrypted>;
+
+export const AiSettings = z.object({
+  /** The provider key, encrypted with the key from the SECRETS_KEY variable. */
+  key: Encrypted.nullable().default(null),
+  /** One model name per task. Null until the author picks one; the task is off until then. */
+  models: z.object({ extraction: z.string().nullable().default(null) }).default({}),
+  /** Frontier stops calling the provider when this month's spending reaches it. */
+  monthlyCapUsd: z.number().min(0).default(10),
+  /** Propose fields for the notes of each Publish. */
+  proposeOnPublish: z.boolean().default(false),
+});
+export type AiSettings = z.infer<typeof AiSettings>;
+
+/**
+ * `/data/state/settings.json`. Every key but the password has a default, so a file written by an
+ * earlier version reads without loss and a write never drops a key it does not know about.
+ */
 export const Settings = z.object({
   passwordHash: z.string(),
+  ai: AiSettings.default({}),
 });
 export type Settings = z.infer<typeof Settings>;
+/** What a caller may pass when writing: the password, and any other part it wants to set. */
+export type SettingsInput = z.input<typeof Settings>;
 
 /** `/data/state/backup.json` */
 export const BackupState = z.object({
@@ -75,3 +96,37 @@ export const BackupState = z.object({
   lastError: z.string().nullable(),
 });
 export type BackupState = z.infer<typeof BackupState>;
+
+/** One change Frontier's AI proposes for an entry. The author decides each one. */
+export const ProposalOperation = z.discriminatedUnion("op", [
+  z.object({
+    id: z.string(),
+    op: z.literal("add_time"),
+    what: z.string(),
+    when: z.string(),
+    /** The sentence of the entry the date was taken from, word for word. */
+    quote: z.string(),
+    /** SHA-256 of the quote with white space collapsed. */
+    quoteHash: z.string(),
+    model: z.string(),
+  }),
+  z.object({ id: z.string(), op: z.literal("set_type"), type: z.string(), model: z.string() }),
+]);
+export type ProposalOperation = z.infer<typeof ProposalOperation>;
+
+/** `/data/state/proposals/<id>.json`: the undecided operations for one entry. */
+export const Proposal = z.object({
+  id: Id,
+  source: z.literal("fields"),
+  path: VaultPath,
+  createdAt: z.string().datetime(),
+  operations: z.array(ProposalOperation),
+});
+export type Proposal = z.infer<typeof Proposal>;
+
+/** `/data/state/proposals/rejected.json`: what the author turned down, so it is not proposed again. */
+export const RejectedOperation = z.union([
+  z.object({ path: VaultPath, op: z.literal("add_time"), what: z.string(), quoteHash: z.string() }),
+  z.object({ path: VaultPath, op: z.literal("set_type"), type: z.string() }),
+]);
+export type RejectedOperation = z.infer<typeof RejectedOperation>;
