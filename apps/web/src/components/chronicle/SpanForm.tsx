@@ -251,30 +251,114 @@ export function SpanForm({ chronicle, worked, span, change, onSelect }: Props) {
           onChange={(e) => edit((s) => ({ ...s, name: e.target.value }))}
         />
       </label>
-      <label className="ch-field">
-        <span>Lane</span>
-        <select value={span.lane} onChange={(e) => edit((s) => ({ ...s, lane: e.target.value }))}>
-          {chronicle.lanes.map((l) => (
-            <option key={l.id} value={l.id}>
-              {l.name}
-            </option>
+      <div className="ch-row">
+        <label className="ch-field">
+          <span>Lane</span>
+          <select value={span.lane} onChange={(e) => edit((s) => ({ ...s, lane: e.target.value }))}>
+            {chronicle.lanes.map((l) => (
+              <option key={l.id} value={l.id}>
+                {l.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="ch-check">
+          <input
+            type="checkbox"
+            checked={span.point}
+            onChange={(e) =>
+              edit((s) =>
+                e.target.checked
+                  ? { ...s, point: true, end: null, length: null }
+                  : { ...s, point: false },
+              )
+            }
+          />
+          <span>This is a single moment</span>
+        </label>
+      </div>
+
+      <section className="ch-relations">
+        <h3>How it relates</h3>
+        {mine.length === 0 && <p className="muted">Nothing stated yet.</p>}
+        <ul>
+          {mine.map((c) => (
+            <li key={c.relation.id} className={`ch-flag is-${c.state}`}>
+              <p>
+                {statementOf(c.relation, chronicle.spans)}{" "}
+                <span className="ch-state">{TONE[c.state]}</span>
+              </p>
+              {c.state !== "holds" && c.state !== "contradicts" && (
+                <p className="muted">{sentenceFor(c, chronicle)}</p>
+              )}
+              <button
+                type="button"
+                className="plain danger"
+                onClick={() =>
+                  change((ch) => ({
+                    ...ch,
+                    relations: ch.relations.filter((r) => r.id !== c.relation.id),
+                  }))
+                }
+              >
+                Remove
+              </button>
+            </li>
           ))}
-        </select>
-      </label>
-      <label className="ch-check">
-        <input
-          type="checkbox"
-          checked={span.point}
-          onChange={(e) =>
-            edit((s) =>
-              e.target.checked
-                ? { ...s, point: true, end: null, length: null }
-                : { ...s, point: false },
-            )
-          }
-        />
-        <span>This is a single moment</span>
-      </label>
+        </ul>
+        {offers.slice(0, 1).map(({ check, offer }) => (
+          <p key={check.relation.id} className="ch-offer">
+            From “{statementOf(check.relation, chronicle.spans)}”:{" "}
+            {offer!.start && <>start at {yearAt(offer!.start)}</>}
+            {offer!.start && offer!.end && <>, </>}
+            {offer!.end && <>end at {yearAt(offer!.end)}</>}.{" "}
+            <button
+              type="button"
+              className="quiet"
+              onClick={() =>
+                edit((s) => ({
+                  ...s,
+                  ...(offer!.start ? { start: rough(offer!.start.lo, offer!.start.hi) } : {}),
+                  ...(offer!.end && !s.point ? { end: rough(offer!.end.lo, offer!.end.hi) } : {}),
+                }))
+              }
+            >
+              Place it there
+            </button>
+          </p>
+        ))}
+        {others.length > 0 && (
+          <div className="ch-add-relation">
+            <span className="ch-this">{spanName(span)}</span>
+            <select
+              aria-label="How it relates"
+              value={kind}
+              onChange={(e) => setKind(e.target.value)}
+            >
+              {KINDS.map((k) => (
+                <option key={k} value={k}>
+                  {KIND_WORDS[k]}
+                </option>
+              ))}
+            </select>
+            <select
+              aria-label="The other span"
+              value={other}
+              onChange={(e) => setOther(e.target.value)}
+            >
+              <option value="">Choose a span…</option>
+              {others.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {spanName(s)}
+                </option>
+              ))}
+            </select>
+            <button type="button" className="primary" disabled={!other} onClick={addRelation}>
+              Add
+            </button>
+          </div>
+        )}
+      </section>
 
       {!span.point && (
         <div className="ch-field">
@@ -310,7 +394,7 @@ export function SpanForm({ chronicle, worked, span, change, onSelect }: Props) {
                 low={span.length.count?.[0] ?? span.length.low}
                 high={span.length.count?.[1] ?? span.length.high}
                 least={0}
-                unit={chronicle.units.find((u) => u.id === lengthUnit)?.name ?? "years"}
+                unit={many(chronicle.units.find((u) => u.id === lengthUnit)?.name ?? "year", 2)}
                 onRange={(low, high) => setLength(lengthUnit, low, high)}
               />
               {lengthUnit && (
@@ -419,88 +503,6 @@ export function SpanForm({ chronicle, worked, span, change, onSelect }: Props) {
           {points.disagrees && <strong className="error">Its own numbers disagree.</strong>}
         </p>
       )}
-
-      <section className="ch-relations">
-        <h3>How it relates</h3>
-        {mine.length === 0 && <p className="muted">Nothing stated yet.</p>}
-        <ul>
-          {mine.map((c) => (
-            <li key={c.relation.id} className={`ch-flag is-${c.state}`}>
-              <p>
-                {statementOf(c.relation, chronicle.spans)}{" "}
-                <span className="ch-state">{TONE[c.state]}</span>
-              </p>
-              {c.state !== "holds" && c.state !== "contradicts" && (
-                <p className="muted">{sentenceFor(c, chronicle)}</p>
-              )}
-              <button
-                type="button"
-                className="plain danger"
-                onClick={() =>
-                  change((ch) => ({
-                    ...ch,
-                    relations: ch.relations.filter((r) => r.id !== c.relation.id),
-                  }))
-                }
-              >
-                Remove
-              </button>
-            </li>
-          ))}
-        </ul>
-        {offers.slice(0, 1).map(({ check, offer }) => (
-          <p key={check.relation.id} className="ch-offer">
-            From “{statementOf(check.relation, chronicle.spans)}”:{" "}
-            {offer!.start && <>start at {yearAt(offer!.start)}</>}
-            {offer!.start && offer!.end && <>, </>}
-            {offer!.end && <>end at {yearAt(offer!.end)}</>}.{" "}
-            <button
-              type="button"
-              className="quiet"
-              onClick={() =>
-                edit((s) => ({
-                  ...s,
-                  ...(offer!.start ? { start: rough(offer!.start.lo, offer!.start.hi) } : {}),
-                  ...(offer!.end && !s.point ? { end: rough(offer!.end.lo, offer!.end.hi) } : {}),
-                }))
-              }
-            >
-              Place it there
-            </button>
-          </p>
-        ))}
-        {others.length > 0 && (
-          <div className="ch-add-relation">
-            <span className="ch-this">{spanName(span)}</span>
-            <select
-              aria-label="How it relates"
-              value={kind}
-              onChange={(e) => setKind(e.target.value)}
-            >
-              {KINDS.map((k) => (
-                <option key={k} value={k}>
-                  {KIND_WORDS[k]}
-                </option>
-              ))}
-            </select>
-            <select
-              aria-label="The other span"
-              value={other}
-              onChange={(e) => setOther(e.target.value)}
-            >
-              <option value="">Choose a span…</option>
-              {others.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {spanName(s)}
-                </option>
-              ))}
-            </select>
-            <button type="button" className="primary" disabled={!other} onClick={addRelation}>
-              Add
-            </button>
-          </div>
-        )}
-      </section>
 
       <label className="ch-field">
         <span>Note</span>

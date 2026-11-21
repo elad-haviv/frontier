@@ -50,7 +50,7 @@ test("CUJ 14: finds what is too quick and what is too slow", async ({ page }, in
   await expect(page.locator(".ch-bar h1")).toHaveText(title);
 
   // Lanes and the author's own unit.
-  await tab(page, "Lanes and units").click();
+  await tab(page, /Lanes and units|Set up/).click();
   await page.getByLabel("Lane name").fill("Humans");
   await page.getByLabel("New lane").fill("Nirani");
   await page.getByRole("button", { name: "Add the lane" }).click();

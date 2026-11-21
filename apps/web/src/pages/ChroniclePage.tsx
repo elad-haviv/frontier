@@ -44,6 +44,7 @@ export function ChroniclePage() {
   const [tab, setTab] = useState<Tab>("order");
   const [selected, setSelected] = useState<string | null>(null);
   const [lane, setLane] = useState<string | null>(null);
+  const [folded, setFolded] = useState(false);
 
   const file = useItemFile<ChronicleFile>(
     {
@@ -150,11 +151,11 @@ export function ChroniclePage() {
     ["order", "Order"],
     ["compare", "Compare"],
     ["flags", red > 0 ? `Does not fit (${red})` : "Does not fit"],
-    ["setup", "Lanes and units"],
+    ["setup", narrow ? "Set up" : "Lanes and units"],
   ];
 
   return (
-    <div className={"ch-page" + (span ? " has-form" : "")}>
+    <div className={"ch-page" + (span ? " has-form" : "") + (span && folded ? " is-folded" : "")}>
       <header className="ch-bar">
         <Link to="/chronicles" className="map-back" aria-label="All chronicles">
           ←
@@ -181,11 +182,25 @@ export function ChroniclePage() {
         <button type="button" className="primary" onClick={() => void add(true)}>
           + Event
         </button>
-        <button type="button" className="quiet" disabled={!file.canUndo} onClick={file.undo}>
-          Undo
+        <button
+          type="button"
+          className="quiet ch-icon"
+          aria-label="Undo"
+          disabled={!file.canUndo}
+          onClick={file.undo}
+        >
+          <span aria-hidden="true">↶</span>
+          <span className="ch-wide">Undo</span>
         </button>
-        <button type="button" className="quiet" disabled={!file.canRedo} onClick={file.redo}>
-          Redo
+        <button
+          type="button"
+          className="quiet ch-icon"
+          aria-label="Redo"
+          disabled={!file.canRedo}
+          onClick={file.redo}
+        >
+          <span aria-hidden="true">↷</span>
+          <span className="ch-wide">Redo</span>
         </button>
         <details className="ch-more">
           <summary>More</summary>
@@ -259,6 +274,16 @@ export function ChroniclePage() {
           <aside className="ch-sheet" aria-label={`${spanName(span)}: details`}>
             <header>
               <h2>{spanName(span)}</h2>
+              {narrow && (
+                <button
+                  type="button"
+                  className="quiet"
+                  aria-expanded={!folded}
+                  onClick={() => setFolded(!folded)}
+                >
+                  {folded ? "Edit" : "Fold"}
+                </button>
+              )}
               <button type="button" className="quiet" onClick={() => setSelected(null)}>
                 Close
               </button>

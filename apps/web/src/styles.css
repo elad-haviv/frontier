@@ -2565,6 +2565,21 @@ input.map-title {
   font: inherit;
   font-size: 1rem;
 }
+.ch-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 0 1rem;
+}
+.ch-row > .ch-field {
+  flex: 1 1 9rem;
+}
+.ch-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+}
 .ch-check {
   display: flex;
   align-items: center;
@@ -2775,6 +2790,40 @@ input.map-title {
   }
   .ch-page.has-form {
     padding-bottom: 54dvh;
+  }
+  .ch-page.is-folded {
+    padding-bottom: 5rem;
+  }
+  /* While a span is open the view needs the room more than the tools do. */
+  .ch-page.has-form:not(.is-folded) .ch-tools,
+  .ch-page.has-form:not(.is-folded) .ch-view > .ch-note,
+  .ch-page.has-form:not(.is-folded) .ch-order > .ch-note {
+    display: none;
+  }
+  .ch-page.is-folded .ch-sheet {
+    height: auto;
+    overflow: hidden;
+  }
+  .ch-page.is-folded .ch-form {
+    display: none;
+  }
+  .ch-wide {
+    display: none;
+  }
+  .ch-tools {
+    flex-wrap: nowrap;
+  }
+  .ch-tools button {
+    min-height: 2.75rem;
+    white-space: nowrap;
+  }
+  .ch-icon {
+    min-width: 2.75rem;
+    font-size: 1.1rem;
+  }
+  .ch-page button.plain {
+    min-height: 2.75rem;
+    padding: 0 0.3rem;
   }
   .ch-body {
     display: block;
