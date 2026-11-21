@@ -351,7 +351,9 @@ Below 34 rem wide:
 
 ## Cases
 
-*   Frontier ships a short list in `packages/time/src/cases.ts`: 6 to 8 for part 5a. Each has an id, a
+*   Frontier ships a short list in `packages/time/src/cases.ts`. Of eight offered on 2026-11-21 the
+    author accepted three: living memory, Norse Greenland and Hebrew. The rest, with what was and was
+    not confirmed, are in `docs/research/stage-5-cases-verified.md`. Each has an id, a
     name, `low` and `high` in years, what starts its clock and what stops it, a source with the place in
     it (page, section or address) and a short quotation that supports the figure, a caveat, and the
     date it was checked.
@@ -359,7 +361,9 @@ Below 34 rem wide:
     case states both, and a case with two defensible readings is two cases.
 *   The list answers the author's two questions first: how long until a people forgets where it came
     from, and how long until a skill or technology is lost. At least two cases are of memory or skill
-    **kept** for a long time, so the list does not lean toward "short". A human generation is one case.
+    **kept** for a long time, so the list does not lean toward "short". The author's choice stands
+    above this aim: the accepted list has one case of something kept, and he defines a generation
+    himself as a unit.
 *   Every figure is looked up in a published source when the list is written. A case that cannot be
     sourced is left out. No case is produced by a model.
 *   **The author accepts the list case by case before it ships.** It is shown to him as a table with

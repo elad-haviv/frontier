@@ -93,7 +93,7 @@ after two independent reviews.
 
 - [x] 5a Order and comparison: the chronicle file, lanes, spans, relations, units, the order view,
       Compare, what does not fit, the form, the phone layout
-- [ ] 5a The list of real-world cases, each sourced, accepted by Elad case by case
+- [x] 5a The list of real-world cases, each sourced, accepted by Elad case by case (three accepted)
 - [ ] Elad tries 5a with his own history before anything more is built
 - [ ] 5b Scale, offered fixes, shifting a selection
 - [ ] 5c Two versions side by side
