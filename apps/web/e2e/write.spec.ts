@@ -170,3 +170,26 @@ test("the toolbar inserts a link, a heading and bold without leaving the editor"
   page.once("dialog", (d) => void d.accept());
   await page.locator("button.quiet", { hasText: "Discard" }).click();
 });
+
+test("tapping a link to an entry that is not written offers to write it, beside the note that holds it", async ({
+  page,
+}) => {
+  const messages: string[] = [];
+  page.on("dialog", (d) => {
+    messages.push(d.message());
+    void d.accept();
+  });
+  await page.goto(entry("01 Places/Unwritten.md"));
+  await page.getByRole("button", { name: "The Drowned Bell" }).first().click();
+  await expect(page).toHaveURL(/\/edit\/.*Drowned%20Bell\.md\?new=1/);
+  expect(messages[0]).toContain("is not written yet");
+  expect(messages[0]).toContain("01 Places/The Drowned Bell.md");
+  await expect(page.locator(".cm-content")).toContainText("# The Drowned Bell");
+
+  // Declining stays on the page and makes nothing.
+  await page.goto(entry("01 Places/Unwritten.md"));
+  page.removeAllListeners("dialog");
+  page.once("dialog", (d) => void d.dismiss());
+  await page.getByRole("button", { name: "The Drowned Bell" }).first().click();
+  await expect(page).toHaveURL(/\/e\/.*Unwritten\.md/);
+});

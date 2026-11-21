@@ -575,6 +575,20 @@ button.tree-folder {
   cursor: help;
 }
 
+button.link-create {
+  padding: 0;
+  border-radius: 0;
+  border-width: 0 0 1px;
+  background: none;
+  font: inherit;
+  text-align: inherit;
+  cursor: pointer;
+}
+button.link-create:hover {
+  color: var(--accent);
+  border-bottom-style: solid;
+}
+
 .link-ambiguous {
   color: var(--warn);
   border-bottom: 1px dashed var(--warn);
@@ -2068,4 +2082,22 @@ input.map-title {
   padding: 0.3rem 0;
   border: 0;
   background: none;
+}
+
+/* On a narrow screen the entry's actions go under the title instead of over it. */
+@media (max-width: 34rem) {
+  .title-row {
+    flex-wrap: wrap;
+    gap: 0;
+  }
+  .title-row h1 {
+    flex: 1 1 100%;
+    overflow-wrap: anywhere;
+  }
+  .entry-actions {
+    margin-bottom: 0.4rem;
+  }
+  .entry-actions .edit-link {
+    margin-top: 0.2rem;
+  }
 }

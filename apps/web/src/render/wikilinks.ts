@@ -36,13 +36,20 @@ function label(p: ReturnType<typeof parts>): string {
   return p.heading ? `${name} › ${p.heading}` : name.replace(/\.md$/i, "");
 }
 
-function linkNode(url: string, kind: ShownKind, text: string, title?: string): Link {
+function linkNode(
+  url: string,
+  kind: ShownKind,
+  text: string,
+  title?: string,
+  /** For a link to an entry that does not exist: what it asks for, so it can be written. */
+  target?: string,
+): Link {
   return {
     type: "link",
     url,
     ...(title ? { title } : {}),
     children: [{ type: "text", value: text }],
-    data: { hProperties: { dataKind: kind } },
+    data: { hProperties: { dataKind: kind, ...(target ? { dataTarget: target } : {}) } },
   };
 }
 
@@ -99,7 +106,9 @@ export function wikilinks(options: WikilinkOptions) {
               "#",
               "unresolved",
               label(p),
-              embed ? "This image is not in the vault" : "Not written yet",
+              embed ? "This image is not in the vault" : "Not written yet. Tap to write it.",
+              // Only a link to an entry can be written; a missing image cannot.
+              embed || p.target.trim() === "" ? undefined : p.target.trim(),
             ),
           );
         }
