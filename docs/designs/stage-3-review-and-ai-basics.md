@@ -227,9 +227,10 @@ what:
     `what` and `when`, with add and remove.
 *   **Links inside `when`.** The link reader already reads the whole note, frontmatter included, so
     these links are indexed, appear in backlinks and are rewritten by a rename. One thing is added: a
-    rename is refused, with the reason, when it would write a name containing `"` or `\` into a link
-    that sits in frontmatter, because that would break the quoted text. The entry response gives each
-    `time` item its links with their resolution, so the reader can draw them.
+    rename to a name containing `"` or `\` is refused, with the reason. Written into a link that sits
+    in frontmatter, such a name would break the quoted text, and Windows, where the vault is also
+    kept, does not allow either character in a file name. The entry response gives each `time` item
+    its links with their resolution, so the reader can draw them.
 
 ### Ids
 

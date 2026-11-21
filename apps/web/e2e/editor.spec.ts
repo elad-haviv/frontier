@@ -106,3 +106,32 @@ test("Tab moves between the cells of a table", async ({ page }) => {
   await saved(page);
   await discardDraft(page);
 });
+
+test("dates and a type set in the properties panel show under the entry's title", async ({
+  page,
+}) => {
+  await openEditor(page, "01 Places/Unwritten.md");
+  await page.locator(".props summary").click();
+  await page.locator(".props-field", { hasText: "Type" }).locator("select").selectOption("place");
+  await page.getByRole("button", { name: "+ Add a date" }).click();
+  const row = page.locator(".props-time-row").first();
+  await row.locator("select").selectOption("founded");
+  await row.locator("input").fill("a generation after [[Mira]] came");
+  await row.locator("input").press("Enter");
+  await expect(page.locator(".cm-content")).toContainText("type: place");
+  await expect(page.locator(".cm-content")).toContainText(
+    'when: "a generation after [[Mira]] came"',
+  );
+  await saved(page);
+
+  await page.goto(entry("01 Places/Unwritten.md"));
+  const fields = page.locator(".fields");
+  await expect(fields).toContainText("place");
+  await expect(fields).toContainText("founded");
+  await expect(fields.locator("a.link-resolved")).toHaveText("Mira");
+  await fields.locator("a.link-resolved").click();
+  await expect(page.locator("h1")).toHaveText("Mira");
+
+  await page.goto(edit("01 Places/Unwritten.md"));
+  await discardDraft(page);
+});

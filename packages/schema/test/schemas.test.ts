@@ -176,12 +176,15 @@ describe("API shapes", () => {
       lastBackupAt: null,
       backupError: "bucket unreachable",
       inbox: { branches: 1 },
+      problems: [],
       attention: {
         ambiguousLinks: 0,
         duplicateImages: 12,
         mixedEndings: 0,
         brokenAppendixLinks: 0,
         nearFolderNotes: 5,
+        unreadableFields: 0,
+        duplicateIds: 0,
       },
     };
     expect(StatusSnapshot.parse(snapshot)).toEqual(snapshot);

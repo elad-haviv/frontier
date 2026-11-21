@@ -2,13 +2,16 @@
  * The in-memory index of the published vault, built by reading the working copy.
  * Nothing here is saved to disk; it is rebuilt at start and after every fetch.
  */
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import {
   aliasesOf,
+  BUILT_IN_SCHEMA,
+  BUILT_IN_SCHEMA_TEXT,
   createResolver,
   detectLineEnding,
   extractHeadings,
+  type Fields,
   findLinks,
   type Heading,
   isEditable,
@@ -20,8 +23,11 @@ import {
   type LineEnding,
   type Link,
   normaliseLineEndings,
+  parseSchema,
+  readFields,
   type Resolution,
   type Resolver,
+  type Schema,
   stem,
 } from "@frontier/vault";
 
@@ -39,6 +45,7 @@ export interface IndexedNote {
   lineEnding: LineEnding;
   headings: Heading[];
   links: IndexedLink[];
+  fields: Fields;
 }
 
 export interface Backlink {
@@ -65,6 +72,8 @@ function lineOf(text: string, offset: number): number {
   return line;
 }
 
+const SCHEMA_FILE = ".frontier/schema.yaml";
+
 export class VaultIndex {
   /** The commit the index was built from. */
   commit: string | null = null;
@@ -72,6 +81,13 @@ export class VaultIndex {
   private notes = new Map<string, IndexedNote>();
   private backlinkMap = new Map<string, Backlink[]>();
   private resolver: Resolver = createResolver([]);
+  /** The types and `what` names in use: the vault's own file, or the built-in ones. */
+  schema: Schema = BUILT_IN_SCHEMA;
+  schemaText = BUILT_IN_SCHEMA_TEXT;
+  schemaBuiltIn = true;
+  /** Why the vault's schema file is not used, when it exists and cannot be. */
+  schemaProblem: string | null = null;
+  private ids = new Map<string, string[]>();
 
   constructor(private readonly root: string) {}
 
@@ -81,6 +97,8 @@ export class VaultIndex {
     const resolver = createResolver(files);
     const notes = new Map<string, IndexedNote>();
     const backlinks = new Map<string, Backlink[]>();
+    const ids = new Map<string, string[]>();
+    this.readSchema();
 
     for (const path of files) {
       if (!isNote(path)) continue;
@@ -93,6 +111,7 @@ export class VaultIndex {
         link,
         resolution: resolver.resolve(link, path),
       }));
+      const fields = readFields(text);
       notes.set(path, {
         path,
         title,
@@ -101,7 +120,9 @@ export class VaultIndex {
         lineEnding: detectLineEnding(raw),
         headings,
         links,
+        fields,
       });
+      if (fields.id) ids.set(fields.id, [...(ids.get(fields.id) ?? []), path]);
     }
 
     for (const note of notes.values()) {
@@ -117,7 +138,36 @@ export class VaultIndex {
     this.resolver = resolver;
     this.notes = notes;
     this.backlinkMap = backlinks;
+    this.ids = ids;
     this.commit = commit;
+  }
+
+  private readSchema(): void {
+    this.schema = BUILT_IN_SCHEMA;
+    this.schemaText = BUILT_IN_SCHEMA_TEXT;
+    this.schemaBuiltIn = true;
+    this.schemaProblem = null;
+    const file = join(this.root, SCHEMA_FILE);
+    if (!existsSync(file)) return;
+    try {
+      const text = readFileSync(file, "utf8");
+      const schema = parseSchema(text);
+      if (schema.version !== 1)
+        throw new Error(`It has version ${schema.version}; Frontier reads version 1.`);
+      this.schema = schema;
+      this.schemaText = text;
+      this.schemaBuiltIn = false;
+    } catch (err) {
+      this.schemaProblem = `${SCHEMA_FILE} cannot be used, so the built-in schema is in use. ${
+        err instanceof Error ? err.message : ""
+      }`.trim();
+    }
+  }
+
+  /** The path of the entry with this id, or undefined when none or more than one carries it. */
+  byId(id: string): string | undefined {
+    const paths = this.ids.get(id);
+    return paths?.length === 1 ? paths[0] : undefined;
   }
 
   /**
@@ -180,6 +230,12 @@ export class VaultIndex {
       mixedEndings: notes.filter((n) => n.lineEnding === "mixed").map((n) => n.path),
       brokenAppendixLinks,
       nearFolderNotes: notes.filter((n) => isNearFolderNote(n.path)).map((n) => n.path),
+      unreadableFields: notes
+        .filter((n) => n.fields.problems.length > 0)
+        .map((n) => ({ path: n.path, problems: n.fields.problems })),
+      duplicateIds: [...this.ids]
+        .filter(([, paths]) => paths.length > 1)
+        .map(([id, paths]) => ({ id, paths })),
     };
   }
 }

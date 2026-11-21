@@ -1547,3 +1547,57 @@ button.big {
   color: var(--ink-soft);
   font-size: 0.9rem;
 }
+
+/* Structured fields under an entry's title */
+.fields {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.2rem 1rem;
+  margin: 0.6rem 0 0;
+  font-size: 0.92rem;
+}
+.fields > div {
+  display: contents;
+}
+.fields dt {
+  color: var(--ink-faint);
+  text-transform: capitalize;
+}
+.fields dd {
+  margin: 0;
+  color: var(--ink-soft);
+}
+.field-mark {
+  color: var(--accent);
+  font-size: 0.8rem;
+  text-transform: none;
+}
+.field-problem dd {
+  color: var(--accent);
+}
+
+.props-time {
+  margin: 0.6rem 0 0.3rem;
+}
+.props-time > span {
+  display: block;
+  margin-bottom: 0.3rem;
+  color: var(--ink-soft);
+}
+.props-time-row {
+  display: grid;
+  grid-template-columns: 7rem 1fr auto;
+  gap: 0.4rem;
+  margin: 0.3rem 0;
+}
+.props-time-row select,
+.props-time-row input,
+.props-field select {
+  min-width: 0;
+  padding: 0.4rem 0.45rem;
+  border: 1px solid var(--rule);
+  border-radius: 5px;
+  background: var(--paper-raised);
+  color: var(--ink);
+  font: inherit;
+}

@@ -1,17 +1,20 @@
 import type { FastifyInstance } from "fastify";
 import {
   type EntryResponse,
+  type SchemaResponse,
   type TreeFolder,
   type TreeResponse,
   VaultPath,
 } from "@frontier/schema";
-import { dirname, stem } from "@frontier/vault";
+import { dirname, readFields, stem, typeFromFolder } from "@frontier/vault";
 import { z } from "zod";
 import { ApiError } from "../errors.js";
 import { type IndexedLink, linkKindOf } from "../index/build.js";
 import type { Services } from "../app.js";
 
-const EntryQuery = z.object({ path: VaultPath });
+const EntryQuery = z
+  .object({ path: VaultPath.optional(), id: z.string().optional() })
+  .refine((q) => (q.path === undefined) !== (q.id === undefined), "Give a path or an id.");
 
 function shown(links: IndexedLink[]): EntryResponse["links"] {
   return links.map(({ link, resolution }) => ({
@@ -35,6 +38,41 @@ export function entryRoutes(app: FastifyInstance, s: Services): void {
       removed: drafts.filter((d) => d.kind === "delete").map((d) => d.path),
     };
   };
+
+  /** The structured fields of a text, with the links inside each date resolved. */
+  const fieldsOf = (path: string, text: string): Pick<EntryResponse, "id" | "fields"> => {
+    const fields = readFields(text);
+    const schema = s.index.schema;
+    const fromFolder = typeFromFolder(schema, path);
+    const type = fields.type ?? fromFolder;
+    return {
+      id: fields.id,
+      fields: {
+        type,
+        typeFrom: fields.type ? "field" : fromFolder ? "folder" : "none",
+        typeKnown: type === null || type in schema.types,
+        time: fields.time.map((item) => ({
+          what: item.what,
+          when: item.when,
+          known: item.what in schema.what,
+          links: shown(s.index.analyse(path, item.when).links).map((l) => ({
+            raw: l.raw,
+            kind: l.kind,
+            ...(l.target ? { target: l.target } : {}),
+          })),
+        })),
+        problems: fields.problems,
+      },
+    };
+  };
+
+  app.get("/api/schema", async (): Promise<SchemaResponse> => ({
+    text: s.index.schemaText,
+    builtIn: s.index.schemaBuiltIn,
+    problem: s.index.schemaProblem,
+    types: Object.keys(s.index.schema.types),
+    what: Object.keys(s.index.schema.what),
+  }));
 
   /** The author's view: what is published, with his drafts on top. */
   app.get("/api/tree", async (): Promise<TreeResponse> => {
@@ -64,7 +102,11 @@ export function entryRoutes(app: FastifyInstance, s: Services): void {
   });
 
   app.get("/api/entries", async (request): Promise<EntryResponse> => {
-    const { path } = EntryQuery.parse(request.query);
+    const query = EntryQuery.parse(request.query);
+    const path = query.path ?? s.index.byId(query.id!);
+    if (path === undefined) {
+      throw new ApiError("not_found", `No single entry has the id "${query.id}".`);
+    }
     const note = s.index.note(path);
     const draft = s.drafts.byPath(path);
     if (!note && (!draft || draft.kind === "delete")) {
@@ -86,6 +128,7 @@ export function entryRoutes(app: FastifyInstance, s: Services): void {
         backlinks: s.index.backlinks(path),
         headings,
         draft: info,
+        ...fieldsOf(path, text),
       };
     }
 
@@ -99,6 +142,7 @@ export function entryRoutes(app: FastifyInstance, s: Services): void {
       backlinks: s.index.backlinks(note!.path),
       headings: note!.headings,
       draft: info,
+      ...fieldsOf(note!.path, note!.text),
     };
   });
 }

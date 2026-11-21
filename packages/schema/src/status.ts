@@ -16,12 +16,16 @@ export const StatusSnapshot = z.object({
   backupError: z.string().nullable(),
   /** What waits in the inbox. */
   inbox: z.object({ branches: z.number().int().min(0) }),
+  /** Files Frontier reads its rules from that could not be read, in words. */
+  problems: z.array(z.string()),
   attention: z.object({
     ambiguousLinks: z.number().int().min(0),
     duplicateImages: z.number().int().min(0),
     mixedEndings: z.number().int().min(0),
     brokenAppendixLinks: z.number().int().min(0),
     nearFolderNotes: z.number().int().min(0),
+    unreadableFields: z.number().int().min(0),
+    duplicateIds: z.number().int().min(0),
   }),
 });
 export type StatusSnapshot = z.infer<typeof StatusSnapshot>;

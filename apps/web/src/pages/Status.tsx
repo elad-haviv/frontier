@@ -37,6 +37,11 @@ export function StatusPage() {
         <dd>{s.unpublished}</dd>
       </dl>
 
+      {s.problems.map((p) => (
+        <p key={p} className="banner" role="alert">
+          {p}
+        </p>
+      ))}
       <h2>Needs your attention</h2>
       <Section title="Links that match more than one file" empty="None.">
         {a.ambiguousLinks.map((l, i) => (
@@ -62,6 +67,21 @@ export function StatusPage() {
         {a.mixedEndings.map((p) => (
           <li key={p}>
             <Link to={entryUrl(p)}>{p}</Link>
+          </li>
+        ))}
+      </Section>
+      <Section title="Fields that cannot be read" empty="None.">
+        {a.unreadableFields.map((f) => (
+          <li key={f.path}>
+            <Link to={entryUrl(f.path)}>{f.path}</Link>
+            <span className="muted">: {f.problems.join(" ")}</span>
+          </li>
+        ))}
+      </Section>
+      <Section title="The same id in two entries" empty="None.">
+        {a.duplicateIds.map((d) => (
+          <li key={d.id}>
+            <code>{d.id}</code>: {d.paths.join(" · ")}
           </li>
         ))}
       </Section>

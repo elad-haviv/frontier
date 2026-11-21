@@ -31,12 +31,15 @@ export class StatusService {
       lastBackupAt: this.lastBackupAt,
       backupError: this.backupError,
       inbox: { branches: this.branches },
+      problems: this.index.schemaProblem ? [this.index.schemaProblem] : [],
       attention: {
         ambiguousLinks: a.ambiguousLinks.length,
         duplicateImages: a.duplicateImages.length,
         mixedEndings: a.mixedEndings.length,
         brokenAppendixLinks: a.brokenAppendixLinks.length,
         nearFolderNotes: a.nearFolderNotes.length,
+        unreadableFields: a.unreadableFields.length,
+        duplicateIds: a.duplicateIds.length,
       },
     };
   }

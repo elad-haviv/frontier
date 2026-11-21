@@ -8,10 +8,13 @@ import {
   isNote,
   type LinkBaseline,
   normaliseLineEndings,
+  readFields,
   readFrontmatter,
   removeFrontmatterKey,
   restoreLineEndings,
   setFrontmatterKey,
+  setTime,
+  setType,
   splitFrontmatter,
 } from "../src/index.js";
 import { changedLines, listFiles, readRaw } from "./helpers.js";
@@ -49,6 +52,33 @@ describe.skipIf(!VAULT)("real vault", () => {
       if (kind === "mixed") continue;
       expect(restoreLineEndings(normaliseLineEndings(raw), kind), path).toBe(raw);
     }
+  });
+
+  it("writes a date and a type into any note and takes them out again without another change", () => {
+    let checked = 0;
+    for (const path of notes) {
+      const raw = read(path);
+      if (detectLineEnding(raw) === "mixed" || readFrontmatter(raw).error) continue;
+      const before = readFields(raw);
+      // No note carries these fields yet; when one does, this test must not overwrite its dates.
+      if (before.time.length > 0 || before.type) continue;
+      const withDate = setTime(raw, [{ what: "founded", when: 'in "the long" year: [[Ezob]]' }]);
+      const withBoth = setType(withDate, "place");
+      const fields = readFields(withBoth);
+      expect(fields.time, path).toEqual([
+        { what: "founded", when: 'in "the long" year: [[Ezob]]' },
+      ]);
+      expect(fields.type, path).toBe("place");
+      expect(withBoth.endsWith(splitFrontmatter(raw).body), path).toBe(true);
+      const back = setType(setTime(withBoth, []), null);
+      // A note that had no properties block keeps an empty one; nothing else may differ.
+      expect(
+        back === raw || back === `---\n---\n${raw}` || back === `---\r\n---\r\n${raw}`,
+        path,
+      ).toBe(true);
+      checked++;
+    }
+    expect(checked).toBeGreaterThan(100);
   });
 
   it("changes one line for a one-character edit to any note (G2)", () => {

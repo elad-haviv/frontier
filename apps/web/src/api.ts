@@ -4,6 +4,7 @@ import type {
   EntryResponse,
   ErrorBody,
   InboxResponse,
+  SchemaResponse,
   PublishPlan,
   StatusSnapshot,
   TreeResponse,
@@ -71,6 +72,7 @@ export const api = {
   entry: (path: string) => call<EntryResponse>(`/api/entries?path=${encodeURIComponent(path)}`),
   status: () => call<StatusSnapshot>("/api/status"),
   attention: () => call<AttentionResponse>("/api/attention"),
+  schema: () => call<SchemaResponse>("/api/schema"),
   names: (query = "") =>
     call<{ results: { path: string; title: string; alias?: string; shared?: boolean }[] }>(
       `/api/switcher${query ? `?q=${encodeURIComponent(query)}` : ""}`,

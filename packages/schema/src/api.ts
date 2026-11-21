@@ -59,6 +59,28 @@ export const EntryHeading = z.object({
 });
 
 /** `GET /api/entries?path=` */
+/** The structured fields of an entry, read from its frontmatter. */
+export const EntryFields = z.object({
+  /** The type in use: the `type` field, or else the one its folder gives. */
+  type: z.string().nullable(),
+  typeFrom: z.enum(["field", "folder", "none"]),
+  /** False when the type is not in the schema. */
+  typeKnown: z.boolean(),
+  time: z.array(
+    z.object({
+      what: z.string(),
+      when: z.string(),
+      /** False when `what` is not in the schema. */
+      known: z.boolean(),
+      /** The links inside `when`, in the order they are written. */
+      links: z.array(z.object({ raw: z.string(), kind: LinkKind, target: z.string().optional() })),
+    }),
+  ),
+  /** Values that are present and cannot be read. */
+  problems: z.array(z.string()),
+});
+export type EntryFields = z.infer<typeof EntryFields>;
+
 export const EntryResponse = z.object({
   path: VaultPath,
   /** The text with line endings normalised: the draft's text if there is one, else the published text. */
@@ -71,6 +93,9 @@ export const EntryResponse = z.object({
   backlinks: z.array(Backlink),
   headings: z.array(EntryHeading),
   draft: z.object({ id: Id, revision: z.number().int().min(0), kind: DraftKind }).nullable(),
+  /** The entry's id from its frontmatter, when it has one. */
+  id: z.string().nullable(),
+  fields: EntryFields,
 });
 export type EntryResponse = z.infer<typeof EntryResponse>;
 
@@ -201,6 +226,8 @@ export const AttentionResponse = z.object({
   mixedEndings: z.array(VaultPath),
   brokenAppendixLinks: z.array(z.object({ path: VaultPath, raw: z.string() })),
   nearFolderNotes: z.array(VaultPath),
+  unreadableFields: z.array(z.object({ path: VaultPath, problems: z.array(z.string()) })),
+  duplicateIds: z.array(z.object({ id: z.string(), paths: z.array(VaultPath) })),
 });
 export type AttentionResponse = z.infer<typeof AttentionResponse>;
 
@@ -294,3 +321,16 @@ export const BranchDecision = z.object({
   tip: z.string(),
   decision: z.enum(["reject", "remove"]),
 });
+
+/** `GET /api/schema`: the types and `what` names in use. */
+export const SchemaResponse = z.object({
+  /** The schema as YAML text. */
+  text: z.string(),
+  /** True when the vault has no schema file of its own. */
+  builtIn: z.boolean(),
+  /** Why the vault's own file is not used, when it exists and cannot be. */
+  problem: z.string().nullable(),
+  types: z.array(z.string()),
+  what: z.array(z.string()),
+});
+export type SchemaResponse = z.infer<typeof SchemaResponse>;

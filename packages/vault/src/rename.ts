@@ -67,6 +67,9 @@ export function planRename(
 
   if (src === dst) throw new RenameError("The new path is the same as the old one.");
   if (dst === "" || src === "") throw new RenameError("A path is missing.");
+  // A link to such a name could not be written inside quoted text in a note's properties, and
+  // Windows, where the vault is also kept, does not allow these characters in a file name.
+  if (/["\\]/.test(dst)) throw new RenameError('A name cannot contain " or \\.');
 
   const moves = new Map<string, string>();
   if (existing.has(src.toLowerCase())) {
