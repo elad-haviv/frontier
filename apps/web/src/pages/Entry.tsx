@@ -97,6 +97,9 @@ export function EntryPage({ onSessionLost }: { onSessionLost: () => void }) {
               <Link to={historyUrl(e.path)} className="edit-link subtle">
                 History
               </Link>
+              <Link to={`/export?path=${encodeURIComponent(e.path)}`} className="edit-link subtle">
+                Export
+              </Link>
               <Link to={editUrl(e.path)} className="edit-link">
                 Edit
               </Link>

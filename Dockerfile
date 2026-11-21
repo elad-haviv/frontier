@@ -1,5 +1,5 @@
 # Build: install everything, compile the packages, the server and the web app.
-FROM node:22-bookworm-slim AS build
+FROM node:22-trixie-slim AS build
 WORKDIR /app
 COPY package.json package-lock.json tsconfig.base.json ./
 COPY packages ./packages
@@ -8,10 +8,11 @@ RUN npm ci
 RUN npm run build
 RUN npm prune --omit=dev
 
-# Run: Node, Git, the compiled code and its production dependencies.
-FROM node:22-bookworm-slim
+# Run: Node, Git, pandoc (for Word and PDF exports; Trixie's writes Typst), the compiled code
+# and its production dependencies.
+FROM node:22-trixie-slim
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends git ca-certificates curl \
+  && apt-get install -y --no-install-recommends git ca-certificates curl pandoc \
   && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY --from=build /app /app

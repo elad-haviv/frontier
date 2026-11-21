@@ -20,6 +20,7 @@ import { loreRoutes } from "./routes/lore.js";
 import { writingRoutes } from "./routes/writing.js";
 import { characterRoutes } from "./routes/characters.js";
 import { discoverRoutes } from "./routes/discover.js";
+import { exportRoutes } from "./routes/export.js";
 import { Discoverer } from "./ai/discover.js";
 import { CharacterTalk } from "./ai/characters.js";
 import { WritingHelper } from "./ai/writing.js";
@@ -464,6 +465,7 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
   writingRoutes(app, services);
   characterRoutes(app, services);
   discoverRoutes(app, services);
+  exportRoutes(app, services);
   importRoutes(app, services);
   historyRoutes(app, services);
   searchRoutes(app, services);

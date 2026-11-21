@@ -282,6 +282,12 @@ export const api = {
     post<{ path: string }>(`/api/maps/${map}/discoveries/${id}/keep`, { folder }),
   dropDiscovery: (map: string, id: string) =>
     send<{ ok: true }>("DELETE", `/api/maps/${map}/discoveries/${id}`),
+  exportFolders: () => call<{ folders: string[] }>("/api/export/folders"),
+  exportPreview: (pick: ExportPick) =>
+    post<{ entries: { path: string; title: string }[]; unsaved: string[]; skipped: string[] }>(
+      "/api/export/preview",
+      pick,
+    ),
   deleteConversation: (id: string) => send<{ ok: true }>("DELETE", `/api/lore/${id}`),
   draftAddition: (id: string, turn: number, again = false) =>
     post<{ addition: LoreAddition; conversation: LoreConversation }>(
@@ -490,3 +496,47 @@ export interface Discovery {
 }
 export const discoveryArtUrl = (map: string, id: string): string =>
   `/api/maps/${map}/discoveries/${id}/art`;
+
+export interface ExportPick {
+  title: string;
+  folder?: string;
+  paths?: string[];
+}
+
+/** Makes an export and saves it as a file, under the name the server gives it. */
+export async function downloadExport(
+  kind: "site" | "docx" | "pdf",
+  pick: ExportPick,
+): Promise<void> {
+  let res: Response;
+  try {
+    res = await fetch(`/api/export/${kind}`, {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(pick),
+    });
+  } catch {
+    throw new ApiFailure(0, "offline", "The server could not be reached. Check your connection.");
+  }
+  if (!res.ok) {
+    const body = (await res.json().catch(() => null)) as ErrorBody | null;
+    throw new ApiFailure(
+      res.status,
+      body?.error.code ?? "unknown",
+      body?.error.message ?? `The server answered with status ${res.status}.`,
+    );
+  }
+  const name =
+    decodeURIComponent(
+      /filename\*=UTF-8''([^;]+)/.exec(res.headers.get("content-disposition") ?? "")?.[1] ?? "",
+    ) || `export.${kind === "site" ? "zip" : kind}`;
+  const url = URL.createObjectURL(await res.blob());
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = name;
+  document.body.append(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10_000);
+}

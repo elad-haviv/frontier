@@ -178,6 +178,9 @@ export function Shell({ children, onLoggedOut }: { children: ReactNode; onLogged
               <Link to="/gallery" className="nav-secondary">
                 Gallery
               </Link>
+              <Link to="/export" className="nav-secondary">
+                Export
+              </Link>
               <Link to="/import" className="nav-secondary">
                 Import
               </Link>
@@ -206,6 +209,7 @@ export function Shell({ children, onLoggedOut }: { children: ReactNode; onLogged
               <Link to="/chronicles">Chronicles</Link>
               <Link to="/gallery">Gallery</Link>
               <Link to="/import">Import</Link>
+              <Link to="/export">Export</Link>
               <Link to="/versions">Versions</Link>
               <Link to="/inbox">Inbox</Link>
               <Link to="/settings">Settings</Link>

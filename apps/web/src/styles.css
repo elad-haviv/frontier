@@ -3625,3 +3625,44 @@ input.map-title {
   margin: 0.3rem 0;
   font-size: 0.85rem;
 }
+
+/* Export */
+.export-kinds {
+  margin: 1rem 0;
+  padding: 0;
+  list-style: none;
+}
+.export-kinds li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem 0.8rem;
+  margin: 0.7rem 0;
+}
+.export-kinds button {
+  min-width: 9rem;
+  min-height: 2.75rem;
+}
+.export-preview details ul {
+  margin: 0.4rem 0;
+}
+
+/* The map's bar carries many controls: the title keeps room, and the controls scroll sideways
+   within the bar when they do not fit, so the map never moves and keeps its height. */
+.map-title {
+  flex: 1 1 6rem;
+  min-width: 5rem;
+}
+.map-actions {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.map-actions > * {
+  flex: none;
+}
+.map-down {
+  width: auto;
+  max-width: 9rem;
+}

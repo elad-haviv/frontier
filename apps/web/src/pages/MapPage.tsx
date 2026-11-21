@@ -42,6 +42,7 @@ import { useRefresh } from "../components/Shell.tsx";
 import { TurnPanel } from "../components/MapTurn.tsx";
 import { type ChronicleChoice, FeatureTime, OrbitEditor, TimeBar } from "../components/MapTime.tsx";
 import { drawOverlay } from "../map/overlay.ts";
+import { mapPicture } from "../map/picture.ts";
 import {
   type MapTime,
   addShape,
@@ -969,6 +970,38 @@ export function MapPage() {
     }
   }
 
+  /** Saves the map as it is shown, at a few times the size of the screen, as a PNG. */
+  async function savePicture(scale: number) {
+    if (!map || !view || !shownMap) return;
+    setNotice("Drawing the picture…");
+    try {
+      const blob = await mapPicture({
+        map: shownMap,
+        state: view,
+        width: size.width,
+        height: size.height,
+        scale,
+        images: map.images
+          .filter((i) => shownImages.has(i.id))
+          .map((i) => ({ id: i.id, extent: i.extent, url: mapImageUrl(i.path, 4096) })),
+        overlay: { hidden, styles, iconFor, titleOf },
+      });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${map.title.replace(/[^\p{L}\p{N} _-]+/gu, "").trim() || "map"}${
+        timeOn && year !== null ? ` year ${year}` : ""
+      }.png`;
+      document.body.append(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 10_000);
+      setNotice(null);
+    } catch {
+      setNotice("The picture could not be made on this device.");
+    }
+  }
+
   const zoom = (factor: number) =>
     view && setView(zoomAt(view, size.width, size.height, size.width / 2, size.height / 2, factor));
   const sphere = map.space.kind === "sphere";
@@ -1103,6 +1136,19 @@ export function MapPage() {
                   {m.title}
                 </option>
               ))}
+            </select>
+          )}
+          {!editing && (
+            <select
+              className="map-down"
+              aria-label="Save a picture"
+              value=""
+              onChange={(e) => e.target.value && void savePicture(Number(e.target.value))}
+            >
+              <option value="">Picture</option>
+              <option value="1">Save at screen size</option>
+              <option value="2">Save at twice the size</option>
+              <option value="4">Save at four times the size</option>
             </select>
           )}
           {found.ready && !editing && (

@@ -98,6 +98,17 @@ after two independent reviews.
 - [x] 5c Two versions side by side
 - [x] 5d Links to entries (not yet: a linked span with no name showing its entry's title)
 
+## Now: stage 9, export
+
+Design: [stage 9](designs/stage-9-export.md). Elad, 2026-11-21: web pages, Word, PDF and map
+pictures; links to entries left out are marked as not shared.
+
+- [x] Web pages: a zip of linked pages in Frontier's look, images included
+- [x] Word and PDF: pandoc, and Typst for the PDF; the server image moved to Debian Trixie for a
+      pandoc that writes Typst
+- [x] Map pictures at one, two or four times the screen, made in the browser
+- [ ] Elad exports a folder of his own and reads it
+
 ## Now: stage 8, the AI companion
 
 Design: [stage 8](designs/stage-8-ai-companion.md). Elad, 2026-11-21: lore chat first; the lore
@@ -153,7 +164,6 @@ Design: [stage 4](designs/stage-4-maps.md), a draft the author has not read yet.
 
 Each gets a short design of its own before it is built.
 
-9. Export: documents, styled web pages, presentations, map renders
 
 ## Done
 
