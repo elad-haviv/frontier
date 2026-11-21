@@ -14,7 +14,9 @@ type End = ChronicleSpan["start"];
 
 const sameEnd = (a: End, b: End, by: number): boolean => {
   if (a === null || b === null || a === "open" || b === "open") return a === b;
-  return a.low === b.low + by && a.high === b.high + by;
+  // Years may be decimals, and adding an offset to one does not always land exactly on the other.
+  const near = (x: number, y: number) => Math.abs(x - y) < 1e-6;
+  return near(a.low, b.low + by) && near(a.high, b.high + by);
 };
 
 /**
@@ -67,7 +69,8 @@ export function compareVersions(
       sameEnd(m.end, t.end, offset) &&
       (m.length?.low ?? null) === (t.length?.low ?? null) &&
       (m.length?.high ?? null) === (t.length?.high ?? null) &&
-      said(mine, m.id, (x) => x) === said(theirs, t.id, (x) => match.get(x) ?? `(${x})`);
+      said(mine, m.id, (x) => (mine.spans.some((s) => s.id === x) ? x : `(${x})`)) ===
+        said(theirs, t.id, (x) => match.get(x) ?? `(${x})`);
     if (!same) {
       mineState.set(m.id, "differs");
       theirState.set(t.id, "differs");

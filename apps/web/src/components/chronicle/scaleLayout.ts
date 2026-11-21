@@ -131,7 +131,8 @@ export function layoutScale(
         unnumbered.push(s.id);
         continue;
       }
-      const at = finite(start) ? x((start.lo + start.hi) / 2) : 0;
+      // An event older than shown sits at the edge, with room for its mark.
+      const at = finite(start) ? x((start.lo + start.hi) / 2) : sizes.eventBefore;
       const fade = finite(start) ? ((start.hi - start.lo) * perYear) / 2 : 0;
       placed.push({
         ...blank,
@@ -203,7 +204,8 @@ export function layoutScale(
   const step = rulerStep(sizes.mark / perYear);
   const marks: ScaleLayout["marks"] = [];
   const first = Math.ceil((bounds.lo - edge / perYear) / step) * step;
-  for (let year = first; x(year) <= length && marks.length < 500; year += step) {
+  const most = Math.ceil(length / sizes.mark) + 2;
+  for (let year = first; x(year) <= length && marks.length < most; year += step) {
     marks.push({ at: x(year), year });
   }
 

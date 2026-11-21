@@ -94,6 +94,12 @@ describe("the scale layout", () => {
     expect(years.every((y) => y % (years[1]! - years[0]!) === 0)).toBe(true);
   });
 
+  it("rules the whole length however much room there is", () => {
+    const one = [span("a", { start: at(0), end: at(1000) })];
+    const wide = layoutScale(one, allSpanPoints(one), ["l1"], 76800, SIZES);
+    expect(wide.marks.at(-1)!.year).toBeGreaterThanOrEqual(1000);
+  });
+
   it("with nothing placed, still lists lengths", () => {
     const only = [span("loose", { length: long(40, 60) }), span("bare")];
     const empty = layoutScale(only, allSpanPoints(only), ["l1"], 600, SIZES);
@@ -117,6 +123,31 @@ describe("moving spans", () => {
     expect(moved.end).toEqual(at(130, 140));
     const byEnd = applyOffer(s, { start: null, end: { lo: 20, hi: 20 } });
     expect(byEnd).toMatchObject({ start: { low: -10, high: -10 }, end: { low: 20, high: 20 } });
+  });
+
+  it("an offered end keeps a span's own numbers in agreement, whatever it was built from", () => {
+    const fits = (x: ChronicleSpan) => allSpanPoints([x]).get(x.id)!.disagrees === false;
+    const end = { start: null, end: { lo: 60, hi: 100 } };
+    const start = { start: { lo: 100, hi: 100 }, end: null };
+    // A start and a length: the end is taken, and the start is worked out from the length.
+    const byLength = applyOffer(span("a", { start: at(0), length: long(50) }), end);
+    expect(byLength).toMatchObject({ start: null, end: { low: 60, high: 100 } });
+    expect(allSpanPoints([byLength]).get("a")!.start).toEqual({ lo: 10, hi: 50 });
+    // An end and a length, given a start.
+    const moved = applyOffer(span("a", { end: at(50), length: long(20) }), start);
+    expect(moved).toMatchObject({ start: { low: 100 }, end: null });
+    // Only the other end stored, with nothing to say how far it lies: it is forgotten.
+    expect(applyOffer(span("a", { start: at(200) }), end).start).toBeNull();
+    // An open start stays open.
+    expect(applyOffer(span("a", { start: "open", end: at(50) }), end).start).toBe("open");
+    expect(applyOffer(span("a", { start: "open", end: at(50) }), start).end).toBeNull();
+    for (const x of [byLength, moved]) expect(fits(x)).toBe(true);
+  });
+
+  it("shifting by nothing keeps the author's words", () => {
+    const s = span("a", { start: { words: "40 years after the start of b", low: 40, high: 40 } });
+    expect(shiftSpan(s, 0)).toEqual(s);
+    expect(shiftSpan(s, 5).start).toMatchObject({ words: "", low: 45 });
   });
 
   it("an offer never gives an event an end", () => {
@@ -227,6 +258,17 @@ describe("two versions", () => {
     const v = compareVersions(mine, withSaid, -1000);
     expect(v.mine.get("a")).toBeUndefined();
     expect(v.mine.get("b")).toBeUndefined();
+  });
+
+  it("does not call an identical copy different for a statement about a removed span", () => {
+    const broken = file(mine.spans, [rel("b", "after", "gone")]);
+    expect(compareVersions(broken, file(broken.spans, broken.relations), 0).mine.size).toBe(0);
+  });
+
+  it("allows for decimals when comparing after an offset", () => {
+    const one = file([span("a", { start: at(0.3) }), span("b", { start: at(1.1) })]);
+    const two = file([span("a", { start: at(0.1) }), span("b", { start: at(0.9) })]);
+    expect(compareVersions(one, two, 0.3 - 0.1).mine.size).toBe(0);
   });
 
   it("rules two chronicles alike when given the same years", () => {

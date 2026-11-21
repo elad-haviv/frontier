@@ -41,12 +41,15 @@ export function ScaleView(p: ViewProps) {
     };
   }, [chronicle.id]);
 
+  const asked = useRef(0);
   const pickOther = (id: string) => {
+    // Only the answer to the latest choice is taken.
+    const mine = ++asked.current;
     setAlignOn(null);
     if (!id) return setOther(null);
     api.chronicle(id).then(
-      (r) => setOther(r.chronicle),
-      () => setOther(null),
+      (r) => mine === asked.current && setOther(r.chronicle),
+      () => mine === asked.current && setOther(null),
     );
   };
 
@@ -85,10 +88,16 @@ export function ScaleView(p: ViewProps) {
   useEffect(() => {
     const el = frame.current;
     if (!el || narrow) return;
+    // A pinch arrives as many small turns of the wheel: one step of zoom per 50 of them.
+    let turned = 0;
     const onWheel = (e: WheelEvent) => {
       if (!e.ctrlKey && !e.metaKey) return;
       e.preventDefault();
-      setZoom((z) => Math.max(0, Math.min(ZOOMS.length - 1, z + (e.deltaY < 0 ? 1 : -1))));
+      turned += e.deltaY;
+      if (Math.abs(turned) < 50) return;
+      const by = turned < 0 ? 1 : -1;
+      turned = 0;
+      setZoom((z) => Math.max(0, Math.min(ZOOMS.length - 1, z + by)));
     };
     el.addEventListener("wheel", onWheel, { passive: false });
     return () => el.removeEventListener("wheel", onWheel);
@@ -111,6 +120,12 @@ export function ScaleView(p: ViewProps) {
       layoutScale(two.moved.spans, two.worked.points, laneIds(two.moved), room, sizes, within),
     [two, room, sizes, within],
   );
+  // The span years are counted from is named only while its start really is year 0.
+  const origin = byId.get(chronicle.origin ?? "");
+  const originAtZero =
+    origin?.start && origin.start !== "open" && origin.start.low === 0 && origin.start.high === 0
+      ? origin
+      : null;
   const pick = (ids: readonly string[]) =>
     ids.map((id) => byId.get(id)).filter((s): s is ChronicleSpan => s !== undefined);
 
@@ -119,10 +134,7 @@ export function ScaleView(p: ViewProps) {
       <div className="ch-zoom">
         <p className="ch-note muted">
           To scale, in years counted from{" "}
-          {chronicle.spans.find((s) => s.id === chronicle.origin)
-            ? `the start of ${spanName(byId.get(chronicle.origin ?? "")!)}`
-            : "year 0"}
-          .
+          {originAtZero ? `the start of ${spanName(originAtZero)}` : "year 0"}.
         </p>
         <button
           type="button"

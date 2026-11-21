@@ -59,6 +59,7 @@ function Chronicle({ id }: { id: string }) {
   const [entries, setEntries] = useState<Record<string, { path: string; title: string }>>({});
   const [linking, setLinking] = useState<Record<string, { path: string; title: string }>>({});
   const links = useRef(new Map<string, string>());
+  const titles = useRef(new Map<string, { path: string; title: string }>());
 
   const file = useItemFile<ChronicleFile>({
     load: async () => {
@@ -72,6 +73,14 @@ function Chronicle({ id }: { id: string }) {
       if (link.length > 0) {
         for (const l of link)
           if (links.current.get(l.span) === l.path) links.current.delete(l.span);
+        // The entry's name is known from the picker, so the link shows at once.
+        const known: Record<string, { path: string; title: string }> = {};
+        for (const l of link) {
+          const entry = saved.chronicle.spans.find((s) => s.id === l.span)?.entry;
+          const title = titles.current.get(l.span);
+          if (entry && title) known[entry] = title;
+        }
+        setEntries((now) => ({ ...now, ...known }));
         setLinking((now) =>
           Object.fromEntries(Object.entries(now).filter(([span]) => links.current.has(span))),
         );
@@ -120,6 +129,7 @@ function Chronicle({ id }: { id: string }) {
   const span = chronicle.spans.find((s) => s.id === selected) ?? null;
   const openLane =
     chronicle.lanes.find((l) => l.id === lane)?.id ??
+    span?.lane ??
     chronicle.lanes.find((l) => chronicle.spans.some((s) => s.lane === l.id))?.id ??
     chronicle.lanes[0]!.id;
   const red = redCount(worked);
@@ -384,8 +394,12 @@ function Chronicle({ id }: { id: string }) {
               }
               onLink={(path, title) => {
                 links.current.set(span.id, path);
+                titles.current.set(span.id, { path, title });
                 setLinking((now) => ({ ...now, [span.id]: { path, title } }));
-                file.change((c) => withSpan(c, span.id, (s) => ({ ...s, entry: null })));
+                // The link travels with the next save. Nothing in the file changes until the
+                // server answers, so there is no step for undo to take back yet.
+                if (span.entry === null) file.touch();
+                else file.change((c) => withSpan(c, span.id, (s) => ({ ...s, entry: null })));
               }}
               onUnlink={() => {
                 links.current.delete(span.id);

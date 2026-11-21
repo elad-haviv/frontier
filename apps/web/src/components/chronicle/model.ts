@@ -158,7 +158,9 @@ export function typed(text: string): number | null {
 
 type Shiftable = Rough | "open" | null;
 const moved = (end: Shiftable, by: number): Shiftable =>
-  end && end !== "open" ? { ...end, words: "", low: end.low + by, high: end.high + by } : end;
+  end && end !== "open" && by !== 0
+    ? { ...end, words: "", low: end.low + by, high: end.high + by }
+    : end;
 
 /** Moves a span's start and end by a number of years. Its length does not change. */
 export function shiftSpan(span: ChronicleSpan, by: number): ChronicleSpan {
@@ -166,29 +168,28 @@ export function shiftSpan(span: ChronicleSpan, by: number): ChronicleSpan {
 }
 
 /**
- * Puts a span where an offer says. A span with both a start and an end keeps its length: the
- * end that was not offered moves along by the same number of years.
+ * Puts a span where an offer says, so that its own numbers still agree. When only one end is
+ * offered: a span with a length keeps the length and has its other end worked out again; a span
+ * with both ends stored moves the other end by the same number of years; otherwise the other end
+ * is forgotten, since nothing says where it now lies.
  */
 export function applyOffer(
   span: ChronicleSpan,
   offer: { start: Range | null; end: Range | null },
 ): ChronicleSpan {
-  const was = (end: Shiftable): number | null => (end && end !== "open" ? end.low : null);
-  let next = span;
-  if (offer.start) {
-    const from = was(span.start);
-    next = { ...next, start: rough(offer.start.lo, offer.start.hi) };
-    if (!offer.end && from !== null)
-      next = { ...next, end: moved(span.end, offer.start.lo - from) };
-  }
-  if (offer.end && !span.point) {
-    const from = was(span.end);
-    next = { ...next, end: rough(offer.end.lo, offer.end.hi) };
-    if (!offer.start && from !== null) {
-      next = { ...next, start: moved(span.start, offer.end.lo - from) };
-    }
-  }
-  return next;
+  const stored = (end: Shiftable): number | null => (end && end !== "open" ? end.low : null);
+  const start = offer.start && rough(offer.start.lo, offer.start.hi);
+  if (span.point) return start ? { ...span, start } : span;
+  const end = offer.end && rough(offer.end.lo, offer.end.hi);
+  if (start && end) return { ...span, start, end };
+  const follow = (other: Shiftable, was: number | null, now: number): Shiftable => {
+    if (other === "open" || other === null) return other;
+    if (span.length) return null;
+    return was === null ? null : moved(other, now - was);
+  };
+  if (start) return { ...span, start, end: follow(span.end, stored(span.start), start.low) };
+  if (end) return { ...span, end, start: follow(span.start, stored(span.end), end.low) };
+  return span;
 }
 
 /** Counts years from another span's start: every stored start and end moves by one amount. */

@@ -24,6 +24,8 @@ export interface ItemFile<T> {
    * typed into one field, are one step for undo.
    */
   change: (fn: (value: T) => T, tag?: string) => void;
+  /** Asks for a save without a change to the value, as when something is sent along with it. */
+  touch: () => void;
   /** Takes in what the server holds now, for after the server changed the file itself. */
   reload: () => Promise<void>;
   undo: () => void;
@@ -195,6 +197,14 @@ export function useItemFile<T>(options: ItemFileOptions<T>): ItemFile<T> {
     [put],
   );
 
+  const touch = useCallback(() => {
+    if (current.current === null) return;
+    dirty.current = true;
+    halted.current = false;
+    setSaving("waiting");
+    schedule();
+  }, [schedule]);
+
   const undo = useCallback(() => {
     const before = undoStack.current.at(-1);
     if (before === undefined || current.current === null) return;
@@ -234,6 +244,7 @@ export function useItemFile<T>(options: ItemFileOptions<T>): ItemFile<T> {
     error,
     saving,
     change,
+    touch,
     reload,
     undo,
     redo,
