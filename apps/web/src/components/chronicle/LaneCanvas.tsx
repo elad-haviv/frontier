@@ -37,7 +37,12 @@ interface Props {
   narrow: boolean;
   openLane: string;
   onOpenLane: (id: string) => void;
-  /** Keeps the place in view when the length changes, as on zooming. */
+  /** How a span compares with the other chronicle, when two are shown. */
+  stateOf?: (id: string) => "differs" | "only" | undefined;
+  /** Leaves sideways scrolling to the parent, so two canvases move as one. */
+  bare?: boolean;
+  /** A heading over the canvas, such as the chronicle's title when two are shown. */
+  heading?: string;
   children?: ReactNode;
 }
 
@@ -60,6 +65,7 @@ export function LaneCanvas(p: Props) {
 
   const bar = (s: Drawn, style: CSSProperties) => {
     const mark = p.markOf(s.id);
+    const versus = p.stateOf?.(s.id);
     const name = p.nameOf(s.id);
     const size = Math.max(1, s.t1 - s.t0);
     const vars = {
@@ -79,7 +85,8 @@ export function LaneCanvas(p: Props) {
           (s.openStart ? " is-open-start" : "") +
           (s.openEnd ? " is-open-end" : "") +
           (p.selected === s.id ? " is-selected" : "") +
-          (mark ? ` is-${mark}` : "")
+          (mark ? ` is-${mark}` : "") +
+          (versus ? ` is-${versus}` : "")
         }
         style={{ ...style, ...vars } as CSSProperties}
         onClick={() => p.onSelect(s.id)}
@@ -91,6 +98,11 @@ export function LaneCanvas(p: Props) {
           {s.small && <small> (not to scale)</small>}
         </span>
         {mark && <b className="sr-only">{mark === "red" ? " (does not fit)" : " (may not fit)"}</b>}
+        {versus && (
+          <b className="sr-only">
+            {versus === "differs" ? " (differs between the two)" : " (only in this one)"}
+          </b>
+        )}
       </button>
     );
   };
@@ -98,7 +110,8 @@ export function LaneCanvas(p: Props) {
   if (!p.narrow) {
     const top = scaled ? 22 : 0;
     return (
-      <div className="ch-across" ref={box}>
+      <div className={p.bare ? "" : "ch-across"} ref={box}>
+        {p.heading && <h3 className="ch-version">{p.heading}</h3>}
         <div className="ch-canvas" style={{ width: p.length }}>
           {p.marks?.map((m) => (
             <div key={m.at} className="ch-mark" style={{ left: m.at }}>
@@ -142,6 +155,7 @@ export function LaneCanvas(p: Props) {
 
   return (
     <div ref={box}>
+      {p.heading && <h3 className="ch-version">{p.heading}</h3>}
       <div className="ch-lane-tabs" role="tablist" aria-label="Lane shown">
         {p.lanes.map((lane) => (
           <button

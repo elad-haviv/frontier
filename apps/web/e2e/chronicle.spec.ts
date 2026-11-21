@@ -166,7 +166,7 @@ test("CUJ 14: finds what is too quick and what is too slow", async ({ page }, in
   });
 });
 
-test("CUJ 15, first half: places spans, takes an offered fix, sees them to scale and shifts them", async ({
+test("CUJ 15: places spans, takes an offered fix, shifts them, and compares a copy with the original", async ({
   page,
 }, info) => {
   const phone = info.project.name === "phone";
@@ -238,6 +238,38 @@ test("CUJ 15, first half: places spans, takes an offered fix, sees them to scale
   await expect(tab(page, "Does not fit")).toBeVisible();
   await expect(page.locator(".ch-saving")).toHaveText("Saved as a draft");
 
+  // Another version: a copy with the war 500 years earlier, beside the original.
+  const original = page.url();
+  await page.locator(".ch-more summary").click();
+  await page.getByRole("button", { name: "Copy, to try another version" }).click();
+  await expect(page.locator(".ch-bar h1")).toHaveText(`Copy of Scale trial ${info.project.name}`);
+  await tab(page, "Scale").click();
+  await page.locator(".ch-shift summary").click();
+  await page.getByLabel("Which spans").selectOption("chosen");
+  await page.locator(".ch-shift-list").getByLabel("War").check();
+  await page.getByLabel("Years to shift by").fill("500");
+  await page.getByLabel("Earlier or later").selectOption("earlier");
+  await page.getByRole("button", { name: "Shift", exact: true }).click();
+  await page
+    .getByLabel("Compare with…")
+    .selectOption({ label: `Scale trial ${info.project.name}` });
+  const versions = page.locator(".ch-version");
+  await expect(versions).toHaveCount(2);
+  await expect(versions.nth(1)).toHaveText(`Scale trial ${info.project.name}`);
+  // The shifted span is marked as different in both; the others are not.
+  await expect(page.locator(".ch-span.is-differs", { hasText: "War" })).toHaveCount(2);
+  await expect(page.locator(".ch-span.is-differs")).toHaveCount(2);
+  await expect(page.getByLabel("Aligned on the start of")).toHaveValue(/.+/);
+  // Each lists its own flags: the copy's war now begins before the fading has ended.
+  await expect(tab(page, /Does not fit \(1\)/)).toBeVisible();
+  await expect(page.locator(".ch-versus-flags")).toContainText("Nothing.");
+  await noSidewaysScroll(page);
+  await expect(page.locator(".ch-saving")).toHaveText("Saved as a draft");
+  await page.evaluate(async () => {
+    await fetch(`/api/chronicles/${location.pathname.split("/").pop()}`, { method: "DELETE" });
+  });
+  await page.goto(original);
+  await expect(page.locator(".ch-bar h1")).toHaveText(`Scale trial ${info.project.name}`);
   await page.evaluate(async () => {
     await fetch(`/api/chronicles/${location.pathname.split("/").pop()}`, { method: "DELETE" });
   });

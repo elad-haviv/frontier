@@ -4,6 +4,7 @@ import { allSpanPoints } from "@frontier/time";
 import { applyOffer, countFrom, shiftSpan } from "./model.ts";
 import { layoutOrder } from "./orderLayout.ts";
 import { type ScaleSizes, layoutScale, rulerStep, scaleBounds } from "./scaleLayout.ts";
+import { alignable, compareVersions } from "./versions.ts";
 
 const span = (id: string, extra: Partial<ChronicleSpan> = {}): ChronicleSpan => ({
   id,
@@ -164,5 +165,78 @@ describe("the order layout", () => {
     expect(of("e").t0).toBe(of("a").t1);
     expect(of("c").t0).toBeGreaterThan(of("a").t1);
     expect(layout.tracks.get("l3")).toBe(1);
+  });
+});
+
+describe("two versions", () => {
+  const file = (spans: ChronicleSpan[], relations: ChronicleFile["relations"] = []) =>
+    ({ spans, relations }) as unknown as ChronicleFile;
+  const rel = (a: string, kind: string, b: string) => ({ id: `${a}${kind}${b}`, a, kind, b });
+  const mine = file(
+    [
+      span("a", { start: at(0) }),
+      span("b", { start: at(100), end: at(200) }),
+      span("c", { name: "Shared name", start: at(10) }),
+      span("mineOnly"),
+    ],
+    [rel("b", "after", "a")],
+  );
+
+  it("matches spans by id, then by name, and marks what differs or is in one only", () => {
+    const theirs = file(
+      [
+        span("a", { start: at(0) }),
+        span("b", { start: at(-400), end: at(-300) }),
+        span("other", { name: "Shared name", start: at(10) }),
+        span("theirsOnly"),
+      ],
+      [rel("b", "after", "a")],
+    );
+    const v = compareVersions(mine, theirs, 0);
+    expect(v.match.get("other")).toBe("c");
+    expect([...v.mine]).toEqual([
+      ["mineOnly", "only"],
+      ["b", "differs"],
+    ]);
+    expect([...v.theirs]).toEqual([
+      ["b", "differs"],
+      ["theirsOnly", "only"],
+    ]);
+  });
+
+  it("counts a different statement as a difference, and not a renamed id", () => {
+    const sameSaid = file(mine.spans, [rel("b", "after", "a")]);
+    expect(compareVersions(mine, sameSaid, 0).mine.size).toBe(0);
+    const said = file(mine.spans, [rel("b", "during", "a")]);
+    expect([...compareVersions(mine, said, 0).mine.keys()].sort()).toEqual(["a", "b"]);
+  });
+
+  it("brings the other onto this ruler by an offset, and offers spans to align on", () => {
+    const theirs = file([
+      span("a", { start: at(1000) }),
+      span("b", { start: at(1100), end: at(1200) }),
+    ]);
+    const anchors = alignable(mine, theirs, compareVersions(mine, theirs, 0));
+    expect(anchors.map((x) => [x.mine.id, x.offset])).toEqual([
+      ["a", -1000],
+      ["b", -1000],
+    ]);
+    // Without the statement the other lacks, both spans that it names still differ.
+    expect(compareVersions(mine, theirs, -1000).mine.get("a")).toBe("differs");
+    const withSaid = file(theirs.spans, [rel("b", "after", "a")]);
+    const v = compareVersions(mine, withSaid, -1000);
+    expect(v.mine.get("a")).toBeUndefined();
+    expect(v.mine.get("b")).toBeUndefined();
+  });
+
+  it("rules two chronicles alike when given the same years", () => {
+    const one = [span("a", { start: at(0), end: at(10) })];
+    const two = [span("a", { start: at(-500), end: at(-490) })];
+    const within = scaleBounds([...allSpanPoints(one).values(), ...allSpanPoints(two).values()])!;
+    const first = layoutScale(one, allSpanPoints(one), ["l1"], 800, SIZES, within);
+    const second = layoutScale(two, allSpanPoints(two), ["l1"], 800, SIZES, within);
+    expect(first.length).toBeCloseTo(second.length);
+    expect(first.perYear).toBeCloseTo(second.perYear);
+    expect(first.spans[0]!.t0 - second.spans[0]!.t0).toBeCloseTo(500 * first.perYear);
   });
 });

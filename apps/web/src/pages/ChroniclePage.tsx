@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { type ChronicleFile, mergeChronicles } from "@frontier/schema";
-import { api, ApiFailure } from "../api.ts";
+import { api, ApiFailure, chronicleUrl } from "../api.ts";
 import { CompareView } from "../components/chronicle/CompareView.tsx";
 import { Flags, redCount } from "../components/chronicle/Flags.tsx";
 import { LaneList, UnitList } from "../components/chronicle/Lists.tsx";
@@ -151,6 +151,16 @@ function Chronicle({ id }: { id: string }) {
     navigate("/chronicles");
   }
 
+  async function copy() {
+    try {
+      const made = await api.copyChronicle(id);
+      refresh();
+      navigate(chronicleUrl(made.id));
+    } catch (err) {
+      setNotice(err instanceof ApiFailure ? err.message : "The chronicle could not be copied.");
+    }
+  }
+
   async function makeMain() {
     try {
       await api.makeMainChronicle(id);
@@ -231,6 +241,9 @@ function Chronicle({ id }: { id: string }) {
           <div>
             <button type="button" className="quiet" onClick={() => void rename()}>
               Rename
+            </button>
+            <button type="button" className="quiet" onClick={() => void copy()}>
+              Copy, to try another version
             </button>
             {!chronicle.main && (
               <button type="button" className="quiet" onClick={() => void makeMain()}>

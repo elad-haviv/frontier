@@ -87,8 +87,10 @@ export function layoutScale(
   lanes: readonly string[],
   room: number,
   sizes: ScaleSizes,
+  /** The years to rule, when two chronicles share one ruler; otherwise fitted to what is placed. */
+  within: Range | null = null,
 ): ScaleLayout {
-  const bounds = scaleBounds(points.values());
+  const bounds = within ?? scaleBounds(points.values());
   const tracks = new Map<string, number>(lanes.map((id) => [id, 1]));
   const notPlaced: ScaleLayout["notPlaced"] = [];
   const unnumbered: string[] = [];

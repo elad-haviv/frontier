@@ -95,7 +95,7 @@ after two independent reviews.
 - [x] 5a The list of real-world cases, each sourced, accepted by Elad case by case (three accepted)
 - [ ] Elad tries 5a with his own history before anything more is built
 - [x] 5b Scale, offered fixes, shifting a selection (built before the trial, at Elad's word)
-- [ ] 5c Two versions side by side
+- [x] 5c Two versions side by side
 - [ ] 5d Links to entries
 
 ## Now: stage 4, maps
