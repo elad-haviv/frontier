@@ -203,6 +203,8 @@ export const ConflictReason = z.enum([
   "binary_changed_on_both",
   /** A map changed here and in the vault in ways that cannot be merged item by item. */
   "map_changed_on_both",
+  /** A chronicle changed here and in the library in ways that cannot be merged item by item. */
+  "chronicle_changed_on_both",
   /** A rename cannot be carried out, for the reason given in `mine`. */
   "rename_blocked",
 ]);

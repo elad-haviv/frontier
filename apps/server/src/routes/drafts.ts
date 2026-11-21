@@ -113,7 +113,10 @@ export function draftRoutes(app: FastifyInstance, s: Services): void {
         binary: d.binary,
         text: d.binary ? "" : await s.drafts.text(d.id),
         // A map is not a note: its published text is read from the file in the vault.
-        mainText: s.index.note(d.path)?.text ?? s.maps.publishedText(d.path),
+        mainText:
+          s.index.note(d.path)?.text ??
+          s.maps.publishedText(d.path) ??
+          s.chronicles.publishedText(d.path),
         origins: d.origins,
       })),
     );

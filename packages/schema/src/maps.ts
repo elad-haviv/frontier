@@ -3,6 +3,7 @@
  * merged. A map is a standalone object that refers to entries by their ids.
  */
 import { z } from "zod";
+import { mergeItemLists, sameValue as same, serialiseItemFile } from "./itemFile.js";
 
 /** 8 random characters, as for an entry. Shorter ids from hand-written files are accepted. */
 const ItemId = z.string().min(1).max(40);
@@ -119,42 +120,12 @@ const ITEM_KEYS: Record<string, string[]> = {
   features: ["id", "kind", "layer", "at", "points", "entry", "label", "icon", "child"],
 };
 
-/** The object with the known keys first, in their fixed order, and any others after, as found. */
-function ordered(value: Record<string, unknown>, first: string[]): Record<string, unknown> {
-  const out: Record<string, unknown> = {};
-  for (const k of first) if (k in value) out[k] = value[k];
-  for (const k of Object.keys(value)) if (!(k in out)) out[k] = value[k];
-  return out;
-}
-
 /**
  * The text a map is stored as. Each image, layer and feature is on one line, so a difference
  * reads item by item, and the same map always gives the same bytes.
  */
 export function serialiseMap(map: MapFile): string {
-  const top = ordered(map as Record<string, unknown>, TOP);
-  const lines: string[] = ["{"];
-  const keys = Object.keys(top);
-  keys.forEach((key, i) => {
-    const comma = i === keys.length - 1 ? "" : ",";
-    const value = top[key];
-    if (key in ITEM_KEYS && Array.isArray(value)) {
-      if (value.length === 0) {
-        lines.push(`  ${JSON.stringify(key)}: []${comma}`);
-        return;
-      }
-      lines.push(`  ${JSON.stringify(key)}: [`);
-      value.forEach((item, n) => {
-        const text = JSON.stringify(ordered(item as Record<string, unknown>, ITEM_KEYS[key]!));
-        lines.push(`    ${text}${n === value.length - 1 ? "" : ","}`);
-      });
-      lines.push(`  ]${comma}`);
-    } else {
-      lines.push(`  ${JSON.stringify(key)}: ${JSON.stringify(value)}${comma}`);
-    }
-  });
-  lines.push("}");
-  return lines.join("\n") + "\n";
+  return serialiseItemFile(map as Record<string, unknown>, TOP, ITEM_KEYS);
 }
 
 export type ParsedMap = { ok: true; map: MapFile } | { ok: false; message: string };
@@ -185,56 +156,6 @@ export function parseMap(text: string): ParsedMap {
 
 // ---- Merging ---------------------------------------------------------------------------------
 
-const same = (a: unknown, b: unknown): boolean => JSON.stringify(a) === JSON.stringify(b);
-
-interface Merged<T> {
-  items: T[];
-  clashes: string[];
-}
-
-/** Merges one list of items by id. In a clash the item from `mine` is kept. */
-function mergeItems<T extends { id: string }>(base: T[], mine: T[], theirs: T[]): Merged<T> {
-  const baseById = new Map(base.map((i) => [i.id, i]));
-  const mineById = new Map(mine.map((i) => [i.id, i]));
-  const clashes: string[] = [];
-  const items: T[] = [];
-  const done = new Set<string>();
-
-  // Their order is the frame; my additions follow. Both sides only ever append.
-  for (const t of theirs) {
-    done.add(t.id);
-    const b = baseById.get(t.id);
-    const m = mineById.get(t.id);
-    if (!m) {
-      // I removed it, or they added it.
-      if (!b) items.push(t);
-      else if (!same(b, t)) {
-        clashes.push(t.id);
-        // My removal is kept.
-      }
-      continue;
-    }
-    if (same(m, t) || same(b, m)) items.push(t);
-    else if (same(b, t)) items.push(m);
-    else {
-      clashes.push(t.id);
-      items.push(m);
-    }
-  }
-  for (const m of mine) {
-    if (done.has(m.id)) continue;
-    const b = baseById.get(m.id);
-    if (!b) items.push(m);
-    else if (!same(b, m)) {
-      // They removed what I changed: mine is kept.
-      clashes.push(m.id);
-      items.push(m);
-    }
-    // Otherwise they removed it and I left it alone: it stays removed.
-  }
-  return { items, clashes };
-}
-
 export interface MapMerge {
   map: MapFile;
   /** Ids of the items, or names of the properties, that both sides changed differently. */
@@ -254,9 +175,9 @@ export function mergeMaps(base: MapFile, mine: MapFile, theirs: MapFile): MapMer
     clashes.push(key);
     return mine[key];
   };
-  const images = mergeItems(base.images, mine.images, theirs.images);
-  const layers = mergeItems(base.layers, mine.layers, theirs.layers);
-  const features = mergeItems(base.features, mine.features, theirs.features);
+  const images = mergeItemLists(base.images, mine.images, theirs.images);
+  const layers = mergeItemLists(base.layers, mine.layers, theirs.layers);
+  const features = mergeItemLists(base.features, mine.features, theirs.features);
   clashes.push(...images.clashes, ...layers.clashes, ...features.clashes);
 
   // A feature must not be left in a layer that the other side removed.

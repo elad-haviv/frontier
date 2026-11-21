@@ -12,7 +12,9 @@ import { AiLog } from "./ai/log.js";
 import { ModelCatalogue } from "./ai/models.js";
 import { AiProvider } from "./ai/provider.js";
 import { LoginLimiter } from "./auth/limit.js";
+import { ChronicleStore } from "./chronicles/store.js";
 import { MapStore } from "./maps/store.js";
+import { chronicleRoutes } from "./routes/chronicles.js";
 import { mapRoutes } from "./routes/maps.js";
 import { historyRoutes } from "./routes/history.js";
 import { importRoutes } from "./routes/import.js";
@@ -78,6 +80,7 @@ export interface Services {
   quarantine: Quarantine;
   loginLimit: LoginLimiter;
   maps: MapStore;
+  chronicles: ChronicleStore;
   backup: Backup;
   search: SearchIndex;
   /** Fetches `main`, resets the working copy and rebuilds the index. */
@@ -205,6 +208,7 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
     drafts,
     changer,
   });
+  const chronicles = new ChronicleStore({ vaultDir, git, index, drafts, changer });
   const reportAi = async () => status.ai(await ai.ready("extraction"), ai.lastError);
 
   const services: Services = {
@@ -230,6 +234,7 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
     quarantine,
     loginLimit: new LoginLimiter(),
     maps,
+    chronicles,
     async sync() {
       const result = await git.fetch();
       status.fetched(result.current);
@@ -237,11 +242,13 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
       await quarantine.noteFetched(result.previous ?? result.current, result.current);
       await quarantine.refresh();
       maps.refresh();
+      chronicles.refresh();
       await services.publisher.clearPublished();
       await quarantine.prune();
       status.quarantine(quarantine.count(), [
         ...(quarantine.problem ? [quarantine.problem] : []),
         ...maps.problems.map((p) => `${p.path} is not shown as a map. ${p.message}`),
+        ...chronicles.problems.map((p) => `${p.path} is not shown as a chronicle. ${p.message}`),
       ]);
       await proposals.prune();
       status.inbox(await services.branches.count());
@@ -393,6 +400,7 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
   settingsRoutes(app, services);
   passkeyRoutes(app, services);
   mapRoutes(app, services);
+  chronicleRoutes(app, services);
   importRoutes(app, services);
   historyRoutes(app, services);
   searchRoutes(app, services);

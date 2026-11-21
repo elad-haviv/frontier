@@ -9,6 +9,7 @@ export function quarantineRoutes(app: FastifyInstance, s: Services): void {
     s.status.quarantine(s.quarantine.count(), [
       ...(s.quarantine.problem ? [s.quarantine.problem] : []),
       ...s.maps.problems.map((p) => `${p.path} is not shown as a map. ${p.message}`),
+      ...s.chronicles.problems.map((p) => `${p.path} is not shown as a chronicle. ${p.message}`),
     ]);
   };
 

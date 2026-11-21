@@ -9,13 +9,17 @@ import { randomBytes } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
+  chronicleIdOf,
   type DraftRecord,
   makeId,
   mapIdOf,
+  mergeChronicles,
   mergeMaps,
+  parseChronicle,
   parseMap,
   type PublishPlan,
   type RenameIntent,
+  serialiseChronicle,
   serialiseMap,
 } from "@frontier/schema";
 import {
@@ -195,13 +199,12 @@ export class Publisher {
 
     const base = await baseText();
     if (base === null) return conflict("overlap", null);
-    const merged =
-      mapIdOf(draft.path) === null
-        ? await git.mergeFile(text, base, mainText)
-        : mergeMapTexts(base, text, mainText);
-    if (!merged.clean) {
-      return conflict(mapIdOf(draft.path) === null ? "overlap" : "map_changed_on_both", base);
-    }
+    // A structured file is merged item by item; a note line by line.
+    const kind = fileKindOf(draft.path);
+    const merged = kind
+      ? kind.merge(base, text, mainText)
+      : await git.mergeFile(text, base, mainText);
+    if (!merged.clean) return conflict(kind ? kind.conflict : "overlap", base);
     if (merged.text === mainText) return null;
     return {
       draft,
@@ -439,11 +442,10 @@ export class Publisher {
     }
     if (idDrafts.size > 0) {
       for (const c of classified.values()) {
-        if (mapIdOf(c.draft.path) === null || c.draft.kind === "delete") continue;
-        const parsed = parseMap(c.merge?.mergedText ?? c.text);
-        if (!parsed.ok) continue;
-        for (const f of parsed.map.features) {
-          const writer = f.entry ? idDrafts.get(f.entry) : undefined;
+        const kind = fileKindOf(c.draft.path);
+        if (!kind || c.draft.kind === "delete") continue;
+        for (const entry of kind.entryIds(c.merge?.mergedText ?? c.text)) {
+          const writer = idDrafts.get(entry);
           if (writer) groups.push([c.draft.id, writer]);
         }
       }
@@ -611,19 +613,55 @@ export class Publisher {
   }
 }
 
-/** Merges two versions of a map item by item. A clash, or text that is no map, is not clean. */
-function mergeMapTexts(
-  base: string,
-  mine: string,
-  theirs: string,
-): { clean: boolean; text: string } {
-  const b = parseMap(base);
-  const m = parseMap(mine);
-  const t = parseMap(theirs);
-  if (!b.ok || !m.ok || !t.ok) return { clean: false, text: mine };
-  const merged = mergeMaps(b.map, m.map, t.map);
-  return { clean: merged.clashes.length === 0, text: serialiseMap(merged.map) };
+/**
+ * A structured file kept in the library beside the notes. Each kind says which paths are its own,
+ * how two versions merge, and which entry ids a text names, so that a file and the draft that
+ * writes an id it names are saved together.
+ */
+interface FileKind {
+  mine(path: string): boolean;
+  conflict: Conflict["reason"];
+  merge(base: string, mine: string, theirs: string): { clean: boolean; text: string };
+  entryIds(text: string): string[];
 }
+
+const FILE_KINDS: FileKind[] = [
+  {
+    mine: (path) => mapIdOf(path) !== null,
+    conflict: "map_changed_on_both",
+    merge(base, mine, theirs) {
+      const b = parseMap(base);
+      const m = parseMap(mine);
+      const t = parseMap(theirs);
+      // A clash, or text that is no map, is not clean.
+      if (!b.ok || !m.ok || !t.ok) return { clean: false, text: mine };
+      const merged = mergeMaps(b.map, m.map, t.map);
+      return { clean: merged.clashes.length === 0, text: serialiseMap(merged.map) };
+    },
+    entryIds(text) {
+      const parsed = parseMap(text);
+      return parsed.ok ? parsed.map.features.flatMap((f) => (f.entry ? [f.entry] : [])) : [];
+    },
+  },
+  {
+    mine: (path) => chronicleIdOf(path) !== null,
+    conflict: "chronicle_changed_on_both",
+    merge(base, mine, theirs) {
+      const b = parseChronicle(base);
+      const m = parseChronicle(mine);
+      const t = parseChronicle(theirs);
+      if (!b.ok || !m.ok || !t.ok) return { clean: false, text: mine };
+      const merged = mergeChronicles(b.chronicle, m.chronicle, t.chronicle);
+      return { clean: merged.clashes.length === 0, text: serialiseChronicle(merged.chronicle) };
+    },
+    entryIds(text) {
+      const parsed = parseChronicle(text);
+      return parsed.ok ? parsed.chronicle.spans.flatMap((sp) => (sp.entry ? [sp.entry] : [])) : [];
+    },
+  },
+];
+
+const fileKindOf = (path: string): FileKind | undefined => FILE_KINDS.find((k) => k.mine(path));
 
 /**
  * Lines at the end of the commit message that name where accepted content came from: the agent's
