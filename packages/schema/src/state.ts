@@ -76,8 +76,15 @@ export const AiSettings = z.object({
     .object({
       extraction: z.string().nullable().default(null),
       conversation: z.string().nullable().default(null),
+      art: z.string().nullable().default(null),
     })
     .default({}),
+  /** The look given to concept art, added to every picture's description. */
+  artStyle: z
+    .string()
+    .default(
+      "Pencil and ink sketch on aged paper: hand-drawn, fine linework, light sepia washes, like a page of an explorer's field notebook.",
+    ),
   /** Frontier stops calling the provider when this month's spending reaches it. */
   monthlyCapUsd: z.number().min(0).default(10),
   /** Propose fields for the notes of each Publish. */
