@@ -9,6 +9,7 @@ import type {
   SettingsResponse,
   InboxResponse,
   MapFile,
+  ChronicleFile,
   SchemaResponse,
   PublishPlan,
   StatusSnapshot,
@@ -166,6 +167,23 @@ export const api = {
   deleteMap: (id: string) => send<{ ok: true }>("DELETE", `/api/maps/${id}`),
   markerSets: () =>
     call<{ sets: { name: string; icons: { name: string; path: string }[] }[] }>("/api/marker-sets"),
+  chronicles: () =>
+    call<{
+      chronicles: { id: string; title: string; main: boolean; spans: number; state: string }[];
+      problems: { path: string; message: string }[];
+    }>("/api/chronicles"),
+  chronicle: (id: string) =>
+    call<{ chronicle: ChronicleFile; revision: number; state: string }>(`/api/chronicles/${id}`),
+  createChronicle: (title: string) => post<{ id: string }>("/api/chronicles", { title }),
+  saveChronicle: (id: string, chronicle: ChronicleFile, revision: number) =>
+    send<{ chronicle: ChronicleFile; revision: number }>("PUT", `/api/chronicles/${id}`, {
+      chronicle,
+      revision,
+    }),
+  makeMainChronicle: (id: string) => post<{ ok: true }>(`/api/chronicles/${id}/main`, {}),
+  resolveChronicle: (id: string, keep: "mine" | "theirs") =>
+    post<{ ok: true }>(`/api/chronicles/${id}/resolve`, { keep }),
+  deleteChronicle: (id: string) => send<{ ok: true }>("DELETE", `/api/chronicles/${id}`),
   mapImages: () => call<{ images: string[] }>("/api/map-images"),
   history: (path?: string) =>
     call<{ versions: Version[] }>(`/api/history${path ? `?path=${encodeURIComponent(path)}` : ""}`),
@@ -300,6 +318,8 @@ export interface LoadedMap {
 export function mapImageUrl(path: string, size: 2560 | 4096): string {
   return `/api/images?path=${encodeURIComponent(path)}&w=${size}`;
 }
+
+export const chronicleUrl = (id: string): string => `/chronicle/${id}`;
 
 export const mapUrl = (id: string, feature?: string): string =>
   `/map/${id}${feature ? `?f=${encodeURIComponent(feature)}` : ""}`;

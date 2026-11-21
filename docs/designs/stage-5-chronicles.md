@@ -391,7 +391,6 @@ Below 34 rem wide:
 | `POST /api/chronicles/:id/main` | none | `{ ok }`; drafts the change into every chronicle it touches |
 | `POST /api/chronicles/:id/resolve` | `{ keep }`, `mine` or `theirs` | `{ ok }` |
 | `DELETE /api/chronicles/:id` | none | `{ ok }` |
-| `GET /api/cases` | none | `{ cases }`, the shipped list |
 
 ## Files
 
@@ -403,12 +402,14 @@ Below 34 rem wide:
 | `apps/server/src/chronicles/store.ts`, `routes/chronicles.ts`, `app.ts` | The store and routes; the service, its refresh after a fetch, its problems in the status | 5a |
 | `apps/server/src/publish/publish.ts`, `routes/drafts.ts` | File kinds; the note routes refusing a chronicle draft | 5a |
 | `apps/web/src/hooks/useItemFile.ts`, `api.ts`, `App.tsx`, `components/Shell.tsx` | The save, merge and undo loop; calls; the route and menu entry | 5a |
-| `apps/web/src/pages/{Chronicles,ChroniclePage}.tsx`, `components/chronicle/{OrderView,CompareView,Flags,SpanForm,LaneList,UnitList}.tsx` | Pages and views | 5a |
+| `apps/web/src/pages/{Chronicles,ChroniclePage}.tsx`, `components/chronicle/{OrderView,orderLayout,CompareView,Flags,SpanForm,Lists,model}.tsx` | Pages and views | 5a |
 | `apps/web/src/pages/Unpublished.tsx` | A chronicle among unsaved changes, its link, and its conflict settled by keeping one | 5a |
 | `apps/web/src/components/chronicle/{ScaleView,ShiftForm,TwoVersions}.tsx` | Scale, shift, two versions | 5b, 5c |
 | `apps/server/src/routes/entries.ts`, `apps/web/src/pages/Entry.tsx` | Chronicles per entry | 5d |
 
-No new dependency. Views are drawn in SVG.
+No new dependency. The order and compare views are drawn with positioned HTML elements, so every
+span is a button; the scale view (5b) is drawn in SVG. The shipped cases are part of the web bundle,
+read from `packages/time/src/cases.ts`; there is no route for them.
 
 ## Risks
 

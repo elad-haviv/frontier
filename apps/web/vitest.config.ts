@@ -8,6 +8,7 @@ export default defineConfig({
     alias: {
       "@frontier/vault": at("../../packages/vault/src/index.ts"),
       "@frontier/schema": at("../../packages/schema/src/index.ts"),
+      "@frontier/time": at("../../packages/time/src/index.ts"),
     },
   },
   test: { include: ["src/**/*.test.ts", "src/**/*.test.tsx"] },

@@ -35,7 +35,7 @@ export default defineConfig({
       name: "desktop",
       use: { viewport: { width: 1280, height: 800 }, storageState: AUTH },
       dependencies: ["setup"],
-      testMatch: /reader\.spec\.ts/,
+      testMatch: /(reader|chronicle)\.spec\.ts/,
     },
   ],
   webServer: {

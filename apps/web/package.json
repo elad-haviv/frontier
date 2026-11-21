@@ -19,6 +19,7 @@
     "@frontier/schema": "0.1.0",
     "@frontier/vault": "0.1.0",
     "@frontier/geo": "0.1.0",
+    "@frontier/time": "0.1.0",
     "@simplewebauthn/browser": "^14.0.0",
     "codemirror": "^6.0.2",
     "d3-geo": "^3.1.2",

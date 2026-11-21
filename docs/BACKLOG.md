@@ -91,7 +91,7 @@ history; notes and media are imported; the library is exported as a vault. Desig
 Design: [stage 5](designs/stage-5-chronicles.md), from the brainstorm in `concepts_brief.md`. Revised
 after two independent reviews.
 
-- [ ] 5a Order and comparison: the chronicle file, lanes, spans, relations, units, the order view,
+- [x] 5a Order and comparison: the chronicle file, lanes, spans, relations, units, the order view,
       Compare, what does not fit, the form, the phone layout
 - [ ] 5a The list of real-world cases, each sourced, accepted by Elad case by case
 - [ ] Elad tries 5a with his own history before anything more is built

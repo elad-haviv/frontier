@@ -11,6 +11,8 @@ import { Home } from "./pages/Home.tsx";
 import { HistoryPage, LibraryHistoryPage } from "./pages/History.tsx";
 import { ImportPage } from "./pages/Import.tsx";
 import { InboxPage } from "./pages/Inbox.tsx";
+import { ChroniclePage } from "./pages/ChroniclePage.tsx";
+import { ChroniclesPage } from "./pages/Chronicles.tsx";
 import { MapPage } from "./pages/MapPage.tsx";
 import { MapsPage } from "./pages/Maps.tsx";
 import { Login } from "./pages/Login.tsx";
@@ -58,6 +60,8 @@ export function App() {
         <Route path="/versions" element={<LibraryHistoryPage />} />
         <Route path="/maps" element={<MapsPage />} />
         <Route path="/map/:id" element={<MapPage />} />
+        <Route path="/chronicles" element={<ChroniclesPage />} />
+        <Route path="/chronicle/:id" element={<ChroniclePage />} />
         <Route path="/settings" element={<SettingsPage />} />
         <Route path="/conflict/:id" element={<ConflictPage />} />
         <Route path="/versions/:id" element={<VersionsPage />} />

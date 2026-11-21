@@ -1,8 +1,8 @@
 import type { PublishPlan, UnpublishedResponse } from "@frontier/schema";
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { mapIdOf } from "@frontier/schema";
-import { api, ApiFailure, editUrl, entryUrl, imageUrl, mapUrl } from "../api.ts";
+import { chronicleIdOf, mapIdOf } from "@frontier/schema";
+import { api, ApiFailure, chronicleUrl, editUrl, entryUrl, imageUrl, mapUrl } from "../api.ts";
 import { Diff } from "../components/Diff.tsx";
 import { useRefresh, useWords } from "../components/Shell.tsx";
 import { useDialogs } from "../components/Dialogs.tsx";
@@ -15,6 +15,8 @@ const REASON: Record<string, string> = {
   deleted_on_main: "This file was deleted from the vault meanwhile.",
   delete_of_changed_file: "This file was changed in the vault after you chose to delete it.",
   binary_changed_on_both: "This image was changed in both places.",
+  chronicle_changed_on_both:
+    "This chronicle was changed here and in the library in the same places. Keep one of the two.",
   map_changed_on_both:
     "This map was changed here and in the vault in the same places. Keep one of the two.",
   rename_blocked: "This rename cannot be carried out.",
@@ -127,8 +129,10 @@ export function UnpublishedPage() {
 
   async function settleMap(path: string, keep: "mine" | "theirs") {
     const id = mapIdOf(path);
-    if (!id) return;
-    await api.resolveMap(id, keep).catch(() => undefined);
+    const chronicle = chronicleIdOf(path);
+    if (id) await api.resolveMap(id, keep).catch(() => undefined);
+    else if (chronicle) await api.resolveChronicle(chronicle, keep).catch(() => undefined);
+    else return;
     setPlan(null);
     await load();
     refresh();
@@ -188,11 +192,15 @@ export function UnpublishedPage() {
                   </details>
                 )}
                 <p className="change-actions">
-                  {d.kind !== "delete" && !d.binary && !mapIdOf(d.path) && (
-                    <Link to={editUrl(d.path)}>Keep editing</Link>
-                  )}
+                  {d.kind !== "delete" &&
+                    !d.binary &&
+                    !mapIdOf(d.path) &&
+                    !chronicleIdOf(d.path) && <Link to={editUrl(d.path)}>Keep editing</Link>}
                   {d.kind !== "delete" && mapIdOf(d.path) && (
                     <Link to={mapUrl(mapIdOf(d.path)!) + "?edit=1"}>Open the map</Link>
+                  )}
+                  {d.kind !== "delete" && chronicleIdOf(d.path) && (
+                    <Link to={chronicleUrl(chronicleIdOf(d.path)!)}>Open the chronicle</Link>
                   )}
                   <button type="button" className="plain danger" onClick={() => discard(d.id)}>
                     Discard
@@ -327,14 +335,15 @@ export function UnpublishedPage() {
                     <p className="error">
                       {REASON[c.reason]} {c.reason === "rename_blocked" && c.mine}
                     </p>
-                    {c.reason === "map_changed_on_both" && (
+                    {(c.reason === "map_changed_on_both" ||
+                      c.reason === "chronicle_changed_on_both") && (
                       <span className="change-actions">
                         <button
                           type="button"
                           className="quiet"
                           onClick={() => settleMap(c.path, "mine")}
                         >
-                          Keep my map
+                          {c.reason === "map_changed_on_both" ? "Keep my map" : "Keep my chronicle"}
                         </button>
                         <button
                           type="button"
@@ -345,11 +354,13 @@ export function UnpublishedPage() {
                         </button>
                       </span>
                     )}
-                    {c.reason !== "rename_blocked" && c.reason !== "map_changed_on_both" && (
-                      <Link to={`/conflict/${c.draftId}`} state={{ conflict: c }}>
-                        Resolve
-                      </Link>
-                    )}
+                    {c.reason !== "rename_blocked" &&
+                      c.reason !== "map_changed_on_both" &&
+                      c.reason !== "chronicle_changed_on_both" && (
+                        <Link to={`/conflict/${c.draftId}`} state={{ conflict: c }}>
+                          Resolve
+                        </Link>
+                      )}
                   </li>
                 ))}
               </ul>
