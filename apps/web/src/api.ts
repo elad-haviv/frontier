@@ -252,6 +252,17 @@ export const api = {
     }),
   rewrite: (body: { path: string; passage: string; before: string; after: string; how: string }) =>
     post<{ text: string }>("/api/write/rewrite", body),
+  comments: (path: string) =>
+    call<{ comments: PassageComment[] }>(`/api/comments?path=${encodeURIComponent(path)}`),
+  commentCount: (path: string) =>
+    call<{ open: number }>(`/api/comments/count?path=${encodeURIComponent(path)}`),
+  addComment: (body: Omit<PassageComment, "id" | "at">) =>
+    post<{ comment: PassageComment }>("/api/comments", body),
+  changeComment: (id: string, change: { text?: string; for?: "me" | "ai" }) =>
+    send<{ comment: PassageComment }>("PATCH", `/api/comments/${id}`, change),
+  removeComment: (id: string) => send<{ ok: true }>("DELETE", `/api/comments/${id}`),
+  workOnComment: (id: string, around: { before: string; after: string }) =>
+    post<{ text: string }>(`/api/comments/${id}/work`, around),
   characterProfile: (path: string) =>
     call<{ profile: CharacterProfile | null }>(
       `/api/characters/profile?path=${encodeURIComponent(path)}`,
@@ -497,6 +508,19 @@ export interface Discovery {
 export const discoveryArtUrl = (map: string, id: string): string =>
   `/api/maps/${map}/discoveries/${id}/art`;
 
+export interface PassageComment {
+  id: string;
+  path: string;
+  quote: string;
+  prefix: string;
+  suffix: string;
+  text: string;
+  for: "me" | "ai";
+  at: string;
+}
+
+export type ExportKind = "site" | "docx" | "pdf" | "markdown" | "json" | "slides";
+
 export interface ExportPick {
   title: string;
   folder?: string;
@@ -504,10 +528,7 @@ export interface ExportPick {
 }
 
 /** Makes an export and saves it as a file, under the name the server gives it. */
-export async function downloadExport(
-  kind: "site" | "docx" | "pdf",
-  pick: ExportPick,
-): Promise<void> {
+export async function downloadExport(kind: ExportKind, pick: ExportPick): Promise<void> {
   let res: Response;
   try {
     res = await fetch(`/api/export/${kind}`, {

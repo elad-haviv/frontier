@@ -1,14 +1,24 @@
 import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { api, ApiFailure, downloadExport, entryUrl, type ExportPick } from "../api.ts";
+import {
+  api,
+  ApiFailure,
+  downloadExport,
+  entryUrl,
+  type ExportKind,
+  type ExportPick,
+} from "../api.ts";
 
 const KINDS = [
   ["site", "Web pages", "A zip of linked pages in Frontier's look, to open in any browser."],
   ["docx", "Word document", "One .docx, with headings and pictures, to edit or send."],
   ["pdf", "PDF", "One printable PDF, with a contents page."],
+  ["slides", "Slides", "One .pptx: a title slide per entry and a slide per section, to edit."],
+  ["markdown", "Markdown", "A zip of .md files linking to each other, with their images."],
+  ["json", "JSON", "One file for other tools: each entry's properties, text and links."],
 ] as const;
 
-/** Exports for reading and sharing: a folder or chosen entries, as web pages, Word or PDF. */
+/** Exports for reading and sharing: a folder or chosen entries, in six forms. */
 export function ExportPage() {
   const [params] = useSearchParams();
   const onePath = params.get("path");
@@ -47,7 +57,7 @@ export function ExportPage() {
       );
   }, [folder, onePath]);
 
-  async function make(kind: "site" | "docx" | "pdf") {
+  async function make(kind: ExportKind) {
     setBusy(kind);
     setError(null);
     try {

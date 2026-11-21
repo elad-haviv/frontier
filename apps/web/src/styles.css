@@ -3512,6 +3512,66 @@ input.map-title {
   color: var(--ink-soft);
 }
 
+/* Comments on a passage */
+.comment-new textarea {
+  width: 100%;
+  padding: 0.4rem 0.6rem;
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  background: var(--paper);
+  color: var(--ink);
+  font: inherit;
+}
+.comment-for {
+  display: flex;
+  gap: 1.2rem;
+  margin: 0.4rem 0;
+  padding: 0;
+  border: 0;
+}
+.comment-for label {
+  display: flex;
+  align-items: center;
+  min-height: 2.5rem;
+}
+.comment-list {
+  margin: 0.4rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+.comment-list > li {
+  padding: 0.5rem 0;
+  border-top: 1px solid var(--rule);
+}
+.comment-list p {
+  margin: 0.2rem 0;
+  overflow-wrap: anywhere;
+}
+.comment-quote {
+  font-size: 0.85rem;
+  color: var(--ink-soft);
+}
+.comment-quote button {
+  padding: 0;
+  text-align: left;
+  font-style: italic;
+}
+.comment-lost .comment-quote {
+  text-decoration: line-through;
+}
+.comment-text {
+  white-space: pre-wrap;
+}
+.comment-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+}
+.comment-actions button {
+  min-height: 2.5rem;
+}
+
 /* Talking with a character */
 .talk-with {
   margin: 0.4rem 0 1rem;

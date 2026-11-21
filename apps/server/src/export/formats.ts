@@ -1,5 +1,5 @@
 /**
- * The three document exports: a small website, a Word document and a PDF.
+ * The exports for reading: a small website, Markdown files, JSON, a Word document, a PDF and slides.
  */
 import { execFile } from "node:child_process";
 import { mkdtemp, readFile, rm, writeFile, mkdir } from "node:fs/promises";
@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { NodeCompiler } from "@myriaddreamin/typst-ts-node-compiler";
-import { basename } from "@frontier/vault";
+import { basename, readFrontmatter } from "@frontier/vault";
 import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
 import rehypeStringify from "rehype-stringify";
 import remarkGfm from "remark-gfm";
@@ -145,10 +145,7 @@ export async function site(d: ExportDeps, title: string, choice: Choice): Promis
     const bytes = await d.git.readFile(path);
     if (bytes) zip.addBuffer(bytes, `images/${name}`);
   }
-  zip.end();
-  const parts: Buffer[] = [];
-  for await (const chunk of zip.outputStream) parts.push(chunk as Buffer);
-  return Buffer.concat(parts);
+  return zipped(zip);
 }
 
 /** The entries joined as one Markdown document for pandoc, with images written next to it. */
@@ -194,7 +191,7 @@ async function pandoc(args: string[], cwd: string): Promise<void> {
     throw new ApiError(
       "not_allowed",
       missing
-        ? "Pandoc is not installed on this server, so Word and PDF exports cannot be made."
+        ? "Pandoc is not installed on this server, so Word, PDF and slide exports cannot be made."
         : "Pandoc could not make the document.",
     );
   }
@@ -243,6 +240,148 @@ export async function pdf(d: ExportDeps, title: string, choice: Choice): Promise
     } catch {
       throw new ApiError("not_allowed", "The PDF could not be typeset.");
     }
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+}
+
+/** A zip's bytes. */
+async function zipped(zip: yazl.ZipFile): Promise<Buffer> {
+  zip.end();
+  const parts: Buffer[] = [];
+  for await (const chunk of zip.outputStream) parts.push(chunk as Buffer);
+  return Buffer.concat(parts);
+}
+
+const folderOf = (path: string) => path.split("/").slice(0, -1).join("/");
+
+/** Markdown files, one per entry, linking to each other, with a README and their images. */
+export async function markdown(d: ExportDeps, title: string, choice: Choice): Promise<Buffer> {
+  const inExport = new Map(choice.entries.map((e) => [e.path, e]));
+  const images = new Images();
+  const zip = new yazl.ZipFile();
+  let outside = false;
+  for (const entry of choice.entries) {
+    const body = rewrite(d.index, entry.path, inExport, {
+      inside: (to, heading, label) =>
+        `[${label}](${to.slug}.md${heading ? `#${anchorOf(heading)}` : ""})`,
+      outside: (label) => {
+        outside = true;
+        return `${label}${MARK}`;
+      },
+      image: (path, alt) => `![${alt}](images/${encodeURI(images.name(path))})`,
+    });
+    zip.addBuffer(
+      Buffer.from(`# ${entry.title}\n\n${demote(body, entry.title)}\n`),
+      `${entry.slug}.md`,
+    );
+  }
+  let readme = `# ${title}\n`;
+  let folder: string | null = null;
+  for (const e of choice.entries) {
+    const f = folderOf(e.path);
+    if (f !== folder) {
+      readme += `\n## ${f || "Top"}\n\n`;
+      folder = f;
+    }
+    readme += `- [${e.title.replace(/([[\]])/g, "\\$1")}](${e.slug}.md)\n`;
+  }
+  if (outside)
+    readme += `\n*${MARK} marks the name of an entry that is not part of this export.*\n`;
+  zip.addBuffer(Buffer.from(readme), "README.md");
+  for (const [path, name] of images.byPath) {
+    const bytes = await d.git.readFile(path);
+    if (bytes) zip.addBuffer(bytes, `images/${name}`);
+  }
+  return zipped(zip);
+}
+
+/** One JSON file for other tools: each entry's names, properties, text and links. */
+export async function json(d: ExportDeps, title: string, choice: Choice): Promise<Buffer> {
+  const inExport = new Map(choice.entries.map((e) => [e.path, e]));
+  const entries = choice.entries.map((entry) => {
+    const links = new Set<string>();
+    const unshared = new Set<string>();
+    const text = rewrite(d.index, entry.path, inExport, {
+      inside: (to, heading, label) => {
+        links.add(to.slug);
+        return `[${label}](#${to.slug}${heading ? `/${anchorOf(heading)}` : ""})`;
+      },
+      outside: (label) => {
+        unshared.add(label.replace(/\\(.)/g, "$1"));
+        return `${label}${MARK}`;
+      },
+      image: (path, alt) => `![${alt}](${path})`,
+    });
+    const note = d.index.note(entry.path)!;
+    return {
+      id: entry.slug,
+      title: entry.title,
+      path: entry.path,
+      folder: folderOf(entry.path),
+      aliases: note.aliases,
+      properties: readFrontmatter(note.text).data ?? {},
+      text,
+      links: [...links],
+      unshared: [...unshared],
+    };
+  });
+  const document = {
+    title,
+    exportedAt: new Date().toISOString(),
+    about:
+      `Entries exported from Frontier. Links between them are written [words](#id). ` +
+      `${MARK} follows the name of an entry not part of this export. Images are named by their ` +
+      `path in the library and not included.`,
+    entries,
+  };
+  return Buffer.from(JSON.stringify(document, null, 2) + "\n");
+}
+
+/** Slides: a title slide per entry and a slide per section, as a PowerPoint file. */
+export async function slides(d: ExportDeps, title: string, choice: Choice): Promise<Buffer> {
+  const dir = await mkdtemp(join(tmpdir(), "frontier-slides-"));
+  try {
+    const inExport = new Map(choice.entries.map((e) => [e.path, e]));
+    const images = new Images();
+    let outside = false;
+    const parts = choice.entries.map((entry) => {
+      const body = rewrite(d.index, entry.path, inExport, {
+        inside: (_to, _heading, label) => label,
+        outside: (label) => {
+          outside = true;
+          return `${label}${MARK}`;
+        },
+        image: (path, alt) => `![${alt}](img/${images.name(path)})`,
+      });
+      // The entry's title is a section title; its sections are slides; deeper headings stay in
+      // their slide. An opening heading that repeats the title is dropped.
+      const lines = demote(body, entry.title).split("\n");
+      let fenced = false;
+      const shaped = lines.map((line) => {
+        if (/^\s*(```|~~~)/.test(line)) fenced = !fenced;
+        if (fenced) return line;
+        const m = /^(#{2,6})\s+(.*)$/.exec(line);
+        if (!m) return line;
+        return m[1]!.length <= 3 ? `## ${m[2]}` : `**${m[2]}**`;
+      });
+      return `# ${entry.title}\n\n${shaped.join("\n")}`;
+    });
+    await mkdir(join(dir, "img"), { recursive: true });
+    for (const [path, name] of images.byPath) {
+      const bytes = await d.git.readFile(path);
+      if (bytes) await writeFile(join(dir, "img", name), bytes);
+    }
+    const close = outside
+      ? `\n\n## About ${MARK}\n\n${MARK} marks the name of an entry that is not part of these slides.\n`
+      : "";
+    const text = `---\ntitle: ${JSON.stringify(title)}\n---\n\n${parts.join("\n\n")}${close}\n`;
+    await writeFile(join(dir, "main.md"), text);
+    await pandoc(
+      ["main.md", "-f", "markdown", "-o", "out.pptx", "--slide-level=2", "--resource-path=."],
+      dir,
+    );
+    return await readFile(join(dir, "out.pptx"));
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

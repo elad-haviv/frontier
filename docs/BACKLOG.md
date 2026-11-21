@@ -14,7 +14,7 @@ One place for what is being built, what is waiting, and ideas. The design in
 
 ## Ideas inbox
 
-- 2026-11-21: **AI co-editing, in the editor.** Highlight text and add a comment for me or the AI
+- 2026-11-21 (built in stage 10): **AI co-editing, in the editor.** Highlight text and add a comment for me or the AI
   to work on; ask the AI to change the length or style of a selection; consult the AI about a
   passage without leaving the editor.
   - Probably stage 8 (AI companion), with the AI basics from stage 3 as a prerequisite.
@@ -97,6 +97,16 @@ after two independent reviews.
 - [x] 5b Scale, offered fixes, shifting a selection (built before the trial, at Elad's word)
 - [x] 5c Two versions side by side
 - [x] 5d Links to entries (not yet: a linked span with no name showing its entry's title)
+
+## Now: stage 10, comments and more export formats
+
+Design: [stage 10](designs/stage-10-comments-and-formats.md). Elad, 2026-11-21: comments on a
+passage, and the export formats stage 9 left out.
+
+- [x] Comments on a passage in the editor, for Elad or for the AI; highlighted; "Work on it" shows
+      the AI's rewrite as a difference; kept on the server, not in the library; they follow renames
+- [x] Exports as Markdown files, JSON and slides (.pptx)
+- [ ] Elad tries comments while editing, and a slide export
 
 ## Now: stage 9, export
 

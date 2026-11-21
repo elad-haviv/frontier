@@ -34,6 +34,8 @@ export function EntryPage({ onSessionLost }: { onSessionLost: () => void }) {
   // Talking with a character is offered once a model for conversations is chosen.
   const ai = useAsync(() => api.conversations(), "conversations-ready");
   const canTalk = ai.state === "ready" && ai.value.ready;
+  const comments = useAsync(() => api.commentCount(path), `comments:${path}@${key}`);
+  const openComments = comments.state === "ready" ? comments.value.open : 0;
 
   useEffect(() => {
     if (entry.state === "failed" && entry.error.status === 401) onSessionLost();
@@ -148,6 +150,13 @@ export function EntryPage({ onSessionLost }: { onSessionLost: () => void }) {
           <p className="talk-with">
             <Link to={talkUrl(e.path)}>
               Talk with {e.path.split("/").pop()!.replace(/\.md$/i, "")}
+            </Link>
+          </p>
+        )}
+        {openComments > 0 && !e.readOnly && (
+          <p className="on-maps">
+            <Link to={`${editUrl(e.path)}?comments=1`}>
+              {openComments} open {openComments === 1 ? "comment" : "comments"}
             </Link>
           </p>
         )}

@@ -150,3 +150,63 @@ describe("documents", () => {
     expect(readFileSync(join(dir, "out.pdf")).length).toBeGreaterThan(5000);
   });
 });
+
+describe("more formats", () => {
+  it("makes Markdown files that link to each other, with a README and the images", async () => {
+    await start();
+    const res = await t.post("/api/export/markdown", { title: "The Harbor", folder: "03 Places" });
+    expect(res.statusCode, res.body).toBe(200);
+    const files = await unzip(res.rawPayload);
+    expect(Object.keys(files).sort()).toEqual([
+      "README.md",
+      "images/quay.png",
+      "salt-pier.md",
+      "tide-market.md",
+    ]);
+    const town = Buffer.from(files["tide-market.md"]!, "latin1").toString("utf8");
+    expect(town.startsWith("# Tide Market\n")).toBe(true);
+    expect(town).toContain("[quay](salt-pier.md#stones)");
+    expect(town).toContain("Ilsa Varn†");
+    expect(town).toContain("![quay](images/quay.png)");
+    expect(town).toContain("### Trade");
+    expect(town).not.toContain("aliases");
+    const readme = Buffer.from(files["README.md"]!, "latin1").toString("utf8");
+    expect(readme).toContain("- [Salt Pier](salt-pier.md)");
+    expect(readme).toContain("† marks the name of an entry");
+  });
+
+  it("makes one JSON file with each entry's properties, text and links", async () => {
+    await start();
+    const res = await t.post("/api/export/json", { title: "The Harbor", folder: "03 Places" });
+    expect(res.statusCode, res.body).toBe(200);
+    const doc = JSON.parse(res.rawPayload.toString("utf8"));
+    expect(doc.title).toBe("The Harbor");
+    const town = doc.entries.find((e: { id: string }) => e.id === "tide-market");
+    expect(town).toMatchObject({
+      title: "Tide Market",
+      folder: "03 Places",
+      aliases: ["Market"],
+      properties: { aliases: ["Market"] },
+      links: ["salt-pier"],
+      unshared: ["Ilsa Varn"],
+    });
+    expect(town.text).toContain("[quay](#salt-pier/stones)");
+    expect(town.text).not.toContain("aliases:");
+  });
+
+  it("makes slides: a title slide per entry and one per section", async () => {
+    await start();
+    const res = await t.post("/api/export/slides", { title: "The Harbor", folder: "03 Places" });
+    expect(res.statusCode, res.body).toBe(200);
+    expect(res.headers["content-disposition"]).toContain("The%20Harbor.pptx");
+    const files = await unzip(res.rawPayload);
+    const slides = Object.keys(files).filter((f) => /^ppt\/slides\/slide\d+\.xml$/.test(f));
+    const text = slides.map((f) =>
+      Buffer.from(files[f]!.replace(/<[^>]+>/g, " "), "latin1").toString("utf8"),
+    );
+    expect(text.some((s) => s.includes("Trade"))).toBe(true);
+    expect(text.some((s) => s.includes("Stones"))).toBe(true);
+    expect(text.some((s) => s.includes("Ilsa Varn†"))).toBe(true);
+    expect(text.some((s) => s.includes("not part of these slides"))).toBe(true);
+  });
+});

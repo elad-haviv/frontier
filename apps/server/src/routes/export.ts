@@ -2,7 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { VaultPath } from "@frontier/schema";
 import { z } from "zod";
 import { choose } from "../export/entries.js";
-import { docx, pdf, site } from "../export/formats.js";
+import { docx, json, markdown, pdf, site, slides } from "../export/formats.js";
 import type { Services } from "../app.js";
 
 const Pick = z
@@ -67,4 +67,12 @@ export function exportRoutes(app: FastifyInstance, s: Services): void {
     docx,
   );
   send("pdf", "application/pdf", "pdf", pdf);
+  send("markdown", "application/zip", "zip", markdown);
+  send("json", "application/json", "json", json);
+  send(
+    "slides",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    "pptx",
+    slides,
+  );
 }

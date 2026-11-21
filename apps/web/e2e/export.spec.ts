@@ -13,6 +13,21 @@ test("exports a folder as web pages, and an entry as a Word document", async ({ 
   const bytes = await (await site.createReadStream()).toArray();
   expect(Buffer.concat(bytes).subarray(0, 2).toString()).toBe("PK");
 
+  const [md] = await Promise.all([
+    page.waitForEvent("download"),
+    page.getByRole("button", { name: "Markdown" }).click(),
+  ]);
+  expect(md.suggestedFilename()).toBe("Avalymia.zip");
+  const [data] = await Promise.all([
+    page.waitForEvent("download"),
+    page.getByRole("button", { name: "JSON" }).click(),
+  ]);
+  expect(data.suggestedFilename()).toBe("Avalymia.json");
+  const parsed = JSON.parse(
+    Buffer.concat(await (await data.createReadStream()).toArray()).toString(),
+  );
+  expect(parsed.entries.length).toBeGreaterThan(0);
+
   // From an entry's page, one entry.
   await page.goto("/e/02%20People/Mira.md");
   await page.locator(".entry-head").getByRole("link", { name: "Export", exact: true }).click();

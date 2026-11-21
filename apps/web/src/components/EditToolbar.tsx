@@ -45,12 +45,15 @@ export function EditToolbar({
   onFiles,
   inTable = false,
   onWrite,
+  onComment,
 }: {
   view: Ref;
   onFiles?: (files: File[]) => void;
   inTable?: boolean;
   /** Opens writing help; absent while no model is chosen. */
   onWrite?: () => void;
+  /** Opens a new comment on the selection, or on the paragraph the cursor is in. */
+  onComment?: () => void;
 }) {
   const act = (fn: (v: EditorView) => void) => () => {
     if (view.current) fn(view.current);
@@ -134,6 +137,17 @@ export function EditToolbar({
             }}
           />
         </label>
+      )}
+      {onComment && (
+        <button
+          type="button"
+          onPointerDown={keep}
+          aria-label="Comment"
+          title="Comment on the selection, for you or for the AI"
+          onClick={onComment}
+        >
+          ✎
+        </button>
       )}
       {onWrite && (
         <button

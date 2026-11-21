@@ -185,6 +185,53 @@ test("writing help rewrites a passage in the editor, shown as a difference first
   await discardDraft(page);
 });
 
+test("comments on a passage: one for the author, one the AI works on", async ({ page }, info) => {
+  test.skip(info.project.name !== "phone", "The AI settings are one per server.");
+  await page.setViewportSize({ width: 375, height: 740 });
+  await page.goto("/settings");
+  await page.getByLabel(/Provider key/).fill("sk-or-browser-test-key");
+  await page.getByLabel("Model for lore conversations").fill("sample/reader");
+  await page.getByRole("button", { name: "Save" }).click();
+  await expect(page.locator(".banner-ok")).toHaveText("Saved.");
+
+  await openEditor(page, "02 People/Shade.md");
+  await page.locator(".cm-content").getByText("A quiet figure.").click();
+  await page.getByRole("button", { name: "Comment", exact: true }).click();
+  const panel = page.locator(".comments-panel");
+  await expect(panel.locator(".writing-passage")).toContainText("A quiet figure.");
+  await panel.getByLabel("Your comment").fill("Say what she does at night");
+  await panel.getByLabel("For the AI").check();
+  await panel.getByRole("button", { name: "Keep the comment" }).click();
+  await expect(panel.locator(".comment-list > li")).toHaveCount(1);
+  await expect(page.locator(".cm-comment").first()).toBeVisible();
+  await expect(page.getByRole("button", { name: "Comments (1)" })).toBeVisible();
+
+  await panel.getByRole("button", { name: "Work on it" }).click();
+  await expect(panel.locator(".diff")).toContainText(
+    "A rewritten passage (Do what this comment on the passage asks)",
+  );
+  await panel.getByRole("button", { name: "Replace" }).click();
+  await expect(panel.locator(".comment-list > li")).toHaveCount(0);
+  await expect(page.locator(".cm-content")).toContainText("A rewritten passage (Do what");
+  await expect(page.locator(".cm-comment")).toHaveCount(0);
+
+  // A comment for the author stays, and the entry's page counts it.
+  await page.locator(".cm-content").getByText("A rewritten passage").click();
+  await page.getByRole("button", { name: "Comment", exact: true }).click();
+  await panel.getByLabel("Your comment").fill("Check her age");
+  await panel.getByRole("button", { name: "Keep the comment" }).click();
+  await expect(panel.locator(".comment-list > li")).toHaveCount(1);
+  await panel.getByRole("button", { name: "Close" }).click();
+  await page.getByRole("button", { name: "Done" }).click();
+  await page.getByRole("link", { name: "1 open comment" }).click();
+  await expect(panel.locator(".comment-text")).toHaveText("Check her age");
+  await panel.getByRole("button", { name: "Done" }).click();
+  await expect(panel.locator(".comment-list > li")).toHaveCount(0);
+  await panel.getByRole("button", { name: "Close" }).click();
+
+  await discardDraft(page);
+});
+
 test("CUJ 12: drafts a character's profile, approves it, talks, and adds a line to the entry", async ({
   page,
 }, info) => {

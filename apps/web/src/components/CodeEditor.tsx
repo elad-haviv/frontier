@@ -4,6 +4,7 @@ import { Compartment, EditorState } from "@codemirror/state";
 import { EditorView, keymap } from "@codemirror/view";
 import { basicSetup } from "codemirror";
 import { useEffect, useRef } from "react";
+import { commentMarks } from "./commentMarks.ts";
 import { completeLinks } from "./linkComplete.ts";
 import { notePath } from "./imageWidget.ts";
 import { livePreview } from "./livePreview.ts";
@@ -17,6 +18,10 @@ const theme = EditorView.theme({
   ".cm-activeLine": { backgroundColor: "color-mix(in srgb, var(--accent-soft) 45%, transparent)" },
   "&.cm-focused": { outline: "none" },
   ".cm-cursor": { borderLeftColor: "var(--accent)" },
+  ".cm-comment": {
+    backgroundColor: "color-mix(in srgb, #e0b13a 30%, transparent)",
+    borderBottom: "2px solid color-mix(in srgb, #c08a12 70%, transparent)",
+  },
   ".cm-selectionBackground, &.cm-focused .cm-selectionBackground": {
     backgroundColor: "color-mix(in srgb, var(--accent) 25%, transparent) !important",
   },
@@ -96,6 +101,7 @@ export function CodeEditor({
           // Entry names are offered after "[[". This replaces the editor's own word suggestions.
           autocompletion({ override: [completeLinks], icons: false }),
           EditorView.lineWrapping,
+          commentMarks,
           EditorState.readOnly.of(readOnly),
           theme,
           EditorView.updateListener.of((update) => {

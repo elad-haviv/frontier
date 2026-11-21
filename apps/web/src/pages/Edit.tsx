@@ -1,10 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { api, ApiFailure, entryUrl, newDraftId } from "../api.ts";
+import { api, ApiFailure, entryUrl, newDraftId, type PassageComment } from "../api.ts";
 import type { EditorView } from "@codemirror/view";
 import { CodeEditor } from "../components/CodeEditor.tsx";
 import { EditToolbar } from "../components/EditToolbar.tsx";
-import { WritingPanel } from "../components/WritingPanel.tsx";
+import { passageOf, WritingPanel } from "../components/WritingPanel.tsx";
+import { CommentsPanel } from "../components/CommentsPanel.tsx";
+import { type Anchor, anchorAt, locate } from "../components/anchor.ts";
+import { setCommentMarks } from "../components/commentMarks.ts";
 import { Properties } from "../components/Properties.tsx";
 import { useRefresh } from "../components/Shell.tsx";
 import { clearBuffer, readBuffer, writeBuffer } from "../drafts.ts";
@@ -61,6 +64,30 @@ export function EditPage() {
       () => setCanWrite(false),
     );
   }, []);
+  // Comments on passages: highlighted in the text, listed in their panel.
+  const [comments, setComments] = useState<PassageComment[]>([]);
+  const [commenting, setCommenting] = useState<{
+    adding: (Anchor & { from: number; to: number }) | null;
+  } | null>(() => (new URLSearchParams(search).get("comments") === "1" ? { adding: null } : null));
+  const loadComments = useCallback(async () => {
+    const list = await api.comments(path).then(
+      (r) => r.comments,
+      () => null,
+    );
+    if (!list) return;
+    setComments(list);
+    const v = view.current;
+    if (!v) return;
+    const text = v.state.doc.toString();
+    v.dispatch({
+      effects: setCommentMarks.of(
+        list.flatMap((c) => {
+          const at = locate(text, c);
+          return at ? [{ id: c.id, ...at }] : [];
+        }),
+      ),
+    });
+  }, [path]);
   const [inTable, setInTable] = useState(false);
   const [preview, setPreview] = useState(() => {
     try {
@@ -213,6 +240,20 @@ export function EditPage() {
 
   useEffect(() => () => window.clearTimeout(timer.current), []);
 
+  // Once the editor holds the text, its comments are found and highlighted.
+  useEffect(() => {
+    if (initial !== null) void loadComments();
+  }, [initial, loadComments]);
+
+  function comment() {
+    const v = view.current;
+    if (!v) return;
+    const at = passageOf(v);
+    if (at.text.trim() === "") return;
+    setWriting(false);
+    setCommenting({ adding: { ...anchorAt(v.state.doc.toString(), at.from, at.to), ...at } });
+  }
+
   // Coming back to this tab: if the server changed the draft meanwhile, such as by accepting a
   // proposed field on another device, and nothing here is unsent, show the server's text.
   useEffect(() => {
@@ -315,6 +356,14 @@ export function EditPage() {
           >
             Preview
           </button>
+          <button
+            type="button"
+            className="quiet"
+            aria-pressed={commenting !== null}
+            onClick={() => setCommenting((c) => (c ? null : { adding: null }))}
+          >
+            Comments{comments.length > 0 ? ` (${comments.length})` : ""}
+          </button>
           <button type="button" className="quiet" onClick={remove}>
             Delete
           </button>
@@ -348,11 +397,32 @@ export function EditPage() {
       {writing && view.current && (
         <WritingPanel view={view.current} path={path} onClose={() => setWriting(false)} />
       )}
+      {commenting && view.current && (
+        <CommentsPanel
+          // A new passage starts the panel afresh.
+          key={commenting.adding ? `${commenting.adding.from}-${commenting.adding.to}` : "list"}
+          view={view.current}
+          path={path}
+          comments={comments}
+          adding={commenting.adding}
+          canAi={canWrite}
+          onChanged={() => void loadComments()}
+          onClose={() => setCommenting(null)}
+        />
+      )}
       <EditToolbar
         view={view}
         onFiles={addImages}
         inTable={inTable}
-        {...(canWrite ? { onWrite: () => setWriting(true) } : {})}
+        onComment={comment}
+        {...(canWrite
+          ? {
+              onWrite: () => {
+                setCommenting(null);
+                setWriting(true);
+              },
+            }
+          : {})}
       />
     </div>
   );

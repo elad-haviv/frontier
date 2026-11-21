@@ -18,6 +18,8 @@ import { Conversations } from "./ai/conversations.js";
 import { LoreAsker } from "./ai/lore.js";
 import { loreRoutes } from "./routes/lore.js";
 import { writingRoutes } from "./routes/writing.js";
+import { commentRoutes } from "./routes/comments.js";
+import { CommentStore } from "./comments/store.js";
 import { characterRoutes } from "./routes/characters.js";
 import { discoverRoutes } from "./routes/discover.js";
 import { exportRoutes } from "./routes/export.js";
@@ -96,6 +98,7 @@ export interface Services {
   characters: CharacterTalk;
   discoverer: Discoverer;
   conversations: Conversations;
+  comments: CommentStore;
   backup: Backup;
   search: SearchIndex;
   /** Fetches `main`, resets the working copy and rebuilds the index. */
@@ -216,6 +219,7 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
   });
   const search = new SearchIndex(index);
   const conversations = new Conversations(stateDir, files);
+  const comments = new CommentStore(stateDir, files);
   const chronicles = new ChronicleStore({ vaultDir, git, index, drafts, changer });
   const characters = new CharacterTalk({
     index,
@@ -295,6 +299,7 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
     characters,
     discoverer,
     conversations,
+    comments,
     async sync() {
       const result = await git.fetch();
       status.fetched(result.current);
@@ -337,7 +342,10 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
       reviewPath: REVIEW_FILE,
     },
     onPushed: (commit) => quarantine.notePushed(commit),
-    onRenamed: (from, to) => proposals.renamed(from, to),
+    onRenamed: async (from, to) => {
+      await proposals.renamed(from, to);
+      await comments.renamed(from, to);
+    },
     onPublished: (paths) => {
       // Runs after the publish call has answered; a failure shows in the status area.
       void (async () => {
@@ -463,6 +471,7 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
   chronicleRoutes(app, services);
   loreRoutes(app, services);
   writingRoutes(app, services);
+  commentRoutes(app, services);
   characterRoutes(app, services);
   discoverRoutes(app, services);
   exportRoutes(app, services);
