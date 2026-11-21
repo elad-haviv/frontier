@@ -40,8 +40,8 @@ One place for what is being built, what is waiting, and ideas. The design in
 
 ## Waiting on Elad
 
-- [ ] Give Frontier access to `avalymia`: add the repo to the "haviv-pro" GitHub app, or create a
-      token or an App
+- [ ] Say whether the preview should become your own library now, and how the real vault comes in:
+      loaded by Claude from the repository, or uploaded by you as a zip
 - [ ] Review the link baseline on the `claude/vibrant-gates-ovwcp2` branch of `avalymia`
       (`.frontier/baseline/links.json`) and compare it with Obsidian's unresolved links
 - [ ] Check in Obsidian whether a bare `[[Alias]]` link resolves
@@ -64,6 +64,20 @@ Design: [stage 3](designs/stage-3-review-and-ai-basics.md), a draft the author h
 - [x] 3d Quarantine, Frontier's side: list, accept, revert, grouped publish, settling. It shows
       nothing until the sync is changed (see `docs/sync-changes.md`)
 - [x] 3e Passkey login, with the option to switch the password off
+
+## Now: Frontier's own library
+
+Decided by Elad on 2026-11-21: the knowledge base lives in Frontier, as files, with its own version
+history; notes and media are imported; the library is exported as a vault. Design:
+[own library](designs/own-library.md).
+
+- [x] A library of Frontier's own when no repository is named; no account needed anywhere
+- [x] Versions: history of an entry and of the library, restore
+- [x] Import of notes and images, with a choice on a name clash; import of a whole vault from a zip
+- [x] Export of the library as a zip
+- [ ] Switch the preview from the sample to an own library, on a disk that lasts
+- [ ] Bring the real vault in
+- [ ] Later: a one-way mirror to GitHub for the memory bank and the agents
 
 ## Now: stage 4, maps
 

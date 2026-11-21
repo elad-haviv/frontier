@@ -166,6 +166,8 @@ describe("API shapes", () => {
 
   it("accepts a status snapshot and a health reply", () => {
     const snapshot = {
+      library: "own",
+      backupOutside: false,
       lastFetchAt: "2026-11-20T18:04:11Z",
       lastPushAt: null,
       failedPush: null,

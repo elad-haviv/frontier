@@ -2044,3 +2044,28 @@ input.map-title {
     padding: 0.35rem 0.5rem;
   }
 }
+
+/* Versions and import */
+.version-when {
+  flex: none;
+  color: var(--ink-faint);
+  font-size: 0.85rem;
+}
+.versions .change-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.2rem 0.8rem;
+}
+.version-files,
+.import-result ul {
+  margin: 0.3rem 0 0.8rem;
+  padding-left: 1.1rem;
+  font-size: 0.9rem;
+  overflow-wrap: anywhere;
+}
+.settings .field input[type="file"] {
+  padding: 0.3rem 0;
+  border: 0;
+  background: none;
+}

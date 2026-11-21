@@ -39,6 +39,11 @@ export interface Config {
   commitAuthor: { name: string; email: string };
   commitBot: { name: string; email: string };
   backup: { kind: "local"; dir: string } | { kind: "s3"; s3: S3Config };
+  /**
+   * Where the knowledge base lives: in a repository of Frontier's own, in one on GitHub that
+   * others write to as well, or in the made-up sample.
+   */
+  library: "own" | "github" | "sample";
   /** The vault folder new images are put in. */
   uploadFolder: string;
   /** The vault folder whose subfolders are marker sets. */
@@ -148,6 +153,12 @@ export function loadConfig(env: Env = process.env): Config {
     ),
     webhookSecret,
     sessionKey,
+    library:
+      optional("FRONTIER_LIBRARY") === "sample"
+        ? "sample"
+        : optional("FRONTIER_LIBRARY") === "own" || !optional("VAULT_REPO")
+          ? "own"
+          : "github",
     iconFolder: (optional("ICON_FOLDER") ?? "99 Appendices/07 Icons").replace(/^\/+|\/+$/g, ""),
     secretsKey,
     openrouterKey: optional("OPENROUTER_API_KEY"),

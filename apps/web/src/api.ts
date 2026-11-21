@@ -162,6 +162,29 @@ export const api = {
   markerSets: () =>
     call<{ sets: { name: string; icons: { name: string; path: string }[] }[] }>("/api/marker-sets"),
   mapImages: () => call<{ images: string[] }>("/api/map-images"),
+  history: (path?: string) =>
+    call<{ versions: Version[] }>(`/api/history${path ? `?path=${encodeURIComponent(path)}` : ""}`),
+  versionText: (path: string, commit: string) =>
+    call<{ text: string; before: string | null }>(
+      `/api/history/version?path=${encodeURIComponent(path)}&commit=${commit}`,
+    ),
+  importFiles: async (files: File[], folder: string, existing: "ask" | "replace" | "both") => {
+    const form = new FormData();
+    // Fields first: the server reads the folder before the first file.
+    form.append("folder", folder);
+    form.append("existing", existing);
+    for (const file of files) form.append("files", file, file.name);
+    return call<ImportResult>("/api/import", { method: "POST", body: form });
+  },
+  importVault: async (zip: File, message: string) => {
+    const form = new FormData();
+    form.append("message", message);
+    form.append("files", zip, zip.name);
+    return call<{ files: number; commit: string }>("/api/import/vault", {
+      method: "POST",
+      body: form,
+    });
+  },
   inbox: () => call<InboxResponse>("/api/inbox"),
   proposeFields: (path: string) => post<{ made: number }>("/api/proposals/fields", { path }),
   decideOperation: (
@@ -275,3 +298,20 @@ export function mapImageUrl(path: string, size: 2560 | 4096): string {
 
 export const mapUrl = (id: string, feature?: string): string =>
   `/map/${id}${feature ? `?f=${encodeURIComponent(feature)}` : ""}`;
+
+/** One saved version of the library, or of a file in it. */
+export interface Version {
+  commit: string;
+  at: string;
+  message: string;
+  paths: string[];
+}
+
+export interface ImportResult {
+  imported: { name: string; path: string; kind: "note" | "image" }[];
+  clashes: { name: string; path: string }[];
+  refused: { name: string; reason: string }[];
+}
+
+export const historyUrl = (path: string): string =>
+  "/history/" + path.split("/").map(encodeURIComponent).join("/");

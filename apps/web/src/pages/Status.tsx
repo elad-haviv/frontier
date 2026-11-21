@@ -37,6 +37,13 @@ export function StatusPage() {
         <dd>{s.unpublished}</dd>
       </dl>
 
+      {s.library === "own" && !s.backupOutside && (
+        <p className="banner" role="alert">
+          The library lives on this server's disk and is backed up only to that same disk. Set up a
+          storage bucket for backups, and export the library now and then.{" "}
+          <a href="/api/export/library.zip">Export the library</a>
+        </p>
+      )}
       {s.problems.map((p) => (
         <p key={p} className="banner" role="alert">
           {p}

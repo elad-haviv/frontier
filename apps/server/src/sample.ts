@@ -105,6 +105,58 @@ export function ensureSampleRemote(dataDir: string, sampleDir = DEFAULT_SAMPLE):
   return remote;
 }
 
+/**
+ * Makes Frontier's own library on first start: a repository on its own disk, with one note in it.
+ * Returns its path, which the rest of the server uses as its remote.
+ */
+export function ensureOwnLibrary(dataDir: string): string {
+  const library = join(dataDir, "library.git");
+  if (existsSync(library)) return library;
+  mkdirSync(dataDir, { recursive: true });
+  const work = mkdtempSync(join(tmpdir(), "frontier-library-"));
+  const git = (cwd: string, ...args: string[]) =>
+    execFileSync(
+      "git",
+      ["-c", "user.name=Frontier", "-c", "user.email=frontier@frontier.invalid", ...args],
+      { cwd, stdio: "ignore" },
+    );
+  try {
+    git(work, "init", "--initial-branch=main");
+    writeFileSync(
+      join(work, "Welcome.md"),
+      "# Welcome\n\nThis library is empty. Write a first entry, or bring your notes in from the Import page.\n",
+    );
+    git(work, "add", "-A");
+    git(work, "commit", "-m", "Start the library");
+    git(dataDir, "clone", "--bare", work, library);
+  } finally {
+    rmSync(work, { recursive: true, force: true });
+  }
+  return library;
+}
+
+/**
+ * Chooses how Frontier keeps its knowledge base, from the settings given. With no repository
+ * named, it keeps a library of its own and needs no account anywhere.
+ */
+export function applyLibraryMode(env: NodeJS.ProcessEnv): void {
+  if (env["FRONTIER_SAMPLE_VAULT"] === "1") {
+    env["FRONTIER_LIBRARY"] = "sample";
+    applySampleMode(env);
+    return;
+  }
+  if (env["VAULT_REPO"]?.trim() || env["VAULT_REMOTE_URL"]?.trim()) return;
+  const dataDir = env["DATA_DIR"]?.trim() || "/data";
+  env["FRONTIER_LIBRARY"] = "own";
+  env["VAULT_REMOTE_URL"] = ensureOwnLibrary(dataDir);
+  env["COMMIT_AUTHOR_NAME"] ??= "Author";
+  env["COMMIT_AUTHOR_EMAIL"] ??= "author@frontier.invalid";
+  env["COMMIT_BOT_NAME"] ??= "frontier";
+  env["COMMIT_BOT_EMAIL"] ??= "frontier@frontier.invalid";
+  // Without a storage bucket the backup stays on the same disk, which the status page says.
+  if (!env["BACKUP_S3_BUCKET"]?.trim()) env["BACKUP_LOCAL_DIR"] ??= join(dataDir, "backup");
+}
+
 /** Fills in the settings a sample run needs, so only a few variables have to be given. */
 export function applySampleMode(env: NodeJS.ProcessEnv): void {
   if (env["FRONTIER_SAMPLE_VAULT"] !== "1") return;

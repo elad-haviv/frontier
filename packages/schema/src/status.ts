@@ -2,6 +2,10 @@ import { z } from "zod";
 
 /** `GET /api/status`, and the data of each `status` server-sent event. */
 export const StatusSnapshot = z.object({
+  /** Where the knowledge base lives: Frontier's own library, GitHub, or the made-up sample. */
+  library: z.enum(["own", "github", "sample"]),
+  /** False when the only backup is on the server's own disk. */
+  backupOutside: z.boolean(),
   lastFetchAt: z.string().datetime().nullable(),
   lastPushAt: z.string().datetime().nullable(),
   /** The message of the last failed push, cleared by the next successful one. */

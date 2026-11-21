@@ -8,6 +8,8 @@ import { EntryPage } from "./pages/Entry.tsx";
 import { UnpublishedPage } from "./pages/Unpublished.tsx";
 import { VersionsPage } from "./pages/Versions.tsx";
 import { Home } from "./pages/Home.tsx";
+import { HistoryPage, LibraryHistoryPage } from "./pages/History.tsx";
+import { ImportPage } from "./pages/Import.tsx";
 import { InboxPage } from "./pages/Inbox.tsx";
 import { MapPage } from "./pages/MapPage.tsx";
 import { MapsPage } from "./pages/Maps.tsx";
@@ -51,6 +53,9 @@ export function App() {
         <Route path="/rename/*" element={<RenamePage />} />
         <Route path="/unpublished" element={<UnpublishedPage />} />
         <Route path="/inbox" element={<InboxPage />} />
+        <Route path="/import" element={<ImportPage />} />
+        <Route path="/history/*" element={<HistoryPage />} />
+        <Route path="/versions" element={<LibraryHistoryPage />} />
         <Route path="/maps" element={<MapsPage />} />
         <Route path="/map/:id" element={<MapPage />} />
         <Route path="/settings" element={<SettingsPage />} />

@@ -9,6 +9,22 @@ import { Tree } from "./Tree.tsx";
 const Refresh = createContext<() => void>(() => undefined);
 const Status = createContext<StatusSnapshot | null>(null);
 
+/**
+ * The words for keeping changes. In a library of Frontier's own a change is saved as a version;
+ * where the library is shared through GitHub it is published there.
+ */
+export function useWords() {
+  const own = useContext(Status)?.library === "own";
+  return {
+    own,
+    waiting: own ? "Unsaved" : "Unpublished",
+    title: own ? "Unsaved changes" : "Unpublished changes",
+    act: own ? "Save a version" : "Publish",
+    acting: own ? "Saving…" : "Publishing…",
+    review: own ? "Review and save" : "Review and publish",
+  };
+}
+
 /** The latest status the shell fetched, or null before the first answer. */
 export const useStatus = () => useContext(Status);
 
@@ -45,6 +61,8 @@ export function Shell({ children, onLoggedOut }: { children: ReactNode; onLogged
   const tree = useAsync(() => api.tree(), `tree-${version}`);
   const status = useAsync(() => api.status(), `status-${version}`);
   const current = currentEntryPath(pathname);
+  const own = status.state === "ready" && status.value.library === "own";
+  const words = { waiting: own ? "Unsaved" : "Unpublished" };
   const waiting = status.state === "ready" ? status.value.unpublished : 0;
   const proposals =
     status.state === "ready"
@@ -131,7 +149,8 @@ export function Shell({ children, onLoggedOut }: { children: ReactNode; onLogged
                 </Link>
               )}
               <Link to="/unpublished" className={waiting > 0 ? "has-waiting" : ""}>
-                Unpublished{waiting > 0 && <span className="badge">{waiting}</span>}
+                {words.waiting}
+                {waiting > 0 && <span className="badge">{waiting}</span>}
               </Link>
               {proposals === 0 && (
                 <Link to="/inbox" className="nav-secondary">
@@ -140,6 +159,9 @@ export function Shell({ children, onLoggedOut }: { children: ReactNode; onLogged
               )}
               <Link to="/maps" className="nav-secondary">
                 Maps
+              </Link>
+              <Link to="/import" className="nav-secondary">
+                Import
               </Link>
               <Link to="/settings" className="nav-secondary">
                 Settings
@@ -162,6 +184,8 @@ export function Shell({ children, onLoggedOut }: { children: ReactNode; onLogged
             {tree.state === "ready" && <Tree tree={tree.value} current={current} />}
             <p className="sidebar-foot">
               <Link to="/maps">Maps</Link>
+              <Link to="/import">Import</Link>
+              <Link to="/versions">Versions</Link>
               <Link to="/inbox">Inbox</Link>
               <Link to="/settings">Settings</Link>
               <Link to="/status">Status</Link>

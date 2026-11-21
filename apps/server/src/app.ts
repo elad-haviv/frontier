@@ -14,6 +14,8 @@ import { AiProvider } from "./ai/provider.js";
 import { LoginLimiter } from "./auth/limit.js";
 import { MapStore } from "./maps/store.js";
 import { mapRoutes } from "./routes/maps.js";
+import { historyRoutes } from "./routes/history.js";
+import { importRoutes } from "./routes/import.js";
 import { Backup } from "./backup/backup.js";
 import { EntryChanger } from "./entries/change.js";
 import { ProposalStore } from "./proposals/store.js";
@@ -88,8 +90,13 @@ export interface App {
 }
 
 /** The folders that hold data which cannot be rebuilt from the vault repository. */
-export function backupSources(dataDir: string): Record<string, string> {
-  return { state: join(dataDir, "state"), generated: join(dataDir, "assets", "generated") };
+export function backupSources(dataDir: string, ownLibrary = false): Record<string, string> {
+  return {
+    state: join(dataDir, "state"),
+    generated: join(dataDir, "assets", "generated"),
+    // Frontier's own library exists nowhere else, so it is backed up with the rest.
+    ...(ownLibrary ? { library: join(dataDir, "library.git") } : {}),
+  };
 }
 
 /** Routes that need no session. */
@@ -136,14 +143,17 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
     ...(options.onGitCommand ? { onCommand: options.onGitCommand } : {}),
   });
   const index = new VaultIndex(vaultDir);
-  const status = new StatusService(index);
+  const status = new StatusService(index, {
+    library: config.library,
+    backupOutside: config.backup.kind === "s3",
+  });
   const files = new StateFiles();
   const settings = new SettingsStore(stateDir, files);
   const images = new ImageServer(vaultDir, config.dataDir);
   const drafts = new DraftStore(stateDir, files);
   await drafts.load();
   const backup = new Backup({
-    sources: backupSources(config.dataDir),
+    sources: backupSources(config.dataDir, config.library === "own"),
     target:
       config.backup.kind === "local"
         ? new FolderTarget(config.backup.dir)
@@ -383,6 +393,8 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
   settingsRoutes(app, services);
   passkeyRoutes(app, services);
   mapRoutes(app, services);
+  importRoutes(app, services);
+  historyRoutes(app, services);
   searchRoutes(app, services);
   statusRoutes(app, services);
   webhookRoutes(app, services);

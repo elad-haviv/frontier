@@ -1,10 +1,10 @@
 import { aliasesOf, splitFrontmatter } from "@frontier/vault";
 import { useEffect, useMemo } from "react";
 import { Link, useLocation } from "react-router-dom";
-import { api, editUrl, entryUrl, mapUrl } from "../api.ts";
+import { api, editUrl, entryUrl, historyUrl, mapUrl } from "../api.ts";
 import { HoverPreview } from "../components/HoverPreview.tsx";
 import { LightboxProvider } from "../components/Lightbox.tsx";
-import { currentEntryPath } from "../components/Shell.tsx";
+import { currentEntryPath, useWords } from "../components/Shell.tsx";
 import { Fields } from "../components/Fields.tsx";
 import { ProposeFields } from "../components/ProposeFields.tsx";
 import { Markdown } from "../render/Markdown.tsx";
@@ -26,6 +26,7 @@ function Crumbs({ path }: { path: string }) {
 }
 
 export function EntryPage({ onSessionLost }: { onSessionLost: () => void }) {
+  const words = useWords();
   const { pathname, hash, key } = useLocation();
   const path = currentEntryPath(pathname);
   // Keyed by the visit as well as the path, so coming back from the editor shows the new draft.
@@ -90,6 +91,9 @@ export function EntryPage({ onSessionLost }: { onSessionLost: () => void }) {
               >
                 Rename
               </Link>
+              <Link to={historyUrl(e.path)} className="edit-link subtle">
+                History
+              </Link>
               <Link to={editUrl(e.path)} className="edit-link">
                 Edit
               </Link>
@@ -109,7 +113,7 @@ export function EntryPage({ onSessionLost }: { onSessionLost: () => void }) {
               : e.draft?.kind === "create"
                 ? "A new entry, not published yet. "
                 : "You are reading your unpublished draft. "}
-            <Link to="/unpublished">Review and publish</Link>
+            <Link to="/unpublished">{words.review}</Link>
           </p>
         )}
         {(view!.aliases.length > 0 || e.readOnly) && (

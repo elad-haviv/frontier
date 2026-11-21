@@ -5,10 +5,10 @@ import { buildApp } from "./app.js";
 import { hashPassword } from "./auth/password.js";
 import { ConfigError, loadConfig } from "./config.js";
 import { startPolling } from "./git/poll.js";
-import { applySampleMode } from "./sample.js";
+import { applyLibraryMode } from "./sample.js";
 
 async function main(): Promise<void> {
-  applySampleMode(process.env);
+  applyLibraryMode(process.env);
   const config = loadConfig();
   await mkdir(join(config.dataDir, "state"), { recursive: true });
   const webDir =
@@ -25,7 +25,10 @@ async function main(): Promise<void> {
   await services.git.ensureClone();
   await services.sync();
   services.backup.startNightly();
-  startPolling(services.sync, (err) => app.log.error({ err }, "Timer fetch failed"));
+  // Only a library that others write to has anything new to fetch.
+  if (config.library === "github") {
+    startPolling(services.sync, (err) => app.log.error({ err }, "Timer fetch failed"));
+  }
 
   const port = Number(process.env["PORT"] ?? 3000);
   await app.listen({ host: "0.0.0.0", port });

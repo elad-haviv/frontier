@@ -53,6 +53,14 @@ export interface FetchResult {
   changed: ChangedFile[];
 }
 
+/** One saved version of the library. */
+export interface Version {
+  commit: string;
+  at: string;
+  message: string;
+  paths: string[];
+}
+
 export interface CommitChanges {
   writes: { path: string; content: Buffer }[];
   deletes: string[];
@@ -401,6 +409,85 @@ export class GitGateway {
       } finally {
         await rm(scratch, { recursive: true, force: true });
       }
+    });
+  }
+
+  /**
+   * Builds a commit that adds every file of a folder to `main`: new files are added, files that
+   * exist are replaced, and nothing is removed. Returns the commit and how many files it changed.
+   */
+  commitFolder(folder: string, message: string): Promise<{ commit: string; files: number }> {
+    return this.locked(async () => {
+      const scratch = await mkdtemp(join(tmpdir(), "frontier-index-"));
+      const env = { GIT_INDEX_FILE: join(scratch, "index") };
+      try {
+        const parent = await this.text(["rev-parse", "origin/main"]);
+        await this.run(["read-tree", parent], { env });
+        await this.run(
+          [
+            "--work-tree",
+            folder,
+            "-c",
+            "core.autocrlf=false",
+            "add",
+            "--ignore-removal",
+            "--",
+            ".",
+          ],
+          { env },
+        );
+        const tree = await this.text(["write-tree"], { env });
+        const changed = (
+          await this.run(["diff-tree", "-r", "--name-only", "-z", "--no-renames", parent, tree])
+        ).stdout
+          .toString("utf8")
+          .split("\0")
+          .filter((p) => p !== "");
+        if (changed.length === 0) {
+          throw new GitError("git_failed", "Every file in it is in the library already.");
+        }
+        const commit = await this.text(["commit-tree", tree, "-p", parent, "-m", message], {
+          env: {
+            GIT_AUTHOR_NAME: this.opts.author.name,
+            GIT_AUTHOR_EMAIL: this.opts.author.email,
+            GIT_COMMITTER_NAME: this.opts.committer.name,
+            GIT_COMMITTER_EMAIL: this.opts.committer.email,
+          },
+        });
+        return { commit, files: changed.length };
+      } finally {
+        await rm(scratch, { recursive: true, force: true });
+      }
+    });
+  }
+
+  /**
+   * The saved versions, newest first: of one file, followed across its renames, or of the whole
+   * library. Each lists the paths it changed, as they were named at that version.
+   */
+  history(path?: string, limit = 100): Promise<Version[]> {
+    return this.locked(async () => {
+      const out = (
+        await this.run([
+          "log",
+          `-n${limit}`,
+          "--name-only",
+          "--format=%x01%H%x02%cI%x02%s%x02",
+          ...(path ? ["--follow", "--", path] : ["--no-renames"]),
+        ])
+      ).stdout.toString("utf8");
+      return out
+        .split("\u0001")
+        .filter((part) => part.trim() !== "")
+        .map((part) => {
+          const [commit, at, message, rest] = part.split("\u0002");
+          return {
+            commit: commit!,
+            at: at!,
+            message: message!,
+            paths: (rest ?? "").split("\n").filter((p) => p !== ""),
+          };
+        });
     });
   }
 

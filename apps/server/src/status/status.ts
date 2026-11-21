@@ -22,11 +22,19 @@ export class StatusService {
   private serverDraftChanges = 0;
   private listeners = new Set<Listener>();
 
-  constructor(private readonly index: VaultIndex) {}
+  constructor(
+    private readonly index: VaultIndex,
+    private readonly facts: {
+      library: StatusSnapshot["library"];
+      backupOutside: boolean;
+    } = { library: "github", backupOutside: true },
+  ) {}
 
   snapshot(): StatusSnapshot {
     const a = this.index.attention();
     return {
+      library: this.facts.library,
+      backupOutside: this.facts.backupOutside,
       lastFetchAt: this.lastFetchAt,
       lastPushAt: this.lastPushAt,
       failedPush: this.failedPush,

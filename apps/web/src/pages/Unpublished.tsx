@@ -4,7 +4,7 @@ import { Link } from "react-router-dom";
 import { mapIdOf } from "@frontier/schema";
 import { api, ApiFailure, editUrl, entryUrl, imageUrl, mapUrl } from "../api.ts";
 import { Diff } from "../components/Diff.tsx";
-import { useRefresh } from "../components/Shell.tsx";
+import { useRefresh, useWords } from "../components/Shell.tsx";
 
 const KIND = { edit: "Edited", create: "New", delete: "Deleted" } as const;
 
@@ -20,6 +20,7 @@ const REASON: Record<string, string> = {
 };
 
 export function UnpublishedPage() {
+  const words = useWords();
   const refresh = useRefresh();
   const [data, setData] = useState<UnpublishedResponse | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -78,7 +79,10 @@ export function UnpublishedPage() {
       const { commit } = await api.confirm(plan.planId, [...confirmed], message.trim());
       setPlan(null);
       setMessage("");
-      setNotice({ kind: "ok", text: `Published as commit ${commit.slice(0, 10)}.` });
+      setNotice({
+        kind: "ok",
+        text: words.own ? "Saved as a new version." : `Published as commit ${commit.slice(0, 10)}.`,
+      });
       await load();
       refresh();
     } catch (err) {
@@ -134,10 +138,11 @@ export function UnpublishedPage() {
   return (
     <article className="entry wide">
       <header className="entry-head">
-        <h1>Unpublished changes</h1>
+        <h1>{words.title}</h1>
         <p className="muted lede">
-          Drafts are saved on the server and are not part of the vault until you publish. Publishing
-          makes one commit.
+          {words.own
+            ? "Drafts are kept as you type. Saving a version records them in the library's history, with a line saying what changed."
+            : "Drafts are saved on the server and are not part of the vault until you publish. Publishing makes one commit."}
         </p>
       </header>
 
@@ -146,7 +151,11 @@ export function UnpublishedPage() {
           {notice.text}
         </p>
       )}
-      {empty && <p className="muted">Nothing is waiting. Everything you wrote is published.</p>}
+      {empty && (
+        <p className="muted">
+          Nothing is waiting. Everything you wrote is {words.own ? "saved" : "published"}.
+        </p>
+      )}
 
       {!plan && !empty && (
         <>
@@ -247,7 +256,7 @@ export function UnpublishedPage() {
 
       {plan && (
         <section className="plan">
-          <h2>Review before publishing</h2>
+          <h2>{words.own ? "What will be saved" : "Review before publishing"}</h2>
 
           {plan.ready.length > 0 && (
             <>
@@ -360,7 +369,7 @@ export function UnpublishedPage() {
               disabled={busy || publishable === 0 || message.trim() === ""}
               onClick={publish}
             >
-              {busy ? "Publishing…" : "Publish"}
+              {busy ? words.acting : words.act}
             </button>
           </p>
         </section>
