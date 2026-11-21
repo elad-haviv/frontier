@@ -86,6 +86,19 @@ history; notes and media are imported; the library is exported as a vault. Desig
 - [ ] Backups to a storage bucket. **Elad, 2026-11-21: fine for now without one.** The library is
       only on the server's disk; the export zip is the off-server copy.
 
+## Now: stage 5, chronicles
+
+Design: [stage 5](designs/stage-5-chronicles.md), from the brainstorm in `concepts_brief.md`. Revised
+after two independent reviews.
+
+- [ ] 5a Order and comparison: the chronicle file, lanes, spans, relations, units, the order view,
+      Compare, what does not fit, the form, the phone layout
+- [ ] 5a The list of real-world cases, each sourced, accepted by Elad case by case
+- [ ] Elad tries 5a with his own history before anything more is built
+- [ ] 5b Scale, offered fixes, shifting a selection
+- [ ] 5c Two versions side by side
+- [ ] 5d Links to entries
+
 ## Now: stage 4, maps
 
 Design: [stage 4](designs/stage-4-maps.md), a draft the author has not read yet.
@@ -104,7 +117,6 @@ Design: [stage 4](designs/stage-4-maps.md), a draft the author has not read yet.
 
 Each gets a short design of its own before it is built.
 
-5. Time: calendars, vague dates, relative order, timelines, overlap views
 6. Time-aware maps
 7. More map views: other projections, cylinder and schematic spaces
 8. AI companion: lore conversations, character chat, discovery with concept art
