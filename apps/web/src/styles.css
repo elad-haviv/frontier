@@ -3321,3 +3321,44 @@ input.map-title {
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 0.5rem;
 }
+
+/* Projections: the turn panel and the box marked for focus */
+.turn-panel h2 {
+  margin: 0 1.6rem 0.4rem 0;
+  font-family: var(--serif);
+  font-size: 1.05rem;
+}
+.turn-angle {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 5rem;
+  align-items: center;
+  gap: 0.15rem 0.5rem;
+  margin: 0.4rem 0;
+  font-size: 0.85rem;
+}
+.turn-angle span {
+  grid-column: 1 / -1;
+  color: var(--ink-soft);
+}
+.turn-angle i {
+  color: var(--ink-faint);
+}
+.turn-angle input[type="range"] {
+  min-height: 2.2rem;
+  accent-color: var(--accent);
+}
+.turn-angle input[type="number"] {
+  height: 2.2rem;
+  padding: 0 0.4rem;
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  background: var(--paper-raised);
+  font-variant-numeric: tabular-nums;
+}
+.focus-box {
+  position: absolute;
+  z-index: 5;
+  border: 2px dashed var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  pointer-events: none;
+}

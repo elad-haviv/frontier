@@ -165,6 +165,41 @@ The WebGL renderer gains a path for projected views.
 *   The feature editor of a marker on a flat map has "Revolves around" (a menu of the map's other
     markers, or none) and "Once every … years".
 
+## As built, after the implementation-readiness review
+
+The review found that d3's interrupted projections do not cut lines at their lobes, that fixed
+2-degree cells fail at high zoom, and that Mercator needs a latitude limit. What was built:
+
+*   **Cutting by hand.** Lines are cut in the turned frame wherever they cross ±180 or the
+    hemispheres' meridian 0, with a point placed on each side (`cutRun`). Zones are cut with the
+    stage 4 `zoneOnPlate` in the turned frame, which carries a zone around a pole, then clipped at
+    meridian 0 for the hemispheres (`clipRing`). The filled rings are also what a tap is tested
+    against, as in the plain flat view.
+*   **The grid** uses a cell of `min(2°, 1.3/√k rad)`, halved until it divides 180, and twice that
+    while a finger is down. Only the part of the turned frame found on screen by sampling a 25 by 25
+    grid of screen points is laid out, with a margin, and cells whose screen box misses the screen
+    are left out. A corner at the image's pole takes the longitude of the other corners of its cell;
+    a pole inside a cell may still show as one small wedge.
+*   **Mercator** stops at ±85.0511 degrees of the turned frame, in the grid, in drawing and in reading.
+*   **Moving.** A sideways drag turns the globe by `dx / k` radians about its axis, wrapped to ±180;
+    an upward drag moves the drawing, within `π k` of the middle. With a turn about the middle, a
+    sideways drag moves the map at that angle, which is accepted. Zoom scales the drawing about the
+    pointer exactly; `k` runs from 40 to 200,000 pixels per radian.
+*   **Switching** to a projection keeps the place in the middle of the screen, upright: `λ` from the
+    old centre, `φ` 0, and the drawing moved so the old latitude is in the middle. Between two
+    projections the turn and scale are kept. Back to the ball or the plain flat view, the place under
+    the middle of the screen becomes the centre.
+*   **Focus**, as in map-reprojector: points sampled inside the box (9 by 9) give the centroid; the
+    globe is turned onto it upright (`γ` 0); the box is fitted to nine tenths of the screen. A box
+    smaller than 12 pixels is ignored. Focus comes before every other use of a drag; a second finger
+    ends the box; Escape cancels. The panel's "Upright" button sets `φ` and `γ` to 0.
+*   **The address**: `v=x,<projection>,<λ>,<φ>,<γ>,<k>,<x>,<y>`, angles to three places, `k` to two,
+    `x` and `y` to one. A projection this Frontier does not know opens the plain flat view centred on
+    `−λ, −φ`.
+*   **Moving between maps** (Up, Down, a world's map) now opens a fresh page for each map, so the
+    view and the drawing surface of the last map are never reused.
+*   The fragment shader is `highp`; the texture's sideways wrap is set at each draw.
+
 ## Map file changes
 
 *   `under`: a map id, top-level, after `space`. Absent or null means none.

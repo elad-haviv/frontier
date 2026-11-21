@@ -197,3 +197,93 @@ test("CUJ 19: a world on a schematic map revolves as the years move, and there i
 
   await cleanUp(page, [id], [chronicle]);
 });
+
+test("CUJ 17: lays a globe flat in Robinson, turns it, tilts it and focuses on a region", async ({
+  page,
+}, info) => {
+  await page.goto("/maps");
+  const id = await makeMap(page, `Atlas ${info.project.name}`, "sphere");
+  await page.goto(`/map/${id}`);
+  await expect(page.locator(".map-top")).toBeVisible();
+  await expect(page).toHaveURL(/v=g/);
+
+  // The picture is drawn in the projection: pale blue in the middle of the frame.
+  const drawn = async () => {
+    await expect(async () => {
+      const box = (await page.locator(".map-frame").boundingBox())!;
+      const shot = await page.screenshot({
+        clip: {
+          x: box.x + box.width / 2 - 20,
+          y: box.y + box.height / 2 - 20,
+          width: 40,
+          height: 40,
+        },
+      });
+      const { data } = await sharp(shot).raw().toBuffer({ resolveWithObject: true });
+      let red = 0;
+      let blue = 0;
+      for (let i = 0; i < data.length; i += 3) {
+        red += data[i]!;
+        blue += data[i + 2]!;
+      }
+      expect(blue - red).toBeGreaterThan((data.length / 3) * 30);
+    }).toPass();
+  };
+
+  await page.getByLabel("View").selectOption("robinson");
+  await expect(page).toHaveURL(/v=x%2Crobinson|v=x,robinson/);
+  await drawn();
+
+  // Dragging sideways turns the globe about its axis.
+  const before = viewOf(page.url()).split(",");
+  const c = await centre(page);
+  await page.mouse.move(c.x, c.y);
+  await page.mouse.down();
+  await page.mouse.move(c.x + 60, c.y, { steps: 6 });
+  await page.mouse.up();
+  await expect.poll(() => viewOf(page.url()).split(",")[2]).not.toBe(before[2]);
+  await drawn();
+
+  // A tilt of 20 degrees, typed.
+  await page.getByRole("button", { name: "Turn" }).click();
+  const tilt = page.getByLabel("Tilt, in degrees");
+  await tilt.fill("20");
+  await tilt.press("Enter");
+  await expect.poll(() => viewOf(page.url()).split(",")[3]).toBe("20");
+  await drawn();
+
+  // Focus: a box around a place; the view turns upright onto it and zooms in.
+  const k = Number(viewOf(page.url()).split(",")[5]);
+  await page.getByRole("button", { name: "Focus on a region" }).click();
+  await page.locator(".turn-panel").getByRole("button", { name: "Close" }).click();
+  const m = await centre(page);
+  await page.mouse.move(m.x - 40, m.y - 30);
+  await page.mouse.down();
+  await page.mouse.move(m.x + 10, m.y + 5, { steps: 5 });
+  await page.mouse.move(m.x + 40, m.y + 30, { steps: 5 });
+  await page.mouse.up();
+  await expect.poll(() => Number(viewOf(page.url()).split(",")[5])).toBeGreaterThan(k * 2);
+  expect(viewOf(page.url()).split(",")[4]).toBe("0");
+  await drawn();
+
+  // The address opens the same view.
+  const address = page.url();
+  await page.reload();
+  await expect(page.getByLabel("View")).toHaveValue("robinson");
+  await page.waitForTimeout(500);
+  expect(viewOf(page.url())).toBe(viewOf(address));
+  await expect
+    .poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth))
+    .toBe(true);
+
+  // Every projection draws the picture.
+  for (const projection of ["mercator", "mollweide", "hemispheres", "winkel3"]) {
+    await page.getByLabel("View").selectOption(projection);
+    await expect(page).toHaveURL(new RegExp(`v=x(%2C|,)${projection}`));
+  }
+  await page.getByLabel("View").selectOption("globe");
+  await expect(page).toHaveURL(/v=g/);
+  await drawn();
+
+  await cleanUp(page, [id]);
+});

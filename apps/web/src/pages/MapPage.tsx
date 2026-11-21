@@ -8,7 +8,11 @@ import {
   scaleFrom,
   type Shape,
   shapeAt,
-  switchGlobeView,
+  switchView,
+  PROJECTIONS,
+  type ProjectionId,
+  focusOn,
+  turnTo,
   vertexAt,
   type ViewState,
   zoomAt,
@@ -34,6 +38,7 @@ import {
   type Names,
 } from "../components/MapPanels.tsx";
 import { useRefresh } from "../components/Shell.tsx";
+import { TurnPanel } from "../components/MapTurn.tsx";
 import { type ChronicleChoice, FeatureTime, OrbitEditor, TimeBar } from "../components/MapTime.tsx";
 import { drawOverlay } from "../map/overlay.ts";
 import {
@@ -128,6 +133,10 @@ export function MapPage() {
       : null,
   );
   const [showAll, setShowAll] = useState(false);
+  // Projections: the panel of the turn's three angles, and marking a box to focus on.
+  const [turning, setTurning] = useState(false);
+  const [focusing, setFocusing] = useState(false);
+  const [box, setBox] = useState<[number, number, number, number] | null>(null);
   const [pin, setPin] = useState<{ feature: string; shape: string | null } | null>(null);
   const [focused, setFocused] = useState(0);
   /** The year at which each remembered step was taken, so undo shows what it changes. */
@@ -657,6 +666,16 @@ export function MapPage() {
   function onPointerDown(e: React.PointerEvent) {
     (e.target as Element).setPointerCapture(e.pointerId);
     const p = at(e);
+    if (focusing) {
+      // Marking a box to focus on comes before every other use of a drag. A second finger ends it.
+      if (pointers.current.size > 0) {
+        setBox(null);
+        return;
+      }
+      pointers.current.set(e.pointerId, p);
+      setBox([p.x, p.y, p.x, p.y]);
+      return;
+    }
     pointers.current.set(e.pointerId, p);
     if (pointers.current.size === 2) {
       const [a, b] = [...pointers.current.values()];
@@ -697,6 +716,12 @@ export function MapPage() {
   }
 
   function onPointerMove(e: React.PointerEvent) {
+    if (focusing) {
+      if (!pointers.current.has(e.pointerId)) return;
+      const p = at(e);
+      setBox((b) => (b ? [b[0], b[1], p.x, p.y] : b));
+      return;
+    }
     const before = pointers.current.get(e.pointerId);
     const g = gesture.current;
     if (!before || !g) return;
@@ -763,6 +788,19 @@ export function MapPage() {
   }
 
   function onPointerUp(e: React.PointerEvent) {
+    if (focusing) {
+      pointers.current.delete(e.pointerId);
+      const b = box;
+      setBox(null);
+      if (!b || !view) return;
+      const [x0, x1] = [Math.min(b[0], b[2]), Math.max(b[0], b[2])];
+      const [y0, y1] = [Math.min(b[1], b[3]), Math.max(b[1], b[3])];
+      // Too small a box is a slip of the finger, not a place to focus on.
+      if (x1 - x0 < 12 || y1 - y0 < 12) return;
+      setView(focusOn(view, size.width, size.height, [x0, y0, x1, y1]));
+      setFocusing(false);
+      return;
+    }
     const g = gesture.current;
     const p = pointers.current.get(e.pointerId);
     pointers.current.delete(e.pointerId);
@@ -777,6 +815,17 @@ export function MapPage() {
     }
     if (g && p && !g.moved) tap(p.x, p.y);
   }
+
+  useEffect(() => {
+    if (!focusing) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      setFocusing(false);
+      setBox(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [focusing]);
 
   // The wheel must be able to stop the page from scrolling, which React's own listener cannot.
   useEffect(() => {
@@ -938,14 +987,36 @@ export function MapPage() {
         )}
         <span className="map-actions">
           {sphere && view && (
+            <select
+              className="map-down"
+              aria-label="View"
+              value={view.kind === "projected" ? view.projection : view.kind}
+              onChange={(e) => {
+                const to = e.target.value as "globe" | "plate" | ProjectionId;
+                setView(switchView(view, to, size.width, size.height));
+                if (to === "globe" || to === "plate") {
+                  setTurning(false);
+                  setFocusing(false);
+                }
+              }}
+            >
+              <option value="globe">Globe</option>
+              <option value="plate">Flat</option>
+              {PROJECTIONS.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+          )}
+          {view?.kind === "projected" && (
             <button
               type="button"
               className="quiet"
-              onClick={() =>
-                setView(switchGlobeView(view, view.kind === "globe" ? "plate" : "globe"))
-              }
+              aria-pressed={turning}
+              onClick={() => setTurning(!turning)}
             >
-              {view.kind === "globe" ? "Flat" : "Globe"}
+              Turn
             </button>
           )}
           {above && (
@@ -1082,6 +1153,34 @@ export function MapPage() {
           onPointerUp={onPointerUp}
           onPointerCancel={onPointerUp}
         />
+        {box && (
+          <div
+            className="focus-box"
+            style={{
+              left: Math.min(box[0], box[2]),
+              top: Math.min(box[1], box[3]),
+              width: Math.abs(box[2] - box[0]),
+              height: Math.abs(box[3] - box[1]),
+            }}
+          />
+        )}
+        {focusing && !box && (
+          <p className="map-hint" role="status">
+            Drag a box around the place to focus on.{" "}
+            <button type="button" className="plain" onClick={() => setFocusing(false)}>
+              Cancel
+            </button>
+          </p>
+        )}
+        {turning && view?.kind === "projected" && (
+          <TurnPanel
+            rotate={view.rotate}
+            onTurn={(rotate) => setView(turnTo(view, rotate))}
+            focusing={focusing}
+            onFocus={() => setFocusing(!focusing)}
+            onClose={() => setTurning(false)}
+          />
+        )}
         <div className="map-zoom">
           <button type="button" aria-label="Zoom in" onClick={() => zoom(1.6)}>
             +

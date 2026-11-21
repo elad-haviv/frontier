@@ -98,6 +98,17 @@ after two independent reviews.
 - [x] 5c Two versions side by side
 - [x] 5d Links to entries (not yet: a linked span with no name showing its entry's title)
 
+## Now: stage 7, more map views
+
+Design: [stage 7](designs/stage-7-more-map-views.md), revised after an implementation-readiness
+review.
+
+- [x] 7a Projections as in map-reprojector: eight of them, turned on three axes, focus on a region
+- [x] 7b Layers beneath a globe, sharing its places: Up and Down
+- [x] 7c Schematic maps: no measuring; worlds revolving as the years move
+- [ ] Elad tries Derdama's layers and the Layered Heavens with his own images
+- [ ] Open: whether the lower layers ever stop lining up with Ezob; which way worlds revolve
+
 ## Now: stage 6, maps in time
 
 Design: [stage 6](designs/stage-6-maps-in-time.md), revised after two independent reviews.
@@ -127,7 +138,6 @@ Design: [stage 4](designs/stage-4-maps.md), a draft the author has not read yet.
 
 Each gets a short design of its own before it is built.
 
-7. More map views: other projections, cylinder and schematic spaces
 8. AI companion: lore conversations, character chat, discovery with concept art
 9. Export: documents, styled web pages, presentations, map renders
 

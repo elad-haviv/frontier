@@ -15,5 +15,10 @@
       "@frontier/time": ["../../packages/time/src/index.ts"]
     }
   },
-  "include": ["src", "vite.config.ts", "vitest.config.ts"]
+  "include": [
+    "src",
+    "vite.config.ts",
+    "vitest.config.ts",
+    "../../packages/geo/src/d3-geo-projection.d.ts"
+  ]
 }

@@ -153,9 +153,9 @@ test("CUJ 10: measures on a globe of unknown size, then with a radius", async ({
   await expect(hint).toContainText("km");
 
   // The same world laid flat, and back.
-  await page.getByRole("button", { name: "Flat", exact: true }).click();
+  await page.getByLabel("View").selectOption("plate");
   await expect(page).toHaveURL(/v=p(,|%2C)/);
-  await page.getByRole("button", { name: "Globe", exact: true }).click();
+  await page.getByLabel("View").selectOption("globe");
   await expect(page).toHaveURL(/v=g(,|%2C)/);
   await expect(page.locator(".save-saved")).toBeVisible();
   await discardMap(page);
@@ -284,7 +284,7 @@ test("a zone around a pole is filled up to the pole in the flat view of a globe"
   page,
 }, info) => {
   await makeMap(page, `Polar ${info.project.name}`, "sphere");
-  await page.getByRole("button", { name: "Flat", exact: true }).click();
+  await page.getByLabel("View").selectOption("plate");
   await page.getByRole("button", { name: "Zoom out" }).click();
   await page.getByRole("button", { name: "Zoom out" }).click();
   // The address says where the view is; from it, where a position falls on the screen.

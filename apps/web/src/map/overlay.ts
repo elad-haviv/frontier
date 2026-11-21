@@ -4,6 +4,7 @@
  */
 import {
   densify,
+  drawingProjection,
   type Point,
   type Position,
   type Shape,
@@ -40,6 +41,7 @@ const PAPER = "#fbf7f0";
 function lines(space: Space, view: View, points: Position[], close: boolean): Point[][] {
   const ring = close && points.length > 2 ? [...points, points[0]!] : points;
   const stepped = densify(space, ring);
+  if (view.lines) return view.lines(stepped);
   if (view.state.kind === "globe") {
     const out: Point[][] = [];
     let run: Point[] = [];
@@ -94,6 +96,14 @@ export function drawOverlay(ctx: CanvasRenderingContext2D, input: OverlayInput):
     ctx.lineWidth = 1;
     ctx.stroke();
   }
+  if (view.state.kind === "projected") {
+    // The map's outline, as the ball has its rim.
+    ctx.beginPath();
+    geoPath(drawingProjection(view.state, view.width, view.height), ctx)({ type: "Sphere" });
+    ctx.strokeStyle = "rgba(42, 36, 32, 0.35)";
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  }
 
   const shapes: Shape[] = [];
   const colours = new Map(map.layers.map((l) => [l.id, l.color]));
@@ -123,6 +133,16 @@ export function drawOverlay(ctx: CanvasRenderingContext2D, input: OverlayInput):
     ctx.fillStyle = colour + (picked ? "55" : "33");
     const drawn = lines(map.space, view, f.points, true);
     if (view.state.kind === "globe") fillOnGlobe(ctx, view, f.points);
+    if (view.rings) {
+      // In a projection the zone is filled as the pieces it is cut into, and tapped by them too.
+      ctx.beginPath();
+      for (const ring of view.rings(f.points)) {
+        trace(ctx, ring);
+        ctx.closePath();
+        shapes.push({ id: f.id, kind: "zone", points: ring });
+      }
+      ctx.fill();
+    }
     if (view.state.kind === "plate") {
       // On a globe laid flat the inside is not simply the closed outline: a zone may be cut by
       // the edge of the picture, or reach up to a pole across the whole width.
@@ -151,7 +171,9 @@ export function drawOverlay(ctx: CanvasRenderingContext2D, input: OverlayInput):
       ctx.strokeStyle = colour;
       ctx.lineWidth = picked ? 3 : 1.5;
       ctx.stroke();
-      if (view.state.kind !== "plate") shapes.push({ id: f.id, kind: "zone", points: line });
+      if (view.state.kind !== "plate" && view.state.kind !== "projected") {
+        shapes.push({ id: f.id, kind: "zone", points: line });
+      }
     }
   }
   for (const f of features) {

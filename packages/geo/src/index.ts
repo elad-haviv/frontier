@@ -4,3 +4,4 @@ export * from "./mesh.js";
 export * from "./space.js";
 export * from "./view.js";
 export * from "./zone.js";
+export * from "./projections.js";

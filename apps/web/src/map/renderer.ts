@@ -3,7 +3,14 @@
  * map's space; the view turns each corner into a point on the screen, and the picture is
  * stretched over the cells.
  */
-import { type Extent, globeMesh, makeView, type Space, type ViewState } from "@frontier/geo";
+import {
+  type Extent,
+  globeMesh,
+  makeView,
+  projectedMesh,
+  type Space,
+  type ViewState,
+} from "@frontier/geo";
 
 const VERTEX = `#version 300 es
 in vec2 a_pos;
@@ -17,11 +24,16 @@ void main() {
 }`;
 
 const FRAGMENT = `#version 300 es
-precision mediump float;
+precision highp float;
 in vec2 v_uv;
 uniform sampler2D u_image;
+// 1 when the image ends sideways, 0 when it goes all the way round and repeats.
+uniform float u_clip;
 out vec4 color;
 void main() {
+  // In a projected view the grid covers more than the image: what lies outside it is not drawn.
+  if (v_uv.y < 0.0 || v_uv.y > 1.0) discard;
+  if (u_clip > 0.5 && (v_uv.x < 0.0 || v_uv.x > 1.0)) discard;
   color = texture(u_image, v_uv);
 }`;
 
@@ -41,6 +53,7 @@ export class MapRenderer {
   private readonly textures = new Map<string, WebGLTexture>();
   private readonly loading = new Set<string>();
   private readonly sizeAt: WebGLUniformLocation | null;
+  private readonly clipAt: WebGLUniformLocation | null;
 
   constructor(
     private readonly canvas: HTMLCanvasElement,
@@ -68,6 +81,7 @@ export class MapRenderer {
     this.uvs = gl.createBuffer();
     this.indices = gl.createBuffer();
     this.sizeAt = gl.getUniformLocation(program, "u_size");
+    this.clipAt = gl.getUniformLocation(program, "u_clip");
   }
 
   /** The largest picture this device can draw, in pixels a side. */
@@ -129,6 +143,17 @@ export class MapRenderer {
       const texture = this.textures.get(image.id);
       if (!texture) continue;
       gl.bindTexture(gl.TEXTURE_2D, texture);
+      // An image that goes all the way round repeats sideways in a projected view; elsewhere its
+      // places stay within it.
+      const round = state.kind === "projected" && image.extent[2] - image.extent[0] >= 360;
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, round ? gl.REPEAT : gl.CLAMP_TO_EDGE);
+      gl.uniform1f(this.clipAt, round ? 0 : 1);
+
+      if (state.kind === "projected") {
+        const mesh = projectedMesh(state, width, height, image.extent, coarse);
+        if (mesh.positions.length > 0) this.plain(mesh.positions, mesh.uvs);
+        continue;
+      }
 
       if (state.kind === "globe") {
         const mesh = globeMesh(state, width, height, image.extent, coarse);
@@ -184,6 +209,21 @@ export class MapRenderer {
         );
       }
     }
+  }
+
+  /** Triangles given corner by corner, three to a triangle, with no shared corners. */
+  private plain(positions: Float32Array, uvs: Float32Array): void {
+    const gl = this.gl;
+    const attribute = (name: string, buffer: WebGLBuffer, data: Float32Array) => {
+      const at = gl.getAttribLocation(this.program, name);
+      gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+      gl.bufferData(gl.ARRAY_BUFFER, data, gl.DYNAMIC_DRAW);
+      gl.enableVertexAttribArray(at);
+      gl.vertexAttribPointer(at, 2, gl.FLOAT, false, 0, 0);
+    };
+    attribute("a_pos", this.positions, positions);
+    attribute("a_uv", this.uvs, uvs);
+    gl.drawArrays(gl.TRIANGLES, 0, positions.length / 2);
   }
 
   private triangles(positions: Float32Array, uvs: Float32Array, indices: Uint16Array): void {
