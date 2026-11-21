@@ -39,6 +39,7 @@ describe("fields of an entry", () => {
       typeKnown: true,
       time: [],
       problems: [],
+      proposed: [],
     });
   });
 

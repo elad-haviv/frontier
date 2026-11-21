@@ -6,6 +6,7 @@ import { HoverPreview } from "../components/HoverPreview.tsx";
 import { LightboxProvider } from "../components/Lightbox.tsx";
 import { currentEntryPath } from "../components/Shell.tsx";
 import { Fields } from "../components/Fields.tsx";
+import { ProposeFields } from "../components/ProposeFields.tsx";
 import { Markdown } from "../render/Markdown.tsx";
 import { useAsync } from "../useAsync.ts";
 
@@ -127,6 +128,7 @@ export function EntryPage({ onSessionLost }: { onSessionLost: () => void }) {
           </p>
         )}
         <Fields fields={e.fields} />
+        {e.state === "published" && !e.readOnly && <ProposeFields path={e.path} />}
       </header>
 
       {e.headings.filter((h) => h.level <= 3).length >= 3 && (

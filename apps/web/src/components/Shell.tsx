@@ -1,11 +1,16 @@
 import { createContext, type ReactNode, useCallback, useContext, useEffect, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
+import type { StatusSnapshot } from "@frontier/schema";
 import { api, editUrl } from "../api.ts";
 import { useAsync } from "../useAsync.ts";
 import { Switcher } from "./Switcher.tsx";
 import { Tree } from "./Tree.tsx";
 
 const Refresh = createContext<() => void>(() => undefined);
+const Status = createContext<StatusSnapshot | null>(null);
+
+/** The latest status the shell fetched, or null before the first answer. */
+export const useStatus = () => useContext(Status);
 
 /** Call after a draft or publish changed something, so the tree and the counts are read again. */
 export const useRefresh = () => useContext(Refresh);
@@ -41,7 +46,8 @@ export function Shell({ children, onLoggedOut }: { children: ReactNode; onLogged
   const status = useAsync(() => api.status(), `status-${version}`);
   const current = currentEntryPath(pathname);
   const waiting = status.state === "ready" ? status.value.unpublished : 0;
-  const proposals = status.state === "ready" ? status.value.inbox.branches : 0;
+  const proposals =
+    status.state === "ready" ? status.value.inbox.branches + status.value.inbox.operations : 0;
 
   // Ctrl+K or Cmd+K opens the switcher from anywhere.
   useEffect(() => {
@@ -77,93 +83,98 @@ export function Shell({ children, onLoggedOut }: { children: ReactNode; onLogged
 
   return (
     <Refresh.Provider value={refresh}>
-      <div className={`shell${open ? " drawer-open" : ""}`}>
-        <header className="topbar">
-          <button
-            type="button"
-            className="icon-button menu"
-            aria-label={open ? "Close the folder list" : "Open the folder list"}
-            aria-expanded={open}
-            onClick={() => setOpen(!open)}
-          >
-            <span aria-hidden="true">{open ? "✕" : "☰"}</span>
-          </button>
-          <Link to="/" className="wordmark small">
-            Frontier
-          </Link>
-          <button
-            type="button"
-            className="icon-button find"
-            aria-label="Go to an entry"
-            title="Go to an entry (Ctrl+K)"
-            onClick={() => setSwitching(true)}
-          >
-            <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
-              <circle
-                cx="10.5"
-                cy="10.5"
-                r="6.5"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-              />
-              <path
-                d="M15.5 15.5 21 21"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-              />
-            </svg>
-          </button>
-          <nav className="topnav">
-            {proposals > 0 && (
-              <Link to="/inbox" className="has-waiting">
-                Inbox<span className="badge">{proposals}</span>
-              </Link>
-            )}
-            <Link to="/unpublished" className={waiting > 0 ? "has-waiting" : ""}>
-              Unpublished{waiting > 0 && <span className="badge">{waiting}</span>}
-            </Link>
-            {proposals === 0 && (
-              <Link to="/inbox" className="nav-secondary">
-                Inbox
-              </Link>
-            )}
-            <Link to="/status" className="nav-secondary">
-              Status
-            </Link>
-            <button type="button" className="plain nav-secondary" onClick={logout}>
-              Log out
+      <Status.Provider value={status.state === "ready" ? status.value : null}>
+        <div className={`shell${open ? " drawer-open" : ""}`}>
+          <header className="topbar">
+            <button
+              type="button"
+              className="icon-button menu"
+              aria-label={open ? "Close the folder list" : "Open the folder list"}
+              aria-expanded={open}
+              onClick={() => setOpen(!open)}
+            >
+              <span aria-hidden="true">{open ? "✕" : "☰"}</span>
             </button>
-          </nav>
-        </header>
-
-        <aside className="sidebar" aria-label="Folders">
-          <button type="button" className="new-entry" onClick={newEntry}>
-            + New entry
-          </button>
-          {tree.state === "loading" && <p className="muted pad">Loading…</p>}
-          {tree.state === "failed" && <p className="error pad">{tree.error.message}</p>}
-          {tree.state === "ready" && <Tree tree={tree.value} current={current} />}
-          <p className="sidebar-foot">
-            <Link to="/status">Status</Link>
-            <button type="button" className="plain" onClick={logout}>
-              Log out
+            <Link to="/" className="wordmark small">
+              Frontier
+            </Link>
+            <button
+              type="button"
+              className="icon-button find"
+              aria-label="Go to an entry"
+              title="Go to an entry (Ctrl+K)"
+              onClick={() => setSwitching(true)}
+            >
+              <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+                <circle
+                  cx="10.5"
+                  cy="10.5"
+                  r="6.5"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                />
+                <path
+                  d="M15.5 15.5 21 21"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                />
+              </svg>
             </button>
-          </p>
-        </aside>
-        {open && (
-          <button
-            type="button"
-            className="scrim"
-            aria-label="Close the folder list"
-            onClick={() => setOpen(false)}
-          />
-        )}
+            <nav className="topnav">
+              {proposals > 0 && (
+                <Link to="/inbox" className="has-waiting">
+                  Inbox<span className="badge">{proposals}</span>
+                </Link>
+              )}
+              <Link to="/unpublished" className={waiting > 0 ? "has-waiting" : ""}>
+                Unpublished{waiting > 0 && <span className="badge">{waiting}</span>}
+              </Link>
+              {proposals === 0 && (
+                <Link to="/inbox" className="nav-secondary">
+                  Inbox
+                </Link>
+              )}
+              <Link to="/settings" className="nav-secondary">
+                Settings
+              </Link>
+              <Link to="/status" className="nav-secondary">
+                Status
+              </Link>
+              <button type="button" className="plain nav-secondary" onClick={logout}>
+                Log out
+              </button>
+            </nav>
+          </header>
 
-        <main className="content">{children}</main>
-        {switching && <Switcher onClose={() => setSwitching(false)} />}
-      </div>
+          <aside className="sidebar" aria-label="Folders">
+            <button type="button" className="new-entry" onClick={newEntry}>
+              + New entry
+            </button>
+            {tree.state === "loading" && <p className="muted pad">Loading…</p>}
+            {tree.state === "failed" && <p className="error pad">{tree.error.message}</p>}
+            {tree.state === "ready" && <Tree tree={tree.value} current={current} />}
+            <p className="sidebar-foot">
+              <Link to="/status">Status</Link>
+              <button type="button" className="plain" onClick={logout}>
+                Log out
+              </button>
+            </p>
+          </aside>
+          {open && (
+            <button
+              type="button"
+              className="scrim"
+              aria-label="Close the folder list"
+              onClick={() => setOpen(false)}
+            />
+          )}
+
+          <main className="content">{children}</main>
+          {switching && <Switcher onClose={() => setSwitching(false)} />}
+        </div>
+      </Status.Provider>
     </Refresh.Provider>
   );
 }

@@ -35,7 +35,13 @@ function When({ item }: { item: EntryFields["time"][number] }) {
 /** The entry's type and dates, shown under its title. Nothing is drawn for an entry without any. */
 export function Fields({ fields }: { fields: EntryFields }) {
   const showType = fields.type !== null && (fields.typeFrom === "field" || fields.time.length > 0);
-  if (!showType && fields.time.length === 0 && fields.problems.length === 0) return null;
+  if (
+    !showType &&
+    fields.time.length === 0 &&
+    fields.problems.length === 0 &&
+    fields.proposed.length === 0
+  )
+    return null;
   return (
     <dl className="fields">
       {showType && (
@@ -55,6 +61,17 @@ export function Fields({ fields }: { fields: EntryFields }) {
           </dt>
           <dd>
             <When item={item} />
+          </dd>
+        </div>
+      ))}
+      {fields.proposed.map((p) => (
+        <div key={p.id} className="field-proposed">
+          <dt>{p.op === "add_time" ? p.what : "Type"}</dt>
+          <dd>
+            {p.op === "add_time" ? p.when : p.type}{" "}
+            <Link to="/inbox" className="field-mark">
+              proposed
+            </Link>
           </dd>
         </div>
       ))}

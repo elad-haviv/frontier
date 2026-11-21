@@ -200,6 +200,33 @@ export function EditPage() {
 
   useEffect(() => () => window.clearTimeout(timer.current), []);
 
+  // Coming back to this tab: if the server changed the draft meanwhile, such as by accepting a
+  // proposed field on another device, and nothing here is unsent, show the server's text.
+  useEffect(() => {
+    const check = async () => {
+      if (document.visibilityState !== "visible" || saving.current) return;
+      const entry = await api.entry(path).catch(() => null);
+      const v = view.current;
+      if (!entry?.draft || !v || entry.draft.id !== draft.current.id) return;
+      if (entry.draft.revision <= draft.current.revision) return;
+      if (latest.current !== v.state.doc.toString() || readBuffer(path)) return;
+      draft.current.revision = entry.draft.revision;
+      latest.current = entry.text;
+      v.dispatch({ changes: { from: 0, to: v.state.doc.length, insert: entry.text } });
+      // The line above reports a change like typing does; this text is the server's already.
+      window.clearTimeout(timer.current);
+      clearBuffer(path);
+      setState("saved");
+    };
+    const onVisible = () => void check();
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", onVisible);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", onVisible);
+    };
+  }, [path]);
+
   async function done() {
     window.clearTimeout(timer.current);
     if (state === "unsaved" || state === "offline") await save();

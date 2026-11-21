@@ -78,6 +78,8 @@ export const EntryFields = z.object({
   ),
   /** Values that are present and cannot be read. */
   problems: z.array(z.string()),
+  /** What Frontier's AI proposes for the entry and the author has not decided yet. */
+  proposed: z.array(ProposalOperation),
 });
 export type EntryFields = z.infer<typeof EntryFields>;
 

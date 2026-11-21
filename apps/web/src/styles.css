@@ -1601,3 +1601,87 @@ button.big {
   color: var(--ink);
   font: inherit;
 }
+
+/* Proposed fields */
+.field-proposed dt,
+.field-proposed dd {
+  font-style: italic;
+}
+.propose {
+  margin: 0.5rem 0 0;
+  font-size: 0.9rem;
+}
+.operation-value {
+  overflow-wrap: anywhere;
+}
+.operation-quote {
+  margin: 0.5rem 0;
+  padding-left: 0.8rem;
+  border-left: 3px solid var(--rule);
+  color: var(--ink-soft);
+  font-family: var(--serif);
+}
+.operation-edit {
+  display: grid;
+  grid-template-columns: minmax(6rem, 1fr) 3fr;
+  gap: 0.4rem;
+}
+.operation-edit input,
+.settings .field input {
+  min-width: 0;
+  padding: 0.45rem 0.55rem;
+  border: 1px solid var(--rule);
+  border-radius: 5px;
+  background: var(--paper-raised);
+  color: var(--ink);
+  font: inherit;
+}
+
+/* Settings */
+.settings-block {
+  margin: 0 0 2.5rem;
+}
+.settings .field {
+  display: grid;
+  gap: 0.3rem;
+  margin: 0.9rem 0;
+}
+.settings .field em {
+  font-size: 0.85rem;
+  font-style: normal;
+}
+.settings .check {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0.9rem 0;
+}
+.table-scroll {
+  overflow-x: auto;
+}
+.calls {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.88rem;
+}
+.calls th,
+.calls td {
+  padding: 0.3rem 0.6rem 0.3rem 0;
+  border-bottom: 1px solid var(--rule);
+  text-align: left;
+  white-space: nowrap;
+}
+.calls tr.failed td {
+  color: var(--accent);
+}
+.schema-text {
+  overflow-x: auto;
+  padding: 0.8rem;
+  border: 1px solid var(--rule);
+  border-radius: 5px;
+  font-size: 0.85rem;
+}
+.job ul {
+  padding-left: 1.1rem;
+  font-size: 0.9rem;
+}

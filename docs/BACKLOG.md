@@ -58,9 +58,9 @@ One place for what is being built, what is waiting, and ideas. The design in
 Design: [stage 3](designs/stage-3-review-and-ai-basics.md), a draft the author has not read yet.
 
 - [x] 3a Inbox for agent branches: list, accept, reject, grouped publish, commit trailer
-- [x] 3b Fields and ids: reader block, properties panel rows, schema, attention entries, lookup by id
-- [ ] 3b remainder: `ensureId` (built with 3c, which brings server-made draft changes)
-- [ ] 3c AI basics: provider, cost log and cap, settings page, field proposals
+- [x] 3b Fields and ids: reader block, properties panel rows, schema, attention entries, lookup by id,
+      `ensureId`
+- [x] 3c AI basics: provider, cost log and cap, settings page, field proposals, folder run
 - [ ] 3d Quarantine: list, decisions, revert, settling
 - [ ] 3e Passkey login
 

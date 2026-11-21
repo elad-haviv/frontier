@@ -3,6 +3,9 @@ import type {
   DraftKind,
   EntryResponse,
   ErrorBody,
+  FieldJobState,
+  ModelsResponse,
+  SettingsResponse,
   InboxResponse,
   SchemaResponse,
   PublishPlan,
@@ -109,6 +112,47 @@ export const api = {
     post<{ id: string; revision: number }>(`/api/drafts/${id}/resolve`, { text }),
   unpublished: () => call<UnpublishedResponse>("/api/unpublished"),
   inbox: () => call<InboxResponse>("/api/inbox"),
+  proposeFields: (path: string) => post<{ made: number }>("/api/proposals/fields", { path }),
+  decideOperation: (
+    id: string,
+    op: string,
+    body: {
+      decision: "accept" | "reject" | "dismiss";
+      what?: string;
+      when?: string;
+      type?: string;
+    },
+  ) => post<{ draftId?: string }>(`/api/proposals/${id}/operations/${op}`, body),
+  settings: () => call<SettingsResponse>("/api/settings"),
+  saveAi: (body: {
+    key?: string | null;
+    models?: { extraction: string | null };
+    monthlyCapUsd?: number;
+    proposeOnPublish?: boolean;
+  }) => send<{ ok: true }>("PUT", "/api/settings/ai", body),
+  testAi: () => post<{ ok: boolean; costUsd: number; message: string }>("/api/settings/ai/test"),
+  models: () => call<ModelsResponse>("/api/ai/models"),
+  aiLog: () =>
+    call<{
+      month: string;
+      totalUsd: number;
+      capUsd: number;
+      calls: {
+        at: string;
+        task: string;
+        model: string;
+        costUsd: number;
+        entry: string | null;
+        ok: boolean;
+        error?: string;
+      }[];
+    }>("/api/ai/log"),
+  fieldJob: () => call<FieldJobState>("/api/proposals/job"),
+  estimateJob: (folder: string) =>
+    post<{ entries: number; estimateUsd: number | null }>("/api/proposals/job", { folder }),
+  startJob: (folder: string) =>
+    post<{ started: true }>("/api/proposals/job", { folder, confirm: true }),
+  cancelJob: () => send<{ ok: true }>("DELETE", "/api/proposals/job"),
   branchFile: (branch: string, path: string) =>
     call<{ before: string | null; after: string | null }>(
       `/api/inbox/branch-file?branch=${encodeURIComponent(branch)}&path=${encodeURIComponent(path)}`,

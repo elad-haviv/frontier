@@ -62,6 +62,7 @@ export function entryRoutes(app: FastifyInstance, s: Services): void {
           })),
         })),
         problems: fields.problems,
+        proposed: s.proposals.pendingFor(path),
       },
     };
   };

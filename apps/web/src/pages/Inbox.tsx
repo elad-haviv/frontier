@@ -1,7 +1,7 @@
-import type { BranchFile, InboxBranch } from "@frontier/schema";
+import type { BranchFile, InboxBranch, InboxProposal } from "@frontier/schema";
 import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { api, ApiFailure, branchImageUrl, editUrl } from "../api.ts";
+import { api, ApiFailure, branchImageUrl, editUrl, entryUrl } from "../api.ts";
 import { Diff } from "../components/Diff.tsx";
 import { useRefresh } from "../components/Shell.tsx";
 
@@ -45,8 +45,116 @@ function FileChanges({ branch, file }: { branch: string; file: BranchFile }) {
   );
 }
 
+type Op = InboxProposal["operations"][number]["operation"];
+
+/** One proposed field with the sentence it came from. The author may correct it before accepting. */
+function Operation({
+  operation: o,
+  applies,
+  busy,
+  decide,
+}: {
+  operation: Op;
+  applies: boolean;
+  busy: boolean;
+  decide: (body: {
+    decision: "accept" | "reject" | "dismiss";
+    what?: string;
+    when?: string;
+    type?: string;
+  }) => void;
+}) {
+  const [what, setWhat] = useState(o.op === "add_time" ? o.what : "");
+  const [when, setWhen] = useState(o.op === "add_time" ? o.when : "");
+  const [type, setType] = useState(o.op === "set_type" ? o.type : "");
+  const [editing, setEditing] = useState(false);
+
+  return (
+    <li>
+      <p className="change-head">
+        <span className="tag tag-create">{o.op === "add_time" ? "Date" : "Type"}</span>
+        <span className="operation-value">
+          {o.op === "add_time" ? (
+            <>
+              <strong>{what}</strong>: {when}
+            </>
+          ) : (
+            <strong>{type}</strong>
+          )}
+        </span>
+      </p>
+      {o.op === "add_time" && <blockquote className="operation-quote">{o.quote}</blockquote>}
+      {!applies && (
+        <p className="blocked">No longer applies: this sentence is not in the entry any more.</p>
+      )}
+      {editing && (
+        <p className="operation-edit">
+          {o.op === "add_time" ? (
+            <>
+              <input
+                aria-label="What happened"
+                value={what}
+                onChange={(e) => setWhat(e.target.value)}
+              />
+              <input aria-label="When" value={when} onChange={(e) => setWhen(e.target.value)} />
+            </>
+          ) : (
+            <input aria-label="Type" value={type} onChange={(e) => setType(e.target.value)} />
+          )}
+        </p>
+      )}
+      <p className="change-actions">
+        {applies ? (
+          <>
+            <button
+              type="button"
+              className="primary"
+              disabled={busy || (o.op === "add_time" ? !what.trim() || !when.trim() : !type.trim())}
+              onClick={() =>
+                decide(
+                  o.op === "add_time"
+                    ? { decision: "accept", what: what.trim(), when: when.trim() }
+                    : { decision: "accept", type: type.trim() },
+                )
+              }
+            >
+              Accept
+            </button>
+            <button
+              type="button"
+              className="quiet"
+              disabled={busy}
+              onClick={() => setEditing(!editing)}
+            >
+              {editing ? "Done editing" : "Edit"}
+            </button>
+            <button
+              type="button"
+              className="plain danger"
+              disabled={busy}
+              onClick={() => decide({ decision: "reject" })}
+            >
+              Reject
+            </button>
+          </>
+        ) : (
+          <button
+            type="button"
+            className="quiet"
+            disabled={busy}
+            onClick={() => decide({ decision: "dismiss" })}
+          >
+            Dismiss
+          </button>
+        )}
+      </p>
+    </li>
+  );
+}
+
 export function InboxPage() {
   const [branches, setBranches] = useState<InboxBranch[] | null>(null);
+  const [proposals, setProposals] = useState<InboxProposal[]>([]);
   const [notice, setNotice] = useState<{ kind: "error" | "ok"; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const refresh = useRefresh();
@@ -54,7 +162,9 @@ export function InboxPage() {
 
   const load = useCallback(async () => {
     try {
-      setBranches((await api.inbox()).branches);
+      const inbox = await api.inbox();
+      setProposals(inbox.proposals);
+      setBranches(inbox.branches);
     } catch (err) {
       setNotice({
         kind: "error",
@@ -65,7 +175,7 @@ export function InboxPage() {
   useEffect(() => void load(), [load]);
 
   async function act(
-    run: () => Promise<{ branchRemoved: boolean; draftId?: string }>,
+    run: () => Promise<{ branchRemoved?: boolean; draftId?: string }>,
     then?: string,
   ) {
     setBusy(true);
@@ -101,8 +211,8 @@ export function InboxPage() {
       <header className="entry-head">
         <h1>Inbox</h1>
         <p className="muted lede">
-          Changes proposed by agents wait here. Accepting a file makes it an unpublished change of
-          yours; nothing reaches the vault until you publish.
+          What agents and Frontier's own AI propose waits here. Accepting something makes it an
+          unpublished change of yours; nothing reaches the vault until you publish.
         </p>
       </header>
       {notice && (
@@ -111,7 +221,29 @@ export function InboxPage() {
           {notice.kind === "ok" && <Link to="/unpublished">See unpublished changes</Link>}
         </p>
       )}
-      {branches.length === 0 && <p className="empty">Nothing is waiting for you.</p>}
+      {branches.length === 0 && proposals.length === 0 && (
+        <p className="empty">Nothing is waiting for you.</p>
+      )}
+
+      {proposals.map((p) => (
+        <section key={p.id} className="proposal">
+          <h2>
+            <Link to={entryUrl(p.path)}>{p.path.split("/").pop()!.replace(/\.md$/i, "")}</Link>
+          </h2>
+          <p className="muted">Fields proposed by the AI from this entry's published text.</p>
+          <ul className="changes">
+            {p.operations.map(({ operation: o, applies }) => (
+              <Operation
+                key={o.id}
+                operation={o}
+                applies={applies}
+                busy={busy}
+                decide={(body) => act(() => api.decideOperation(p.id, o.id, body))}
+              />
+            ))}
+          </ul>
+        </section>
+      ))}
 
       {branches.map((b) => {
         const undecided = b.files.filter((f) => !f.decision).length;
