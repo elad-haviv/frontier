@@ -242,8 +242,8 @@ describe("writing a shape", () => {
 
 describe("the slider", () => {
   it("runs a little beyond what is placed, on round years", () => {
-    expect(time.range).toEqual({ from: -5, to: 505, step: 5, latest: 500 });
-    expect(clampYear(time, 1e9)).toBe(505);
+    expect(time.range).toEqual({ from: -25, to: 525, step: 5, latest: 500 });
+    expect(clampYear(time, 1e9)).toBe(525);
     expect(clampYear(time, 12.6)).toBe(13);
     expect(clampYear(time, Number.NaN)).toBe(0);
   });
@@ -260,7 +260,7 @@ describe("the slider", () => {
 
   it("steps by a round number of years on a long chronicle", () => {
     const long = readTime(chronicle([span("a", { start: at(0), end: at(20000) })]));
-    expect(long.range).toMatchObject({ step: 100, from: -100, to: 20100 });
+    expect(long.range).toMatchObject({ step: 100, from: -1000, to: 21000 });
   });
 
   it("visits every year at which something on the map changes", () => {

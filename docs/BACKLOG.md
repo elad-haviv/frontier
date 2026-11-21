@@ -98,6 +98,17 @@ after two independent reviews.
 - [x] 5c Two versions side by side
 - [x] 5d Links to entries (not yet: a linked span with no name showing its entry's title)
 
+## Now: stage 6, maps in time
+
+Design: [stage 6](designs/stage-6-maps-in-time.md), revised after two independent reviews.
+
+- [x] 6a The time bar: a chronicle, a year, features appearing, fading and going
+- [x] 6b A feature tied to a span; the editor saying which span decides
+- [x] 6c Later shapes: added from a span, pinned for editing, swapped by the year
+- [ ] Elad tries it on one of his own maps
+- [ ] Open: an event's feature staying after the event; images that change with time; marking
+      features whose entry has no span
+
 ## Now: stage 4, maps
 
 Design: [stage 4](designs/stage-4-maps.md), a draft the author has not read yet.
@@ -116,7 +127,6 @@ Design: [stage 4](designs/stage-4-maps.md), a draft the author has not read yet.
 
 Each gets a short design of its own before it is built.
 
-6. Time-aware maps
 7. More map views: other projections, cylinder and schematic spaces
 8. AI companion: lore conversations, character chat, discovery with concept art
 9. Export: documents, styled web pages, presentations, map renders

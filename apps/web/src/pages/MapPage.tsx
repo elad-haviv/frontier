@@ -14,6 +14,7 @@ import {
   zoomAt,
 } from "@frontier/geo";
 import {
+  type ChronicleSpan,
   type MapFeature,
   type MapFile,
   mergeMaps,
@@ -32,7 +33,22 @@ import {
   type Names,
 } from "../components/MapPanels.tsx";
 import { useRefresh } from "../components/Shell.tsx";
+import { type ChronicleChoice, FeatureTime, TimeBar } from "../components/MapTime.tsx";
 import { drawOverlay } from "../map/overlay.ts";
+import {
+  type MapTime,
+  addShape,
+  changeYears,
+  clampYear,
+  countFeatures,
+  readTime,
+  reasonFor,
+  removeShape,
+  resolve,
+  shapeOf,
+  tie,
+  writeShape,
+} from "../map/time.ts";
 import { MapRenderer, MapsNeedWebGL } from "../map/renderer.ts";
 import { newItemId, readView, writeView } from "../map/viewUrl.ts";
 import { useDialogs } from "../components/Dialogs.tsx";
@@ -87,6 +103,25 @@ export function MapPage() {
     past: [],
     future: [],
   });
+
+  // Time: the chronicle the map is seen through, the year, and the shape pinned for editing.
+  const [chronicles, setChronicles] = useState<ChronicleChoice[]>([]);
+  const [timeOn, setTimeOn] = useState(params.get("t") !== null);
+  const [chosen, setChosen] = useState<string | null>(params.get("c"));
+  const [time, setTime] = useState<MapTime | null>(null);
+  const [spanEntries, setSpanEntries] = useState<Record<string, { title: string }>>({});
+  const [year, setYear] = useState<number | null>(
+    params.get("t") !== null && Number.isFinite(Number(params.get("t")))
+      ? Number(params.get("t"))
+      : null,
+  );
+  const [showAll, setShowAll] = useState(false);
+  const [pin, setPin] = useState<{ feature: string; shape: string | null } | null>(null);
+  const [focused, setFocused] = useState(0);
+  /** The year at which each remembered step was taken, so undo shows what it changes. */
+  const stamps = useRef(new WeakMap<MapFile, number>());
+  const yearRef = useRef<number | null>(null);
+  yearRef.current = timeOn ? year : null;
 
   const frame = useRef<HTMLDivElement>(null);
   const glCanvas = useRef<HTMLCanvasElement>(null);
@@ -163,6 +198,12 @@ export function MapPage() {
       (r) => live && setOtherMaps(r.maps.filter((m) => m.id !== id)),
       () => undefined,
     );
+    // Without the list of chronicles the map simply has no time.
+    api.chronicles().then(
+      (r) =>
+        live && setChronicles(r.chronicles.map(({ id, title, main }) => ({ id, title, main }))),
+      () => undefined,
+    );
     return () => {
       live = false;
       window.clearTimeout(timer.current);
@@ -196,6 +237,72 @@ export function MapPage() {
     setView(state);
   }, [map, view, size]);
 
+  // ---- Time ------------------------------------------------------------------------------------
+
+  const defaultChronicle = chronicles.find((c) => c.main)?.id ?? chronicles[0]?.id ?? null;
+  const chronicleId = chosen && chronicles.some((c) => c.id === chosen) ? chosen : defaultChronicle;
+
+  useEffect(() => {
+    if (chosen && chronicles.length > 0 && !chronicles.some((c) => c.id === chosen)) {
+      setNotice("The chronicle in the address could not be found; another is shown.");
+      setChosen(null);
+    }
+  }, [chosen, chronicles]);
+
+  // The chronicle is read when time is turned on, when another is chosen, and when the tab
+  // gets the focus again, since it may have been changed in another tab.
+  useEffect(() => {
+    if (!timeOn || !chronicleId) return;
+    let live = true;
+    api.chronicle(chronicleId).then(
+      (r) => {
+        if (!live) return;
+        const read = readTime(r.chronicle);
+        setTime(read);
+        setSpanEntries(r.entries);
+        // The year starts at the latest the chronicle knows, and stays inside its range.
+        setYear((y) => clampYear(read, y ?? read.range?.latest ?? 0));
+      },
+      () => live && setNotice("The chronicle could not be read."),
+    );
+    return () => {
+      live = false;
+    };
+  }, [timeOn, chronicleId, focused]);
+
+  useEffect(() => {
+    const onFocus = () => setFocused((n) => n + 1);
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+  }, []);
+
+  const seen = timeOn && time?.chronicle.id === chronicleId ? time : null;
+  /** The features as drawn now: each with the shape on screen, and those not there left out. */
+  const resolved = useMemo(
+    () => (map ? resolve(map, seen, year ?? 0, { selected, pin, editing, showAll }) : []),
+    [map, seen, year, selected, pin, editing, showAll],
+  );
+  const resolvedRef = useRef(resolved);
+  resolvedRef.current = resolved;
+  const shownMap = useMemo(
+    () => (map ? { ...map, features: resolved.map((r) => r.feature) } : null),
+    [map, resolved],
+  );
+  const styles = useMemo(
+    () => new Map(resolved.map((r) => [r.feature.id, { opacity: r.opacity, dashed: r.dashed }])),
+    [resolved],
+  );
+  const onScreen = resolved.find((r) => r.feature.id === selected) ?? null;
+
+  // A pin lasts while its feature stays selected; a picked corner while its shape stays on screen.
+  useEffect(() => setPin(null), [selected]);
+  useEffect(() => setVertex(null), [onScreen?.shape]);
+
+  const moveTo = (next: number) => {
+    setPin(null);
+    setYear(seen ? clampYear(seen, next) : Math.round(next));
+  };
+
   // The view and what is shown are kept in the address, replacing it, so Back leaves the map.
   useEffect(() => {
     if (!view || !map) return;
@@ -211,10 +318,12 @@ export function MapPage() {
         next.set("img", [...shownImages].join(","));
       }
       if (editing) next.set("edit", "1");
+      if (timeOn && year !== null) next.set("t", String(year));
+      if (timeOn && chronicleId && chronicleId !== defaultChronicle) next.set("c", chronicleId);
       setParams(next, { replace: true });
     }, 300);
     return () => window.clearTimeout(wait);
-  }, [view, hidden, shownImages, editing]);
+  }, [view, hidden, shownImages, editing, timeOn, year, chronicleId, defaultChronicle]);
 
   // ---- Drawing ---------------------------------------------------------------------------------
 
@@ -267,7 +376,8 @@ export function MapPage() {
       if (canvas.height !== Math.round(size.height * ratio))
         canvas.height = Math.round(size.height * ratio);
       shapes.current = drawOverlay(canvas.getContext("2d")!, {
-        map,
+        map: shownMap ?? map,
+        styles,
         view: makeView(view, size.width, size.height),
         hidden,
         selected,
@@ -284,6 +394,8 @@ export function MapPage() {
     return () => cancelAnimationFrame(handle);
   }, [
     map,
+    shownMap,
+    styles,
     view,
     size,
     hidden,
@@ -393,7 +505,10 @@ export function MapPage() {
     (next: MapFile, remember = true) => {
       const before = mapRef.current;
       if (!before) return;
-      if (remember) setHistory((h) => ({ past: [...h.past.slice(-99), before], future: [] }));
+      if (remember) {
+        if (yearRef.current !== null) stamps.current.set(before, yearRef.current);
+        setHistory((h) => ({ past: [...h.past.slice(-99), before], future: [] }));
+      }
       setMap(next);
       schedule();
     },
@@ -417,6 +532,13 @@ export function MapPage() {
       const before = h.past[h.past.length - 1];
       if (!before || !mapRef.current) return h;
       const now = mapRef.current;
+      // Back at the year the change was made, what is undone is on screen.
+      const then = stamps.current.get(before);
+      if (then !== undefined && yearRef.current !== null) {
+        stamps.current.set(now, then);
+        setYear(then);
+      }
+      setPin(null);
       setMap(before);
       schedule();
       return { past: h.past.slice(0, -1), future: [now, ...h.future] };
@@ -427,6 +549,12 @@ export function MapPage() {
       const next = h.future[0];
       if (!next || !mapRef.current) return h;
       const now = mapRef.current;
+      const then = stamps.current.get(next);
+      if (then !== undefined && yearRef.current !== null) {
+        stamps.current.set(now, then);
+        setYear(then);
+      }
+      setPin(null);
       setMap(next);
       schedule();
       return { past: [...h.past, now], future: h.future.slice(1) };
@@ -496,7 +624,8 @@ export function MapPage() {
     }
 
     // Reading, or the select tool: a corner of the selected shape first, then any feature.
-    const chosen = now.features.find((f) => f.id === selected);
+    // The shape on screen is what is tapped, whichever of the feature's shapes that is.
+    const chosen = resolvedRef.current.find((r) => r.feature.id === selected)?.feature;
     if (editing && chosen && chosen.kind !== "marker") {
       const corners = chosen.points.map((p) => v.projectClamped(p).point);
       const corner = vertexAt(corners, [x, y]);
@@ -530,7 +659,7 @@ export function MapPage() {
     const state = viewRef.current;
     if (editing && tool === "select" && selected && now && state) {
       const v = makeView(state, size.width, size.height);
-      const chosen = now.features.find((f) => f.id === selected);
+      const chosen = resolvedRef.current.find((r) => r.feature.id === selected)?.feature;
       if (chosen?.kind === "marker") {
         const s = v.project(chosen.at);
         if (s && Math.hypot(s[0] - p.x, s[1] - p.y) < 24)
@@ -590,18 +719,23 @@ export function MapPage() {
       // One drag is one step to undo.
       if (g.drag && mapRef.current) {
         const start = mapRef.current;
+        if (yearRef.current !== null) stamps.current.set(start, yearRef.current);
         setHistory((h) => ({ past: [...h.past.slice(-99), start], future: [] }));
       }
     }
     if (g.drag) {
       const position = makeView(state, size.width, size.height).unproject(p.x, p.y);
       const feature = mapRef.current?.features.find((f) => f.id === g.drag!.feature);
-      if (!position || !feature) return;
-      if (feature.kind === "marker") setFeature({ ...feature, at: position }, false);
-      else {
-        const points = feature.points.map((q, i) => (i === g.drag!.vertex ? position : q));
-        setFeature({ ...feature, points } as MapFeature, false);
-      }
+      const drawn = resolvedRef.current.find((r) => r.feature.id === g.drag!.feature);
+      if (!position || !feature || !drawn) return;
+      // The drag changes the shape on screen: the feature's first shape or a later one.
+      const shape =
+        drawn.feature.kind === "marker"
+          ? { at: position }
+          : {
+              points: drawn.feature.points.map((q, i) => (i === g.drag!.vertex ? position : q)),
+            };
+      setFeature(writeShape(feature, drawn.shape, shape), false);
       return;
     }
     coarse.current = g.touch;
@@ -658,6 +792,20 @@ export function MapPage() {
     () => (map && tool === "measure" && sketch.length > 1 ? measure(map.space, sketch) : null),
     [map, tool, sketch],
   );
+
+  const spanName = (span: ChronicleSpan): string =>
+    span.name || (span.entry ? spanEntries[span.entry]?.title : undefined) || "(unnamed)";
+  const stops = useMemo(() => (map && seen ? changeYears(map, seen) : []), [map, seen]);
+  const timeLine = useMemo(() => {
+    if (!map || !seen) return null;
+    const c = countFeatures(map, seen, hidden);
+    return `In time: ${c.follows} follow the chronicle, ${c.undated} undated, ${c.noSpan} with an entry that has no span, ${c.timeless} timeless.`;
+  }, [map, seen, hidden]);
+  // The year and the chronicle go along into the map of a place.
+  const carry =
+    timeOn && year !== null
+      ? `t=${year}${chronicleId && chronicleId !== defaultChronicle ? `&c=${chronicleId}` : ""}`
+      : "";
 
   if (error) {
     return (
@@ -747,6 +895,19 @@ export function MapPage() {
               }
             >
               {view.kind === "globe" ? "Flat" : "Globe"}
+            </button>
+          )}
+          {chronicles.length > 0 && (
+            <button
+              type="button"
+              className="quiet"
+              aria-pressed={timeOn}
+              onClick={() => {
+                setTimeOn(!timeOn);
+                setPin(null);
+              }}
+            >
+              Time
             </button>
           )}
           <button
@@ -883,6 +1044,7 @@ export function MapPage() {
 
         {panel && (
           <LayerPanel
+            timeLine={timeLine}
             map={map}
             hidden={hidden}
             shownImages={shownImages}
@@ -932,6 +1094,8 @@ export function MapPage() {
             title={titleOf(feature)}
             names={names}
             children={children}
+            reason={seen ? reasonFor(feature, seen, year ?? 0, spanName) : null}
+            {...(carry ? { carry } : {})}
             onClose={() => setSelected(null)}
           />
         )}
@@ -964,13 +1128,47 @@ export function MapPage() {
               setSelected(null);
             }}
             onRemoveVertex={() => {
-              if (feature.kind === "marker" || vertex === null) return;
-              setFeature({
-                ...feature,
-                points: feature.points.filter((_, i) => i !== vertex),
-              } as MapFeature);
+              const drawn = onScreen?.feature;
+              if (!drawn || drawn.kind === "marker" || vertex === null) return;
+              setFeature(
+                writeShape(feature, onScreen.shape, {
+                  points: drawn.points.filter((_, i) => i !== vertex),
+                }),
+              );
               setVertex(null);
             }}
+            {...(onScreen && onScreen.feature.kind !== "marker"
+              ? { corners: onScreen.feature.points.length }
+              : {})}
+            time={
+              seen && onScreen ? (
+                <FeatureTime
+                  feature={feature}
+                  time={seen}
+                  onScreen={onScreen.shape}
+                  pinned={pin?.feature === feature.id ? pin.shape : undefined}
+                  nameOf={spanName}
+                  onTie={(span) => setFeature(tie(feature, span))}
+                  onPin={(shape) => setPin({ feature: feature.id, shape })}
+                  onAddShape={(from) => {
+                    // The new shape starts as the one on screen, and is the one edited next.
+                    const shape = newItemId();
+                    setFeature(addShape(feature, shape, from, shapeOf(onScreen.feature)));
+                    setPin({ feature: feature.id, shape });
+                  }}
+                  onRemoveShape={(shape) => {
+                    setPin(null);
+                    setFeature(removeShape(feature, shape));
+                  }}
+                />
+              ) : (
+                <p className="muted feature-time">
+                  {chronicles.length > 0
+                    ? "Turn time on to see when this exists."
+                    : "Make a chronicle to say when this exists."}
+                </p>
+              )
+            }
             canMove={{
               forward: reorderFeature(map.features, feature.id, 1) !== map.features,
               back: reorderFeature(map.features, feature.id, -1) !== map.features,
@@ -982,6 +1180,26 @@ export function MapPage() {
           />
         )}
       </div>
+
+      {timeOn && chronicleId && (
+        <TimeBar
+          chronicles={chronicles}
+          chosen={chronicleId}
+          onChoose={(next) => {
+            setChosen(next);
+            setYear(null);
+            setPin(null);
+          }}
+          time={seen}
+          year={year ?? 0}
+          onYear={moveTo}
+          stops={stops}
+          editing={editing}
+          showAll={showAll}
+          onShowAll={setShowAll}
+          onClose={() => setTimeOn(false)}
+        />
+      )}
     </div>
   );
 }

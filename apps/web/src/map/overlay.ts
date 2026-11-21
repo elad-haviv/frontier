@@ -29,6 +29,8 @@ export interface OverlayInput {
   sketch: { kind: "path" | "zone" | "measure"; points: Position[] } | null;
   /** Corner handles are shown while editing. */
   editing: boolean;
+  /** How strongly each feature is drawn, and whether with dashes, when the map is seen in time. */
+  styles?: ReadonlyMap<string, { opacity: number; dashed: boolean }>;
 }
 
 const INK = "#2a2420";
@@ -100,9 +102,22 @@ export function drawOverlay(ctx: CanvasRenderingContext2D, input: OverlayInput):
     .filter((f) => !input.hidden.has(f.layer))
     .sort((a, b) => (order.get(a.layer) ?? 0) - (order.get(b.layer) ?? 0));
 
+  /** Sets the strength and the dashes for one feature; `plain` puts them back. */
+  const look = (f: MapFeature): { opacity: number; dashed: boolean } => {
+    const style = input.styles?.get(f.id) ?? { opacity: 1, dashed: false };
+    ctx.globalAlpha = style.opacity;
+    ctx.setLineDash(style.dashed ? [7, 5] : []);
+    return style;
+  };
+  const plain = () => {
+    ctx.globalAlpha = 1;
+    ctx.setLineDash([]);
+  };
+
   // Zones first, then paths, then markers, so the small things stay reachable.
   for (const f of features) {
     if (f.kind !== "zone") continue;
+    look(f);
     const colour = colours.get(f.layer) ?? INK;
     const picked = f.id === input.selected;
     ctx.fillStyle = colour + (picked ? "55" : "33");
@@ -141,6 +156,7 @@ export function drawOverlay(ctx: CanvasRenderingContext2D, input: OverlayInput):
   }
   for (const f of features) {
     if (f.kind !== "path") continue;
+    look(f);
     const colour = colours.get(f.layer) ?? INK;
     for (const line of lines(map.space, view, f.points, false)) {
       ctx.beginPath();
@@ -155,10 +171,14 @@ export function drawOverlay(ctx: CanvasRenderingContext2D, input: OverlayInput):
     }
   }
 
+  plain();
+
   // Markers in the order of the file, so a later one lies above an earlier one.
-  const labels: { title: string; x: number; y: number; picked: boolean }[] = [];
+  const labels: { title: string; x: number; y: number; picked: boolean; opacity: number }[] = [];
   for (const f of features) {
     if (f.kind !== "marker") continue;
+    const style = look(f);
+    ctx.setLineDash([]);
     const colour = colours.get(f.layer) ?? INK;
     const spots: Point[] =
       view.state.kind === "globe"
@@ -192,11 +212,23 @@ export function drawOverlay(ctx: CanvasRenderingContext2D, input: OverlayInput):
         ctx.lineWidth = 2;
         ctx.stroke();
       }
+      if (style.dashed) {
+        // Undated: a dashed ring, outside the ring that marks the selection.
+        ctx.beginPath();
+        ctx.arc(x, y, icon ? 25 : 16, 0, Math.PI * 2);
+        ctx.setLineDash([4, 4]);
+        ctx.strokeStyle = INK;
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
       shapes.push({ id: f.id, kind: "marker", at: [x, y] });
       const title = input.titleOf(f);
-      if (title) labels.push({ title, x, y: y + below, picked });
+      if (title) labels.push({ title, x, y: y + below, picked, opacity: style.opacity });
     }
   }
+
+  plain();
 
   // Labels above every marker, those of later features first, where there is room.
   const taken: [number, number, number, number][] = [];
@@ -204,7 +236,7 @@ export function drawOverlay(ctx: CanvasRenderingContext2D, input: OverlayInput):
   ctx.textAlign = "center";
   ctx.textBaseline = "top";
   for (let i = labels.length - 1; i >= 0; i--) {
-    const { title, x, y, picked } = labels[i]!;
+    const { title, x, y, picked, opacity } = labels[i]!;
     const half = ctx.measureText(title).width / 2 + 3;
     const box: [number, number, number, number] = [x - half, y, x + half, y + 16];
     const clash = taken.some(
@@ -212,12 +244,15 @@ export function drawOverlay(ctx: CanvasRenderingContext2D, input: OverlayInput):
     );
     if (clash && !picked) continue;
     taken.push(box);
+    ctx.globalAlpha = opacity;
     ctx.strokeStyle = PAPER;
     ctx.lineWidth = 3;
     ctx.strokeText(title, x, y);
     ctx.fillStyle = INK;
     ctx.fillText(title, x, y);
   }
+
+  plain();
 
   // Corner handles of the selected path or zone.
   const chosen = features.find((f) => f.id === input.selected);

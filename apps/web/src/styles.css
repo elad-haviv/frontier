@@ -1898,6 +1898,141 @@ input.map-title {
 .map-tools .danger {
   color: var(--accent);
 }
+/* Time on a map: the bar under it, and the part of the feature editor */
+.time-bar {
+  flex: none;
+  display: grid;
+  gap: 0.3rem;
+  padding: 0.4rem 0.6rem 0.5rem;
+  border-top: 1px solid var(--rule);
+  background: var(--paper);
+  font-size: 0.9rem;
+}
+.time-bar p {
+  margin: 0;
+}
+.time-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-width: 0;
+}
+.time-row select {
+  flex: 1 1 8rem;
+  min-width: 0;
+  height: 2.5rem;
+  padding: 0 0.4rem;
+  border: 1px solid var(--rule);
+  border-radius: 5px;
+  background: var(--paper-raised);
+  color: var(--ink);
+  font: inherit;
+}
+.time-row button {
+  flex: none;
+  min-height: 2.5rem;
+  white-space: nowrap;
+}
+.time-row button:disabled {
+  opacity: 0.4;
+}
+.time-year {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: var(--ink-soft);
+}
+.time-year input {
+  width: 6.5rem;
+  height: 2.5rem;
+  padding: 0 0.4rem;
+  border: 1px solid var(--rule);
+  border-radius: 5px;
+  background: var(--paper-raised);
+  font-size: 1rem;
+  font-variant-numeric: tabular-nums;
+}
+.time-range {
+  flex: 1;
+  min-width: 0;
+  height: 2.5rem;
+  accent-color: var(--accent);
+}
+.time-key {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.2rem 0.45rem;
+  font-size: 0.8rem;
+}
+.time-key i {
+  display: inline-block;
+  width: 0.9rem;
+  height: 0.9rem;
+  margin-left: 0.4rem;
+  border: 2px solid var(--ink-soft);
+  border-radius: 50%;
+  background: var(--ink-soft);
+}
+.time-key i.key-perhaps {
+  opacity: 0.45;
+}
+.time-key i.key-undated {
+  border-style: dashed;
+  background: none;
+}
+.time-key label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  margin-left: auto;
+  min-height: 2rem;
+}
+.time-line,
+.card-reason {
+  margin: 0 0 0.5rem;
+  font-size: 0.85rem;
+}
+.feature-time {
+  margin: 0.2rem 0 0.6rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--rule);
+  font-size: 0.88rem;
+}
+.feature-time h3 {
+  margin: 0.4rem 0 0.25rem;
+  font-family: var(--sans);
+  font-size: 0.75rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+.feature-time p {
+  margin: 0 0 0.4rem;
+}
+.shape-list {
+  margin: 0 0 0.5rem;
+  padding: 0;
+  list-style: none;
+}
+.shape-list li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.2rem 0.5rem;
+  min-height: 2.2rem;
+}
+.shape-list button[aria-pressed="true"] {
+  font-weight: 700;
+  text-decoration: underline;
+}
+.shape-editing {
+  padding: 0.3rem 0.5rem;
+  border-left: 3px solid var(--accent);
+  background: var(--paper-raised);
+}
+
 .map-notice {
   margin: 0;
   border-radius: 0;

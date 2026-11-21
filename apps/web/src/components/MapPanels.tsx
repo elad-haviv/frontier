@@ -1,6 +1,6 @@
 import type { Length } from "@frontier/geo";
 import { extentProblem, type MapFeature, type MapFile, wholeExtent } from "@frontier/schema";
-import { useEffect, useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, entryUrl, imageUrl, mapUrl } from "../api.ts";
 import { iconLabel, newItemId } from "../map/viewUrl.ts";
@@ -31,12 +31,18 @@ export function FeatureCard({
   title,
   names,
   children,
+  reason,
+  carry,
   onClose,
 }: {
   feature: MapFeature;
   title: string;
   names: Names;
   children: Record<string, string>;
+  /** Why it is faded or dashed at the year shown, when the map is seen in time. */
+  reason?: string | null;
+  /** The year and chronicle, carried into the map of this place. */
+  carry?: string;
   onClose: () => void;
 }) {
   const entry = feature.entry ? names[feature.entry] : undefined;
@@ -60,13 +66,16 @@ export function FeatureCard({
         ✕
       </button>
       <h2>{title || "Unnamed"}</h2>
+      {reason && <p className="card-reason muted">{reason}</p>}
       {text && <p className="card-text">{text}</p>}
       {feature.entry && !entry && <p className="muted">Its entry could not be found.</p>}
       <p className="change-actions">
         {entry && <Link to={entryUrl(entry.path)}>Open the entry</Link>}
         {feature.child &&
           (children[feature.child] ? (
-            <Link to={mapUrl(feature.child)}>Open the map of this place</Link>
+            <Link to={mapUrl(feature.child) + (carry ? `?${carry}` : "")}>
+              Open the map of this place
+            </Link>
           ) : (
             <span className="muted">Its map is missing.</span>
           ))}
@@ -143,7 +152,13 @@ export function FeatureEditor({
   canMove,
   onMove,
   onClose,
+  corners,
+  time,
 }: {
+  /** How many points the shape on screen has, when it is not the feature's first shape. */
+  corners?: number;
+  /** The part that says when the feature exists and lists its shapes. */
+  time?: ReactNode;
   feature: MapFeature;
   map: MapFile;
   names: Names;
@@ -284,12 +299,15 @@ export function FeatureEditor({
           </button>
         </span>
       </div>
+      {time}
       <p className="change-actions">
-        {feature.kind !== "marker" && vertex !== null && feature.points.length > minimum && (
-          <button type="button" className="quiet" onClick={onRemoveVertex}>
-            Remove this point
-          </button>
-        )}
+        {feature.kind !== "marker" &&
+          vertex !== null &&
+          (corners ?? feature.points.length) > minimum && (
+            <button type="button" className="quiet" onClick={onRemoveVertex}>
+              Remove this point
+            </button>
+          )}
         <button type="button" className="plain danger" onClick={onDelete}>
           Delete
         </button>
@@ -372,7 +390,10 @@ export function LayerPanel({
   onChange,
   onKeepAsOpening,
   onAddImage,
+  timeLine,
 }: {
+  /** How the features stand to the chosen chronicle, while the map is seen in time. */
+  timeLine?: string | null;
   map: MapFile;
   hidden: Set<string>;
   shownImages: Set<string>;
@@ -459,6 +480,7 @@ export function LayerPanel({
 
   return (
     <aside className="layer-panel" aria-label="Images and layers">
+      {timeLine && <p className="muted time-line">{timeLine}</p>}
       {(editing || map.images.length > 1) && (
         <>
           <h3>Images</h3>

@@ -37,9 +37,11 @@ export function readTime(chronicle: ChronicleFile): MapTime {
   let range: MapTime["range"] = null;
   if (bounds) {
     const step = Math.max(1, rulerStep(Math.max(bounds.hi - bounds.lo, 1) / 200));
+    // A twentieth of the width beyond each end, and never less than one step, on round years.
+    const beyond = Math.max(step, Math.ceil(((bounds.hi - bounds.lo) * 0.05) / step) * step);
     range = {
-      from: Math.floor(bounds.lo / step) * step - step,
-      to: Math.ceil(bounds.hi / step) * step + step,
+      from: Math.floor(bounds.lo / step) * step - beyond,
+      to: Math.ceil(bounds.hi / step) * step + beyond,
       step,
       latest: Math.round(bounds.hi),
     };

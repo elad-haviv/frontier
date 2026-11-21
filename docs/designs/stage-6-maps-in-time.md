@@ -177,8 +177,9 @@ A feature may hold `shapes`, a list of later shapes:
     one; otherwise the first in the list, and the bar says "no chronicle is marked as the main one".
     A `c` that cannot be read gives a notice and falls back the same way.
 *   **Range.** From `scaleBounds` of the chronicle (stage 5): `lo` and `hi`. With `step =
-    rulerStep((hi − lo) / 200)`, at least 1, the range runs from `floor(lo / step) × step − step` to
-    `ceil(hi / step) × step + step`, so both ends are round and a little beyond what is placed. When
+    rulerStep((hi − lo) / 200)`, at least 1, and `beyond` a twentieth of `hi − lo` rounded up to a
+    whole number of steps and at least one step, the range runs from `floor(lo / step) × step −
+    beyond` to `ceil(hi / step) × step + beyond`: round years, a little beyond what is placed. When
     `lo = hi` the width counts as 1. When nothing with a finite year is placed there is no range: the
     bar says "nothing in this chronicle is placed in years yet", shows no control, and features are
     drawn by the table at year 0.
