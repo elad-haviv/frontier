@@ -138,6 +138,9 @@ export function Shell({ children, onLoggedOut }: { children: ReactNode; onLogged
                   Inbox
                 </Link>
               )}
+              <Link to="/maps" className="nav-secondary">
+                Maps
+              </Link>
               <Link to="/settings" className="nav-secondary">
                 Settings
               </Link>
@@ -158,6 +161,7 @@ export function Shell({ children, onLoggedOut }: { children: ReactNode; onLogged
             {tree.state === "failed" && <p className="error pad">{tree.error.message}</p>}
             {tree.state === "ready" && <Tree tree={tree.value} current={current} />}
             <p className="sidebar-foot">
+              <Link to="/maps">Maps</Link>
               <Link to="/inbox">Inbox</Link>
               <Link to="/settings">Settings</Link>
               <Link to="/status">Status</Link>

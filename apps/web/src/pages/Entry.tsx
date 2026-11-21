@@ -1,7 +1,7 @@
 import { aliasesOf, splitFrontmatter } from "@frontier/vault";
 import { useEffect, useMemo } from "react";
 import { Link, useLocation } from "react-router-dom";
-import { api, editUrl, entryUrl } from "../api.ts";
+import { api, editUrl, entryUrl, mapUrl } from "../api.ts";
 import { HoverPreview } from "../components/HoverPreview.tsx";
 import { LightboxProvider } from "../components/Lightbox.tsx";
 import { currentEntryPath } from "../components/Shell.tsx";
@@ -134,6 +134,17 @@ export function EntryPage({ onSessionLost }: { onSessionLost: () => void }) {
           </p>
         )}
         <Fields fields={e.fields} />
+        {e.maps.length > 0 && (
+          <p className="on-maps">
+            On maps:{" "}
+            {e.maps.map((m, i) => (
+              <span key={m.id}>
+                {i > 0 && ", "}
+                <Link to={mapUrl(m.id, m.feature)}>{m.title}</Link>
+              </span>
+            ))}
+          </p>
+        )}
         {e.state === "published" && !e.readOnly && <ProposeFields path={e.path} />}
       </header>
 

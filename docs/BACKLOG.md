@@ -65,11 +65,24 @@ Design: [stage 3](designs/stage-3-review-and-ai-basics.md), a draft the author h
       nothing until the sync is changed (see `docs/sync-changes.md`)
 - [x] 3e Passkey login, with the option to switch the password off
 
+## Now: stage 4, maps
+
+Design: [stage 4](designs/stage-4-maps.md), a draft the author has not read yet.
+
+- [x] 4a Map files: form, merging by item, drafts and Publish, marker sets
+- [x] 4b Viewer: flat maps and globes in WebGL, pan and zoom, globe and flat view, the place kept
+      in the address
+- [x] 4c Markers with entries and icons; "On maps" on an entry
+- [x] 4d Paths, zones, layers, child maps, undo
+- [x] 4e Measuring; a globe's radius and a flat map's scale
+- [ ] Left to do: adding a second image to a map and setting an image's extent; reordering
+      features; a zone that contains a pole in the flat view
+- [ ] Try it on the real vault's images and on a real phone (frame rate)
+
 ## Later stages
 
 Each gets a short design of its own before it is built.
 
-4. Maps: flat and sphere maps, markers, paths, zones, layers, drill-down, measuring
 5. Time: calendars, vague dates, relative order, timelines, overlap views
 6. Time-aware maps
 7. More map views: other projections, cylinder and schematic spaces

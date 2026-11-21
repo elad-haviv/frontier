@@ -1,0 +1,135 @@
+import { type FormEvent, useEffect, useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
+import { api, ApiFailure, mapUrl } from "../api.ts";
+import { useRefresh } from "../components/Shell.tsx";
+import { useAsync } from "../useAsync.ts";
+
+const STATE: Record<string, string> = {
+  new: "not published yet",
+  unpublished: "unpublished changes",
+};
+
+/** The list of maps, and the form that makes a new one from an image of the vault. */
+export function MapsPage() {
+  const maps = useAsync(() => api.maps(), "maps");
+  const navigate = useNavigate();
+  const refresh = useRefresh();
+  const [images, setImages] = useState<string[]>([]);
+  const [title, setTitle] = useState("");
+  const [kind, setKind] = useState<"sphere" | "flat">("flat");
+  const [image, setImage] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const loadImages = () =>
+    api.mapImages().then(
+      (r) => setImages(r.images),
+      () => undefined,
+    );
+  useEffect(() => void loadImages(), []);
+
+  async function create(e: FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      const { id } = await api.createMap(title.trim(), kind, image);
+      refresh();
+      navigate(mapUrl(id) + "?edit=1");
+    } catch (err) {
+      setError(err instanceof ApiFailure ? err.message : "The map could not be made.");
+      setBusy(false);
+    }
+  }
+
+  async function upload(file: File | undefined) {
+    if (!file) return;
+    setError(null);
+    try {
+      const { path } = await api.upload(file);
+      await loadImages();
+      setImage(path);
+      refresh();
+    } catch (err) {
+      setError(err instanceof ApiFailure ? err.message : "The image could not be added.");
+    }
+  }
+
+  return (
+    <article className="entry wide maps">
+      <header className="entry-head">
+        <h1>Maps</h1>
+        <p className="muted lede">
+          A map is drawn over an image of yours. Its markers, paths and zones point at entries.
+        </p>
+      </header>
+
+      {maps.state === "loading" && <p className="muted">Loading…</p>}
+      {maps.state === "failed" && <p className="error">{maps.error.message}</p>}
+      {maps.state === "ready" && (
+        <>
+          {maps.value.maps.length === 0 && (
+            <p className="empty">No maps yet. Make the first below.</p>
+          )}
+          <ul className="map-list">
+            {maps.value.maps.map((m) => (
+              <li key={m.id}>
+                <Link to={mapUrl(m.id)}>{m.title}</Link>
+                <span className="muted">
+                  {m.space.kind === "sphere" ? "globe" : "flat map"} · {m.features}{" "}
+                  {m.features === 1 ? "feature" : "features"}
+                  {STATE[m.state] ? ` · ${STATE[m.state]}` : ""}
+                </span>
+              </li>
+            ))}
+          </ul>
+          {maps.value.problems.map((p) => (
+            <p key={p.path} className="banner" role="alert">
+              {p.path} is not shown as a map. {p.message}
+            </p>
+          ))}
+        </>
+      )}
+
+      <form className="settings-block new-map settings" onSubmit={create}>
+        <h2>New map</h2>
+        <label className="field">
+          <span>Title</span>
+          <input type="text" value={title} onChange={(e) => setTitle(e.target.value)} />
+        </label>
+        <label className="field">
+          <span>Kind</span>
+          <select value={kind} onChange={(e) => setKind(e.target.value as "sphere" | "flat")}>
+            <option value="flat">Flat map: a region, a city, a diagram</option>
+            <option value="sphere">Globe: an image that wraps a whole world</option>
+          </select>
+        </label>
+        <label className="field">
+          <span>Image</span>
+          <select value={image} onChange={(e) => setImage(e.target.value)}>
+            <option value="">Choose an image of the vault…</option>
+            {images.map((p) => (
+              <option key={p} value={p}>
+                {p.split("/").pop()} ({p.split("/").slice(0, -1).join("/")})
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="field">
+          <span>Or add a new image</span>
+          <input type="file" accept="image/*" onChange={(e) => void upload(e.target.files?.[0])} />
+        </label>
+        {error && (
+          <p className="error" role="alert">
+            {error}
+          </p>
+        )}
+        <p className="change-actions">
+          <button type="submit" className="primary" disabled={busy || !title.trim() || !image}>
+            Make the map
+          </button>
+        </p>
+      </form>
+    </article>
+  );
+}

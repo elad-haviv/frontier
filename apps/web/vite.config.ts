@@ -10,6 +10,7 @@ export default defineConfig({
     // The shared packages are bundled from source, so the web build needs no earlier build step.
     alias: {
       "@frontier/vault": at("../../packages/vault/src/index.ts"),
+      "@frontier/geo": at("../../packages/geo/src/index.ts"),
       "@frontier/schema": at("../../packages/schema/src/index.ts"),
     },
   },

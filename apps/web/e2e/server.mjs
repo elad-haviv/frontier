@@ -16,6 +16,7 @@ Object.assign(process.env, {
   PUBLIC_URL: `http://localhost:${process.env.PORT}`,
   SESSION_KEY: Buffer.alloc(32, 9).toString("base64"),
   FRONTIER_INITIAL_PASSWORD: "browser-test-password",
+  ICON_FOLDER: "99 Appendices/Icons",
 });
 
 // A stand-in for the AI provider. For any entry it "finds" one dated fact and quotes the entry's

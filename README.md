@@ -22,6 +22,7 @@ Stage 1 of nine is in progress. What exists so far:
 | Full-text search, outline, hover preview, editing toolbar                                                                                    | Built; covered by browser tests                                              |
 | Live preview; image upload; table editing; properties panel                                                                                  | Built; image sizing and table row tools still to do                          |
 | Stage 3: inbox for agent branches; type and date fields; AI provider, cap and field proposals; quarantine; passkey login                     | Built; the AI needs an OpenRouter key, and quarantine needs the sync changed |
+| Stage 4: maps (flat maps and globes, markers, paths, zones, layers, measuring)                                                               | Built; to be tried on the real images                                        |
 
 The app writes to its vault: drafts are saved on the server and Publish makes one commit.
 

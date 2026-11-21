@@ -8,6 +8,7 @@ import type {
   ModelsResponse,
   SettingsResponse,
   InboxResponse,
+  MapFile,
   SchemaResponse,
   PublishPlan,
   StatusSnapshot,
@@ -130,6 +131,37 @@ export const api = {
   resolve: (id: string, text: string) =>
     post<{ id: string; revision: number }>(`/api/drafts/${id}/resolve`, { text }),
   unpublished: () => call<UnpublishedResponse>("/api/unpublished"),
+  maps: () =>
+    call<{
+      maps: {
+        id: string;
+        title: string;
+        space: MapFile["space"];
+        features: number;
+        state: string;
+      }[];
+      problems: { path: string; message: string }[];
+    }>("/api/maps"),
+  map: (id: string) => call<LoadedMap>(`/api/maps/${id}`),
+  createMap: (title: string, kind: "sphere" | "flat", image: string) =>
+    post<{ id: string }>("/api/maps", { title, kind, image }),
+  saveMap: (
+    id: string,
+    map: MapFile,
+    revision: number,
+    link: { feature: string; path: string }[],
+  ) =>
+    send<{ map: MapFile; revision: number; unlinked: { feature: string; reason: string }[] }>(
+      "PUT",
+      `/api/maps/${id}`,
+      { map, revision, link },
+    ),
+  resolveMap: (id: string, keep: "mine" | "theirs") =>
+    post<{ ok: true }>(`/api/maps/${id}/resolve`, { keep }),
+  deleteMap: (id: string) => send<{ ok: true }>("DELETE", `/api/maps/${id}`),
+  markerSets: () =>
+    call<{ sets: { name: string; icons: { name: string; path: string }[] }[] }>("/api/marker-sets"),
+  mapImages: () => call<{ images: string[] }>("/api/map-images"),
   inbox: () => call<InboxResponse>("/api/inbox"),
   proposeFields: (path: string) => post<{ made: number }>("/api/proposals/fields", { path }),
   decideOperation: (
@@ -226,3 +258,20 @@ export function imageUrl(path: string, width?: 320 | 640 | 1280): string {
 export function branchImageUrl(branch: string, path: string): string {
   return `/api/images?branch=${encodeURIComponent(branch)}&path=${encodeURIComponent(path)}&w=640`;
 }
+
+/** A map as the server gives it: the map, its draft revision, and the names its features need. */
+export interface LoadedMap {
+  map: MapFile;
+  revision: number;
+  state: "published" | "unpublished" | "new";
+  entries: Record<string, { path: string; title: string }>;
+  children: Record<string, string>;
+}
+
+/** The address of a map image at the size maps ask for: 4096, or 2560 on a small or modest device. */
+export function mapImageUrl(path: string, size: 2560 | 4096): string {
+  return `/api/images?path=${encodeURIComponent(path)}&w=${size}`;
+}
+
+export const mapUrl = (id: string, feature?: string): string =>
+  `/map/${id}${feature ? `?f=${encodeURIComponent(feature)}` : ""}`;

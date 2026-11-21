@@ -1,7 +1,8 @@
 import type { PublishPlan, UnpublishedResponse } from "@frontier/schema";
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { api, ApiFailure, editUrl, entryUrl, imageUrl } from "../api.ts";
+import { mapIdOf } from "@frontier/schema";
+import { api, ApiFailure, editUrl, entryUrl, imageUrl, mapUrl } from "../api.ts";
 import { Diff } from "../components/Diff.tsx";
 import { useRefresh } from "../components/Shell.tsx";
 
@@ -13,6 +14,8 @@ const REASON: Record<string, string> = {
   deleted_on_main: "This file was deleted from the vault meanwhile.",
   delete_of_changed_file: "This file was changed in the vault after you chose to delete it.",
   binary_changed_on_both: "This image was changed in both places.",
+  map_changed_on_both:
+    "This map was changed here and in the vault in the same places. Keep one of the two.",
   rename_blocked: "This rename cannot be carried out.",
 };
 
@@ -110,6 +113,15 @@ export function UnpublishedPage() {
     update(next);
   };
 
+  async function settleMap(path: string, keep: "mine" | "theirs") {
+    const id = mapIdOf(path);
+    if (!id) return;
+    await api.resolveMap(id, keep).catch(() => undefined);
+    setPlan(null);
+    await load();
+    refresh();
+  }
+
   if (!data) return <p className="center muted">{notice?.text ?? "Loading…"}</p>;
   const empty =
     data.drafts.length === 0 && data.renames.length === 0 && data.decisions.length === 0;
@@ -159,8 +171,11 @@ export function UnpublishedPage() {
                   </details>
                 )}
                 <p className="change-actions">
-                  {d.kind !== "delete" && !d.binary && (
+                  {d.kind !== "delete" && !d.binary && !mapIdOf(d.path) && (
                     <Link to={editUrl(d.path)}>Keep editing</Link>
+                  )}
+                  {d.kind !== "delete" && mapIdOf(d.path) && (
+                    <Link to={mapUrl(mapIdOf(d.path)!) + "?edit=1"}>Open the map</Link>
                   )}
                   <button type="button" className="plain danger" onClick={() => discard(d.id)}>
                     Discard
@@ -295,7 +310,25 @@ export function UnpublishedPage() {
                     <p className="error">
                       {REASON[c.reason]} {c.reason === "rename_blocked" && c.mine}
                     </p>
-                    {c.reason !== "rename_blocked" && (
+                    {c.reason === "map_changed_on_both" && (
+                      <span className="change-actions">
+                        <button
+                          type="button"
+                          className="quiet"
+                          onClick={() => settleMap(c.path, "mine")}
+                        >
+                          Keep my map
+                        </button>
+                        <button
+                          type="button"
+                          className="quiet"
+                          onClick={() => settleMap(c.path, "theirs")}
+                        >
+                          Take the vault's
+                        </button>
+                      </span>
+                    )}
+                    {c.reason !== "rename_blocked" && c.reason !== "map_changed_on_both" && (
                       <Link to={`/conflict/${c.draftId}`} state={{ conflict: c }}>
                         Resolve
                       </Link>

@@ -10,6 +10,7 @@
     "types": ["vite/client"],
     "paths": {
       "@frontier/vault": ["../../packages/vault/src/index.ts"],
+      "@frontier/geo": ["../../packages/geo/src/index.ts"],
       "@frontier/schema": ["../../packages/schema/src/index.ts"]
     }
   },
