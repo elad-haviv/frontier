@@ -47,7 +47,9 @@ export function Shell({ children, onLoggedOut }: { children: ReactNode; onLogged
   const current = currentEntryPath(pathname);
   const waiting = status.state === "ready" ? status.value.unpublished : 0;
   const proposals =
-    status.state === "ready" ? status.value.inbox.branches + status.value.inbox.operations : 0;
+    status.state === "ready"
+      ? status.value.inbox.branches + status.value.inbox.operations + status.value.inbox.quarantined
+      : 0;
 
   // Ctrl+K or Cmd+K opens the switcher from anywhere.
   useEffect(() => {
@@ -156,6 +158,8 @@ export function Shell({ children, onLoggedOut }: { children: ReactNode; onLogged
             {tree.state === "failed" && <p className="error pad">{tree.error.message}</p>}
             {tree.state === "ready" && <Tree tree={tree.value} current={current} />}
             <p className="sidebar-foot">
+              <Link to="/inbox">Inbox</Link>
+              <Link to="/settings">Settings</Link>
               <Link to="/status">Status</Link>
               <button type="button" className="plain" onClick={logout}>
                 Log out

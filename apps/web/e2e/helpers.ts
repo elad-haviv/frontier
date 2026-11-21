@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -65,6 +65,24 @@ export function pushProposal(branch: string, files: Record<string, string>, mess
     git(work, "add", "-A");
     git(work, "commit", "-qm", message);
     git(work, "push", "-q", "origin", branch);
+  } finally {
+    rmSync(work, { recursive: true, force: true });
+  }
+}
+
+/** Commits files to `main` from outside the app and returns the commit. */
+export function pushToMain(files: Record<string, string>, message: string): string {
+  const work = mkdtempSync(join(tmpdir(), "frontier-outside-"));
+  try {
+    git(tmpdir(), "clone", "-q", REMOTE, work);
+    for (const [path, text] of Object.entries(files)) {
+      mkdirSync(dirname(join(work, path)), { recursive: true });
+      writeFileSync(join(work, path), text);
+    }
+    git(work, "add", "-A");
+    git(work, "commit", "-qm", message);
+    git(work, "push", "-q", "origin", "HEAD:main");
+    return git(work, "rev-parse", "HEAD");
   } finally {
     rmSync(work, { recursive: true, force: true });
   }

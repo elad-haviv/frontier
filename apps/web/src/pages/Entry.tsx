@@ -96,6 +96,12 @@ export function EntryPage({ onSessionLost }: { onSessionLost: () => void }) {
             </span>
           )}
         </div>
+        {e.quarantine && (
+          <p className="draft-note quarantine-note" role="status">
+            This note arrived unreviewed, pushed by {e.quarantine.pushedBy}. It is kept out of the
+            memory bank until you decide. <Link to="/inbox">Accept or revert it in the inbox</Link>
+          </p>
+        )}
         {e.state === "unpublished" && (
           <p className="draft-note">
             {e.draft?.kind === "delete"

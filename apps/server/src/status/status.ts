@@ -15,6 +15,8 @@ export class StatusService {
   private conflicts = 0;
   private branches = 0;
   private operations = 0;
+  private quarantined = 0;
+  private fileProblems: string[] = [];
   private aiOn = false;
   private aiError: string | null = null;
   private serverDraftChanges = 0;
@@ -34,10 +36,17 @@ export class StatusService {
       indexStale: this.remoteCommit !== null && this.index.commit !== this.remoteCommit,
       lastBackupAt: this.lastBackupAt,
       backupError: this.backupError,
-      inbox: { branches: this.branches, operations: this.operations },
+      inbox: {
+        branches: this.branches,
+        operations: this.operations,
+        quarantined: this.quarantined,
+      },
       ai: { on: this.aiOn, lastError: this.aiError },
       serverDraftChanges: this.serverDraftChanges,
-      problems: this.index.schemaProblem ? [this.index.schemaProblem] : [],
+      problems: [
+        ...(this.index.schemaProblem ? [this.index.schemaProblem] : []),
+        ...this.fileProblems,
+      ],
       attention: {
         ambiguousLinks: a.ambiguousLinks.length,
         duplicateImages: a.duplicateImages.length,
@@ -103,6 +112,13 @@ export class StatusService {
   inbox(branches: number): void {
     if (this.branches === branches) return;
     this.branches = branches;
+    this.changed();
+  }
+
+  /** The number of quarantined notes waiting, and any trouble reading the list. */
+  quarantine(count: number, problem: string | null): void {
+    this.quarantined = count;
+    this.fileProblems = problem ? [problem] : [];
     this.changed();
   }
 

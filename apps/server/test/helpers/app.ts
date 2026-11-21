@@ -48,7 +48,7 @@ let cachedHash: Promise<string> | null = null;
 /** A server on a fresh copy of the fixture vault, cloned and indexed, with a password set. */
 export async function makeTestApp(
   extraEnv: Record<string, string> = {},
-  options: { fetch?: typeof fetch } = {},
+  options: { fetch?: typeof fetch; settleMs?: number } = {},
 ): Promise<TestApp> {
   const repo = makeTestRepo();
   const config = loadConfig(testEnv(repo, extraEnv));

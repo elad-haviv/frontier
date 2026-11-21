@@ -716,7 +716,8 @@ button.big {
 
 .sidebar-foot {
   display: none;
-  gap: 1.5rem;
+  flex-wrap: wrap;
+  gap: 0.6rem 1.5rem;
   margin: 1.5rem 0.5rem 0;
   padding-top: 1rem;
   border-top: 1px solid var(--rule);
@@ -1684,4 +1685,15 @@ button.big {
 .job ul {
   padding-left: 1.1rem;
   font-size: 0.9rem;
+}
+
+/* Notes that arrived unreviewed */
+.tree-note.is-quarantined::after {
+  content: "!";
+  margin-left: 0.4rem;
+  color: var(--accent);
+  font-weight: 700;
+}
+.quarantine-note {
+  border-left-width: 4px;
 }

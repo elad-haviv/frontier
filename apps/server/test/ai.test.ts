@@ -66,7 +66,7 @@ async function start(
   opts: { env?: Record<string, string>; cost?: number; setUp?: boolean } = {},
 ) {
   const p = provider(answers, opts.cost);
-  t = await makeTestApp({ ...SECRETS, ...opts.env }, { fetch: p.fake });
+  t = await makeTestApp({ ...SECRETS, ...opts.env }, { fetch: p.fake, settleMs: 0 });
   await t.login();
   t.repo.pushFromOutside({ [VEL]: BODY });
   await t.services.sync();
@@ -139,7 +139,10 @@ describe("settings and the provider key", () => {
 
   it("refuses to store a key without SECRETS_KEY and uses the one from the environment", async () => {
     const p = provider([{ reply: "ok" }]);
-    t = await makeTestApp({ OPENROUTER_API_KEY: "sk-or-from-env-9876" }, { fetch: p.fake });
+    t = await makeTestApp(
+      { OPENROUTER_API_KEY: "sk-or-from-env-9876" },
+      { fetch: p.fake, settleMs: 0 },
+    );
     await t.login();
     const res = await t.put("/api/settings/ai", { key: "sk-or-test-key-1234" });
     expect(res.statusCode).toBe(409);

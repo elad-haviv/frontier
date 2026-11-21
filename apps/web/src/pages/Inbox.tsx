@@ -1,4 +1,4 @@
-import type { BranchFile, InboxBranch, InboxProposal } from "@frontier/schema";
+import type { BranchFile, InboxBranch, InboxProposal, InboxQuarantined } from "@frontier/schema";
 import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { api, ApiFailure, branchImageUrl, editUrl, entryUrl } from "../api.ts";
@@ -155,6 +155,7 @@ function Operation({
 export function InboxPage() {
   const [branches, setBranches] = useState<InboxBranch[] | null>(null);
   const [proposals, setProposals] = useState<InboxProposal[]>([]);
+  const [quarantine, setQuarantine] = useState<InboxQuarantined[]>([]);
   const [notice, setNotice] = useState<{ kind: "error" | "ok"; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const refresh = useRefresh();
@@ -164,6 +165,7 @@ export function InboxPage() {
     try {
       const inbox = await api.inbox();
       setProposals(inbox.proposals);
+      setQuarantine(inbox.quarantine);
       setBranches(inbox.branches);
     } catch (err) {
       setNotice({
@@ -221,8 +223,70 @@ export function InboxPage() {
           {notice.kind === "ok" && <Link to="/unpublished">See unpublished changes</Link>}
         </p>
       )}
-      {branches.length === 0 && proposals.length === 0 && (
+      {branches.length === 0 && proposals.length === 0 && quarantine.length === 0 && (
         <p className="empty">Nothing is waiting for you.</p>
+      )}
+
+      {quarantine.length > 0 && (
+        <section className="proposal">
+          <h2>Arrived unreviewed</h2>
+          <p className="muted">
+            These notes were pushed straight to the vault by someone other than you. They stay out
+            of the memory bank until you accept or revert them; your decision goes out with your
+            next publish.
+          </p>
+          <ul className="changes">
+            {quarantine.map((q) => (
+              <li key={q.path + q.commit} className={q.pending ? "decided" : ""}>
+                <p className="change-head">
+                  <span className={`tag tag-${TAG[q.kind]}`}>{KIND[q.kind]}</span>
+                  <span className="change-path">
+                    <Link to={entryUrl(q.path)}>{q.path}</Link>
+                  </span>
+                </p>
+                <p className="muted">Pushed by {q.pushedBy}.</p>
+                <details>
+                  <summary>Show changes</summary>
+                  <Diff before={q.before ?? ""} after={q.after ?? ""} />
+                </details>
+                {q.pending ? (
+                  <p className="muted">
+                    {q.pending.decision === "accepted" ? "Accepted" : "Reverted"}, waiting for your
+                    next publish. <Link to="/unpublished">Review and publish</Link>
+                  </p>
+                ) : (
+                  <>
+                    {q.revertBlocked && (
+                      <p className="blocked">Can only be accepted: {q.revertBlocked}</p>
+                    )}
+                    <p className="change-actions">
+                      <button
+                        type="button"
+                        className="primary"
+                        disabled={busy}
+                        onClick={() => act(() => api.decideQuarantine(q.path, q.commit, "accept"))}
+                      >
+                        Accept
+                      </button>
+                      {!q.revertBlocked && (
+                        <button
+                          type="button"
+                          className="plain danger"
+                          disabled={busy}
+                          onClick={() =>
+                            act(() => api.decideQuarantine(q.path, q.commit, "revert"))
+                          }
+                        >
+                          Revert
+                        </button>
+                      )}
+                    </p>
+                  </>
+                )}
+              </li>
+            ))}
+          </ul>
+        </section>
       )}
 
       {proposals.map((p) => (

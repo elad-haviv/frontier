@@ -19,6 +19,8 @@ export const StatusSnapshot = z.object({
     branches: z.number().int().min(0),
     /** Operations proposed by Frontier's AI that wait for a decision. */
     operations: z.number().int().min(0),
+    /** Notes that arrived unreviewed and wait for a decision. */
+    quarantined: z.number().int().min(0),
   }),
   ai: z.object({
     /** A key and a model for proposing fields are set. */

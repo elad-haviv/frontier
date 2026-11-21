@@ -41,6 +41,7 @@ interface StoredPlan {
   createdAt: number;
   classified: Map<string, Classified>;
   renameIds: string[];
+  decisionIds: string[];
 }
 
 interface Assembled {
@@ -62,6 +63,19 @@ export interface PublisherDeps {
   /** Fetches `main`, rebuilds the index and clears finished drafts. */
   sync: () => Promise<void>;
   now?: () => number;
+  /** The author's decisions about quarantined notes, published in the vault's review file. */
+  reviews?: {
+    pendingDecisions(): {
+      id: string;
+      path: string;
+      decision: "accepted" | "reverted";
+      draftId?: string | undefined;
+    }[];
+    reviewFile(ids: string[]): Buffer;
+    reviewPath: string;
+  };
+  /** Told each commit Frontier pushes. */
+  onPushed?: (commit: string) => Promise<void>;
   /** Told when a rename is found published, so that what is kept by path can follow. */
   onRenamed?: (from: string, to: string) => Promise<void>;
   /** Told the notes whose own draft was just published. */
@@ -353,7 +367,7 @@ export class Publisher {
 
   // ---- The two calls -------------------------------------------------------------------------
 
-  async plan(draftIds: string[], renameIds: string[]): Promise<Plan> {
+  async plan(draftIds: string[], renameIds: string[], decisionIds: string[] = []): Promise<Plan> {
     await this.d.sync();
     const mainCommit = this.d.index.commit;
     /* c8 ignore next */
@@ -400,6 +414,11 @@ export class Publisher {
     for (const ids of byBranch.values()) {
       if (ids.length > 1 && ids.some((id) => classified.has(id))) groups.push(ids);
     }
+    // A revert and the draft that undoes the note are one change.
+    const decisions = (this.d.reviews?.pendingDecisions() ?? []).filter((d) =>
+      decisionIds.includes(d.id),
+    );
+    for (const d of decisions) if (d.draftId) groups.push([d.id, d.draftId]);
 
     const all = [...classified.values()];
     const plan: Plan = {
@@ -410,6 +429,12 @@ export class Publisher {
       conflicts: [...all.flatMap((c) => (c.conflict ? [c.conflict] : [])), ...preview.blocked],
       renames: preview.renames,
       groups,
+      decisions: decisions.map((d) => ({
+        id: d.id,
+        path: d.path,
+        decision: d.decision,
+        ...(d.draftId ? { draftId: d.draftId } : {}),
+      })),
     };
 
     for (const [id, stored] of this.plans) {
@@ -420,6 +445,7 @@ export class Publisher {
       createdAt: this.now(),
       classified,
       renameIds: intents.map((r) => r.id),
+      decisionIds: decisions.map((d) => d.id),
     });
     this.d.status.drafts(this.d.drafts.count(), plan.conflicts.length);
     return plan;
@@ -461,7 +487,11 @@ export class Publisher {
     // A group member that was not selected for this plan holds its group back.
     for (const group of stored.plan.groups) {
       for (const id of group) {
-        if (!stored.classified.has(id) && !stored.renameIds.includes(id)) held.add(id);
+        const known =
+          stored.classified.has(id) ||
+          stored.renameIds.includes(id) ||
+          stored.decisionIds.includes(id);
+        if (!known) held.add(id);
       }
     }
     // Changes that depend on each other are published together or not at all.
@@ -480,7 +510,10 @@ export class Publisher {
       .filter((id) => !held.has(id))
       .map((id) => this.d.drafts.getRename(id))
       .filter((r): r is RenameIntent => r !== undefined);
-    if (included.length === 0 && intents.length === 0) {
+    const decided = (this.d.reviews?.pendingDecisions() ?? []).filter(
+      (d) => stored.decisionIds.includes(d.id) && !held.has(d.id),
+    );
+    if (included.length === 0 && intents.length === 0 && decided.length === 0) {
       throw new ApiError("invalid", "Nothing in this plan can be published yet.");
     }
 
@@ -508,6 +541,12 @@ export class Publisher {
         `A rename can no longer be carried out: ${result.blocked[0]!.mine}`,
       );
     }
+    if (decided.length > 0 && this.d.reviews) {
+      result.writes.push({
+        path: this.d.reviews.reviewPath,
+        content: this.d.reviews.reviewFile(decided.map((d) => d.id)),
+      });
+    }
     if (result.writes.length === 0 && result.deletes.length === 0) {
       await this.d.sync();
       throw new ApiError("invalid", "Everything in this plan is already published.");
@@ -523,6 +562,7 @@ export class Publisher {
       if (err instanceof GitError) this.d.status.pushFailed(err.message);
       throw err;
     }
+    await this.d.onPushed?.(commit);
     this.d.status.pushed(new Date(this.now()));
     this.plans.delete(planId);
     await this.d.sync();

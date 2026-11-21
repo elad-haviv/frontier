@@ -166,8 +166,11 @@ export const api = {
     }),
   decideBranch: (branch: string, tip: string, decision: "reject" | "remove") =>
     post<{ branchRemoved: boolean }>("/api/inbox/branch", { branch, tip, decision }),
-  plan: (draftIds: string[], renameIds: string[]) =>
-    post<PublishPlan>("/api/publish/plan", { draftIds, renameIds }),
+  plan: (draftIds: string[], renameIds: string[], decisionIds: string[] = []) =>
+    post<PublishPlan>("/api/publish/plan", { draftIds, renameIds, decisionIds }),
+  decideQuarantine: (path: string, commit: string, decision: "accept" | "revert") =>
+    post<{ id: string; draftId?: string }>("/api/quarantine", { path, commit, decision }),
+  withdrawDecision: (id: string) => send<{ ok: true }>("DELETE", `/api/quarantine/${id}`),
   confirm: (planId: string, confirmedMergeIds: string[], message: string) =>
     post<{ commit: string }>("/api/publish/confirm", { planId, confirmedMergeIds, message }),
   cancelRename: (id: string) => send<{ ok: true }>("DELETE", `/api/renames/${id}`),

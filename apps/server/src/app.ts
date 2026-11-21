@@ -14,7 +14,9 @@ import { AiProvider } from "./ai/provider.js";
 import { Backup } from "./backup/backup.js";
 import { EntryChanger } from "./entries/change.js";
 import { ProposalStore } from "./proposals/store.js";
+import { Quarantine, REVIEW_FILE } from "./quarantine/quarantine.js";
 import { proposalRoutes } from "./routes/proposals.js";
+import { quarantineRoutes } from "./routes/quarantine.js";
 import { settingsRoutes } from "./routes/settings.js";
 import { FolderTarget, S3Target } from "./backup/targets.js";
 import type { Config } from "./config.js";
@@ -63,6 +65,7 @@ export interface Services {
   proposals: ProposalStore;
   fields: FieldProposer;
   fieldJob: FieldJob;
+  quarantine: Quarantine;
   backup: Backup;
   search: SearchIndex;
   /** Fetches `main`, resets the working copy and rebuilds the index. */
@@ -90,6 +93,8 @@ export interface BuildOptions {
   logger?: boolean;
   /** How long after a change the backup runs. Tests shorten it. */
   backupDelayMs?: number;
+  /** How long a note from outside is kept from AI features. Tests shorten it. */
+  settleMs?: number;
   /** Stands in for the network in tests of the AI provider. */
   fetch?: typeof fetch;
   /** Folder of the built web app. When it holds a build, the server also serves the interface. */
@@ -153,7 +158,18 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
     provider: ai,
     proposals,
     models,
+    mayRead: (path) => quarantine.aiMayRead(path),
   });
+  const quarantine = new Quarantine({
+    stateDir,
+    vaultDir,
+    files,
+    git,
+    index,
+    drafts,
+    ...(options.settleMs !== undefined ? { settleMs: options.settleMs } : {}),
+  });
+  await quarantine.load();
   const reportAi = async () => status.ai(await ai.ready("extraction"), ai.lastError);
 
   const services: Services = {
@@ -176,11 +192,16 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
     proposals,
     fields,
     fieldJob: new FieldJob(fields),
+    quarantine,
     async sync() {
       const result = await git.fetch();
       status.fetched(result.current);
       if (index.commit !== result.current) index.build(result.current);
+      await quarantine.noteFetched(result.previous ?? result.current, result.current);
+      await quarantine.refresh();
       await services.publisher.clearPublished();
+      await quarantine.prune();
+      status.quarantine(quarantine.count(), quarantine.problem);
       await proposals.prune();
       status.inbox(await services.branches.count());
       status.indexed();
@@ -202,6 +223,12 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
     drafts,
     status,
     sync: () => services.sync(),
+    reviews: {
+      pendingDecisions: () => quarantine.pendingDecisions(),
+      reviewFile: (ids) => quarantine.reviewFile(ids),
+      reviewPath: REVIEW_FILE,
+    },
+    onPushed: (commit) => quarantine.notePushed(commit),
     onRenamed: (from, to) => proposals.renamed(from, to),
     onPublished: (paths) => {
       // Runs after the publish call has answered; a failure shows in the status area.
@@ -321,6 +348,7 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
   imageRoutes(app, services);
   inboxRoutes(app, services);
   proposalRoutes(app, services);
+  quarantineRoutes(app, services);
   settingsRoutes(app, services);
   searchRoutes(app, services);
   statusRoutes(app, services);

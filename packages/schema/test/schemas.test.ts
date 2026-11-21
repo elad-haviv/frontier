@@ -132,7 +132,7 @@ describe("API shapes", () => {
       renames: [{ id: "abcdefgh1234", from: "a/Old.md", to: "a/New.md", affected: ["c.md"] }],
       groups: [["k3f9x2ab7qpd", "abcdefgh1234"]],
     };
-    expect(PublishPlan.parse(plan)).toEqual(plan);
+    expect(PublishPlan.parse(plan)).toEqual({ ...plan, decisions: [] });
     expect(PublishPlan.safeParse({ ...plan, mainCommit: undefined }).success).toBe(false);
   });
 
@@ -175,7 +175,7 @@ describe("API shapes", () => {
       indexStale: false,
       lastBackupAt: null,
       backupError: "bucket unreachable",
-      inbox: { branches: 1, operations: 2 },
+      inbox: { branches: 1, operations: 2, quarantined: 0 },
       ai: { on: false, lastError: null },
       serverDraftChanges: 0,
       problems: [],

@@ -57,7 +57,7 @@ function Folder({
             <li key={n.path}>
               <NavLink
                 to={entryUrl(n.path)}
-                className={`tree-note${n.state === "unpublished" ? " is-draft" : ""}`}
+                className={`tree-note${n.state === "unpublished" ? " is-draft" : ""}${n.state === "quarantined" ? " is-quarantined" : ""}`}
               >
                 {nameOf(n.path).replace(/\.md$/i, "")}
               </NavLink>
@@ -79,7 +79,7 @@ export function Tree({ tree, current }: { tree: TreeResponse; current: string })
         <li key={n.path}>
           <NavLink
             to={entryUrl(n.path)}
-            className={`tree-note${n.state === "unpublished" ? " is-draft" : ""}`}
+            className={`tree-note${n.state === "unpublished" ? " is-draft" : ""}${n.state === "quarantined" ? " is-quarantined" : ""}`}
           >
             {nameOf(n.path).replace(/\.md$/i, "")}
           </NavLink>

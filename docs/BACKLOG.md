@@ -61,7 +61,8 @@ Design: [stage 3](designs/stage-3-review-and-ai-basics.md), a draft the author h
 - [x] 3b Fields and ids: reader block, properties panel rows, schema, attention entries, lookup by id,
       `ensureId`
 - [x] 3c AI basics: provider, cost log and cap, settings page, field proposals, folder run
-- [ ] 3d Quarantine: list, decisions, revert, settling
+- [x] 3d Quarantine, Frontier's side: list, accept, revert, grouped publish, settling. It shows
+      nothing until the sync is changed (see `docs/sync-changes.md`)
 - [ ] 3e Passkey login
 
 ## Later stages

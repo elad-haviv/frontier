@@ -269,6 +269,29 @@ export class GitGateway {
     );
   }
 
+  /** Each commit after `from` up to `to`, with the files it changed. */
+  commitsBetween(from: string, to: string): Promise<{ commit: string; paths: string[] }[]> {
+    return this.locked(async () => {
+      const out = (
+        await this.run([
+          "log",
+          "--no-renames",
+          "--name-only",
+          "-z",
+          "--format=%x01%H",
+          `${from}..${to}`,
+        ])
+      ).stdout.toString("utf8");
+      return out
+        .split("\u0001")
+        .filter((part) => part !== "")
+        .map((part) => {
+          const [commit, ...paths] = part.split(/[\0\n]/).filter((x) => x !== "");
+          return { commit: commit!, paths };
+        });
+    });
+  }
+
   /** The first lines of the commit messages after `from` up to `to`, oldest first. */
   subjects(from: string, to: string): Promise<string[]> {
     return this.locked(async () =>

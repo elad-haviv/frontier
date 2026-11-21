@@ -98,6 +98,8 @@ export const EntryResponse = z.object({
   /** The entry's id from its frontmatter, when it has one. */
   id: z.string().nullable(),
   fields: EntryFields,
+  /** Present while the note waits in quarantine for the author's decision. */
+  quarantine: z.object({ commit: z.string(), pushedBy: z.string(), at: z.string() }).optional(),
 });
 export type EntryResponse = z.infer<typeof EntryResponse>;
 
@@ -139,6 +141,15 @@ export const RenameSummary = z.object({
 });
 export type RenameSummary = z.infer<typeof RenameSummary>;
 
+/** A decision about a quarantined note that waits to be published. */
+export const ReviewDecision = z.object({
+  id: Id,
+  path: VaultPath,
+  decision: z.enum(["accepted", "reverted"]),
+  draftId: Id.optional(),
+});
+export type ReviewDecision = z.infer<typeof ReviewDecision>;
+
 /** `GET /api/unpublished`. The browser shows the differences. */
 export const UnpublishedResponse = z.object({
   drafts: z.array(
@@ -155,11 +166,17 @@ export const UnpublishedResponse = z.object({
     }),
   ),
   renames: z.array(RenameSummary),
+  /** Decisions about quarantined notes. They go out with the next publish. */
+  decisions: z.array(ReviewDecision),
 });
 export type UnpublishedResponse = z.infer<typeof UnpublishedResponse>;
 
 /** `POST /api/publish/plan` */
-export const PublishPlanRequest = z.object({ draftIds: z.array(Id), renameIds: z.array(Id) });
+export const PublishPlanRequest = z.object({
+  draftIds: z.array(Id),
+  renameIds: z.array(Id),
+  decisionIds: z.array(Id).default([]),
+});
 
 export const PlannedMerge = z.object({
   id: z.string(),
@@ -200,6 +217,8 @@ export const PublishPlan = z.object({
   renames: z.array(RenameSummary),
   /** Draft and rename ids that are published together or not at all. */
   groups: z.array(z.array(Id)),
+  /** The review decisions this plan publishes. */
+  decisions: z.array(ReviewDecision).default([]),
 });
 export type PublishPlan = z.infer<typeof PublishPlan>;
 
@@ -319,11 +338,38 @@ export const InboxProposal = z.object({
 });
 export type InboxProposal = z.infer<typeof InboxProposal>;
 
+/** A note that reached `main` without review, as the sync listed it. */
+export const InboxQuarantined = z.object({
+  path: VaultPath,
+  /** The first commit of the unreviewed push that touched the note. */
+  commit: z.string(),
+  pushedBy: z.string(),
+  at: z.string(),
+  kind: z.enum(["added", "changed", "removed"]),
+  /** The note before that commit and as that commit left it. */
+  before: z.string().nullable(),
+  after: z.string().nullable(),
+  /** Why the note can only be accepted. */
+  revertBlocked: z.string().optional(),
+  /** The author's decision, when it waits to be published. */
+  pending: z.object({ id: Id, decision: z.enum(["accepted", "reverted"]) }).optional(),
+});
+export type InboxQuarantined = z.infer<typeof InboxQuarantined>;
+
 /** `GET /api/inbox` */
 export const InboxResponse = z.object({
   branches: z.array(InboxBranch),
   proposals: z.array(InboxProposal),
+  quarantine: z.array(InboxQuarantined),
 });
+
+/** `POST /api/quarantine` */
+export const QuarantineDecision = z.object({
+  path: VaultPath,
+  commit: z.string(),
+  decision: z.enum(["accept", "revert"]),
+});
+
 export type InboxResponse = z.infer<typeof InboxResponse>;
 
 /** `POST /api/inbox/branch-file` */

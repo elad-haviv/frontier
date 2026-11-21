@@ -111,12 +111,19 @@ export function draftRoutes(app: FastifyInstance, s: Services): void {
       const affected = await s.publisher.previewRename(intent).catch(() => []);
       renames.push({ id: intent.id, from: intent.from, to: intent.to, affected });
     }
-    return { drafts, renames };
+    await s.quarantine.prune();
+    const decisions = s.quarantine.pendingDecisions().map((d) => ({
+      id: d.id,
+      path: d.path,
+      decision: d.decision,
+      ...(d.draftId ? { draftId: d.draftId } : {}),
+    }));
+    return { drafts, renames, decisions };
   });
 
   app.post("/api/publish/plan", async (request) => {
-    const { draftIds, renameIds } = PublishPlanRequest.parse(request.body);
-    return s.publisher.plan(draftIds, renameIds);
+    const { draftIds, renameIds, decisionIds } = PublishPlanRequest.parse(request.body);
+    return s.publisher.plan(draftIds, renameIds, decisionIds);
   });
 
   app.post("/api/publish/confirm", async (request) => {

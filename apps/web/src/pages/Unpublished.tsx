@@ -54,6 +54,7 @@ export function UnpublishedPage() {
       const p = await api.plan(
         data.drafts.filter((d) => selected.has(d.id)).map((d) => d.id),
         data.renames.filter((r) => selected.has(r.id)).map((r) => r.id),
+        data.decisions.map((d) => d.id),
       );
       setPlan(p);
       setConfirmed(new Set());
@@ -110,8 +111,12 @@ export function UnpublishedPage() {
   };
 
   if (!data) return <p className="center muted">{notice?.text ?? "Loading…"}</p>;
-  const empty = data.drafts.length === 0 && data.renames.length === 0;
-  const publishable = plan ? plan.ready.length + confirmed.size + plan.renames.length : 0;
+  const empty =
+    data.drafts.length === 0 && data.renames.length === 0 && data.decisions.length === 0;
+  const chosen = selected.size + data.decisions.length;
+  const publishable = plan
+    ? plan.ready.length + confirmed.size + plan.renames.length + plan.decisions.length
+    : 0;
   const pathOf = (id: string) => data.drafts.find((d) => d.id === id)?.path ?? id;
 
   return (
@@ -184,16 +189,43 @@ export function UnpublishedPage() {
                 </p>
               </li>
             ))}
+            {data.decisions.map((d) => (
+              <li key={d.id}>
+                <p className="change-head">
+                  <span className="tag tag-edit">Review decision</span>
+                  <span className="change-path">
+                    {d.decision === "accepted" ? "Accept" : "Revert"} {d.path}
+                  </span>
+                </p>
+                <p className="muted">
+                  {d.decision === "accepted"
+                    ? "Tells the memory bank that this unreviewed note is canon."
+                    : "Goes out together with the change that puts the note back."}
+                </p>
+                <p className="change-actions">
+                  <button
+                    type="button"
+                    className="plain danger"
+                    onClick={async () => {
+                      await api.withdrawDecision(d.id).catch(() => undefined);
+                      setPlan(null);
+                      await load();
+                      refresh();
+                    }}
+                  >
+                    Withdraw
+                  </button>
+                </p>
+              </li>
+            ))}
           </ul>
           <button
             type="button"
             className="primary big"
-            disabled={busy || selected.size === 0}
+            disabled={busy || chosen === 0}
             onClick={review}
           >
-            {busy
-              ? "Checking the vault…"
-              : `Review ${selected.size} change${selected.size === 1 ? "" : "s"}`}
+            {busy ? "Checking the vault…" : `Review ${chosen} change${chosen === 1 ? "" : "s"}`}
           </button>
         </>
       )}

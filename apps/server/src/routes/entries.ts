@@ -93,7 +93,11 @@ export function entryRoutes(app: FastifyInstance, s: Services): void {
       folder(dirname(note.path)).notes.push({
         path: note.path,
         title: note.title,
-        state: s.drafts.byPath(note.path) ? "unpublished" : "published",
+        state: s.drafts.byPath(note.path)
+          ? "unpublished"
+          : s.quarantine.waiting(note.path)
+            ? "quarantined"
+            : "published",
       });
     }
     for (const path of added) {
@@ -133,12 +137,16 @@ export function entryRoutes(app: FastifyInstance, s: Services): void {
       };
     }
 
+    const waiting = s.quarantine.waiting(note!.path);
     return {
       path: note!.path,
       text: note!.text,
       lineEnding: note!.lineEnding,
       readOnly: s.index.readOnly(note!.path),
-      state: draft ? "unpublished" : "published",
+      state: draft ? "unpublished" : waiting ? "quarantined" : "published",
+      ...(waiting
+        ? { quarantine: { commit: waiting.commit, pushedBy: waiting.pushedBy, at: waiting.at } }
+        : {}),
       links: shown(note!.links),
       backlinks: s.index.backlinks(note!.path),
       headings: note!.headings,
