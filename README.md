@@ -10,17 +10,18 @@ The full design is in [docs/designs/frontier.md](docs/designs/frontier.md). What
 
 Stage 1 of nine is in progress. What exists so far:
 
-| Part                                                                                                           | State                                                                    |
-| -------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
-| `packages/vault`: reading notes, frontmatter, line endings, links, link resolution, rename planning            | Built and tested                                                         |
-| `packages/schema`: types and validation shared by server and web                                               | Built and tested                                                         |
-| `apps/server`: configuration, Git gateway, in-memory index, login, status, webhook, timer fetch, image serving | Built and tested                                                         |
-| `apps/server`: drafts, two-call Publish with merge and conflicts, renames, crash recovery                      | Built and tested                                                         |
-| `apps/web`: login, folder tree, entry reader, status page                                                      | Built                                                                    |
-| `apps/web`: source editor with autosave, new and delete, unpublished list, Publish, merge and conflict screens | Built; checked by a scripted browser run, not yet a committed test suite |
-| Backup and restore; the browser test suite; rename screen; image upload; search; live preview                  | Not started                                                              |
+| Part                                                                                                                                         | State                                                           |
+| -------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- |
+| `packages/vault`: reading notes, frontmatter, line endings, links, link resolution, rename planning                                          | Built and tested                                                |
+| `packages/schema`: types and validation shared by server and web                                                                             | Built and tested                                                |
+| `apps/server`: configuration, Git gateway, in-memory index, login, status, webhook, timer fetch, image serving                               | Built and tested                                                |
+| `apps/server`: drafts, two-call Publish with merge and conflicts, renames, crash recovery                                                    | Built and tested                                                |
+| `apps/server`: backup of working files and a restore command                                                                                 | Built and tested; the S3 path has not run against a real bucket |
+| `apps/web`: login, folder tree, entry reader, image lightbox, status page, quick switcher                                                    | Built; covered by browser tests                                 |
+| `apps/web`: source editor with autosave and link autocomplete, new, delete and rename, unpublished list, Publish, merge and conflict screens | Built; covered by browser tests                                 |
+| Full-text search; live preview; image upload; table editing; properties panel                                                                | Not started                                                     |
 
-The app can now write to its vault: drafts are saved on the server and Publish makes one commit.
+The app writes to its vault: drafts are saved on the server and Publish makes one commit.
 
 A preview on made-up sample content runs with `FRONTIER_SAMPLE_VAULT=1`; see the Dockerfile.
 
