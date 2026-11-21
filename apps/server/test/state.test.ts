@@ -62,6 +62,8 @@ describe("state files", () => {
     expect(await store.read()).toEqual({
       passwordHash: "$argon2id$x",
       ai: { key: null, models: { extraction: null }, monthlyCapUsd: 10, proposeOnPublish: false },
+      passkeys: [],
+      passwordOff: false,
     });
   });
 

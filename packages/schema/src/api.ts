@@ -8,7 +8,13 @@ const Ok = z.object({ ok: z.literal(true) });
 export const LoginRequest = z.object({ password: z.string().min(1) });
 export const LoginResponse = Ok;
 export const LogoutResponse = Ok;
-export const SessionResponse = z.object({ loggedIn: z.boolean() });
+export const SessionResponse = z.object({
+  loggedIn: z.boolean(),
+  /** Whether a passkey exists, so the login page can offer it. */
+  passkeys: z.boolean(),
+  /** False when the password is switched off. */
+  password: z.boolean(),
+});
 
 // ---- Tree and entries ----------------------------------------------------------------------
 
@@ -422,6 +428,12 @@ export const SettingsResponse = z.object({
     monthlyCapUsd: z.number(),
     proposeOnPublish: z.boolean(),
     spentUsd: z.number(),
+  }),
+  signIn: z.object({
+    passkeys: z.array(z.object({ id: z.string(), name: z.string(), addedAt: z.string() })),
+    passwordOff: z.boolean(),
+    /** How this session logged in. Switching the password off needs a passkey session. */
+    method: z.enum(["password", "passkey"]),
   }),
 });
 export type SettingsResponse = z.infer<typeof SettingsResponse>;

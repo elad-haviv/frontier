@@ -11,10 +11,12 @@ import { FieldJob } from "./ai/job.js";
 import { AiLog } from "./ai/log.js";
 import { ModelCatalogue } from "./ai/models.js";
 import { AiProvider } from "./ai/provider.js";
+import { LoginLimiter } from "./auth/limit.js";
 import { Backup } from "./backup/backup.js";
 import { EntryChanger } from "./entries/change.js";
 import { ProposalStore } from "./proposals/store.js";
 import { Quarantine, REVIEW_FILE } from "./quarantine/quarantine.js";
+import { passkeyRoutes } from "./routes/passkeys.js";
 import { proposalRoutes } from "./routes/proposals.js";
 import { quarantineRoutes } from "./routes/quarantine.js";
 import { settingsRoutes } from "./routes/settings.js";
@@ -44,6 +46,10 @@ import { StatusService } from "./status/status.js";
 declare module "@fastify/secure-session" {
   interface SessionData {
     user: string;
+    /** How the author logged in. */
+    method: "password" | "passkey";
+    /** The challenge of a passkey ceremony in progress, and when it ends. */
+    challenge: { value: string; until: number };
   }
 }
 
@@ -66,6 +72,7 @@ export interface Services {
   fields: FieldProposer;
   fieldJob: FieldJob;
   quarantine: Quarantine;
+  loginLimit: LoginLimiter;
   backup: Backup;
   search: SearchIndex;
   /** Fetches `main`, resets the working copy and rebuilds the index. */
@@ -83,7 +90,14 @@ export function backupSources(dataDir: string): Record<string, string> {
 }
 
 /** Routes that need no session. */
-const OPEN = new Set(["/api/login", "/api/session", "/api/github/webhook", "/health"]);
+const OPEN = new Set([
+  "/api/login",
+  "/api/session",
+  "/api/github/webhook",
+  "/health",
+  "/api/passkeys/login/options",
+  "/api/passkeys/login/verify",
+]);
 
 const THIRTY_DAYS = 30 * 24 * 60 * 60;
 
@@ -193,6 +207,7 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
     fields,
     fieldJob: new FieldJob(fields),
     quarantine,
+    loginLimit: new LoginLimiter(),
     async sync() {
       const result = await git.fetch();
       status.fetched(result.current);
@@ -350,6 +365,7 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
   proposalRoutes(app, services);
   quarantineRoutes(app, services);
   settingsRoutes(app, services);
+  passkeyRoutes(app, services);
   searchRoutes(app, services);
   statusRoutes(app, services);
   webhookRoutes(app, services);

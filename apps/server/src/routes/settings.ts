@@ -21,7 +21,7 @@ export function settingsRoutes(app: FastifyInstance, s: Services): void {
     s.status.ai(await s.ai.ready("extraction"), s.ai.lastError);
   }
 
-  app.get("/api/settings", async (): Promise<SettingsResponse> => {
+  app.get("/api/settings", async (request): Promise<SettingsResponse> => {
     const settings = (await s.settings.read())!;
     const key = await s.ai.key();
     const { spentUsd } = await s.ai.spending();
@@ -35,6 +35,11 @@ export function settingsRoutes(app: FastifyInstance, s: Services): void {
         monthlyCapUsd: settings.ai.monthlyCapUsd,
         proposeOnPublish: settings.ai.proposeOnPublish,
         spentUsd,
+      },
+      signIn: {
+        passkeys: settings.passkeys.map(({ id, name, addedAt }) => ({ id, name, addedAt })),
+        passwordOff: settings.passwordOff,
+        method: request.session.get("method") ?? "password",
       },
     };
   });

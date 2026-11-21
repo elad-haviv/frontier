@@ -82,9 +82,26 @@ export type AiSettings = z.infer<typeof AiSettings>;
  * `/data/state/settings.json`. Every key but the password has a default, so a file written by an
  * earlier version reads without loss and a write never drops a key it does not know about.
  */
+/** A passkey the author registered: the public half only. */
+export const Passkey = z.object({
+  /** The credential id, base64url. */
+  id: z.string(),
+  /** The public key, base64url. */
+  publicKey: z.string(),
+  counter: z.number().int().min(0),
+  transports: z.array(z.string()).default([]),
+  name: z.string(),
+  addedAt: z.string().datetime(),
+});
+export type Passkey = z.infer<typeof Passkey>;
+
 export const Settings = z.object({
+  /** Empty when no password is set. */
   passwordHash: z.string(),
   ai: AiSettings.default({}),
+  passkeys: z.array(Passkey).default([]),
+  /** When true the password no longer logs in; only a passkey does. */
+  passwordOff: z.boolean().default(false),
 });
 export type Settings = z.infer<typeof Settings>;
 /** What a caller may pass when writing: the password, and any other part it wants to set. */

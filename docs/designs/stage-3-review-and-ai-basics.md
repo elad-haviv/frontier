@@ -461,7 +461,8 @@ its notes are quarantined.
 *   The settings page adds and removes passkeys, each with a name. Adding one needs a session.
 *   The login page offers "Use a passkey" when at least one exists. The login `verify` call counts
     against the same limit as a password login (5 per 15 minutes per address, one shared counter); the
-    `options` call does not count.
+    `options` call does not count. The counter is Frontier's own: the rate-limit library counts each route
+    separately.
 *   `passwordOff` can be switched on only in a session whose `method` is `passkey`. The password then no
     longer logs in. `npm run set-password` on the server switches it back off, which is the way back in
     after losing the device. A deployment with passkeys and no password works the same way.

@@ -26,6 +26,11 @@ if (password.length < 12) {
 
 await mkdir(stateDir, { recursive: true });
 const store = new SettingsStore(stateDir, new StateFiles());
-// Everything else in the settings is kept as it is.
-await store.write({ ...(await store.read()), passwordHash: await hashPassword(password) });
+// Everything else in the settings is kept as it is. The password is switched back on, which is
+// the way in again after losing a passkey device.
+await store.write({
+  ...(await store.read()),
+  passwordHash: await hashPassword(password),
+  passwordOff: false,
+});
 console.error(`Password set. Stored in ${join(stateDir, "settings.json")}.`);

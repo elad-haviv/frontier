@@ -192,6 +192,115 @@ function AiSettings({ ai, reload }: { ai: SettingsResponse["ai"]; reload: () => 
   );
 }
 
+function SignIn({
+  signIn,
+  reload,
+}: {
+  signIn: SettingsResponse["signIn"];
+  reload: () => Promise<void>;
+}) {
+  const [notice, setNotice] = useState<Notice>(null);
+  const [name, setName] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  async function run(work: () => Promise<unknown>, done: string) {
+    setBusy(true);
+    setNotice(null);
+    try {
+      await work();
+      setNotice({ kind: "ok", text: done });
+      await reload();
+    } catch (err) {
+      setNotice({
+        kind: "error",
+        text: err instanceof ApiFailure ? err.message : "The passkey was not added. Try again.",
+      });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className="settings-block">
+      <h2>Signing in</h2>
+      <p className="muted">
+        A passkey logs you in with this device's fingerprint, face or screen lock instead of the
+        password. Once one works you can switch the password off.
+      </p>
+      <Note notice={notice} />
+      {signIn.passkeys.length > 0 && (
+        <ul className="passkeys">
+          {signIn.passkeys.map((p) => (
+            <li key={p.id}>
+              <span>
+                {p.name} <em className="muted">added {new Date(p.addedAt).toLocaleDateString()}</em>
+              </span>
+              <button
+                type="button"
+                className="plain danger"
+                disabled={busy}
+                onClick={() => {
+                  if (window.confirm(`Remove the passkey "${p.name}"?`))
+                    void run(() => api.removePasskey(p.id), "The passkey was removed.");
+                }}
+              >
+                Remove
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      <label className="field">
+        <span>Add a passkey on this device</span>
+        <input
+          type="text"
+          value={name}
+          placeholder="A name for it, such as Phone"
+          onChange={(e) => setName(e.target.value)}
+        />
+      </label>
+      <p className="change-actions">
+        <button
+          type="button"
+          className="primary"
+          disabled={busy || name.trim() === ""}
+          onClick={() =>
+            run(async () => {
+              await api.addPasskey(name.trim());
+              setName("");
+            }, "The passkey was added. Log out and try it before switching the password off.")
+          }
+        >
+          Add a passkey
+        </button>
+      </p>
+      {signIn.passkeys.length > 0 && (
+        <label className="check">
+          <input
+            type="checkbox"
+            checked={signIn.passwordOff}
+            disabled={busy}
+            onChange={(e) =>
+              run(
+                () => api.passwordOff(e.target.checked),
+                e.target.checked
+                  ? "The password no longer logs in. The set-password command on the server switches it back on."
+                  : "The password logs in again.",
+              )
+            }
+          />
+          <span>
+            Switch the password off
+            {signIn.method !== "passkey" && !signIn.passwordOff && (
+              <em className="muted"> (log in with a passkey first)</em>
+            )}
+          </span>
+        </label>
+      )}
+    </section>
+  );
+}
+
 function FolderRun({ on }: { on: boolean }) {
   const refresh = useRefresh();
   const [folder, setFolder] = useState("");
@@ -394,6 +503,7 @@ export function SettingsPage() {
       <FolderRun on={on} />
       <Spending />
       <Schema />
+      <SignIn signIn={settings.signIn} reload={load} />
     </article>
   );
 }

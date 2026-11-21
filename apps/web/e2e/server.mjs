@@ -13,7 +13,7 @@ rmSync(dataDir, { recursive: true, force: true });
 Object.assign(process.env, {
   FRONTIER_SAMPLE_VAULT: "1",
   DATA_DIR: dataDir,
-  PUBLIC_URL: `http://127.0.0.1:${process.env.PORT}`,
+  PUBLIC_URL: `http://localhost:${process.env.PORT}`,
   SESSION_KEY: Buffer.alloc(32, 9).toString("base64"),
   FRONTIER_INITIAL_PASSWORD: "browser-test-password",
 });

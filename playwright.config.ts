@@ -16,7 +16,8 @@ export default defineConfig({
   expect: { timeout: 10_000 },
   reporter: [["list"]],
   use: {
-    baseURL: `http://127.0.0.1:${PORT}`,
+    // "localhost", not an address: a passkey is bound to a host name.
+    baseURL: `http://localhost:${PORT}`,
     // Tracing is off to keep runs fast; turn it on with --trace on when a test needs debugging.
     trace: "off",
   },

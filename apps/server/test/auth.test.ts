@@ -37,7 +37,7 @@ describe("session", () => {
   });
 
   it("answers the open routes without a session", async () => {
-    expect((await t.get("/api/session")).json()).toEqual({ loggedIn: false });
+    expect((await t.get("/api/session")).json()).toMatchObject({ loggedIn: false });
     expect((await t.get("/health")).statusCode).toBe(200);
   });
 
@@ -52,7 +52,7 @@ describe("session", () => {
     const cookie = String(ok.headers["set-cookie"]);
     expect(cookie).toContain("HttpOnly");
     expect(cookie).toContain("SameSite=Lax");
-    expect((await t.get("/api/session")).json()).toEqual({ loggedIn: true });
+    expect((await t.get("/api/session")).json()).toMatchObject({ loggedIn: true });
     expect((await t.get("/api/tree")).statusCode).toBe(200);
 
     const out = await t.post("/api/logout");

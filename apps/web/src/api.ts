@@ -1,3 +1,4 @@
+import { startAuthentication, startRegistration } from "@simplewebauthn/browser";
 import type {
   AttentionResponse,
   DraftKind,
@@ -68,7 +69,25 @@ const post = <T>(url: string, body?: unknown) =>
   });
 
 export const api = {
-  session: () => call<{ loggedIn: boolean }>("/api/session"),
+  session: () => call<{ loggedIn: boolean; passkeys: boolean; password: boolean }>("/api/session"),
+  /** Registers a passkey on this device, under a name the author gives it. */
+  addPasskey: async (name: string) => {
+    const optionsJSON = await post<Parameters<typeof startRegistration>[0]["optionsJSON"]>(
+      "/api/passkeys/register/options",
+    );
+    const response = await startRegistration({ optionsJSON });
+    return post<{ ok: true }>("/api/passkeys/register/verify", { name, response });
+  },
+  loginWithPasskey: async () => {
+    const optionsJSON = await post<Parameters<typeof startAuthentication>[0]["optionsJSON"]>(
+      "/api/passkeys/login/options",
+    );
+    const response = await startAuthentication({ optionsJSON });
+    return post<{ ok: true }>("/api/passkeys/login/verify", { response });
+  },
+  removePasskey: (id: string) =>
+    send<{ ok: true }>("DELETE", `/api/passkeys/${encodeURIComponent(id)}`),
+  passwordOff: (off: boolean) => send<{ ok: true }>("PUT", "/api/settings/password-off", { off }),
   login: (password: string) => post<{ ok: true }>("/api/login", { password }),
   logout: () => post<{ ok: true }>("/api/logout"),
   tree: () => call<TreeResponse>("/api/tree"),

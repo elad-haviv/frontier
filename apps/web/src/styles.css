@@ -1697,3 +1697,21 @@ button.big {
 .quarantine-note {
   border-left-width: 4px;
 }
+
+.passkeys {
+  margin: 0.8rem 0;
+  padding: 0;
+  list-style: none;
+}
+.passkeys li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.45rem 0;
+  border-bottom: 1px solid var(--rule);
+}
+.passkeys em {
+  font-size: 0.85rem;
+  font-style: normal;
+}
