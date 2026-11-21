@@ -269,3 +269,45 @@ describe("reordering features", () => {
     expect(reorderFeature(list, "nobody", 1)).toBe(list);
   });
 });
+
+describe("a feature in time", () => {
+  const timed = marker("t1", [1, 2], {
+    span: "s2",
+    shapes: [{ id: "h1", from: "s7", at: [3, 4] }],
+  });
+
+  it("writes a span and later shapes after the keys an older map has, and reads them back", () => {
+    const text = serialiseMap({ ...base, features: [...base.features, timed] });
+    expect(text).toContain(
+      '"child":null,"span":"s2","shapes":[{"id":"h1","from":"s7","at":[3,4]}]',
+    );
+    const read = parseMap(text);
+    expect(read.ok && read.map.features.at(-1)).toEqual(timed);
+    expect(read.ok && serialiseMap(read.map)).toBe(text);
+  });
+
+  it("leaves a map without them byte for byte as it was", () => {
+    const text = serialiseMap(base);
+    expect(text).not.toContain("span");
+    expect(text).not.toContain("shapes");
+  });
+
+  it("refuses a later shape with no id or no span", () => {
+    const bad = { ...base, features: [marker("t2", [0, 0], { shapes: [{ at: [1, 1] }] })] };
+    expect(parseMap(JSON.stringify(bad)).ok).toBe(false);
+  });
+
+  it("keeps a later shape added on one side when the other side moved another feature", () => {
+    const start = { ...base, features: [...base.features, marker("t1", [1, 2])] };
+    const mine = { ...start, features: [...base.features, timed] };
+    const other = start.features[0]!;
+    const theirs = {
+      ...start,
+      features: [{ ...other, label: "renamed" } as MapFeature, ...start.features.slice(1)],
+    };
+    const merged = mergeMaps(start, mine, theirs);
+    expect(merged.clashes).toEqual([]);
+    expect(merged.map.features.find((f) => f.id === "t1")).toEqual(timed);
+    expect(merged.map.features[0]!.label).toBe("renamed");
+  });
+});

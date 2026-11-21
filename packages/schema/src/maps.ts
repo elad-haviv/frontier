@@ -51,6 +51,20 @@ export const MapLayer = z
   .passthrough();
 export type MapLayer = z.infer<typeof MapLayer>;
 
+/**
+ * Another shape of a feature, in force from the start of a span of the chronicle the map is seen
+ * through. A marker's holds `at`; a path's or a zone's holds `points`.
+ */
+export const LaterShape = z
+  .object({
+    id: ItemId,
+    from: ItemId,
+    at: Pair.optional(),
+    points: z.array(Pair).optional(),
+  })
+  .passthrough();
+export type LaterShape = z.infer<typeof LaterShape>;
+
 const featureBase = {
   id: ItemId,
   layer: ItemId,
@@ -60,6 +74,10 @@ const featureBase = {
   label: z.string().nullable(),
   /** The id of a more detailed map of this place, or null. */
   child: z.string().nullable(),
+  /** The id of the chronicle span that says when this exists. It wins over the entry's span. */
+  span: ItemId.optional(),
+  /** Later shapes, each in force from the start of a span. */
+  shapes: z.array(LaterShape).optional(),
 };
 
 export const MapFeature = z.discriminatedUnion("kind", [
@@ -117,7 +135,19 @@ const TOP = ["version", "id", "title", "space", "images", "markerSets", "layers"
 const ITEM_KEYS: Record<string, string[]> = {
   images: ["id", "name", "path", "extent", "visible"],
   layers: ["id", "name", "visible", "color"],
-  features: ["id", "kind", "layer", "at", "points", "entry", "label", "icon", "child"],
+  features: [
+    "id",
+    "kind",
+    "layer",
+    "at",
+    "points",
+    "entry",
+    "label",
+    "icon",
+    "child",
+    "span",
+    "shapes",
+  ],
 };
 
 /**
