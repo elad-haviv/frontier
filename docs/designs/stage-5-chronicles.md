@@ -411,9 +411,14 @@ Below 34 rem wide:
 | `apps/web/src/components/chronicle/{ScaleView,ShiftForm,TwoVersions}.tsx` | Scale, shift, two versions | 5b, 5c |
 | `apps/server/src/routes/entries.ts`, `apps/web/src/pages/Entry.tsx` | Chronicles per entry | 5d |
 
-No new dependency. The order and compare views are drawn with positioned HTML elements, so every
-span is a button; the scale view (5b) is drawn in SVG. The shipped cases are part of the web bundle,
-read from `packages/time/src/cases.ts`; there is no route for them.
+No new dependency. Every view is drawn with positioned HTML elements, so each span is a button; the
+order and scale views share one lane canvas (`LaneCanvas.tsx`). The shipped cases are part of the
+web bundle, read from `packages/time/src/cases.ts`; there is no route for them.
+
+As built in 5b: a span with a length and no place is listed under the scale view with its length,
+not drawn in a row of its own. Zoom is by buttons, and on a desktop by the wheel with Ctrl held or a
+pinch on a trackpad. An offered start on a span that has a stored start and end moves both, keeping
+its length. "Move B" on a `during` statement offers nothing.
 
 ## Risks
 

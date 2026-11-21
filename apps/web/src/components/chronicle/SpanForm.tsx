@@ -13,6 +13,8 @@ import {
   type Change,
   type Worked,
   KIND_WORDS,
+  applyOffer,
+  countFrom,
   laneOf,
   newId,
   num,
@@ -331,13 +333,7 @@ export function SpanForm({ chronicle, worked, span, change, onSelect }: Props) {
             <button
               type="button"
               className="quiet"
-              onClick={() =>
-                edit((s) => ({
-                  ...s,
-                  ...(offer!.start ? { start: rough(offer!.start.lo, offer!.start.hi) } : {}),
-                  ...(offer!.end && !s.point ? { end: rough(offer!.end.lo, offer!.end.hi) } : {}),
-                }))
-              }
+              onClick={() => edit((s) => applyOffer(s, offer!))}
             >
               Place it there
             </button>
@@ -523,6 +519,18 @@ export function SpanForm({ chronicle, worked, span, change, onSelect }: Props) {
             <>The span years were counted from was removed; the numbers still stand. </>
           )}
           {points.disagrees && <strong className="error">Its own numbers disagree.</strong>}
+        </p>
+      )}
+      {origin !== null && origin !== span.id && span.start && span.start !== "open" && (
+        <p className="change-actions">
+          <button
+            type="button"
+            className="quiet"
+            title="Every stored start and end moves by the same number of years; nothing else changes."
+            onClick={() => change((c) => countFrom(c, span.id))}
+          >
+            Count years from this span instead
+          </button>
         </p>
       )}
 

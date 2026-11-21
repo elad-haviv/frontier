@@ -1,6 +1,6 @@
 import type { ChronicleFile } from "@frontier/schema";
-import { type Check, sentenceFor, statementOf } from "@frontier/time";
-import { type Change, type Worked, spanName } from "./model.ts";
+import { type Check, offerMove, sentenceFor, statementOf } from "@frontier/time";
+import { type Change, type Worked, applyOffer, spanName, withSpan, yearAt } from "./model.ts";
 
 interface Props {
   chronicle: ChronicleFile;
@@ -52,6 +52,24 @@ export function Flags({ chronicle, worked, change, onSelect }: Props) {
               Open {spanName(chronicle.spans.find((s) => s.id === id)!)}
             </button>
           ))}
+          {check.state === "does_not_fit" &&
+            (["a", "b"] as const).map((side) => {
+              const offer = offerMove(relation, side, chronicle.spans);
+              const mover = chronicle.spans.find((x) => x.id === relation[side]);
+              if (!offer || !mover) return null;
+              const to = offer.start ? `start ${yearAt(offer.start)}` : `end ${yearAt(offer.end!)}`;
+              return (
+                <button
+                  key={side}
+                  type="button"
+                  className="quiet"
+                  title={`To ${to}`}
+                  onClick={() => change((c) => withSpan(c, mover.id, (x) => applyOffer(x, offer)))}
+                >
+                  Move {spanName(mover)} ({to})
+                </button>
+              );
+            })}
           <button type="button" className="plain danger" onClick={() => remove(relation.id)}>
             Remove the statement
           </button>

@@ -165,3 +165,80 @@ test("CUJ 14: finds what is too quick and what is too slow", async ({ page }, in
     await fetch(`/api/chronicles/${location.pathname.split("/").pop()}`, { method: "DELETE" });
   });
 });
+
+test("CUJ 15, first half: places spans, takes an offered fix, sees them to scale and shifts them", async ({
+  page,
+}, info) => {
+  const phone = info.project.name === "phone";
+  if (phone) await page.setViewportSize({ width: 375, height: 740 });
+  await page.goto("/chronicles");
+  await page.locator(".new-map input[type=text]").fill(`Scale trial ${info.project.name}`);
+  await page.getByRole("button", { name: "Make the chronicle" }).click();
+
+  // The first start given makes its span the one years are counted from.
+  await add(page, "Event", "Landing");
+  await sheet(page).locator("#ch-start-mode").selectOption("years");
+  await expect(sheet(page)).toContainText("Years are counted from its start");
+
+  // A statement about a placed span offers a place.
+  await add(page, "Span", "Fading");
+  await relate(page, "starts_with", "Landing");
+  await sheet(page).getByRole("button", { name: "Place it there" }).click();
+  await sheet(page).locator("#ch-length-unit").selectOption({ label: "In years" });
+  await sheet(page).locator("#ch-length").fill("100");
+  await sheet(page).locator(".ch-range").first().getByLabel("Highest").fill("150");
+  await expect(sheet(page)).toContainText("Ends year 100 to 150");
+
+  // A start that contradicts a statement is flagged, and the flag offers the fix.
+  await add(page, "Span", "War");
+  await relate(page, "after", "Fading");
+  await sheet(page).locator("#ch-start-mode").selectOption("years");
+  await sheet(page).locator("#ch-start").fill("50");
+  await sheet(page).locator("#ch-length-unit").selectOption({ label: "In years" });
+  await sheet(page).locator("#ch-length").fill("40");
+  await closeSheet(page);
+  await tab(page, /Does not fit \(1\)/).click();
+  await expect(page.locator(".ch-flag.is-red")).toContainText(
+    "War begins before Fading has ended; you said War is after Fading.",
+  );
+  await page.getByRole("button", { name: /^Move War/ }).click();
+  await expect(page.locator(".ch-flags")).toContainText("Nothing you have stated is contradicted");
+
+  // To scale: the war lies after the fading, on a ruler in years.
+  await tab(page, "Scale").click();
+  const scale = page.locator(".ch-scale");
+  await expect(scale.locator(".ch-mark").first()).toBeVisible();
+  const box = async (name: string) =>
+    (await scale.locator(".ch-span", { hasText: name }).boundingBox())!;
+  const along = phone ? ("y" as const) : ("x" as const);
+  const size = phone ? ("height" as const) : ("width" as const);
+  const fading = await box("Fading");
+  const war = await box("War");
+  expect(war[along]).toBeGreaterThan(fading[along] + fading[size] / 2);
+  // The fading may cover 150 years; the war may start anywhere in 50 and lasts 40, so 90.
+  expect(fading[size] / war[size]).toBeCloseTo(150 / 90, 1);
+  await noSidewaysScroll(page);
+  await scale.getByRole("button", { name: "Zoom in" }).click();
+  expect((await box("Fading"))[size]).toBeGreaterThan(fading[size] * 1.3);
+  await scale.getByRole("button", { name: "Fit", exact: true }).click();
+
+  // Shifting moves what is chosen and nothing else.
+  await page.locator(".ch-shift summary").click();
+  await page.getByLabel("Which spans").selectOption("chosen");
+  await page.locator(".ch-shift-list").getByLabel("War").check();
+  await page.getByLabel("Years to shift by").fill("500");
+  await page.getByLabel("Earlier or later").selectOption("earlier");
+  await page.getByRole("button", { name: "Shift", exact: true }).click();
+  await expect(page.locator(".ch-shift")).toContainText("Moved 1 span 500 years earlier");
+  await expect(tab(page, /Does not fit \(1\)/)).toBeVisible();
+  await scale.locator(".ch-span", { hasText: "War" }).click();
+  await expect(sheet(page)).toContainText("Starts year -400 to -350");
+  await closeSheet(page);
+  await page.getByRole("button", { name: "Undo" }).click();
+  await expect(tab(page, "Does not fit")).toBeVisible();
+  await expect(page.locator(".ch-saving")).toHaveText("Saved as a draft");
+
+  await page.evaluate(async () => {
+    await fetch(`/api/chronicles/${location.pathname.split("/").pop()}`, { method: "DELETE" });
+  });
+});

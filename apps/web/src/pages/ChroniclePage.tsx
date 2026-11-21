@@ -6,13 +6,15 @@ import { CompareView } from "../components/chronicle/CompareView.tsx";
 import { Flags, redCount } from "../components/chronicle/Flags.tsx";
 import { LaneList, UnitList } from "../components/chronicle/Lists.tsx";
 import { OrderView } from "../components/chronicle/OrderView.tsx";
+import { ScaleView } from "../components/chronicle/ScaleView.tsx";
+import { ShiftForm } from "../components/chronicle/ShiftForm.tsx";
 import { SpanForm } from "../components/chronicle/SpanForm.tsx";
 import { newSpan, spanName, work } from "../components/chronicle/model.ts";
 import { useDialogs } from "../components/Dialogs.tsx";
 import { useRefresh } from "../components/Shell.tsx";
 import { useItemFile } from "../hooks/useItemFile.ts";
 
-type Tab = "order" | "compare" | "flags" | "setup";
+type Tab = "order" | "scale" | "compare" | "flags" | "setup";
 
 const NARROW = "(max-width: 34rem)";
 
@@ -162,6 +164,7 @@ function Chronicle({ id }: { id: string }) {
 
   const tabs: [Tab, string][] = [
     ["order", "Order"],
+    ["scale", "Scale"],
     ["compare", "Compare"],
     ["flags", red > 0 ? `Does not fit (${red})` : "Does not fit"],
     ["setup", narrow ? "Set up" : "Lanes and units"],
@@ -268,6 +271,20 @@ function Chronicle({ id }: { id: string }) {
               openLane={openLane}
               onOpenLane={setLane}
             />
+          )}
+          {tab === "scale" && (
+            <>
+              <ScaleView
+                chronicle={chronicle}
+                worked={worked}
+                selected={selected}
+                onSelect={select}
+                narrow={narrow}
+                openLane={openLane}
+                onOpenLane={setLane}
+              />
+              <ShiftForm chronicle={chronicle} change={file.change} />
+            </>
           )}
           {tab === "compare" && (
             <CompareView

@@ -155,3 +155,49 @@ export function typed(text: string): number | null {
   const n = Number(cleaned);
   return Number.isFinite(n) ? n : null;
 }
+
+type Shiftable = Rough | "open" | null;
+const moved = (end: Shiftable, by: number): Shiftable =>
+  end && end !== "open" ? { ...end, words: "", low: end.low + by, high: end.high + by } : end;
+
+/** Moves a span's start and end by a number of years. Its length does not change. */
+export function shiftSpan(span: ChronicleSpan, by: number): ChronicleSpan {
+  return { ...span, start: moved(span.start, by), end: moved(span.end, by) };
+}
+
+/**
+ * Puts a span where an offer says. A span with both a start and an end keeps its length: the
+ * end that was not offered moves along by the same number of years.
+ */
+export function applyOffer(
+  span: ChronicleSpan,
+  offer: { start: Range | null; end: Range | null },
+): ChronicleSpan {
+  const was = (end: Shiftable): number | null => (end && end !== "open" ? end.low : null);
+  let next = span;
+  if (offer.start) {
+    const from = was(span.start);
+    next = { ...next, start: rough(offer.start.lo, offer.start.hi) };
+    if (!offer.end && from !== null)
+      next = { ...next, end: moved(span.end, offer.start.lo - from) };
+  }
+  if (offer.end && !span.point) {
+    const from = was(span.end);
+    next = { ...next, end: rough(offer.end.lo, offer.end.hi) };
+    if (!offer.start && from !== null) {
+      next = { ...next, start: moved(span.start, offer.end.lo - from) };
+    }
+  }
+  return next;
+}
+
+/** Counts years from another span's start: every stored start and end moves by one amount. */
+export function countFrom(chronicle: ChronicleFile, id: string): ChronicleFile {
+  const at = chronicle.spans.find((s) => s.id === id)?.start;
+  if (!at || at === "open") return chronicle;
+  return {
+    ...chronicle,
+    origin: id,
+    spans: chronicle.spans.map((s) => shiftSpan(s, -at.low)),
+  };
+}

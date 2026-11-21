@@ -2480,6 +2480,104 @@ input.map-title {
   max-width: 6rem;
 }
 
+/* To scale: a ruler, bars that fade across the range of each end, broken edges */
+.ch-zoom {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+.ch-zoom .ch-note {
+  flex: 1;
+}
+.ch-zoom button {
+  min-width: 2.75rem;
+  min-height: 2.5rem;
+}
+.ch-mark {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-left: 1px solid color-mix(in srgb, var(--rule) 70%, transparent);
+  color: var(--ink-faint);
+  font-size: 0.72rem;
+  pointer-events: none;
+}
+.ch-mark span {
+  padding-left: 0.25rem;
+  white-space: nowrap;
+}
+.ch-span.is-scaled {
+  --tint: color-mix(in srgb, var(--lane) 45%, var(--paper-raised));
+  --dir: to right;
+  overflow: visible;
+  padding: 0 0.3rem;
+  border: 0;
+  border-radius: 2px;
+  background: linear-gradient(
+    var(--dir),
+    color-mix(in srgb, var(--lane) 8%, transparent),
+    var(--tint) var(--f0),
+    var(--tint) calc(100% - var(--f1)),
+    color-mix(in srgb, var(--lane) 8%, transparent)
+  );
+}
+.ch-span.is-scaled > span {
+  overflow: visible;
+  text-shadow:
+    0 0 3px var(--paper),
+    0 0 3px var(--paper);
+}
+.ch-span.is-scaled small {
+  color: var(--ink-soft);
+}
+.ch-span.is-open-start {
+  border-left: 2px dashed var(--lane);
+}
+.ch-span.is-open-end {
+  border-right: 2px dashed var(--lane);
+}
+.ch-down .ch-mark {
+  top: auto;
+  bottom: auto;
+  left: 0;
+  right: 0;
+  border-left: 0;
+  border-top: 1px solid color-mix(in srgb, var(--rule) 70%, transparent);
+  text-align: right;
+}
+.ch-down .ch-span.is-scaled {
+  --dir: to bottom;
+  padding-top: 0;
+}
+.ch-down .ch-span.is-open-start {
+  border-left: 0;
+  border-top: 2px dashed var(--lane);
+}
+.ch-down .ch-span.is-open-end {
+  border-right: 0;
+  border-bottom: 2px dashed var(--lane);
+}
+.ch-shift {
+  margin-top: 1.2rem;
+  padding: 0.3rem 0.8rem 0.6rem;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+}
+.ch-shift summary {
+  min-height: 2.5rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.ch-shift .ch-range,
+.ch-shift .ch-triple {
+  margin: 0.4rem 0;
+}
+.ch-shift-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
 /* The order view, down the page */
 .ch-down {
   position: relative;
@@ -3006,4 +3104,13 @@ input.map-title {
   .gallery-grid {
     grid-template-columns: repeat(auto-fill, minmax(6.5rem, 1fr));
   }
+}
+.ch-down .ch-mark {
+  z-index: 2;
+}
+.ch-down .ch-mark span {
+  padding: 0 0.2rem;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--paper) 80%, transparent);
+  color: var(--ink-soft);
 }
