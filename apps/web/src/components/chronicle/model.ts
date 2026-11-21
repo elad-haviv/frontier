@@ -15,7 +15,8 @@ import {
   orderOf,
 } from "@frontier/time";
 
-export type Change = (fn: (chronicle: ChronicleFile) => ChronicleFile) => void;
+/** Changes that follow each other with the same `tag` are one step for undo. */
+export type Change = (fn: (chronicle: ChronicleFile) => ChronicleFile, tag?: string) => void;
 
 const LETTERS = "abcdefghijklmnopqrstuvwxyz0123456789";
 

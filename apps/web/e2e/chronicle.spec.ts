@@ -71,7 +71,12 @@ test("CUJ 14: finds what is too quick and what is too slow", async ({ page }, in
   await add(page, "Span", "Nirani presence");
   await sheet(page).getByLabel("Lane").selectOption({ label: "Nirani" });
   await relate(page, "longer_than", "Earth memory fades");
-  await length(page, "In years", "350", "450");
+  // The lowest number alone is a length: an empty highest means the same.
+  await sheet(page).locator("#ch-length-unit").selectOption({ label: "In years" });
+  await sheet(page).locator("#ch-length").fill("350");
+  await expect(sheet(page)).toContainText("Lasts 350 years");
+  await sheet(page).locator(".ch-range").first().getByLabel("Highest").fill("450");
+  await expect(sheet(page)).toContainText("Lasts 350 to 450 years");
   await expect(sheet(page).locator(".ch-flag", { hasText: "is longer than" })).toContainText(
     "holds",
   );
@@ -136,7 +141,6 @@ test("CUJ 14: finds what is too quick and what is too slow", async ({ page }, in
 
   // Undo takes the change back.
   await page.getByRole("button", { name: "Undo" }).click();
-  await page.getByRole("button", { name: "Undo" }).click();
   await expect(page.locator(".ch-flags")).not.toContainText("may not fit");
 
   // A statement about a span that is deleted is shown as broken.
@@ -145,6 +149,12 @@ test("CUJ 14: finds what is too quick and what is too slow", async ({ page }, in
   await sheet(page).getByRole("button", { name: "Delete this span" }).click();
   await tab(page, /Does not fit/).click();
   await expect(page.locator(".ch-flags")).toContainText("This names a span that was removed.");
+
+  // Marking it as the main chronicle shows at once and survives the next change.
+  await page.locator(".ch-more summary").click();
+  await page.getByRole("button", { name: "Make this the main chronicle" }).click();
+  await expect(page.locator(".ch-bar .chip")).toHaveText("main");
+  await expect(page.getByRole("button", { name: "Undo" })).toBeDisabled();
 
   // It is among the unsaved changes, with a way back to it.
   await expect(page.locator(".ch-saving")).toHaveText("Saved as a draft");

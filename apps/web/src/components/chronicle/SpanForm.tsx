@@ -48,14 +48,17 @@ function RangeFields(p: {
   unit: string;
   onRange: (low: number, high: number) => void;
 }) {
+  // An empty "highest" means the same as the lowest.
   const [low, setLow] = useState(show(p.low));
-  const [high, setHigh] = useState(show(p.high));
-  // What is stored wins when it changes from outside, as after an undo.
+  const [high, setHigh] = useState(p.high === p.low ? "" : show(p.high));
+  // What is stored wins when it changes from outside, as after an undo: if the two fields
+  // together no longer mean what is stored, both are written afresh.
   useEffect(() => {
-    if (typed(low) !== (p.low ?? null)) setLow(show(p.low));
-    if ((typed(high) ?? typed(low)) !== (p.high ?? null)) {
-      setHigh(p.high === p.low ? "" : show(p.high));
-    }
+    const a = typed(low);
+    const b = typed(high) ?? a;
+    if (a === (p.low ?? null) && b === (p.high ?? null)) return;
+    setLow(show(p.low));
+    setHigh(p.high === p.low ? "" : show(p.high));
   }, [p.low, p.high]);
 
   const tell = (l: string, h: string) => {
@@ -121,9 +124,11 @@ export function SpanForm({ chronicle, worked, span, change, onSelect }: Props) {
   const others = chronicle.spans.filter((s) => s.id !== span.id);
   const [kind, setKind] = useState("after");
   const [other, setOther] = useState("");
+  const [relProblem, setRelProblem] = useState<string | null>(null);
   const [rel, setRel] = useState({ low: "", high: "", dir: "after", part: "end", ref: "" });
 
-  const edit = (fn: (s: ChronicleSpan) => ChronicleSpan) => change((c) => withSpan(c, span.id, fn));
+  const edit = (fn: (s: ChronicleSpan) => ChronicleSpan, tag?: string) =>
+    change((c) => withSpan(c, span.id, fn), tag && `${tag}:${span.id}`);
 
   /** Writes a start or an end. The first start ever given makes its span the one counted from. */
   const place = (part: "start" | "end", value: Rough | "open" | null) =>
@@ -164,7 +169,7 @@ export function SpanForm({ chronicle, worked, span, change, onSelect }: Props) {
               low={value.low}
               high={value.high}
               unit="(year)"
-              onRange={(low, high) => place(part, { ...value, low, high })}
+              onRange={(low, high) => place(part, rough(low, high))}
             />
             {value.words && <p className="muted ch-words">“{value.words}”</p>}
           </>
@@ -192,7 +197,12 @@ export function SpanForm({ chronicle, worked, span, change, onSelect }: Props) {
     });
   };
 
-  const lengthUnit = span.length?.unit ?? "";
+  // A length written in a unit that is gone, or without its count, is read as plain years.
+  const countedIn =
+    span.length?.count !== undefined
+      ? chronicle.units.find((u) => u.id === span.length?.unit)
+      : undefined;
+  const lengthUnit = countedIn?.id ?? "";
   const stale = span.length ? staleLength(span.length, chronicle.units) : null;
   const open = span.start === "open" || span.end === "open";
 
@@ -225,7 +235,13 @@ export function SpanForm({ chronicle, worked, span, change, onSelect }: Props) {
     const low = typed(rel.low);
     const high = typed(rel.high) ?? low;
     const ref = chronicle.spans.find((s) => s.id === rel.ref);
-    if (!at || low === null || high === null || high < low || low < 0 || !ref) return;
+    if (!at || low === null || high === null || high < low || low < 0 || !ref) {
+      setRelProblem(
+        "Give a number of years, lowest first, and choose a span that has a number there.",
+      );
+      return;
+    }
+    setRelProblem(null);
     const range =
       rel.dir === "after"
         ? { lo: at.lo + low, hi: at.hi + high }
@@ -248,7 +264,7 @@ export function SpanForm({ chronicle, worked, span, change, onSelect }: Props) {
         <input
           type="text"
           value={span.name}
-          onChange={(e) => edit((s) => ({ ...s, name: e.target.value }))}
+          onChange={(e) => edit((s) => ({ ...s, name: e.target.value }), "name")}
         />
       </label>
       <div className="ch-row">
@@ -391,8 +407,8 @@ export function SpanForm({ chronicle, worked, span, change, onSelect }: Props) {
               <RangeFields
                 key={lengthUnit}
                 id="ch-length"
-                low={span.length.count?.[0] ?? span.length.low}
-                high={span.length.count?.[1] ?? span.length.high}
+                low={countedIn ? span.length.count?.[0] : span.length.low}
+                high={countedIn ? span.length.count?.[1] : span.length.high}
                 least={0}
                 unit={many(chronicle.units.find((u) => u.id === lengthUnit)?.name ?? "year", 2)}
                 onRange={(low, high) => setLength(lengthUnit, low, high)}
@@ -478,6 +494,7 @@ export function SpanForm({ chronicle, worked, span, change, onSelect }: Props) {
               ))}
             </select>
           </div>
+          {relProblem && <p className="error ch-words">{relProblem}</p>}
           {rel.ref && !refPoint() && (
             <p className="muted ch-words">That span has no number there yet.</p>
           )}
@@ -499,7 +516,12 @@ export function SpanForm({ chronicle, worked, span, change, onSelect }: Props) {
           {points.start && <>Starts {yearAt(points.start)}. </>}
           {!span.point && points.end && <>Ends {yearAt(points.end)}. </>}
           {!span.point && points.length && <>Lasts {years(points.length)}. </>}
-          {origin === span.id && <>Years are counted from its start. </>}
+          {origin === span.id && points.start?.lo === 0 && points.start.hi === 0 && (
+            <>Years are counted from its start. </>
+          )}
+          {origin !== null && !chronicle.spans.some((s) => s.id === origin) && (
+            <>The span years were counted from was removed; the numbers still stand. </>
+          )}
           {points.disagrees && <strong className="error">Its own numbers disagree.</strong>}
         </p>
       )}
@@ -509,7 +531,7 @@ export function SpanForm({ chronicle, worked, span, change, onSelect }: Props) {
         <textarea
           rows={2}
           value={span.note}
-          onChange={(e) => edit((s) => ({ ...s, note: e.target.value }))}
+          onChange={(e) => edit((s) => ({ ...s, note: e.target.value }), "note")}
         />
       </label>
 

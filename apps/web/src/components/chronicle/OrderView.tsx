@@ -38,7 +38,7 @@ export function OrderView(p: Props) {
   // The selected span is kept in sight, also when the form covers the lower half of a phone.
   useEffect(() => {
     if (!p.selected) return;
-    const el = box.current?.querySelector(`[data-span="${p.selected}"]`);
+    const el = box.current?.querySelector(`[data-span="${CSS.escape(p.selected)}"]`);
     el?.scrollIntoView({ block: "nearest", inline: "nearest" });
   }, [p.selected, narrow, p.openLane]);
 

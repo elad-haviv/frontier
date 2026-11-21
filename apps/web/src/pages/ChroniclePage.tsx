@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { type ChronicleFile, mergeChronicles } from "@frontier/schema";
-import { api } from "../api.ts";
+import { api, ApiFailure } from "../api.ts";
 import { CompareView } from "../components/chronicle/CompareView.tsx";
 import { Flags, redCount } from "../components/chronicle/Flags.tsx";
 import { LaneList, UnitList } from "../components/chronicle/Lists.tsx";
@@ -37,6 +37,11 @@ const SAVING: Record<string, string> = {
 /** One chronicle: its views, its lists, and the form for the selected span. */
 export function ChroniclePage() {
   const { id = "" } = useParams();
+  // A different chronicle gets a fresh page, with its own saving loop and undo history.
+  return <Chronicle key={id} id={id} />;
+}
+
+function Chronicle({ id }: { id: string }) {
   const navigate = useNavigate();
   const refresh = useRefresh();
   const dialogs = useDialogs();
@@ -45,22 +50,20 @@ export function ChroniclePage() {
   const [selected, setSelected] = useState<string | null>(null);
   const [lane, setLane] = useState<string | null>(null);
   const [folded, setFolded] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
 
-  const file = useItemFile<ChronicleFile>(
-    {
-      load: async () => {
-        const loaded = await api.chronicle(id);
-        return { value: loaded.chronicle, revision: loaded.revision };
-      },
-      save: async (value, revision) => {
-        const saved = await api.saveChronicle(id, value, revision);
-        return { value: saved.chronicle, revision: saved.revision };
-      },
-      merge: (base, mine, theirs) => mergeChronicles(base, mine, theirs).chronicle,
-      onSaved: refresh,
+  const file = useItemFile<ChronicleFile>({
+    load: async () => {
+      const loaded = await api.chronicle(id);
+      return { value: loaded.chronicle, revision: loaded.revision };
     },
-    id,
-  );
+    save: async (value, revision) => {
+      const saved = await api.saveChronicle(id, value, revision);
+      return { value: saved.chronicle, revision: saved.revision };
+    },
+    merge: (base, mine, theirs) => mergeChronicles(base, mine, theirs).chronicle,
+    onSaved: refresh,
+  });
   const chronicle = file.value;
   const worked = useMemo(() => (chronicle ? work(chronicle) : null), [chronicle]);
 
@@ -136,15 +139,25 @@ export function ChroniclePage() {
       danger: true,
     });
     if (!ok) return;
-    await api.deleteChronicle(id);
+    try {
+      await api.deleteChronicle(id);
+    } catch (err) {
+      setNotice(err instanceof ApiFailure ? err.message : "The chronicle could not be deleted.");
+      return;
+    }
     refresh();
     navigate("/chronicles");
   }
 
   async function makeMain() {
-    await api.makeMainChronicle(id);
-    refresh();
-    file.change((c) => ({ ...c, main: true }));
+    try {
+      await api.makeMainChronicle(id);
+      // The server wrote the mark itself, so the page takes in what the server now holds.
+      await file.reload();
+      refresh();
+    } catch (err) {
+      setNotice(err instanceof ApiFailure ? err.message : "It could not be made the main one.");
+    }
   }
 
   const tabs: [Tab, string][] = [
@@ -169,6 +182,14 @@ export function ChroniclePage() {
           {SAVING[file.saving]}
         </span>
       </header>
+      {notice && (
+        <p className="banner" role="alert">
+          {notice}{" "}
+          <button type="button" className="plain" onClick={() => setNotice(null)}>
+            Dismiss
+          </button>
+        </p>
+      )}
       {file.saving === "failed" && file.error && (
         <p className="banner" role="alert">
           {file.error}

@@ -236,7 +236,25 @@ export function mergeChronicles(
   clashes.push(...lanes.clashes, ...units.clashes, ...spans.clashes, ...relations.clashes);
 
   // A chronicle always has a lane, and no span may be left in one that is gone.
-  const kept = lanes.items.length > 0 ? lanes.items : mine.lanes;
+  const unordered = lanes.items.length > 0 ? lanes.items : mine.lanes;
+  // The list merge keeps their order. When only this side reordered the lanes, its order wins.
+  const order = (c: ChronicleFile) =>
+    c.lanes.map((l) => l.id).filter((id) => base.lanes.some((l) => l.id === id));
+  const same = (x: string[], y: string[]) => x.join("\n") === y.join("\n");
+  const baseOrder = base.lanes.map((l) => l.id);
+  const mineMoved =
+    !same(
+      order(mine),
+      baseOrder.filter((id) => mine.lanes.some((l) => l.id === id)),
+    ) &&
+    same(
+      order(theirs),
+      baseOrder.filter((id) => theirs.lanes.some((l) => l.id === id)),
+    );
+  const rank = new Map(mine.lanes.map((l, i) => [l.id, i]));
+  const kept = mineMoved
+    ? [...unordered].sort((x, y) => (rank.get(x.id) ?? Infinity) - (rank.get(y.id) ?? Infinity))
+    : unordered;
   const laneIds = new Set(kept.map((l) => l.id));
   const fallback = kept[0]!.id;
   const chronicle: ChronicleFile = {

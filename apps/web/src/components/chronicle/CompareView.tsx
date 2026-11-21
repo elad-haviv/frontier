@@ -29,6 +29,7 @@ function Bar({ range, max, color }: { range: Range; max: number; color: string }
 /** A few spans and real-world cases as bars from a common start, on one straight scale. */
 export function CompareView({ chronicle, worked, change, onSelect }: Props) {
   const [adding, setAdding] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
   const [own, setOwn] = useState({ name: "", low: "", high: "", from: "", to: "", source: "" });
   const { compare } = chronicle;
 
@@ -38,7 +39,9 @@ export function CompareView({ chronicle, worked, change, onSelect }: Props) {
   };
   const shown = compare.spans
     .map((id) => chronicle.spans.find((s) => s.id === id))
-    .filter((s) => s !== undefined);
+    .filter((s) => s !== undefined)
+    // A span that has since become a single moment has no length to compare.
+    .filter((s) => !s.point);
   const canAdd = chronicle.spans.filter(
     (s) => !s.point && lengthOf(s.id) && !compare.spans.includes(s.id),
   );
@@ -57,7 +60,13 @@ export function CompareView({ chronicle, worked, change, onSelect }: Props) {
     e.preventDefault();
     const low = typed(own.low);
     const high = typed(own.high) ?? low;
-    if (!own.name.trim() || low === null || high === null || low < 0 || high < low) return;
+    if (!own.name.trim() || low === null || high === null || low < 0 || high < low) {
+      setProblem(
+        "Give the case a name and a lowest number of years; the highest cannot be below it.",
+      );
+      return;
+    }
+    setProblem(null);
     addCase({
       id: newId(),
       name: own.name.trim(),
@@ -246,6 +255,11 @@ export function CompareView({ chronicle, worked, change, onSelect }: Props) {
               onChange={(e) => setOwn({ ...own, source: e.target.value })}
             />
           </label>
+          {problem && (
+            <p className="error" role="alert">
+              {problem}
+            </p>
+          )}
           <p className="change-actions">
             <button type="submit" className="primary">
               Add the case

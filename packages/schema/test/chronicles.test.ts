@@ -206,4 +206,26 @@ describe("merging two versions of a chronicle", () => {
     expect(merged.spans[1]!.lane).toBe("l2");
     expect(merged.spans[1]!.length).toEqual(two.spans[1]!.length);
   });
+
+  it("keeps a lane order only this side changed, with the lane the other side added", () => {
+    const start = edit((c) => {
+      c.lanes.push({ id: "lx", name: "Second", color: "#000000", clock: "ezob" });
+    });
+    const mine = edit((c) => c.lanes.reverse(), start);
+    const theirs = edit((c) => {
+      c.lanes.push({ id: "ly", name: "Third", color: "#000000", clock: "ezob" });
+    }, start);
+    const merged = mergeChronicles(start, mine, theirs).chronicle;
+    expect(merged.lanes.map((l) => l.id)).toEqual([...mine.lanes.map((l) => l.id), "ly"]);
+    // When they reordered too, their order stands.
+    const both = mergeChronicles(
+      start,
+      mine,
+      edit((c) => c.lanes.reverse(), start),
+    ).chronicle;
+    expect(both.lanes.map((l) => l.id)).toEqual(mine.lanes.map((l) => l.id));
+    expect(mergeChronicles(start, start, theirs).chronicle.lanes.map((l) => l.id)).toEqual(
+      theirs.lanes.map((l) => l.id),
+    );
+  });
 });
