@@ -27,10 +27,9 @@ One place for what is being built, what is waiting, and ideas. The design in
 - 2026-11-21: The idea, as said. (Notes: which stage it probably belongs to, open questions.)
 -->
 
-- 2026-11-21: **Gallery.** A page for browsing the vault's images. Open: all images or only those
-  used in entries (about 80 of 284 are used; most of the rest are icon sets); grouping by folder or
-  by the entry that uses them; whether an image links back to its entries. (The lightbox half of
-  this idea is built; see Done.)
+- 2026-11-21: **Gallery.** Built: a page of every image by folder, with those used in entries
+  shown first, the others and the icons behind tabs, a search by name or entry, each image opening
+  large and linking to its entries. Open: whether maps' images should count as used.
 
 ## Left from stage 2
 

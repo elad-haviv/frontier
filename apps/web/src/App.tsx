@@ -7,6 +7,7 @@ import { EditPage } from "./pages/Edit.tsx";
 import { EntryPage } from "./pages/Entry.tsx";
 import { UnpublishedPage } from "./pages/Unpublished.tsx";
 import { VersionsPage } from "./pages/Versions.tsx";
+import { GalleryPage } from "./pages/Gallery.tsx";
 import { Home } from "./pages/Home.tsx";
 import { HistoryPage, LibraryHistoryPage } from "./pages/History.tsx";
 import { ImportPage } from "./pages/Import.tsx";
@@ -60,6 +61,7 @@ export function App() {
         <Route path="/versions" element={<LibraryHistoryPage />} />
         <Route path="/maps" element={<MapsPage />} />
         <Route path="/map/:id" element={<MapPage />} />
+        <Route path="/gallery" element={<GalleryPage />} />
         <Route path="/chronicles" element={<ChroniclesPage />} />
         <Route path="/chronicle/:id" element={<ChroniclePage />} />
         <Route path="/settings" element={<SettingsPage />} />

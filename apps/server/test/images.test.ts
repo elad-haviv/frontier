@@ -143,3 +143,24 @@ describe("serving the interface", () => {
     }
   });
 });
+
+describe("the gallery", () => {
+  it("lists every image with the entries that use it, in order", async () => {
+    const res = await t.get("/api/gallery");
+    expect(res.statusCode).toBe(200);
+    const { images } = res.json() as {
+      images: { path: string; icon: boolean; usedBy: { path: string; title: string }[] }[];
+    };
+    const paths = images.map((i) => i.path);
+    expect(paths).toContain("99 Appendices/Images/wide.png");
+    expect(paths).toEqual([...paths].sort((a, b) => a.localeCompare(b)));
+    expect(images.find((i) => i.path.endsWith("/wide.png"))?.usedBy).toEqual([]);
+    const used = images.filter((i) => i.usedBy.length > 0);
+    expect(used.length).toBeGreaterThan(0);
+    for (const image of used) {
+      // No entry is named twice for one image, however often it shows it.
+      expect(new Set(image.usedBy.map((e) => e.path)).size).toBe(image.usedBy.length);
+      expect(image.usedBy.every((e) => e.path.endsWith(".md") && e.title !== "")).toBe(true);
+    }
+  });
+});

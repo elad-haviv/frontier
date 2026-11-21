@@ -7,6 +7,32 @@ import { ApiError } from "../errors.js";
 import type { Services } from "../app.js";
 
 export function imageRoutes(app: FastifyInstance, s: Services): void {
+  /** Every image of the library, with the entries that show or link it. */
+  app.get("/api/gallery", async () => {
+    const usedBy = new Map<string, { path: string; title: string }[]>();
+    for (const note of s.index.allNotes()) {
+      const seen = new Set<string>();
+      for (const { resolution } of note.links) {
+        if (resolution.kind !== "file" || !isImage(resolution.path)) continue;
+        if (seen.has(resolution.path)) continue;
+        seen.add(resolution.path);
+        const list = usedBy.get(resolution.path) ?? [];
+        list.push({ path: note.path, title: note.title });
+        usedBy.set(resolution.path, list);
+      }
+    }
+    const icons = s.config.iconFolder + "/";
+    const images = s.index.files
+      .filter((f) => isImage(f) && !isExcluded(f))
+      .sort((x, y) => x.localeCompare(y))
+      .map((path) => ({
+        path,
+        icon: path.startsWith(icons),
+        usedBy: (usedBy.get(path) ?? []).sort((x, y) => x.title.localeCompare(y.title)),
+      }));
+    return { images };
+  });
+
   app.get("/api/images", async (request, reply) => {
     const { path, w, branch } = ImageQuery.parse(request.query);
     if (branch !== undefined) {

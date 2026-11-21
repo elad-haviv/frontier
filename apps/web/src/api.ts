@@ -184,6 +184,10 @@ export const api = {
   resolveChronicle: (id: string, keep: "mine" | "theirs") =>
     post<{ ok: true }>(`/api/chronicles/${id}/resolve`, { keep }),
   deleteChronicle: (id: string) => send<{ ok: true }>("DELETE", `/api/chronicles/${id}`),
+  gallery: () =>
+    call<{
+      images: { path: string; icon: boolean; usedBy: { path: string; title: string }[] }[];
+    }>("/api/gallery"),
   mapImages: () => call<{ images: string[] }>("/api/map-images"),
   history: (path?: string) =>
     call<{ versions: Version[] }>(`/api/history${path ? `?path=${encodeURIComponent(path)}` : ""}`),
