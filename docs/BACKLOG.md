@@ -46,7 +46,9 @@ One place for what is being built, what is waiting, and ideas. The design in
       (`.frontier/baseline/links.json`) and compare it with Obsidian's unresolved links
 - [ ] Check in Obsidian whether a bare `[[Alias]]` link resolves
 - [ ] A storage bucket for backups and a persistent disk on the Coolify app
-- [ ] Change the preview password once the real vault is connected
+- [x] Change the preview password once the real vault is connected
+- [ ] Add a passkey and switch the password off
+- [ ] A storage bucket for backups: the library now exists only on the server's disk
 - [ ] Read the stage 3 design and answer its four questions: an OpenRouter key and model; which
       GitHub account the Hermes agents push with; whether a rule can protect `main`; whether Obsidian
       rewrites links inside a `when` field
@@ -75,8 +77,10 @@ history; notes and media are imported; the library is exported as a vault. Desig
 - [x] Versions: history of an entry and of the library, restore
 - [x] Import of notes and images, with a choice on a name clash; import of a whole vault from a zip
 - [x] Export of the library as a zip
-- [ ] Switch the preview from the sample to an own library, on a disk that lasts
-- [ ] Bring the real vault in
+- [x] Switch the preview from the sample to an own library, on a disk that lasts (2026-11-21: volume
+      on `/data`, new password)
+- [x] Bring the real vault in (2026-11-21: from GitHub `main`, in four parts because Cloudflare
+      refuses uploads over about 100 MB)
 - [ ] Later: a one-way mirror to GitHub for the memory bank and the agents
 
 ## Now: stage 4, maps
