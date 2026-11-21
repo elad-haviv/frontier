@@ -4,6 +4,7 @@ import { api, ApiFailure, entryUrl, newDraftId } from "../api.ts";
 import type { EditorView } from "@codemirror/view";
 import { CodeEditor } from "../components/CodeEditor.tsx";
 import { EditToolbar } from "../components/EditToolbar.tsx";
+import { WritingPanel } from "../components/WritingPanel.tsx";
 import { Properties } from "../components/Properties.tsx";
 import { useRefresh } from "../components/Shell.tsx";
 import { clearBuffer, readBuffer, writeBuffer } from "../drafts.ts";
@@ -51,6 +52,15 @@ export function EditPage() {
   const saving = useRef(false);
   const again = useRef(false);
   const view = useRef<EditorView | null>(null);
+  // Writing help is offered once a model for it is chosen.
+  const [writing, setWriting] = useState(false);
+  const [canWrite, setCanWrite] = useState(false);
+  useEffect(() => {
+    api.conversations().then(
+      (r) => setCanWrite(r.ready),
+      () => setCanWrite(false),
+    );
+  }, []);
   const [inTable, setInTable] = useState(false);
   const [preview, setPreview] = useState(() => {
     try {
@@ -335,7 +345,15 @@ export function EditPage() {
         path={path}
         onTable={setInTable}
       />
-      <EditToolbar view={view} onFiles={addImages} inTable={inTable} />
+      {writing && view.current && (
+        <WritingPanel view={view.current} path={path} onClose={() => setWriting(false)} />
+      )}
+      <EditToolbar
+        view={view}
+        onFiles={addImages}
+        inTable={inTable}
+        {...(canWrite ? { onWrite: () => setWriting(true) } : {})}
+      />
     </div>
   );
 }

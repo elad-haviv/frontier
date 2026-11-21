@@ -106,7 +106,8 @@ from Frontier's own library, not the Hindsight bank; what is kept becomes an uns
 - [x] 8a Lore conversations: answers from the library, each paragraph with checked quotes;
       "not in the lore"; additions drafted, chosen and kept as drafts
 - [ ] Elad sets a model for lore conversations in Settings and tries it
-- [ ] 8b Writing help in the editor
+- [x] 8b Writing help in the editor: rewrite a passage, ask the lore about it (comments on a
+      passage wait)
 - [ ] 8c Character chat
 - [ ] 8d Discovery on a map, with concept art
 

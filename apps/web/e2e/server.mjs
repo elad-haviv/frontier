@@ -23,6 +23,10 @@ Object.assign(process.env, {
 // line of text; a question with "unknown" in it is not in the lore. Asked for an addition, it
 // adds a line to that entry.
 function lore(user) {
+  if (user.includes("=== Passage")) {
+    const request = /Request: (.*)$/.exec(user)?.[1] ?? "";
+    return { text: `A rewritten passage (${request.split(":")[0]}).` };
+  }
   const first = /=== Entry: (.*)\nTitle: .*\n\n([\s\S]*?)\n=== End/.exec(user);
   const path = first?.[1] ?? "";
   const line = (first?.[2] ?? "")

@@ -193,3 +193,28 @@ What was built differs from the sections above as follows; where they disagree, 
     model; an addition to an existing entry, to a new one, and to an entry with a draft; keeping it
     makes a draft; conversations stored, listed and deleted.
 *   **Browser**, with the stand-in: CUJ 11 on a phone.
+
+## 8b Writing help in the editor
+
+Built on 2026-11-21 with these choices, which the author can overrule; comments on a passage, from
+the ideas inbox, wait for a later part.
+
+*   **Where.** An "AI" button on the editor's toolbar, shown once a model for lore conversations is
+    chosen; the same model serves writing help, and Settings says so. It opens a panel over the
+    lower part of the editor.
+*   **The passage** is the selection, or the paragraph the cursor is in when nothing is selected.
+    It is fixed when the panel opens.
+*   **Rewriting.** Shorter, Longer, Simpler, More vivid, or the author's own words ("as a legend told
+    by an elder"). The model gets the passage, about 1,200 characters before and after it, the
+    request, and up to six entries the passage names or is about (looked up as for a question,
+    without the entry being edited and never a note in quarantine), and is told to add no new facts
+    unless asked. Pictures from other web addresses are taken out of its answer.
+*   **The difference first.** The rewrite is shown against the passage. "Replace" puts it in place of
+    the passage and "Put below" after it, as an ordinary edit of the draft, so it can be undone and
+    is saved as an unsaved change like anything typed. If the passage changed while the panel was
+    open, nothing is put in and the panel says so.
+*   **Asking about the passage.** A question in the panel starts a lore conversation whose question
+    quotes the passage. The panel shows the answer's paragraphs as plain text, guesses marked, with a
+    link to the conversation and its sources.
+*   **API**: `POST /api/write/rewrite` with `{ path, passage, before, after, how }` answers
+    `{ text }` and saves nothing.

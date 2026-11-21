@@ -311,3 +311,48 @@ describe("drafting an addition", () => {
     expect(preview.json().error.message).toContain("marked for deletion");
   });
 });
+
+describe("writing help", () => {
+  it("rewrites a passage as asked, keeping to the lore, and leaves out pictures from the web", async () => {
+    const p = await start([
+      { text: "The Nirani count time by the deep currents. ![x](http://evil.example/a.png)" },
+    ]);
+    const res = await t.post("/api/write/rewrite", {
+      path: NIRANI,
+      passage: "The Nirani keep time by the pulse of the deep currents, which they call [[Vaakh]].",
+      before: "# Nirani",
+      after: "They have no written calendar.",
+      how: "shorter",
+    });
+    expect(res.statusCode, res.body).toBe(200);
+    expect(res.json().text).toBe("The Nirani count time by the deep currents.");
+    const sent = p.calls[0]!.body.messages[1]!.content;
+    expect(sent).toContain("Request: Make it shorter");
+    expect(sent).toContain(`=== Entry: ${VAAKH}`);
+    expect(sent).not.toContain(`=== Entry: ${NIRANI}`);
+  });
+
+  it("takes the author's own words as the request", async () => {
+    const p = await start([{ text: "Rewritten." }]);
+    await t.post("/api/write/rewrite", {
+      path: NIRANI,
+      passage: "Some words.",
+      how: "Write it as a legend told by an elder.",
+    });
+    expect(p.calls[0]!.body.messages[1]!.content).toContain(
+      "Request: Write it as a legend told by an elder.",
+    );
+  });
+
+  it("is off without a model, and refuses what is not an entry", async () => {
+    await start([{ text: "x" }], { extraction: MODEL });
+    const off = await t.post("/api/write/rewrite", { path: NIRANI, passage: "x", how: "shorter" });
+    expect(off.statusCode).toBe(409);
+    const map = await t.post("/api/write/rewrite", {
+      path: ".frontier/maps/abcdefgh.json",
+      passage: "x",
+      how: "shorter",
+    });
+    expect(map.statusCode).toBe(400);
+  });
+});

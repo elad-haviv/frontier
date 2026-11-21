@@ -44,10 +44,13 @@ export function EditToolbar({
   view,
   onFiles,
   inTable = false,
+  onWrite,
 }: {
   view: Ref;
   onFiles?: (files: File[]) => void;
   inTable?: boolean;
+  /** Opens writing help; absent while no model is chosen. */
+  onWrite?: () => void;
 }) {
   const act = (fn: (v: EditorView) => void) => () => {
     if (view.current) fn(view.current);
@@ -131,6 +134,17 @@ export function EditToolbar({
             }}
           />
         </label>
+      )}
+      {onWrite && (
+        <button
+          type="button"
+          onPointerDown={keep}
+          aria-label="Writing help"
+          title="Rewrite the selection, or ask the lore about it"
+          onClick={onWrite}
+        >
+          AI
+        </button>
       )}
       <span className="edit-toolbar-gap" />
       <button

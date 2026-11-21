@@ -17,6 +17,8 @@ import { MapStore } from "./maps/store.js";
 import { Conversations } from "./ai/conversations.js";
 import { LoreAsker } from "./ai/lore.js";
 import { loreRoutes } from "./routes/lore.js";
+import { writingRoutes } from "./routes/writing.js";
+import { WritingHelper } from "./ai/writing.js";
 import { chronicleRoutes } from "./routes/chronicles.js";
 import { mapRoutes } from "./routes/maps.js";
 import { historyRoutes } from "./routes/history.js";
@@ -85,6 +87,7 @@ export interface Services {
   maps: MapStore;
   chronicles: ChronicleStore;
   lore: LoreAsker;
+  writing: WritingHelper;
   conversations: Conversations;
   backup: Backup;
   search: SearchIndex;
@@ -206,6 +209,13 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
   });
   const search = new SearchIndex(index);
   const conversations = new Conversations(stateDir, files);
+  const writing = new WritingHelper({
+    index,
+    search,
+    provider: ai,
+    settings,
+    mayRead: (path) => quarantine.aiMayRead(path) === null,
+  });
   const lore = new LoreAsker({
     index,
     search,
@@ -250,6 +260,7 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
     maps,
     chronicles,
     lore,
+    writing,
     conversations,
     async sync() {
       const result = await git.fetch();
@@ -418,6 +429,7 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
   mapRoutes(app, services);
   chronicleRoutes(app, services);
   loreRoutes(app, services);
+  writingRoutes(app, services);
   importRoutes(app, services);
   historyRoutes(app, services);
   searchRoutes(app, services);

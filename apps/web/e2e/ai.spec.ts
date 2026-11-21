@@ -1,5 +1,14 @@
 import { expect, test } from "@playwright/test";
-import { commitCount, entry, lastBody, onMain, publish, review } from "./helpers.ts";
+import {
+  commitCount,
+  discardDraft,
+  entry,
+  lastBody,
+  onMain,
+  openEditor,
+  publish,
+  review,
+} from "./helpers.ts";
 
 // One test at a time changes the AI settings, which are shared by the whole server.
 test.describe.configure({ mode: "serial" });
@@ -140,4 +149,38 @@ test("CUJ 11: asks the lore, reads cited answers, and keeps a drafted addition a
   await page.getByRole("button", { name: "Delete the conversation" }).click();
   await page.getByRole("dialog").getByRole("button", { name: "Delete", exact: true }).click();
   await expect(page).toHaveURL(/\/ask$/);
+});
+
+test("writing help rewrites a passage in the editor, shown as a difference first", async ({
+  page,
+}, info) => {
+  test.skip(info.project.name !== "phone", "The AI settings are one per server.");
+  await page.setViewportSize({ width: 375, height: 740 });
+  await page.goto("/settings");
+  await page.getByLabel(/Provider key/).fill("sk-or-browser-test-key");
+  await page.getByLabel("Model for lore conversations").fill("sample/reader");
+  await page.getByRole("button", { name: "Save" }).click();
+  await expect(page.locator(".banner-ok")).toHaveText("Saved.");
+
+  await openEditor(page, "02 People/Shade.md");
+  // The cursor in the paragraph is enough: the whole paragraph is the passage.
+  await page.locator(".cm-content").getByText("A quiet figure.").click();
+  await page.getByRole("button", { name: "Writing help" }).click();
+  const panel = page.locator(".writing-panel");
+  await expect(panel.locator(".writing-passage")).toContainText("A quiet figure.");
+  await panel.getByRole("button", { name: "Shorter" }).click();
+  await expect(panel.locator(".diff")).toContainText("A rewritten passage (Make it shorter)");
+  await panel.getByRole("button", { name: "Replace" }).click();
+  await expect(panel).toHaveCount(0);
+  await expect(page.locator(".cm-content")).toContainText("A rewritten passage (Make it shorter).");
+  await expect(page.locator(".cm-content")).not.toContainText("A quiet figure.");
+
+  // Asked about the passage, the lore answers in the panel.
+  await page.getByRole("button", { name: "Writing help" }).click();
+  await panel.getByLabel("Ask the lore about this passage").fill("Who is this?");
+  await panel.getByRole("button", { name: "Ask" }).click();
+  await expect(panel.locator(".writing-answer")).toContainText("Open the conversation");
+  await panel.getByRole("button", { name: "Close" }).click();
+
+  await discardDraft(page);
 });

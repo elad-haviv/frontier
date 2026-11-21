@@ -144,7 +144,7 @@ function AiSettings({ ai, reload }: { ai: SettingsResponse["ai"]; reload: () => 
         />
         <em className="muted">
           {talker.trim()
-            ? "Asking the lore sends the question and the entries it is answered from to this model."
+            ? "Asking the lore and writing help send the question or passage, and the entries looked up for it, to this model."
             : "No model chosen: asking the lore is off."}
         </em>
       </label>

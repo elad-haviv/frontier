@@ -250,6 +250,8 @@ export const api = {
       question,
       ...(conversation ? { conversation } : {}),
     }),
+  rewrite: (body: { path: string; passage: string; before: string; after: string; how: string }) =>
+    post<{ text: string }>("/api/write/rewrite", body),
   deleteConversation: (id: string) => send<{ ok: true }>("DELETE", `/api/lore/${id}`),
   draftAddition: (id: string, turn: number, again = false) =>
     post<{ addition: LoreAddition; conversation: LoreConversation }>(
