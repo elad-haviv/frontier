@@ -109,10 +109,14 @@ export function useItemFile<T>(options: ItemFileOptions<T>): ItemFile<T> {
           redoStack.current = [];
         }
         if (current.current !== sent && current.current !== null) {
-          // Changes typed while the merge was on its way are laid over the merged value.
+          // Changes typed while the save was on its way are laid over what the server answered.
+          // This happens even after the page was left, so what goes out last holds both.
           dirty.current = true;
-          if (live.current) show(opts.current.merge(sent, current.current, saved.value));
+          const both = opts.current.merge(sent, current.current, saved.value);
+          if (live.current) show(both);
+          else current.current = both;
         } else if (live.current) show(saved.value);
+        else current.current = saved.value;
       }
       if (live.current) setSaving(dirty.current ? "waiting" : "saved");
     } catch (err) {

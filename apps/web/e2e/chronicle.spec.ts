@@ -310,3 +310,49 @@ test("a span linked to an entry opens the entry, and the entry lists the chronic
     for (const d of un.drafts) await fetch(`/api/drafts/${d.id}`, { method: "DELETE" });
   });
 });
+
+test("typing in a span while its link is being saved keeps both the link and the words", async ({
+  page,
+}, info) => {
+  if (info.project.name === "phone") await page.setViewportSize({ width: 375, height: 740 });
+  await page.goto("/chronicles");
+  await page.locator(".new-map input[type=text]").fill(`Slow link ${info.project.name}`);
+  await page.getByRole("button", { name: "Make the chronicle" }).click();
+  await add(page, "Span", "Shade's years");
+  await expect(page.locator(".ch-saving")).toHaveText("Saved as a draft");
+
+  // Saves that carry a link are held for a moment, as on a slow connection.
+  let held = 0;
+  await page.route("**/api/chronicles/*", async (route) => {
+    const body = route.request().postData() ?? "";
+    if (route.request().method() === "PUT" && body.includes('"link":[{')) {
+      held += 1;
+      await new Promise((r) => setTimeout(r, 2500));
+    }
+    await route.continue();
+  });
+
+  const entry = sheet(page).locator(".ch-entry");
+  await entry.getByLabel("Find an entry").fill("Shade");
+  await entry.locator(".entry-picker li button", { hasText: "Shade" }).first().click();
+  await expect(page.locator(".ch-saving")).toHaveText("Saving…");
+  await expect.poll(() => held).toBe(1);
+  // While the link is on its way, a note is typed into the same span.
+  await sheet(page).getByLabel("Note").fill("Written during the save");
+  await expect(page.locator(".ch-saving")).toHaveText("Saved as a draft", { timeout: 15_000 });
+  await page.unroute("**/api/chronicles/*");
+
+  const stored = await page.evaluate(async () => {
+    const id = location.pathname.split("/").pop();
+    return (await (await fetch(`/api/chronicles/${id}`)).json()).chronicle.spans[0];
+  });
+  expect(stored.note).toBe("Written during the save");
+  expect(stored.entry).toMatch(/^[a-z0-9]{8}$/);
+  await expect(entry.getByRole("link", { name: "Shade" })).toBeVisible();
+
+  await page.evaluate(async () => {
+    await fetch(`/api/chronicles/${location.pathname.split("/").pop()}`, { method: "DELETE" });
+    const un = await (await fetch("/api/unpublished")).json();
+    for (const d of un.drafts) await fetch(`/api/drafts/${d.id}`, { method: "DELETE" });
+  });
+});

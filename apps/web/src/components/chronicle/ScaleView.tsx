@@ -29,6 +29,7 @@ export function ScaleView(p: ViewProps) {
   const [others, setOthers] = useState<{ id: string; title: string }[]>([]);
   const [other, setOther] = useState<ChronicleFile | null>(null);
   const [alignOn, setAlignOn] = useState<string | null>(null);
+  const [otherLane, setOtherLane] = useState<string | null>(null);
 
   useEffect(() => {
     let live = true;
@@ -222,7 +223,10 @@ export function ScaleView(p: ViewProps) {
             onSelect={p.onSelect}
             narrow={narrow}
             openLane={p.openLane}
-            onOpenLane={p.onOpenLane}
+            onOpenLane={(id) => {
+              setOtherLane(null);
+              p.onOpenLane(id);
+            }}
           />
           {two && second && (
             <LaneCanvas
@@ -244,6 +248,9 @@ export function ScaleView(p: ViewProps) {
               }}
               narrow={narrow}
               openLane={
+                // A lane tapped on this side wins, even one that only this chronicle has;
+                // otherwise the lane that matches the one open above.
+                two.moved.lanes.find((l) => l.id === otherLane)?.id ??
                 two.moved.lanes.find((l) => l.id === p.openLane)?.id ??
                 two.moved.lanes.find(
                   (l) => l.name === chronicle.lanes.find((x) => x.id === p.openLane)?.name,
@@ -251,6 +258,7 @@ export function ScaleView(p: ViewProps) {
                 two.moved.lanes[0]!.id
               }
               onOpenLane={(id) => {
+                setOtherLane(id);
                 const name = two.moved.lanes.find((l) => l.id === id)?.name;
                 const mine =
                   chronicle.lanes.find((l) => l.id === id) ??

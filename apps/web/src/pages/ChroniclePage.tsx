@@ -60,6 +60,8 @@ function Chronicle({ id }: { id: string }) {
   const [linking, setLinking] = useState<Record<string, { path: string; title: string }>>({});
   const links = useRef(new Map<string, string>());
   const titles = useRef(new Map<string, { path: string; title: string }>());
+  /** Spans unlinked since the last save: the server's answer must not link them again. */
+  const dropped = useRef(new Set<string>());
 
   const file = useItemFile<ChronicleFile>({
     load: async () => {
@@ -69,6 +71,7 @@ function Chronicle({ id }: { id: string }) {
     },
     save: async (value, revision) => {
       const link = [...links.current].map(([span, path]) => ({ span, path }));
+      const unlinked = new Set(dropped.current);
       const saved = await api.saveChronicle(id, value, revision, link);
       if (link.length > 0) {
         for (const l of link)
@@ -90,9 +93,28 @@ function Chronicle({ id }: { id: string }) {
           () => undefined,
         );
       }
+      // An unlink that this save carried is now on the server; one made since still waits.
+      for (const span of unlinked) dropped.current.delete(span);
       return { value: saved.chronicle, revision: saved.revision };
     },
-    merge: (base, mine, theirs) => mergeChronicles(base, mine, theirs).chronicle,
+    merge: (base, mine, theirs) => {
+      const merged = mergeChronicles(base, mine, theirs).chronicle;
+      // A span's entry is settled on its own, so typing in a span while its link is being saved
+      // keeps both: the words typed here, and the entry the server wrote. An unlink made here
+      // since wins over the server's link.
+      return {
+        ...merged,
+        spans: merged.spans.map((s) => {
+          if (dropped.current.has(s.id)) return { ...s, entry: null };
+          const b = base.spans.find((x) => x.id === s.id);
+          const m = mine.spans.find((x) => x.id === s.id);
+          const t = theirs.spans.find((x) => x.id === s.id);
+          if (!b || !m || !t) return s;
+          const entry = m.entry === b.entry ? t.entry : m.entry;
+          return entry === s.entry ? s : { ...s, entry };
+        }),
+      };
+    },
     // The server writes an entry's id into a span that was linked by path.
     changed: (sent, saved) =>
       sent.spans.some((s) => saved.spans.find((x) => x.id === s.id)?.entry !== s.entry),
@@ -394,6 +416,7 @@ function Chronicle({ id }: { id: string }) {
               }
               onLink={(path, title) => {
                 links.current.set(span.id, path);
+                dropped.current.delete(span.id);
                 titles.current.set(span.id, { path, title });
                 setLinking((now) => ({ ...now, [span.id]: { path, title } }));
                 // The link travels with the next save. Nothing in the file changes until the
@@ -403,6 +426,7 @@ function Chronicle({ id }: { id: string }) {
               }}
               onUnlink={() => {
                 links.current.delete(span.id);
+                dropped.current.add(span.id);
                 setLinking((now) =>
                   Object.fromEntries(Object.entries(now).filter(([k]) => k !== span.id)),
                 );
