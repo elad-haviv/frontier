@@ -417,6 +417,11 @@ ones use Git LFS is decided in the stage 4 design, when the real sizes are known
 One module owns every Git operation. Nothing else touches the working copy, and the working copy always
 equals the last fetched `main`: Frontier never makes a local commit in it.
 
+*   **Identity, as built.** The server accepts either a fine-grained personal access token
+    (`GITHUB_TOKEN`) or a GitHub App. A token is enough for stages 1 and 2, where nothing depends on who
+    Frontier pushes as: the quarantine rule allows pushes by the author and by Frontier alike. With a token
+    Frontier's pushes show as the author's. The choice is revisited in the stage 3 design. The webhook is
+    optional; without it the vault is fetched every 5 minutes. The text below describes the App.
 *   **Identity.** Frontier pushes as its own GitHub App, installed on the `avalymia` repository only and
     created in stage 1. Its credential is held in server environment variables. A token of the author's
     own account is not used, because Frontier's pushes would then be indistinguishable from his. This is

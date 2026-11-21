@@ -19,7 +19,8 @@ Stage 1 of nine is in progress. What exists so far:
 | `apps/server`: backup of working files and a restore command                                                                                 | Built and tested; the S3 path has not run against a real bucket |
 | `apps/web`: login, folder tree, entry reader, image lightbox, status page, quick switcher                                                    | Built; covered by browser tests                                 |
 | `apps/web`: source editor with autosave and link autocomplete, new, delete and rename, unpublished list, Publish, merge and conflict screens | Built; covered by browser tests                                 |
-| Full-text search; live preview; image upload; table editing; properties panel                                                                | Not started                                                     |
+| Full-text search, outline, hover preview, editing toolbar                                                                                    | Built; covered by browser tests                                 |
+| Live preview; image upload; table editing; properties panel                                                                                  | Not started                                                     |
 
 The app writes to its vault: drafts are saved on the server and Publish makes one commit.
 
