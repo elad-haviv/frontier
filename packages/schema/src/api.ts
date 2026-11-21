@@ -106,6 +106,8 @@ export const EntryResponse = z.object({
   fields: EntryFields,
   /** The maps, drafts included, that have a feature for this entry. */
   maps: z.array(z.object({ id: z.string(), title: z.string(), feature: z.string() })),
+  /** The chronicles, drafts included, that have a span for this entry. */
+  chronicles: z.array(z.object({ id: z.string(), title: z.string(), span: z.string() })),
   /** Present while the note waits in quarantine for the author's decision. */
   quarantine: z.object({ commit: z.string(), pushedBy: z.string(), at: z.string() }).optional(),
 });

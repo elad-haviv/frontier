@@ -274,3 +274,39 @@ test("CUJ 15: places spans, takes an offered fix, shifts them, and compares a co
     await fetch(`/api/chronicles/${location.pathname.split("/").pop()}`, { method: "DELETE" });
   });
 });
+
+test("a span linked to an entry opens the entry, and the entry lists the chronicle", async ({
+  page,
+}, info) => {
+  if (info.project.name === "phone") await page.setViewportSize({ width: 375, height: 740 });
+  const title = `Linked ${info.project.name}`;
+  await page.goto("/chronicles");
+  await page.locator(".new-map input[type=text]").fill(title);
+  await page.getByRole("button", { name: "Make the chronicle" }).click();
+  await add(page, "Span", "Mira's years");
+
+  const entry = sheet(page).locator(".ch-entry");
+  await entry.getByLabel("Find an entry").fill("Mira");
+  await entry.locator(".entry-picker li button", { hasText: "Mira" }).first().click();
+  await expect(entry.getByRole("link", { name: "Mira" })).toBeVisible();
+  await expect(page.locator(".ch-saving")).toHaveText("Saved as a draft");
+  await expect(entry).not.toContainText("linking");
+
+  // From the entry back to its span.
+  await entry.getByRole("link", { name: "Mira" }).click();
+  await expect(page).toHaveURL(/\/e\//);
+  await page.locator(".on-maps").getByRole("link", { name: title }).click();
+  await expect(sheet(page).locator("h2")).toHaveText("Mira's years");
+
+  // Unlinking takes the chronicle off the entry.
+  await sheet(page).locator(".ch-entry").getByRole("button", { name: "Unlink" }).click();
+  await expect(sheet(page).locator(".ch-entry")).toContainText("Link this to the entry");
+  await expect(page.locator(".ch-saving")).toHaveText("Saved as a draft");
+
+  // Nothing is left behind: the chronicle goes, and so does the id written into the entry.
+  await page.evaluate(async () => {
+    await fetch(`/api/chronicles/${location.pathname.split("/").pop()}`, { method: "DELETE" });
+    const un = await (await fetch("/api/unpublished")).json();
+    for (const d of un.drafts) await fetch(`/api/drafts/${d.id}`, { method: "DELETE" });
+  });
+});

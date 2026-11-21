@@ -96,7 +96,7 @@ after two independent reviews.
 - [ ] Elad tries 5a with his own history before anything more is built
 - [x] 5b Scale, offered fixes, shifting a selection (built before the trial, at Elad's word)
 - [x] 5c Two versions side by side
-- [ ] 5d Links to entries
+- [x] 5d Links to entries (not yet: a linked span with no name showing its entry's title)
 
 ## Now: stage 4, maps
 

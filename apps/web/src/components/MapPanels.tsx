@@ -76,7 +76,7 @@ export function FeatureCard({
 }
 
 /** Finds an entry by name, as the quick switcher does. */
-function EntryPicker({ onPick }: { onPick: (path: string, title: string) => void }) {
+export function EntryPicker({ onPick }: { onPick: (path: string, title: string) => void }) {
   const [query, setQuery] = useState("");
   const [rows, setRows] = useState<{ path: string; title: string; alias?: string }[]>([]);
   useEffect(() => {

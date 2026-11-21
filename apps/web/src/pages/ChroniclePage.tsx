@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { type ChronicleFile, mergeChronicles } from "@frontier/schema";
 import { api, ApiFailure, chronicleUrl } from "../api.ts";
 import { CompareView } from "../components/chronicle/CompareView.tsx";
@@ -9,7 +9,7 @@ import { OrderView } from "../components/chronicle/OrderView.tsx";
 import { ScaleView } from "../components/chronicle/ScaleView.tsx";
 import { ShiftForm } from "../components/chronicle/ShiftForm.tsx";
 import { SpanForm } from "../components/chronicle/SpanForm.tsx";
-import { newSpan, spanName, work } from "../components/chronicle/model.ts";
+import { newSpan, spanName, withSpan, work } from "../components/chronicle/model.ts";
 import { useDialogs } from "../components/Dialogs.tsx";
 import { useRefresh } from "../components/Shell.tsx";
 import { useItemFile } from "../hooks/useItemFile.ts";
@@ -49,21 +49,44 @@ function Chronicle({ id }: { id: string }) {
   const dialogs = useDialogs();
   const narrow = useNarrow();
   const [tab, setTab] = useState<Tab>("order");
-  const [selected, setSelected] = useState<string | null>(null);
+  const [params] = useSearchParams();
+  const [selected, setSelected] = useState<string | null>(params.get("span"));
   const [lane, setLane] = useState<string | null>(null);
   const [folded, setFolded] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
 
+  // Entries by id, for the spans linked to one; and links asked for that the next save carries.
+  const [entries, setEntries] = useState<Record<string, { path: string; title: string }>>({});
+  const [linking, setLinking] = useState<Record<string, { path: string; title: string }>>({});
+  const links = useRef(new Map<string, string>());
+
   const file = useItemFile<ChronicleFile>({
     load: async () => {
       const loaded = await api.chronicle(id);
+      setEntries(loaded.entries);
       return { value: loaded.chronicle, revision: loaded.revision };
     },
     save: async (value, revision) => {
-      const saved = await api.saveChronicle(id, value, revision);
+      const link = [...links.current].map(([span, path]) => ({ span, path }));
+      const saved = await api.saveChronicle(id, value, revision, link);
+      if (link.length > 0) {
+        for (const l of link)
+          if (links.current.get(l.span) === l.path) links.current.delete(l.span);
+        setLinking((now) =>
+          Object.fromEntries(Object.entries(now).filter(([span]) => links.current.has(span))),
+        );
+        if (saved.unlinked.length > 0) setNotice(saved.unlinked.map((u) => u.reason).join(" "));
+        void api.chronicle(id).then(
+          (r) => setEntries(r.entries),
+          () => undefined,
+        );
+      }
       return { value: saved.chronicle, revision: saved.revision };
     },
     merge: (base, mine, theirs) => mergeChronicles(base, mine, theirs).chronicle,
+    // The server writes an entry's id into a span that was linked by path.
+    changed: (sent, saved) =>
+      sent.spans.some((s) => saved.spans.find((x) => x.id === s.id)?.entry !== s.entry),
     onSaved: refresh,
   });
   const chronicle = file.value;
@@ -346,6 +369,31 @@ function Chronicle({ id }: { id: string }) {
               span={span}
               change={file.change}
               onSelect={select}
+              entry={
+                linking[span.id]
+                  ? { state: "pending", ...linking[span.id]! }
+                  : span.entry === null
+                    ? { state: "none" }
+                    : entries[span.entry]
+                      ? { state: "linked", ...entries[span.entry]! }
+                      : { state: "gone" }
+              }
+              second={
+                span.entry !== null &&
+                chronicle.spans.find((s) => s.entry === span.entry)?.id !== span.id
+              }
+              onLink={(path, title) => {
+                links.current.set(span.id, path);
+                setLinking((now) => ({ ...now, [span.id]: { path, title } }));
+                file.change((c) => withSpan(c, span.id, (s) => ({ ...s, entry: null })));
+              }}
+              onUnlink={() => {
+                links.current.delete(span.id);
+                setLinking((now) =>
+                  Object.fromEntries(Object.entries(now).filter(([k]) => k !== span.id)),
+                );
+                file.change((c) => withSpan(c, span.id, (s) => ({ ...s, entry: null })));
+              }}
             />
           </aside>
         )}

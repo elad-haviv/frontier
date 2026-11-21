@@ -1,4 +1,7 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
+import { entryUrl } from "../../api.ts";
+import { EntryPicker } from "../MapPanels.tsx";
 import type { ChronicleFile, ChronicleSpan, Rough } from "@frontier/schema";
 import {
   type Range,
@@ -33,7 +36,18 @@ interface Props {
   span: ChronicleSpan;
   change: Change;
   onSelect: (id: string | null) => void;
+  /** The entry this span stands for: linked, being linked, gone, or none. */
+  entry: SpanEntry;
+  /** True when an earlier span of this chronicle is linked to the same entry. */
+  second: boolean;
+  onLink: (path: string, title: string) => void;
+  onUnlink: () => void;
 }
+
+export type SpanEntry =
+  | { state: "none" }
+  | { state: "gone" }
+  | { state: "linked" | "pending"; path: string; title: string };
 
 /** "generations" for more than one "generation". A name that ends in s is left alone. */
 const many = (name: string, count: number): string =>
@@ -119,7 +133,8 @@ const TONE: Record<string, string> = {
 };
 
 /** The form for one span: its name, lane, numbers, note and statements. */
-export function SpanForm({ chronicle, worked, span, change, onSelect }: Props) {
+export function SpanForm(props: Props) {
+  const { chronicle, worked, span, change, onSelect, entry } = props;
   const points = worked.points.get(span.id);
   const lane = laneOf(chronicle, span);
   const origin = chronicle.origin;
@@ -533,6 +548,39 @@ export function SpanForm({ chronicle, worked, span, change, onSelect }: Props) {
           </button>
         </p>
       )}
+
+      <section className="ch-relations ch-entry">
+        <h3>Entry</h3>
+        {entry.state === "none" && (
+          <>
+            <p className="muted">Link this to the entry it stands for.</p>
+            <EntryPicker onPick={props.onLink} />
+          </>
+        )}
+        {entry.state === "gone" && (
+          <p>
+            Its entry was removed.{" "}
+            <button type="button" className="plain danger" onClick={props.onUnlink}>
+              Unlink
+            </button>
+          </p>
+        )}
+        {(entry.state === "linked" || entry.state === "pending") && (
+          <p>
+            <Link to={entryUrl(entry.path)}>{entry.title}</Link>
+            {entry.state === "pending" && <span className="muted"> (linking…)</span>}{" "}
+            <button type="button" className="plain danger" onClick={props.onUnlink}>
+              Unlink
+            </button>
+          </p>
+        )}
+        {props.second && (
+          <p className="muted">
+            Another span here is linked to the same entry. Maps that change with time will read the
+            first of them in the file.
+          </p>
+        )}
+      </section>
 
       <label className="ch-field">
         <span>Note</span>

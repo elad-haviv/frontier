@@ -308,6 +308,10 @@ describe("linking a span to an entry", () => {
     const entryId = res.json().chronicle.spans[0].entry as string;
     expect(entryId).toMatch(/^[a-z0-9]{8}$/);
     expect((await load(id)).entries[entryId]).toEqual({ path: MIRA, title: "Mira" });
+    const entry = (await t.get(`/api/entries?path=${encodeURIComponent(MIRA)}`)).json();
+    expect(entry.chronicles).toEqual([
+      { id, title: (await load(id)).chronicle.title, span: "s0000001" },
+    ]);
 
     const un = UnpublishedResponse.parse((await t.get("/api/unpublished")).json());
     const own = un.drafts.find((d) => d.path === file(id))!;

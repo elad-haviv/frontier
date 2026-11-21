@@ -173,14 +173,25 @@ export const api = {
       problems: { path: string; message: string }[];
     }>("/api/chronicles"),
   chronicle: (id: string) =>
-    call<{ chronicle: ChronicleFile; revision: number; state: string }>(`/api/chronicles/${id}`),
+    call<{
+      chronicle: ChronicleFile;
+      revision: number;
+      state: string;
+      entries: Record<string, { path: string; title: string }>;
+    }>(`/api/chronicles/${id}`),
   createChronicle: (title: string) => post<{ id: string }>("/api/chronicles", { title }),
   copyChronicle: (copyOf: string) => post<{ id: string }>("/api/chronicles", { copyOf }),
-  saveChronicle: (id: string, chronicle: ChronicleFile, revision: number) =>
-    send<{ chronicle: ChronicleFile; revision: number }>("PUT", `/api/chronicles/${id}`, {
-      chronicle,
-      revision,
-    }),
+  saveChronicle: (
+    id: string,
+    chronicle: ChronicleFile,
+    revision: number,
+    link: { span: string; path: string }[] = [],
+  ) =>
+    send<{
+      chronicle: ChronicleFile;
+      revision: number;
+      unlinked: { span: string; reason: string }[];
+    }>("PUT", `/api/chronicles/${id}`, { chronicle, revision, link }),
   makeMainChronicle: (id: string) => post<{ ok: true }>(`/api/chronicles/${id}/main`, {}),
   resolveChronicle: (id: string, keep: "mine" | "theirs") =>
     post<{ ok: true }>(`/api/chronicles/${id}/resolve`, { keep }),

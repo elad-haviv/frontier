@@ -6,6 +6,8 @@ export interface ItemFileOptions<T> {
   save: (value: T, revision: number) => Promise<{ value: T; revision: number }>;
   /** Brings together what this page changed and what another device saved meanwhile. */
   merge: (base: T, mine: T, theirs: T) => T;
+  /** Says whether the server changed the value it was sent, so the page should take it in. */
+  changed?: (sent: T, saved: T) => boolean;
   /** Called after each save that reached the server. */
   onSaved?: () => void;
 }
@@ -98,10 +100,12 @@ export function useItemFile<T>(options: ItemFileOptions<T>): ItemFile<T> {
     const sent = current.current;
     try {
       const saved = await send(sent);
-      if (saved.merged) {
-        // A snapshot from before the merge would take the other device's changes away again.
-        undoStack.current = [];
-        redoStack.current = [];
+      if (saved.merged || opts.current.changed?.(sent, saved.value)) {
+        if (saved.merged) {
+          // A snapshot from before the merge would take the other device's changes away again.
+          undoStack.current = [];
+          redoStack.current = [];
+        }
         if (current.current !== sent && current.current !== null) {
           // Changes typed while the merge was on its way are laid over the merged value.
           dirty.current = true;

@@ -1,7 +1,7 @@
 import { aliasesOf, splitFrontmatter } from "@frontier/vault";
 import { useEffect, useMemo } from "react";
 import { Link, useLocation } from "react-router-dom";
-import { api, editUrl, entryUrl, historyUrl, mapUrl } from "../api.ts";
+import { api, chronicleUrl, editUrl, entryUrl, historyUrl, mapUrl } from "../api.ts";
 import { HoverPreview } from "../components/HoverPreview.tsx";
 import { LightboxProvider } from "../components/Lightbox.tsx";
 import { currentEntryPath, useWords } from "../components/Shell.tsx";
@@ -145,6 +145,19 @@ export function EntryPage({ onSessionLost }: { onSessionLost: () => void }) {
               <span key={m.id}>
                 {i > 0 && ", "}
                 <Link to={mapUrl(m.id, m.feature)}>{m.title}</Link>
+              </span>
+            ))}
+          </p>
+        )}
+        {e.chronicles.length > 0 && (
+          <p className="on-maps">
+            On chronicles:{" "}
+            {e.chronicles.map((c, i) => (
+              <span key={c.id}>
+                {i > 0 && ", "}
+                <Link to={`${chronicleUrl(c.id)}?span=${encodeURIComponent(c.span)}`}>
+                  {c.title}
+                </Link>
               </span>
             ))}
           </p>

@@ -85,6 +85,10 @@ export function entryRoutes(app: FastifyInstance, s: Services): void {
     const id = await s.maps.entryId(path);
     return id ? s.maps.mapsFor(id) : [];
   };
+  const chroniclesOf = async (path: string) => {
+    const id = await s.maps.entryId(path);
+    return id ? s.chronicles.chroniclesFor(id) : [];
+  };
 
   app.get("/api/schema", async (): Promise<SchemaResponse> => ({
     text: s.index.schemaText,
@@ -156,6 +160,7 @@ export function entryRoutes(app: FastifyInstance, s: Services): void {
         draft: info,
         ...fieldsOf(path, text),
         maps: await mapsOf(path),
+        chronicles: await chroniclesOf(path),
       };
     }
 
@@ -175,6 +180,7 @@ export function entryRoutes(app: FastifyInstance, s: Services): void {
       draft: info,
       ...fieldsOf(note!.path, note!.text),
       maps: await mapsOf(note!.path),
+      chronicles: await chroniclesOf(note!.path),
     };
   });
 
