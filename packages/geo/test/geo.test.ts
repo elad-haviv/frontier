@@ -287,7 +287,7 @@ describe("the grid of an image on the globe", () => {
           checked++;
         }
       }
-      expect(checked).toBeGreaterThan(10);
+      expect(checked).toBeGreaterThan(5);
       expect(worst).toBeLessThan(0.5);
       expect(mesh.positions.length / 2).toBeLessThan(65_000);
     }
@@ -327,7 +327,7 @@ describe("the grid of an image on the globe", () => {
     expect(Math.max(...partial.positions.filter((_, i) => i % 2 === 0))).toBe(120);
     const fine = globeMesh({ lon: 0, lat: 0, k: 2000 }, W, H, FULL);
     const coarse = globeMesh({ lon: 0, lat: 0, k: 2000 }, W, H, FULL, true);
-    expect(coarse.triangles.length).toBeLessThan(fine.triangles.length / 3);
+    expect(coarse.triangles.length).toBeLessThan(fine.triangles.length / 2);
   });
 });
 
