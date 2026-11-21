@@ -1,7 +1,7 @@
 import { aliasesOf, splitFrontmatter } from "@frontier/vault";
 import { useEffect, useMemo } from "react";
 import { Link, useLocation } from "react-router-dom";
-import { api, chronicleUrl, editUrl, entryUrl, historyUrl, mapUrl } from "../api.ts";
+import { api, chronicleUrl, editUrl, entryUrl, historyUrl, mapUrl, talkUrl } from "../api.ts";
 import { HoverPreview } from "../components/HoverPreview.tsx";
 import { LightboxProvider } from "../components/Lightbox.tsx";
 import { currentEntryPath, useWords } from "../components/Shell.tsx";
@@ -31,6 +31,9 @@ export function EntryPage({ onSessionLost }: { onSessionLost: () => void }) {
   const path = currentEntryPath(pathname);
   // Keyed by the visit as well as the path, so coming back from the editor shows the new draft.
   const entry = useAsync(() => api.entry(path), `${path}@${key}`);
+  // Talking with a character is offered once a model for conversations is chosen.
+  const ai = useAsync(() => api.conversations(), "conversations-ready");
+  const canTalk = ai.state === "ready" && ai.value.ready;
 
   useEffect(() => {
     if (entry.state === "failed" && entry.error.status === 401) onSessionLost();
@@ -138,6 +141,13 @@ export function EntryPage({ onSessionLost }: { onSessionLost: () => void }) {
           </p>
         )}
         <Fields fields={e.fields} />
+        {canTalk && (e.fields.type === "person" || e.fields.type === "deity") && (
+          <p className="talk-with">
+            <Link to={talkUrl(e.path)}>
+              Talk with {e.path.split("/").pop()!.replace(/\.md$/i, "")}
+            </Link>
+          </p>
+        )}
         {e.maps.length > 0 && (
           <p className="on-maps">
             On maps:{" "}

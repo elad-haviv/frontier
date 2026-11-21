@@ -22,7 +22,40 @@ Object.assign(process.env, {
 // For a lore question it answers from the first entry it was given, quoting that entry's first
 // line of text; a question with "unknown" in it is not in the lore. Asked for an addition, it
 // adds a line to that entry.
+function firstLine(user) {
+  const first = /=== Entry: (.*)\n(?:Title: .*\n\n)?([\s\S]*?)\n=== End/.exec(user);
+  const path = first?.[1] ?? "";
+  const line = (first?.[2] ?? "")
+    .split("\n")
+    .find((l) => l.trim() !== "" && !l.startsWith("#") && l.split(/\s+/).length >= 4);
+  return { path, line };
+}
+
+function character(user) {
+  const { path, line } = firstLine(user);
+  return {
+    lines: [
+      { text: line ?? "Hm.", sources: [path], quotes: line ? [{ path, text: line }] : [] },
+      { text: "I dream of the sea.", sources: [], quotes: [] },
+    ],
+  };
+}
+
 function lore(user) {
+  if (user.includes("\nThe character: ")) {
+    const { path, line } = firstLine(user);
+    return {
+      traits: [
+        {
+          kind: "knows",
+          text: "Is a friend of Mira.",
+          sources: [path],
+          quotes: line ? [{ path, text: line }] : [],
+        },
+        { kind: "unknown", text: "Where they were born.", sources: [], quotes: [] },
+      ],
+    };
+  }
   if (user.includes("=== Passage")) {
     const request = /Request: (.*)$/.exec(user)?.[1] ?? "";
     return { text: `A rewritten passage (${request.split(":")[0]}).` };
@@ -88,9 +121,11 @@ const ai = createServer((req, res) => {
     const quote = lines.find((l) => l.trim() !== "" && !l.startsWith("#")) ?? "";
     const answer = user.startsWith("Entry:")
       ? { type: null, time: [{ what: "happened", when: "in the year of the test", quote }] }
-      : user.startsWith("Entries:")
-        ? lore(user)
-        : { reply: "ok" };
+      : user.startsWith("The character:")
+        ? character(user)
+        : user.startsWith("Entries:")
+          ? lore(user)
+          : { reply: "ok" };
     res.end(
       JSON.stringify({
         choices: [{ message: { content: JSON.stringify(answer) } }],

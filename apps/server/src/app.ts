@@ -18,6 +18,8 @@ import { Conversations } from "./ai/conversations.js";
 import { LoreAsker } from "./ai/lore.js";
 import { loreRoutes } from "./routes/lore.js";
 import { writingRoutes } from "./routes/writing.js";
+import { characterRoutes } from "./routes/characters.js";
+import { CharacterTalk } from "./ai/characters.js";
 import { WritingHelper } from "./ai/writing.js";
 import { chronicleRoutes } from "./routes/chronicles.js";
 import { mapRoutes } from "./routes/maps.js";
@@ -88,6 +90,7 @@ export interface Services {
   chronicles: ChronicleStore;
   lore: LoreAsker;
   writing: WritingHelper;
+  characters: CharacterTalk;
   conversations: Conversations;
   backup: Backup;
   search: SearchIndex;
@@ -209,6 +212,18 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
   });
   const search = new SearchIndex(index);
   const conversations = new Conversations(stateDir, files);
+  const chronicles = new ChronicleStore({ vaultDir, git, index, drafts, changer });
+  const characters = new CharacterTalk({
+    index,
+    search,
+    provider: ai,
+    settings,
+    drafts,
+    git,
+    changer,
+    chronicles,
+    mayRead: (path) => quarantine.aiMayRead(path) === null,
+  });
   const writing = new WritingHelper({
     index,
     search,
@@ -232,7 +247,6 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
     drafts,
     changer,
   });
-  const chronicles = new ChronicleStore({ vaultDir, git, index, drafts, changer });
   const reportAi = async () => status.ai(await ai.ready("extraction"), ai.lastError);
 
   const services: Services = {
@@ -261,6 +275,7 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
     chronicles,
     lore,
     writing,
+    characters,
     conversations,
     async sync() {
       const result = await git.fetch();
@@ -430,6 +445,7 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
   chronicleRoutes(app, services);
   loreRoutes(app, services);
   writingRoutes(app, services);
+  characterRoutes(app, services);
   importRoutes(app, services);
   historyRoutes(app, services);
   searchRoutes(app, services);

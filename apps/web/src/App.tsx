@@ -9,6 +9,7 @@ import { UnpublishedPage } from "./pages/Unpublished.tsx";
 import { VersionsPage } from "./pages/Versions.tsx";
 import { AskPage } from "./pages/Ask.tsx";
 import { ConversationPage } from "./pages/Conversation.tsx";
+import { TalkPage } from "./pages/Talk.tsx";
 import { GalleryPage } from "./pages/Gallery.tsx";
 import { Home } from "./pages/Home.tsx";
 import { HistoryPage, LibraryHistoryPage } from "./pages/History.tsx";
@@ -71,6 +72,7 @@ export function App() {
         <Route path="/map/:id" element={<OneMap />} />
         <Route path="/ask" element={<AskPage />} />
         <Route path="/ask/:id" element={<ConversationPage />} />
+        <Route path="/talk/*" element={<TalkPage />} />
         <Route path="/gallery" element={<GalleryPage />} />
         <Route path="/chronicles" element={<ChroniclesPage />} />
         <Route path="/chronicle/:id" element={<ChroniclePage />} />

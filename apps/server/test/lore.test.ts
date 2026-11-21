@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { UnpublishedResponse } from "@frontier/schema";
+import { PublishPlan, UnpublishedResponse } from "@frontier/schema";
 import { lookUp, plainForQuotes } from "../src/ai/lore.js";
 import { makeTestApp, type TestApp } from "./helpers/app.js";
 
@@ -354,5 +354,157 @@ describe("writing help", () => {
       how: "shorter",
     });
     expect(map.statusCode).toBe(400);
+  });
+});
+
+describe("talking with a character", () => {
+  const PROPOSED = {
+    traits: [
+      {
+        kind: "knows",
+        text: "Knows the currents.",
+        sources: [NIRANI],
+        quotes: [{ path: NIRANI, text: "keep time by the pulse of the deep currents" }],
+      },
+      { kind: "believes", text: "Believes the sun speaks.", sources: [NIRANI], quotes: [] },
+      { kind: "unknown", text: "Where they were born.", sources: [], quotes: [] },
+    ],
+  };
+  const LINES = {
+    lines: [
+      {
+        text: "We count by the currents.",
+        sources: [NIRANI],
+        quotes: [{ path: NIRANI, text: "keep time by the pulse of the deep currents" }],
+      },
+      { text: "I once saw the sun.", sources: [], quotes: [] },
+    ],
+  };
+
+  async function saveVersion() {
+    const un = UnpublishedResponse.parse((await t.get("/api/unpublished")).json());
+    const plan = PublishPlan.parse(
+      (
+        await t.post("/api/publish/plan", { draftIds: un.drafts.map((d) => d.id), renameIds: [] })
+      ).json(),
+    );
+    return t.post("/api/publish/confirm", {
+      planId: plan.planId,
+      confirmedMergeIds: plan.merges.map((m) => m.id),
+      message: "Profile",
+    });
+  }
+
+  it("proposes a profile with each trait checked, and keeps unsupported ones only as unknown", async () => {
+    await start([PROPOSED]);
+    const res = await t.post("/api/characters/propose", { path: NIRANI });
+    expect(res.statusCode, res.body).toBe(200);
+    const { name, traits } = res.json();
+    expect(name).toBe("Nirani");
+    expect(traits[0]).toMatchObject({ kind: "knows", supported: true });
+    expect(traits[1]).toMatchObject({ kind: "unknown", supported: false });
+    expect(traits[2]).toMatchObject({ kind: "unknown" });
+  });
+
+  it("saves an approved profile in the library, and talks in voice with improvised lines marked", async () => {
+    const p = await start([LINES]);
+    expect(
+      (await t.get(`/api/characters/profile?path=${encodeURIComponent(NIRANI)}`)).json(),
+    ).toEqual({
+      profile: null,
+    });
+    const approved = await t.post("/api/characters/approve", {
+      path: NIRANI,
+      traits: [{ kind: "voice", text: "Speaks slowly.", sources: [], quotes: [] }],
+      moment: { words: "Before the Exodus", year: null },
+    });
+    expect(approved.statusCode, approved.body).toBe(200);
+    const { profile } = approved.json();
+    expect(profile.entry).toMatch(/^[a-z0-9]{8}$/);
+    // The profile and the id written into the entry are saved together as one version.
+    expect((await saveVersion()).statusCode).toBe(200);
+    expect(t.repo.remoteFile(`.frontier/profiles/${profile.entry}.json`)).toContain(
+      "Speaks slowly.",
+    );
+    expect(t.repo.remoteFile(NIRANI)).toContain(`id: ${profile.entry}`);
+    await t.services.sync();
+    expect(
+      (await t.get(`/api/characters/profile?path=${encodeURIComponent(NIRANI)}`)).json().profile,
+    ).toMatchObject({ moment: { words: "Before the Exodus" } });
+
+    const said = await t.post("/api/characters/say", {
+      path: NIRANI,
+      message: "How do you count days?",
+      history: [],
+    });
+    expect(said.statusCode, said.body).toBe(200);
+    expect(said.json().lines).toEqual([
+      expect.objectContaining({ text: "We count by the currents.", improvised: false }),
+      expect.objectContaining({ text: "I once saw the sun.", improvised: true }),
+    ]);
+    const sent = p.calls.at(-1)!.body.messages[1]!.content;
+    expect(sent).toContain("Speaking from: Before the Exodus");
+    expect(sent).toContain("- voice: Speaks slowly.");
+    expect(sent).toContain("Author: How do you count days?");
+
+    // A line goes into the character's entry as a draft.
+    const line = await t.post("/api/characters/line", {
+      path: NIRANI,
+      text: "We count by the currents.",
+    });
+    expect(line.statusCode, line.body).toBe(200);
+    const un = UnpublishedResponse.parse((await t.get("/api/unpublished")).json());
+    expect(un.drafts.find((d) => d.path === NIRANI)?.text).toContain(
+      "\n\nWe count by the currents.\n",
+    );
+  });
+
+  it("will not talk before a profile is approved", async () => {
+    await start([LINES]);
+    const res = await t.post("/api/characters/say", { path: VAAKH, message: "Hello", history: [] });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it("leaves out what happens after the moment the character speaks from", async () => {
+    const p = await start([LINES]);
+    // The main chronicle has Vaakh begin in year 500.
+    const { id } = (await t.post("/api/chronicles", { title: "Main" })).json();
+    const loaded = (await t.get(`/api/chronicles/${id}`)).json();
+    const chronicle = loaded.chronicle;
+    chronicle.spans = [
+      {
+        id: "vaakh001",
+        lane: chronicle.lanes[0].id,
+        name: "Vaakh",
+        point: true,
+        start: { words: "", low: 500, high: 500 },
+        end: null,
+        length: null,
+        entry: null,
+        note: "",
+      },
+    ];
+    const saved = await t.put(`/api/chronicles/${id}`, {
+      chronicle,
+      revision: loaded.revision,
+      link: [{ span: "vaakh001", path: VAAKH }],
+    });
+    expect(saved.statusCode, saved.body).toBe(200);
+    await t.post(`/api/chronicles/${id}/main`, {});
+    expect((await saveVersion()).statusCode).toBe(200);
+    await t.services.sync();
+
+    const talk = async (year: number | null) => {
+      await t.post("/api/characters/approve", {
+        path: NIRANI,
+        traits: [],
+        moment: { words: "Then", year },
+      });
+      await t.post("/api/characters/say", { path: NIRANI, message: "Hello", history: [] });
+      return p.calls.at(-1)!.body.messages[1]!.content;
+    };
+    expect(await talk(null)).toContain(`=== Entry: ${VAAKH}`);
+    expect(await talk(100)).not.toContain(`=== Entry: ${VAAKH}`);
+    expect(await talk(900)).toContain(`=== Entry: ${VAAKH}`);
   });
 });

@@ -3511,3 +3511,70 @@ input.map-title {
 .writing-answer .guess-text {
   color: var(--ink-soft);
 }
+
+/* Talking with a character */
+.talk-with {
+  margin: 0.4rem 0 1rem;
+}
+.traits {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.trait {
+  display: grid;
+  gap: 0.3rem;
+  margin: 0.6rem 0;
+  padding: 0.5rem 0.7rem;
+  border-left: 3px solid var(--rule);
+  background: var(--paper-raised);
+}
+.trait-unknown {
+  border-left-style: dashed;
+}
+.trait select,
+.trait textarea,
+.profile-form input[type="text"] {
+  min-height: 2.5rem;
+  padding: 0.4rem 0.5rem;
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  background: var(--paper);
+  font: inherit;
+  font-size: 1rem;
+}
+.talk-lines {
+  margin: 1rem 0;
+  padding: 0;
+  list-style: none;
+}
+.talk-lines li {
+  margin: 0.6rem 0;
+  padding: 0.5rem 0.8rem;
+  border-radius: 8px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.talk-author {
+  margin-left: 15%;
+  background: var(--accent-soft);
+}
+.talk-character {
+  margin-right: 10%;
+  border: 1px solid var(--rule);
+  background: var(--paper-raised);
+  font-family: var(--serif);
+}
+.talk-character p {
+  margin: 0.15rem 0;
+}
+.talk-character .sources,
+.talk-character .guess,
+.talk-character button {
+  font-family: var(--sans);
+  font-size: 0.8rem;
+}
+.talk-character.is-improvised {
+  border-style: dashed;
+  border-color: var(--warn);
+}

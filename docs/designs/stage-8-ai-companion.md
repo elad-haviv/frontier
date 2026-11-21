@@ -218,3 +218,30 @@ the ideas inbox, wait for a later part.
     link to the conversation and its sources.
 *   **API**: `POST /api/write/rewrite` with `{ path, passage, before, after, how }` answers
     `{ text }` and saves nothing.
+
+## 8c Character chat
+
+Built on 2026-11-21 following CUJ 12 of the parent, with these choices, which the author can
+overrule:
+
+*   **Where.** "Talk with …" on an entry typed `person` or `deity` (the Notable Individuals,
+    Deities and Archdemons folders), once a model for conversations is chosen. The page is
+    `/talk/<path>`.
+*   **The profile** is drafted from the character's entry, the entries that link to it or that it
+    links to, and what a search for its name finds (twelve at most, never appendices or notes in
+    quarantine). Traits are of four kinds: how they speak, what they know, what they believe, and
+    what is not known. A trait of the first three kinds is kept as such only with a quote of four
+    words or more found in one of its sources; otherwise it is turned into "not known". The author
+    edits, removes and adds traits, names the moment the character speaks from, and may give that
+    moment's year in the main chronicle.
+*   **Approving** saves the profile as a draft of `.frontier/profiles/<entry id>.json`, giving the
+    entry an id first when it has none; both are saved together with the next version.
+*   **Talking.** The model gets the profile, the same entries, the last twelve lines and the
+    author's words, and answers in one to four lines in the character's voice. With a year given,
+    entries whose span in the main chronicle begins after it are left out: the character does not
+    know them. Each line is checked like a lore answer; a line with no supported quote is shown as
+    improvised. The conversation is not kept; it ends when the page is left.
+*   **Keeping a line.** "Add to …'s entry" appends the line to the entry as a draft, with the
+    origin `lore`, which the unsaved changes page names.
+*   **API**: `GET /api/characters/profile?path=`, `POST /api/characters/propose`,
+    `POST /api/characters/approve`, `POST /api/characters/say`, `POST /api/characters/line`.

@@ -184,3 +184,57 @@ test("writing help rewrites a passage in the editor, shown as a difference first
 
   await discardDraft(page);
 });
+
+test("CUJ 12: drafts a character's profile, approves it, talks, and adds a line to the entry", async ({
+  page,
+}, info) => {
+  test.skip(info.project.name !== "phone", "The AI settings are one per server.");
+  await page.setViewportSize({ width: 375, height: 740 });
+  await page.goto("/settings");
+  await page.getByLabel(/Provider key/).fill("sk-or-browser-test-key");
+  await page.getByLabel("Model for lore conversations").fill("sample/reader");
+  await page.getByRole("button", { name: "Save" }).click();
+  await expect(page.locator(".banner-ok")).toHaveText("Saved.");
+
+  await page.goto("/talk/02%20People/Shade.md");
+  await expect(page.locator("h1")).toHaveText("Talk with Shade");
+  await page.getByRole("button", { name: "Draft a profile from the entries" }).click();
+  const traits = page.locator(".trait");
+  await expect(traits).toHaveCount(2);
+  await expect(traits.first()).toContainText("From Shade");
+  await expect(traits.nth(1).getByLabel("Kind of trait")).toHaveValue("unknown");
+  await traits
+    .nth(1)
+    .getByLabel("Trait", { exact: true })
+    .fill("Where Shade was born is not told.");
+  await page.getByLabel("Speaks from").fill("The night of the harbor fire");
+  await page.getByRole("button", { name: "Approve the profile" }).click();
+  await expect(page.locator(".lede")).toContainText("Speaking from: The night of the harbor fire");
+
+  await page.getByLabel("Say something to Shade").fill("Who are your friends?");
+  await page.getByRole("button", { name: "Say it" }).click();
+  const lines = page.locator(".talk-character");
+  await expect(lines).toHaveCount(2);
+  await expect(lines.first()).toContainText("A quiet figure. Friend of [[Mira]].");
+  await expect(lines.first().locator(".sources")).toContainText("Shade");
+  await expect(lines.nth(1)).toHaveClass(/is-improvised/);
+  await expect(lines.nth(1)).toContainText("Improvised");
+  await lines.nth(1).getByRole("button", { name: "Add to Shade's entry" }).click();
+  await expect(lines.nth(1)).toContainText("Added to Shade's entry");
+  await expect(
+    page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+  ).resolves.toBe(true);
+
+  // The profile, the id it needed, and the line are unsaved changes; they are thrown away here.
+  await page.goto("/unpublished");
+  await expect(page.locator(".changes")).toContainText(".frontier/profiles/");
+  await expect(
+    page
+      .locator(".changes li")
+      .filter({ has: page.locator(".change-path", { hasText: /^02 People\/Shade\.md$/ }) }),
+  ).toContainText("Holds an addition the AI drafted");
+  await page.evaluate(async () => {
+    const un = await (await fetch("/api/unpublished")).json();
+    for (const d of un.drafts) await fetch(`/api/drafts/${d.id}`, { method: "DELETE" });
+  });
+});

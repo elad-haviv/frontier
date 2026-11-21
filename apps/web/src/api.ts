@@ -252,6 +252,24 @@ export const api = {
     }),
   rewrite: (body: { path: string; passage: string; before: string; after: string; how: string }) =>
     post<{ text: string }>("/api/write/rewrite", body),
+  characterProfile: (path: string) =>
+    call<{ profile: CharacterProfile | null }>(
+      `/api/characters/profile?path=${encodeURIComponent(path)}`,
+    ),
+  proposeProfile: (path: string) =>
+    post<{ name: string; traits: (Trait & { supported: boolean })[] }>("/api/characters/propose", {
+      path,
+    }),
+  approveProfile: (path: string, traits: Trait[], moment: { words: string; year: number | null }) =>
+    post<{ profile: CharacterProfile; draft: string }>("/api/characters/approve", {
+      path,
+      traits,
+      moment,
+    }),
+  say: (path: string, message: string, history: { who: "author" | "character"; text: string }[]) =>
+    post<{ lines: CharacterLine[] }>("/api/characters/say", { path, message, history }),
+  keepLine: (path: string, text: string) =>
+    post<{ draft: string | null }>("/api/characters/line", { path, text }),
   deleteConversation: (id: string) => send<{ ok: true }>("DELETE", `/api/lore/${id}`),
   draftAddition: (id: string, turn: number, again = false) =>
     post<{ addition: LoreAddition; conversation: LoreConversation }>(
@@ -423,3 +441,25 @@ export interface LoreConversation {
 }
 
 export const askUrl = (id?: string): string => (id ? `/ask/${id}` : "/ask");
+
+export interface Trait {
+  kind: "voice" | "knows" | "believes" | "unknown";
+  text: string;
+  sources: string[];
+  quotes: { path: string; text: string }[];
+}
+export interface CharacterProfile {
+  entry: string;
+  name: string;
+  traits: Trait[];
+  moment: { words: string; year: number | null };
+  approvedAt: string;
+}
+export interface CharacterLine {
+  text: string;
+  sources: string[];
+  quotes: { path: string; text: string }[];
+  improvised: boolean;
+}
+export const talkUrl = (path: string): string =>
+  "/talk/" + path.split("/").map(encodeURIComponent).join("/");
