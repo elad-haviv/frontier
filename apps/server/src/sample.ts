@@ -5,7 +5,15 @@
  * vault and uses it as its remote. Nothing outside the container is read or written.
  */
 import { execFileSync } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import {
+  appendFileSync,
+  cpSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -14,6 +22,9 @@ const DEFAULT_SAMPLE = join(
   dirname(fileURLToPath(import.meta.url)),
   "../../../packages/vault/test/fixture-vault",
 );
+
+/** The proposal branch the sample remote starts with. */
+export const SAMPLE_BRANCH = "proposal/sample-agent/harbor-keeper";
 
 /** Creates the sample remote if needed and returns its path. */
 export function ensureSampleRemote(dataDir: string, sampleDir = DEFAULT_SAMPLE): string {
@@ -40,6 +51,19 @@ export function ensureSampleRemote(dataDir: string, sampleDir = DEFAULT_SAMPLE):
     git(work, "init", "--initial-branch=main");
     git(work, "add", "-A");
     git(work, "commit", "-m", "Sample vault");
+    // One proposal from a made-up agent, so the inbox has something to show.
+    git(work, "checkout", "-b", SAMPLE_BRANCH);
+    writeFileSync(
+      join(work, "02 People", "Harbor Keeper.md"),
+      "# Harbor Keeper\n\nKeeps the lamp at the [[Old Quay]] and knows [[Mira]] by her step.\n",
+    );
+    appendFileSync(
+      join(work, "03 Things", "Ledger.md"),
+      "\nThe [[Harbor Keeper]] owns one like it.\n",
+    );
+    git(work, "add", "-A");
+    git(work, "commit", "-m", "Propose the Harbor Keeper");
+    git(work, "checkout", "main");
     git(dataDir, "clone", "--bare", work, remote);
   } finally {
     rmSync(work, { recursive: true, force: true });

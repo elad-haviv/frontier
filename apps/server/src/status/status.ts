@@ -13,6 +13,7 @@ export class StatusService {
   private backupError: string | null = null;
   private unpublished = 0;
   private conflicts = 0;
+  private branches = 0;
   private listeners = new Set<Listener>();
 
   constructor(private readonly index: VaultIndex) {}
@@ -29,6 +30,7 @@ export class StatusService {
       indexStale: this.remoteCommit !== null && this.index.commit !== this.remoteCommit,
       lastBackupAt: this.lastBackupAt,
       backupError: this.backupError,
+      inbox: { branches: this.branches },
       attention: {
         ambiguousLinks: a.ambiguousLinks.length,
         duplicateImages: a.duplicateImages.length,
@@ -85,6 +87,13 @@ export class StatusService {
   backedUp(at: string | null, error: string | null): void {
     this.lastBackupAt = at ?? this.lastBackupAt;
     this.backupError = error;
+    this.changed();
+  }
+
+  /** The number of agent branches waiting for the author. */
+  inbox(branches: number): void {
+    if (this.branches === branches) return;
+    this.branches = branches;
     this.changed();
   }
 

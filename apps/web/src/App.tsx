@@ -8,6 +8,7 @@ import { EntryPage } from "./pages/Entry.tsx";
 import { UnpublishedPage } from "./pages/Unpublished.tsx";
 import { VersionsPage } from "./pages/Versions.tsx";
 import { Home } from "./pages/Home.tsx";
+import { InboxPage } from "./pages/Inbox.tsx";
 import { Login } from "./pages/Login.tsx";
 import { RenamePage } from "./pages/Rename.tsx";
 import { StatusPage } from "./pages/Status.tsx";
@@ -46,6 +47,7 @@ export function App() {
         <Route path="/edit/*" element={<EditPage />} />
         <Route path="/rename/*" element={<RenamePage />} />
         <Route path="/unpublished" element={<UnpublishedPage />} />
+        <Route path="/inbox" element={<InboxPage />} />
         <Route path="/conflict/:id" element={<ConflictPage />} />
         <Route path="/versions/:id" element={<VersionsPage />} />
         <Route path="/status" element={<StatusPage />} />

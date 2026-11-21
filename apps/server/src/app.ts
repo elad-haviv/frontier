@@ -13,6 +13,8 @@ import { ApiError } from "./errors.js";
 import { appTokenSource } from "./git/appAuth.js";
 import { GitError, GitGateway } from "./git/gateway.js";
 import { ImageServer } from "./images/serve.js";
+import { BranchInbox } from "./inbox/branches.js";
+import { inboxRoutes } from "./routes/inbox.js";
 import { Publisher } from "./publish/publish.js";
 import { draftRoutes } from "./routes/drafts.js";
 import { DraftStore } from "./state/drafts.js";
@@ -44,6 +46,7 @@ export interface Services {
   images: ImageServer;
   drafts: DraftStore;
   publisher: Publisher;
+  branches: BranchInbox;
   backup: Backup;
   search: SearchIndex;
   /** Fetches `main`, resets the working copy and rebuilds the index. */
@@ -125,14 +128,25 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
     backup,
     search: new SearchIndex(index),
     publisher: undefined as unknown as Publisher,
+    branches: undefined as unknown as BranchInbox,
     async sync() {
       const result = await git.fetch();
       status.fetched(result.current);
       if (index.commit !== result.current) index.build(result.current);
       await services.publisher.clearPublished();
+      status.inbox(await services.branches.count());
       status.indexed();
     },
   };
+  services.branches = new BranchInbox({
+    stateDir,
+    files,
+    git,
+    index,
+    drafts,
+    sync: () => services.sync(),
+  });
+  await services.branches.load();
   services.publisher = new Publisher({
     vaultDir,
     git,
@@ -244,6 +258,7 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
   entryRoutes(app, services);
   draftRoutes(app, services);
   imageRoutes(app, services);
+  inboxRoutes(app, services);
   searchRoutes(app, services);
   statusRoutes(app, services);
   webhookRoutes(app, services);

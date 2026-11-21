@@ -32,7 +32,7 @@ One place for what is being built, what is waiting, and ideas. The design in
   by the entry that uses them; whether an image links back to its entries. (The lightbox half of
   this idea is built; see Done.)
 
-## Now: finishing stages 1 and 2
+## Left from stage 2
 
 - [x] Live preview in the editor (hide Markdown marks away from the cursor)
 - [x] Image upload (toolbar, paste, drop); Tab between table cells; properties panel (other names, tags)
@@ -47,12 +47,26 @@ One place for what is being built, what is waiting, and ideas. The design in
 - [ ] Check in Obsidian whether a bare `[[Alias]]` link resolves
 - [ ] A storage bucket for backups and a persistent disk on the Coolify app
 - [ ] Change the preview password once the real vault is connected
+- [ ] Read the stage 3 design and answer its four questions: an OpenRouter key and model; which
+      GitHub account the Hermes agents push with; whether a rule can protect `main`; whether Obsidian
+      rewrites links inside a `when` field
+- [ ] Have the sync on the Hermes box changed for quarantine (the changes will be written in
+      `docs/sync-changes.md`)
+
+## Now: stage 3
+
+Design: [stage 3](designs/stage-3-review-and-ai-basics.md), a draft the author has not read yet.
+
+- [x] 3a Inbox for agent branches: list, accept, reject, grouped publish, commit trailer
+- [ ] 3b Fields and ids: reader block, properties panel rows, attention entries
+- [ ] 3c AI basics: provider, cost log and cap, settings page, field proposals
+- [ ] 3d Quarantine: list, decisions, revert, settling
+- [ ] 3e Passkey login
 
 ## Later stages
 
 Each gets a short design of its own before it is built.
 
-3. Review inbox: agent proposal branches, AI basics, structured fields, Hindsight sync changes
 4. Maps: flat and sphere maps, markers, paths, zones, layers, drill-down, measuring
 5. Time: calendars, vague dates, relative order, timelines, overlap views
 6. Time-aware maps

@@ -41,6 +41,7 @@ export function Shell({ children, onLoggedOut }: { children: ReactNode; onLogged
   const status = useAsync(() => api.status(), `status-${version}`);
   const current = currentEntryPath(pathname);
   const waiting = status.state === "ready" ? status.value.unpublished : 0;
+  const proposals = status.state === "ready" ? status.value.inbox.branches : 0;
 
   // Ctrl+K or Cmd+K opens the switcher from anywhere.
   useEffect(() => {
@@ -115,9 +116,19 @@ export function Shell({ children, onLoggedOut }: { children: ReactNode; onLogged
             </svg>
           </button>
           <nav className="topnav">
+            {proposals > 0 && (
+              <Link to="/inbox" className="has-waiting">
+                Inbox<span className="badge">{proposals}</span>
+              </Link>
+            )}
             <Link to="/unpublished" className={waiting > 0 ? "has-waiting" : ""}>
               Unpublished{waiting > 0 && <span className="badge">{waiting}</span>}
             </Link>
+            {proposals === 0 && (
+              <Link to="/inbox" className="nav-secondary">
+                Inbox
+              </Link>
+            )}
             <Link to="/status" className="nav-secondary">
               Status
             </Link>

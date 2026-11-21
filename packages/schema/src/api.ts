@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { DraftKind, Id, VaultPath } from "./state.js";
+import { DraftKind, Id, Origin, VaultPath } from "./state.js";
 
 const Ok = z.object({ ok: z.literal(true) });
 
@@ -123,6 +123,8 @@ export const UnpublishedResponse = z.object({
       text: z.string(),
       /** The published text; null for a new file. */
       mainText: z.string().nullable(),
+      /** Where the content came from, when the author did not type it. */
+      origins: z.array(Origin),
     }),
   ),
   renames: z.array(RenameSummary),
@@ -214,6 +216,8 @@ export const ImageQuery = z.object({
     .refine((n) => (IMAGE_WIDTHS as readonly number[]).includes(n))
     .optional(),
   draft: Id.optional(),
+  /** With `branch`: a new image on that proposal branch, shown in the inbox. */
+  branch: z.string().optional(),
 });
 
 /** `POST /api/images` (stage 2) */
@@ -242,3 +246,51 @@ export const SwitcherResponse = z.object({
   ),
 });
 export const PreviewResponse = z.object({ path: VaultPath, text: z.string() });
+
+/** One file changed on an agent's proposal branch. */
+export const BranchFile = z.object({
+  path: VaultPath,
+  kind: z.enum(["added", "changed", "removed"]),
+  /** True for anything that is not a note. */
+  binary: z.boolean(),
+  /** The file's blob on the branch; empty for a removed file. A decision must carry it. */
+  blob: z.string(),
+  /** Why the file can only be rejected. */
+  blocked: z.string().optional(),
+  decision: z.enum(["accepted", "rejected"]).optional(),
+});
+export type BranchFile = z.infer<typeof BranchFile>;
+
+export const InboxBranch = z.object({
+  name: z.string(),
+  tip: z.string(),
+  /** First lines of the branch's commit messages, oldest first. */
+  commits: z.array(z.string()),
+  /**
+   * `open`: files wait for a decision. `empty`: nothing differs from `main`. `no_fork`: the branch
+   * shares no history with `main`. `too_many`: more files than Frontier lists. `decided`: every
+   * file is decided and the branch could not be removed yet.
+   */
+  state: z.enum(["open", "empty", "no_fork", "too_many", "decided"]),
+  files: z.array(BranchFile),
+});
+export type InboxBranch = z.infer<typeof InboxBranch>;
+
+/** `GET /api/inbox` */
+export const InboxResponse = z.object({ branches: z.array(InboxBranch) });
+export type InboxResponse = z.infer<typeof InboxResponse>;
+
+/** `POST /api/inbox/branch-file` */
+export const BranchFileDecision = z.object({
+  branch: z.string(),
+  path: VaultPath,
+  blob: z.string(),
+  decision: z.enum(["accept", "reject"]),
+});
+
+/** `POST /api/inbox/branch` */
+export const BranchDecision = z.object({
+  branch: z.string(),
+  tip: z.string(),
+  decision: z.enum(["reject", "remove"]),
+});

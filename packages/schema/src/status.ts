@@ -14,6 +14,8 @@ export const StatusSnapshot = z.object({
   indexStale: z.boolean(),
   lastBackupAt: z.string().datetime().nullable(),
   backupError: z.string().nullable(),
+  /** What waits in the inbox. */
+  inbox: z.object({ branches: z.number().int().min(0) }),
   attention: z.object({
     ambiguousLinks: z.number().int().min(0),
     duplicateImages: z.number().int().min(0),

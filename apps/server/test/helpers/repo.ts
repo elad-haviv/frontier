@@ -35,6 +35,17 @@ export interface TestRepo {
   workdir: string;
   /** Makes a commit on the remote's `main` from outside, as Obsidian or an agent would. */
   pushFromOutside(changes: Record<string, string | null>, message?: string): string;
+  /**
+   * Pushes a branch from outside, as an agent would. It starts from the current `main` unless the
+   * branch exists already, in which case the commit is added to it.
+   */
+  pushBranch(
+    name: string,
+    changes: Record<string, string | Buffer | null>,
+    message?: string,
+  ): string;
+  /** Whether a branch exists on the remote. */
+  hasBranch(name: string): boolean;
   /** The commit `main` is at on the remote. */
   remoteHead(): string;
   /** A file's content on the remote's `main`, or null. */
@@ -85,6 +96,39 @@ export function makeTestRepo(): TestRepo {
       git(outside, "commit", "-m", message);
       git(outside, "push", "origin", "main");
       return git(outside, "rev-parse", "HEAD");
+    },
+    pushBranch(name, changes, message = "Agent change") {
+      const exists = this.hasBranch(name);
+      if (exists) {
+        git(outside, "fetch", "origin", name);
+        git(outside, "checkout", "-B", name, "FETCH_HEAD");
+      } else {
+        git(outside, "pull", "--ff-only", "origin", "main");
+        git(outside, "checkout", "-b", name);
+      }
+      for (const [path, content] of Object.entries(changes)) {
+        const full = join(outside, path);
+        if (content === null) rmSync(full);
+        else {
+          mkdirSync(dirname(full), { recursive: true });
+          writeFileSync(full, content);
+        }
+      }
+      git(outside, "add", "-A");
+      git(outside, "commit", "-m", message);
+      git(outside, "push", "origin", name);
+      const commit = git(outside, "rev-parse", "HEAD");
+      git(outside, "checkout", "main");
+      git(outside, "branch", "-D", name);
+      return commit;
+    },
+    hasBranch(name) {
+      try {
+        git(remote, "rev-parse", "--verify", "--quiet", `refs/heads/${name}`);
+        return true;
+      } catch {
+        return false;
+      }
     },
     remoteHead: () => git(remote, "rev-parse", "refs/heads/main"),
     remoteFile(path) {

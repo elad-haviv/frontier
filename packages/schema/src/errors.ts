@@ -14,6 +14,8 @@ export const ERROR_STATUS = {
   push_failed: 502,
   merge_failed: 500,
   invalid: 400,
+  not_allowed: 403,
+  proposal_moved: 409,
 } as const;
 
 export type ErrorCode = keyof typeof ERROR_STATUS;

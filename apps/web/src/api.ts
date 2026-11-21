@@ -3,6 +3,7 @@ import type {
   DraftKind,
   EntryResponse,
   ErrorBody,
+  InboxResponse,
   PublishPlan,
   StatusSnapshot,
   TreeResponse,
@@ -105,6 +106,20 @@ export const api = {
   resolve: (id: string, text: string) =>
     post<{ id: string; revision: number }>(`/api/drafts/${id}/resolve`, { text }),
   unpublished: () => call<UnpublishedResponse>("/api/unpublished"),
+  inbox: () => call<InboxResponse>("/api/inbox"),
+  branchFile: (branch: string, path: string) =>
+    call<{ before: string | null; after: string | null }>(
+      `/api/inbox/branch-file?branch=${encodeURIComponent(branch)}&path=${encodeURIComponent(path)}`,
+    ),
+  decideFile: (branch: string, path: string, blob: string, decision: "accept" | "reject") =>
+    post<{ draftId?: string; branchRemoved: boolean }>("/api/inbox/branch-file", {
+      branch,
+      path,
+      blob,
+      decision,
+    }),
+  decideBranch: (branch: string, tip: string, decision: "reject" | "remove") =>
+    post<{ branchRemoved: boolean }>("/api/inbox/branch", { branch, tip, decision }),
   plan: (draftIds: string[], renameIds: string[]) =>
     post<PublishPlan>("/api/publish/plan", { draftIds, renameIds }),
   confirm: (planId: string, confirmedMergeIds: string[], message: string) =>
@@ -137,4 +152,9 @@ export function entryUrl(path: string, heading?: string | null): string {
 /** The address of a vault image, scaled to a width the server offers. */
 export function imageUrl(path: string, width?: 320 | 640 | 1280): string {
   return `/api/images?path=${encodeURIComponent(path)}${width ? `&w=${width}` : ""}`;
+}
+
+/** The address of a new image on an agent's branch, for the inbox. */
+export function branchImageUrl(branch: string, path: string): string {
+  return `/api/images?branch=${encodeURIComponent(branch)}&path=${encodeURIComponent(path)}&w=640`;
 }

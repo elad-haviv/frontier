@@ -55,6 +55,31 @@ export function changeFromOutside(path: string, change: (text: string) => string
   }
 }
 
+/** Pushes a proposal branch from outside, as an agent would. */
+export function pushProposal(branch: string, files: Record<string, string>, message: string): void {
+  const work = mkdtempSync(join(tmpdir(), "frontier-agent-"));
+  try {
+    git(tmpdir(), "clone", "-q", REMOTE, work);
+    git(work, "checkout", "-q", "-b", branch);
+    for (const [path, text] of Object.entries(files)) writeFileSync(join(work, path), text);
+    git(work, "add", "-A");
+    git(work, "commit", "-qm", message);
+    git(work, "push", "-q", "origin", branch);
+  } finally {
+    rmSync(work, { recursive: true, force: true });
+  }
+}
+
+export const hasBranch = (branch: string): boolean => {
+  try {
+    git(REMOTE, "rev-parse", "--verify", "--quiet", `refs/heads/${branch}`);
+    return true;
+  } catch {
+    return false;
+  }
+};
+export const lastBody = () => git(REMOTE, "log", "-1", "--format=%B", "main");
+
 export const entry = (path: string) => "/e/" + path.split("/").map(encodeURIComponent).join("/");
 export const edit = (path: string) => "/edit/" + path.split("/").map(encodeURIComponent).join("/");
 

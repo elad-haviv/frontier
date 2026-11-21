@@ -103,6 +103,7 @@ export function draftRoutes(app: FastifyInstance, s: Services): void {
         binary: d.binary,
         text: d.binary ? "" : await s.drafts.text(d.id),
         mainText: s.index.note(d.path)?.text ?? null,
+        origins: d.origins,
       })),
     );
     const renames = [];

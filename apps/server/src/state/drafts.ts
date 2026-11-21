@@ -10,7 +10,7 @@
 import { existsSync } from "node:fs";
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { DraftRecord, type DraftKind, RenameIntent } from "@frontier/schema";
+import { DraftRecord, type DraftKind, type Origin, RenameIntent } from "@frontier/schema";
 import { ApiError } from "../errors.js";
 import type { StateFiles } from "./files.js";
 
@@ -108,11 +108,49 @@ export class DraftStore {
       baseBlob: "",
       lineEnding: "lf",
       binary: true,
+      origins: [],
       updatedAt: now.toISOString(),
     };
     await this.files.write(join(this.folder(id), "content"), content);
     await this.files.writeJson(join(this.folder(id), "record.json"), record);
     this.records.set(id, record);
+    return record;
+  }
+
+  /**
+   * Makes a draft from content the author accepted rather than typed, such as a file from an
+   * agent's branch. The base is given by the caller, so Publish merges from where that content
+   * started. The path must have no draft yet.
+   */
+  async saveFrom(
+    input: {
+      id: string;
+      path: string;
+      kind: DraftRecord["kind"];
+      content: string | Buffer;
+      baseBlob: string;
+      lineEnding: DraftRecord["lineEnding"];
+      origin: Origin;
+    },
+    now = new Date(),
+  ): Promise<DraftRecord> {
+    if (this.byPath(input.path)) {
+      throw new ApiError("not_allowed", "You have an unpublished change to this file already.");
+    }
+    const record: DraftRecord = {
+      id: input.id,
+      revision: 1,
+      path: input.path,
+      kind: input.kind,
+      baseBlob: input.baseBlob,
+      lineEnding: input.lineEnding,
+      binary: typeof input.content !== "string",
+      updatedAt: now.toISOString(),
+      origins: [input.origin],
+    };
+    await this.files.write(join(this.folder(record.id), "content"), input.content);
+    await this.files.writeJson(join(this.folder(record.id), "record.json"), record);
+    this.records.set(record.id, record);
     return record;
   }
 
@@ -147,6 +185,7 @@ export class DraftStore {
         baseBlob: published.blob,
         lineEnding: published.lineEnding,
         binary: false,
+        origins: [],
         updatedAt: now.toISOString(),
       };
       await this.put(record, input.text);

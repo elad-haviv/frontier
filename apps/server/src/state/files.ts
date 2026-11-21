@@ -6,7 +6,7 @@ import { randomBytes } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
-import type { ZodType } from "zod";
+import type { ZodType, ZodTypeDef } from "zod";
 
 export class StateFiles {
   private listeners: (() => void)[] = [];
@@ -38,7 +38,7 @@ export class StateFiles {
   }
 
   /** Reads and checks a JSON file. Returns null when the file does not exist. */
-  async readJson<T>(path: string, schema: ZodType<T>): Promise<T | null> {
+  async readJson<T>(path: string, schema: ZodType<T, ZodTypeDef, unknown>): Promise<T | null> {
     if (!existsSync(path)) return null;
     return schema.parse(JSON.parse(await readFile(path, "utf8")));
   }

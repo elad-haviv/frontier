@@ -34,7 +34,17 @@ const record = {
 
 describe("stored files", () => {
   it("accepts the worked draft record and rejects one with a field missing", () => {
-    expect(DraftRecord.parse(record)).toEqual(record);
+    // A record written before origins existed reads as a draft the author typed.
+    expect(DraftRecord.parse(record)).toEqual({ ...record, origins: [] });
+    const accepted = {
+      ...record,
+      origins: [
+        { kind: "branch", ref: "proposal/architect/x", tip: "8a41" },
+        { kind: "fields", ref: "p4k2m9x0aa7q", model: "some/model" },
+      ],
+    };
+    expect(DraftRecord.parse(accepted)).toEqual(accepted);
+    expect(DraftRecord.safeParse({ ...record, origins: [{ kind: "other" }] }).success).toBe(false);
     for (const key of Object.keys(record)) {
       const copy: Record<string, unknown> = { ...record };
       delete copy[key];
@@ -165,6 +175,7 @@ describe("API shapes", () => {
       indexStale: false,
       lastBackupAt: null,
       backupError: "bucket unreachable",
+      inbox: { branches: 1 },
       attention: {
         ambiguousLinks: 0,
         duplicateImages: 12,
@@ -185,7 +196,9 @@ describe("errors", () => {
   it("maps every code to a status", () => {
     expect(statusOf("main_moved")).toBe(409);
     expect(statusOf("git_busy")).toBe(503);
-    expect(Object.keys(ERROR_STATUS)).toHaveLength(12);
+    expect(statusOf("proposal_moved")).toBe(409);
+    expect(statusOf("not_allowed")).toBe(403);
+    expect(Object.keys(ERROR_STATUS)).toHaveLength(14);
   });
 
   it("accepts an error body with a known code only", () => {

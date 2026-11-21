@@ -384,6 +384,17 @@ export class Publisher {
       text: c.merge?.mergedText ?? c.text,
     }));
     const groups = (await this.assemble(everything, intents)).groups;
+    // The files accepted from one agent branch go out together or not at all, selected or not.
+    const byBranch = new Map<string, string[]>();
+    for (const draft of this.d.drafts.list()) {
+      for (const origin of draft.origins) {
+        if (origin.kind !== "branch") continue;
+        byBranch.set(origin.ref, [...(byBranch.get(origin.ref) ?? []), draft.id]);
+      }
+    }
+    for (const ids of byBranch.values()) {
+      if (ids.length > 1 && ids.some((id) => classified.has(id))) groups.push(ids);
+    }
 
     const all = [...classified.values()];
     const plan: Plan = {
@@ -442,6 +453,12 @@ export class Publisher {
         .map((c) => c.draft.id),
       ...stored.plan.conflicts.filter((c) => c.reason === "rename_blocked").map((c) => c.draftId),
     ]);
+    // A group member that was not selected for this plan holds its group back.
+    for (const group of stored.plan.groups) {
+      for (const id of group) {
+        if (!stored.classified.has(id) && !stored.renameIds.includes(id)) held.add(id);
+      }
+    }
     // Changes that depend on each other are published together or not at all.
     for (let changed = true; changed;) {
       changed = false;
@@ -493,7 +510,7 @@ export class Publisher {
 
     const commit = await this.d.git.commit(
       { writes: result.writes, deletes: result.deletes },
-      message,
+      message + trailers(publishing.map((p) => p.draft)),
     );
     try {
       await this.d.git.push(commit);
@@ -506,6 +523,25 @@ export class Publisher {
     await this.d.sync();
     return commit;
   }
+}
+
+/**
+ * Lines at the end of the commit message that name where accepted content came from: the agent's
+ * branch, or the proposal and model of Frontier's own AI.
+ */
+export function trailers(drafts: DraftRecord[]): string {
+  const lines: string[] = [];
+  const seen = new Set<string>();
+  for (const draft of drafts) {
+    for (const origin of draft.origins) {
+      const key = `${origin.kind}:${origin.ref}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      lines.push(`Frontier-Proposal: ${origin.ref}`);
+      if (origin.kind === "fields") lines.push(`Frontier-Model: ${origin.model}`);
+    }
+  }
+  return lines.length ? `\n\n${lines.join("\n")}` : "";
 }
 
 /** Where a path ends up after a rename of `from` to `to`, or null when the rename does not move it. */

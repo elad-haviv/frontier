@@ -21,6 +21,8 @@ Stage 1 of nine is in progress. What exists so far:
 | `apps/web`: source editor with autosave and link autocomplete, new, delete and rename, unpublished list, Publish, merge and conflict screens | Built; covered by browser tests                                 |
 | Full-text search, outline, hover preview, editing toolbar                                                                                    | Built; covered by browser tests                                 |
 | Live preview; image upload; table editing; properties panel                                                                                  | Built; image sizing and table row tools still to do             |
+| Stage 3a: inbox for agent proposal branches                                                                                                  | Built                                                           |
+| Stage 3b to 3e: fields, AI basics, quarantine, passkey                                                                                       | Designed; in progress                                           |
 
 The app writes to its vault: drafts are saved on the server and Publish makes one commit.
 

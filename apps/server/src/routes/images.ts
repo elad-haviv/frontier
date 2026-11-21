@@ -8,7 +8,14 @@ import type { Services } from "../app.js";
 
 export function imageRoutes(app: FastifyInstance, s: Services): void {
   app.get("/api/images", async (request, reply) => {
-    const { path, w } = ImageQuery.parse(request.query);
+    const { path, w, branch } = ImageQuery.parse(request.query);
+    if (branch !== undefined) {
+      const shown = await s.images.serve(await s.branches.image(branch, path), w);
+      return reply
+        .header("content-type", shown.contentType)
+        .header("cache-control", "private, no-store")
+        .send(shown.body);
+    }
     // Only files the index knows about are served, so a path can never leave the vault.
     if (!isImage(path) || isExcluded(path)) {
       throw new ApiError("not_found", `There is no image at "${path}".`);

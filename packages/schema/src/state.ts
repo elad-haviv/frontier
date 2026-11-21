@@ -27,6 +27,17 @@ export type DraftKind = z.infer<typeof DraftKind>;
 
 export const StoredLineEnding = z.enum(["lf", "crlf"]);
 
+/**
+ * Where a draft's content came from when the author did not type it: an agent's branch, or a field
+ * proposed by Frontier's own AI. Drafts from one branch are published together or not at all, and
+ * the commit names each origin in a trailer.
+ */
+export const Origin = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("branch"), ref: z.string(), tip: z.string() }),
+  z.object({ kind: z.literal("fields"), ref: z.string(), model: z.string() }),
+]);
+export type Origin = z.infer<typeof Origin>;
+
 /** `/data/state/drafts/<id>/record.json` */
 export const DraftRecord = z.object({
   id: Id,
@@ -38,6 +49,8 @@ export const DraftRecord = z.object({
   lineEnding: StoredLineEnding,
   binary: z.boolean(),
   updatedAt: z.string().datetime(),
+  /** Empty for a draft the author typed. */
+  origins: z.array(Origin).default([]),
 });
 export type DraftRecord = z.infer<typeof DraftRecord>;
 
