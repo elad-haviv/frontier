@@ -10,16 +10,18 @@ export type Presence = "not_yet" | "perhaps" | "there" | "gone" | "undated";
  */
 export function presenceAt(points: SpanPoints, isEvent: boolean, year: number): Presence {
   const { start, end } = points;
-  if (points.disagrees) return "undated";
   if (isEvent) {
     if (!start) return "undated";
     if (year < start.lo) return "not_yet";
     return year < start.hi ? "perhaps" : "there";
   }
   if (!start && !end) return "undated";
+  // An end that lies wholly before the start says nothing usable about when it exists.
+  if (start && end && end.hi < start.lo) return "undated";
   if (start && year < start.lo) return "not_yet";
-  if (start && year < start.hi) return "perhaps";
+  // What is surely over is gone, even inside the range its start may fall in.
   if (end && year > end.hi) return "gone";
+  if (start && year < start.hi) return "perhaps";
   if (end && year > end.lo) return "perhaps";
   return "there";
 }

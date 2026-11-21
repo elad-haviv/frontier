@@ -65,6 +65,21 @@ describe("presence at a year", () => {
     expect(at_(span({ start: at(100), end: at(50) }), 75)).toBe("undated");
   });
 
+  it("is gone once its end is surely past, even where its start is still rough", () => {
+    const s = span({ start: at(100, 200), end: at(150, 160) });
+    expect([120, 155, 161, 180].map((y) => at_(s, y))).toEqual([
+      "perhaps",
+      "perhaps",
+      "gone",
+      "gone",
+    ]);
+  });
+
+  it("still reads a start and an end whose stored length disagrees with them", () => {
+    const s = span({ start: at(0), end: at(10), length: { ...at(500), clock: "ezob" } });
+    expect(at_(s, 5)).toBe("there");
+  });
+
   it("keeps what an event stands for from its moment on", () => {
     const e = span({ point: true, start: at(300, 310) });
     expect([299, 300, 309, 310, 9999].map((y) => at_(e, y))).toEqual([
