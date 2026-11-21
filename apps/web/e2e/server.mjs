@@ -19,6 +19,44 @@ Object.assign(process.env, {
   ICON_FOLDER: "99 Appendices/Icons",
 });
 
+// For a lore question it answers from the first entry it was given, quoting that entry's first
+// line of text; a question with "unknown" in it is not in the lore. Asked for an addition, it
+// adds a line to that entry.
+function lore(user) {
+  const first = /=== Entry: (.*)\nTitle: .*\n\n([\s\S]*?)\n=== End/.exec(user);
+  const path = first?.[1] ?? "";
+  const line = (first?.[2] ?? "")
+    .split("\n")
+    .find((l) => l.trim() !== "" && !l.startsWith("#") && l.split(/\s+/).length >= 4);
+  if (user.includes("What the entries do not say:")) {
+    return { path, text: "A line the test drafted to fill the gap." };
+  }
+  const question = /Question: (.*)$/.exec(user)?.[1] ?? "";
+  if (question.includes("unknown")) {
+    return {
+      paragraphs: [{ text: "Nothing is said of this.", sources: [], quotes: [] }],
+      related: [],
+      missing: "The entries do not say this.",
+    };
+  }
+  return {
+    paragraphs: [
+      {
+        text: `It is told in ${path}.`,
+        sources: [path],
+        quotes: line ? [{ path, text: line }] : [],
+      },
+      {
+        text: "Bells ring at dawn.",
+        sources: [path],
+        quotes: [{ path, text: "bells ring at dawn always" }],
+      },
+    ],
+    related: [],
+    missing: "",
+  };
+}
+
 // A stand-in for the AI provider. For any entry it "finds" one dated fact and quotes the entry's
 // first line of text, so the answer passes the check that a quote must be in the entry.
 const ai = createServer((req, res) => {
@@ -46,7 +84,9 @@ const ai = createServer((req, res) => {
     const quote = lines.find((l) => l.trim() !== "" && !l.startsWith("#")) ?? "";
     const answer = user.startsWith("Entry:")
       ? { type: null, time: [{ what: "happened", when: "in the year of the test", quote }] }
-      : { reply: "ok" };
+      : user.startsWith("Entries:")
+        ? lore(user)
+        : { reply: "ok" };
     res.end(
       JSON.stringify({
         choices: [{ message: { content: JSON.stringify(answer) } }],

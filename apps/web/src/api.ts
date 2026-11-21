@@ -238,9 +238,37 @@ export const api = {
     },
   ) => post<{ draftId?: string }>(`/api/proposals/${id}/operations/${op}`, body),
   settings: () => call<SettingsResponse>("/api/settings"),
+  conversations: () =>
+    call<{
+      conversations: { id: string; title: string; at: string; turns: number }[];
+      ready: boolean;
+    }>("/api/lore"),
+  conversation: (id: string) =>
+    call<{ conversation: LoreConversation; gone: string[] }>(`/api/lore/${id}`),
+  ask: (question: string, conversation?: string) =>
+    post<{ conversation: LoreConversation; gone: string[] }>("/api/lore", {
+      question,
+      ...(conversation ? { conversation } : {}),
+    }),
+  deleteConversation: (id: string) => send<{ ok: true }>("DELETE", `/api/lore/${id}`),
+  draftAddition: (id: string, turn: number, again = false) =>
+    post<{ addition: LoreAddition; conversation: LoreConversation }>(
+      `/api/lore/${id}/turns/${turn}/addition`,
+      { again },
+    ),
+  previewAddition: (id: string, turn: number, path: string) =>
+    post<{ path: string; isNew: boolean; before: string; after: string; base: string }>(
+      `/api/lore/${id}/turns/${turn}/addition/preview`,
+      { path },
+    ),
+  keepAddition: (id: string, turn: number, path: string, base: string) =>
+    post<{ draft: string | null; conversation: LoreConversation }>(
+      `/api/lore/${id}/turns/${turn}/addition/keep`,
+      { path, base },
+    ),
   saveAi: (body: {
     key?: string | null;
-    models?: { extraction: string | null };
+    models?: { extraction?: string | null; conversation?: string | null };
     monthlyCapUsd?: number;
     proposeOnPublish?: boolean;
   }) => send<{ ok: true }>("PUT", "/api/settings/ai", body),
@@ -357,3 +385,39 @@ export interface ImportResult {
 
 export const historyUrl = (path: string): string =>
   "/history/" + path.split("/").map(encodeURIComponent).join("/");
+
+/** A lore conversation, as the server keeps it. */
+export interface LoreAddition {
+  text: string;
+  newPath: string | null;
+  model: string;
+  at: string;
+}
+export interface LoreTurn {
+  question: string;
+  answer: {
+    paragraphs: {
+      text: string;
+      sources: string[];
+      quotes: { path: string; text: string }[];
+      grounded: boolean;
+    }[];
+    related: { path: string; why: string }[];
+    missing: string;
+    droppedQuotes: number;
+  };
+  given: string[];
+  model: string;
+  costUsd: number;
+  at: string;
+  addition: LoreAddition | null;
+  kept: { path: string; at: string } | null;
+}
+export interface LoreConversation {
+  id: string;
+  title: string;
+  at: string;
+  turns: LoreTurn[];
+}
+
+export const askUrl = (id?: string): string => (id ? `/ask/${id}` : "/ask");

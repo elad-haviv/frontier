@@ -3362,3 +3362,91 @@ input.map-title {
   background: color-mix(in srgb, var(--accent) 10%, transparent);
   pointer-events: none;
 }
+
+/* ---- Asking the lore ----------------------------------------------------------------------- */
+
+.ask-box textarea {
+  width: 100%;
+  padding: 0.6rem 0.7rem;
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  background: var(--paper-raised);
+  color: var(--ink);
+  font: inherit;
+  font-size: 1rem;
+}
+.turns {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.turn {
+  margin: 0 0 2rem;
+  padding-bottom: 1.2rem;
+  border-bottom: 1px solid var(--rule);
+}
+.turn-question {
+  margin: 0 0 0.8rem;
+  font-family: var(--serif);
+  font-size: 1.15rem;
+  font-weight: 600;
+}
+.answer-para {
+  margin: 0 0 1rem;
+}
+.answer-text {
+  margin: 0 0 0.3rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.answer-para.is-guess .answer-text {
+  padding-left: 0.6rem;
+  border-left: 3px dashed var(--warn);
+  color: var(--ink-soft);
+}
+.guess {
+  margin: 0.2rem 0;
+  color: var(--warn);
+  font-size: 0.85rem;
+}
+.answer-para blockquote {
+  margin: 0.3rem 0;
+  padding: 0.2rem 0.7rem;
+  border-left: 3px solid var(--accent-soft);
+  font-family: var(--serif);
+  font-size: 0.95rem;
+  overflow-wrap: anywhere;
+}
+.sources,
+.related,
+.turn-meta {
+  margin: 0.3rem 0;
+  font-size: 0.85rem;
+}
+.turn-meta summary {
+  min-height: 2rem;
+  color: var(--ink-faint);
+  cursor: pointer;
+}
+.not-in-lore {
+  margin: 0.8rem 0;
+  padding: 0.6rem 0.8rem;
+  border-left: 4px solid var(--warn);
+  background: var(--paper-raised);
+}
+.not-in-lore p {
+  margin: 0.2rem 0;
+}
+.addition {
+  margin: 0.8rem 0;
+  padding: 0.6rem 0.8rem;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+}
+.addition h3 {
+  margin: 0;
+}
+.addition select {
+  min-height: 2.5rem;
+  max-width: 100%;
+}

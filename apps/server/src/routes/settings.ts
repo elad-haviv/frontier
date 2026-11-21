@@ -61,7 +61,20 @@ export function settingsRoutes(app: FastifyInstance, s: Services): void {
         ...(input.key === undefined
           ? {}
           : { key: input.key === null ? null : encrypt(secretsKey!, input.key.trim()) }),
-        ...(input.models ? { models: { ...now.ai.models, ...input.models } } : {}),
+        ...(input.models
+          ? {
+              models: {
+                extraction:
+                  input.models.extraction === undefined
+                    ? now.ai.models.extraction
+                    : input.models.extraction,
+                conversation:
+                  input.models.conversation === undefined
+                    ? now.ai.models.conversation
+                    : input.models.conversation,
+              },
+            }
+          : {}),
         ...(input.monthlyCapUsd === undefined ? {} : { monthlyCapUsd: input.monthlyCapUsd }),
         ...(input.proposeOnPublish === undefined
           ? {}

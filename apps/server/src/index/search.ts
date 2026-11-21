@@ -55,6 +55,24 @@ export class SearchIndex {
     return mini;
   }
 
+  /**
+   * Notes that contain any word of the query, best first, for questions put in ordinary words.
+   * Appendix notes are always left out.
+   */
+  anyWord(query: string, limit = 8): string[] {
+    const q = query.trim();
+    if (q === "") return [];
+    return (
+      this.ensure()
+        // Any word, not every word; whole words, except that a long word also finds its longer
+        // forms. The search page keeps its own stricter search.
+        .search(q, { combineWith: "OR", prefix: (term) => term.length >= 5, fuzzy: false })
+        .filter((h) => !isInAppendix(String(h.id)))
+        .slice(0, limit)
+        .map((h) => String(h.id))
+    );
+  }
+
   /** Notes that contain every word of the query. Appendix notes are left out unless asked for. */
   search(query: string, includeAppendices = false, limit = 30): SearchHit[] {
     const q = query.trim();

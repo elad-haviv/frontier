@@ -9,7 +9,7 @@ import { decrypt } from "../state/secrets.js";
 import type { SettingsStore } from "../state/settings.js";
 import { type AiLog, monthOf } from "./log.js";
 
-export type AiTask = "extraction";
+export type AiTask = "extraction" | "conversation";
 
 export interface AnswerSchema<T> {
   name: string;
@@ -29,6 +29,10 @@ export interface CompleteInput<T> {
   /** Overrides the model set for the task. */
   model?: string;
   maxTokens?: number;
+  /** How long to wait for the provider; one minute when not given. */
+  timeoutMs?: number;
+  /** Whether a call that timed out is sent again. A timed-out call may still have been billed. */
+  retryOnTimeout?: boolean;
 }
 
 export interface AiProviderDeps {
@@ -43,6 +47,7 @@ export interface AiProviderDeps {
 interface Attempt {
   ok: boolean;
   retry: boolean;
+  timedOut?: boolean;
   content?: string;
   promptTokens: number;
   completionTokens: number;
@@ -107,7 +112,8 @@ export class AiProvider {
     }
 
     let attempt = await this.attempt(key.key, model, input);
-    if (!attempt.ok && attempt.retry) attempt = await this.attempt(key.key, model, input);
+    const again = attempt.retry && !(attempt.timedOut && input.retryOnTimeout === false);
+    if (!attempt.ok && again) attempt = await this.attempt(key.key, model, input);
     if (!attempt.ok) {
       this.lastError = attempt.error ?? "The AI provider did not answer.";
       throw new ApiError("ai_failed", this.lastError);
@@ -165,7 +171,7 @@ export class AiProvider {
           stream: false,
           ...(input.maxTokens ? { max_tokens: input.maxTokens } : {}),
         }),
-        signal: AbortSignal.timeout(this.d.timeoutMs ?? 60_000),
+        signal: AbortSignal.timeout(input.timeoutMs ?? this.d.timeoutMs ?? 60_000),
       });
     } catch (err) {
       const timedOut = err instanceof Error && err.name === "TimeoutError";
@@ -173,8 +179,9 @@ export class AiProvider {
         ...none,
         ok: false,
         retry: true,
+        timedOut,
         error: timedOut
-          ? "The AI provider did not answer within a minute."
+          ? "The AI provider did not answer in time."
           : "The AI provider could not be reached.",
       };
     }

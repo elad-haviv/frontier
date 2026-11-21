@@ -169,6 +169,9 @@ export function Shell({ children, onLoggedOut }: { children: ReactNode; onLogged
               <Link to="/maps" className="nav-secondary">
                 Maps
               </Link>
+              <Link to="/ask" className="nav-secondary">
+                Ask
+              </Link>
               <Link to="/chronicles" className="nav-secondary">
                 Chronicles
               </Link>
@@ -199,6 +202,7 @@ export function Shell({ children, onLoggedOut }: { children: ReactNode; onLogged
             {tree.state === "ready" && <Tree tree={tree.value} current={current} />}
             <p className="sidebar-foot">
               <Link to="/maps">Maps</Link>
+              <Link to="/ask">Ask the lore</Link>
               <Link to="/chronicles">Chronicles</Link>
               <Link to="/gallery">Gallery</Link>
               <Link to="/import">Import</Link>

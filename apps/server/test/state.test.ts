@@ -61,7 +61,12 @@ describe("state files", () => {
     // A file from before the AI settings existed reads with their defaults.
     expect(await store.read()).toEqual({
       passwordHash: "$argon2id$x",
-      ai: { key: null, models: { extraction: null }, monthlyCapUsd: 10, proposeOnPublish: false },
+      ai: {
+        key: null,
+        models: { extraction: null, conversation: null },
+        monthlyCapUsd: 10,
+        proposeOnPublish: false,
+      },
       passkeys: [],
       passwordOff: false,
     });

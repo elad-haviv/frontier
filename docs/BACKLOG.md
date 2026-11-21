@@ -98,6 +98,18 @@ after two independent reviews.
 - [x] 5c Two versions side by side
 - [x] 5d Links to entries (not yet: a linked span with no name showing its entry's title)
 
+## Now: stage 8, the AI companion
+
+Design: [stage 8](designs/stage-8-ai-companion.md). Elad, 2026-11-21: lore chat first; the lore
+from Frontier's own library, not the Hindsight bank; what is kept becomes an unsaved change.
+
+- [x] 8a Lore conversations: answers from the library, each paragraph with checked quotes;
+      "not in the lore"; additions drafted, chosen and kept as drafts
+- [ ] Elad sets a model for lore conversations in Settings and tries it
+- [ ] 8b Writing help in the editor
+- [ ] 8c Character chat
+- [ ] 8d Discovery on a map, with concept art
+
 ## Now: stage 7, more map views
 
 Design: [stage 7](designs/stage-7-more-map-views.md), revised after an implementation-readiness
@@ -138,7 +150,6 @@ Design: [stage 4](designs/stage-4-maps.md), a draft the author has not read yet.
 
 Each gets a short design of its own before it is built.
 
-8. AI companion: lore conversations, character chat, discovery with concept art
 9. Export: documents, styled web pages, presentations, map renders
 
 ## Done

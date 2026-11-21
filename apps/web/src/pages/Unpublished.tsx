@@ -183,6 +183,11 @@ export function UnpublishedPage() {
                   <span className={`tag tag-${d.kind}`}>{KIND[d.kind]}</span>
                   <span className="change-path">{d.path}</span>
                 </label>
+                {d.origins.some((o) => o.kind === "lore") && (
+                  <p className="muted">
+                    Holds an addition the AI drafted in a lore conversation. Read it before saving.
+                  </p>
+                )}
                 {d.binary ? (
                   <img className="change-image" src={imageUrl(d.path, 320)} alt={d.path} />
                 ) : (

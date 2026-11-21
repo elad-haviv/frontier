@@ -434,7 +434,7 @@ export const SettingsResponse = z.object({
     keyLast4: z.string().nullable(),
     /** False when SECRETS_KEY is not set, so a key cannot be stored here. */
     canStoreKey: z.boolean(),
-    models: z.object({ extraction: z.string().nullable() }),
+    models: z.object({ extraction: z.string().nullable(), conversation: z.string().nullable() }),
     monthlyCapUsd: z.number(),
     proposeOnPublish: z.boolean(),
     spentUsd: z.number(),
@@ -451,7 +451,12 @@ export type SettingsResponse = z.infer<typeof SettingsResponse>;
 /** `PUT /api/settings/ai`. `key: null` removes the stored key. */
 export const AiSettingsRequest = z.object({
   key: z.string().min(8).nullable().optional(),
-  models: z.object({ extraction: z.string().min(1).nullable() }).optional(),
+  models: z
+    .object({
+      extraction: z.string().min(1).nullable().optional(),
+      conversation: z.string().min(1).nullable().optional(),
+    })
+    .optional(),
   monthlyCapUsd: z.number().min(0).max(10_000).optional(),
   proposeOnPublish: z.boolean().optional(),
 });

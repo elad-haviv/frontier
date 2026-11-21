@@ -26,6 +26,7 @@ function AiSettings({ ai, reload }: { ai: SettingsResponse["ai"]; reload: () => 
   const refresh = useRefresh();
   const [key, setKey] = useState("");
   const [model, setModel] = useState(ai.models.extraction ?? "");
+  const [talker, setTalker] = useState(ai.models.conversation ?? "");
   const [cap, setCap] = useState(String(ai.monthlyCapUsd));
   const [onPublish, setOnPublish] = useState(ai.proposeOnPublish);
   const [models, setModels] = useState<ModelsResponse["models"] | null>(null);
@@ -61,7 +62,7 @@ function AiSettings({ ai, reload }: { ai: SettingsResponse["ai"]; reload: () => 
       }
       await api.saveAi({
         ...(key.trim() ? { key: key.trim() } : {}),
-        models: { extraction: model.trim() || null },
+        models: { extraction: model.trim() || null, conversation: talker.trim() || null },
         monthlyCapUsd: capUsd,
         proposeOnPublish: onPublish,
       });
@@ -129,6 +130,22 @@ function AiSettings({ ai, reload }: { ai: SettingsResponse["ai"]; reload: () => 
             : model.trim()
               ? "Not in the list of models that answer in a fixed form. It may still work; use Test."
               : "No model chosen: proposing fields is off."}
+        </em>
+      </label>
+
+      <label className="field">
+        <span>Model for lore conversations</span>
+        <input
+          type="text"
+          list="model-list"
+          value={talker}
+          placeholder="Pick from the list or type a model name"
+          onChange={(e) => setTalker(e.target.value)}
+        />
+        <em className="muted">
+          {talker.trim()
+            ? "Asking the lore sends the question and the entries it is answered from to this model."
+            : "No model chosen: asking the lore is off."}
         </em>
       </label>
 

@@ -676,7 +676,9 @@ export function trailers(drafts: DraftRecord[]): string {
       if (seen.has(key)) continue;
       seen.add(key);
       lines.push(`Frontier-Proposal: ${origin.ref}`);
-      if (origin.kind === "fields") lines.push(`Frontier-Model: ${origin.model}`);
+      if (origin.kind === "fields" || origin.kind === "lore") {
+        lines.push(`Frontier-Model: ${origin.model}`);
+      }
     }
   }
   return lines.length ? `\n\n${lines.join("\n")}` : "";

@@ -14,6 +14,9 @@ import { AiProvider } from "./ai/provider.js";
 import { LoginLimiter } from "./auth/limit.js";
 import { ChronicleStore } from "./chronicles/store.js";
 import { MapStore } from "./maps/store.js";
+import { Conversations } from "./ai/conversations.js";
+import { LoreAsker } from "./ai/lore.js";
+import { loreRoutes } from "./routes/lore.js";
 import { chronicleRoutes } from "./routes/chronicles.js";
 import { mapRoutes } from "./routes/maps.js";
 import { historyRoutes } from "./routes/history.js";
@@ -81,6 +84,8 @@ export interface Services {
   loginLimit: LoginLimiter;
   maps: MapStore;
   chronicles: ChronicleStore;
+  lore: LoreAsker;
+  conversations: Conversations;
   backup: Backup;
   search: SearchIndex;
   /** Fetches `main`, resets the working copy and rebuilds the index. */
@@ -199,6 +204,15 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
     drafts,
     ...(options.settleMs !== undefined ? { settleMs: options.settleMs } : {}),
   });
+  const search = new SearchIndex(index);
+  const conversations = new Conversations(stateDir, files);
+  const lore = new LoreAsker({
+    index,
+    search,
+    provider: ai,
+    settings,
+    mayRead: (path) => quarantine.aiMayRead(path) === null,
+  });
   await quarantine.load();
   const maps = new MapStore({
     vaultDir,
@@ -221,7 +235,7 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
     images,
     drafts,
     backup,
-    search: new SearchIndex(index),
+    search,
     publisher: undefined as unknown as Publisher,
     branches: undefined as unknown as BranchInbox,
     ai,
@@ -235,6 +249,8 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
     loginLimit: new LoginLimiter(),
     maps,
     chronicles,
+    lore,
+    conversations,
     async sync() {
       const result = await git.fetch();
       status.fetched(result.current);
@@ -401,6 +417,7 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
   passkeyRoutes(app, services);
   mapRoutes(app, services);
   chronicleRoutes(app, services);
+  loreRoutes(app, services);
   importRoutes(app, services);
   historyRoutes(app, services);
   searchRoutes(app, services);

@@ -205,7 +205,8 @@ describe("errors", () => {
     expect(statusOf("git_busy")).toBe(503);
     expect(statusOf("proposal_moved")).toBe(409);
     expect(statusOf("not_allowed")).toBe(403);
-    expect(Object.keys(ERROR_STATUS)).toHaveLength(19);
+    expect(statusOf("changed")).toBe(409);
+    expect(Object.keys(ERROR_STATUS)).toHaveLength(20);
   });
 
   it("accepts an error body with a known code only", () => {

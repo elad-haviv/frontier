@@ -76,3 +76,68 @@ test("a rejected proposal is not made again", async ({ page }, info) => {
   await page.getByRole("button", { name: "Propose fields" }).click();
   await expect(page.locator(".propose")).toContainText("Nothing new to propose.");
 });
+
+test("CUJ 11: asks the lore, reads cited answers, and keeps a drafted addition as a draft", async ({
+  page,
+}, info) => {
+  test.skip(info.project.name !== "phone", "The AI settings are one per server.");
+  await page.setViewportSize({ width: 375, height: 740 });
+  await page.goto("/settings");
+  await page.getByLabel(/Provider key/).fill("sk-or-browser-test-key");
+  await page.getByLabel("Model for lore conversations").fill("sample/reader");
+  await page.getByRole("button", { name: "Save" }).click();
+  await expect(page.locator(".banner-ok")).toHaveText("Saved.");
+
+  await page.goto("/ask");
+  await page.getByLabel("A question").fill("Who is Shade?");
+  await page.getByRole("button", { name: "Ask" }).click();
+  await expect(page).toHaveURL(/\/ask\/[a-z0-9]{12}$/);
+
+  // The supported paragraph quotes its entry and links to it; the other is marked as a guess.
+  const turn = page.locator(".turn").first();
+  await expect(turn.locator(".turn-question")).toHaveText("Who is Shade?");
+  const supported = turn.locator(".answer-para").first();
+  await expect(supported.locator("blockquote")).toContainText(
+    "A quiet figure. Friend of [[Mira]].",
+  );
+  await expect(supported.locator(".sources")).toContainText("Shade");
+  await expect(turn.locator(".answer-para.is-guess")).toContainText("Bells ring at dawn.");
+  await expect(turn.locator(".guess")).toBeVisible();
+  await expect(turn.locator(".turn-meta summary")).toContainText(/Read \d+ entr/);
+
+  // A follow-up the lore does not cover: an addition is drafted and kept as a draft.
+  await page.getByLabel("Ask again").fill("What is unknown about Shade?");
+  await page.getByRole("button", { name: "Ask" }).click();
+  const second = page.locator(".turn").nth(1);
+  await expect(second.locator(".not-in-lore")).toContainText("This is not in the lore.");
+  await second.getByRole("button", { name: "Draft an addition" }).click();
+  const addition = second.locator(".addition");
+  await expect(addition).toContainText("Written by the AI");
+  await expect(addition.locator(".diff, ins, .added").first()).toBeVisible();
+  await addition.getByLabel("Where the addition goes").selectOption({ label: "Shade" });
+  await addition.getByRole("button", { name: "Keep as a draft" }).click();
+  await expect(second.locator(".banner-ok")).toContainText("Kept as a draft of Shade");
+  await expect(
+    page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+  ).resolves.toBe(true);
+
+  await page.goto("/unpublished");
+  const shade = page.locator(".changes li", { hasText: "02 People/Shade.md" });
+  await expect(shade).toContainText("Holds an addition the AI drafted");
+  await shade.getByRole("button", { name: "Discard" }).click();
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { name: "Discard", exact: true })
+    .click()
+    .catch(() => undefined);
+
+  // The conversation is listed, and can be deleted.
+  await page.goto("/ask");
+  await expect(page.locator(".map-list li", { hasText: "Who is Shade?" })).toContainText(
+    "2 questions",
+  );
+  await page.locator(".map-list a", { hasText: "Who is Shade?" }).click();
+  await page.getByRole("button", { name: "Delete the conversation" }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Delete", exact: true }).click();
+  await expect(page).toHaveURL(/\/ask$/);
+});

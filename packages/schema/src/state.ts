@@ -35,6 +35,8 @@ export const StoredLineEnding = z.enum(["lf", "crlf"]);
 export const Origin = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("branch"), ref: z.string(), tip: z.string() }),
   z.object({ kind: z.literal("fields"), ref: z.string(), model: z.string() }),
+  /** An addition drafted in a lore conversation: `ref` is the conversation and turn. */
+  z.object({ kind: z.literal("lore"), ref: z.string(), model: z.string() }),
 ]);
 export type Origin = z.infer<typeof Origin>;
 
@@ -70,7 +72,12 @@ export const AiSettings = z.object({
   /** The provider key, encrypted with the key from the SECRETS_KEY variable. */
   key: Encrypted.nullable().default(null),
   /** One model name per task. Null until the author picks one; the task is off until then. */
-  models: z.object({ extraction: z.string().nullable().default(null) }).default({}),
+  models: z
+    .object({
+      extraction: z.string().nullable().default(null),
+      conversation: z.string().nullable().default(null),
+    })
+    .default({}),
   /** Frontier stops calling the provider when this month's spending reaches it. */
   monthlyCapUsd: z.number().min(0).default(10),
   /** Propose fields for the notes of each Publish. */

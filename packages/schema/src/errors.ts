@@ -20,6 +20,8 @@ export const ERROR_STATUS = {
   ai_cap_reached: 402,
   ai_failed: 502,
   ai_bad_answer: 502,
+  // What the author was shown has changed since; he looks again before going on.
+  changed: 409,
   secrets_key_missing: 409,
 } as const;
 
