@@ -39,6 +39,7 @@ describe("configuration", () => {
     const c = loadConfig(local);
     expect(c.remoteUrl).toBe("/tmp/remote.git");
     expect(c.githubApp).toBeNull();
+    expect(c.githubToken).toBeNull();
     expect(c.webhookSecret).toBeNull();
     expect(c.dataDir).toBe("/data");
     expect(c.backup).toEqual({ kind: "local", dir: "/tmp/bucket" });
@@ -65,6 +66,25 @@ describe("configuration", () => {
     });
   });
 
+  it("accepts a personal access token in place of a GitHub App, and needs no webhook", () => {
+    const rest: Record<string, string> = { ...hosted };
+    for (const k of [
+      "GITHUB_APP_ID",
+      "GITHUB_APP_PRIVATE_KEY",
+      "GITHUB_APP_INSTALLATION_ID",
+      "WEBHOOK_SECRET",
+    ]) {
+      delete rest[k];
+    }
+    const c = loadConfig({ ...rest, GITHUB_TOKEN: "github_pat_example" });
+    expect(c.githubToken).toBe("github_pat_example");
+    expect(c.githubApp).toBeNull();
+    expect(c.webhookSecret).toBeNull();
+    expect(c.remoteUrl).toBe("https://github.com/someone/vault.git");
+    // With neither a token nor an App, the App variables are named as missing.
+    expect(() => loadConfig(rest)).toThrow(/GITHUB_APP_ID/);
+  });
+
   it("names every missing variable", () => {
     expect(() => loadConfig({})).toThrow(ConfigError);
     try {
@@ -74,7 +94,6 @@ describe("configuration", () => {
       for (const name of [
         "VAULT_REPO",
         "GITHUB_APP_ID",
-        "WEBHOOK_SECRET",
         "COMMIT_AUTHOR_NAME",
         "BACKUP_S3_BUCKET",
       ]) {

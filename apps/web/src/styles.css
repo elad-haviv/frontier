@@ -1297,3 +1297,115 @@ button.big {
   color: var(--ink-soft);
   padding: 0 0.75rem;
 }
+
+/* ---- Search results, outline, hover preview, editing toolbar ------------------------------ */
+
+.switcher-label {
+  margin: 0.5rem 0.7rem 0.2rem;
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+.switcher-where.is-snippet {
+  font-size: 0.82rem;
+  color: var(--ink-soft);
+  font-family: var(--serif);
+}
+
+.outline {
+  margin: -0.4rem 0 1.4rem;
+  font-size: 0.9rem;
+}
+
+.outline summary {
+  cursor: pointer;
+  color: var(--ink-soft);
+  font-size: 0.78rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.outline ul {
+  list-style: none;
+  margin: 0.6rem 0 0;
+  padding: 0 0 0 0.9rem;
+  border-left: 1px solid var(--rule);
+  display: grid;
+  gap: 0.3rem;
+}
+
+.outline a {
+  color: var(--ink-soft);
+  text-decoration: none;
+}
+
+.outline-2 {
+  padding-left: 0.9rem;
+}
+
+.outline-3 {
+  padding-left: 1.8rem;
+  font-size: 0.85rem;
+}
+
+.hover-preview {
+  position: fixed;
+  z-index: 60;
+  width: 22rem;
+  max-width: calc(100vw - 2rem);
+  padding: 0.8rem 0.95rem;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  background: var(--paper-raised);
+  box-shadow: var(--shadow);
+  font-family: var(--sans);
+  font-size: 0.86rem;
+  line-height: 1.5;
+  pointer-events: none;
+}
+
+.hover-preview strong {
+  font-family: var(--serif);
+  font-size: 1rem;
+}
+
+.hover-preview p {
+  margin: 0.3rem 0 0;
+  color: var(--ink-soft);
+}
+
+.edit-toolbar {
+  position: sticky;
+  bottom: 0;
+  z-index: 10;
+  display: flex;
+  gap: 0.25rem;
+  padding: 0.35rem 0.5rem;
+  padding-bottom: max(0.35rem, env(safe-area-inset-bottom));
+  background: var(--paper);
+  border-top: 1px solid var(--rule);
+  overflow-x: auto;
+}
+
+.edit-toolbar button {
+  flex: none;
+  min-width: 2.75rem;
+  height: 2.5rem;
+  padding: 0 0.6rem;
+  border: 1px solid var(--rule);
+  border-radius: 5px;
+  background: var(--paper-raised);
+  color: var(--ink-soft);
+  font-family: var(--mono);
+  font-size: 0.95rem;
+}
+
+.edit-toolbar-gap {
+  flex: 1;
+}
+
+.code-editor .cm-content {
+  padding-bottom: 30vh !important;
+}

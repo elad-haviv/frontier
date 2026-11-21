@@ -1,6 +1,8 @@
 import type { FastifyInstance } from "fastify";
-import { isInAppendix, stem } from "@frontier/vault";
+import { VaultPath } from "@frontier/schema";
+import { isInAppendix, splitFrontmatter, stem } from "@frontier/vault";
 import { z } from "zod";
+import { ApiError } from "../errors.js";
 import type { Services } from "../app.js";
 
 const Query = z.object({
@@ -17,6 +19,22 @@ interface Name {
 }
 
 export function searchRoutes(app: FastifyInstance, s: Services): void {
+  /** Full-text search over the published vault. */
+  app.get("/api/search", async (request) => {
+    const { q, appendices } = Query.parse(request.query);
+    return { results: s.search.search(q ?? "", appendices === "1") };
+  });
+
+  /** The opening of an entry, for the preview shown when a link is hovered. */
+  app.get("/api/preview", async (request) => {
+    const { path } = z.object({ path: VaultPath }).parse(request.query);
+    const note = s.index.note(path);
+    if (!note) throw new ApiError("not_found", `There is no note at "${path}".`);
+    const body = splitFrontmatter(note.text).body.trim();
+    const cut = body.length > 600 ? body.slice(0, body.lastIndexOf(" ", 600)) + " …" : body;
+    return { path, text: cut };
+  });
+
   /**
    * Entries by name or alias, for the quick switcher and for link autocomplete.
    * With no query it returns every name. Appendix notes are left out unless asked for.

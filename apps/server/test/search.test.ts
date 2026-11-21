@@ -72,3 +72,105 @@ describe("names for the quick switcher and link autocomplete", () => {
     expect((await t.get(`/api/switcher?q=${"x".repeat(300)}`)).statusCode).toBe(400);
   });
 });
+
+describe("full-text search", () => {
+  const search = async (query: string) =>
+    (await t.get(`/api/search${query}`)).json().results as {
+      path: string;
+      title: string;
+      snippet: string;
+    }[];
+
+  it("finds notes by words in the text and shows the place", async () => {
+    const r = await search("?q=fishers");
+    expect(r.map((x) => x.path)).toEqual(["01 Places/Harbor/Harbor.md"]);
+    expect(r[0]!.snippet).toContain("Founded by fishers.");
+  });
+
+  it("puts a match in the name above a match in the text", async () => {
+    const r = await search("?q=harbor");
+    expect(r[0]!.path).toBe("01 Places/Harbor/Harbor.md");
+    expect(r.length).toBeGreaterThan(3);
+  });
+
+  it("needs every word, matches the start of a word, and forgives a small slip", async () => {
+    expect((await search("?q=grey%20water")).map((x) => x.title)).toContain("Harbor");
+    expect(await search("?q=fishers%20zebra")).toEqual([]);
+    expect((await search("?q=fish")).map((x) => x.title)).toEqual(["Harbor"]);
+    expect((await search("?q=fishrs")).map((x) => x.title)).toEqual(["Harbor"]);
+  });
+
+  it("finds by alias and by heading", async () => {
+    expect((await search("?q=greywater"))[0]!.title).toBe("Harbor");
+    // A heading match ranks above a match in the running text.
+    expect(
+      (await search("?q=tides"))
+        .slice(0, 2)
+        .map((x) => x.title)
+        .sort(),
+    ).toEqual(["Harbor", "Old Quay"]);
+  });
+
+  it("leaves appendix notes out unless asked, and returns nothing for an empty query", async () => {
+    expect(await search("?q=profile")).toEqual([]);
+    expect((await search("?q=profile&appendices=1")).map((x) => x.path)).toEqual([
+      "99 Appendices/Agents/Shade.md",
+    ]);
+    expect(await search("?q=")).toEqual([]);
+    expect(await search("")).toEqual([]);
+  });
+
+  it("does not show frontmatter in a snippet, and trims a long text at word ends", async () => {
+    const r = await search("?q=lantern");
+    const lantern = r.find((x) => x.path === "03 Things/Lantern.md")!;
+    expect(lantern.snippet).not.toContain("aliases");
+    const long = (await search("?q=marsh%20salt%20bell")).find((x) => x.title === "Long")!;
+    expect(long.snippet.length).toBeLessThan(175);
+    expect(long.snippet.endsWith(" …")).toBe(true);
+  });
+
+  it("sees a new note after the vault changes", async () => {
+    t.repo.pushFromOutside({ "01 Places/Reef.md": "# Reef\n\nWhere the kelpwrights dive.\n" });
+    await t.services.sync();
+    expect((await search("?q=kelpwrights")).map((x) => x.title)).toEqual(["Reef"]);
+  });
+
+  it("answers within 100 ms on a 500-note vault", async () => {
+    const { execFileSync } = await import("node:child_process");
+    const { rmSync } = await import("node:fs");
+    const { dirname, join } = await import("node:path");
+    const { fileURLToPath } = await import("node:url");
+    const { VaultIndex } = await import("../src/index/build.js");
+    const { SearchIndex } = await import("../src/index/search.js");
+    const vaultPackage = join(dirname(fileURLToPath(import.meta.url)), "../../../packages/vault");
+    execFileSync("npx", ["tsx", "scripts/make-big-fixture.ts"], {
+      cwd: vaultPackage,
+      stdio: "ignore",
+    });
+    const big = join(vaultPackage, "test", ".big-fixture");
+    try {
+      const index = new VaultIndex(big);
+      index.build("timing");
+      const s = new SearchIndex(index);
+      s.search("warm up");
+      const started = performance.now();
+      const hits = s.search("stray space");
+      expect(performance.now() - started).toBeLessThan(100);
+      expect(hits.length).toBeGreaterThan(0);
+    } finally {
+      rmSync(big, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("previews", () => {
+  it("returns the opening of an entry without its frontmatter", async () => {
+    const res = (await t.get("/api/preview?path=01%20Places%2FHarbor%2FHarbor.md")).json();
+    expect(res.text.startsWith("# Harbor")).toBe(true);
+    expect(res.text).not.toContain("aliases");
+    const long = (await t.get("/api/preview?path=03%20Things%2FLong.md")).json();
+    expect(long.text.length).toBeLessThan(610);
+    expect(long.text.endsWith(" …")).toBe(true);
+    expect((await t.get("/api/preview?path=nope.md")).statusCode).toBe(404);
+  });
+});

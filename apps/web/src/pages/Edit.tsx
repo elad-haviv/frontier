@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { api, ApiFailure, entryUrl, newDraftId } from "../api.ts";
+import type { EditorView } from "@codemirror/view";
 import { CodeEditor } from "../components/CodeEditor.tsx";
+import { EditToolbar } from "../components/EditToolbar.tsx";
 import { useRefresh } from "../components/Shell.tsx";
 import { clearBuffer, readBuffer, writeBuffer } from "../drafts.ts";
 
@@ -45,6 +47,7 @@ export function EditPage() {
   const timer = useRef<number | undefined>(undefined);
   const saving = useRef(false);
   const again = useRef(false);
+  const view = useRef<EditorView | null>(null);
 
   // Open the file: the server's draft or published text, or what this device still holds unsent.
   useEffect(() => {
@@ -224,7 +227,8 @@ export function EditPage() {
           )}
         </p>
       )}
-      <CodeEditor key={path} initial={initial} onChange={onChange} />
+      <CodeEditor key={path} initial={initial} onChange={onChange} viewRef={view} />
+      <EditToolbar view={view} />
     </div>
   );
 }

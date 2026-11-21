@@ -27,10 +27,13 @@ export function CodeEditor({
   initial,
   onChange,
   readOnly = false,
+  viewRef,
 }: {
   initial: string;
   onChange?: (text: string) => void;
   readOnly?: boolean;
+  /** Receives the editor, so a toolbar can insert text into it. */
+  viewRef?: { current: EditorView | null };
 }) {
   const host = useRef<HTMLDivElement>(null);
   const changed = useRef(onChange);
@@ -55,7 +58,11 @@ export function CodeEditor({
         ],
       }),
     });
-    return () => view.destroy();
+    if (viewRef) viewRef.current = view;
+    return () => {
+      if (viewRef) viewRef.current = null;
+      view.destroy();
+    };
     // The editor owns the text after it is created.
   }, []);
 

@@ -2,6 +2,7 @@ import { aliasesOf, splitFrontmatter } from "@frontier/vault";
 import { useEffect, useMemo } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { api, editUrl, entryUrl } from "../api.ts";
+import { HoverPreview } from "../components/HoverPreview.tsx";
 import { LightboxProvider } from "../components/Lightbox.tsx";
 import { currentEntryPath } from "../components/Shell.tsx";
 import { Markdown } from "../render/Markdown.tsx";
@@ -126,6 +127,21 @@ export function EntryPage({ onSessionLost }: { onSessionLost: () => void }) {
         )}
       </header>
 
+      {e.headings.filter((h) => h.level <= 3).length >= 3 && (
+        <details className="outline">
+          <summary>On this page</summary>
+          <ul>
+            {e.headings
+              .filter((h) => h.level <= 3)
+              .map((h) => (
+                <li key={h.line} className={`outline-${h.level}`}>
+                  <a href={`#${encodeURIComponent(h.text)}`}>{h.text}</a>
+                </li>
+              ))}
+          </ul>
+        </details>
+      )}
+
       <div className="prose">
         {view!.text.trim() === "" ? (
           <p className="muted">This entry is empty.</p>
@@ -135,6 +151,8 @@ export function EntryPage({ onSessionLost }: { onSessionLost: () => void }) {
           </LightboxProvider>
         )}
       </div>
+
+      <HoverPreview scope=".prose" />
 
       {e.backlinks.length > 0 && (
         <footer className="backlinks">

@@ -58,3 +58,22 @@ test("refuses a rename onto an existing entry, and one in an append-only folder"
   await page.goto(entry("99 Appendices/Logs/Session.md"));
   await expect(page.locator(".edit-link")).toHaveCount(0);
 });
+
+test("searches the text of entries from the same box", async ({ page }) => {
+  await page.goto(entry("README.md"));
+  await page.locator(".find").click();
+  const box = page.locator(".switcher");
+  await box.locator("input").fill("fishers");
+  await expect(box.locator(".switcher-label")).toHaveText("In the text");
+  await expect(box.locator(".is-snippet")).toContainText("Founded by fishers.");
+  await box.locator("li button").first().click();
+  await expect(page.locator(".entry h1").first()).toHaveText("Harbor");
+});
+
+test("lists an entry's headings and jumps to one", async ({ page }) => {
+  await page.goto(entry("01 Places/Harbor/Harbor.md"));
+  await page.locator(".outline summary").click();
+  await page.locator(".outline a", { hasText: "Tides" }).click();
+  await expect(page).toHaveURL(/#Tides$/);
+  await expect(page.locator(".prose h2", { hasText: "Tides" })).toBeInViewport();
+});

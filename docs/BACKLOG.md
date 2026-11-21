@@ -35,11 +35,7 @@ One place for what is being built, what is waiting, and ideas. The design in
 ## Now: finishing stages 1 and 2
 
 - [ ] Live preview in the editor (hide Markdown marks away from the cursor)
-- [ ] Hover preview of linked entries; outline of an entry's headings
-- [ ] Full-text search (the quick switcher by name is built)
 - [ ] Image upload and sizing; table editing; properties panel
-- [ ] Accept a GitHub token as an alternative to a GitHub App
-- [ ] Phone toolbar above the keyboard (link, heading, list, image, undo)
 
 ## Waiting on Elad
 
@@ -81,3 +77,8 @@ Each gets a short design of its own before it is built.
   nightly; restore command. The bucket path has not run against a real bucket yet.
 - Rename and move screen
 - Quick switcher: jump to an entry by name or alias (the magnifier, or Ctrl+K)
+- Full-text search in the same box as the switcher, with the words around each match
+- Outline of an entry's headings; preview of a linked entry on hover (mouse only)
+- Editing toolbar for link, heading, list, bold, italic, undo and redo
+- A GitHub personal access token works in place of a GitHub App (`GITHUB_TOKEN`); the webhook is
+  optional

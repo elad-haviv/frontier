@@ -30,8 +30,10 @@ export interface Config {
   dataDir: string;
   /** The Git address the working copy is cloned from and pushed to. */
   remoteUrl: string;
-  /** Present when the remote is GitHub; absent with VAULT_REMOTE_URL. */
+  /** Present when Frontier pushes as its own GitHub App. */
   githubApp: GithubAppConfig | null;
+  /** Present when Frontier pushes with a personal access token instead of an App. */
+  githubToken: string | null;
   webhookSecret: string | null;
   sessionKey: Buffer;
   commitAuthor: { name: string; email: string };
@@ -59,18 +61,24 @@ export function loadConfig(env: Env = process.env): Config {
   const override = optional("VAULT_REMOTE_URL");
   let remoteUrl: string;
   let githubApp: GithubAppConfig | null = null;
-  let webhookSecret: string | null = optional("WEBHOOK_SECRET");
+  let githubToken: string | null = null;
+  const webhookSecret: string | null = optional("WEBHOOK_SECRET");
   if (override) {
     remoteUrl = override;
   } else {
     const repo = get("VAULT_REPO");
     remoteUrl = `https://github.com/${repo}.git`;
-    githubApp = {
-      appId: get("GITHUB_APP_ID"),
-      privateKey: get("GITHUB_APP_PRIVATE_KEY").replace(/\\n/g, "\n"),
-      installationId: get("GITHUB_APP_INSTALLATION_ID"),
-    };
-    webhookSecret = get("WEBHOOK_SECRET");
+    // A fine-grained personal access token is the simple way in; a GitHub App gives Frontier an
+    // identity of its own. One of the two is needed. The webhook is optional: without it the vault
+    // is fetched on a timer.
+    githubToken = optional("GITHUB_TOKEN");
+    if (!githubToken) {
+      githubApp = {
+        appId: get("GITHUB_APP_ID"),
+        privateKey: get("GITHUB_APP_PRIVATE_KEY").replace(/\\n/g, "\n"),
+        installationId: get("GITHUB_APP_INSTALLATION_ID"),
+      };
+    }
   }
 
   const sessionKeyText = get("SESSION_KEY");
@@ -117,6 +125,7 @@ export function loadConfig(env: Env = process.env): Config {
     dataDir,
     remoteUrl,
     githubApp,
+    githubToken,
     webhookSecret,
     sessionKey,
     commitAuthor,

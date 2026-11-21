@@ -74,6 +74,12 @@ export const api = {
     call<{ results: { path: string; title: string; alias?: string; shared?: boolean }[] }>(
       `/api/switcher${query ? `?q=${encodeURIComponent(query)}` : ""}`,
     ),
+  search: (query: string) =>
+    call<{ results: { path: string; title: string; snippet: string }[] }>(
+      `/api/search?q=${encodeURIComponent(query)}`,
+    ),
+  preview: (path: string) =>
+    call<{ path: string; text: string }>(`/api/preview?path=${encodeURIComponent(path)}`),
   rename: (from: string, to: string) =>
     post<{ id: string; affected: string[] }>("/api/renames", { from, to }),
 

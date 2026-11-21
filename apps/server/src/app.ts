@@ -16,6 +16,7 @@ import { Publisher } from "./publish/publish.js";
 import { draftRoutes } from "./routes/drafts.js";
 import { DraftStore } from "./state/drafts.js";
 import { VaultIndex } from "./index/build.js";
+import { SearchIndex } from "./index/search.js";
 import { authRoutes } from "./routes/auth.js";
 import { entryRoutes } from "./routes/entries.js";
 import { imageRoutes } from "./routes/images.js";
@@ -43,6 +44,7 @@ export interface Services {
   drafts: DraftStore;
   publisher: Publisher;
   backup: Backup;
+  search: SearchIndex;
   /** Fetches `main`, resets the working copy and rebuilds the index. */
   sync(): Promise<void>;
 }
@@ -82,7 +84,11 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
     remoteUrl: config.remoteUrl,
     author: config.commitAuthor,
     committer: config.commitBot,
-    ...(config.githubApp ? { token: appTokenSource(config.githubApp) } : {}),
+    ...(config.githubApp
+      ? { token: appTokenSource(config.githubApp) }
+      : config.githubToken
+        ? { token: async () => config.githubToken }
+        : {}),
     ...(options.onGitCommand ? { onCommand: options.onGitCommand } : {}),
   });
   const index = new VaultIndex(vaultDir);
@@ -116,6 +122,7 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
     images,
     drafts,
     backup,
+    search: new SearchIndex(index),
     publisher: undefined as unknown as Publisher,
     async sync() {
       const result = await git.fetch();

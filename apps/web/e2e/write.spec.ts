@@ -151,3 +151,22 @@ test("deletes an entry through a draft and a publish", async ({ page }) => {
   await publish(page, "Remove Empty");
   expect(onMain("03 Things/Empty.md")).toBeNull();
 });
+
+test("the toolbar inserts a link, a heading and bold without leaving the editor", async ({
+  page,
+}) => {
+  await openEditor(page, "03 Things/Scalar.md");
+  await page.keyboard.type("\nplain");
+  await page.locator(".edit-toolbar button[aria-label=Heading]").click();
+  await expect(page.locator(".cm-content")).toContainText("## plain");
+  await page.keyboard.press("Control+End");
+  await page.keyboard.type("\n");
+  await page.locator(".edit-toolbar button[aria-label='Link to an entry']").click();
+  await page.keyboard.type("mir");
+  await page.locator(".cm-tooltip-autocomplete li", { hasText: "Mira" }).click();
+  await expect(page.locator(".cm-content")).toContainText("[[Mira]]");
+  await page.locator(".edit-toolbar button[aria-label=Undo]").click();
+  await saved(page);
+  page.once("dialog", (d) => void d.accept());
+  await page.locator("button.quiet", { hasText: "Discard" }).click();
+});
