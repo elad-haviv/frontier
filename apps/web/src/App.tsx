@@ -9,6 +9,7 @@ import { UnpublishedPage } from "./pages/Unpublished.tsx";
 import { VersionsPage } from "./pages/Versions.tsx";
 import { Home } from "./pages/Home.tsx";
 import { Login } from "./pages/Login.tsx";
+import { RenamePage } from "./pages/Rename.tsx";
 import { StatusPage } from "./pages/Status.tsx";
 
 export function App() {
@@ -43,6 +44,7 @@ export function App() {
         <Route path="/" element={<Home />} />
         <Route path="/e/*" element={<EntryPage onSessionLost={() => setLoggedIn(false)} />} />
         <Route path="/edit/*" element={<EditPage />} />
+        <Route path="/rename/*" element={<RenamePage />} />
         <Route path="/unpublished" element={<UnpublishedPage />} />
         <Route path="/conflict/:id" element={<ConflictPage />} />
         <Route path="/versions/:id" element={<VersionsPage />} />

@@ -2,6 +2,7 @@ import { createContext, type ReactNode, useCallback, useContext, useEffect, useS
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { api, editUrl } from "../api.ts";
 import { useAsync } from "../useAsync.ts";
+import { Switcher } from "./Switcher.tsx";
 import { Tree } from "./Tree.tsx";
 
 const Refresh = createContext<() => void>(() => undefined);
@@ -34,11 +35,24 @@ export function Shell({ children, onLoggedOut }: { children: ReactNode; onLogged
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const [version, setVersion] = useState(0);
+  const [switching, setSwitching] = useState(false);
   const refresh = useCallback(() => setVersion((v) => v + 1), []);
   const tree = useAsync(() => api.tree(), `tree-${version}`);
   const status = useAsync(() => api.status(), `status-${version}`);
   const current = currentEntryPath(pathname);
   const waiting = status.state === "ready" ? status.value.unpublished : 0;
+
+  // Ctrl+K or Cmd+K opens the switcher from anywhere.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setSwitching(true);
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, []);
 
   // On a phone the tree is a drawer; it closes when a page opens.
   useEffect(() => setOpen(false), [pathname]);
@@ -76,6 +90,30 @@ export function Shell({ children, onLoggedOut }: { children: ReactNode; onLogged
           <Link to="/" className="wordmark small">
             Frontier
           </Link>
+          <button
+            type="button"
+            className="icon-button find"
+            aria-label="Go to an entry"
+            title="Go to an entry (Ctrl+K)"
+            onClick={() => setSwitching(true)}
+          >
+            <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+              <circle
+                cx="10.5"
+                cy="10.5"
+                r="6.5"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+              />
+              <path
+                d="M15.5 15.5 21 21"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+              />
+            </svg>
+          </button>
           <nav className="topnav">
             <Link to="/unpublished" className={waiting > 0 ? "has-waiting" : ""}>
               Unpublished{waiting > 0 && <span className="badge">{waiting}</span>}
@@ -113,6 +151,7 @@ export function Shell({ children, onLoggedOut }: { children: ReactNode; onLogged
         )}
 
         <main className="content">{children}</main>
+        {switching && <Switcher onClose={() => setSwitching(false)} />}
       </div>
     </Refresh.Provider>
   );

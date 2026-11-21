@@ -70,10 +70,12 @@ export const api = {
   entry: (path: string) => call<EntryResponse>(`/api/entries?path=${encodeURIComponent(path)}`),
   status: () => call<StatusSnapshot>("/api/status"),
   attention: () => call<AttentionResponse>("/api/attention"),
-  names: () =>
+  names: (query = "") =>
     call<{ results: { path: string; title: string; alias?: string; shared?: boolean }[] }>(
-      "/api/switcher",
+      `/api/switcher${query ? `?q=${encodeURIComponent(query)}` : ""}`,
     ),
+  rename: (from: string, to: string) =>
+    post<{ id: string; affected: string[] }>("/api/renames", { from, to }),
 
   saveDraft: (draft: {
     id: string;

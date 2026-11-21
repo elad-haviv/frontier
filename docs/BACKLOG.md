@@ -34,11 +34,9 @@ One place for what is being built, what is waiting, and ideas. The design in
 
 ## Now: finishing stages 1 and 2
 
-- [ ] Backup of drafts to a storage bucket, and a restore command
-- [ ] Rename and move screen (the server side is built)
 - [ ] Live preview in the editor (hide Markdown marks away from the cursor)
 - [ ] Hover preview of linked entries; outline of an entry's headings
-- [ ] Search and quick switcher (the names route they need is built)
+- [ ] Full-text search (the quick switcher by name is built)
 - [ ] Image upload and sizing; table editing; properties panel
 - [ ] Accept a GitHub token as an alternative to a GitHub App
 - [ ] Phone toolbar above the keyboard (link, heading, list, image, undo)
@@ -79,3 +77,7 @@ Each gets a short design of its own before it is built.
 - A link to a missing image shows as a missing link, not a broken picture
 - Link autocomplete after `[[`, over names and aliases; an alias is written as `[[Entry|Alias]]`
 - Browser test suite in the repo: 23 tests at phone and desktop size, run in CI
+- Backup of working files to a folder or S3-compatible bucket, a few minutes after a change and
+  nightly; restore command. The bucket path has not run against a real bucket yet.
+- Rename and move screen
+- Quick switcher: jump to an entry by name or alias (the magnifier, or Ctrl+K)

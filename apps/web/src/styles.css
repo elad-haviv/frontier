@@ -1199,3 +1199,101 @@ button.big {
   font-style: normal;
   font-size: 0.8rem;
 }
+
+/* ---- Switcher and rename ------------------------------------------------------------------ */
+
+.find {
+  color: var(--ink-soft);
+}
+
+.switcher {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  padding: max(3.5rem, 12vh) 0.75rem 0.75rem;
+  background: rgba(20, 16, 10, 0.5);
+}
+
+.switcher-box {
+  max-width: 34rem;
+  max-height: 100%;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  background: var(--paper-raised);
+  box-shadow: var(--shadow);
+}
+
+.switcher-box input {
+  padding: 0.95rem 1rem;
+  border: 0;
+  border-bottom: 1px solid var(--rule);
+  background: none;
+  font-size: 1.05rem;
+  outline: none;
+}
+
+.switcher-box ul {
+  list-style: none;
+  margin: 0;
+  padding: 0.3rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.switcher-box li button {
+  display: grid;
+  gap: 0.1rem;
+  width: 100%;
+  padding: 0.55rem 0.7rem;
+  border: 0;
+  border-radius: 5px;
+  background: none;
+  text-align: left;
+}
+
+.switcher-box li button.is-current {
+  background: var(--accent-soft);
+}
+
+.switcher-name {
+  font-weight: 600;
+}
+
+.is-current .switcher-name {
+  color: var(--accent);
+}
+
+.switcher-where {
+  font-size: 0.74rem;
+  color: var(--ink-faint);
+  overflow-wrap: anywhere;
+}
+
+.switcher-empty {
+  padding: 0.8rem 0.7rem;
+}
+
+.entry-actions {
+  flex: none;
+  display: flex;
+  gap: 0.4rem;
+}
+
+.edit-link.subtle {
+  border-color: transparent;
+  color: var(--ink-faint);
+  font-weight: 500;
+}
+
+.stack .field:first-child {
+  margin-top: 0;
+}
+
+.quiet-link {
+  color: var(--ink-soft);
+  padding: 0 0.75rem;
+}

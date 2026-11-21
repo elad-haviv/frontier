@@ -80,9 +80,17 @@ export function EntryPage({ onSessionLost }: { onSessionLost: () => void }) {
         <div className="title-row">
           <h1>{view!.title}</h1>
           {!e.readOnly && e.draft?.kind !== "delete" && (
-            <Link to={editUrl(e.path)} className="edit-link">
-              Edit
-            </Link>
+            <span className="entry-actions">
+              <Link
+                to={"/rename/" + e.path.split("/").map(encodeURIComponent).join("/")}
+                className="edit-link subtle"
+              >
+                Rename
+              </Link>
+              <Link to={editUrl(e.path)} className="edit-link">
+                Edit
+              </Link>
+            </span>
           )}
         </div>
         {e.state === "unpublished" && (
