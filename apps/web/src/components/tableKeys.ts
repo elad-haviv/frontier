@@ -1,12 +1,65 @@
-import type { KeyBinding } from "@codemirror/view";
+import type { EditorState } from "@codemirror/state";
+import type { EditorView, KeyBinding } from "@codemirror/view";
+import { editTable, findTable, isRow, type TableAction } from "./tableEdit.ts";
 
-const isRow = (text: string) => /^\s*\|.*\|\s*$/.test(text);
+/** The table the cursor is in, with the cursor's row in it, or null outside a table. */
+function tableHere(state: EditorState) {
+  const { head } = state.selection.main;
+  const line = state.doc.lineAt(head);
+  const table = findTable(
+    (n) => (n >= 1 && n <= state.doc.lines ? state.doc.line(n).text : null),
+    line.number,
+  );
+  if (!table) return null;
+  return { ...table, row: line.number - table.start, at: head - line.from };
+}
+
+/** Whether the cursor is in a Markdown table. Cheap enough to ask on every cursor move. */
+export function inTable(state: EditorState): boolean {
+  return tableHere(state) !== null;
+}
 
 /**
- * In a Markdown table, Tab moves to the next cell and Shift+Tab to the one before.
- * Outside a table the keys do what they always do.
+ * Adds or removes a row or column of the table the cursor is in. Answers false outside a table;
+ * inside one it answers true even when nothing can be done, such as deleting the header row, so
+ * the key does not fall through to what it means elsewhere.
+ */
+export function tableCommand(action: TableAction) {
+  return (view: EditorView): boolean => {
+    const table = tableHere(view.state);
+    if (!table) return false;
+    const edit = editTable(table.lines, table.row, table.at, action);
+    if (!edit) return true;
+    const base = view.state.doc.line(table.start).from;
+    view.dispatch({
+      changes: edit.changes.map((c) => ({
+        from: base + c.from,
+        to: base + c.to,
+        insert: c.insert,
+      })),
+      selection: { anchor: base + edit.cursor },
+      scrollIntoView: true,
+      userEvent: "input",
+    });
+    return true;
+  };
+}
+
+/**
+ * In a Markdown table, Tab moves to the next cell and Shift+Tab to the one before. Also in a table:
+ *
+ *   Mod-Enter              add a row below
+ *   Mod-Shift-Enter        add a column to the right
+ *   Mod-Shift-Backspace    delete this row (never the header or the separator)
+ *   Mod-Alt-Backspace      delete this column (never the last one)
+ *
+ * Mod is Cmd on a Mac and Ctrl elsewhere. Outside a table the keys do what they always do.
  */
 export const tableKeys: KeyBinding[] = [
+  { key: "Mod-Enter", run: tableCommand("addRow") },
+  { key: "Mod-Shift-Enter", run: tableCommand("addColumn") },
+  { key: "Mod-Shift-Backspace", run: tableCommand("deleteRow") },
+  { key: "Mod-Alt-Backspace", run: tableCommand("deleteColumn") },
   {
     key: "Tab",
     run(view) {

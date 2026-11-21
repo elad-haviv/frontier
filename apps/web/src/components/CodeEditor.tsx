@@ -5,8 +5,9 @@ import { EditorView, keymap } from "@codemirror/view";
 import { basicSetup } from "codemirror";
 import { useEffect, useRef } from "react";
 import { completeLinks } from "./linkComplete.ts";
+import { notePath } from "./imageWidget.ts";
 import { livePreview } from "./livePreview.ts";
-import { tableKeys } from "./tableKeys.ts";
+import { inTable, tableKeys } from "./tableKeys.ts";
 
 const theme = EditorView.theme({
   "&": { fontSize: "1rem", backgroundColor: "transparent", color: "var(--ink)" },
@@ -45,6 +46,8 @@ export function CodeEditor({
   preview = false,
   viewRef,
   onFiles,
+  path = "",
+  onTable,
 }: {
   initial: string;
   onChange?: (text: string) => void;
@@ -55,12 +58,18 @@ export function CodeEditor({
   viewRef?: { current: EditorView | null };
   /** Called with image files pasted or dropped into the editor. */
   onFiles?: (files: File[]) => void;
+  /** The note's vault path, so live preview can find the images it embeds. */
+  path?: string;
+  /** Told whether the cursor is in a table, when the cursor moves. */
+  onTable?: (inside: boolean) => void;
 }) {
   const host = useRef<HTMLDivElement>(null);
   const changed = useRef(onChange);
   changed.current = onChange;
   const files = useRef(onFiles);
   files.current = onFiles;
+  const table = useRef(onTable);
+  table.current = onTable;
   const previewSlot = useRef(new Compartment());
   const made = useRef<EditorView | null>(null);
 
@@ -83,6 +92,7 @@ export function CodeEditor({
             },
           }),
           markdown(),
+          notePath.of(path),
           // Entry names are offered after "[[". This replaces the editor's own word suggestions.
           autocompletion({ override: [completeLinks], icons: false }),
           EditorView.lineWrapping,
@@ -90,6 +100,7 @@ export function CodeEditor({
           theme,
           EditorView.updateListener.of((update) => {
             if (update.docChanged) changed.current?.(update.state.doc.toString());
+            if (update.docChanged || update.selectionSet) table.current?.(inTable(update.state));
           }),
         ],
       }),

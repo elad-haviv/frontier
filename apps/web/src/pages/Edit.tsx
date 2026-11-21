@@ -51,6 +51,7 @@ export function EditPage() {
   const saving = useRef(false);
   const again = useRef(false);
   const view = useRef<EditorView | null>(null);
+  const [inTable, setInTable] = useState(false);
   const [preview, setPreview] = useState(() => {
     try {
       return localStorage.getItem("frontier.preview") !== "0";
@@ -331,8 +332,10 @@ export function EditPage() {
         viewRef={view}
         preview={preview}
         onFiles={addImages}
+        path={path}
+        onTable={setInTable}
       />
-      <EditToolbar view={view} onFiles={addImages} />
+      <EditToolbar view={view} onFiles={addImages} inTable={inTable} />
     </div>
   );
 }

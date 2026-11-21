@@ -1,6 +1,7 @@
 import { startCompletion } from "@codemirror/autocomplete";
 import { redo, undo } from "@codemirror/commands";
 import type { EditorView } from "@codemirror/view";
+import { tableCommand } from "./tableKeys.ts";
 
 type Ref = { current: EditorView | null };
 
@@ -27,11 +28,27 @@ function linePrefix(view: EditorView, mark: string) {
   view.focus();
 }
 
+const TABLE_BUTTONS = [
+  ["addRow", "+row", "Add a row below"],
+  ["deleteRow", "−row", "Delete this row"],
+  ["addColumn", "+col", "Add a column to the right"],
+  ["deleteColumn", "−col", "Delete this column"],
+] as const;
+
 /**
  * Buttons for the marks that are slow to reach on a phone keyboard. They sit at the bottom of the
- * screen, above the keyboard when it is open.
+ * screen, above the keyboard when it is open. While the cursor is in a table, buttons to add and
+ * delete its rows and columns come first.
  */
-export function EditToolbar({ view, onFiles }: { view: Ref; onFiles?: (files: File[]) => void }) {
+export function EditToolbar({
+  view,
+  onFiles,
+  inTable = false,
+}: {
+  view: Ref;
+  onFiles?: (files: File[]) => void;
+  inTable?: boolean;
+}) {
   const act = (fn: (v: EditorView) => void) => () => {
     if (view.current) fn(view.current);
   };
@@ -40,6 +57,23 @@ export function EditToolbar({ view, onFiles }: { view: Ref; onFiles?: (files: Fi
 
   return (
     <div className="edit-toolbar" role="toolbar" aria-label="Formatting">
+      {inTable &&
+        TABLE_BUTTONS.map(([action, text, label]) => (
+          <button
+            key={action}
+            type="button"
+            className="edit-toolbar-table"
+            onPointerDown={keep}
+            aria-label={label}
+            title={label}
+            onClick={act((v) => {
+              tableCommand(action)(v);
+              v.focus();
+            })}
+          >
+            {text}
+          </button>
+        ))}
       <button
         type="button"
         onPointerDown={keep}

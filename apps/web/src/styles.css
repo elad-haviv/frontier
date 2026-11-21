@@ -1461,6 +1461,60 @@ button.big {
   color: var(--ink-faint);
 }
 
+/* An image embed shown as the image, with a handle on its right edge to set the width. */
+.code-editor .cm-lp-image:not(.cm-lp-embed) {
+  position: relative;
+  display: inline-block;
+  max-width: 100%;
+  vertical-align: bottom;
+}
+.code-editor .cm-lp-image img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  border-radius: 3px;
+}
+.code-editor .cm-lp-image-handle {
+  position: absolute;
+  top: 0;
+  right: -12px;
+  bottom: 0;
+  width: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: ew-resize;
+  /* The finger drags the edge; the page does not scroll or zoom under it. */
+  touch-action: none;
+}
+.code-editor .cm-lp-image-handle::after {
+  content: "";
+  width: 5px;
+  height: min(3rem, 60%);
+  border-radius: 3px;
+  background: var(--accent);
+  box-shadow: 0 0 0 1px var(--paper);
+  opacity: 0.75;
+}
+.code-editor .cm-lp-image-dragging img {
+  outline: 2px solid color-mix(in srgb, var(--accent) 60%, transparent);
+}
+.code-editor .cm-lp-image-reset {
+  position: absolute;
+  top: 0.3rem;
+  right: 1rem;
+  width: 1.9rem;
+  height: 1.9rem;
+  padding: 0;
+  border: 1px solid var(--rule);
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--paper-raised) 85%, transparent);
+  color: var(--ink-soft);
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
 .editor-actions button[aria-pressed="true"] {
   color: var(--accent);
 }

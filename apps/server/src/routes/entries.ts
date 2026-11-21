@@ -6,7 +6,7 @@ import {
   type TreeResponse,
   VaultPath,
 } from "@frontier/schema";
-import { dirname, isNote, readFields, stem, typeFromFolder } from "@frontier/vault";
+import { dirname, isImage, isNote, readFields, stem, typeFromFolder } from "@frontier/vault";
 import { z } from "zod";
 import { ApiError } from "../errors.js";
 import { type IndexedLink, linkKindOf } from "../index/build.js";
@@ -15,6 +15,17 @@ import type { Services } from "../app.js";
 const EntryQuery = z
   .object({ path: VaultPath.optional(), id: z.string().optional() })
   .refine((q) => (q.path === undefined) !== (q.id === undefined), "Give a path or an id.");
+
+const FindQuery = z.object({
+  /** What an embed points at, as written: "![[name.png]]" sends "name.png". */
+  name: z
+    .string()
+    .min(1)
+    .max(1000)
+    .regex(/^[^[\]\n|]+$/),
+  /** The note the embed is in, which decides between images of the same name. */
+  from: VaultPath,
+});
 
 function shown(links: IndexedLink[]): EntryResponse["links"] {
   return links.map(({ link, resolution }) => ({
@@ -165,5 +176,16 @@ export function entryRoutes(app: FastifyInstance, s: Services): void {
       ...fieldsOf(note!.path, note!.text),
       maps: await mapsOf(note!.path),
     };
+  });
+
+  /**
+   * The image an embed in a note points at, resolved as the reader resolves it, including images
+   * uploaded but not yet published. The editor uses it to show the image in place of the embed.
+   */
+  app.get("/api/images/find", async (request): Promise<{ path: string | null }> => {
+    const { name, from } = FindQuery.parse(request.query);
+    const { added, removed } = overlay();
+    const r = s.index.analyse(from, `![[${name}]]`, added, removed).links[0]?.resolution;
+    return { path: r?.kind === "file" && isImage(r.path) ? r.path : null };
   });
 }

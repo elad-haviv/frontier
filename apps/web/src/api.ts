@@ -106,6 +106,11 @@ export const api = {
     ),
   preview: (path: string) =>
     call<{ path: string; text: string }>(`/api/preview?path=${encodeURIComponent(path)}`),
+  /** The image an embed in the note `from` points at, or null when there is none. */
+  findImage: (name: string, from: string) =>
+    call<{ path: string | null }>(
+      `/api/images/find?name=${encodeURIComponent(name)}&from=${encodeURIComponent(from)}`,
+    ),
   upload: async (file: File) => {
     const form = new FormData();
     form.append("file", file, file.name);

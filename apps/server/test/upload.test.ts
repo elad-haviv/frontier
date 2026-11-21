@@ -73,6 +73,24 @@ describe("image upload", () => {
     });
   });
 
+  it("finds the image an embed points at, for the editor to show it", async () => {
+    const find = async (name: string) =>
+      (
+        await t.get(
+          `/api/images/find?name=${encodeURIComponent(name)}&from=${encodeURIComponent("02 People/Mira.md")}`,
+        )
+      ).json();
+    expect(await find("Sea Chart.png")).toEqual({ path: "99 Appendices/Images/Sea Chart.png" });
+    expect(await find("Nowhere.png")).toEqual({ path: null });
+    // A note is not an image, even when the name matches.
+    expect(await find("Mira")).toEqual({ path: null });
+    expect((await t.get("/api/images/find?name=a%5Bb.png&from=x.md")).statusCode).toBe(400);
+    expect(
+      (await t.app.inject({ method: "GET", url: "/api/images/find?name=a.png&from=x.md" }))
+        .statusCode,
+    ).toBe(401);
+  });
+
   it("lists the image among the unpublished changes without treating it as text", async () => {
     const u = UnpublishedResponse.parse((await t.get("/api/unpublished")).json());
     const image = u.drafts.find((d) => d.path.endsWith("Sea Chart.png"))!;

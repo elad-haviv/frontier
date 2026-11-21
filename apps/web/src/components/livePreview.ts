@@ -1,6 +1,7 @@
 /**
  * Live preview: on every line except the one being edited, Markdown marks are hidden and the text
- * is shown as it will read. The document itself is never changed; this only affects how it looks.
+ * is shown as it will read, and image embeds as their images. Showing never changes the document;
+ * only dragging an image's edge does, and then only that embed's text (see imageWidget.ts).
  */
 import { syntaxTree } from "@codemirror/language";
 import type { Range } from "@codemirror/state";
@@ -11,6 +12,9 @@ import {
   ViewPlugin,
   type ViewUpdate,
 } from "@codemirror/view";
+import { readImageEmbed } from "./embedWidth.ts";
+import { ImageWidget, notePath } from "./imageWidget.ts";
+import { isRow } from "./tableEdit.ts";
 
 const hide = Decoration.replace({});
 const mark = (cls: string) => Decoration.mark({ class: cls });
@@ -82,6 +86,13 @@ function build(view: EditorView): DecorationSet {
         const pipe = /\\?\|/.exec(inner);
         const shownFrom = pipe ? open + pipe.index + pipe[0].length : open;
         if (m[1] === "!") {
+          const image = readImageEmbed(m[0]);
+          const from = state.facet(notePath);
+          if (image && from) {
+            const widget = new ImageWidget(m[0], image, from, isRow(line.text));
+            out.push(Decoration.replace({ widget }).range(start, end));
+            continue;
+          }
           out.push(mark("cm-lp-embed").range(start, end));
           continue;
         }
