@@ -72,7 +72,7 @@ export function entryRoutes(app: FastifyInstance, s: Services): void {
     }
 
     const info = draft ? { id: draft.id, revision: draft.revision, kind: draft.kind } : null;
-    if (draft && draft.kind !== "delete") {
+    if (draft && draft.kind !== "delete" && !draft.binary) {
       const text = await s.drafts.text(draft.id);
       const { added, removed } = overlay();
       const { headings, links } = s.index.analyse(path, text, added, removed);

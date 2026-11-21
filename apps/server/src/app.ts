@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import fastifyStatic from "@fastify/static";
+import multipart from "@fastify/multipart";
 import rateLimit from "@fastify/rate-limit";
 import secureSession from "@fastify/secure-session";
 import Fastify, { type FastifyInstance } from "fastify";
@@ -168,6 +169,8 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
     },
   });
   await app.register(rateLimit, { global: false });
+  // One image per upload, up to 25 MB.
+  await app.register(multipart, { limits: { fileSize: 25 * 1024 * 1024, files: 1 } });
 
   app.addHook("onClose", async () => backup.stop());
 

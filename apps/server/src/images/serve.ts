@@ -39,7 +39,11 @@ export class ImageServer {
    * file's extension can be wrong.
    */
   async get(path: string, width?: number): Promise<ServedImage> {
-    const original = await readFile(join(this.vaultDir, path));
+    return this.serve(await readFile(join(this.vaultDir, path)), width);
+  }
+
+  /** The same for image bytes that are not in the vault yet, such as an unpublished upload. */
+  async serve(original: Buffer, width?: number): Promise<ServedImage> {
     const meta = await sharp(original).metadata();
     const format = meta.format ?? "png";
     const contentType = TYPES[format] ?? "application/octet-stream";

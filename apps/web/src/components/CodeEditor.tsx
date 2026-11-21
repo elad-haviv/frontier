@@ -1,10 +1,12 @@
 import { autocompletion } from "@codemirror/autocomplete";
 import { markdown } from "@codemirror/lang-markdown";
-import { EditorState } from "@codemirror/state";
-import { EditorView } from "@codemirror/view";
+import { Compartment, EditorState } from "@codemirror/state";
+import { EditorView, keymap } from "@codemirror/view";
 import { basicSetup } from "codemirror";
 import { useEffect, useRef } from "react";
 import { completeLinks } from "./linkComplete.ts";
+import { livePreview } from "./livePreview.ts";
+import { tableKeys } from "./tableKeys.ts";
 
 const theme = EditorView.theme({
   "&": { fontSize: "1rem", backgroundColor: "transparent", color: "var(--ink)" },
@@ -19,6 +21,19 @@ const theme = EditorView.theme({
   },
 });
 
+/** Hands image files from a paste or a drop to the page. Anything else is left to the editor. */
+function takeImages(
+  data: DataTransfer | null,
+  event: Event,
+  handle: ((files: File[]) => void) | undefined,
+): boolean {
+  const images = [...(data?.files ?? [])].filter((f) => f.type.startsWith("image/"));
+  if (!images.length || !handle) return false;
+  event.preventDefault();
+  handle(images);
+  return true;
+}
+
 /**
  * A plain source editor. The text is edited as written, so nothing the author did not touch can
  * change. `initial` is read once; later changes come from the author's typing only.
@@ -27,17 +42,27 @@ export function CodeEditor({
   initial,
   onChange,
   readOnly = false,
+  preview = false,
   viewRef,
+  onFiles,
 }: {
   initial: string;
   onChange?: (text: string) => void;
   readOnly?: boolean;
+  /** Hide Markdown marks away from the line being edited. */
+  preview?: boolean;
   /** Receives the editor, so a toolbar can insert text into it. */
   viewRef?: { current: EditorView | null };
+  /** Called with image files pasted or dropped into the editor. */
+  onFiles?: (files: File[]) => void;
 }) {
   const host = useRef<HTMLDivElement>(null);
   const changed = useRef(onChange);
   changed.current = onChange;
+  const files = useRef(onFiles);
+  files.current = onFiles;
+  const previewSlot = useRef(new Compartment());
+  const made = useRef<EditorView | null>(null);
 
   useEffect(() => {
     const view = new EditorView({
@@ -45,7 +70,18 @@ export function CodeEditor({
       state: EditorState.create({
         doc: initial,
         extensions: [
+          // Before the standard keys, so Tab moves between table cells before it indents.
+          keymap.of(tableKeys),
           basicSetup,
+          previewSlot.current.of(preview ? livePreview : []),
+          EditorView.domEventHandlers({
+            paste(event) {
+              return takeImages(event.clipboardData, event, files.current);
+            },
+            drop(event) {
+              return takeImages(event.dataTransfer, event, files.current);
+            },
+          }),
           markdown(),
           // Entry names are offered after "[[". This replaces the editor's own word suggestions.
           autocompletion({ override: [completeLinks], icons: false }),
@@ -58,13 +94,21 @@ export function CodeEditor({
         ],
       }),
     });
+    made.current = view;
     if (viewRef) viewRef.current = view;
     return () => {
+      made.current = null;
       if (viewRef) viewRef.current = null;
       view.destroy();
     };
     // The editor owns the text after it is created.
   }, []);
+
+  useEffect(() => {
+    made.current?.dispatch({
+      effects: previewSlot.current.reconfigure(preview ? livePreview : []),
+    });
+  }, [preview]);
 
   return <div ref={host} className="code-editor" />;
 }

@@ -88,3 +88,10 @@ export async function noSidewaysScroll(page: Page): Promise<void> {
     false,
   );
 }
+
+/** Throws away the draft that is open in the editor, so the next test starts from the vault. */
+export async function discardDraft(page: Page): Promise<void> {
+  page.once("dialog", (d) => void d.accept());
+  await page.getByRole("button", { name: "Discard" }).click();
+  await expect(page.locator(".code-editor")).toHaveCount(0);
+}

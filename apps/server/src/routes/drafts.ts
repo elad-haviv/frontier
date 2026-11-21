@@ -101,7 +101,7 @@ export function draftRoutes(app: FastifyInstance, s: Services): void {
         path: d.path,
         kind: d.kind,
         binary: d.binary,
-        text: await s.drafts.text(d.id),
+        text: d.binary ? "" : await s.drafts.text(d.id),
         mainText: s.index.note(d.path)?.text ?? null,
       })),
     );

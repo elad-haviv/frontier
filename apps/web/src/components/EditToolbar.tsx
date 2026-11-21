@@ -31,7 +31,7 @@ function linePrefix(view: EditorView, mark: string) {
  * Buttons for the marks that are slow to reach on a phone keyboard. They sit at the bottom of the
  * screen, above the keyboard when it is open.
  */
-export function EditToolbar({ view }: { view: Ref }) {
+export function EditToolbar({ view, onFiles }: { view: Ref; onFiles?: (files: File[]) => void }) {
   const act = (fn: (v: EditorView) => void) => () => {
     if (view.current) fn(view.current);
   };
@@ -83,6 +83,21 @@ export function EditToolbar({ view }: { view: Ref }) {
       >
         <i>I</i>
       </button>
+      {onFiles && (
+        <label className="edit-toolbar-file" aria-label="Add an image">
+          ▣
+          <input
+            type="file"
+            accept="image/*"
+            multiple
+            onChange={(e) => {
+              const picked = [...(e.target.files ?? [])];
+              e.target.value = "";
+              if (picked.length) onFiles(picked);
+            }}
+          />
+        </label>
+      )}
       <span className="edit-toolbar-gap" />
       <button
         type="button"

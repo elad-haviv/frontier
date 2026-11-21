@@ -34,8 +34,9 @@ One place for what is being built, what is waiting, and ideas. The design in
 
 ## Now: finishing stages 1 and 2
 
-- [ ] Live preview in the editor (hide Markdown marks away from the cursor)
-- [ ] Image upload and sizing; table editing; properties panel
+- [x] Live preview in the editor (hide Markdown marks away from the cursor)
+- [x] Image upload (toolbar, paste, drop); Tab between table cells; properties panel (other names, tags)
+- [ ] Image sizing in the editor; adding and removing table rows and columns
 
 ## Waiting on Elad
 

@@ -20,7 +20,7 @@ Stage 1 of nine is in progress. What exists so far:
 | `apps/web`: login, folder tree, entry reader, image lightbox, status page, quick switcher                                                    | Built; covered by browser tests                                 |
 | `apps/web`: source editor with autosave and link autocomplete, new, delete and rename, unpublished list, Publish, merge and conflict screens | Built; covered by browser tests                                 |
 | Full-text search, outline, hover preview, editing toolbar                                                                                    | Built; covered by browser tests                                 |
-| Live preview; image upload; table editing; properties panel                                                                                  | Not started                                                     |
+| Live preview; image upload; table editing; properties panel                                                                                  | Built; image sizing and table row tools still to do             |
 
 The app writes to its vault: drafts are saved on the server and Publish makes one commit.
 

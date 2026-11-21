@@ -98,9 +98,9 @@ export class Publisher {
         continue;
       }
       if (onMain === null) continue;
-      const bytes = Buffer.from(
-        restoreLineEndings(await this.d.drafts.text(draft.id), draft.lineEnding),
-      );
+      const bytes = draft.binary
+        ? await this.d.drafts.bytes(draft.id)
+        : Buffer.from(restoreLineEndings(await this.d.drafts.text(draft.id), draft.lineEnding));
       if (bytes.equals(onMain) && !this.d.drafts.hasSecondVersion(draft.id)) {
         await this.d.drafts.discard(draft.id);
       }
@@ -112,6 +112,26 @@ export class Publisher {
 
   private async classify(draft: DraftRecord): Promise<Classified | null> {
     const { git } = this.d;
+    if (draft.binary) {
+      // A new image: ready unless a file took its name meanwhile.
+      const existing = await git.readFile(draft.path);
+      if (existing === null) return { draft, text: "", outcome: "ready", mainBlob: null };
+      if (existing.equals(await this.d.drafts.bytes(draft.id))) return null;
+      return {
+        draft,
+        text: "",
+        outcome: "conflict",
+        mainBlob: await git.blobHash(draft.path),
+        conflict: {
+          draftId: draft.id,
+          path: draft.path,
+          reason: "created_on_main",
+          mine: "",
+          theirs: null,
+          base: null,
+        },
+      };
+    }
     const text = await this.d.drafts.text(draft.id);
     const mainBlob = await git.blobHash(draft.path);
     const mainBytes = mainBlob === null ? null : await git.readFile(draft.path);
@@ -185,9 +205,14 @@ export class Publisher {
     const origin = new Map<string, string>();
     const draftAt = new Map<string, DraftRecord>();
     const removed = new Set<string>();
+    /** New files that are not text, by their path after all moves. */
+    const images = new Map<string, DraftRecord>();
 
     for (const { draft, text } of included) {
-      if (draft.kind === "delete") {
+      if (draft.binary) {
+        files.add(draft.path);
+        images.set(draft.path, draft);
+      } else if (draft.kind === "delete") {
         files.delete(draft.path);
         removed.add(draft.path);
       } else {
@@ -258,7 +283,10 @@ export class Publisher {
         files.delete(move.from);
         files.add(move.to);
         if (index.hasFile(move.from)) removed.add(move.from);
-        if (texts.has(move.from)) {
+        if (images.has(move.from)) {
+          images.set(move.to, images.get(move.from)!);
+          images.delete(move.from);
+        } else if (texts.has(move.from)) {
           texts.set(move.to, texts.get(move.from)!);
           texts.delete(move.from);
           origin.set(move.to, origin.get(move.from) ?? move.from);
@@ -288,6 +316,9 @@ export class Publisher {
       const current = index.hasFile(path) && !removed.has(path) ? await git.readFile(path) : null;
       if (current === null || !current.equals(content)) writes.push({ path, content });
     }
+    for (const [path, draft] of images) {
+      writes.push({ path, content: await this.d.drafts.bytes(draft.id) });
+    }
     for (const [to, from] of carried) {
       const content = await git.readFile(from);
       if (content !== null) writes.push({ path: to, content });
@@ -303,9 +334,10 @@ export class Publisher {
   /** The notes a rename would rewrite, given every current draft. Throws ApiError when it cannot be done. */
   async previewRename(intent: RenameIntent): Promise<string[]> {
     const included = await Promise.all(
-      this.d.drafts
-        .list()
-        .map(async (draft) => ({ draft, text: await this.d.drafts.text(draft.id) })),
+      this.d.drafts.list().map(async (draft) => ({
+        draft,
+        text: draft.binary ? "" : await this.d.drafts.text(draft.id),
+      })),
     );
     const earlier = this.d.drafts.listRenames().filter((r) => r.id !== intent.id);
     const result = await this.assemble(included, [...earlier, intent]);

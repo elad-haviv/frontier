@@ -1,7 +1,7 @@
 import type { PublishPlan, UnpublishedResponse } from "@frontier/schema";
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { api, ApiFailure, editUrl, entryUrl } from "../api.ts";
+import { api, ApiFailure, editUrl, entryUrl, imageUrl } from "../api.ts";
 import { Diff } from "../components/Diff.tsx";
 import { useRefresh } from "../components/Shell.tsx";
 
@@ -145,12 +145,18 @@ export function UnpublishedPage() {
                   <span className={`tag tag-${d.kind}`}>{KIND[d.kind]}</span>
                   <span className="change-path">{d.path}</span>
                 </label>
-                <details>
-                  <summary>Show changes</summary>
-                  <Diff before={d.mainText ?? ""} after={d.kind === "delete" ? "" : d.text} />
-                </details>
+                {d.binary ? (
+                  <img className="change-image" src={imageUrl(d.path, 320)} alt={d.path} />
+                ) : (
+                  <details>
+                    <summary>Show changes</summary>
+                    <Diff before={d.mainText ?? ""} after={d.kind === "delete" ? "" : d.text} />
+                  </details>
+                )}
                 <p className="change-actions">
-                  {d.kind !== "delete" && <Link to={editUrl(d.path)}>Keep editing</Link>}
+                  {d.kind !== "delete" && !d.binary && (
+                    <Link to={editUrl(d.path)}>Keep editing</Link>
+                  )}
                   <button type="button" className="plain danger" onClick={() => discard(d.id)}>
                     Discard
                   </button>

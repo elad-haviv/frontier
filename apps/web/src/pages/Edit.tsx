@@ -4,6 +4,7 @@ import { api, ApiFailure, entryUrl, newDraftId } from "../api.ts";
 import type { EditorView } from "@codemirror/view";
 import { CodeEditor } from "../components/CodeEditor.tsx";
 import { EditToolbar } from "../components/EditToolbar.tsx";
+import { Properties } from "../components/Properties.tsx";
 import { useRefresh } from "../components/Shell.tsx";
 import { clearBuffer, readBuffer, writeBuffer } from "../drafts.ts";
 
@@ -48,6 +49,50 @@ export function EditPage() {
   const saving = useRef(false);
   const again = useRef(false);
   const view = useRef<EditorView | null>(null);
+  const [preview, setPreview] = useState(() => {
+    try {
+      return localStorage.getItem("frontier.preview") !== "0";
+    } catch {
+      return true;
+    }
+  });
+
+  function togglePreview() {
+    setPreview((on) => {
+      try {
+        localStorage.setItem("frontier.preview", on ? "0" : "1");
+      } catch {
+        /* the choice lasts for this visit only */
+      }
+      return !on;
+    });
+  }
+
+  /** Stores each image as an unpublished file and writes its embed where the cursor is. */
+  const addImages = useCallback(
+    async (files: File[]) => {
+      for (const file of files) {
+        setMessage(`Adding ${file.name}…`);
+        try {
+          const { embed } = await api.upload(file);
+          const v = view.current;
+          if (v) {
+            const { from, to } = v.state.selection.main;
+            v.dispatch({
+              changes: { from, to, insert: embed },
+              selection: { anchor: from + embed.length },
+            });
+          }
+          setMessage(null);
+          refresh();
+        } catch (err) {
+          setMessage(err instanceof ApiFailure ? err.message : "Could not add the image.");
+          return;
+        }
+      }
+    },
+    [refresh],
+  );
 
   // Open the file: the server's draft or published text, or what this device still holds unsent.
   useEffect(() => {
@@ -208,6 +253,17 @@ export function EditPage() {
           {LABEL[state]}
         </span>
         <span className="editor-actions">
+          <button
+            type="button"
+            className="quiet"
+            aria-pressed={preview}
+            // Keeps the cursor in the text, and the phone keyboard open.
+            onPointerDown={(e) => e.preventDefault()}
+            onClick={togglePreview}
+            title="Hide Markdown marks away from the line you are on"
+          >
+            Preview
+          </button>
           <button type="button" className="quiet" onClick={remove}>
             Delete
           </button>
@@ -227,8 +283,16 @@ export function EditPage() {
           )}
         </p>
       )}
-      <CodeEditor key={path} initial={initial} onChange={onChange} viewRef={view} />
-      <EditToolbar view={view} />
+      <Properties view={view} />
+      <CodeEditor
+        key={path}
+        initial={initial}
+        onChange={onChange}
+        viewRef={view}
+        preview={preview}
+        onFiles={addImages}
+      />
+      <EditToolbar view={view} onFiles={addImages} />
     </div>
   );
 }

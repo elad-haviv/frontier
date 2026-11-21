@@ -88,6 +88,34 @@ export class DraftStore {
     return readFile(join(this.folder(id), "content"), "utf8");
   }
 
+  /** The stored content as bytes. For an image draft this is the image itself. */
+  async bytes(id: string): Promise<Buffer> {
+    return readFile(join(this.folder(id), "content"));
+  }
+
+  /** Stores a new file that is not text, such as an uploaded image, as a draft. */
+  async saveBinary(
+    id: string,
+    path: string,
+    content: Buffer,
+    now = new Date(),
+  ): Promise<DraftRecord> {
+    const record: DraftRecord = {
+      id,
+      revision: 1,
+      path,
+      kind: "create",
+      baseBlob: "",
+      lineEnding: "lf",
+      binary: true,
+      updatedAt: now.toISOString(),
+    };
+    await this.files.write(join(this.folder(id), "content"), content);
+    await this.files.writeJson(join(this.folder(id), "record.json"), record);
+    this.records.set(id, record);
+    return record;
+  }
+
   hasSecondVersion(id: string): boolean {
     return existsSync(join(this.folder(id), "content.v2"));
   }
@@ -125,6 +153,9 @@ export class DraftStore {
       return record;
     }
 
+    if (existing.binary) {
+      throw new ApiError("invalid", "An uploaded image cannot be edited as text.");
+    }
     if (existing.id === input.id && existing.path !== input.path) {
       throw new ApiError("invalid", "A draft cannot change which file it belongs to.");
     }

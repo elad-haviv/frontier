@@ -39,6 +39,8 @@ export interface Config {
   commitAuthor: { name: string; email: string };
   commitBot: { name: string; email: string };
   backup: { kind: "local"; dir: string } | { kind: "s3"; s3: S3Config };
+  /** The vault folder new images are put in. */
+  uploadFolder: string;
 }
 
 type Env = Record<string, string | undefined>;
@@ -126,6 +128,10 @@ export function loadConfig(env: Env = process.env): Config {
     remoteUrl,
     githubApp,
     githubToken,
+    uploadFolder: (optional("UPLOAD_FOLDER") ?? "99 Appendices/01 Images").replace(
+      /^\/+|\/+$/g,
+      "",
+    ),
     webhookSecret,
     sessionKey,
     commitAuthor,

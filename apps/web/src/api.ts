@@ -80,6 +80,11 @@ export const api = {
     ),
   preview: (path: string) =>
     call<{ path: string; text: string }>(`/api/preview?path=${encodeURIComponent(path)}`),
+  upload: async (file: File) => {
+    const form = new FormData();
+    form.append("file", file, file.name);
+    return call<{ path: string; embed: string }>("/api/images", { method: "POST", body: form });
+  },
   rename: (from: string, to: string) =>
     post<{ id: string; affected: string[] }>("/api/renames", { from, to }),
 
