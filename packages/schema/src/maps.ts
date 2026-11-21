@@ -75,7 +75,7 @@ const featureBase = {
   /** The id of a more detailed map of this place, or null. */
   child: z.string().nullable(),
   /** The id of the chronicle span that says when this exists. It wins over the entry's span. */
-  span: ItemId.optional(),
+  span: ItemId.nullish(),
   /** Later shapes, each in force from the start of a span. */
   shapes: z.array(LaterShape).optional(),
 };
@@ -150,12 +150,44 @@ const ITEM_KEYS: Record<string, string[]> = {
   ],
 };
 
+const SHAPE_KEYS = ["id", "from", "at", "points"];
+
+function inOrder<T extends object>(item: T, keys: string[]): T {
+  const from = item as Record<string, unknown>;
+  const out: Record<string, unknown> = {};
+  for (const key of keys) if (from[key] !== undefined) out[key] = from[key];
+  for (const key of Object.keys(from))
+    if (!(key in out) && from[key] !== undefined) out[key] = from[key];
+  return out as T;
+}
+
+/**
+ * A feature with its keys, and those of its later shapes, in the order the file is written in.
+ * A null span and an empty list of later shapes are left out: both mean "none". The same
+ * feature then gives the same bytes, and compares as equal, however it was put together.
+ */
+export function orderFeature(feature: MapFeature): MapFeature {
+  const { span, shapes, ...rest } = feature as MapFeature & Record<string, unknown>;
+  return inOrder(
+    {
+      ...rest,
+      ...(span != null ? { span } : {}),
+      ...(Array.isArray(shapes) && shapes.length > 0
+        ? { shapes: shapes.map((h) => inOrder(h as LaterShape, SHAPE_KEYS)) }
+        : {}),
+    } as MapFeature,
+    ITEM_KEYS.features!,
+  );
+}
+
+const ordered = (map: MapFile): MapFile => ({ ...map, features: map.features.map(orderFeature) });
+
 /**
  * The text a map is stored as. Each image, layer and feature is on one line, so a difference
  * reads item by item, and the same map always gives the same bytes.
  */
 export function serialiseMap(map: MapFile): string {
-  return serialiseItemFile(map as Record<string, unknown>, TOP, ITEM_KEYS);
+  return serialiseItemFile(ordered(map) as Record<string, unknown>, TOP, ITEM_KEYS);
 }
 
 export type ParsedMap = { ok: true; map: MapFile } | { ok: false; message: string };
@@ -197,7 +229,9 @@ export interface MapMerge {
  * taken from that side. Where both changed the same thing differently, `mine` is kept and the
  * thing is named in `clashes`; the caller decides whether that is acceptable.
  */
-export function mergeMaps(base: MapFile, mine: MapFile, theirs: MapFile): MapMerge {
+export function mergeMaps(base0: MapFile, mine0: MapFile, theirs0: MapFile): MapMerge {
+  // The same feature must compare as equal whatever order its keys were set in.
+  const [base, mine, theirs] = [ordered(base0), ordered(mine0), ordered(theirs0)];
   const clashes: string[] = [];
   const pick = <K extends "title" | "space" | "markerSets">(key: K): MapFile[K] => {
     if (same(mine[key], theirs[key]) || same(base[key], theirs[key])) return mine[key];

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   extentProblem,
+  orderFeature,
   type MapFeature,
   type MapFile,
   mapIdOf,
@@ -309,5 +310,54 @@ describe("a feature in time", () => {
     expect(merged.clashes).toEqual([]);
     expect(merged.map.features.find((f) => f.id === "t1")).toEqual(timed);
     expect(merged.map.features[0]!.label).toBe("renamed");
+  });
+
+  it("gives the same bytes whatever order the keys were set in, at both levels", () => {
+    const built = {
+      shapes: [{ at: [3, 4], from: "s7", id: "h1" }],
+      span: "s2",
+      ...marker("t1", [1, 2]),
+    } as unknown as MapFeature;
+    expect(JSON.stringify(orderFeature(built))).toBe(JSON.stringify(timed));
+    expect(serialiseMap({ ...base, features: [built] })).toBe(
+      serialiseMap({ ...base, features: [timed] }),
+    );
+  });
+
+  it("reads a null span and an empty list of shapes as none", () => {
+    const loose = marker("t3", [0, 0], { span: null, shapes: [] });
+    const read = parseMap(JSON.stringify({ ...base, features: [loose] }));
+    expect(read.ok).toBe(true);
+    const text = serialiseMap({ ...base, features: [loose] });
+    expect(text).toBe(serialiseMap({ ...base, features: [marker("t3", [0, 0])] }));
+  });
+
+  it("opens a map whose later shape is unusable", () => {
+    const odd = marker("t4", [0, 0], { shapes: [{ id: "h1", from: "s1", points: [[1, 1]] }] });
+    expect(parseMap(JSON.stringify({ ...base, features: [odd] })).ok).toBe(true);
+  });
+
+  it("sees no change in a feature that came back from a save with its keys reordered", () => {
+    const start = { ...base, features: [timed] };
+    const mine = {
+      ...base,
+      features: [{ shapes: timed.shapes, span: "s2", ...marker("t1", [1, 2]) } as MapFeature],
+    };
+    const theirs = { ...base, features: [{ ...timed, label: "theirs" } as MapFeature] };
+    const merged = mergeMaps(start, mine, theirs);
+    expect(merged.clashes).toEqual([]);
+    expect(merged.map.features[0]!.label).toBe("theirs");
+  });
+
+  it("clashes, keeping mine, when two sides change different shapes of one feature", () => {
+    const start = { ...base, features: [timed] };
+    const mine = { ...base, features: [{ ...timed, at: [9, 9] } as MapFeature] };
+    const theirs = {
+      ...base,
+      features: [{ ...timed, shapes: [{ id: "h1", from: "s7", at: [5, 5] }] } as MapFeature],
+    };
+    const merged = mergeMaps(start, mine, theirs);
+    expect(merged.clashes).toEqual(["t1"]);
+    expect(merged.map.features[0]).toMatchObject({ at: [9, 9] });
   });
 });
