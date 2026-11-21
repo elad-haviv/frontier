@@ -1,0 +1,224 @@
+/**
+ * Copies the working files to a backup target.
+ *
+ *   latest/            mirrors the folders now, including deletions, a few minutes after any change
+ *   nightly/<date>/    a full copy each night, kept for 14 days
+ *
+ * Working files are the only data that cannot be rebuilt from the vault repository.
+ */
+import { createHash } from "node:crypto";
+import { existsSync } from "node:fs";
+import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
+import { BackupState } from "@frontier/schema";
+import type { BackupTarget } from "./targets.js";
+
+export interface BackupOptions {
+  /** Folders to back up, each under a name: { state: "/data/state", generated: "/data/assets/generated" }. */
+  sources: Record<string, string>;
+  target: BackupTarget;
+  /** Where the time of the last copy is recorded. It is not itself backed up. */
+  stateFile: string;
+  /** How long after the first unsaved change a copy runs. */
+  delayMs?: number;
+  keepNights?: number;
+  onResult?: (state: BackupState) => void;
+  now?: () => Date;
+}
+
+const MANIFEST = "latest/.manifest.json";
+
+async function walk(root: string, rel = ""): Promise<string[]> {
+  const out: string[] = [];
+  if (!existsSync(join(root, rel))) return out;
+  for (const name of (await readdir(join(root, rel))).sort()) {
+    const child = rel === "" ? name : `${rel}/${name}`;
+    if ((await stat(join(root, child))).isDirectory()) out.push(...(await walk(root, child)));
+    // Files still being written are skipped; they are renamed into place a moment later.
+    else if (!name.endsWith(".tmp")) out.push(child);
+  }
+  return out;
+}
+
+const sha = (data: Buffer) => createHash("sha1").update(data).digest("hex");
+const day = (d: Date) => d.toISOString().slice(0, 10);
+
+/** Milliseconds from `now` until the next time the clock shows `hour`:00. */
+export function msUntilHour(hour: number, now: Date): number {
+  const next = new Date(now);
+  next.setHours(hour, 0, 0, 0);
+  if (next.getTime() <= now.getTime()) next.setDate(next.getDate() + 1);
+  return next.getTime() - now.getTime();
+}
+
+export class Backup {
+  private timer: NodeJS.Timeout | undefined;
+  private nightly: NodeJS.Timeout | undefined;
+  private queue: Promise<unknown> = Promise.resolve();
+  private readonly delayMs: number;
+  private readonly keepNights: number;
+  private readonly now: () => Date;
+
+  constructor(private readonly o: BackupOptions) {
+    this.delayMs = o.delayMs ?? 5 * 60 * 1000;
+    this.keepNights = o.keepNights ?? 14;
+    this.now = o.now ?? (() => new Date());
+  }
+
+  /** Call on every write to the working files. The copy runs once, `delayMs` after the first call. */
+  noteChange(): void {
+    if (this.timer) return;
+    this.timer = setTimeout(() => {
+      this.timer = undefined;
+      void this.runNow();
+    }, this.delayMs);
+    this.timer.unref();
+  }
+
+  /** Starts the nightly copy at 03:00 server time. */
+  startNightly(): void {
+    const schedule = () => {
+      this.nightly = setTimeout(
+        () => {
+          void this.runNightly().finally(schedule);
+        },
+        msUntilHour(3, this.now()),
+      );
+      this.nightly.unref();
+    };
+    schedule();
+  }
+
+  stop(): void {
+    clearTimeout(this.timer);
+    clearTimeout(this.nightly);
+    this.timer = undefined;
+  }
+
+  async lastState(): Promise<BackupState> {
+    if (!existsSync(this.o.stateFile)) return { lastSuccessAt: null, lastError: null };
+    try {
+      return BackupState.parse(JSON.parse(await readFile(this.o.stateFile, "utf8")));
+    } catch {
+      return { lastSuccessAt: null, lastError: null };
+    }
+  }
+
+  private async record(error: string | null): Promise<BackupState> {
+    const previous = await this.lastState();
+    const state: BackupState = {
+      lastSuccessAt: error === null ? this.now().toISOString() : previous.lastSuccessAt,
+      lastError: error,
+    };
+    await mkdir(dirname(this.o.stateFile), { recursive: true });
+    await writeFile(this.o.stateFile, JSON.stringify(state, null, 2) + "\n");
+    this.o.onResult?.(state);
+    return state;
+  }
+
+  /** One job at a time: a copy never overlaps another. */
+  private exclusive<T>(job: () => Promise<T>): Promise<T> {
+    const run = this.queue.then(job, job);
+    this.queue = run.catch(() => undefined);
+    return run;
+  }
+
+  private async files(): Promise<Map<string, Buffer>> {
+    const out = new Map<string, Buffer>();
+    for (const [name, dir] of Object.entries(this.o.sources)) {
+      for (const rel of await walk(dir)) {
+        const full = join(dir, rel);
+        if (full === this.o.stateFile) continue;
+        out.set(`${name}/${rel}`, await readFile(full));
+      }
+    }
+    return out;
+  }
+
+  /** Brings `latest/` in line with the folders: uploads what changed and removes what is gone. */
+  runNow(): Promise<BackupState> {
+    clearTimeout(this.timer);
+    this.timer = undefined;
+    return this.exclusive(async () => {
+      try {
+        const { target } = this.o;
+        const local = await this.files();
+        const raw = await target.get(MANIFEST);
+        const known: Record<string, string> = raw
+          ? (JSON.parse(raw.toString("utf8")) as Record<string, string>)
+          : {};
+        const next: Record<string, string> = {};
+        for (const [path, data] of local) {
+          const hash = sha(data);
+          next[path] = hash;
+          if (known[path] !== hash) await target.put(`latest/${path}`, data);
+        }
+        for (const key of await target.list("latest/")) {
+          const path = key.slice("latest/".length);
+          if (key !== MANIFEST && !(path in next)) await target.remove(key);
+        }
+        await target.put(MANIFEST, Buffer.from(JSON.stringify(next, null, 2)));
+        return await this.record(null);
+      } catch (err) {
+        return await this.record((err as Error).message || "The backup failed.");
+      }
+    });
+  }
+
+  /** Writes a full copy under tonight's date and removes copies older than `keepNights`. */
+  runNightly(): Promise<BackupState> {
+    return this.exclusive(async () => {
+      try {
+        const { target } = this.o;
+        const today = day(this.now());
+        for (const [path, data] of await this.files())
+          await target.put(`nightly/${today}/${path}`, data);
+        await target.put(`nightly/${today}/.complete`, Buffer.from(this.now().toISOString()));
+        const nights = [
+          ...new Set((await target.list("nightly/")).map((k) => k.split("/")[1]!)),
+        ].sort();
+        for (const night of nights.slice(0, Math.max(0, nights.length - this.keepNights))) {
+          for (const key of await target.list(`nightly/${night}/`)) await target.remove(key);
+        }
+        return await this.record(null);
+      } catch (err) {
+        return await this.record((err as Error).message || "The nightly backup failed.");
+      }
+    });
+  }
+}
+
+/**
+ * Fills the given folders from a backup. `from` is "latest" or a night such as "2026-11-20".
+ * Refuses to write into a folder that already holds files, so a restore cannot overwrite work.
+ */
+export async function restore(
+  target: BackupTarget,
+  sources: Record<string, string>,
+  from = "latest",
+): Promise<{ files: number; from: string }> {
+  const prefix = from === "latest" ? "latest/" : `nightly/${from}/`;
+  const keys = (await target.list(prefix)).filter(
+    (k) => !k.endsWith("/.manifest.json") && !k.endsWith("/.complete"),
+  );
+  if (keys.length === 0) throw new Error(`There is no backup under "${prefix}".`);
+  for (const [name, dir] of Object.entries(sources)) {
+    if ((await walk(dir)).length > 0) {
+      throw new Error(`"${dir}" (${name}) is not empty. Restore only into an empty folder.`);
+    }
+  }
+  let files = 0;
+  for (const key of keys) {
+    const rel = key.slice(prefix.length);
+    const name = rel.split("/")[0]!;
+    const dir = sources[name];
+    if (!dir) continue;
+    const data = await target.get(key);
+    if (data === null) continue;
+    const path = join(dir, rel.slice(name.length + 1));
+    await mkdir(dirname(path), { recursive: true });
+    await writeFile(path, data);
+    files++;
+  }
+  return { files, from: prefix };
+}

@@ -24,6 +24,7 @@ async function main(): Promise<void> {
 
   await services.git.ensureClone();
   await services.sync();
+  services.backup.startNightly();
   startPolling(services.sync, (err) => app.log.error({ err }, "Timer fetch failed"));
 
   const port = Number(process.env["PORT"] ?? 3000);

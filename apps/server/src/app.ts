@@ -5,6 +5,8 @@ import rateLimit from "@fastify/rate-limit";
 import secureSession from "@fastify/secure-session";
 import Fastify, { type FastifyInstance } from "fastify";
 import { ZodError } from "zod";
+import { Backup } from "./backup/backup.js";
+import { FolderTarget, S3Target } from "./backup/targets.js";
 import type { Config } from "./config.js";
 import { ApiError } from "./errors.js";
 import { appTokenSource } from "./git/appAuth.js";
@@ -40,6 +42,7 @@ export interface Services {
   images: ImageServer;
   drafts: DraftStore;
   publisher: Publisher;
+  backup: Backup;
   /** Fetches `main`, resets the working copy and rebuilds the index. */
   sync(): Promise<void>;
 }
@@ -47,6 +50,11 @@ export interface Services {
 export interface App {
   app: FastifyInstance;
   services: Services;
+}
+
+/** The folders that hold data which cannot be rebuilt from the vault repository. */
+export function backupSources(dataDir: string): Record<string, string> {
+  return { state: join(dataDir, "state"), generated: join(dataDir, "assets", "generated") };
 }
 
 /** Routes that need no session. */
@@ -58,6 +66,8 @@ export interface BuildOptions {
   /** Used by tests to watch Git commands. */
   onGitCommand?: (args: readonly string[]) => void;
   logger?: boolean;
+  /** How long after a change the backup runs. Tests shorten it. */
+  backupDelayMs?: number;
   /** Folder of the built web app. When it holds a build, the server also serves the interface. */
   webDir?: string;
 }
@@ -82,6 +92,19 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
   const images = new ImageServer(vaultDir, config.dataDir);
   const drafts = new DraftStore(stateDir, files);
   await drafts.load();
+  const backup = new Backup({
+    sources: backupSources(config.dataDir),
+    target:
+      config.backup.kind === "local"
+        ? new FolderTarget(config.backup.dir)
+        : new S3Target(config.backup.s3),
+    stateFile: join(stateDir, "backup.json"),
+    ...(options.backupDelayMs !== undefined ? { delayMs: options.backupDelayMs } : {}),
+    onResult: (state) => status.backedUp(state.lastSuccessAt, state.lastError),
+  });
+  files.onChange(() => backup.noteChange());
+  const last = await backup.lastState();
+  status.backedUp(last.lastSuccessAt, last.lastError);
 
   const services: Services = {
     config,
@@ -92,6 +115,7 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
     settings,
     images,
     drafts,
+    backup,
     publisher: undefined as unknown as Publisher,
     async sync() {
       const result = await git.fetch();
@@ -137,6 +161,8 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
     },
   });
   await app.register(rateLimit, { global: false });
+
+  app.addHook("onClose", async () => backup.stop());
 
   app.addHook("onRequest", async (request) => {
     const path = request.url.split("?")[0] ?? "";
