@@ -143,6 +143,7 @@ export const api = {
         id: string;
         title: string;
         space: MapFile["space"];
+        under: string | null;
         features: number;
         state: string;
       }[];

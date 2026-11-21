@@ -361,3 +361,38 @@ describe("a feature in time", () => {
     expect(merged.map.features[0]).toMatchObject({ at: [9, 9] });
   });
 });
+
+describe("more map views", () => {
+  it("writes a map's place under another, a schematic space and an orbit, and reads them back", () => {
+    const flat = {
+      ...base,
+      under: "e2ob0000",
+      space: { kind: "flat", width: 100, height: 50, scale: null, unit: "km", schematic: true },
+      features: [marker("korr", [10, 0], { orbit: { around: "ezob", period: 1000 } })],
+    } as unknown as MapFile;
+    const text = serialiseMap(flat);
+    expect(text.indexOf('"under"')).toBeGreaterThan(text.indexOf('"space"'));
+    expect(text.indexOf('"under"')).toBeLessThan(text.indexOf('"images"'));
+    expect(text).toContain('"orbit":{"around":"ezob","period":1000}');
+    const read = parseMap(text);
+    expect(read.ok && serialiseMap(read.map)).toBe(text);
+  });
+
+  it("leaves the keys out when they say nothing", () => {
+    const none = { ...base, under: null, features: [marker("a", [0, 0], { orbit: null })] };
+    expect(serialiseMap(none as MapFile)).toBe(
+      serialiseMap({ ...base, features: [marker("a", [0, 0])] }),
+    );
+  });
+
+  it("refuses an orbit with no period", () => {
+    const bad = { ...base, features: [marker("a", [0, 0], { orbit: { around: "b", period: 0 } })] };
+    expect(parseMap(JSON.stringify(bad)).ok).toBe(false);
+  });
+
+  it("merges a change of the map it lies under like the title", () => {
+    const mine = { ...base, under: "aaaaaaaa" };
+    expect(mergeMaps(base, mine, base).map.under).toBe("aaaaaaaa");
+    expect(mergeMaps(base, base, mine).map.under).toBe("aaaaaaaa");
+  });
+});

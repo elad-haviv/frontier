@@ -1898,6 +1898,20 @@ input.map-title {
 .map-tools .danger {
   color: var(--accent);
 }
+.map-setup h3 {
+  margin: 0.6rem 0 0.3rem;
+}
+.map-down {
+  height: 2.3rem;
+  padding: 0 0.4rem;
+  border: 1px solid var(--rule);
+  border-radius: 5px;
+  background: var(--paper-raised);
+  color: var(--ink-soft);
+  font: inherit;
+  font-size: 0.9rem;
+}
+
 /* Time on a map: the bar under it, and the part of the feature editor */
 .time-bar {
   flex: none;

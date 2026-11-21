@@ -16,7 +16,7 @@ export function MapsPage() {
   const refresh = useRefresh();
   const [images, setImages] = useState<string[]>([]);
   const [title, setTitle] = useState("");
-  const [kind, setKind] = useState<"sphere" | "flat">("flat");
+  const [kind, setKind] = useState<"sphere" | "flat" | "schematic">("flat");
   const [image, setImage] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -33,7 +33,23 @@ export function MapsPage() {
     setBusy(true);
     setError(null);
     try {
-      const { id } = await api.createMap(title.trim(), kind, image);
+      const { id } = await api.createMap(
+        title.trim(),
+        kind === "sphere" ? "sphere" : "flat",
+        image,
+      );
+      if (kind === "schematic") {
+        // A schematic map is a flat map with measuring off.
+        const made = await api.map(id);
+        if (made.map.space.kind === "flat") {
+          await api.saveMap(
+            id,
+            { ...made.map, space: { ...made.map.space, schematic: true } },
+            made.revision,
+            [],
+          );
+        }
+      }
       refresh();
       navigate(mapUrl(id) + "?edit=1");
     } catch (err) {
@@ -72,16 +88,26 @@ export function MapsPage() {
             <p className="empty">No maps yet. Make the first below.</p>
           )}
           <ul className="map-list">
-            {maps.value.maps.map((m) => (
-              <li key={m.id}>
-                <Link to={mapUrl(m.id)}>{m.title}</Link>
-                <span className="muted">
-                  {m.space.kind === "sphere" ? "globe" : "flat map"} · {m.features}{" "}
-                  {m.features === 1 ? "feature" : "features"}
-                  {STATE[m.state] ? ` · ${STATE[m.state]}` : ""}
-                </span>
-              </li>
-            ))}
+            {maps.value.maps.map((m) => {
+              const below = maps.value.maps.filter((x) => x.under === m.id).length;
+              const above = maps.value.maps.find((x) => x.id === m.under);
+              return (
+                <li key={m.id}>
+                  <Link to={mapUrl(m.id)}>{m.title}</Link>
+                  <span className="muted">
+                    {m.space.kind === "sphere"
+                      ? "globe"
+                      : m.space.schematic
+                        ? "schematic map"
+                        : "flat map"}{" "}
+                    · {m.features} {m.features === 1 ? "feature" : "features"}
+                    {above ? ` · lies under ${above.title}` : ""}
+                    {below > 0 ? ` · ${below} ${below === 1 ? "layer" : "layers"} below` : ""}
+                    {STATE[m.state] ? ` · ${STATE[m.state]}` : ""}
+                  </span>
+                </li>
+              );
+            })}
           </ul>
           {maps.value.problems.map((p) => (
             <p key={p.path} className="banner" role="alert">
@@ -99,8 +125,12 @@ export function MapsPage() {
         </label>
         <label className="field">
           <span>Kind</span>
-          <select value={kind} onChange={(e) => setKind(e.target.value as "sphere" | "flat")}>
-            <option value="flat">Flat map: a region, a city, a diagram</option>
+          <select
+            value={kind}
+            onChange={(e) => setKind(e.target.value as "sphere" | "flat" | "schematic")}
+          >
+            <option value="flat">Flat map: a region, a city</option>
+            <option value="schematic">Schematic: a diagram, with no measuring</option>
             <option value="sphere">Globe: an image that wraps a whole world</option>
           </select>
         </label>

@@ -26,6 +26,7 @@ export function mapRoutes(app: FastifyInstance, s: Services): void {
       id: map.id,
       title: map.title,
       space: map.space,
+      under: map.under ?? null,
       features: map.features.length,
       state,
     })),

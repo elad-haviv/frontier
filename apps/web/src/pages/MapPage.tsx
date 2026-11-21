@@ -18,12 +18,13 @@ import {
   type MapFeature,
   type MapFile,
   mergeMaps,
+  orderFeature,
   reorderFeature,
   wholeExtent,
 } from "@frontier/schema";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { api, ApiFailure, imageUrl, mapImageUrl } from "../api.ts";
+import { api, ApiFailure, imageUrl, mapImageUrl, mapUrl } from "../api.ts";
 import {
   FeatureCard,
   FeatureEditor,
@@ -33,7 +34,7 @@ import {
   type Names,
 } from "../components/MapPanels.tsx";
 import { useRefresh } from "../components/Shell.tsx";
-import { type ChronicleChoice, FeatureTime, TimeBar } from "../components/MapTime.tsx";
+import { type ChronicleChoice, FeatureTime, OrbitEditor, TimeBar } from "../components/MapTime.tsx";
 import { drawOverlay } from "../map/overlay.ts";
 import {
   type MapTime,
@@ -45,13 +46,22 @@ import {
   reasonFor,
   removeShape,
   resolve,
+  orbitAt,
   shapeOf,
   tie,
+  turnAbout,
   writeShape,
 } from "../map/time.ts";
 import { MapRenderer, MapsNeedWebGL } from "../map/renderer.ts";
 import { newItemId, readView, writeView } from "../map/viewUrl.ts";
 import { useDialogs } from "../components/Dialogs.tsx";
+
+/** A flat space with measuring on again. */
+function withoutSchematic(space: MapFile["space"]): MapFile["space"] {
+  const next: Record<string, unknown> = { ...space };
+  delete next.schematic;
+  return next as MapFile["space"];
+}
 
 type Tool = "select" | "marker" | "path" | "zone" | "measure";
 type SaveState = "saved" | "saving" | "unsaved" | "offline" | "failed";
@@ -96,7 +106,9 @@ export function MapPage() {
   const [panel, setPanel] = useState(false);
   const [saveState, setSaveState] = useState<SaveState>("saved");
   const [sets, setSets] = useState<MarkerSets>([]);
-  const [otherMaps, setOtherMaps] = useState<{ id: string; title: string }[]>([]);
+  const [otherMaps, setOtherMaps] = useState<
+    { id: string; title: string; space: MapFile["space"]; under: string | null }[]
+  >([]);
   const [pendingNames, setPendingNames] = useState<Record<string, string>>({});
   const [iconsLoaded, setIconsLoaded] = useState(0);
   const [history, setHistory] = useState<{ past: MapFile[]; future: MapFile[] }>({
@@ -282,6 +294,8 @@ export function MapPage() {
     () => (map ? resolve(map, seen, year ?? 0, { selected, pin, editing, showAll }) : []),
     [map, seen, year, selected, pin, editing, showAll],
   );
+  const seenRef = useRef(seen);
+  seenRef.current = seen;
   const resolvedRef = useRef(resolved);
   resolvedRef.current = resolved;
   const shownMap = useMemo(
@@ -735,7 +749,13 @@ export function MapPage() {
           : {
               points: drawn.feature.points.map((q, i) => (i === g.drag!.vertex ? position : q)),
             };
-      setFeature(writeShape(feature, drawn.shape, shape), false);
+      // A revolving marker is dropped where the finger is at the year shown: its own place is
+      // that point turned back by the orbit.
+      const orbit =
+        mapRef.current && orbitAt(mapRef.current, feature, seenRef.current, yearRef.current ?? 0);
+      const placed =
+        orbit && "at" in shape ? { at: turnAbout(shape.at, orbit.centre, -orbit.degrees) } : shape;
+      setFeature(writeShape(feature, drawn.shape, placed), false);
       return;
     }
     coarse.current = g.touch;
@@ -792,6 +812,37 @@ export function MapPage() {
     () => (map && tool === "measure" && sketch.length > 1 ? measure(map.space, sketch) : null),
     [map, tool, sketch],
   );
+
+  const schematic = map?.space.kind === "flat" && map.space.schematic === true;
+  // Layers: the map this one lies under, and those that lie under it. Both must be globes.
+  const above =
+    map?.space.kind === "sphere"
+      ? otherMaps.find((m) => m.id === map.under && m.space.kind === "sphere")
+      : undefined;
+  const below =
+    map?.space.kind === "sphere"
+      ? otherMaps.filter((m) => m.under === id && m.space.kind === "sphere")
+      : [];
+  /** Opens another layer at the same place, view and moment. */
+  const goLayer = (other: string) => {
+    const next = new URLSearchParams();
+    if (view) next.set("v", writeView(view));
+    if (timeOn && year !== null) next.set("t", String(year));
+    if (timeOn && chronicleId && chronicleId !== defaultChronicle) next.set("c", chronicleId);
+    navigate(`${mapUrl(other)}?${next.toString()}`);
+  };
+
+  /** Whether a map lies, directly or through others, under this one: it cannot be put above it. */
+  const lies = (other: string): boolean => {
+    const seenIds = new Set<string>();
+    let at: string | null | undefined = other;
+    while (at && !seenIds.has(at)) {
+      if (at === id) return true;
+      seenIds.add(at);
+      at = otherMaps.find((m) => m.id === at)?.under;
+    }
+    return false;
+  };
 
   const spanName = (span: ChronicleSpan): string =>
     span.name || (span.entry ? spanEntries[span.entry]?.title : undefined) || "(unnamed)";
@@ -897,6 +948,41 @@ export function MapPage() {
               {view.kind === "globe" ? "Flat" : "Globe"}
             </button>
           )}
+          {above && (
+            <button
+              type="button"
+              className="quiet"
+              title={`Up to ${above.title}`}
+              onClick={() => goLayer(above.id)}
+            >
+              ▲ Up
+            </button>
+          )}
+          {below.length === 1 && (
+            <button
+              type="button"
+              className="quiet"
+              title={`Down to ${below[0]!.title}`}
+              onClick={() => goLayer(below[0]!.id)}
+            >
+              ▼ Down
+            </button>
+          )}
+          {below.length > 1 && (
+            <select
+              className="map-down"
+              aria-label="Down to a layer below"
+              value=""
+              onChange={(e) => e.target.value && goLayer(e.target.value)}
+            >
+              <option value="">▼ Down</option>
+              {below.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.title}
+                </option>
+              ))}
+            </select>
+          )}
           {chronicles.length > 0 && (
             <button
               type="button"
@@ -940,7 +1026,7 @@ export function MapPage() {
 
       {editing && (
         <div className="map-tools" role="toolbar" aria-label="Map tools">
-          {TOOLS.map((t) => (
+          {TOOLS.filter((t) => !(t.tool === "measure" && schematic)).map((t) => (
             <button
               key={t.tool}
               type="button"
@@ -1045,6 +1131,52 @@ export function MapPage() {
         {panel && (
           <LayerPanel
             timeLine={timeLine}
+            setup={
+              <div className="map-setup">
+                <h3>This map</h3>
+                {map.space.kind === "sphere" && (
+                  <label className="field">
+                    <span>Lies under</span>
+                    <select
+                      aria-label="This map lies under"
+                      value={map.under ?? ""}
+                      onChange={(e) => {
+                        const next = { ...map } as MapFile;
+                        delete next.under;
+                        change(e.target.value ? { ...next, under: e.target.value } : next);
+                      }}
+                    >
+                      <option value="">Nothing: it is a world of its own</option>
+                      {otherMaps
+                        .filter((m) => m.space.kind === "sphere" && !lies(m.id))
+                        .map((m) => (
+                          <option key={m.id} value={m.id}>
+                            {m.title}
+                          </option>
+                        ))}
+                    </select>
+                  </label>
+                )}
+                {map.space.kind === "flat" && (
+                  <label className="check">
+                    <input
+                      type="checkbox"
+                      checked={schematic}
+                      onChange={(e) =>
+                        map.space.kind === "flat" &&
+                        change({
+                          ...map,
+                          space: e.target.checked
+                            ? { ...map.space, schematic: true }
+                            : withoutSchematic(map.space),
+                        })
+                      }
+                    />{" "}
+                    Schematic: a diagram, with no measuring
+                  </label>
+                )}
+              </div>
+            }
             map={map}
             hidden={hidden}
             shownImages={shownImages}
@@ -1140,6 +1272,21 @@ export function MapPage() {
             {...(onScreen && onScreen.feature.kind !== "marker"
               ? { corners: onScreen.feature.points.length }
               : {})}
+            extra={
+              map.space.kind === "flat" && feature.kind === "marker" ? (
+                <OrbitEditor
+                  feature={feature}
+                  markers={map.features
+                    .filter((f) => f.kind === "marker")
+                    .map((f) => ({ id: f.id, title: titleOf(f) }))}
+                  onChange={(orbit) => {
+                    const next = { ...feature } as MapFeature & { orbit?: unknown };
+                    delete next.orbit;
+                    setFeature(orderFeature((orbit ? { ...next, orbit } : next) as MapFeature));
+                  }}
+                />
+              ) : null
+            }
             time={
               seen && onScreen ? (
                 <FeatureTime

@@ -14,6 +14,9 @@ import {
   shapeStart,
   spanFor,
   tie,
+  orbitAngle,
+  orbitAt,
+  turnAbout,
   writeShape,
 } from "./time.ts";
 
@@ -304,5 +307,53 @@ describe("the slider", () => {
     );
     expect(reasonFor(zone("z", { span: "nowhere" }), time, 0, name)).toContain("not in this");
     expect(reasonFor(zone("z"), time, 0, name)).toBeNull();
+  });
+});
+
+describe("revolving markers", () => {
+  const flat = (features: MapFeature[]) =>
+    ({
+      space: { kind: "flat", width: 100, height: 100, scale: null, unit: "" },
+      features,
+    }) as unknown as MapFile;
+  const centre = marker("ezob", { at: [50, 50] });
+  const korr = marker("korr", { at: [60, 50], orbit: { around: "ezob", period: 1000 } });
+
+  it("turns a full circle once a period, counter-clockwise on the screen", () => {
+    expect([0, 250, 500, 1000, -250].map((y) => orbitAngle(1000, y))).toEqual([0, 90, 180, 0, 270]);
+    const quarter = turnAbout([60, 50], [50, 50], 90);
+    expect(quarter[0]).toBeCloseTo(50);
+    // Up on the screen is a smaller y.
+    expect(quarter[1]).toBeCloseTo(40);
+  });
+
+  it("draws the marker turned about its centre at the year shown", () => {
+    const m = flat([centre, korr]);
+    const at = (year: number) =>
+      (
+        resolve(m, time, year, plain).find((r) => r.feature.id === "korr")!.feature as {
+          at: number[];
+        }
+      ).at;
+    expect(at(0)[0]).toBeCloseTo(60);
+    expect(at(500)[0]).toBeCloseTo(40);
+    expect(at(500)[1]).toBeCloseTo(50);
+    // With time off it is where it was placed.
+    expect((resolve(m, null, 500, plain)[1]!.feature as { at: number[] }).at).toEqual([60, 50]);
+  });
+
+  it("does not revolve on a globe, around itself, or around something that is not a marker", () => {
+    const globe = { ...flat([centre, korr]), space: { kind: "sphere", radius: null, unit: "" } };
+    expect(orbitAt(globe as unknown as MapFile, korr, time, 250)).toBeNull();
+    const self = marker("k", { at: [1, 1], orbit: { around: "k", period: 10 } });
+    expect(orbitAt(flat([self]), self, time, 5)).toBeNull();
+    const aroundZone = marker("k", { orbit: { around: "z", period: 10 } });
+    expect(orbitAt(flat([zone("z"), aroundZone]), aroundZone, time, 5)).toBeNull();
+  });
+
+  it("takes a turn back to the same place", () => {
+    const back = turnAbout(turnAbout([70, 20], [50, 50], 33), [50, 50], -33);
+    expect(back[0]).toBeCloseTo(70);
+    expect(back[1]).toBeCloseTo(20);
   });
 });

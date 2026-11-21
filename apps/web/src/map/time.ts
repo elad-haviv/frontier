@@ -113,6 +113,42 @@ export function shapeAt(feature: MapFeature, time: MapTime, year: number): Later
   return best;
 }
 
+/** How far a revolving marker has turned at a year, in degrees, counter-clockwise on screen. */
+export function orbitAngle(period: number, year: number): number {
+  return ((((360 * year) / period) % 360) + 360) % 360;
+}
+
+/** Turns `p` about `centre` by `degrees`, counter-clockwise as seen on a screen whose y runs down. */
+export function turnAbout(p: Pair, centre: Pair, degrees: number): Pair {
+  const a = (-degrees * Math.PI) / 180;
+  const dx = p[0] - centre[0];
+  const dy = p[1] - centre[1];
+  return [
+    centre[0] + dx * Math.cos(a) - dy * Math.sin(a),
+    centre[1] + dx * Math.sin(a) + dy * Math.cos(a),
+  ];
+}
+
+/**
+ * Where a revolving marker is drawn at a year, or null when it does not revolve: on a flat map,
+ * around a marker that exists, while the map is seen in time. Orbits do not chain: the centre is
+ * taken where it is placed at that year, without its own orbit.
+ */
+export function orbitAt(
+  map: MapFile,
+  feature: MapFeature,
+  time: MapTime | null,
+  year: number,
+): { centre: Pair; degrees: number } | null {
+  if (feature.kind !== "marker" || !feature.orbit || !time || map.space.kind !== "flat")
+    return null;
+  const centre = map.features.find((f) => f.id === feature.orbit!.around);
+  if (!centre || centre.kind !== "marker" || centre.id === feature.id) return null;
+  const shape = shapeAt(centre, time, year);
+  const at = (shape?.at as Pair | undefined) ?? centre.at;
+  return { centre: at, degrees: orbitAngle(feature.orbit.period, year) };
+}
+
 /** A feature as it is drawn at one moment. */
 export interface Resolved {
   /** The feature with the shape on screen in its `at` or `points`. */
@@ -176,8 +212,13 @@ export function resolve(
     const shape = pinned
       ? ((feature.shapes ?? []).find((h) => h.id === pinned.shape && fits(feature, h)) ?? null)
       : shapeAt(feature, time, year);
+    let drawn = withShape(feature, shape);
+    const orbit = orbitAt(map, feature, time, year);
+    if (orbit && drawn.kind === "marker") {
+      drawn = { ...drawn, at: turnAbout(drawn.at, orbit.centre, orbit.degrees) };
+    }
     out.push({
-      feature: withShape(feature, shape),
+      feature: drawn,
       shape: shape?.id ?? null,
       presence,
       opacity: away ? 0.25 : presence === "perhaps" ? 0.45 : 1,

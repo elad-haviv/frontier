@@ -1,4 +1,5 @@
 import type { ChronicleSpan, MapFeature } from "@frontier/schema";
+import { useState } from "react";
 import { Link } from "react-router-dom";
 import { chronicleUrl } from "../api.ts";
 import { type MapTime, changeYears, shapeStart, spanFor } from "../map/time.ts";
@@ -288,6 +289,61 @@ export function FeatureTime(p: {
           </select>
         </label>
       )}
+    </section>
+  );
+}
+
+/** How a marker on a flat map revolves around another as the years move. */
+export function OrbitEditor(p: {
+  feature: MapFeature;
+  markers: readonly { id: string; title: string }[];
+  onChange: (orbit: { around: string; period: number } | null) => void;
+}) {
+  const orbit = p.feature.orbit ?? null;
+  const [period, setPeriod] = useState(String(orbit?.period ?? 1000));
+  const others = p.markers.filter((m) => m.id !== p.feature.id);
+  if (p.feature.kind !== "marker" || others.length === 0) return null;
+  const years = Number(period);
+  return (
+    <section className="feature-time" aria-label="Revolving">
+      <h3>Revolves</h3>
+      <label className="field">
+        <span>Revolves around</span>
+        <select
+          aria-label="Revolves around"
+          value={orbit?.around ?? ""}
+          onChange={(e) =>
+            p.onChange(
+              e.target.value ? { around: e.target.value, period: years > 0 ? years : 1000 } : null,
+            )
+          }
+        >
+          <option value="">Nothing: it stays where it is</option>
+          {others.map((m) => (
+            <option key={m.id} value={m.id}>
+              {m.title || "Unnamed marker"}
+            </option>
+          ))}
+        </select>
+      </label>
+      {orbit && (
+        <label className="field">
+          <span>Once every … years</span>
+          <input
+            type="number"
+            inputMode="decimal"
+            aria-label="Years for one turn"
+            min={1}
+            value={period}
+            onChange={(e) => {
+              setPeriod(e.target.value);
+              const n = Number(e.target.value);
+              if (n > 0) p.onChange({ around: orbit.around, period: n });
+            }}
+          />
+        </label>
+      )}
+      {orbit && <p className="muted">It turns while the map is seen in time.</p>}
     </section>
   );
 }

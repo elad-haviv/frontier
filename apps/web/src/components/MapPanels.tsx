@@ -154,7 +154,10 @@ export function FeatureEditor({
   onClose,
   corners,
   time,
+  extra,
 }: {
+  /** More parts of the editor, such as how a world revolves. */
+  extra?: ReactNode;
   /** How many points the shape on screen has, when it is not the feature's first shape. */
   corners?: number;
   /** The part that says when the feature exists and lists its shapes. */
@@ -300,6 +303,7 @@ export function FeatureEditor({
         </span>
       </div>
       {time}
+      {extra}
       <p className="change-actions">
         {feature.kind !== "marker" &&
           vertex !== null &&
@@ -391,7 +395,10 @@ export function LayerPanel({
   onKeepAsOpening,
   onAddImage,
   timeLine,
+  setup,
 }: {
+  /** The map's own settings while editing: what it lies under, and whether it is schematic. */
+  setup?: ReactNode;
   /** How the features stand to the chosen chronicle, while the map is seen in time. */
   timeLine?: string | null;
   map: MapFile;
@@ -481,6 +488,7 @@ export function LayerPanel({
   return (
     <aside className="layer-panel" aria-label="Images and layers">
       {timeLine && <p className="muted time-line">{timeLine}</p>}
+      {editing && setup}
       {(editing || map.images.length > 1) && (
         <>
           <h3>Images</h3>

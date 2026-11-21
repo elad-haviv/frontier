@@ -27,6 +27,8 @@ export const MapSpace = z.discriminatedUnion("kind", [
       /** Real units per position unit; null until given. */
       scale: z.number().positive().nullable(),
       unit: z.string(),
+      /** A diagram, such as the cosmology: positions mean nothing physical, so nothing is measured. */
+      schematic: z.boolean().optional(),
     })
     .passthrough(),
 ]);
@@ -78,6 +80,8 @@ const featureBase = {
   span: ItemId.nullish(),
   /** Later shapes, each in force from the start of a span. */
   shapes: z.array(LaterShape).optional(),
+  /** On a flat map: turns about another marker, once every `period` years, as time moves. */
+  orbit: z.object({ around: ItemId, period: z.number().positive() }).passthrough().nullish(),
 };
 
 export const MapFeature = z.discriminatedUnion("kind", [
@@ -102,6 +106,11 @@ export const MapFile = z
     id: z.string().regex(/^[a-z0-9]{8}$/),
     title: z.string().min(1),
     space: MapSpace,
+    /** The id of the map this one lies under, sharing its longitude and latitude. */
+    under: z
+      .string()
+      .regex(/^[a-z0-9]{8}$/)
+      .nullish(),
     images: z.array(MapImage),
     markerSets: z.array(z.string()),
     layers: z.array(MapLayer).min(1),
@@ -131,7 +140,17 @@ export function mapIdOf(path: string): string | null {
 
 // ---- The text form ---------------------------------------------------------------------------
 
-const TOP = ["version", "id", "title", "space", "images", "markerSets", "layers", "features"];
+const TOP = [
+  "version",
+  "id",
+  "title",
+  "space",
+  "under",
+  "images",
+  "markerSets",
+  "layers",
+  "features",
+];
 const ITEM_KEYS: Record<string, string[]> = {
   images: ["id", "name", "path", "extent", "visible"],
   layers: ["id", "name", "visible", "color"],
@@ -147,6 +166,7 @@ const ITEM_KEYS: Record<string, string[]> = {
     "child",
     "span",
     "shapes",
+    "orbit",
   ],
 };
 
@@ -167,11 +187,12 @@ function inOrder<T extends object>(item: T, keys: string[]): T {
  * feature then gives the same bytes, and compares as equal, however it was put together.
  */
 export function orderFeature(feature: MapFeature): MapFeature {
-  const { span, shapes, ...rest } = feature as MapFeature & Record<string, unknown>;
+  const { span, shapes, orbit, ...rest } = feature as MapFeature & Record<string, unknown>;
   return inOrder(
     {
       ...rest,
       ...(span != null ? { span } : {}),
+      ...(orbit != null ? { orbit } : {}),
       ...(Array.isArray(shapes) && shapes.length > 0
         ? { shapes: shapes.map((h) => inOrder(h as LaterShape, SHAPE_KEYS)) }
         : {}),
@@ -180,7 +201,15 @@ export function orderFeature(feature: MapFeature): MapFeature {
   );
 }
 
-const ordered = (map: MapFile): MapFile => ({ ...map, features: map.features.map(orderFeature) });
+const ordered = (map: MapFile): MapFile => {
+  // "Lies under nothing" is written by leaving the key out.
+  const { under, ...rest } = map;
+  return {
+    ...rest,
+    ...(under != null ? { under } : {}),
+    features: map.features.map(orderFeature),
+  } as MapFile;
+};
 
 /**
  * The text a map is stored as. Each image, layer and feature is on one line, so a difference
@@ -233,7 +262,7 @@ export function mergeMaps(base0: MapFile, mine0: MapFile, theirs0: MapFile): Map
   // The same feature must compare as equal whatever order its keys were set in.
   const [base, mine, theirs] = [ordered(base0), ordered(mine0), ordered(theirs0)];
   const clashes: string[] = [];
-  const pick = <K extends "title" | "space" | "markerSets">(key: K): MapFile[K] => {
+  const pick = <K extends "title" | "space" | "markerSets" | "under">(key: K): MapFile[K] => {
     if (same(mine[key], theirs[key]) || same(base[key], theirs[key])) return mine[key];
     if (same(base[key], mine[key])) return theirs[key];
     clashes.push(key);
@@ -252,6 +281,9 @@ export function mergeMaps(base0: MapFile, mine0: MapFile, theirs0: MapFile): Map
     ...theirs,
     ...mine,
     title: pick("title"),
+    ...(mine.under != null || theirs.under != null || base.under != null
+      ? { under: pick("under") }
+      : {}),
     space: pick("space"),
     markerSets: pick("markerSets"),
     images: images.items,

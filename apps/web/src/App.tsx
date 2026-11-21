@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Navigate, Route, Routes, useLocation } from "react-router-dom";
+import { Navigate, Route, Routes, useLocation, useParams } from "react-router-dom";
 import { api } from "./api.ts";
 import { Shell } from "./components/Shell.tsx";
 import { ConflictPage } from "./pages/Conflict.tsx";
@@ -20,6 +20,12 @@ import { Login } from "./pages/Login.tsx";
 import { RenamePage } from "./pages/Rename.tsx";
 import { SettingsPage } from "./pages/Settings.tsx";
 import { StatusPage } from "./pages/Status.tsx";
+
+/** A different map gets a fresh page: its own view, drawing surface and history. */
+function OneMap() {
+  const { id = "" } = useParams();
+  return <MapPage key={id} />;
+}
 
 export function App() {
   const [loggedIn, setLoggedIn] = useState<boolean | null>(null);
@@ -60,7 +66,7 @@ export function App() {
         <Route path="/history/*" element={<HistoryPage />} />
         <Route path="/versions" element={<LibraryHistoryPage />} />
         <Route path="/maps" element={<MapsPage />} />
-        <Route path="/map/:id" element={<MapPage />} />
+        <Route path="/map/:id" element={<OneMap />} />
         <Route path="/gallery" element={<GalleryPage />} />
         <Route path="/chronicles" element={<ChroniclesPage />} />
         <Route path="/chronicle/:id" element={<ChroniclePage />} />
