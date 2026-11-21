@@ -7,6 +7,7 @@ import { EditToolbar } from "../components/EditToolbar.tsx";
 import { Properties } from "../components/Properties.tsx";
 import { useRefresh } from "../components/Shell.tsx";
 import { clearBuffer, readBuffer, writeBuffer } from "../drafts.ts";
+import { useDialogs } from "../components/Dialogs.tsx";
 
 type SaveState = "saved" | "saving" | "unsaved" | "offline" | "stale" | "failed";
 
@@ -28,6 +29,7 @@ function pathFrom(pathname: string): string {
 }
 
 export function EditPage() {
+  const dialogs = useDialogs();
   const { pathname, search } = useLocation();
   const navigate = useNavigate();
   const refresh = useRefresh();
@@ -234,7 +236,13 @@ export function EditPage() {
   }
 
   async function discard() {
-    if (!window.confirm("Discard this draft? The published text stays as it is.")) return;
+    const ok = await dialogs.confirm({
+      title: "Discard this draft?",
+      body: "What is saved in the library stays as it is.",
+      action: "Discard",
+      danger: true,
+    });
+    if (!ok) return;
     window.clearTimeout(timer.current);
     clearBuffer(path);
     if (draft.current.revision > 0) await api.discardDraft(draft.current.id).catch(() => undefined);
@@ -243,8 +251,13 @@ export function EditPage() {
   }
 
   async function remove() {
-    if (!window.confirm("Delete this entry? It is removed from the vault when you publish."))
-      return;
+    const ok = await dialogs.confirm({
+      title: "Delete this entry?",
+      body: "It is removed from the library when you save a version. Until then you can still bring it back.",
+      action: "Delete",
+      danger: true,
+    });
+    if (!ok) return;
     window.clearTimeout(timer.current);
     clearBuffer(path);
     try {

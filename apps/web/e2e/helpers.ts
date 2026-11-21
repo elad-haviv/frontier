@@ -134,7 +134,16 @@ export async function noSidewaysScroll(page: Page): Promise<void> {
 
 /** Throws away the draft that is open in the editor, so the next test starts from the vault. */
 export async function discardDraft(page: Page): Promise<void> {
-  page.once("dialog", (d) => void d.accept());
   await page.getByRole("button", { name: "Discard" }).click();
+  await answerDialog(page, "Discard");
   await expect(page.locator(".code-editor")).toHaveCount(0);
+}
+
+/** Answers the app's own question box: types a value if one is given, then presses a button. */
+export async function answerDialog(page: Page, button: string, value?: string): Promise<void> {
+  const dialog = page.getByRole("dialog");
+  await expect(dialog).toBeVisible();
+  if (value !== undefined) await dialog.getByRole("textbox").fill(value);
+  await dialog.getByRole("button", { name: button, exact: true }).click();
+  await expect(dialog).toHaveCount(0);
 }

@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, entryUrl, imageUrl, mapUrl } from "../api.ts";
 import { iconLabel, newItemId } from "../map/viewUrl.ts";
+import { useDialogs } from "./Dialogs.tsx";
 
 export type Names = Record<string, { path: string; title: string }>;
 export type MarkerSets = { name: string; icons: { name: string; path: string }[] }[];
@@ -292,19 +293,24 @@ export function LayerPanel({
   onChange: (next: MapFile) => void;
   onKeepAsOpening: () => void;
 }) {
+  const dialogs = useDialogs();
   const setLayer = (id: string, change: Partial<MapFile["layers"][number]>) =>
     onChange({ ...map, layers: map.layers.map((l) => (l.id === id ? { ...l, ...change } : l)) });
 
-  function removeLayer(id: string) {
+  async function removeLayer(id: string) {
     const at = map.layers.findIndex((l) => l.id === id);
     const target = map.layers[at === 0 ? 1 : at - 1];
     if (!target) return;
     const count = map.features.filter((f) => f.layer === id).length;
-    if (
-      count > 0 &&
-      !window.confirm(`Move its ${count} features to "${target.name}" and delete the layer?`)
-    )
-      return;
+    if (count > 0) {
+      const ok = await dialogs.confirm({
+        title: "Delete this layer?",
+        body: `Its ${count} features move to "${target.name}".`,
+        action: "Delete the layer",
+        danger: true,
+      });
+      if (!ok) return;
+    }
     onChange({
       ...map,
       layers: map.layers.filter((l) => l.id !== id),

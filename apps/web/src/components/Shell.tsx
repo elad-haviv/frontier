@@ -5,6 +5,7 @@ import { api, editUrl } from "../api.ts";
 import { useAsync } from "../useAsync.ts";
 import { Switcher } from "./Switcher.tsx";
 import { Tree } from "./Tree.tsx";
+import { useDialogs } from "./Dialogs.tsx";
 
 const Refresh = createContext<() => void>(() => undefined);
 const Status = createContext<StatusSnapshot | null>(null);
@@ -52,6 +53,7 @@ export function currentEntryPath(pathname: string): string {
 }
 
 export function Shell({ children, onLoggedOut }: { children: ReactNode; onLoggedOut: () => void }) {
+  const dialogs = useDialogs();
   const { pathname } = useLocation();
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
@@ -89,9 +91,16 @@ export function Shell({ children, onLoggedOut }: { children: ReactNode; onLogged
     onLoggedOut();
   }
 
-  function newEntry() {
+  async function newEntry() {
     const folder = current.includes("/") ? current.slice(0, current.lastIndexOf("/")) : "";
-    const name = window.prompt(`Name of the new entry${folder ? ` in "${folder}"` : ""}:`)?.trim();
+    const name = (
+      await dialogs.prompt({
+        title: "New entry",
+        ...(folder ? { body: `It will be made in "${folder}".` } : {}),
+        label: "Name",
+        action: "Make the entry",
+      })
+    )?.trim();
     if (!name) return;
     const safe = name
       .replace(/[\\/:*?"<>|#^[\]]/g, "")

@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 import {
+  answerDialog,
   changeFromOutside,
   commitCount,
   entry,
@@ -36,10 +37,10 @@ test("CUJ 1: write, leave, come back, publish as one commit", async ({ page, con
 });
 
 test("creates a new entry whose links resolve before it is published", async ({ page }) => {
-  page.on("dialog", (d) => void d.accept(d.type() === "prompt" ? "Saltmother" : undefined));
   await page.goto(entry("01 Places/Unwritten.md"));
   await page.locator(".menu").click();
   await page.locator(".new-entry").click();
+  await answerDialog(page, "Make the entry", "Saltmother");
   await page.locator(".cm-content").click();
   await page.keyboard.press("Control+End");
   await page.keyboard.type("A village by the [[Harbor]].\n");
@@ -68,8 +69,8 @@ test("offers entry names after [[ and writes an alias the way Obsidian does", as
   // Two notes are called Twin, so the link is written with its path.
   await expect(page.locator(".cm-content")).toContainText("[[02 People/Twin]]");
   await saved(page);
-  page.once("dialog", (d) => void d.accept());
   await page.locator("button.quiet", { hasText: "Discard" }).click();
+  await answerDialog(page, "Discard");
   await expect(page.locator(".entry h1").first()).toHaveText("Ledger");
   await expect(page.locator(".draft-note")).toHaveCount(0);
 });
@@ -137,14 +138,14 @@ test("keeps text typed while the server cannot be reached, and sends it afterwar
   await expect(page.locator(".save-saved")).toBeVisible({ timeout: 15_000 });
   await page.reload();
   await expect(page.locator(".cm-content")).toContainText("Typed with no connection.");
-  page.once("dialog", (d) => void d.accept());
   await page.locator("button.quiet", { hasText: "Discard" }).click();
+  await answerDialog(page, "Discard");
 });
 
 test("deletes an entry through a draft and a publish", async ({ page }) => {
   await openEditor(page, "03 Things/Empty.md");
-  page.once("dialog", (d) => void d.accept());
   await page.locator("button.quiet", { hasText: "Delete" }).click();
+  await answerDialog(page, "Delete");
   await expect(page.locator(".tag-delete")).toBeVisible();
   await page.locator("button.big").click();
   await expect(page.locator(".plan")).toBeVisible();
@@ -167,29 +168,30 @@ test("the toolbar inserts a link, a heading and bold without leaving the editor"
   await expect(page.locator(".cm-content")).toContainText("[[Mira]]");
   await page.locator(".edit-toolbar button[aria-label=Undo]").click();
   await saved(page);
-  page.once("dialog", (d) => void d.accept());
   await page.locator("button.quiet", { hasText: "Discard" }).click();
+  await answerDialog(page, "Discard");
 });
 
 test("tapping a link to an entry that is not written offers to write it, beside the note that holds it", async ({
   page,
 }) => {
-  const messages: string[] = [];
-  page.on("dialog", (d) => {
-    messages.push(d.message());
-    void d.accept();
-  });
   await page.goto(entry("01 Places/Unwritten.md"));
   await page.getByRole("button", { name: "The Drowned Bell" }).first().click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog).toContainText("is not written yet");
+  await expect(dialog).toContainText("01 Places/The Drowned Bell.md");
+  await answerDialog(page, "Write it");
   await expect(page).toHaveURL(/\/edit\/.*Drowned%20Bell\.md\?new=1/);
-  expect(messages[0]).toContain("is not written yet");
-  expect(messages[0]).toContain("01 Places/The Drowned Bell.md");
   await expect(page.locator(".cm-content")).toContainText("# The Drowned Bell");
 
   // Declining stays on the page and makes nothing.
   await page.goto(entry("01 Places/Unwritten.md"));
-  page.removeAllListeners("dialog");
-  page.once("dialog", (d) => void d.dismiss());
   await page.getByRole("button", { name: "The Drowned Bell" }).first().click();
+  await answerDialog(page, "Cancel");
   await expect(page).toHaveURL(/\/e\/.*Unwritten\.md/);
+  // Escape leaves the box too.
+  await page.getByRole("button", { name: "The Drowned Bell" }).first().click();
+  await expect(page.getByRole("dialog")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
 });

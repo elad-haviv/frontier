@@ -2101,3 +2101,64 @@ input.map-title {
     margin-top: 0.2rem;
   }
 }
+
+/* Questions the app asks, in place of the browser's own boxes */
+.dialog-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  background: rgb(20 16 12 / 0.45);
+}
+.dialog {
+  width: min(26rem, 100%);
+  padding: 1.2rem 1.3rem 1rem;
+  border: 1px solid var(--rule);
+  border-radius: 10px;
+  background: var(--paper);
+  box-shadow: 0 12px 40px rgb(0 0 0 / 0.3);
+}
+.dialog h2 {
+  margin: 0 0 0.4rem;
+  font-family: var(--serif);
+  font-size: 1.2rem;
+}
+.dialog-body {
+  margin: 0 0 0.9rem;
+  color: var(--ink-soft);
+  font-size: 0.95rem;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+.dialog-field {
+  display: grid;
+  gap: 0.3rem;
+  margin: 0.6rem 0 0.9rem;
+  font-size: 0.85rem;
+  color: var(--ink-soft);
+}
+.dialog-field input {
+  padding: 0.5rem 0.6rem;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  background: var(--paper-raised);
+  color: var(--ink);
+  font: inherit;
+  font-size: 1rem;
+}
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin: 0.4rem 0 0;
+}
+.dialog-actions button {
+  min-width: 5rem;
+  padding: 0.5rem 1rem;
+}
+.dialog-actions .danger-solid {
+  border-color: #8a2c14;
+  background: #8a2c14;
+}

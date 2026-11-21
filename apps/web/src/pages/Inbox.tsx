@@ -4,6 +4,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { api, ApiFailure, branchImageUrl, editUrl, entryUrl } from "../api.ts";
 import { Diff } from "../components/Diff.tsx";
 import { useRefresh } from "../components/Shell.tsx";
+import { useDialogs } from "../components/Dialogs.tsx";
 
 const KIND: Record<BranchFile["kind"], string> = {
   added: "New",
@@ -153,6 +154,7 @@ function Operation({
 }
 
 export function InboxPage() {
+  const dialogs = useDialogs();
   const [branches, setBranches] = useState<InboxBranch[] | null>(null);
   const [proposals, setProposals] = useState<InboxProposal[]>([]);
   const [quarantine, setQuarantine] = useState<InboxQuarantined[]>([]);
@@ -402,11 +404,14 @@ export function InboxPage() {
                   type="button"
                   className="plain danger"
                   disabled={busy}
-                  onClick={() => {
-                    if (
-                      window.confirm(`Reject everything left on "${b.name}" and remove the branch?`)
-                    )
-                      void act(() => api.decideBranch(b.name, b.tip, "reject"));
+                  onClick={async () => {
+                    const ok = await dialogs.confirm({
+                      title: "Reject everything left?",
+                      body: `Every undecided file on "${b.name}" is rejected and the branch is removed.`,
+                      action: "Reject all",
+                      danger: true,
+                    });
+                    if (ok) void act(() => api.decideBranch(b.name, b.tip, "reject"));
                   }}
                 >
                   Reject all that is left

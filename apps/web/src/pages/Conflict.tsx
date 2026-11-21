@@ -4,11 +4,13 @@ import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { api, ApiFailure } from "../api.ts";
 import { CodeEditor } from "../components/CodeEditor.tsx";
 import { Diff } from "../components/Diff.tsx";
+import { useDialogs } from "../components/Dialogs.tsx";
 
 type Conflict = PublishPlan["conflicts"][number];
 
 /** The author's version beside the vault's, for him to combine by hand. Nothing is merged for him. */
 export function ConflictPage() {
+  const dialogs = useDialogs();
   const { id = "" } = useParams();
   const navigate = useNavigate();
   const conflict = (useLocation().state as { conflict?: Conflict } | null)?.conflict;
@@ -38,7 +40,13 @@ export function ConflictPage() {
   }
 
   async function discard() {
-    if (!window.confirm("Discard your version and keep what is in the vault?")) return;
+    const ok = await dialogs.confirm({
+      title: "Discard your version?",
+      body: "What is in the vault stays as it is.",
+      action: "Discard",
+      danger: true,
+    });
+    if (!ok) return;
     await api.discardDraft(id).catch(() => undefined);
     navigate("/unpublished");
   }

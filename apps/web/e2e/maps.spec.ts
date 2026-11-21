@@ -1,5 +1,5 @@
 import { expect, type Page, test } from "@playwright/test";
-import { entry, onMain, publish, review } from "./helpers.ts";
+import { answerDialog, entry, onMain, publish, review } from "./helpers.ts";
 
 const IMAGE = "99 Appendices/Images/map one.png";
 
@@ -148,8 +148,8 @@ test("CUJ 10: measures on a globe of unknown size, then with a radius", async ({
   await expect(hint).toContainText("% of the way round");
   await expect(hint).not.toContainText("km");
 
-  page.once("dialog", (d) => void d.accept("6000"));
   await hint.getByRole("button", { name: "Set the radius" }).click();
+  await answerDialog(page, "Set the radius", "6000");
   await expect(hint).toContainText("km");
 
   // The same world laid flat, and back.

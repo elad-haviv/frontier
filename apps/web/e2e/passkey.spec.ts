@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { answerDialog } from "./helpers.ts";
 
 test("adds a passkey, logs in with it, and switches the password off and on again", async ({
   page,
@@ -46,7 +47,7 @@ test("adds a passkey, logs in with it, and switches the password off and on agai
   // Back to how it was, so the other tests can log in.
   await page.getByLabel(/Switch the password off/).click();
   await expect(page.locator(".banner-ok")).toContainText("The password logs in again");
-  page.once("dialog", (d) => void d.accept());
   await page.locator(".passkeys").getByRole("button", { name: "Remove" }).click();
+  await answerDialog(page, "Remove");
   await expect(page.locator(".passkeys")).toHaveCount(0);
 });

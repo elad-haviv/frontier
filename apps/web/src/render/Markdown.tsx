@@ -8,6 +8,7 @@ import { editUrl } from "../api.ts";
 import { useLightbox } from "../components/Lightbox.tsx";
 import { currentEntryPath } from "../components/Shell.tsx";
 import { wikilinks } from "./wikilinks.ts";
+import { useDialogs } from "../components/Dialogs.tsx";
 
 /**
  * Everything rendered from Markdown is untrusted. Raw HTML in a note is not rendered at all, and
@@ -29,11 +30,12 @@ type Extra = { "data-kind"?: string; "data-target"?: string; node?: unknown };
  * note that holds the link, or in the folder the link names when it has one.
  */
 function MissingEntry({ target, children }: { target: string; children: ReactNode }) {
+  const dialogs = useDialogs();
   const navigate = useNavigate();
   const { pathname } = useLocation();
   const here = currentEntryPath(pathname);
 
-  function create() {
+  async function create() {
     const clean = target
       .replace(/\\/g, "/")
       .replace(/\.md$/i, "")
@@ -50,12 +52,12 @@ function MissingEntry({ target, children }: { target: string; children: ReactNod
           ? here.slice(0, here.lastIndexOf("/"))
           : "";
     const path = `${folder ? folder + "/" : ""}${name}.md`;
-    if (
-      !window.confirm(
-        `"${name}" is not written yet.\n\nWrite it now?\n\nIt will be made as ${path}`,
-      )
-    )
-      return;
+    const ok = await dialogs.confirm({
+      title: `Write "${name}" now?`,
+      body: `It is not written yet. It will be made as\n${path}`,
+      action: "Write it",
+    });
+    if (!ok) return;
     navigate(`${editUrl(path)}?new=1`);
   }
 

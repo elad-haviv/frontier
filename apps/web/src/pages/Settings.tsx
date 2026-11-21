@@ -4,6 +4,7 @@ import { Link } from "react-router-dom";
 import { api, ApiFailure, entryUrl } from "../api.ts";
 import { useRefresh } from "../components/Shell.tsx";
 import { useAsync } from "../useAsync.ts";
+import { useDialogs } from "../components/Dialogs.tsx";
 
 const usd = (n: number) => (n > 0 && n < 0.01 ? "under $0.01" : `$${n.toFixed(2)}`);
 const message = (err: unknown) =>
@@ -21,6 +22,7 @@ function Note({ notice }: { notice: Notice }) {
 }
 
 function AiSettings({ ai, reload }: { ai: SettingsResponse["ai"]; reload: () => Promise<void> }) {
+  const dialogs = useDialogs();
   const refresh = useRefresh();
   const [key, setKey] = useState("");
   const [model, setModel] = useState(ai.models.extraction ?? "");
@@ -176,8 +178,14 @@ function AiSettings({ ai, reload }: { ai: SettingsResponse["ai"]; reload: () => 
             type="button"
             className="plain danger"
             disabled={busy}
-            onClick={() => {
-              if (window.confirm("Remove the stored provider key?"))
+            onClick={async () => {
+              const ok = await dialogs.confirm({
+                title: "Remove the provider key?",
+                body: "AI features stop until a key is entered again.",
+                action: "Remove",
+                danger: true,
+              });
+              if (ok)
                 void run(async () => {
                   await api.saveAi({ key: null });
                   return { kind: "ok", text: "The key was removed." };
@@ -199,6 +207,7 @@ function SignIn({
   signIn: SettingsResponse["signIn"];
   reload: () => Promise<void>;
 }) {
+  const dialogs = useDialogs();
   const [notice, setNotice] = useState<Notice>(null);
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
@@ -239,9 +248,13 @@ function SignIn({
                 type="button"
                 className="plain danger"
                 disabled={busy}
-                onClick={() => {
-                  if (window.confirm(`Remove the passkey "${p.name}"?`))
-                    void run(() => api.removePasskey(p.id), "The passkey was removed.");
+                onClick={async () => {
+                  const ok = await dialogs.confirm({
+                    title: `Remove the passkey "${p.name}"?`,
+                    action: "Remove",
+                    danger: true,
+                  });
+                  if (ok) void run(() => api.removePasskey(p.id), "The passkey was removed.");
                 }}
               >
                 Remove

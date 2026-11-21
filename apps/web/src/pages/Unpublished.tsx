@@ -5,6 +5,7 @@ import { mapIdOf } from "@frontier/schema";
 import { api, ApiFailure, editUrl, entryUrl, imageUrl, mapUrl } from "../api.ts";
 import { Diff } from "../components/Diff.tsx";
 import { useRefresh, useWords } from "../components/Shell.tsx";
+import { useDialogs } from "../components/Dialogs.tsx";
 
 const KIND = { edit: "Edited", create: "New", delete: "Deleted" } as const;
 
@@ -20,6 +21,7 @@ const REASON: Record<string, string> = {
 };
 
 export function UnpublishedPage() {
+  const dialogs = useDialogs();
   const words = useWords();
   const refresh = useRefresh();
   const [data, setData] = useState<UnpublishedResponse | null>(null);
@@ -96,7 +98,13 @@ export function UnpublishedPage() {
   }
 
   async function discard(id: string) {
-    if (!window.confirm("Discard this draft?")) return;
+    const ok = await dialogs.confirm({
+      title: "Discard this draft?",
+      body: "The text you wrote is thrown away.",
+      action: "Discard",
+      danger: true,
+    });
+    if (!ok) return;
     await api.discardDraft(id).catch(fail);
     setPlan(null);
     await load();

@@ -29,6 +29,7 @@ import { useRefresh } from "../components/Shell.tsx";
 import { drawOverlay } from "../map/overlay.ts";
 import { MapRenderer, MapsNeedWebGL } from "../map/renderer.ts";
 import { newItemId, readView, writeView } from "../map/viewUrl.ts";
+import { useDialogs } from "../components/Dialogs.tsx";
 
 type Tool = "select" | "marker" | "path" | "zone" | "measure";
 type SaveState = "saved" | "saving" | "unsaved" | "offline" | "failed";
@@ -49,6 +50,7 @@ const TOOLS: { tool: Tool; label: string }[] = [
 ];
 
 export function MapPage() {
+  const dialogs = useDialogs();
   const { id = "" } = useParams();
   const [params, setParams] = useSearchParams();
   const navigate = useNavigate();
@@ -666,31 +668,42 @@ export function MapPage() {
     view && setView(zoomAt(view, size.width, size.height, size.width / 2, size.height / 2, factor));
   const sphere = map.space.kind === "sphere";
 
-  function setSize2() {
+  async function setSize2() {
     if (!map) return;
     if (map.space.kind === "sphere") {
-      const answer = window.prompt(
-        `The radius of this world, in ${map.space.unit}. Leave empty when it is not known.`,
-        map.space.radius === null ? "" : String(map.space.radius),
-      );
+      const answer = await dialogs.prompt({
+        title: "The size of this world",
+        body: "Give the radius to see distances as well as angles. Leave it empty when it is not known.",
+        label: `Radius in ${map.space.unit}`,
+        initial: map.space.radius === null ? "" : String(map.space.radius),
+        inputMode: "decimal",
+        action: "Set the radius",
+      });
       if (answer === null) return;
       const radius = answer.trim() === "" ? null : Number(answer);
       if (radius !== null && !(radius > 0)) return;
       change({ ...map, space: { ...map.space, radius } });
     } else if (measured) {
-      const answer = window.prompt(`How long is the measured line, in ${map.space.unit}?`);
+      const answer = await dialogs.prompt({
+        title: "Set the scale from this line",
+        body: "Say how long the line you measured really is. Distances on this map follow from it.",
+        label: `Length in ${map.space.unit}`,
+        inputMode: "decimal",
+        action: "Set the scale",
+      });
       const scale = answer ? scaleFrom(sketch, Number(answer)) : null;
       if (scale) change({ ...map, space: { ...map.space, scale } });
     }
   }
 
   async function remove() {
-    if (
-      !window.confirm(
-        `Delete the map "${map!.title}"? It is removed from the vault when you publish.`,
-      )
-    )
-      return;
+    const ok = await dialogs.confirm({
+      title: `Delete the map "${map!.title}"?`,
+      body: "It is removed from the library when you save a version.",
+      action: "Delete the map",
+      danger: true,
+    });
+    if (!ok) return;
     window.clearTimeout(timer.current);
     await api.deleteMap(id).catch(() => undefined);
     refresh();
