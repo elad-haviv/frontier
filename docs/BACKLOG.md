@@ -105,12 +105,13 @@ from Frontier's own library, not the Hindsight bank; what is kept becomes an uns
 
 - [x] 8a Lore conversations: answers from the library, each paragraph with checked quotes;
       "not in the lore"; additions drafted, chosen and kept as drafts
-- [ ] Elad sets a model for lore conversations in Settings and tries it
+- [ ] Elad sets models for conversations and for concept art in Settings and tries them
 - [x] 8b Writing help in the editor: rewrite a passage, ask the lore about it (comments on a
       passage wait)
 - [x] 8c Character chat: a profile from the entries, approved and kept in the library; lines
       checked, improvised ones marked; a line added to the entry as a draft
-- [ ] 8d Discovery on a map, with concept art
+- [x] 8d Discovery on a map: proposals from what is near, checked; concept art when asked;
+      kept as a new entry with a marker
 
 ## Now: stage 7, more map views
 

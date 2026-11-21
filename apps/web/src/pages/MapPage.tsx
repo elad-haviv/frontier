@@ -28,7 +28,8 @@ import {
 } from "@frontier/schema";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { api, ApiFailure, imageUrl, mapImageUrl, mapUrl } from "../api.ts";
+import { api, ApiFailure, type Discovery, imageUrl, mapImageUrl, mapUrl } from "../api.ts";
+import { DiscoveryCard } from "../components/DiscoveryCard.tsx";
 import {
   FeatureCard,
   FeatureEditor,
@@ -135,6 +136,22 @@ export function MapPage() {
   const [showAll, setShowAll] = useState(false);
   // Projections: the panel of the turn's three angles, and marking a box to focus on.
   const [turning, setTurning] = useState(false);
+  // Discovery: explore mode, the proposals on this map, and the one opened.
+  const [exploring, setExploring] = useState(false);
+  const [found, setFound] = useState<{
+    items: Discovery[];
+    ready: boolean;
+    art: boolean;
+    folders: string[];
+  }>({ items: [], ready: false, art: false, folders: [] });
+  const [openFound, setOpenFound] = useState<string | null>(null);
+  const [seeking, setSeeking] = useState(false);
+  useEffect(() => {
+    api.discoveries(id).then(
+      (r) => setFound({ items: r.discoveries, ready: r.ready, art: r.art, folders: r.folders }),
+      () => undefined,
+    );
+  }, [id]);
   const [focusing, setFocusing] = useState(false);
   const [box, setBox] = useState<[number, number, number, number] | null>(null);
   const [pin, setPin] = useState<{ feature: string; shape: string | null } | null>(null);
@@ -618,6 +635,26 @@ export function MapPage() {
     const v = makeView(state, size.width, size.height);
     const position = v.unproject(x, y);
 
+    // Exploring: a tap asks what is found there.
+    if (exploring && !editing) {
+      if (!position || seeking) return;
+      setSeeking(true);
+      setNotice("Looking at what is near…");
+      api
+        .discover(id, position, timeOn ? chronicleId : null, timeOn ? year : null)
+        .then(
+          (r) => {
+            setFound((f) => ({ ...f, items: [...f.items, ...r.discoveries] }));
+            setOpenFound(r.discoveries[0]?.id ?? null);
+            setNotice(null);
+          },
+          (err: unknown) =>
+            setNotice(err instanceof ApiFailure ? err.message : "Nothing could be discovered."),
+        )
+        .finally(() => setSeeking(false));
+      return;
+    }
+
     if (editing && tool === "marker") {
       if (!position) return;
       const feature: MapFeature = {
@@ -918,6 +955,20 @@ export function MapPage() {
   if (!map) return <p className="center muted">Opening the map…</p>;
   if (glError) return <p className="center error">{glError}</p>;
 
+  /** Takes in the map as the server holds it, after the server changed it, as when a discovery is kept. */
+  async function reloadMap() {
+    try {
+      const loaded = await api.map(id);
+      confirmed.current = loaded.map;
+      revision.current = loaded.revision;
+      setNames((n) => ({ ...n, ...loaded.entries }));
+      setMap(loaded.map);
+      setHistory({ past: [], future: [] });
+    } catch {
+      setNotice("The map could not be read again. Open it anew to see the new marker.");
+    }
+  }
+
   const zoom = (factor: number) =>
     view && setView(zoomAt(view, size.width, size.height, size.width / 2, size.height / 2, factor));
   const sphere = map.space.kind === "sphere";
@@ -1054,6 +1105,19 @@ export function MapPage() {
               ))}
             </select>
           )}
+          {found.ready && !editing && (
+            <button
+              type="button"
+              className="quiet"
+              aria-pressed={exploring}
+              onClick={() => {
+                setExploring(!exploring);
+                setSelected(null);
+              }}
+            >
+              Explore
+            </button>
+          )}
           {chronicles.length > 0 && (
             <button
               type="button"
@@ -1153,6 +1217,39 @@ export function MapPage() {
           onPointerUp={onPointerUp}
           onPointerCancel={onPointerUp}
         />
+        {view &&
+          found.items.map((d) => {
+            const at = makeView(view, size.width, size.height).project(d.at);
+            if (
+              !at ||
+              at[0] < -20 ||
+              at[1] < -20 ||
+              at[0] > size.width + 20 ||
+              at[1] > size.height + 20
+            ) {
+              return null;
+            }
+            return (
+              <button
+                key={d.id}
+                type="button"
+                className={"discovery-pin" + (openFound === d.id ? " is-open" : "")}
+                style={{ left: at[0], top: at[1] }}
+                aria-label={`Proposed ${d.kind}: ${d.name}`}
+                onClick={() => {
+                  setSelected(null);
+                  setOpenFound(d.id);
+                }}
+              >
+                ?
+              </button>
+            );
+          })}
+        {exploring && !openFound && (
+          <p className="map-hint" role="status">
+            {seeking ? "Looking at what is near…" : "Tap a place to see what might be found there."}
+          </p>
+        )}
         {box && (
           <div
             className="focus-box"
@@ -1319,6 +1416,30 @@ export function MapPage() {
           />
         )}
 
+        {openFound && found.items.some((d) => d.id === openFound) && !editing && (
+          <DiscoveryCard
+            key={openFound}
+            map={id}
+            discovery={found.items.find((d) => d.id === openFound)!}
+            canArt={found.art}
+            folders={found.folders}
+            onChanged={(d) =>
+              setFound((f) => ({ ...f, items: f.items.map((x) => (x.id === d.id ? d : x)) }))
+            }
+            onKept={(path) => {
+              setFound((f) => ({ ...f, items: f.items.filter((x) => x.id !== openFound) }));
+              setOpenFound(null);
+              setNotice(`Kept as a new entry, ${path}, with a marker. Both are unsaved changes.`);
+              refresh();
+              void reloadMap();
+            }}
+            onDropped={() => {
+              setFound((f) => ({ ...f, items: f.items.filter((x) => x.id !== openFound) }));
+              setOpenFound(null);
+            }}
+            onClose={() => setOpenFound(null)}
+          />
+        )}
         {feature && !editing && (
           <FeatureCard
             feature={feature}

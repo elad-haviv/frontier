@@ -3578,3 +3578,50 @@ input.map-title {
   border-style: dashed;
   border-color: var(--warn);
 }
+
+/* Discoveries on a map: provisional pins and their card */
+.discovery-pin {
+  position: absolute;
+  z-index: 4;
+  width: 30px;
+  height: 30px;
+  margin: -15px 0 0 -15px;
+  padding: 0;
+  border: 2px dashed var(--accent);
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--paper-raised) 85%, transparent);
+  color: var(--accent);
+  font-weight: 700;
+}
+.discovery-pin::after {
+  content: "";
+  position: absolute;
+  inset: -8px;
+}
+.discovery-pin.is-open {
+  background: var(--accent);
+  color: var(--paper-raised);
+}
+.discovery-kind {
+  margin: 0;
+  font-size: 0.75rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.discovery-art {
+  display: block;
+  width: 100%;
+  margin: 0.4rem 0;
+  border-radius: 4px;
+}
+.discovery-basis blockquote {
+  margin: 0.25rem 0;
+  padding-left: 0.6rem;
+  border-left: 3px solid var(--accent-soft);
+  font-size: 0.85rem;
+}
+.discovery-basis p,
+.discovery-conflict {
+  margin: 0.3rem 0;
+  font-size: 0.85rem;
+}

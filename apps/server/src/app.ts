@@ -19,6 +19,8 @@ import { LoreAsker } from "./ai/lore.js";
 import { loreRoutes } from "./routes/lore.js";
 import { writingRoutes } from "./routes/writing.js";
 import { characterRoutes } from "./routes/characters.js";
+import { discoverRoutes } from "./routes/discover.js";
+import { Discoverer } from "./ai/discover.js";
 import { CharacterTalk } from "./ai/characters.js";
 import { WritingHelper } from "./ai/writing.js";
 import { chronicleRoutes } from "./routes/chronicles.js";
@@ -91,6 +93,7 @@ export interface Services {
   lore: LoreAsker;
   writing: WritingHelper;
   characters: CharacterTalk;
+  discoverer: Discoverer;
   conversations: Conversations;
   backup: Backup;
   search: SearchIndex;
@@ -224,6 +227,27 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
     chronicles,
     mayRead: (path) => quarantine.aiMayRead(path) === null,
   });
+  const maps = new MapStore({
+    vaultDir,
+    iconFolder: config.iconFolder,
+    git,
+    index,
+    drafts,
+    changer,
+  });
+  const discoverer = new Discoverer({
+    stateDir,
+    files,
+    index,
+    maps,
+    chronicles,
+    drafts,
+    changer,
+    provider: ai,
+    settings,
+    uploadFolder: config.uploadFolder,
+    mayRead: (path) => quarantine.aiMayRead(path) === null,
+  });
   const writing = new WritingHelper({
     index,
     search,
@@ -239,14 +263,6 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
     mayRead: (path) => quarantine.aiMayRead(path) === null,
   });
   await quarantine.load();
-  const maps = new MapStore({
-    vaultDir,
-    iconFolder: config.iconFolder,
-    git,
-    index,
-    drafts,
-    changer,
-  });
   const reportAi = async () => status.ai(await ai.ready("extraction"), ai.lastError);
 
   const services: Services = {
@@ -276,6 +292,7 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
     lore,
     writing,
     characters,
+    discoverer,
     conversations,
     async sync() {
       const result = await git.fetch();
@@ -446,6 +463,7 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
   loreRoutes(app, services);
   writingRoutes(app, services);
   characterRoutes(app, services);
+  discoverRoutes(app, services);
   importRoutes(app, services);
   historyRoutes(app, services);
   searchRoutes(app, services);

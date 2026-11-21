@@ -270,6 +270,18 @@ export const api = {
     post<{ lines: CharacterLine[] }>("/api/characters/say", { path, message, history }),
   keepLine: (path: string, text: string) =>
     post<{ draft: string | null }>("/api/characters/line", { path, text }),
+  discoveries: (map: string) =>
+    call<{ discoveries: Discovery[]; ready: boolean; art: boolean; folders: string[] }>(
+      `/api/maps/${map}/discoveries`,
+    ),
+  discover: (map: string, at: [number, number], chronicle: string | null, year: number | null) =>
+    post<{ discoveries: Discovery[] }>(`/api/maps/${map}/discover`, { at, chronicle, year }),
+  discoveryArt: (map: string, id: string) =>
+    post<{ discovery: Discovery }>(`/api/maps/${map}/discoveries/${id}/art`, {}),
+  keepDiscovery: (map: string, id: string, folder: string) =>
+    post<{ path: string }>(`/api/maps/${map}/discoveries/${id}/keep`, { folder }),
+  dropDiscovery: (map: string, id: string) =>
+    send<{ ok: true }>("DELETE", `/api/maps/${map}/discoveries/${id}`),
   deleteConversation: (id: string) => send<{ ok: true }>("DELETE", `/api/lore/${id}`),
   draftAddition: (id: string, turn: number, again = false) =>
     post<{ addition: LoreAddition; conversation: LoreConversation }>(
@@ -288,7 +300,8 @@ export const api = {
     ),
   saveAi: (body: {
     key?: string | null;
-    models?: { extraction?: string | null; conversation?: string | null };
+    models?: { extraction?: string | null; conversation?: string | null; art?: string | null };
+    artStyle?: string;
     monthlyCapUsd?: number;
     proposeOnPublish?: boolean;
   }) => send<{ ok: true }>("PUT", "/api/settings/ai", body),
@@ -463,3 +476,17 @@ export interface CharacterLine {
 }
 export const talkUrl = (path: string): string =>
   "/talk/" + path.split("/").map(encodeURIComponent).join("/");
+
+export interface Discovery {
+  id: string;
+  at: [number, number];
+  kind: string;
+  name: string;
+  description: string;
+  basis: { path: string; quote: string }[];
+  conflicts: string[];
+  art: boolean;
+  model: string;
+}
+export const discoveryArtUrl = (map: string, id: string): string =>
+  `/api/maps/${map}/discoveries/${id}/art`;

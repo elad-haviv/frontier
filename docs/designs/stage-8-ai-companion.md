@@ -245,3 +245,34 @@ overrule:
     origin `lore`, which the unsaved changes page names.
 *   **API**: `GET /api/characters/profile?path=`, `POST /api/characters/propose`,
     `POST /api/characters/approve`, `POST /api/characters/say`, `POST /api/characters/line`.
+
+## 8d Discovery on a map, with concept art
+
+Built on 2026-11-21 following CUJ 13 of the parent. The author decided: concept art is made **only
+when he asks**, and the default style is **pencil and ink on aged paper**. Other choices, which he
+can overrule:
+
+*   **Explore** on a map's bar, shown once a model for conversations is chosen. While exploring, a
+    tap asks what might be found at that place. With time on, the year and chronicle of the time
+    bar are the moment: entries whose span begins later are not drawn on.
+*   **What is drawn on**: the entries of the zones the place lies in, of the six nearest features
+    linked to an entry, and the entries those link to, twelve at most; never appendices or notes in
+    quarantine. With nothing near linked to an entry, Frontier says so and calls no model.
+*   **Proposals**: one to three, each a settlement, place, creature, person or thing, with a name,
+    a short description, the passages it grew from and what it might contradict. Passages are
+    checked word for word; a name already used by an entry is flagged; a proposal with no checked
+    passage says so. Proposals are working files (`/data/state/discoveries/<map>.json`), shown on
+    the map as dashed "?" pins, and are not lore.
+*   **Concept art**: "Make concept art" on a proposal calls the art model chosen in Settings
+    (`/api/v1/images`), with the style from Settings and the proposal's description. The picture is
+    kept with the proposal; "Draw it again" replaces it. Each call is checked against the cap and
+    logged.
+*   **Keeping**: the author picks a folder; the proposal becomes a new entry there (its name, its
+    description, and its picture embedded when there is one, the picture added to the images
+    folder), and a marker linked to it is added to the map, all as drafts saved with the next
+    version. The entry carries the origin `lore`. "Discard" throws a proposal away.
+*   **API**: `GET /api/maps/:id/discoveries`, `POST /api/maps/:id/discover` `{ at, chronicle,
+    year }`, `POST /api/maps/:id/discoveries/:d/art`, `GET` the same address for the picture,
+    `POST /api/maps/:id/discoveries/:d/keep` `{ folder }`, `DELETE /api/maps/:id/discoveries/:d`.
+*   **Settings**: a model for concept art, and the style, a paragraph added to every picture's
+    description.

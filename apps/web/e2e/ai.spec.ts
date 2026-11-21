@@ -238,3 +238,67 @@ test("CUJ 12: drafts a character's profile, approves it, talks, and adds a line 
     for (const d of un.drafts) await fetch(`/api/drafts/${d.id}`, { method: "DELETE" });
   });
 });
+
+test("CUJ 13: explores a map, makes concept art when asked, and keeps a discovery", async ({
+  page,
+}, info) => {
+  test.skip(info.project.name !== "phone", "The AI settings are one per server.");
+  await page.setViewportSize({ width: 375, height: 740 });
+  await page.goto("/settings");
+  await page.getByLabel(/Provider key/).fill("sk-or-browser-test-key");
+  await page.getByLabel("Model for lore conversations").fill("sample/reader");
+  await page.getByLabel("Model for concept art").fill("sample/painter");
+  await expect(page.getByLabel("Style of concept art")).toHaveValue(/Pencil and ink/);
+  await page.getByRole("button", { name: "Save" }).click();
+  await expect(page.locator(".banner-ok")).toHaveText("Saved.");
+
+  // A map with a marker for Mira near the middle.
+  await page.goto("/maps");
+  await page.locator(".new-map input[type=text]").fill("Explored coast");
+  await page.locator(".new-map select").nth(0).selectOption("flat");
+  await page.locator(".new-map select").nth(1).selectOption("99 Appendices/Images/map one.png");
+  await page.getByRole("button", { name: "Make the map" }).click();
+  await expect(page.locator(".map-top")).toBeVisible();
+  await expect(page).toHaveURL(/v=/);
+  const box = (await page.locator(".map-top").boundingBox())!;
+  const c = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+  await page.getByRole("button", { name: "Marker" }).click();
+  await page.mouse.click(c.x, c.y);
+  const editor = page.locator(".feature-editor");
+  await editor.getByLabel("Find an entry").fill("Mira");
+  await editor.locator(".entry-picker li button", { hasText: "Mira" }).first().click();
+  await expect(editor.locator(".linked")).toContainText("Mira");
+  await expect(page.locator(".save-saved")).toBeVisible();
+  await page.getByRole("button", { name: "Done" }).click();
+
+  // Explore: a tap on the empty coast nearby proposes a discovery, shown as a provisional pin.
+  await page.getByRole("button", { name: "Explore" }).click();
+  await page.mouse.click(c.x + 40, c.y - 30);
+  const card = page.locator(".discovery-card");
+  await expect(card.locator("h2")).toHaveText("Test Hollow");
+  await expect(card).toContainText("not in the lore");
+  await expect(card.locator(".discovery-basis")).toContainText("Mira");
+  await expect(page.locator(".discovery-pin")).toHaveCount(1);
+  // No picture until asked for.
+  await expect(card.locator(".discovery-art")).toHaveCount(0);
+  await card.getByRole("button", { name: "Make concept art" }).click();
+  await expect(card.locator(".discovery-art")).toBeVisible();
+
+  await card.getByLabel("Folder for the new entry").selectOption("02 People");
+  await card.getByRole("button", { name: "Keep" }).click();
+  await expect(page.locator(".map-notice")).toContainText("02 People/Test Hollow.md");
+  await expect(page.locator(".discovery-pin")).toHaveCount(0);
+
+  await page.goto("/unpublished");
+  const changes = page.locator(".changes");
+  await expect(changes).toContainText("02 People/Test Hollow.md");
+  await expect(changes).toContainText("Test Hollow.png");
+
+  await page.evaluate(async () => {
+    const maps = await (await fetch("/api/maps")).json();
+    for (const m of maps.maps)
+      if (m.title === "Explored coast") await fetch(`/api/maps/${m.id}`, { method: "DELETE" });
+    const un = await (await fetch("/api/unpublished")).json();
+    for (const d of un.drafts) await fetch(`/api/drafts/${d.id}`, { method: "DELETE" });
+  });
+});

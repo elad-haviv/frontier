@@ -9,7 +9,7 @@ import { decrypt } from "../state/secrets.js";
 import type { SettingsStore } from "../state/settings.js";
 import { type AiLog, monthOf } from "./log.js";
 
-export type AiTask = "extraction" | "conversation";
+export type AiTask = "extraction" | "conversation" | "art";
 
 export interface AnswerSchema<T> {
   name: string;
@@ -132,6 +132,80 @@ export class AiProvider {
     }
     this.lastError = null;
     return checked.data;
+  }
+
+  /**
+   * One picture made from a description, as PNG or JPEG bytes. Checked against the cap first and
+   * logged like every call. Not sent twice: a picture that timed out may still be billed.
+   */
+  async image(prompt: string, entry?: string): Promise<{ bytes: Buffer; costUsd: number }> {
+    const settings = await this.d.settings.read();
+    const key = await this.key();
+    const model = settings?.ai.models.art ?? null;
+    if (!key || !model) {
+      throw new ApiError(
+        "ai_off",
+        !key
+          ? "No AI provider key is set. Add one on the settings page."
+          : "No model is chosen for concept art. Choose one on the settings page.",
+      );
+    }
+    const { spentUsd, capUsd } = await this.spending();
+    if (spentUsd >= capUsd) {
+      throw new ApiError(
+        "ai_cap_reached",
+        `This month's AI spending is ${money(spentUsd)} and your cap is ${money(capUsd)}. ` +
+          "Raise the cap on the settings page to go on.",
+      );
+    }
+    let ok = false;
+    let costUsd = 0;
+    let error: string | undefined;
+    let bytes: Buffer | null = null;
+    try {
+      const res = await this.fetch(`${this.d.config.openrouterUrl}/images`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${key.key}`, "content-type": "application/json" },
+        body: JSON.stringify({ model, prompt }),
+        signal: AbortSignal.timeout(180_000),
+      });
+      const body = (await res.json().catch(() => null)) as {
+        data?: { b64_json?: unknown }[];
+        usage?: { cost?: unknown };
+        error?: { message?: unknown };
+      } | null;
+      costUsd = typeof body?.usage?.cost === "number" ? body.usage.cost : 0;
+      const b64 = body?.data?.[0]?.b64_json;
+      if (res.ok && typeof b64 === "string") {
+        bytes = Buffer.from(b64, "base64");
+        ok = true;
+      } else {
+        const said = typeof body?.error?.message === "string" ? body.error.message : null;
+        error = `The image model refused the call (${res.status})${said ? `: ${said}` : "."}`;
+      }
+    } catch (err) {
+      error =
+        err instanceof Error && err.name === "TimeoutError"
+          ? "The image model did not answer in time."
+          : "The AI provider could not be reached.";
+    }
+    await this.d.log.append({
+      at: this.now().toISOString(),
+      task: "art",
+      model,
+      promptTokens: 0,
+      completionTokens: 0,
+      costUsd,
+      entry: entry ?? null,
+      ok,
+      ...(error ? { error } : {}),
+    });
+    if (!ok || !bytes) {
+      this.lastError = error ?? "No picture came back.";
+      throw new ApiError("ai_failed", this.lastError);
+    }
+    this.lastError = null;
+    return { bytes, costUsd };
   }
 
   /** One request to the provider, and its line in the log. */

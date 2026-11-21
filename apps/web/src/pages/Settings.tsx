@@ -27,6 +27,8 @@ function AiSettings({ ai, reload }: { ai: SettingsResponse["ai"]; reload: () => 
   const [key, setKey] = useState("");
   const [model, setModel] = useState(ai.models.extraction ?? "");
   const [talker, setTalker] = useState(ai.models.conversation ?? "");
+  const [painter, setPainter] = useState(ai.models.art ?? "");
+  const [style, setStyle] = useState(ai.artStyle);
   const [cap, setCap] = useState(String(ai.monthlyCapUsd));
   const [onPublish, setOnPublish] = useState(ai.proposeOnPublish);
   const [models, setModels] = useState<ModelsResponse["models"] | null>(null);
@@ -62,7 +64,12 @@ function AiSettings({ ai, reload }: { ai: SettingsResponse["ai"]; reload: () => 
       }
       await api.saveAi({
         ...(key.trim() ? { key: key.trim() } : {}),
-        models: { extraction: model.trim() || null, conversation: talker.trim() || null },
+        models: {
+          extraction: model.trim() || null,
+          conversation: talker.trim() || null,
+          art: painter.trim() || null,
+        },
+        ...(style.trim() ? { artStyle: style.trim() } : {}),
         monthlyCapUsd: capUsd,
         proposeOnPublish: onPublish,
       });
@@ -147,6 +154,26 @@ function AiSettings({ ai, reload }: { ai: SettingsResponse["ai"]; reload: () => 
             ? "Asking the lore and writing help send the question or passage, and the entries looked up for it, to this model."
             : "No model chosen: asking the lore is off."}
         </em>
+      </label>
+
+      <label className="field">
+        <span>Model for concept art</span>
+        <input
+          type="text"
+          value={painter}
+          placeholder="An image model, such as google/gemini-2.5-flash-image"
+          onChange={(e) => setPainter(e.target.value)}
+        />
+        <em className="muted">
+          {painter.trim()
+            ? "A picture is made only when you ask for one on a discovery. Each costs a few cents."
+            : "No model chosen: discoveries have no pictures."}
+        </em>
+      </label>
+
+      <label className="field">
+        <span>Style of concept art</span>
+        <textarea rows={3} value={style} onChange={(e) => setStyle(e.target.value)} />
       </label>
 
       <label className="field">

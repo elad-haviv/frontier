@@ -32,6 +32,7 @@ export function settingsRoutes(app: FastifyInstance, s: Services): void {
         keyLast4: key ? key.key.slice(-4) : null,
         canStoreKey: s.config.secretsKey !== null,
         models: settings.ai.models,
+        artStyle: settings.ai.artStyle,
         monthlyCapUsd: settings.ai.monthlyCapUsd,
         proposeOnPublish: settings.ai.proposeOnPublish,
         spentUsd,
@@ -72,10 +73,12 @@ export function settingsRoutes(app: FastifyInstance, s: Services): void {
                   input.models.conversation === undefined
                     ? now.ai.models.conversation
                     : input.models.conversation,
+                art: input.models.art === undefined ? now.ai.models.art : input.models.art,
               },
             }
           : {}),
         ...(input.monthlyCapUsd === undefined ? {} : { monthlyCapUsd: input.monthlyCapUsd }),
+        ...(input.artStyle === undefined ? {} : { artStyle: input.artStyle }),
         ...(input.proposeOnPublish === undefined
           ? {}
           : { proposeOnPublish: input.proposeOnPublish }),

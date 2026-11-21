@@ -31,6 +31,21 @@ function firstLine(user) {
   return { path, line };
 }
 
+function discovery(user) {
+  const { path, line } = firstLine(user);
+  return {
+    candidates: [
+      {
+        kind: "settlement",
+        name: "Test Hollow",
+        description: "A small place the test found.",
+        basis: line ? [{ path, quote: line }] : [],
+        conflicts: "",
+      },
+    ],
+  };
+}
+
 function character(user) {
   const { path, line } = firstLine(user);
   return {
@@ -101,6 +116,21 @@ const ai = createServer((req, res) => {
   req.on("data", (chunk) => (raw += chunk));
   req.on("end", () => {
     res.setHeader("content-type", "application/json");
+    if (req.url.endsWith("/images")) {
+      // A one-pixel picture, for concept art.
+      res.end(
+        JSON.stringify({
+          data: [
+            {
+              b64_json:
+                "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+            },
+          ],
+          usage: { cost: 0.04 },
+        }),
+      );
+      return;
+    }
     if (req.url.endsWith("/models")) {
       res.end(
         JSON.stringify({
@@ -121,11 +151,13 @@ const ai = createServer((req, res) => {
     const quote = lines.find((l) => l.trim() !== "" && !l.startsWith("#")) ?? "";
     const answer = user.startsWith("Entry:")
       ? { type: null, time: [{ what: "happened", when: "in the year of the test", quote }] }
-      : user.startsWith("The character:")
-        ? character(user)
-        : user.startsWith("Entries:")
-          ? lore(user)
-          : { reply: "ok" };
+      : user.startsWith("Entries about what is near")
+        ? discovery(user)
+        : user.startsWith("The character:")
+          ? character(user)
+          : user.startsWith("Entries:")
+            ? lore(user)
+            : { reply: "ok" };
     res.end(
       JSON.stringify({
         choices: [{ message: { content: JSON.stringify(answer) } }],

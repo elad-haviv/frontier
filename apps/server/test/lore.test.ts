@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { PublishPlan, UnpublishedResponse } from "@frontier/schema";
+import { PublishPlan, serialiseMap, type MapFile, UnpublishedResponse } from "@frontier/schema";
 import { lookUp, plainForQuotes } from "../src/ai/lore.js";
 import { makeTestApp, type TestApp } from "./helpers/app.js";
 
@@ -32,8 +32,13 @@ const NOTES: Record<string, string> = {
     "\n\n## Tolls\n\nThe toll on the Long Road is paid in salt.\n",
 };
 
+const PNG = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+  "base64",
+);
+
 interface Call {
-  body: { model: string; messages: { role: string; content: string }[] };
+  body: { model: string; messages: { role: string; content: string }[]; prompt?: string };
 }
 
 /** Stands in for OpenRouter. Each answer is used once, the last one for every later call. */
@@ -41,6 +46,13 @@ function provider(answers: object[]) {
   const calls: Call[] = [];
   const fake: typeof fetch = async (input, init) => {
     if (String(input).endsWith("/models")) return Response.json({ data: [] });
+    if (String(input).endsWith("/images")) {
+      calls.push({ body: JSON.parse(String(init?.body)) });
+      return Response.json({
+        data: [{ b64_json: PNG.toString("base64") }],
+        usage: { cost: 0.04 },
+      });
+    }
     calls.push({ body: JSON.parse(String(init?.body)) });
     const answer = answers[Math.min(calls.length - 1, answers.length - 1)]!;
     return Response.json({
@@ -506,5 +518,153 @@ describe("talking with a character", () => {
     expect(await talk(null)).toContain(`=== Entry: ${VAAKH}`);
     expect(await talk(100)).not.toContain(`=== Entry: ${VAAKH}`);
     expect(await talk(900)).toContain(`=== Entry: ${VAAKH}`);
+  });
+});
+
+describe("discovering what lies at a place", () => {
+  const MAP_ID = "kingdom1";
+  const map = {
+    version: 1,
+    id: MAP_ID,
+    title: "Kingdom",
+    space: { kind: "flat", width: 1000, height: 1000, scale: null, unit: "km" },
+    images: [
+      {
+        id: "img1",
+        name: "Base",
+        path: "99 Appendices/Images/base.png",
+        extent: [0, 0, 1000, 1000],
+        visible: true,
+      },
+    ],
+    markerSets: [],
+    layers: [{ id: "lay1", name: "Places", visible: true, color: "#884422" }],
+    features: [
+      {
+        id: "near1",
+        kind: "marker",
+        layer: "lay1",
+        at: [100, 100],
+        entry: "niraniid",
+        label: null,
+        icon: null,
+        child: null,
+      },
+      {
+        id: "far01",
+        kind: "marker",
+        layer: "lay1",
+        at: [900, 900],
+        entry: "waterid0",
+        label: null,
+        icon: null,
+        child: null,
+      },
+    ],
+  } as unknown as MapFile;
+  const CANDIDATES = {
+    candidates: [
+      {
+        kind: "settlement",
+        name: "Current Hollow",
+        description: "A village that listens to the deep currents.",
+        basis: [{ path: NIRANI, quote: "keep time by the pulse of the deep currents" }],
+        conflicts: "",
+      },
+      {
+        kind: "person",
+        name: "Vaakh",
+        description: "A keeper of beats.",
+        basis: [{ path: NIRANI, quote: "they sing to the stars" }],
+        conflicts: "",
+      },
+    ],
+  };
+
+  async function startWithMap(
+    answers: object[],
+    models: Record<string, string> = { conversation: MODEL },
+  ) {
+    const p = await start(answers, models);
+    t.repo.pushFromOutside({
+      [NIRANI]: `---\nid: niraniid\n---\n${NOTES[NIRANI]}`,
+      [WATER]: `---\nid: waterid0\n---\n${NOTES[WATER]}`,
+      [`.frontier/maps/${MAP_ID}.json`]: serialiseMap(map),
+    });
+    await t.services.sync();
+    return p;
+  }
+
+  it("proposes discoveries from what is near, checking their basis and their names", async () => {
+    const p = await startWithMap([CANDIDATES]);
+    const res = await t.post(`/api/maps/${MAP_ID}/discover`, { at: [120, 110] });
+    expect(res.statusCode, res.body).toBe(200);
+    const [first, second] = res.json().discoveries;
+    expect(first).toMatchObject({
+      name: "Current Hollow",
+      kind: "settlement",
+      art: false,
+      conflicts: [],
+    });
+    expect(first.basis).toHaveLength(1);
+    // A quote that is not in the entry is dropped, and a name already in use is flagged.
+    expect(second.basis).toEqual([]);
+    expect(second.conflicts).toEqual([
+      'An entry is already named "Vaakh".',
+      "Nothing it names as its basis was found in the entries.",
+    ]);
+    const sent = p.calls[0]!.body.messages[1]!.content;
+    expect(sent).toContain(`=== Entry: ${NIRANI}`);
+    // Vaakh is linked from the Nirani entry, so it is drawn on too.
+    expect(sent).toContain(`=== Entry: ${VAAKH}`);
+    expect((await t.get(`/api/maps/${MAP_ID}/discoveries`)).json().discoveries).toHaveLength(2);
+  });
+
+  it("makes a picture only when asked, and keeps a discovery as a new entry with a marker", async () => {
+    const p = await startWithMap([CANDIDATES], { conversation: MODEL, art: "test/painter" });
+    const [found] = (await t.post(`/api/maps/${MAP_ID}/discover`, { at: [120, 110] })).json()
+      .discoveries;
+    const art = await t.post(`/api/maps/${MAP_ID}/discoveries/${found.id}/art`, {});
+    expect(art.statusCode, art.body).toBe(200);
+    expect(art.json().discovery.art).toBe(true);
+    // The picture is asked of the art model, in the style from the settings.
+    const asked = p.calls.at(-1)!.body;
+    expect(asked.model).toBe("test/painter");
+    expect(asked.prompt).toContain("Pencil and ink sketch");
+    expect(asked.prompt).toContain("Current Hollow");
+    const picture = await t.get(`/api/maps/${MAP_ID}/discoveries/${found.id}/art`);
+    expect(picture.headers["content-type"]).toBe("image/png");
+
+    const bad = await t.post(`/api/maps/${MAP_ID}/discoveries/${found.id}/keep`, {
+      folder: "Nowhere",
+    });
+    expect(bad.statusCode).toBe(400);
+    const kept = await t.post(`/api/maps/${MAP_ID}/discoveries/${found.id}/keep`, {
+      folder: "04 Inhabitants",
+    });
+    expect(kept.statusCode, kept.body).toBe(200);
+    expect(kept.json().path).toBe("04 Inhabitants/Current Hollow.md");
+
+    const un = UnpublishedResponse.parse((await t.get("/api/unpublished")).json());
+    const entry = un.drafts.find((d) => d.path === "04 Inhabitants/Current Hollow.md")!;
+    expect(entry.kind).toBe("create");
+    expect(entry.text).toContain("A village that listens to the deep currents.");
+    expect(entry.text).toContain("![[Current Hollow.png]]");
+    expect(entry.origins[0]).toMatchObject({ kind: "lore", ref: `discovery:${found.id}` });
+    expect(un.drafts.some((d) => d.path.endsWith("/Current Hollow.png") && d.binary)).toBe(true);
+    const mapDraft = un.drafts.find((d) => d.path === `.frontier/maps/${MAP_ID}.json`)!;
+    expect(mapDraft.text).toContain('"at":[120,110]');
+    expect((await t.get(`/api/maps/${MAP_ID}/discoveries`)).json().discoveries).toHaveLength(1);
+  });
+
+  it("says when nothing near is linked to an entry", async () => {
+    await startWithMap([CANDIDATES]);
+    t.repo.pushFromOutside({
+      [`.frontier/maps/${MAP_ID}.json`]: serialiseMap({ ...map, features: [] }),
+    });
+    await t.services.sync();
+    const res = await t.post(`/api/maps/${MAP_ID}/discover`, { at: [1, 1] });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error.message).toContain("Nothing near this place");
   });
 });
