@@ -23,6 +23,30 @@ One place for what is being built, what is waiting, and ideas. The design in
   - Fits the existing rule: an AI change to a selection is a proposal shown as a difference, which
     you accept or reject before it enters the draft.
 
+- 2026-11-22: **Interface overhaul and offline work** (the author's list, kept whole; being taken
+  through EGM brainstorm as stage 11 onwards; the fresh UX review is in `ux-review/expert-review.md`).
+  - General: a UX/UI expert review; icons across the app; folders editable like entries (add, nest,
+    move, reorder, rename, style, delete), with an icon and a default type per folder, drag and drop,
+    quick buttons beside the name and a context menu; a clearer "new entry" control; a graph screen as
+    in Obsidian; drop the top bar and put everything in a collapsible side bar with a menu at the
+    bottom; clearer loading signs on a bad connection.
+  - Entries: a sticky breadcrumb of headings while scrolling, with a button for a table of contents
+    pane on the right; a toggle for full width; rename inline with a pencil, move with a combobox that
+    suggests folders; history and export in a right side bar, history with an expand button.
+  - Editor: properties in a right side bar; a clearer toolbar with icons, styled tooltips and perhaps
+    a status bar naming the hovered tool; an image gallery dialog (browse, upload or drop, paste,
+    URL saved to the server, search); a style picker (headings and so on); bullet and numbered lists;
+    indenting with Tab (Tab does not work now); code blocks and quotes; underline and strikethrough
+    if Markdown allows; a context menu; comment in the toolbar and in the context menu.
+  - Maps: the same gallery when choosing a map image; a collapsible right side bar that shows the open
+    panel (layers and so on); the entry field for markers as the same combobox, editable in the side
+    bar; "map of this place" as a combobox, not a plain select; a viewing mode next to editing, with
+    tooltips and floating entry previews on hover; a context menu and keyboard shortcuts; while drawing
+    a path, a line to the cursor; straight or curved paths; kinds of path (river, road, border, ...)
+    with control over each; tooltips everywhere; a hover highlight on objects; a + at the middle of
+    each segment of a path or zone to add a point; drag a whole zone by holding inside it.
+  - System: work offline and sync the differences when the network returns.
+
 <!-- Format:
 - 2026-11-21: The idea, as said. (Notes: which stage it probably belongs to, open questions.)
 -->
