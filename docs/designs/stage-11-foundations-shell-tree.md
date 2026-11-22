@@ -1,9 +1,9 @@
 # Stage 11: foundations, the shell and the folder tree
 
 *   **Author:** Elad Haviv
-*   **Status:** Draft
+*   **Status:** Proposed
 *   **Date:** 2026-11-22
-*   **Parent:** [Frontier](docs/designs/frontier.md), [Frontier's own library](docs/designs/own-library.md).
+*   **Parent:** [Frontier](frontier.md), [Frontier's own library](own-library.md).
     Comes from `concepts_brief.md` (stages 11 to 15), which seven fresh reviewers examined.
 
 --------------------------------------------------------------------------------

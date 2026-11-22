@@ -241,7 +241,7 @@ first:
 3. **Stage 11c: the folder tree.**
    - Add, nest, move, reorder, rename, style and delete, with drag and drop, quick buttons, a context
      menu, and undo for moves.
-   - The default type edits the schema and is written into each new entry.
+   - The default type is kept in the folder file (decided by the author after this brief; see the stage 11 design) and is written into each new entry.
    - A folder move is one rename plan.
 4. **Stage 12: entries and editor.**
    - Sticky folder › entry › heading line, a contents tab, full width, inline rename, move combobox.
