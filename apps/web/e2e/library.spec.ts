@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { commitCount, entry, onMain, publish, review } from "./helpers.ts";
+import { commitCount, entry, onMain, openMenu, publish, review } from "./helpers.ts";
 
 test("imports a note, saves it, changes it, and restores the first version from its history", async ({
   page,
@@ -48,7 +48,8 @@ test("imports a note, saves it, changes it, and restores the first version from 
   // The history lists both versions; the first can be brought back.
   await page.goto(entry(path));
   await expect(page.locator(".prose")).toContainText("The second telling.");
-  await page.getByRole("link", { name: "History" }).click();
+  await openMenu(page, "More actions");
+  await page.getByRole("menuitem", { name: "History" }).click();
   const rows = page.locator(".versions > li");
   await expect(rows).toHaveCount(2);
   await expect(rows.nth(0)).toContainText(`Retell ${name}`);

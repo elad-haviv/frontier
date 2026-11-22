@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 import sharp from "sharp";
+import { openMenu } from "./helpers.ts";
 
 test("exports a folder as web pages, and an entry as a Word document", async ({ page }) => {
   await page.goto("/export");
@@ -30,7 +31,8 @@ test("exports a folder as web pages, and an entry as a Word document", async ({ 
 
   // From an entry's page, one entry.
   await page.goto("/e/02%20People/Mira.md");
-  await page.locator(".entry-head").getByRole("link", { name: "Export", exact: true }).click();
+  await openMenu(page, "More actions");
+  await page.getByRole("menuitem", { name: "Export", exact: true }).click();
   await expect(page.locator(".export")).toContainText("One entry");
   await expect(page.getByLabel("Title")).toHaveValue("Mira");
   const [word] = await Promise.all([

@@ -8,6 +8,8 @@ import { currentEntryPath, useWords } from "../components/Shell.tsx";
 import { Fields } from "../components/Fields.tsx";
 import { ProposeFields } from "../components/ProposeFields.tsx";
 import { Markdown } from "../render/Markdown.tsx";
+import { Menu, MenuLink } from "../components/ui/Menu.tsx";
+import { FileDown, FolderInput, History } from "lucide-react";
 import { useAsync } from "../useAsync.ts";
 
 function Crumbs({ path }: { path: string }) {
@@ -90,21 +92,24 @@ export function EntryPage({ onSessionLost }: { onSessionLost: () => void }) {
           <h1>{view!.title}</h1>
           {!e.readOnly && e.draft?.kind !== "delete" && (
             <span className="entry-actions">
-              <Link
-                to={"/rename/" + e.path.split("/").map(encodeURIComponent).join("/")}
-                className="edit-link subtle"
-              >
-                Rename
-              </Link>
-              <Link to={historyUrl(e.path)} className="edit-link subtle">
-                History
-              </Link>
-              <Link to={`/export?path=${encodeURIComponent(e.path)}`} className="edit-link subtle">
-                Export
-              </Link>
               <Link to={editUrl(e.path)} className="edit-link">
                 Edit
               </Link>
+              {/* One clear action; the rest wait behind "⋯", as the review asked. */}
+              <Menu label="More actions">
+                <MenuLink
+                  icon={FolderInput}
+                  to={"/rename/" + e.path.split("/").map(encodeURIComponent).join("/")}
+                >
+                  Rename
+                </MenuLink>
+                <MenuLink icon={History} to={historyUrl(e.path)}>
+                  History
+                </MenuLink>
+                <MenuLink icon={FileDown} to={`/export?path=${encodeURIComponent(e.path)}`}>
+                  Export
+                </MenuLink>
+              </Menu>
             </span>
           )}
         </div>

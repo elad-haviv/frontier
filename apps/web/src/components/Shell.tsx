@@ -5,7 +5,25 @@ import { api, editUrl } from "../api.ts";
 import { useAsync } from "../useAsync.ts";
 import { Switcher } from "./Switcher.tsx";
 import { Tree } from "./Tree.tsx";
-import { useDialogs } from "./Dialogs.tsx";
+import { KeySheet } from "./KeySheet.tsx";
+import { NewEntry } from "./NewEntry.tsx";
+import { Icon } from "./ui/Icon.tsx";
+import { IconButton } from "./ui/IconButton.tsx";
+import { Menu, MenuItem, MenuLink, MenuSeparator } from "./ui/Menu.tsx";
+import { useKeyListener, useShortcut } from "../keys.ts";
+import {
+  Activity,
+  Download,
+  History,
+  Keyboard,
+  LogOut,
+  Menu as MenuIcon,
+  Plus,
+  Search,
+  Settings,
+  Upload,
+  X,
+} from "lucide-react";
 
 const Refresh = createContext<() => void>(() => undefined);
 const Status = createContext<StatusSnapshot | null>(null);
@@ -53,12 +71,13 @@ export function currentEntryPath(pathname: string): string {
 }
 
 export function Shell({ children, onLoggedOut }: { children: ReactNode; onLoggedOut: () => void }) {
-  const dialogs = useDialogs();
   const { pathname } = useLocation();
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const [version, setVersion] = useState(0);
   const [switching, setSwitching] = useState(false);
+  const [sheet, setSheet] = useState(false);
+  const [making, setMaking] = useState(false);
   const refresh = useCallback(() => setVersion((v) => v + 1), []);
   const tree = useAsync(() => api.tree(), `tree-${version}`);
   const status = useAsync(() => api.status(), `status-${version}`);
@@ -71,17 +90,11 @@ export function Shell({ children, onLoggedOut }: { children: ReactNode; onLogged
       ? status.value.inbox.branches + status.value.inbox.operations + status.value.inbox.quarantined
       : 0;
 
-  // Ctrl+K or Cmd+K opens the switcher from anywhere.
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
-        e.preventDefault();
-        setSwitching(true);
-      }
-    };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, []);
+  // One listener for every shortcut of the app. Ctrl+K (Cmd+K) opens the switcher from anywhere,
+  // even from a field; "?" opens the list of shortcuts.
+  useKeyListener();
+  useShortcut("app.switcher", () => setSwitching(true));
+  useShortcut("app.keys", () => setSheet(true));
 
   // On a phone the tree is a drawer; it closes when a page opens.
   useEffect(() => setOpen(false), [pathname]);
@@ -91,66 +104,33 @@ export function Shell({ children, onLoggedOut }: { children: ReactNode; onLogged
     onLoggedOut();
   }
 
-  async function newEntry() {
-    const folder = current.includes("/") ? current.slice(0, current.lastIndexOf("/")) : "";
-    const name = (
-      await dialogs.prompt({
-        title: "New entry",
-        ...(folder ? { body: `It will be made in "${folder}".` } : {}),
-        label: "Name",
-        action: "Make the entry",
-      })
-    )?.trim();
-    if (!name) return;
-    const safe = name
-      .replace(/[\\/:*?"<>|#^[\]]/g, "")
-      .replace(/\.md$/i, "")
-      .trim();
-    if (!safe) return;
-    navigate(`${editUrl(`${folder ? folder + "/" : ""}${safe}.md`)}?new=1`);
-  }
+  // New entries are made in the folder of the entry in view, unless the author picks another.
+  const folderInView = current.includes("/") ? current.slice(0, current.lastIndexOf("/")) : "";
 
   return (
     <Refresh.Provider value={refresh}>
       <Status.Provider value={status.state === "ready" ? status.value : null}>
         <div className={`shell${open ? " drawer-open" : ""}`}>
           <header className="topbar">
-            <button
-              type="button"
+            <IconButton
               className="icon-button menu"
-              aria-label={open ? "Close the folder list" : "Open the folder list"}
+              label={open ? "Close the folder list" : "Open the folder list"}
+              icon={open ? X : MenuIcon}
+              tipSide="bottom"
               aria-expanded={open}
               onClick={() => setOpen(!open)}
-            >
-              <span aria-hidden="true">{open ? "✕" : "☰"}</span>
-            </button>
+            />
             <Link to="/" className="wordmark small">
               Frontier
             </Link>
-            <button
-              type="button"
+            <IconButton
               className="icon-button find"
-              aria-label="Go to an entry"
-              title="Go to an entry (Ctrl+K)"
+              label="Go to an entry"
+              icon={Search}
+              shortcut="app.switcher"
+              tipSide="bottom"
               onClick={() => setSwitching(true)}
-            >
-              <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
-                <circle
-                  cx="10.5"
-                  cy="10.5"
-                  r="6.5"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                />
-                <path
-                  d="M15.5 15.5 21 21"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                />
-              </svg>
-            </button>
+            />
             <nav className="topnav">
               {proposals > 0 && (
                 <Link to="/inbox" className="has-waiting">
@@ -178,27 +158,38 @@ export function Shell({ children, onLoggedOut }: { children: ReactNode; onLogged
               <Link to="/gallery" className="nav-secondary">
                 Gallery
               </Link>
-              <Link to="/export" className="nav-secondary">
-                Export
-              </Link>
-              <Link to="/import" className="nav-secondary">
-                Import
-              </Link>
-              <Link to="/settings" className="nav-secondary">
-                Settings
-              </Link>
-              <Link to="/status" className="nav-secondary">
-                Status
-              </Link>
-              <button type="button" className="plain nav-secondary" onClick={logout}>
-                Log out
-              </button>
+              {/* The pages for looking after the library, and leaving, wait behind "⋯". */}
+              <Menu label="App menu" className="app-menu">
+                <MenuLink icon={Upload} to="/import">
+                  Import
+                </MenuLink>
+                <MenuLink icon={Download} to="/export">
+                  Export
+                </MenuLink>
+                <MenuLink icon={History} to="/versions">
+                  History of the library
+                </MenuLink>
+                <MenuLink icon={Settings} to="/settings">
+                  Settings
+                </MenuLink>
+                <MenuLink icon={Activity} to="/status">
+                  Status
+                </MenuLink>
+                <MenuItem icon={Keyboard} onSelect={() => setSheet(true)}>
+                  Keyboard shortcuts
+                </MenuItem>
+                <MenuSeparator />
+                <MenuItem icon={LogOut} onSelect={() => void logout()}>
+                  Log out
+                </MenuItem>
+              </Menu>
             </nav>
           </header>
 
           <aside className="sidebar" aria-label="Folders">
-            <button type="button" className="new-entry" onClick={newEntry}>
-              + New entry
+            <button type="button" className="new-entry" onClick={() => setMaking(true)}>
+              <Icon icon={Plus} size="sm" />
+              New entry
             </button>
             {tree.state === "loading" && <p className="muted pad">Loading…</p>}
             {tree.state === "failed" && <p className="error pad">{tree.error.message}</p>}
@@ -208,15 +199,7 @@ export function Shell({ children, onLoggedOut }: { children: ReactNode; onLogged
               <Link to="/ask">Ask the lore</Link>
               <Link to="/chronicles">Chronicles</Link>
               <Link to="/gallery">Gallery</Link>
-              <Link to="/import">Import</Link>
-              <Link to="/export">Export</Link>
-              <Link to="/versions">Versions</Link>
               <Link to="/inbox">Inbox</Link>
-              <Link to="/settings">Settings</Link>
-              <Link to="/status">Status</Link>
-              <button type="button" className="plain" onClick={logout}>
-                Log out
-              </button>
             </p>
           </aside>
           {open && (
@@ -230,6 +213,19 @@ export function Shell({ children, onLoggedOut }: { children: ReactNode; onLogged
 
           <main className="content">{children}</main>
           {switching && <Switcher onClose={() => setSwitching(false)} />}
+          {sheet && <KeySheet onClose={() => setSheet(false)} />}
+          {making && (
+            <NewEntry
+              tree={tree}
+              folder={folderInView}
+              onRetry={refresh}
+              onMake={(path) => {
+                setMaking(false);
+                navigate(`${editUrl(path)}?new=1`);
+              }}
+              onClose={() => setMaking(false)}
+            />
+          )}
         </div>
       </Status.Provider>
     </Refresh.Provider>

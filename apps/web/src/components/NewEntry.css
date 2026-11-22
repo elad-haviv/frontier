@@ -1,0 +1,11 @@
+/* The folder list opens below its field, inside the dialog, so the dialog keeps its place. */
+.new-entry-dialog .dialog-field {
+  position: relative;
+}
+.new-entry-problem {
+  margin: 0 0 0.6rem;
+  font-size: 0.9rem;
+}
+.new-entry-dialog .ui-problem {
+  margin: 0 0 0.8rem;
+}

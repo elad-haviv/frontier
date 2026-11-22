@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { commitCount, entry, noSidewaysScroll, onMain, publish } from "./helpers.ts";
+import { commitCount, entry, noSidewaysScroll, onMain, openMenu, publish } from "./helpers.ts";
 
 test("jumps to an entry by name or alias with the switcher", async ({ page }) => {
   await page.goto(entry("README.md"));
@@ -24,7 +24,8 @@ test("jumps to an entry by name or alias with the switcher", async ({ page }) =>
 test("CUJ 3: renames an entry and rewrites the links to it in one commit", async ({ page }) => {
   const before = commitCount();
   await page.goto(entry("03 Things/Lantern.md"));
-  await page.getByRole("link", { name: "Rename" }).click();
+  await openMenu(page, "More actions");
+  await page.getByRole("menuitem", { name: "Rename" }).click();
   await expect(page.locator(".entry h1").first()).toHaveText("Rename or move");
   // Renaming to itself is not offered.
   await expect(page.locator("button.big")).toBeDisabled();

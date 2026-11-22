@@ -132,9 +132,32 @@ export async function noSidewaysScroll(page: Page): Promise<void> {
   );
 }
 
+/** Opens a "⋯" menu by the name of its button, such as "More actions", and waits for it. */
+export async function openMenu(page: Page, name: string): Promise<void> {
+  await page.getByRole("button", { name, exact: true }).click();
+  await expect(page.getByRole("menu")).toBeVisible();
+}
+
+/** Makes a new entry through the New entry dialog, choosing its folder in the folder list. */
+export async function newEntry(page: Page, folder: string, name: string): Promise<void> {
+  // On a phone the button is in the folder drawer.
+  const drawer = page.locator(".menu");
+  if (await drawer.isVisible()) await drawer.click();
+  await page.locator(".new-entry").click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByLabel("Name").fill(name);
+  await dialog.getByRole("combobox", { name: "Folder", exact: true }).click();
+  await page.getByPlaceholder("Find a folder").fill(folder);
+  await page.getByRole("option", { name: folder, exact: true }).click();
+  await expect(dialog.getByRole("combobox", { name: "Folder", exact: true })).toHaveText(folder);
+  await dialog.getByRole("button", { name: "Make the entry", exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+}
+
 /** Throws away the draft that is open in the editor, so the next test starts from the vault. */
 export async function discardDraft(page: Page): Promise<void> {
-  await page.getByRole("button", { name: "Discard" }).click();
+  await openMenu(page, "More actions");
+  await page.getByRole("menuitem", { name: "Discard draft" }).click();
   await answerDialog(page, "Discard");
   await expect(page.locator(".code-editor")).toHaveCount(0);
 }
