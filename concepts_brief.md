@@ -265,12 +265,16 @@ first:
    - An "N changes waiting" list.
    - Storage kept and shown.
 
-Open questions for the author:
+Answered by the author on 2026-11-22:
 
-1. Folder icon, colour and order: instant, as Frontier's own settings (not versioned, not exported), or
-   versioned in the library, where each reorder waits for "Save a version"?
-2. A new empty folder: made with its folder note, so it is real in Obsidian too, or kept only in
-   Frontier until its first entry?
-3. Offline limits: are you content that moves and renames, image upload from a URL, AI, search across
-   uncached entries and history need a connection, and that on an iPhone Frontier must be installed to
-   the home screen to keep its offline copy?
+1. **Folder icon, colour and order are versioned.** They live in a library file under `.frontier/`, go
+   through drafts and "Save a version" like maps, and are kept in history and in the export. The file
+   is stored one item per line and merged item by item, so two devices reordering different folders do
+   not clash. A folder rename rewrites its keys in the same version; keys for folders that no longer
+   exist are dropped when the file is read.
+2. **No folder note by default.** A new empty folder is listed in that same file, so it lasts and is
+   versioned, and it becomes an ordinary folder when its first entry arrives. A folder note is made
+   only when the author asks for one. In an Obsidian export an empty folder does not appear.
+3. **The offline limits are accepted:** moves and renames, URL image import, AI, search over entries not
+   on the device, and history need a connection; on an iPhone Frontier must be installed to the home
+   screen to keep its offline copy.
