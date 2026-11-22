@@ -1,247 +1,276 @@
-# Stage 5: a workbench for shaping history
+# Stages 11 to 15: a calmer interface, and work that survives a bad connection
 
 - **Author:** Elad Haviv
-- **Date:** 2026-11-21
+- **Date:** 2026-11-22
 
 ## Overview
 
-The parent design planned stage 5 as a reader of dates: parse the dates written in entries, convert
-between calendars, draw a timeline. The vault has no dates to read. The author kept time vague on
-purpose, then began writing human history on Ezob, could not see how it fitted the other narratives
-he had in mind, and deleted it. His words: the arrival of humans and the fading of Earth's memory and
-technology felt "both too quick and at the same time too slow" beside the Nirani arrival and the age
-of the world, with "many events over a great span in too many different places at once". He ranks
-being able to tell the order and overlap of events as most important.
+Frontier works, but it reads as a set of separate admin pages. An 11-link top bar sits above a folder
+list that cannot be edited. The editor toolbar is a row of symbols with no names. Maps give no sign of
+what is under the pointer. A weak connection shows up only as pages that go blank. The author listed
+about 45 changes (kept whole in `docs/BACKLOG.md`, 2026-11-22). An independent UX review of the running
+app (`ux-review/expert-review.md`) found most of the same problems without seeing his list, and added
+some he had not named: on a phone the map editor's Done and Undo are off the screen; the editor body is
+monospace; Delete sits next to Done; secondary text is too faint to meet contrast rules.
 
-So stage 5 becomes a place to shape history before it is written. The author lays out spans and
-events in lanes, says how they relate and roughly how long they last, and sees them to scale beside
-each other and beside real-world comparisons. The Ezob calendar, the pulse count and the difference
-in time between planes are added later, on top of a shape he is content with.
+The author wants all of it, with the general interface first. He also wants to keep working when the
+network drops: editing the files he opened recently, adding entries, and changing maps and chronicles,
+with the differences sent when the connection returns.
 
-Seven independent reviewers examined this concept. This brief merges their findings. They agreed on
-most points; where they disagreed, both views are given.
+Seven fresh reviewers examined the concept. Their notes are in `.egm/reviews/`. This brief merges them.
 
 ## Analysis
 
-### What the reviewers found in the vault
+### What all seven agreed on
 
-- No note has a `time`, `type` or `id` field. About 25 to 30 notes mention a duration at all, nearly
-  all vaguely ("centuries ago"). `02 History & Lore` holds 7 notes.
-- The lore states a few usable facts: the Era of Man "predates the NPS by millennia"; the Grand
-  Canary was built "during the first century following the settlement of Ezob"; the Adyni vanished
-  "centuries ago"; the Ezob year is about 360 days; a plane's drift is "imperceptibly slow".
-- One inconsistency waits for the calendar work: 11 months of 30 days is 330 days, 30 short of the
-  year, yet the nameless month is added only "approximately every three years".
+**1. Offline work cannot be added last on top of today's saving. It has to be prepared first.**
+Saving works four different ways now:
 
-The consequence all seven drew: a date parser, calendar files and a common axis would have nothing to
-work on. What the author types into the workbench is the content. The screen for laying things out is
-the product.
+- entry text, with a small buffer in the browser's `localStorage`;
+- maps, with a three-way merge whose base copy lives only in memory;
+- chronicles, the same through `useItemFile`;
+- on the server, one spare slot (`content.v2`) for a clashing version.
 
-### The seven problems with the concept as first stated
+Each page also calls the server directly and has its own retry timer.
 
-**1. It did not say where the shape is kept, and both obvious answers fail.** (All seven; four called
-it blocking.) Entries cannot hold it: a `time` item is two pieces of text, with no room for a lane, a
-length or a link to another span, and a span would need a note before it could exist, which is the
-order that failed him. Yet the parent design says "dates stay on entries only".
+Several of these already lose work in edge cases, and offline use would make those cases common:
 
-The agreed answer: the shape lives in a file of its own, a **chronicle**, built the way map files are
-(one item per line, merged item by item across devices, saved through drafts and versions). A span
-may point to an entry or to none. The entry's `time` field keeps a different job: it records what the
-entry's text says, in the author's words. The two are different facts, so "one home per fact" still
-holds. Nothing copies itself from one to the other.
+- **A published change can be undone silently.** A save never says which version of the entry it
+  started from. The phone edits an entry offline, the laptop edits and publishes the same entry, and
+  the phone reconnects. The server takes the phone's old text as a fresh draft based on the laptop's
+  version, and Publish then overwrites the laptop's change without showing a conflict. Maps and
+  chronicles have the same gap (`drafts.ts:198-216`, `maps/store.ts:183-191`,
+  `chronicles/store.ts:184-189`).
+- **Kept text is cleared, or ignored, today.**
+  - When the editor learns a newer draft exists, it clears the text kept in the browser
+    (`Edit.tsx:224-228`).
+  - When that draft was published from another device, the kept text is skipped and never mentioned
+    again (`Edit.tsx:182-189`).
+- **A third version overwrites the second.** The spare slot holds one clashing version, so a third
+  device's save replaces the second's text.
+- **A reload turns the merge into "mine wins".** Without its in-memory base, the map merge keeps
+  "yours" on every clash. That is harmless after seconds offline and destructive after days.
 
-**2. "Moving one span shows what else must move" was two different behaviours, and one is costly.**
-(Six of seven.) Either the others move by themselves, or they stay and are marked. The reviewers
-split on how far to go:
+The agreed answer is one data layer, built in stage 11, that every page saves through:
 
-- The simple view: each span is placed by a rough number or by one link ("starts about N after X
-  ends"). Moving X moves what hangs from it. Every other statement ("overlaps", "before", "longer
-  than") is a check that turns red and moves nothing. Every red mark names the statement it breaks.
-- The fuller view: a real solver over ranges, with each span either pinned by the author or free;
-  free spans follow, pinned ones raise a flag, and the result is previewed before it is kept.
+- a queue of changes on the device (IndexedDB), each carrying the version it started from and its own
+  id, so a retry is never stored twice;
+- one connection service built on the status stream the server already sends
+  (`/api/status/events`, which the web app never listens to today);
+- on the server, a check that the base still matches before a save becomes a draft;
+- room for several clashing versions, one per device;
+- conflict records that survive a reload and can be opened by link.
 
-Both agree on three rules. Only what the author stated is stored, never the positions drawn. A
-comparison of two lengths ("longer than the Niran presence") is checked, not used to move things.
-A change is a trial until he keeps it.
+Stage 15 then adds the offline cache and the sync rules, and does not touch every page again.
 
-**3. "In his own words" and "to one scale" pull against each other.** (Five of seven.) "A few
-generations" has no width until someone decides what a generation is. If the app decides silently,
-the picture looks exact and he judges it on a number he never chose. Agreed answer: each length keeps
-his words and a range, lowest to highest, which he confirms. A small table he owns says what the
-words mean ("a generation: 20 to 35 years"), per people where it differs. A range is drawn with soft
-ends. A span with no length is drawn in a visibly different way and takes part in no checks. These
-are working numbers, not lore.
+**2. Offline and the graph reverse two written non-goals.** `frontier.md:186-190` says "Full offline
+use" is out ("Obsidian remains available for writing with no connection") and "the graph view … is not
+rebuilt". The author has now asked for both. The master design must record that change, with the date,
+or later reviews will meet two answers.
 
-**4. One scale cannot show the age of the world and a few generations together.** (Six of seven.) On
-a straight scale the short spans vanish. A compressed scale would make them visible and make the
-comparison of lengths false, which is the comparison he needs. Agreed: the scale is always straight
-within a view, with zoom and an overview strip; a span too short to draw becomes a mark labelled "not
-to scale". Two reviewers went further and proposed **two instruments on the same data**:
+**3. A per-folder default type already exists.** `.frontier/schema.yaml` maps each type to its folders,
+and the editor already shows "type from folder". A second mapping in a new folder file would make two
+answers that can disagree. The folder's "default type" setting must edit the schema, and folder
+renames must update the schema's folder paths too.
 
-- an **order view**, laid out by sequence only, with no ruler, which needs no numbers at all and
-  works on a phone;
-- a **comparison strip**: pick two to four spans and see them as bars from a common start, beside
-  the real-world comparisons.
+**4. An empty folder cannot exist yet.** Git keeps no empty folders, and the tree is built from notes
+alone. A folder made with nothing in it disappears on reload and in the export.
 
-The to-scale picture then appears for whatever has a length. This also gives a first slice that is
-useful before any number exists.
+**5. Fetching an image from a URL on the server is a real security risk.** The server sits on the
+Coolify network next to other services. A "download this address" endpoint can be pointed at internal
+addresses unless it does all of the following:
 
-**5. Dragging on a phone will not work.** (All seven.) A narrow span edge under a finger, on a canvas
-that also pans and zooms. Agreed: a form is the main way to edit everywhere (tap a span; change its
-words, its length, what it comes after). Dragging is a desktop convenience that writes the same
-things. On the phone, time runs down the page with one to three lanes.
+- accepts http and https only;
+- refuses private and local addresses, checking again after each redirect;
+- caps size and time;
+- checks the bytes are really an image;
+- saves through the existing upload path.
 
-**6. The real-world comparisons are the part most likely to mislead.** (All seven.) "How long until a
-people forgets where it came from" has no single answer; the known cases range widely and several are
-disputed. Produced by AI on request they would be confident, unsourced and different each time, and
-he would size his history against them. Agreed: a short list prepared and checked by hand, about 15
-to 25, each with a range, a named source and a caveat. They are rulers to lay beside a span. They
-never raise a flag. He can add his own, and any span he has settled can serve as a ruler too.
-Candidates named by reviewers, all to be verified before use: the loss of writing in Greece after the
-Bronze Age collapse; the loss of wheel-made pottery in Britain after Rome; Norse Greenland from
-settlement to abandonment; the Roma forgetting their Indian origin; Latin becoming the Romance
-languages; claims of oral memory lasting thousands of years (disputed).
+**6. "Kind" is already taken in maps.** It is the field that says marker, path or zone. Path and zone
+categories (river, road, border) need another name, and a stated rule for whether their style or the
+layer's colour wins.
 
-His complaint, "too quick and too slow at once", is one span judged against two comparisons that
-disagree. The comparison strip should show exactly that.
+**7. Use libraries for the shared parts.** The app has no icon set, tooltip, menu, combobox, splitter
+or shortcut layer today, and eight separate key listeners in four files. Writing these by hand would
+be the largest single cost of stages 11 to 13, and the hand-made versions would lack keyboard and
+screen-reader support.
 
-**7. Time on other planes must be allowed for from the first file, though not built.** (Six of
-seven.) If the first chronicle stores a bare number of "years", then adding "a month in Derdama costs
-half a year on Ezob" later means reinterpreting every number already entered. Agreed: from the first
-version each lane names its plane, each length names whose clock it is counted on, and the file names
-one reference clock. Every ratio is 1 until he gives one. The calendar and the pulse count then
-arrive as ways of labelling the same line: the lore already defines both starting points as events
-(year 1 EM is the first permanent settlement; Pulse Zero is the first pulse-counting network), so
-each is one event on the chronicle named as a starting point.
+### Where reviewers disagreed
 
-One reviewer argued for leaving travel between planes out of this stage altogether: it is a sum at
-the scale of months between two places, a different job from shaping millennia, and may want its own
-small view.
+- **How much to cut.** The cost-cutting reviewer would drop:
+  - URL import, custom folder order, library-wide path styles, stacked panels and the graph;
+  - offline creation and offline map editing.
 
-### Smaller findings
+  The others treat them as wanted and say how to build them safely. The author has already chosen:
 
-- **Events on an entry have no identity.** A `time` item is known only by its wording. The chronicle
-  and, later, maps that change with time both need to point at one. Give each item a short id,
-  written only when something first refers to it. This costs nothing today because nothing reads
-  these items yet.
-- **The AI field proposals built in stage 3 stay as they are**, for what an entry's text states.
-  Their rule is "invent nothing". Helping to invent a number is the opposite job and must look
-  different: it proposes a range for one missing length, shows which of his statements and which
-  comparisons it reasoned from, and he decides. Two reviewers would leave it out until he has used
-  the workbench and still wants it.
-- **A chronicle is invisible outside Frontier.** It is not a note, so lore chat and outside agents
-  cannot see it. When a shape is settled it needs a way into the notes. This is partly moot while
-  the memory bank is set aside, but it will return.
-- **Merging two devices' changes can make a contradiction** that neither device made (one says A
-  before B, the other B before A). A contradiction must therefore be an ordinary state that the
-  view marks, never a file that fails to open.
-- **Map code is written for maps by name.** A second kind of file needs the shared parts lifted out
-  first (the merge, the text form, the save loop, the conflict handling), or stage 5 copies them.
-- **The parent design needs an explicit list of what this replaces**: its Time section, CUJ 8,
-  CUJ 9, part of CUJ 5, the "dates on entries only" rule, and the statement that Frontier "does not
-  invent" numbers, which becomes "may propose; only the author decides".
-- **Words.** "Layer" already means a map layer; the later additions need another word. "Span",
-  "event", "lane", "chronicle", "comparison" and "does not fit" each need one definition. "Does not
-  fit" can only mean "breaks something the author stated".
+  - library-wide styles for paths and zones;
+  - folder order that only Frontier sees;
+  - gallery search over his own images;
+  - offline editing of recent files, new entries, maps and chronicles.
+
+  This brief keeps those choices and adds the safety rules.
+- **Where folder style and order live.**
+  - In the library as a file: versioned and exported, but every drag becomes an unpublished change.
+  - In Frontier's own state: instant, but outside history and export.
+
+  Open question 1.
+- **Empty folders.**
+  - Make each new folder with its folder note (a note named after the folder, which Frontier already
+    treats as the folder's page and Obsidian shows).
+  - Or keep empty folders as a list in Frontier's state until a first entry arrives.
+
+  Open question 2.
+
+### Further risks to carry into the designs
+
+- **Phone and touch.** Much of the concept assumes a mouse: hover tooltips, right-click, dragging in the
+  tree, a resizable side bar, dragging a zone. Each needs a touch equivalent:
+  - a long press or a "⋯" button for menus;
+  - tap to select, then "Move" in place of dragging;
+  - on a phone, the right side bar becomes a bottom sheet and the left a drawer.
+- **The collapsed side bar must keep the signals the top bar carried:** search, the unpublished and
+  inbox counts, and the connection state.
+- **Maps.**
+  - A zone moves by dragging its inside only once it is selected; elsewhere a drag still pans.
+  - The "+" handles at segment middles show only on the selected feature.
+  - Edits act on the shape in force at the time on screen, since paths and zones have later shapes.
+  - Curves are stored as a flag plus control points. A densified line is worked out once in
+    `packages/geo`, so measuring, hit-testing, the globe and the exports all agree.
+  - The map file stays at version 1, and every new field is optional.
+- **MapPage.tsx is 1,618 lines with about 64 pieces of state.** Before stage 13 adds a view mode, hover,
+  menus, rubber-band lines and handles, its tools and gestures should be split into separate modules
+  with one clear state machine.
+- **Shortcuts.**
+  - One list of shortcuts with scopes (app, editor, table, map), from which the "?" sheet and the
+    tooltip hints are made.
+  - Ctrl+K stays the switcher.
+  - Tab moves between table cells, indents in lists and text, and Esc then Tab leaves the editor.
+- **Underline.** `<u>` is HTML, not Markdown. The reader strips it today, and each export needs
+  handling. Ctrl+U opens view-source in browsers, so the editor must take that key. Obsidian does show
+  `<u>`.
+- **Offline storage on a phone.** Safari clears a site's storage after about 7 days without use unless
+  the site is installed to the home screen. So:
+  - ask the browser to keep storage (`navigator.storage.persist()`);
+  - never evict an unsent change;
+  - show what is on the device and what is waiting to be sent.
+  - This cannot be tested in CI, which runs Chromium only; it must be checked on a real iPhone.
+- **Offline login and updates.**
+  - An expired session pauses the queue rather than clearing it.
+  - An app update waits until the queue is empty.
+  - Logout warns about unsent work, then wipes the device copy.
+- **Offline links.** Offline, links, `[[` completion and map names need a small index of every
+  entry's name, aliases, id and links. That index is cached whole, with only the bodies limited to
+  recent files. The same index feeds the graph, so the graph works offline too.
+- **Moves while offline.** Moving or renaming folders and entries needs the server to work out which
+  links change, so these are online only.
+- **E2E tests.** Removing the top bar will break selectors in most browser tests. `e2e/helpers.ts` is
+  rewritten first.
+
+### Ideal result
+
+Stage 11 delivers four shared pieces: the save queue and connection service, the shortcut list, the
+side-bar panel registry, and the shared components (icons, tooltip, menu, combobox). Stages 12 to 14
+plug into them. Stage 15 adds the cache, the base copies for merging and the sync rules. Nothing typed
+on any device is lost without the author seeing it, and only real overlaps reach a conflict screen.
 
 ## Goals vs. Non-Goals
 
-**In-scope goals, first slice**
-
-- One chronicle file: lanes; spans and single events, each with a name, a lane, an optional link to
-  an entry, its length as the author's words plus a range, and how it relates to others (after,
-  before, during, starts with, ends with, with an optional rough gap).
-- An order view that needs no numbers, and a comparison strip for a few chosen spans.
-- A to-scale drawing, straight scale, with zoom, for whatever has a length.
-- Editing through a form on every device.
-- A list of what does not fit, each naming the statements in conflict.
-- A short checked list of real-world comparisons.
-- Every length and lane recording whose clock it is on, with all ratios 1.
-
-**Test for the first slice:** the author lays out the human arrival on Ezob, the fading of Earth's
-memory and technology, the Nirani arrival and the age of the world, and can say which span is too
-quick or too slow, and whether the deleted history can be rewritten.
-
-**In scope, later slices**
-
-- Moving a span by dragging on desktop. Nothing else moves.
-- Two chronicles shown one above the other on the same scale; copying a chronicle.
-- Linking spans to entries and their events; a tray of statements from entries not yet placed.
-- The author's own units and comparisons.
-- Proposals for missing lengths.
-- Starting points for the Ezob calendar and the pulse count; a time ratio per plane.
-
-**Out-of-scope non-goals**
-
-- Reading dates out of free text.
-- A general solver that rearranges many spans by itself.
-- Compulsory conversion between calendars.
-- Treating working numbers as lore.
-- Comparisons that validate or flag anything.
-- A compressed time scale.
-- Maps that change with time (stage 6).
-- Agents changing chronicles.
+- **In-scope goals:**
+  - every item in the author's list of 2026-11-22;
+  - the UX review's top ten;
+  - fixing today's paths that clear or ignore kept text;
+  - saves that carry their base.
+- **Out of scope:**
+  - several people using one library (one author only);
+  - real-time co-editing;
+  - offline AI, search across uncached entries, export, import and history;
+  - folder or entry moves while offline;
+  - URL image import while offline;
+  - rebuilding Obsidian's canvas.
 
 ## Alternatives Weighed
 
-| Alternative                                                                                                | Outcome                                          | Reason                                                                                                                                                            |
-| ---------------------------------------------------------------------------------------------------------- | ------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| The original plan: calendars, a date parser and a common axis first                                        | Rejected as the start                            | The vault has no dates to parse, and it does not touch the stated trouble. Its calendar and axis return later as labels on the chronicle's line.                  |
-| A plain list of spans with numbers in one unit                                                             | Kept as the core of the data, not as the feature | A list does not show overlap across places, which the author ranks first.                                                                                         |
-| Spans kept only in entries' `time` fields                                                                  | Rejected                                         | Needs a note for every span, has no home for lanes or ranges, and one move would redraft many notes.                                                              |
-| Chronicle files only, with the `time` field dropped                                                        | Rejected                                         | Throws away the stage 3 work and the tie from a placement to the sentence that supports it.                                                                       |
-| Both, with separate jobs: the entry says what the text says, the chronicle says where the author placed it | Kept                                             | Two different facts, each with one home.                                                                                                                          |
-| A general constraint solver                                                                                | Rejected for the first slices                    | It cannot easily say why something fails; length comparisons do not fit the simple kind. The file form must not rule it out.                                      |
-| Placement by one link, with dependents following when it moves                                             | Rejected by the author                           | He wants the others to stay put and show where they no longer fit. Every statement is a check.                                                                    |
-| One scaled timeline as the only view                                                                       | Rejected                                         | Needs a position and a length for everything before anything shows. An order view and a comparison strip work from the first minute.                              |
-| A compressed (logarithmic) time scale                                                                      | Rejected                                         | Makes the comparison of lengths false.                                                                                                                            |
-| Comparisons produced by AI on request                                                                      | Rejected as the source                           | Unsourced and unrepeatable. AI may suggest candidates for the checked list.                                                                                       |
-| The chronicle as a Markdown note, one span per line                                                        | Open                                             | Easy to type on a phone and visible to Obsidian, lore chat and agents. Costs: every edit rewrites text, typing errors break it, and nothing built works this way. |
-| A spreadsheet or an outside timeline tool                                                                  | Rejected as the product                          | No tie to entries or maps. Useful for a one-hour trial before building.                                                                                           |
+- **Build stage 15 last on today's saving:** rejected by all seven reviewers; every page would be redone
+  and several paths lose work.
+- **A second folder-to-type mapping in a new file:** rejected; the schema already holds one.
+- **Reorder folders by renaming their number prefixes:** rejected by the author; the order is to be
+  seen in Frontier only.
+- **Folder kinds as layers (add width and dash to layers):** offered by the cost-cutting reviewer;
+  rejected by the author's choice of library-wide styles. Layers keep their colour, and the precedence
+  is stated in the stage 13 design.
+- **Panels that stack freely, as in Obsidian:** rejected; tabs in one resizable side bar, a fixed set
+  per screen.
+- **Three outlines (in-page contents, heading breadcrumb, contents pane):** merged into one sticky line
+  (folder › entry › heading) and one contents tab in the right side bar.
+- **A status bar naming the hovered tool:** dropped; styled tooltips show the name and shortcut and also
+  work with the keyboard.
+- **Hand-made tooltips, menus, comboboxes, tree and splitters:** rejected in favour of libraries:
+  `lucide-react` for icons, Radix primitives for tooltips and menus, one combobox, `react-arborist` for
+  the tree, and `react-resizable-panels`. The design confirms each choice.
+- **A graph computed in the browser from every entry's text:** rejected; one `/api/graph` from the
+  server's link index. The local graph is the same view filtered to one entry.
+- **Server-side URL import with no guards:** rejected; it is kept only with the guards in point 5.
 
 ## Key Decisions & Staging for Next Steps
 
-**Settled by the review, unless the author objects**
+The order is changed from the concept, to put the review's urgent fixes and the shared foundations
+first:
 
-1.  The shape lives in chronicle files of its own; entries keep what their text says.
-2.  Only what the author states is stored. Positions are worked out each time.
-3.  Each length is his words plus a range he confirms; working numbers are not lore.
-4.  A form is the main editor; dragging is for desktop, later.
-5.  The scale is straight, with zoom; there is an order view that needs no numbers.
-6.  Real-world comparisons are a short, sourced, hand-checked list, and are only ever rulers.
-7.  Every length and lane names its clock from the first version.
-8.  No date parser, no calendar, no pulse, no plane ratios and no AI in the first slice.
+1. **Stage 11a: urgent fixes and foundations.**
+   - Fixes:
+     - the phone map header;
+     - map hover and selection;
+     - New entry choosing its folder;
+     - contrast;
+     - a live preview with prose font;
+     - Delete moved out of the main row;
+     - Ctrl+B/I/S and Tab.
+   - Foundations:
+     - shared components and icons;
+     - the shortcut list;
+     - the save queue and connection service;
+     - saves carrying their base, with several clashing versions kept.
+   - Moving today's `localStorage` buffer into the queue.
+2. **Stage 11b: the shell.**
+   - The top bar goes.
+   - A collapsible left side bar with the app menu at the bottom, and an icon rail that keeps the
+     counts and connection state.
+   - A tabbed, resizable right side bar that pages fill through a registry.
+   - Phone: a drawer and a bottom sheet.
+   - Loading states that keep the old page with a progress line.
+3. **Stage 11c: the folder tree.**
+   - Add, nest, move, reorder, rename, style and delete, with drag and drop, quick buttons, a context
+     menu, and undo for moves.
+   - The default type edits the schema and is written into each new entry.
+   - A folder move is one rename plan.
+4. **Stage 12: entries and editor.**
+   - Sticky folder › entry › heading line, a contents tab, full width, inline rename, move combobox.
+   - History, export and properties as side-bar tabs.
+   - New toolbar and style picker, lists, code and quotes, strikethrough and underline, context menu
+     with comment.
+   - One image dialog over the Gallery's data, with browse, upload or drop, paste, guarded URL import
+     and search.
+5. **Stage 13: maps.**
+   - Split MapPage first.
+   - Then the gallery, combobox and side bar.
+   - A view mode with hover previews (reusing `HoverPreview`).
+   - Library-wide path and zone styles.
+   - Curves, rubber-band line, midpoint handles, zone drag, context menu and keys.
+6. **Stage 14: the graph.** Global and local, read and navigate, coloured by folder, with filters.
+7. **Stage 15: offline.**
+   - The app cached through a service worker.
+   - The compact index always on the device, bodies for recent and pinned files.
+   - Base copies for three-way merge, with a resolver per kind of file (text, map by feature, chronicle
+     by span).
+   - An "N changes waiting" list.
+   - Storage kept and shown.
 
-**Decided by the author on 2026-11-21**
+Open questions for the author:
 
-9.  **Moving a span moves nothing else.** The others stay where they are and show where they no
-    longer fit. So there is no solver and no chain of dependents: every statement about how spans
-    relate is a check. This removes the costliest part of the concept, and the "dragging with
-    dependents following" slice with it.
-10. **Two versions of a history can sit side by side.** A chronicle can be copied, and two chronicles
-    can be shown one above the other on the same scale. One chronicle is marked as the main one, for
-    maps and AI later.
-11. **No trial on paper first.** The kinds of statement are therefore chosen now and kept few: after,
-    before, during, starts with, ends with, overlaps, longer than, shorter than. Adding a kind later
-    must not need a change to files already written.
-12. **Ezob is ancient; recorded history runs to thousands or tens of thousands of years.** The
-    workbench is built for spans from a generation to tens of thousands of years. The age of the world
-    is shown as "ancient, not to scale" and is not something to zoom out to.
-
-**For the author to decide**
-
-These can be settled in the design or as the work goes; none blocks the first slice.
-
-3.  **Spans with no note.** May a span stay on the chronicle for good without a note behind it?
-4.  **Years.** When you say "a thousand years", is it always Ezob years? Is the Ezob year (about 360
-    days) close enough to an Earth year to compare with real history directly?
-5.  **Generations.** How long is a generation, and living memory, for the Nirani and other long-lived
-    peoples? Should human comparisons apply to them at all?
-6.  **The phone.** Do you shape history there, or only read and correct?
-7.  **Comparisons.** Would you trust a short sourced list we prepare? Which kinds matter most:
-    forgetting an origin, losing a technology, a language changing, others?
-8.  **First things placed.** What are the first four or five spans you would lay out?
-9.  **Planes.** Is "a month in Derdama, half a year here" part of the trouble you hit with Ezob's
-    history, or only of later travel stories? May it wait?
-10. **Reaching the lore.** Once a shape is settled, should it be written into the notes, and by whom:
-    you, by hand, or a step in Frontier?
+1. Folder icon, colour and order: instant, as Frontier's own settings (not versioned, not exported), or
+   versioned in the library, where each reorder waits for "Save a version"?
+2. A new empty folder: made with its folder note, so it is real in Obsidian too, or kept only in
+   Frontier until its first entry?
+3. Offline limits: are you content that moves and renames, image upload from a URL, AI, search across
+   uncached entries and history need a connection, and that on an iPhone Frontier must be installed to
+   the home screen to keep its offline copy?
