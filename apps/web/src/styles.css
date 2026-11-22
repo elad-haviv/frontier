@@ -4,7 +4,8 @@
   --paper-raised: #fffdf8;
   --ink: #23201b;
   --ink-soft: #5d564b;
-  --ink-faint: #8f8676;
+  /* 5.1:1 on the paper, so secondary text and save states pass WCAG AA. */
+  --ink-faint: #6e665a;
   --rule: #ddd4c2;
   --accent: #9a3b1c;
   --accent-soft: #f0ddd2;
@@ -15,6 +16,29 @@
   --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
   --bar: 3.25rem;
   --side: 19rem;
+
+  /* Layers, from the page up. A tooltip shows over a dialog, as dialogs have buttons too. */
+  --layer-base: 0;
+  --layer-sticky: 10;
+  --layer-side: 30;
+  --layer-popover: 60;
+  --layer-menu: 70;
+  --layer-dialog: 100;
+  --layer-tooltip: 105;
+  --layer-toast: 110;
+
+  /* Spacing steps */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.5rem;
+  --space-6: 2rem;
+
+  /* Icon sizes */
+  --icon-sm: 1rem;
+  --icon-md: 1.25rem;
+  --icon-lg: 1.5rem;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -23,7 +47,8 @@
     --paper-raised: #1f1c18;
     --ink: #ebe4d6;
     --ink-soft: #b3aa99;
-    --ink-faint: #7f7768;
+    /* 5.8:1 on the dark paper. */
+    --ink-faint: #9a917f;
     --rule: #35302a;
     --accent: #e08a5f;
     --accent-soft: #3a261d;
@@ -681,9 +706,14 @@ button.primary {
   color: var(--paper-raised);
 }
 
+/* Disabled: outlined and grey rather than a pale fill, so it reads as unavailable and its words
+   stay readable. */
 button.primary:disabled {
-  opacity: 0.5;
-  cursor: default;
+  border-style: dashed;
+  border-color: var(--ink-faint);
+  background: none;
+  color: var(--ink-faint);
+  cursor: not-allowed;
 }
 
 button.quiet {
@@ -756,11 +786,15 @@ button.big {
 
 .new-entry {
   width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
   margin: 0 0 0.6rem;
   padding: 0.55rem;
-  border: 1px dashed var(--rule);
+  border: 1px solid var(--rule);
   border-radius: 4px;
-  background: none;
+  background: var(--paper);
   color: var(--ink-soft);
   font-size: 0.9rem;
 }
@@ -1131,6 +1165,11 @@ button.big {
   line-height: 1;
 }
 
+.lightbox-button:hover {
+  color: inherit;
+  background: rgba(255, 255, 255, 0.2);
+}
+
 .lightbox-button:focus-visible,
 .lightbox-link:focus-visible {
   outline-color: #f1ece2;
@@ -1413,7 +1452,6 @@ button.big {
   border-radius: 5px;
   background: var(--paper-raised);
   color: var(--ink-soft);
-  font-family: var(--mono);
   font-size: 0.95rem;
 }
 
@@ -1521,15 +1559,7 @@ button.big {
 
 .edit-toolbar-file {
   flex: none;
-  display: grid;
-  place-items: center;
-  min-width: 2.75rem;
-  height: 2.5rem;
-  border: 1px solid var(--rule);
-  border-radius: 5px;
-  background: var(--paper-raised);
-  color: var(--ink-soft);
-  cursor: pointer;
+  display: flex;
 }
 .edit-toolbar-file input {
   position: absolute;
@@ -1581,8 +1611,7 @@ button.big {
 .code-editor .cm-lp-h span:not(.cm-lp-link) {
   text-decoration: none;
 }
-.edit-toolbar button,
-.edit-toolbar-file {
+.edit-toolbar button {
   min-width: 2.5rem;
 }
 
@@ -1892,11 +1921,10 @@ input.map-title {
   background: var(--accent);
   color: #fff;
 }
-.map-tools button:disabled {
-  opacity: 0.4;
-}
-.map-tools .danger {
-  color: var(--accent);
+.map-tools button[aria-disabled="true"] {
+  border-style: dashed;
+  background: none;
+  color: var(--ink-faint);
 }
 .map-setup h3 {
   margin: 0.6rem 0 0.3rem;
@@ -2366,7 +2394,7 @@ input.map-title {
 .dialog-scrim {
   position: fixed;
   inset: 0;
-  z-index: 100;
+  z-index: var(--layer-dialog);
   display: grid;
   place-items: center;
   padding: 1rem;
@@ -3765,8 +3793,10 @@ input.map-title {
     padding-left: 0.3rem;
     padding-right: 0.3rem;
   }
-  .edit-toolbar button,
   .edit-toolbar-file {
+    flex: 1 0 auto;
+  }
+  .edit-toolbar button {
     flex: 1 0 auto;
     min-width: 2.05rem;
     padding: 0 0.25rem;
@@ -3788,5 +3818,144 @@ input.map-title {
   }
   .map-down {
     max-width: 6.5rem;
+  }
+}
+
+/* ---- Stage 11a-1 ---------------------------------------------------------------------------- */
+
+/* The top bar's icon buttons keep their size; the shared IconButton gives them a tooltip. */
+.topbar .icon-button {
+  min-width: 2.5rem;
+  padding: 0;
+  color: var(--ink);
+}
+
+/* Live preview reads like the page: the reading font at the reading size. Code, tables and the
+   frontmatter keep the fixed-width font. */
+.code-editor .cm-reading .cm-content {
+  font-family: var(--serif);
+  font-size: 1.1rem;
+}
+.code-editor .cm-reading .cm-lp-code,
+.code-editor .cm-reading .cm-lp-table,
+.code-editor .cm-reading .cm-lp-fm,
+.code-editor .cm-reading .cm-lp-icode {
+  font-family: var(--mono);
+  font-size: 0.9rem;
+}
+.code-editor .cm-lp-icode {
+  padding: 0.05em 0.2em;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--ink) 7%, transparent);
+}
+/* The frontmatter, folded into one line that opens the Properties panel. */
+.code-editor .cm-lp-props {
+  padding: 0 1rem;
+}
+.code-editor .cm-lp-props button {
+  max-width: 100%;
+  overflow: hidden;
+  padding: 0.15rem 0.6rem;
+  border: 1px solid var(--rule);
+  border-radius: 99px;
+  background: var(--paper-raised);
+  color: var(--ink-soft);
+  font-family: var(--sans);
+  font-size: 0.8rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+/* The editor fills the screen, so its toolbar rests at the bottom, under the thumb, however
+   short the note is. */
+.editor-page {
+  min-height: calc(100dvh - var(--bar));
+  display: flex;
+  flex-direction: column;
+}
+.editor-page > .code-editor {
+  flex: 1 0 auto;
+}
+
+/* The editor's "⋯" sits beside Done. */
+.editor-actions .editor-more {
+  height: 2.2rem;
+  min-width: 2.2rem;
+}
+@media (max-width: 30rem) {
+  .editor-bar .editor-actions .editor-more {
+    order: 0;
+  }
+}
+
+/* The map: Done and "⋯" at the end of the bar. */
+.map-main {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 0.2rem;
+}
+.map-back.ui-icon-button {
+  min-width: 2.2rem;
+  padding: 0;
+}
+.map-tools .ui-icon-button {
+  gap: 0.35rem;
+}
+
+/* On a phone or a small tablet, Done and "⋯" keep their place at the end of the map's bar, and
+   only the controls between the title and Done scroll sideways, so the way out is always on
+   screen. The drawing tools, Undo and Redo sit in a bar at the bottom, under the thumb. */
+@media (max-width: 47.99rem) {
+  .map-bar {
+    gap: 0.4rem;
+    padding-left: 0.4rem;
+    padding-right: 0.4rem;
+  }
+  .map-bar .map-actions {
+    flex: 1 1 0;
+    /* A soft edge says there is more to scroll to. */
+    mask-image: linear-gradient(to right, #000 calc(100% - 1rem), transparent);
+  }
+  .map-tools {
+    order: 1;
+    justify-content: space-between;
+    border-top: 1px solid var(--rule);
+    border-bottom: 0;
+    padding-bottom: max(0.35rem, env(safe-area-inset-bottom));
+  }
+  .map-tools .ui-icon-button {
+    flex: 1 0 auto;
+    min-width: 2.6rem;
+    padding: 0 0.4rem;
+  }
+  .map-tools .ui-icon-button-label {
+    display: none;
+  }
+  .map-tools .edit-toolbar-gap {
+    flex: 0 0 0.4rem;
+  }
+}
+
+/* On a phone the save state is a dot beside the title, coloured by state; its words are still
+   read out, and shown on hover. */
+@media (max-width: 30rem) {
+  .map-bar .save-state {
+    flex: none;
+    width: 0.6rem;
+    height: 0.6rem;
+    overflow: hidden;
+    border-radius: 50%;
+    background: var(--ink-faint);
+    font-size: 0;
+  }
+  .map-bar .save-unsaved,
+  .map-bar .save-saving {
+    background: var(--accent);
+  }
+  .map-bar .save-offline,
+  .map-bar .save-failed {
+    background: var(--warn);
   }
 }
