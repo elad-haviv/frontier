@@ -1,5 +1,5 @@
 import { expect, type Page, test } from "@playwright/test";
-import { answerDialog, entry, onMain, publish, review } from "./helpers.ts";
+import { answerDialog, entry, onMain, openMenu, publish, review } from "./helpers.ts";
 
 const IMAGE = "99 Appendices/Images/map one.png";
 
@@ -79,6 +79,35 @@ test("CUJ 7: places a marker for an entry, opens the entry from the map and come
   await page.locator(".on-maps a", { hasText: title }).click();
   // Opened from the entry, the map is centred on the marker and shows its card.
   await expect(page.locator(".feature-card h2")).toHaveText("Mira");
+});
+
+test("CUJ 5: on a phone, Done, Undo and the menu stay on screen, and Delete map is in the menu", async ({
+  page,
+}, info) => {
+  await page.setViewportSize({ width: 390, height: 664 });
+  await makeMap(page, `Pocket chart ${info.project.name}`, "flat");
+  const c = await centre(page);
+  await page.getByRole("button", { name: "Marker" }).click();
+  await page.mouse.click(c.x, c.y);
+  await expect(page.locator(".feature-editor")).toBeVisible();
+  await page.locator(".feature-editor .card-close").click();
+
+  for (const name of ["Done", "Undo", "Redo", "More actions"]) {
+    await expect(page.getByRole("button", { name, exact: true })).toBeInViewport({ ratio: 1 });
+  }
+  // The tools are icons in a bar below the map, each named for screen readers.
+  const tools = (await page.locator(".map-tools").boundingBox())!;
+  const frame = (await page.locator(".map-frame").boundingBox())!;
+  expect(tools.y).toBeGreaterThanOrEqual(frame.y + frame.height - 1);
+  for (const name of ["Select", "Marker", "Path", "Zone", "Measure"]) {
+    await expect(page.getByRole("button", { name, exact: true })).toBeInViewport({ ratio: 1 });
+  }
+  // Delete map is no longer in a row beside Undo; it waits in the menu.
+  await expect(page.getByRole("button", { name: "Delete map" })).toHaveCount(0);
+  await openMenu(page, "More actions");
+  await page.getByRole("menuitem", { name: "Delete map" }).click();
+  await answerDialog(page, "Delete the map");
+  await expect(page).toHaveURL(/\/maps$/);
 });
 
 test("draws a path and a zone, hides a layer, and undoes", async ({ page }, info) => {

@@ -62,6 +62,21 @@ import {
 import { MapRenderer, MapsNeedWebGL } from "../map/renderer.ts";
 import { newItemId, readView, writeView } from "../map/viewUrl.ts";
 import { useDialogs } from "../components/Dialogs.tsx";
+import { IconButton, IconLink } from "../components/ui/IconButton.tsx";
+import { Menu, MenuItem } from "../components/ui/Menu.tsx";
+import { useScope, useShortcut } from "../keys.ts";
+import {
+  ChevronLeft,
+  type LucideIcon,
+  MapPin,
+  MousePointer2,
+  Pentagon,
+  Redo2,
+  Ruler,
+  Spline,
+  Trash2,
+  Undo2,
+} from "lucide-react";
 
 /** A flat space with measuring on again. */
 function withoutSchematic(space: MapFile["space"]): MapFile["space"] {
@@ -80,12 +95,12 @@ const SAVE_LABEL: Record<SaveState, string> = {
   offline: "Offline: will save when back",
   failed: "Could not save",
 };
-const TOOLS: { tool: Tool; label: string }[] = [
-  { tool: "select", label: "Select" },
-  { tool: "marker", label: "Marker" },
-  { tool: "path", label: "Path" },
-  { tool: "zone", label: "Zone" },
-  { tool: "measure", label: "Measure" },
+const TOOLS: { tool: Tool; label: string; icon: LucideIcon }[] = [
+  { tool: "select", label: "Select", icon: MousePointer2 },
+  { tool: "marker", label: "Marker", icon: MapPin },
+  { tool: "path", label: "Path", icon: Spline },
+  { tool: "zone", label: "Zone", icon: Pentagon },
+  { tool: "measure", label: "Measure", icon: Ruler },
 ];
 
 export function MapPage() {
@@ -854,16 +869,15 @@ export function MapPage() {
     if (g && p && !g.moved) tap(p.x, p.y);
   }
 
-  useEffect(() => {
-    if (!focusing) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== "Escape") return;
+  useScope("map");
+  useShortcut(
+    "map.stopFocus",
+    () => {
       setFocusing(false);
       setBox(null);
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [focusing]);
+    },
+    focusing,
+  );
 
   // The wheel must be able to stop the page from scrolling, which React's own listener cannot.
   useEffect(() => {
@@ -1051,9 +1065,7 @@ export function MapPage() {
   return (
     <div className="map-page">
       <div className="map-bar">
-        <Link to="/maps" className="map-back" aria-label="All maps">
-          ‹
-        </Link>
+        <IconLink to="/maps" className="map-back" label="All maps" icon={ChevronLeft} />
         {editing ? (
           <input
             className="map-title"
@@ -1065,7 +1077,11 @@ export function MapPage() {
           <h1 className="map-title">{map.title}</h1>
         )}
         {editing && (
-          <span className={`save-state save-${saveState}`} role="status">
+          <span
+            className={`save-state save-${saveState}`}
+            role="status"
+            title={SAVE_LABEL[saveState]}
+          >
             {SAVE_LABEL[saveState]}
           </span>
         )}
@@ -1189,6 +1205,9 @@ export function MapPage() {
           >
             Layers
           </button>
+        </span>
+        {/* Done and "⋯" stay on the first line on a phone, so the way out is always on screen. */}
+        <span className="map-main">
           <button
             type="button"
             className={editing ? "primary" : "quiet"}
@@ -1202,45 +1221,45 @@ export function MapPage() {
           >
             {editing ? "Done" : "Edit"}
           </button>
+          <Menu label="More actions" className="map-more">
+            <MenuItem icon={Trash2} danger onSelect={() => void remove()}>
+              Delete map
+            </MenuItem>
+          </Menu>
         </span>
       </div>
 
       {editing && (
         <div className="map-tools" role="toolbar" aria-label="Map tools">
           {TOOLS.filter((t) => !(t.tool === "measure" && schematic)).map((t) => (
-            <button
+            <IconButton
               key={t.tool}
-              type="button"
+              label={t.label}
+              icon={t.icon}
+              showLabel
               aria-pressed={tool === t.tool}
               onClick={() => {
                 setTool(t.tool);
                 setSketch([]);
                 if (t.tool !== "select") setSelected(null);
               }}
-            >
-              {t.label}
-            </button>
+            />
           ))}
           <span className="edit-toolbar-gap" />
-          <button
-            type="button"
-            aria-label="Undo"
+          <IconButton
+            label="Undo"
+            icon={Undo2}
             disabled={history.past.length === 0}
+            disabledReason="Nothing to undo yet"
             onClick={undo}
-          >
-            ↶
-          </button>
-          <button
-            type="button"
-            aria-label="Redo"
+          />
+          <IconButton
+            label="Redo"
+            icon={Redo2}
             disabled={history.future.length === 0}
+            disabledReason="Nothing to redo"
             onClick={redo}
-          >
-            ↷
-          </button>
-          <button type="button" className="danger" onClick={remove}>
-            Delete map
-          </button>
+          />
         </div>
       )}
 
