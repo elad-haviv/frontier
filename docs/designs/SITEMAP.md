@@ -7,7 +7,7 @@
 | [Stage 3: review inbox, AI basics, structured fields](stage-3-review-and-ai-basics.md) | 2026-11-21 | Elad Haviv | Inbox for agent branches; fields, schema and ids; AI provider, cost log and field proposals; quarantine; passkey | Formats and rules for stage 3, in five parts built in order. |
 | [Stage 4: maps](stage-4-maps.md) | 2026-11-21 | Elad Haviv | Map files, the WebGL viewer for flat maps and globes, markers, paths, zones, layers, measuring | Formats and rules for stage 4, in five parts built in order. |
 | [Stage 5: chronicles](stage-5-chronicles.md) | 2026-11-21 | Elad Haviv | Chronicle files; order, comparison and scale views; checks; real-world cases | A workbench for shaping history before it is written. Replaces the parent design's Time section. Comes from `concepts_brief.md`. |
-| [Stage 11: foundations, shell and folder tree](stage-11-foundations-shell-tree.md) | 2026-11-22 | Elad Haviv | Save queue and connection service; shared UI pieces and shortcuts; shell with two side bars; editable folder tree and `.frontier/folders.json` | First of five stages (11 to 15) reworking the interface and preparing offline work. Comes from `concepts_brief.md`. |
+| [Stage 11: foundations, shell and folder tree](stage-11-foundations-shell-tree.md) | 2026-11-22 | Elad Haviv | Fixes and shared UI pieces; save queue, kept copies and connection signal; shell with two side bars; editable folder tree and `.frontier/folders.json` | First of five stages (11 to 15). Approved after a five-stage Goldfish review; four releases 11a-1, 11a-2, 11b, 11c. |
 
 Status: Approved on 2026-11-20 after a five-stage review. The review reports are in this repository's Git
 history (removed from the working tree in the commit that approved the design).

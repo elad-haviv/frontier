@@ -1,3 +1,5 @@
+Status: resolved (all 19 proposed fixes and item 14 accepted by the author on 2026-11-22; applied to the design)
+
 # Goldfish Annotated Review Report
 
 **Target:** [`docs/designs/stage-11-foundations-shell-tree.md`](docs/designs/stage-11-foundations-shell-tree.md)
