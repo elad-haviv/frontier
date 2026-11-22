@@ -1,0 +1,29 @@
+/* A small dark label over the page, in either theme. It never takes the pointer, so it cannot
+   stand in the way of the next click. */
+.ui-tip {
+  z-index: var(--layer-tooltip);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.2rem 0.6rem;
+  max-width: min(18rem, calc(100vw - 1rem));
+  padding: 0.3rem 0.55rem;
+  border-radius: 5px;
+  background: var(--ink);
+  color: var(--paper);
+  font-family: var(--sans);
+  font-size: 0.8rem;
+  line-height: 1.35;
+  box-shadow: 0 4px 14px rgb(0 0 0 / 0.2);
+  pointer-events: none;
+  user-select: none;
+}
+.ui-tip-keys {
+  font-family: var(--sans);
+  font-size: 0.75rem;
+  opacity: 0.8;
+}
+.ui-tip-note {
+  flex-basis: 100%;
+  opacity: 0.85;
+}

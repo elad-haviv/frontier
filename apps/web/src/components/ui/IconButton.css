@@ -1,0 +1,38 @@
+/* An icon control: square, quiet until hovered, at least 2.5rem so a finger can hit it. Pages
+   give it a border or a fill where it sits in a toolbar. */
+.ui-icon-button {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  min-width: 2.5rem;
+  height: 2.5rem;
+  padding: 0 0.5rem;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: none;
+  color: var(--ink-soft);
+  font-size: 0.9rem;
+  text-decoration: none;
+}
+.ui-icon-button:hover {
+  color: var(--ink);
+  background: color-mix(in srgb, var(--ink) 6%, transparent);
+}
+.ui-icon-button[aria-pressed="true"],
+.ui-icon-button[aria-expanded="true"] {
+  color: var(--accent);
+}
+/* Disabled: still readable (the faint ink passes 4.5:1), outlined with a dashed line, and the
+   pointer says it will not act. The tooltip says why. */
+.ui-icon-button[aria-disabled="true"] {
+  color: var(--ink-faint);
+  background: none;
+  border-style: dashed;
+  border-color: var(--ink-faint);
+  cursor: not-allowed;
+}
+.ui-icon-button-label {
+  white-space: nowrap;
+}
