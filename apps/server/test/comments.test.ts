@@ -1,3 +1,4 @@
+import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { makeTestApp, type TestApp } from "./helpers/app.js";
 
@@ -89,6 +90,18 @@ describe("comments on a passage", () => {
       await store.add({ path: ROAD, quote: "x", prefix: "", suffix: "", text: "n", for: "me" });
     }
     expect((await add()).statusCode).toBe(400);
+  });
+
+  it("keep every one of many added at once, on disk too", async () => {
+    await start();
+    const results = await Promise.all(
+      Array.from({ length: 20 }, (_, i) => add({ text: `Comment ${i}` })),
+    );
+    expect(results.every((r) => r.statusCode === 200)).toBe(true);
+    expect(await list()).toHaveLength(20);
+    const { CommentStore } = await import("../src/comments/store.js");
+    const again = new CommentStore(join(t.services.config.dataDir, "state"), t.services.files);
+    expect(await again.forPath(ROAD)).toHaveLength(20);
   });
 
   it("follow their entry when a rename is saved", async () => {

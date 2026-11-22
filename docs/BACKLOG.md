@@ -106,6 +106,10 @@ passage, and the export formats stage 9 left out.
 - [x] Comments on a passage in the editor, for Elad or for the AI; highlighted; "Work on it" shows
       the AI's rewrite as a difference; kept on the server, not in the library; they follow renames
 - [x] Exports as Markdown files, JSON and slides (.pptx)
+- [x] Fixes after an independent review (2026-11-22)
+- [x] Phone fit (2026-11-22): the editor's actions in two rows with Done beside the title; every
+      toolbar button on screen; the map's title readable beside its controls; the top bar gives
+      the name's room to Inbox and Unpublished
 - [ ] Elad tries comments while editing, and a slide export
 
 ## Now: stage 9, export

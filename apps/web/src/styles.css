@@ -3726,3 +3726,67 @@ input.map-title {
   width: auto;
   max-width: 9rem;
 }
+
+/* ---- Phone fit (stage 10) ------------------------------------------------------------------ */
+@media (max-width: 30rem) {
+  /* The name gives way to Inbox and Unpublished, which say something. */
+  .topbar .wordmark.small {
+    display: none;
+  }
+  /* The editor's actions in one row under the title, not two. */
+  .editor-bar {
+    gap: 0.3rem 0.6rem;
+    padding: 0.45rem 0.75rem;
+  }
+  /* Done beside the title, as phones put it; the other actions in one row below. */
+  .editor-actions {
+    display: contents;
+  }
+  .editor-bar::after {
+    content: "";
+    flex-basis: 100%;
+    order: 1;
+  }
+  .editor-bar .editor-actions button {
+    order: 2;
+    padding: 0.35rem 0.55rem;
+    font-size: 0.88rem;
+  }
+  .editor-bar .editor-actions button.primary {
+    order: 0;
+    margin-left: auto;
+  }
+  .editor-path {
+    max-width: 55%;
+  }
+  /* Every toolbar button on the screen at once, Redo included. */
+  .edit-toolbar {
+    gap: 2px;
+    padding-left: 0.3rem;
+    padding-right: 0.3rem;
+  }
+  .edit-toolbar button,
+  .edit-toolbar-file {
+    flex: 1 0 auto;
+    min-width: 2.05rem;
+    padding: 0 0.25rem;
+    font-size: 0.85rem;
+  }
+  .edit-toolbar-gap {
+    flex: 0 0 0.3rem;
+  }
+  /* The map keeps the screen: one row, the title never squeezed below a readable width, the
+     controls scrolling beside it. */
+  .map-bar .map-title {
+    flex: 0 1 auto;
+    min-width: 6.5rem;
+    max-width: 45%;
+    font-size: 1rem;
+  }
+  .map-actions {
+    flex: 1 1 0;
+  }
+  .map-down {
+    max-width: 6.5rem;
+  }
+}

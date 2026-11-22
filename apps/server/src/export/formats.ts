@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { NodeCompiler } from "@myriaddreamin/typst-ts-node-compiler";
-import { basename, readFrontmatter } from "@frontier/vault";
+import { basename } from "@frontier/vault";
 import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
 import rehypeStringify from "rehype-stringify";
 import remarkGfm from "remark-gfm";
@@ -20,7 +20,15 @@ import yazl from "yazl";
 import { ApiError } from "../errors.js";
 import type { GitGateway } from "../git/gateway.js";
 import type { VaultIndex } from "../index/build.js";
-import { anchorOf, type Choice, type Chosen, demote, rewrite } from "./entries.js";
+import {
+  anchorOf,
+  type Choice,
+  type Chosen,
+  demote,
+  properties,
+  rewrite,
+  withoutComments,
+} from "./entries.js";
 
 const run = promisify(execFile);
 const UNSHARED = "unshared:";
@@ -272,7 +280,7 @@ export async function markdown(d: ExportDeps, title: string, choice: Choice): Pr
       image: (path, alt) => `![${alt}](images/${encodeURI(images.name(path))})`,
     });
     zip.addBuffer(
-      Buffer.from(`# ${entry.title}\n\n${demote(body, entry.title)}\n`),
+      Buffer.from(`# ${entry.title}\n\n${demote(withoutComments(body), entry.title)}\n`),
       `${entry.slug}.md`,
     );
   }
@@ -311,7 +319,7 @@ export async function json(d: ExportDeps, title: string, choice: Choice): Promis
         unshared.add(label.replace(/\\(.)/g, "$1"));
         return `${label}${MARK}`;
       },
-      image: (path, alt) => `![${alt}](${path})`,
+      image: (path, alt) => `![${alt}](<${path}>)`,
     });
     const note = d.index.note(entry.path)!;
     return {
@@ -320,8 +328,8 @@ export async function json(d: ExportDeps, title: string, choice: Choice): Promis
       path: entry.path,
       folder: folderOf(entry.path),
       aliases: note.aliases,
-      properties: readFrontmatter(note.text).data ?? {},
-      text,
+      properties: properties(d.index, entry.path, inExport, MARK),
+      text: withoutComments(text),
       links: [...links],
       unshared: [...unshared],
     };
@@ -373,7 +381,7 @@ export async function slides(d: ExportDeps, title: string, choice: Choice): Prom
       if (bytes) await writeFile(join(dir, "img", name), bytes);
     }
     const close = outside
-      ? `\n\n## About ${MARK}\n\n${MARK} marks the name of an entry that is not part of these slides.\n`
+      ? `\n\n# About ${MARK}\n\n${MARK} marks the name of an entry that is not part of these slides.\n`
       : "";
     const text = `---\ntitle: ${JSON.stringify(title)}\n---\n\n${parts.join("\n\n")}${close}\n`;
     await writeFile(join(dir, "main.md"), text);

@@ -58,7 +58,16 @@ export function CommentsPanel(p: {
     }
   }
 
-  function show(at: { from: number; to: number }) {
+  /** Where a comment's passage is in the text as it is now; the list may be a moment old. */
+  function find(c: PassageComment): { from: number; to: number } | null {
+    const at = locate(doc(), c);
+    if (!at) setError("That passage is no longer in the text.");
+    return at;
+  }
+
+  function show(c: PassageComment) {
+    const at = find(c);
+    if (!at) return;
     p.view.dispatch({
       selection: EditorSelection.single(at.from, at.to),
       scrollIntoView: true,
@@ -93,10 +102,12 @@ export function CommentsPanel(p: {
     }
   }
 
-  async function workOn(c: PassageComment, at: { from: number; to: number }) {
-    setBusy(c.id);
+  async function workOn(c: PassageComment) {
     setError(null);
     setWork(null);
+    const at = find(c);
+    if (!at) return;
+    setBusy(c.id);
     const text = doc();
     try {
       const res = await api.workOnComment(c.id, {
@@ -114,11 +125,8 @@ export function CommentsPanel(p: {
   /** Puts the AI's work in place of the passage, if the passage is still there, and closes it. */
   async function replace(c: PassageComment) {
     if (!work || work.id !== c.id) return;
-    const at = locate(doc(), c);
-    if (!at) {
-      setError("The passage is no longer in the text, so nothing was replaced.");
-      return;
-    }
+    const at = find(c);
+    if (!at) return;
     p.view.dispatch({ changes: { from: at.from, to: at.to, insert: work.text } });
     setWork(null);
     await done(c.id);
@@ -191,7 +199,7 @@ export function CommentsPanel(p: {
             <li key={c.id} className={at ? "" : "comment-lost"}>
               <p className="comment-quote">
                 {at ? (
-                  <button type="button" className="plain" onClick={() => show(at)}>
+                  <button type="button" className="plain" onClick={() => show(c)}>
                     “{short(c.quote, 100)}”
                   </button>
                 ) : (
@@ -208,7 +216,7 @@ export function CommentsPanel(p: {
                     type="button"
                     className="quiet"
                     disabled={busy !== null}
-                    onClick={() => void workOn(c, at)}
+                    onClick={() => void workOn(c)}
                   >
                     {busy === c.id ? "Working…" : "Work on it"}
                   </button>

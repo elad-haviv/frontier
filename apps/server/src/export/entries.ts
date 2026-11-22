@@ -2,7 +2,16 @@
  * Exports meant for reading: which entries go, and their text with every link rewritten for the
  * format. Only published text; never appendices, Frontier's own files, or notes in quarantine.
  */
-import { isExcluded, isImage, isInAppendix, isNote, splitFrontmatter, stem } from "@frontier/vault";
+import {
+  isExcluded,
+  isImage,
+  isInAppendix,
+  isNote,
+  readFrontmatter,
+  type Resolution,
+  splitFrontmatter,
+  stem,
+} from "@frontier/vault";
 import { ApiError } from "../errors.js";
 import type { VaultIndex } from "../index/build.js";
 import type { DraftStore } from "../state/drafts.js";
@@ -54,7 +63,8 @@ export function choose(
     const fb = b.path.split("/").slice(0, -1).join("/");
     return fa.localeCompare(fb) || a.title.localeCompare(b.title);
   });
-  const used = new Set<string>();
+  // Names the exports use for their own files are never an entry's.
+  const used = new Set<string>(["index", "readme", "images", "style", "img"]);
   const entries = ok.map((e) => {
     const base =
       e.title
@@ -127,9 +137,7 @@ export function rewrite(
         : escapeLabel(label);
     } else if (resolution.kind === "note" || resolution.kind === "ambiguous") {
       // A name several entries share leads to the one in the export, when just one of them is.
-      const paths = resolution.kind === "note" ? [resolution.path] : resolution.candidates;
-      const inside = paths.filter((p) => inExport.has(p));
-      const target = inside.length === 1 ? inExport.get(inside[0]!) : undefined;
+      const target = targetIn(resolution, inExport);
       const heading = resolution.kind === "note" ? resolution.heading : link.heading;
       out = target
         ? how.inside(target, heading, escapeLabel(label))
@@ -142,6 +150,57 @@ export function rewrite(
     text = text.slice(0, link.start) + out + text.slice(link.end);
   }
   return text.slice(offset).replace(/^\s+/, "");
+}
+
+/** How an entry's links lead: to the one entry in the export they name, or to nothing in it. */
+function targetIn(
+  resolution: Resolution,
+  inExport: ReadonlyMap<string, Chosen>,
+): Chosen | undefined {
+  if (resolution.kind !== "note" && resolution.kind !== "ambiguous") return undefined;
+  const paths = resolution.kind === "note" ? [resolution.path] : resolution.candidates;
+  const inside = paths.filter((p) => inExport.has(p));
+  return inside.length === 1 ? inExport.get(inside[0]!) : undefined;
+}
+
+/**
+ * An entry's properties, with the links in them treated as the body's are: a link to an entry in
+ * the export stays a link by its title; any other link is its words, marked "†" when it names an
+ * entry left out. Nothing a property links to leaves unmarked.
+ */
+export function properties(
+  index: VaultIndex,
+  path: string,
+  inExport: ReadonlyMap<string, Chosen>,
+  mark: string,
+): Record<string, unknown> {
+  const note = index.note(path)!;
+  const end = splitFrontmatter(note.text).frontmatter?.length ?? 0;
+  if (end === 0) return {};
+  let text = note.text.slice(0, end);
+  const links = [...note.links]
+    .filter(({ link }) => link.end <= end)
+    .sort((a, b) => b.link.start - a.link.start);
+  for (const { link, resolution } of links) {
+    const label =
+      link.display || (link.heading && !link.target ? link.heading : stem(link.target || path));
+    const to = targetIn(resolution, inExport);
+    const out = to
+      ? `[[${to.title}]]`
+      : resolution.kind === "note" || resolution.kind === "ambiguous"
+        ? `${label}${mark}`
+        : label;
+    text = text.slice(0, link.start) + out + text.slice(link.end);
+  }
+  return readFrontmatter(text).data ?? {};
+}
+
+/** HTML comments left out, outside code: they are notes to oneself, as the reader hides them. */
+export function withoutComments(markdown: string): string {
+  const parts = markdown.split(/(^\s*(?:```|~~~)[^\n]*\n[\s\S]*?^\s*(?:```|~~~)[^\n]*$)/m);
+  return parts
+    .map((part, i) => (i % 2 === 1 ? part : part.replace(/<!--[\s\S]*?-->/g, "")))
+    .join("");
 }
 
 /** Headings one level down, outside fenced code, so an entry reads as a part of one document. */

@@ -210,3 +210,37 @@ describe("more formats", () => {
     expect(text.some((s) => s.includes("not part of these slides"))).toBe(true);
   });
 });
+
+describe("what the newer formats must not carry", () => {
+  it("marks links in properties, drops hidden comments, and keeps file names apart", async () => {
+    await start();
+    t.repo.pushFromOutside({
+      "03 Places/Index.md":
+        '---\nregion: "[[Talk]]"\nnear: "[[Salt Pier]]"\nruler: "[[Ilsa Varn]]"\n---\n# Index\n\n' +
+        "Seen <!-- the secret ending --> from afar.\n\n```\n<!-- kept in code -->\n```\n",
+    });
+    await t.services.sync();
+    const res = await t.post("/api/export/json", { title: "T", folder: "03 Places" });
+    expect(res.statusCode, res.body).toBe(200);
+    const doc = JSON.parse(res.rawPayload.toString("utf8"));
+    const index = doc.entries.find((e: { title: string }) => e.title === "Index");
+    // Not "index": that name is the export's own.
+    expect(index.id).toBe("index-2");
+    expect(index.properties).toEqual({
+      region: "Talk†",
+      near: "[[Salt Pier]]",
+      ruler: "Ilsa Varn†",
+    });
+    expect(JSON.stringify(index)).not.toContain("99 Appendices");
+    expect(index.text).not.toContain("secret ending");
+    expect(index.text).toContain("<!-- kept in code -->");
+    const town = doc.entries.find((e: { title: string }) => e.title === "Tide Market");
+    expect(town.text).toContain("![quay](<99 Appendices/Images/quay.png>)");
+
+    const md = await unzip(
+      (await t.post("/api/export/markdown", { title: "T", folder: "03 Places" })).rawPayload,
+    );
+    expect(Object.keys(md)).toContain("index-2.md");
+    expect(md["index-2.md"]).not.toContain("secret ending");
+  });
+});

@@ -25,4 +25,23 @@ describe("finding a commented passage again", () => {
     const a = anchorAt(text, 8, 25);
     expect(locate("# Road\n\nAll different now.\n", a)).toBeNull();
   });
+
+  it("does not take the same short words elsewhere once the passage was rewritten", () => {
+    const t = "Kael drew his sword at dawn.\n\nLater, Kael slept.\n";
+    const a = anchorAt(t, 0, 4);
+    expect(locate(t, a)).toEqual({ from: 0, to: 4 });
+    const rewritten = "At dawn the sword came out.\n\nLater, Kael slept.\n";
+    expect(locate(rewritten, a)).toBeNull();
+  });
+
+  it("takes a long passage that occurs once even when all around it changed", () => {
+    const quote = "The toll on the Long Road is paid in salt, always.";
+    const a = anchorAt(`Before.\n\n${quote}\n\nAfter.`, 9, 9 + quote.length);
+    const moved = `Something else entirely.\n${quote}`;
+    expect(locate(moved, a)).toEqual({ from: 25, to: 25 + quote.length });
+  });
+
+  it("refuses passages too short to find again", () => {
+    expect(locate("a b c", { quote: "a ", prefix: "", suffix: "" })).toBeNull();
+  });
 });

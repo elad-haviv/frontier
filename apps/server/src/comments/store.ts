@@ -31,7 +31,9 @@ const File = z.object({ comments: z.array(Comment) });
 
 export class CommentStore {
   private readonly file: string;
-  private comments: Comment[] | null = null;
+  /** The comments, read once; every change goes through `queue`, one after another. */
+  private loaded: Promise<Comment[]> | null = null;
+  private queue: Promise<unknown> = Promise.resolve();
 
   constructor(
     stateDir: string,
@@ -40,16 +42,23 @@ export class CommentStore {
     this.file = join(stateDir, "comments.json");
   }
 
-  private async all(): Promise<Comment[]> {
-    if (this.comments === null) {
-      this.comments = (await this.files.readJson(this.file, File))?.comments ?? [];
-    }
-    return this.comments;
+  private all(): Promise<Comment[]> {
+    this.loaded ??= this.files.readJson(this.file, File).then((f) => f?.comments ?? []);
+    return this.loaded;
   }
 
-  private async write(comments: Comment[]): Promise<void> {
-    this.comments = comments;
-    await this.files.writeJson(this.file, { comments });
+  /** Runs a change after every earlier one, so two at once cannot undo each other. */
+  private apply<T>(work: (all: Comment[]) => Promise<{ next: Comment[] | null; value: T }>) {
+    const run = this.queue.then(async () => {
+      const { next, value } = await work(await this.all());
+      if (next) {
+        this.loaded = Promise.resolve(next);
+        await this.files.writeJson(this.file, { comments: next });
+      }
+      return value;
+    });
+    this.queue = run.catch(() => undefined);
+    return run;
   }
 
   async forPath(path: string): Promise<Comment[]> {
@@ -60,53 +69,55 @@ export class CommentStore {
     return (await this.all()).find((c) => c.id === id) ?? null;
   }
 
-  async add(input: Omit<Comment, "id" | "at">, now = new Date()): Promise<Comment> {
-    const all = await this.all();
-    if (all.filter((c) => c.path === input.path).length >= MAX_COMMENTS_PER_ENTRY) {
-      throw new ApiError(
-        "invalid",
-        `An entry can hold at most ${MAX_COMMENTS_PER_ENTRY} comments. Mark some done first.`,
-      );
-    }
-    const alphabet = "abcdefghijklmnopqrstuvwxyz0123456789";
-    const id = [...randomBytes(12)].map((b) => alphabet[b % 36]).join("");
-    const comment = Comment.parse({ ...input, id, at: now.toISOString() });
-    await this.write([...all, comment]);
-    return comment;
+  add(input: Omit<Comment, "id" | "at">, now = new Date()): Promise<Comment> {
+    return this.apply(async (all) => {
+      if (all.filter((c) => c.path === input.path).length >= MAX_COMMENTS_PER_ENTRY) {
+        throw new ApiError(
+          "invalid",
+          `An entry can hold at most ${MAX_COMMENTS_PER_ENTRY} comments. Mark some done first.`,
+        );
+      }
+      const alphabet = "abcdefghijklmnopqrstuvwxyz0123456789";
+      const id = [...randomBytes(12)].map((b) => alphabet[b % 36]).join("");
+      const comment = Comment.parse({ ...input, id, at: now.toISOString() });
+      return { next: [...all, comment], value: comment };
+    });
   }
 
   async change(
     id: string,
     change: { text?: string | undefined; for?: "me" | "ai" | undefined },
   ): Promise<Comment> {
-    const all = await this.all();
-    const found = all.find((c) => c.id === id);
-    if (!found) throw new ApiError("not_found", "That comment is not there any more.");
-    const next = {
-      ...found,
-      ...(change.text === undefined ? {} : { text: change.text }),
-      ...(change.for === undefined ? {} : { for: change.for }),
-    };
-    await this.write(all.map((c) => (c.id === id ? next : c)));
-    return next;
+    return this.apply(async (all) => {
+      const found = all.find((c) => c.id === id);
+      if (!found) throw new ApiError("not_found", "That comment is not there any more.");
+      const next = {
+        ...found,
+        ...(change.text === undefined ? {} : { text: change.text }),
+        ...(change.for === undefined ? {} : { for: change.for }),
+      };
+      return { next: all.map((c) => (c.id === id ? next : c)), value: next };
+    });
   }
 
   async remove(id: string): Promise<void> {
-    const all = await this.all();
-    if (!all.some((c) => c.id === id)) return;
-    await this.write(all.filter((c) => c.id !== id));
+    await this.apply(async (all) => ({
+      next: all.some((c) => c.id === id) ? all.filter((c) => c.id !== id) : null,
+      value: undefined,
+    }));
   }
 
   /** A saved rename: comments follow their entry, or the entries of a renamed folder. */
   async renamed(from: string, to: string): Promise<void> {
-    const all = await this.all();
-    let changed = false;
-    const next = all.map((c) => {
-      const moved = movedPath(c.path, from, to);
-      if (moved === null) return c;
-      changed = true;
-      return { ...c, path: moved };
+    await this.apply(async (all) => {
+      let changed = false;
+      const next = all.map((c) => {
+        const moved = movedPath(c.path, from, to);
+        if (moved === null) return c;
+        changed = true;
+        return { ...c, path: moved };
+      });
+      return { next: changed ? next : null, value: undefined };
     });
-    if (changed) await this.write(next);
   }
 }

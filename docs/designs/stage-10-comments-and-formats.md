@@ -86,3 +86,26 @@ Long sections make crowded slides; slides are a starting point to edit, not a fi
 *   **Web unit**: `locate` with a moved passage, a repeated passage, a lost passage.
 *   **Browser**: a comment added on a selection, highlighted, worked on by the stand-in AI and
     replaced; a Markdown export downloaded.
+
+## After review (2026-11-22)
+
+An independent review found these, all fixed:
+
+*   **Finding a passage again** no longer takes the same short words elsewhere once the passage was
+    rewritten: unless the words are long and occur once, some of the text around them must still
+    match. A passage needs at least three characters besides spaces.
+*   **Highlights and the list** are found again from the words after each pause in typing, so a
+    replaced text or an undone deletion brings them back; the list's buttons look for the passage
+    when pressed, not when the list was drawn.
+*   **Adding a second comment** on the same passage opens a fresh form.
+*   **The comments file** is read once and changed one request at a time, so two changes at once
+    cannot undo each other.
+*   **JSON export**: links in an entry's properties are treated as the body's are (a link to an
+    appendix or an entry left out becomes its words, marked); image paths with spaces are written
+    so Markdown readers take them.
+*   **Markdown and JSON exports** leave out HTML comments (`<!-- -->`) outside code, as the web
+    pages, Word and PDF already did.
+*   **File names**: no entry takes `index`, `readme`, `style`, `images` or `img`, the exports' own.
+*   **Writing help** is refused for a note waiting in quarantine, as Work on it is.
+
+Left as is: comments on an entry that is deleted stay in the working file, out of sight.

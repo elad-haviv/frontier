@@ -10,7 +10,10 @@ const Words = z.string().trim().min(1).max(2000);
 
 const New = z.object({
   path: VaultPath,
-  quote: z.string().min(1).max(6000),
+  quote: z
+    .string()
+    .max(6000)
+    .refine((q) => q.replace(/\s/g, "").length >= 3, "A passage needs a few words."),
   prefix: z.string().max(200).default(""),
   suffix: z.string().max(200).default(""),
   text: Words,

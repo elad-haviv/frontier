@@ -18,6 +18,9 @@ export function writingRoutes(app: FastifyInstance, s: Services): void {
   app.post("/api/write/rewrite", async (request) => {
     const input = Rewrite.parse(request.body);
     if (!isNote(input.path)) throw new ApiError("invalid", "Only an entry can be rewritten.");
+    // A note waiting in quarantine is never sent to the AI.
+    const held = s.quarantine.aiMayRead(input.path);
+    if (held !== null) throw new ApiError("not_allowed", held);
     return { text: await s.writing.rewrite(input) };
   });
 }

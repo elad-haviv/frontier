@@ -6,7 +6,7 @@ import { CodeEditor } from "../components/CodeEditor.tsx";
 import { EditToolbar } from "../components/EditToolbar.tsx";
 import { passageOf, WritingPanel } from "../components/WritingPanel.tsx";
 import { CommentsPanel } from "../components/CommentsPanel.tsx";
-import { type Anchor, anchorAt, locate } from "../components/anchor.ts";
+import { type Anchor, anchorAt, locate, MIN_QUOTE } from "../components/anchor.ts";
 import { setCommentMarks } from "../components/commentMarks.ts";
 import { Properties } from "../components/Properties.tsx";
 import { useRefresh } from "../components/Shell.tsx";
@@ -68,14 +68,17 @@ export function EditPage() {
   const [comments, setComments] = useState<PassageComment[]>([]);
   const [commenting, setCommenting] = useState<{
     adding: (Anchor & { from: number; to: number }) | null;
-  } | null>(() => (new URLSearchParams(search).get("comments") === "1" ? { adding: null } : null));
-  const loadComments = useCallback(async () => {
-    const list = await api.comments(path).then(
-      (r) => r.comments,
-      () => null,
-    );
-    if (!list) return;
-    setComments(list);
+    /** Changes each time the panel is opened, so it starts afresh. */
+    n: number;
+  } | null>(() =>
+    new URLSearchParams(search).get("comments") === "1" ? { adding: null, n: 0 } : null,
+  );
+  const commentsNow = useRef<PassageComment[]>([]);
+  // Highlights move with typing; after a pause they are found again from the words, so an undone
+  // deletion or a replaced text brings them back. The pause also redraws the panel's list.
+  const marksTimer = useRef<number | undefined>(undefined);
+  const [, setTextTick] = useState(0);
+  const placeMarks = useCallback((list: PassageComment[]) => {
     const v = view.current;
     if (!v) return;
     const text = v.state.doc.toString();
@@ -87,7 +90,17 @@ export function EditPage() {
         }),
       ),
     });
-  }, [path]);
+  }, []);
+  const loadComments = useCallback(async () => {
+    const list = await api.comments(path).then(
+      (r) => r.comments,
+      () => null,
+    );
+    if (!list) return;
+    commentsNow.current = list;
+    setComments(list);
+    placeMarks(list);
+  }, [path, placeMarks]);
   const [inTable, setInTable] = useState(false);
   const [preview, setPreview] = useState(() => {
     try {
@@ -234,11 +247,22 @@ export function EditPage() {
       setState((s) => (s === "stale" ? s : "unsaved"));
       window.clearTimeout(timer.current);
       timer.current = window.setTimeout(() => void save(), 1000);
+      window.clearTimeout(marksTimer.current);
+      marksTimer.current = window.setTimeout(() => {
+        placeMarks(commentsNow.current);
+        setTextTick((n) => n + 1);
+      }, 500);
     },
-    [path, save],
+    [path, save, placeMarks],
   );
 
-  useEffect(() => () => window.clearTimeout(timer.current), []);
+  useEffect(
+    () => () => {
+      window.clearTimeout(timer.current);
+      window.clearTimeout(marksTimer.current);
+    },
+    [],
+  );
 
   // Once the editor holds the text, its comments are found and highlighted.
   useEffect(() => {
@@ -249,9 +273,20 @@ export function EditPage() {
     const v = view.current;
     if (!v) return;
     const at = passageOf(v);
-    if (at.text.trim() === "") return;
+    if (at.text.replace(/\s/g, "").length < MIN_QUOTE) {
+      setMessage("Select a few words, or put the cursor in a paragraph, to comment on it.");
+      return;
+    }
+    if (at.text.length > 6000) {
+      setMessage("That passage is too long for one comment. Select a shorter part of it.");
+      return;
+    }
+    setMessage(null);
     setWriting(false);
-    setCommenting({ adding: { ...anchorAt(v.state.doc.toString(), at.from, at.to), ...at } });
+    setCommenting((c) => ({
+      adding: { ...anchorAt(v.state.doc.toString(), at.from, at.to), ...at },
+      n: (c?.n ?? 0) + 1,
+    }));
   }
 
   // Coming back to this tab: if the server changed the draft meanwhile, such as by accepting a
@@ -360,7 +395,7 @@ export function EditPage() {
             type="button"
             className="quiet"
             aria-pressed={commenting !== null}
-            onClick={() => setCommenting((c) => (c ? null : { adding: null }))}
+            onClick={() => setCommenting((c) => (c ? null : { adding: null, n: Date.now() }))}
           >
             Comments{comments.length > 0 ? ` (${comments.length})` : ""}
           </button>
@@ -399,8 +434,7 @@ export function EditPage() {
       )}
       {commenting && view.current && (
         <CommentsPanel
-          // A new passage starts the panel afresh.
-          key={commenting.adding ? `${commenting.adding.from}-${commenting.adding.to}` : "list"}
+          key={commenting.n}
           view={view.current}
           path={path}
           comments={comments}
