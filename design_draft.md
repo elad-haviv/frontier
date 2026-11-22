@@ -436,6 +436,103 @@ Decided by the author on 2026-11-22: a folder's default type is a `type` on its 
 note that the browser buffer uses IndexedDB becomes true. `SITEMAP.md` lists this design; `BACKLOG.md`
 moves the 2026-11-22 ideas into stages 11 to 15.
 
+## Alternatives Considered
+
+### Alternative A: Build the interface first, offline last, on today's saving
+
+*   **Pros**: Visible changes arrive sooner; stage 11 is smaller.
+*   **Cons**: Every page from stages 11 to 14 would save on its own and need reworking in stage 15. The
+    paths that lose work today (a save without its base, the buffer cleared on `stale_revision`, one
+    spare slot, the base held only in memory) stay in place for months.
+*   **Reason for Rejection**: Rejected by all seven reviewers of the brief and by the author: the queue
+    is cheaper to build once, first, and it fixes losses that happen today.
+
+### Alternative B: Keep the `localStorage` buffer and extend it
+
+*   **Pros**: No new dependency; the buffer already works for one entry.
+*   **Cons**: About 5 MB; fails without telling anyone (`writeBuffer` drops the error); keyed by path, so a
+    rename orphans its text; holds only the latest text and a revision, not the base; cannot hold maps,
+    chronicles or the folder file.
+*   **Reason for Rejection**: Rejected by author: IndexedDB holds structured records with their base,
+    and the master design already chose it.
+
+### Alternative C: Resolve every stale save on the server with a three-way merge
+
+*   **Pros**: Fewer "two versions" notices; differences in separate paragraphs would merge by themselves.
+*   **Cons**: Needs the base text on the server for every save; a wrong automatic merge of prose is worse
+    than a shown conflict; maps and chronicles already merge item by item in the browser.
+*   **Reason for Rejection**: Deferred to stage 15, where the device keeps base copies. Stage 11 keeps
+    every version and lets the author compare, which loses nothing.
+
+### Alternative D: One `content.v2` slot, as today
+
+*   **Pros**: No change to the draft folder layout.
+*   **Cons**: A third device's stale save overwrites the second's text.
+*   **Reason for Rejection**: Rejected: one version per device, keyed by the device id the queue sends.
+
+### Alternative E: Hand-made tooltips, menus, combobox, tree and splitters
+
+*   **Pros**: No new packages; full control of markup.
+*   **Cons**: The largest single cost of stages 11 to 13. Keyboard handling, focus return, screen-reader
+    roles, collision with the screen edge and touch would each be written and tested by hand. The UX
+    review already found the hand-made parts missing exactly these.
+*   **Reason for Rejection**: Rejected by author in favour of `lucide-react`, Radix primitives, `cmdk`,
+    `react-arborist` and `react-resizable-panels`. Each is small, unstyled, and used for one job.
+
+### Alternative F: Reorder folders by renaming their number prefixes
+
+*   **Pros**: Obsidian would show the same order; no folder file needed for order.
+*   **Cons**: Every reorder renames many files and rewrites links; folder names change.
+*   **Reason for Rejection**: Rejected by author: the custom order is seen in Frontier only.
+
+### Alternative G: Folder style and order as Frontier's own settings, outside the library
+
+*   **Pros**: Instant; never an unsaved change; no merge of the file.
+*   **Cons**: Not in history, not in the export, lost if the server's state folder is lost.
+*   **Reason for Rejection**: Rejected by author: style and order are versioned with the library.
+
+### Alternative H: A folder note for every new folder
+
+*   **Pros**: An empty folder would be a real file, so Obsidian would show it.
+*   **Cons**: Files the author did not write appear in every folder.
+*   **Reason for Rejection**: Rejected by author: a folder note is made only when asked for. Empty folders
+    are lines in the folder file.
+
+### Alternative I: Default type in `schema.yaml`
+
+*   **Pros**: The schema already holds the folder lists; no data moves.
+*   **Cons**: A second file for folder actions to write, and a rename must rewrite both. Frontier would
+    rewrite a file the author has so far edited by hand.
+*   **Reason for Rejection**: Rejected by author on 2026-11-22: everything about a folder lives in one file.
+
+### Alternative J: A second, separate folder-to-type mapping beside the schema's
+
+*   **Pros**: Nothing existing changes.
+*   **Cons**: Two answers to "what type does this folder give", which can disagree.
+*   **Reason for Rejection**: Rejected by all reviewers; the folder file replaces the schema's lists, it
+    does not sit beside them.
+
+### Alternative K: Panels that stack and float freely, as in Obsidian
+
+*   **Pros**: Any arrangement of panels.
+*   **Cons**: Saved layouts, dragging between stacks, panels that must work at any size; a layout manager
+    is its own project.
+*   **Reason for Rejection**: Rejected by author: one right side bar with tabs and an adjustable width.
+
+### Alternative L: A status bar naming the tool under the pointer
+
+*   **Pros**: Names appear without waiting for a tooltip.
+*   **Cons**: Repeats the tooltip, takes a line of screen, does nothing on touch or keyboard.
+*   **Reason for Rejection**: Rejected: tooltips show the name and the shortcut, on hover and on focus.
+
+### Alternative M: Folder ids instead of paths as keys in the folder file
+
+*   **Pros**: Survives renames made outside Frontier.
+*   **Cons**: An id must be stored somewhere for every folder, and the schema, renames and the tree all
+    speak in paths.
+*   **Reason for Rejection**: Frontier is the only writer of its library, so paths change only through
+    its own renames, which rewrite the file.
+
 --------------------------------------------------------------------------------
 
 *Drafted with EGM*
