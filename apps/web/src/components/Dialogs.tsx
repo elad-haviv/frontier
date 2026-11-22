@@ -8,6 +8,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { isFree } from "../keys.ts";
 
 export interface ConfirmOptions {
   title: string;
@@ -50,47 +51,60 @@ export function useDialogs(): Dialogs {
   return dialogs;
 }
 
-function Box({ open, close }: { open: Open; close: () => void }) {
-  const { options } = open;
-  const [value, setValue] = useState(open.kind === "prompt" ? (open.options.initial ?? "") : "");
-  const field = useRef<HTMLInputElement>(null);
-  const action = useRef<HTMLButtonElement>(null);
+/** What can take the focus inside a dialog, for keeping Tab inside it. */
+const FOCUSABLE = 'input, button, select, textarea, a[href], [tabindex]:not([tabindex="-1"])';
+
+/**
+ * The one dialog of the app: a box over a dimmed page that keeps the focus inside, closes on
+ * Escape or a click beside it, and gives the focus back to where it was. The confirm and prompt
+ * questions below use it, and so does any dialog that needs fields of its own.
+ */
+export function DialogFrame({
+  title,
+  body,
+  onCancel,
+  onSubmit,
+  initialFocus,
+  className,
+  children,
+}: {
+  title: string;
+  body?: string;
+  onCancel: () => void;
+  onSubmit: () => void;
+  /** What gets the focus when the dialog opens; the first field or button when not given. */
+  initialFocus?: { current: HTMLElement | null };
+  className?: string;
+  children: ReactNode;
+}) {
+  const form = useRef<HTMLFormElement>(null);
   const before = useRef<Element | null>(document.activeElement);
 
   useEffect(() => {
-    (open.kind === "prompt" ? field.current : action.current)?.focus();
-    field.current?.select();
+    const first =
+      initialFocus?.current ?? form.current?.querySelector<HTMLElement>(FOCUSABLE) ?? null;
+    first?.focus();
+    if (first instanceof HTMLInputElement) first.select();
     const earlier = before.current;
     return () => {
       if (earlier instanceof HTMLElement) earlier.focus();
     };
   }, []);
 
-  function cancel() {
-    if (open.kind === "prompt") open.answer(null);
-    else open.answer(false);
-    close();
-  }
-
-  function submit(e?: FormEvent) {
-    e?.preventDefault();
-    if (open.kind === "prompt") open.answer(value.trim());
-    else open.answer(true);
-    close();
-  }
-
   return (
     <div
       className="dialog-scrim"
-      onMouseDown={(e) => e.target === e.currentTarget && cancel()}
+      onMouseDown={(e) => e.target === e.currentTarget && onCancel()}
       onKeyDown={(e) => {
-        if (e.key === "Escape") {
+        // A list or menu inside the dialog closes itself first and marks the key as used; a
+        // tooltip closes and lets the key through.
+        if (e.key === "Escape" && isFree(e.nativeEvent)) {
           e.stopPropagation();
-          cancel();
+          onCancel();
         }
         // Tab stays inside the box.
         if (e.key === "Tab") {
-          const items = [...e.currentTarget.querySelectorAll<HTMLElement>("input, button")];
+          const items = [...e.currentTarget.querySelectorAll<HTMLElement>(FOCUSABLE)];
           const first = items[0];
           const last = items[items.length - 1];
           if (e.shiftKey && document.activeElement === first) {
@@ -104,43 +118,78 @@ function Box({ open, close }: { open: Open; close: () => void }) {
       }}
     >
       <form
-        className="dialog"
+        ref={form}
+        className={`dialog${className ? ` ${className}` : ""}`}
         role="dialog"
         aria-modal="true"
         aria-labelledby="dialog-title"
-        onSubmit={submit}
+        onSubmit={(e: FormEvent) => {
+          e.preventDefault();
+          onSubmit();
+        }}
       >
-        <h2 id="dialog-title">{options.title}</h2>
-        {options.body && <p className="dialog-body">{options.body}</p>}
-        {open.kind === "prompt" && (
-          <label className="dialog-field">
-            {open.options.label && <span>{open.options.label}</span>}
-            <input
-              ref={field}
-              type="text"
-              inputMode={open.options.inputMode ?? "text"}
-              value={value}
-              placeholder={open.options.placeholder}
-              onChange={(e) => setValue(e.target.value)}
-            />
-          </label>
-        )}
-        <p className="dialog-actions">
-          <button type="button" className="quiet" onClick={cancel}>
-            Cancel
-          </button>
-          <button
-            ref={action}
-            type="submit"
-            className={
-              open.kind === "confirm" && open.options.danger ? "primary danger-solid" : "primary"
-            }
-          >
-            {options.action ?? (open.kind === "prompt" ? "OK" : "Yes")}
-          </button>
-        </p>
+        <h2 id="dialog-title">{title}</h2>
+        {body && <p className="dialog-body">{body}</p>}
+        {children}
       </form>
     </div>
+  );
+}
+
+function Box({ open, close }: { open: Open; close: () => void }) {
+  const { options } = open;
+  const [value, setValue] = useState(open.kind === "prompt" ? (open.options.initial ?? "") : "");
+  const field = useRef<HTMLInputElement>(null);
+  const action = useRef<HTMLButtonElement>(null);
+
+  function cancel() {
+    if (open.kind === "prompt") open.answer(null);
+    else open.answer(false);
+    close();
+  }
+
+  function submit() {
+    if (open.kind === "prompt") open.answer(value.trim());
+    else open.answer(true);
+    close();
+  }
+
+  return (
+    <DialogFrame
+      title={options.title}
+      {...(options.body ? { body: options.body } : {})}
+      onCancel={cancel}
+      onSubmit={submit}
+      initialFocus={open.kind === "prompt" ? field : action}
+    >
+      {open.kind === "prompt" && (
+        <label className="dialog-field">
+          {open.options.label && <span>{open.options.label}</span>}
+          <input
+            ref={field}
+            type="text"
+            inputMode={open.options.inputMode ?? "text"}
+            value={value}
+            placeholder={open.options.placeholder}
+            onChange={(e) => setValue(e.target.value)}
+          />
+        </label>
+      )}
+      <p className="dialog-actions">
+        <button type="button" className="quiet" onClick={cancel}>
+          Cancel
+        </button>
+        <button
+          ref={action}
+          type="submit"
+          className={
+            open.kind === "confirm" && open.options.danger ? "primary danger-solid" : "primary"
+          }
+        >
+          {options.action ?? (open.kind === "prompt" ? "OK" : "Yes")}
+        </button>
+      </p>
+    </DialogFrame>
   );
 }
 

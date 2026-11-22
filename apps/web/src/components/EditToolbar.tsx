@@ -1,39 +1,40 @@
 import { startCompletion } from "@codemirror/autocomplete";
 import { redo, undo } from "@codemirror/commands";
 import type { EditorView } from "@codemirror/view";
+import {
+  BetweenHorizontalEnd,
+  BetweenVerticalEnd,
+  Bold,
+  Brackets,
+  Heading2,
+  ImagePlus,
+  Italic,
+  List,
+  type LucideIcon,
+  MessageSquarePlus,
+  Redo2,
+  TableColumnsSplit,
+  TableRowsSplit,
+  Undo2,
+  WandSparkles,
+} from "lucide-react";
+import { useRef } from "react";
+import { linePrefix, wrap } from "./editCommands.ts";
 import { tableCommand } from "./tableKeys.ts";
+import { IconButton } from "./ui/IconButton.tsx";
 
 type Ref = { current: EditorView | null };
 
-/** Wraps the selection in a mark, or places the cursor between the two halves of the mark. */
-function wrap(view: EditorView, before: string, after: string) {
-  const { from, to } = view.state.selection.main;
-  const selected = view.state.sliceDoc(from, to);
-  view.dispatch({
-    changes: { from, to, insert: `${before}${selected}${after}` },
-    selection: { anchor: from + before.length, head: from + before.length + selected.length },
-  });
-  view.focus();
-}
-
-/** Puts a mark at the start of the current line, or removes it when it is already there. */
-function linePrefix(view: EditorView, mark: string) {
-  const line = view.state.doc.lineAt(view.state.selection.main.head);
-  const has = line.text.startsWith(mark);
-  view.dispatch({
-    changes: has
-      ? { from: line.from, to: line.from + mark.length, insert: "" }
-      : { from: line.from, insert: mark },
-  });
-  view.focus();
-}
-
-const TABLE_BUTTONS = [
-  ["addRow", "+row", "Add a row below"],
-  ["deleteRow", "−row", "Delete this row"],
-  ["addColumn", "+col", "Add a column to the right"],
-  ["deleteColumn", "−col", "Delete this column"],
-] as const;
+const TABLE_BUTTONS: readonly [
+  "addRow" | "deleteRow" | "addColumn" | "deleteColumn",
+  LucideIcon,
+  string,
+][] = [
+  ["addRow", BetweenHorizontalEnd, "Add a row below"],
+  ["deleteRow", TableRowsSplit, "Delete this row"],
+  ["addColumn", BetweenVerticalEnd, "Add a column to the right"],
+  ["deleteColumn", TableColumnsSplit, "Delete this column"],
+];
 
 /**
  * Buttons for the marks that are slow to reach on a phone keyboard. They sit at the bottom of the
@@ -60,123 +61,114 @@ export function EditToolbar({
   };
   // Buttons must not take the focus from the editor, or the phone keyboard closes.
   const keep = (e: React.PointerEvent) => e.preventDefault();
+  const picker = useRef<HTMLInputElement>(null);
 
   return (
     <div className="edit-toolbar" role="toolbar" aria-label="Formatting">
       {inTable &&
-        TABLE_BUTTONS.map(([action, text, label]) => (
-          <button
+        TABLE_BUTTONS.map(([action, icon, label]) => (
+          <IconButton
             key={action}
-            type="button"
             className="edit-toolbar-table"
+            label={label}
+            icon={icon}
+            shortcut={`table.${action}`}
             onPointerDown={keep}
-            aria-label={label}
-            title={label}
             onClick={act((v) => {
               tableCommand(action)(v);
               v.focus();
             })}
-          >
-            {text}
-          </button>
+          />
         ))}
-      <button
-        type="button"
+      <IconButton
+        label="Link to an entry"
+        icon={Brackets}
         onPointerDown={keep}
-        aria-label="Link to an entry"
         onClick={act((v) => {
           wrap(v, "[[", "]]");
           startCompletion(v);
         })}
-      >
-        [[ ]]
-      </button>
-      <button
-        type="button"
+      />
+      <IconButton
+        label="Heading"
+        icon={Heading2}
         onPointerDown={keep}
-        aria-label="Heading"
         onClick={act((v) => linePrefix(v, "## "))}
-      >
-        H
-      </button>
-      <button
-        type="button"
+      />
+      <IconButton
+        label="List item"
+        icon={List}
         onPointerDown={keep}
-        aria-label="List item"
         onClick={act((v) => linePrefix(v, "- "))}
-      >
-        •
-      </button>
-      <button
-        type="button"
+      />
+      <IconButton
+        label="Bold"
+        icon={Bold}
+        shortcut="editor.bold"
         onPointerDown={keep}
-        aria-label="Bold"
         onClick={act((v) => wrap(v, "**", "**"))}
-      >
-        <b>B</b>
-      </button>
-      <button
-        type="button"
+      />
+      <IconButton
+        label="Italic"
+        icon={Italic}
+        shortcut="editor.italic"
         onPointerDown={keep}
-        aria-label="Italic"
         onClick={act((v) => wrap(v, "*", "*"))}
-      >
-        <i>I</i>
-      </button>
+      />
       {onFiles && (
-        <label className="edit-toolbar-file" aria-label="Add an image">
-          ▣
+        <span className="edit-toolbar-file">
+          <IconButton
+            label="Add an image"
+            icon={ImagePlus}
+            onPointerDown={keep}
+            onClick={() => picker.current?.click()}
+          />
           <input
+            ref={picker}
             type="file"
             accept="image/*"
             multiple
+            tabIndex={-1}
+            aria-hidden="true"
             onChange={(e) => {
               const picked = [...(e.target.files ?? [])];
               e.target.value = "";
               if (picked.length) onFiles(picked);
             }}
           />
-        </label>
+        </span>
       )}
       {onComment && (
-        <button
-          type="button"
+        <IconButton
+          label="Comment"
+          icon={MessageSquarePlus}
           onPointerDown={keep}
-          aria-label="Comment"
-          title="Comment on the selection, for you or for the AI"
           onClick={onComment}
-        >
-          ✎
-        </button>
+        />
       )}
       {onWrite && (
-        <button
-          type="button"
+        <IconButton
+          label="Writing help"
+          icon={WandSparkles}
           onPointerDown={keep}
-          aria-label="Writing help"
-          title="Rewrite the selection, or ask the lore about it"
           onClick={onWrite}
-        >
-          AI
-        </button>
+        />
       )}
       <span className="edit-toolbar-gap" />
-      <button
-        type="button"
+      <IconButton
+        label="Undo"
+        icon={Undo2}
+        shortcut="editor.undo"
         onPointerDown={keep}
-        aria-label="Undo"
         onClick={act((v) => void undo(v))}
-      >
-        ↶
-      </button>
-      <button
-        type="button"
+      />
+      <IconButton
+        label="Redo"
+        icon={Redo2}
+        shortcut="editor.redo"
         onPointerDown={keep}
-        aria-label="Redo"
         onClick={act((v) => void redo(v))}
-      >
-        ↷
-      </button>
+      />
     </div>
   );
 }

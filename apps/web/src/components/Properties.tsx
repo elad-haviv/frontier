@@ -10,7 +10,7 @@ import {
 } from "@frontier/vault";
 import type { SchemaResponse } from "@frontier/schema";
 import type { EditorView } from "@codemirror/view";
-import { useState } from "react";
+import { type Ref, useState } from "react";
 import { api } from "../api.ts";
 
 const LISTS = [
@@ -61,7 +61,14 @@ interface Loaded {
  * The note's properties as form fields: other names, tags, type and dates. Each field writes only
  * its own key in the frontmatter; every other line of the note stays as written.
  */
-export function Properties({ view }: { view: { current: EditorView | null } }) {
+export function Properties({
+  view,
+  ref,
+}: {
+  view: { current: EditorView | null };
+  /** The panel itself, so the editor's folded frontmatter line can open it. */
+  ref?: Ref<HTMLDetailsElement>;
+}) {
   const [values, setValues] = useState<Loaded | null>(null);
   const [schema, setSchema] = useState<SchemaResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -128,7 +135,7 @@ export function Properties({ view }: { view: { current: EditorView | null } }) {
   };
 
   return (
-    <details className="props" onToggle={(e) => e.currentTarget.open && load()}>
+    <details ref={ref} className="props" onToggle={(e) => e.currentTarget.open && load()}>
       <summary>Properties</summary>
       {error && <p className="error">{error}</p>}
       {values && (

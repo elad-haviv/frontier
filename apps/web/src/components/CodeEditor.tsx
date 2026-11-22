@@ -1,17 +1,19 @@
 import { autocompletion } from "@codemirror/autocomplete";
 import { markdown } from "@codemirror/lang-markdown";
 import { Compartment, EditorState } from "@codemirror/state";
-import { EditorView, keymap } from "@codemirror/view";
+import { EditorView } from "@codemirror/view";
 import { basicSetup } from "codemirror";
 import { useEffect, useRef } from "react";
 import { commentMarks } from "./commentMarks.ts";
 import { completeLinks } from "./linkComplete.ts";
 import { notePath } from "./imageWidget.ts";
-import { livePreview } from "./livePreview.ts";
-import { inTable, tableKeys } from "./tableKeys.ts";
+import { editorKeymap } from "../keys.ts";
+import { frontmatterEnd, livePreview, openProperties } from "./livePreview.ts";
+import { inTable } from "./tableKeys.ts";
 
 const theme = EditorView.theme({
   "&": { fontSize: "1rem", backgroundColor: "transparent", color: "var(--ink)" },
+  // Source is fixed-width; live preview sets the reading font instead (styles.css, .cm-reading).
   ".cm-content": { fontFamily: "var(--mono)", padding: "1rem 0 40vh", caretColor: "var(--accent)" },
   ".cm-line": { padding: "0 1rem", lineHeight: "1.6" },
   ".cm-gutters": { display: "none" },
@@ -53,6 +55,7 @@ export function CodeEditor({
   onFiles,
   path = "",
   onTable,
+  onProperties,
 }: {
   initial: string;
   onChange?: (text: string) => void;
@@ -67,6 +70,8 @@ export function CodeEditor({
   path?: string;
   /** Told whether the cursor is in a table, when the cursor moves. */
   onTable?: (inside: boolean) => void;
+  /** Called when the folded frontmatter line is chosen in live preview. */
+  onProperties?: () => void;
 }) {
   const host = useRef<HTMLDivElement>(null);
   const changed = useRef(onChange);
@@ -75,17 +80,22 @@ export function CodeEditor({
   files.current = onFiles;
   const table = useRef(onTable);
   table.current = onTable;
+  const properties = useRef(onProperties);
+  properties.current = onProperties;
   const previewSlot = useRef(new Compartment());
   const made = useRef<EditorView | null>(null);
 
   useEffect(() => {
+    const frontmatter = frontmatterEnd(EditorState.create({ doc: initial }));
     const view = new EditorView({
       parent: host.current!,
       state: EditorState.create({
         doc: initial,
+        // The cursor starts where the writing does, after the frontmatter.
+        selection: { anchor: frontmatter ? Math.min(frontmatter + 1, initial.length) : 0 },
         extensions: [
-          // Before the standard keys, so Tab moves between table cells before it indents.
-          keymap.of(tableKeys),
+          // Ahead of the standard keys: Bold, Italic, Save, Done, and Tab between table cells.
+          editorKeymap(),
           basicSetup,
           previewSlot.current.of(preview ? livePreview : []),
           EditorView.domEventHandlers({
@@ -98,6 +108,7 @@ export function CodeEditor({
           }),
           markdown(),
           notePath.of(path),
+          openProperties.of(() => properties.current?.()),
           // Entry names are offered after "[[". This replaces the editor's own word suggestions.
           autocompletion({ override: [completeLinks], icons: false }),
           EditorView.lineWrapping,

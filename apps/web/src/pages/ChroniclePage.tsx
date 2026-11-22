@@ -13,6 +13,7 @@ import { newSpan, spanName, withSpan, work } from "../components/chronicle/model
 import { useDialogs } from "../components/Dialogs.tsx";
 import { useRefresh } from "../components/Shell.tsx";
 import { useItemFile } from "../hooks/useItemFile.ts";
+import { useShortcut } from "../keys.ts";
 
 type Tab = "order" | "scale" | "compare" | "flags" | "setup";
 
@@ -123,18 +124,9 @@ function Chronicle({ id }: { id: string }) {
   const chronicle = file.value;
   const worked = useMemo(() => (chronicle ? work(chronicle) : null), [chronicle]);
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (!(e.metaKey || e.ctrlKey) || e.key.toLowerCase() !== "z") return;
-      const target = e.target as HTMLElement | null;
-      if (target && /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)) return;
-      e.preventDefault();
-      if (e.shiftKey) file.redo();
-      else file.undo();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [file.undo, file.redo]);
+  // Ctrl+Z and Ctrl+Shift+Z, except while typing in a field, which has its own undo.
+  useShortcut("chronicle.undo", file.undo);
+  useShortcut("chronicle.redo", file.redo);
 
   if (file.state === "loading") return <p className="center muted">Opening the chronicle…</p>;
   if (file.state === "failed" || !chronicle || !worked) {

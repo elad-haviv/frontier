@@ -1,5 +1,5 @@
 import type { EditorState } from "@codemirror/state";
-import type { EditorView, KeyBinding } from "@codemirror/view";
+import type { EditorView } from "@codemirror/view";
 import { editTable, findTable, isRow, type TableAction } from "./tableEdit.ts";
 
 /** The table the cursor is in, with the cursor's row in it, or null outside a table. */
@@ -45,61 +45,42 @@ export function tableCommand(action: TableAction) {
   };
 }
 
-/**
- * In a Markdown table, Tab moves to the next cell and Shift+Tab to the one before. Also in a table:
- *
- *   Mod-Enter              add a row below
- *   Mod-Shift-Enter        add a column to the right
- *   Mod-Shift-Backspace    delete this row (never the header or the separator)
- *   Mod-Alt-Backspace      delete this column (never the last one)
- *
- * Mod is Cmd on a Mac and Ctrl elsewhere. Outside a table the keys do what they always do.
- */
-export const tableKeys: KeyBinding[] = [
-  { key: "Mod-Enter", run: tableCommand("addRow") },
-  { key: "Mod-Shift-Enter", run: tableCommand("addColumn") },
-  { key: "Mod-Shift-Backspace", run: tableCommand("deleteRow") },
-  { key: "Mod-Alt-Backspace", run: tableCommand("deleteColumn") },
-  {
-    key: "Tab",
-    run(view) {
-      const { head } = view.state.selection.main;
-      const line = view.state.doc.lineAt(head);
-      if (!isRow(line.text)) return false;
-      const next = line.text.indexOf("|", head - line.from);
-      const last = line.text.lastIndexOf("|");
-      let target: number;
-      if (next !== -1 && next < last) {
-        target = line.from + next + 1;
-      } else if (
-        line.number < view.state.doc.lines &&
-        isRow(view.state.doc.line(line.number + 1).text)
-      ) {
-        const below = view.state.doc.line(line.number + 1);
-        target = below.from + below.text.indexOf("|") + 1;
-      } else {
-        return false;
-      }
-      // Step over the space after the bar, so typing starts inside the cell.
-      if (view.state.sliceDoc(target, target + 1) === " ") target++;
-      view.dispatch({ selection: { anchor: target }, scrollIntoView: true });
-      return true;
-    },
-  },
-  {
-    key: "Shift-Tab",
-    run(view) {
-      const { head } = view.state.selection.main;
-      const line = view.state.doc.lineAt(head);
-      if (!isRow(line.text)) return false;
-      const before = line.text.slice(0, head - line.from);
-      const cellStart = before.lastIndexOf("|");
-      const previous = cellStart <= 0 ? -1 : before.lastIndexOf("|", cellStart - 1);
-      if (previous === -1) return false;
-      let target = line.from + previous + 1;
-      if (view.state.sliceDoc(target, target + 1) === " ") target++;
-      view.dispatch({ selection: { anchor: target }, scrollIntoView: true });
-      return true;
-    },
-  },
-];
+/** In a table, moves to the next cell, or to the first cell of the row below. */
+export function nextCell(view: EditorView): boolean {
+  const { head } = view.state.selection.main;
+  const line = view.state.doc.lineAt(head);
+  if (!isRow(line.text)) return false;
+  const next = line.text.indexOf("|", head - line.from);
+  const last = line.text.lastIndexOf("|");
+  let target: number;
+  if (next !== -1 && next < last) {
+    target = line.from + next + 1;
+  } else if (
+    line.number < view.state.doc.lines &&
+    isRow(view.state.doc.line(line.number + 1).text)
+  ) {
+    const below = view.state.doc.line(line.number + 1);
+    target = below.from + below.text.indexOf("|") + 1;
+  } else {
+    return false;
+  }
+  // Step over the space after the bar, so typing starts inside the cell.
+  if (view.state.sliceDoc(target, target + 1) === " ") target++;
+  view.dispatch({ selection: { anchor: target }, scrollIntoView: true });
+  return true;
+}
+
+/** In a table, moves to the cell before. */
+export function previousCell(view: EditorView): boolean {
+  const { head } = view.state.selection.main;
+  const line = view.state.doc.lineAt(head);
+  if (!isRow(line.text)) return false;
+  const before = line.text.slice(0, head - line.from);
+  const cellStart = before.lastIndexOf("|");
+  const previous = cellStart <= 0 ? -1 : before.lastIndexOf("|", cellStart - 1);
+  if (previous === -1) return false;
+  let target = line.from + previous + 1;
+  if (view.state.sliceDoc(target, target + 1) === " ") target++;
+  view.dispatch({ selection: { anchor: target }, scrollIntoView: true });
+  return true;
+}

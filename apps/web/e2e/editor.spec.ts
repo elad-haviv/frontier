@@ -15,7 +15,9 @@ import {
 
 test("adds an image from the toolbar, shows it before publishing, then publishes it", async ({
   page,
-}) => {
+}, info) => {
+  // The test runs at phone and desktop size on one server, so each run adds an image of its own.
+  const image = `Ledger cover ${info.project.name}`;
   const png = await sharp({
     create: { width: 40, height: 30, channels: 3, background: { r: 200, g: 120, b: 40 } },
   })
@@ -25,25 +27,25 @@ test("adds an image from the toolbar, shows it before publishing, then publishes
   await page.keyboard.type("\n");
   await page
     .locator(".edit-toolbar-file input")
-    .setInputFiles({ name: "Ledger cover.png", mimeType: "image/png", buffer: png });
-  await expect(page.locator(".cm-content")).toContainText("![[Ledger cover.png]]");
+    .setInputFiles({ name: `${image}.png`, mimeType: "image/png", buffer: png });
+  await expect(page.locator(".cm-content")).toContainText(`![[${image}.png]]`);
   await saved(page);
 
   await page.locator("button.primary").click();
-  const shown = page.locator('.prose img[alt*="Ledger cover"]');
+  const shown = page.locator(`.prose img[alt*="${image}"]`);
   await expect(shown).toBeVisible();
   expect(await shown.evaluate((img: HTMLImageElement) => img.naturalWidth)).toBeGreaterThan(0);
 
   await page.goto("/unpublished");
   await expect(page.locator(".change-image")).toBeVisible();
   await review(page);
-  await publish(page, "Add the ledger cover");
-  expect(onMain("03 Things/Ledger.md")).toContain("![[Ledger cover.png]]");
+  await publish(page, `Add the ledger cover at ${info.project.name} size`);
+  expect(onMain("03 Things/Ledger.md")).toContain(`![[${image}.png]]`);
   const files = execFileSync("git", ["ls-tree", "-r", "--name-only", "main"], {
     cwd: REMOTE,
     encoding: "utf8",
   });
-  expect(files).toContain("Ledger cover.png");
+  expect(files).toContain(`${image}.png`);
 });
 
 test("live preview hides marks away from the cursor and leaves the text as written", async ({
@@ -72,6 +74,8 @@ test("live preview hides marks away from the cursor and leaves the text as writt
 
 test("the properties panel writes other names into the frontmatter only", async ({ page }) => {
   await openEditor(page, "03 Things/Ledger.md");
+  // Live preview folds the frontmatter into one line; the source shows it as written.
+  await page.getByRole("button", { name: "Preview" }).click();
   const before = await page.locator(".cm-content").innerText();
   await page.locator(".props summary").click();
   const field = page.locator(".props-field", { hasText: "Other names" }).locator("input");
@@ -111,6 +115,7 @@ test("dates and a type set in the properties panel show under the entry's title"
   page,
 }) => {
   await openEditor(page, "01 Places/Unwritten.md");
+  await page.getByRole("button", { name: "Preview" }).click();
   await page.locator(".props summary").click();
   await page.locator(".props-field", { hasText: "Type" }).locator("select").selectOption("place");
   await page.getByRole("button", { name: "+ Add a date" }).click();
@@ -268,6 +273,98 @@ test("adds and deletes table rows and columns from the toolbar and the keyboard"
   await page.keyboard.press("ArrowUp");
   await page.keyboard.press("ArrowUp");
   await expect(addRow).toHaveCount(0);
+
+  await saved(page);
+  await discardDraft(page);
+});
+
+test("live preview folds the frontmatter into one line that opens the Properties panel", async ({
+  page,
+}) => {
+  await openEditor(page, "03 Things/Ledger.md");
+  const folded = page.locator(".cm-lp-props");
+  await expect(folded).toContainText("Properties: keeper, zeta, 2 aliases");
+  await expect(page.locator(".cm-content")).not.toContainText("aliases: [Book, The Ledger]");
+  await folded.getByRole("button").click();
+  await expect(page.locator(".props")).toHaveAttribute("open", "");
+  await expect(
+    page.locator(".props-field", { hasText: "Other names" }).locator("input"),
+  ).toHaveValue("Book, The Ledger");
+  // The cursor on its lines shows the frontmatter as written.
+  await page.locator(".cm-content").click();
+  await page.keyboard.press("Control+Home");
+  await expect(page.locator(".cm-content")).toContainText("aliases: [Book, The Ledger]");
+});
+
+test("Ctrl+B and Ctrl+I mark text, Tab indents, Ctrl+S saves and Ctrl+Enter is Done", async ({
+  page,
+}) => {
+  await openEditor(page, "02 People/Mira.md");
+  await page.getByRole("button", { name: "Preview" }).click();
+  const text = page.locator(".cm-content");
+  await page.keyboard.type("\nheavy");
+  await page.keyboard.press("Shift+Home");
+  await page.keyboard.press("Control+b");
+  await expect(text).toContainText("**heavy**");
+  await page.keyboard.press("End");
+  await page.keyboard.type(" and ");
+  await page.keyboard.press("Control+i");
+  await page.keyboard.type("light");
+  await expect(text).toContainText("**heavy** and *light*");
+
+  // Tab indents the line and keeps the cursor in the text.
+  await page.keyboard.press("End");
+  await page.keyboard.type("\n- a point");
+  await page.keyboard.press("Tab");
+  const item = page.locator(".cm-line", { hasText: "- a point" });
+  await expect.poll(() => item.evaluate((line) => line.textContent)).toMatch(/^\s{2,}- a point/);
+  await expect(text).toBeFocused();
+
+  // Ctrl+S sends the text at once; Ctrl+Enter leaves the editor for the entry.
+  await page.keyboard.type(" made");
+  await page.keyboard.press("Control+s");
+  await saved(page);
+  await page.keyboard.press("Control+Enter");
+  await expect(page.locator(".prose")).toContainText("a point made");
+  await page.goto(edit("02 People/Mira.md"));
+  await discardDraft(page);
+});
+
+test("every toolbar button has a name and a tooltip with its shortcut, and ? lists the keys", async ({
+  page,
+}) => {
+  await openEditor(page, "02 People/Mira.md");
+  // With the cursor in a table, its buttons are shown too.
+  await page.getByRole("button", { name: "Preview" }).click();
+  await page.keyboard.type("\n| a | b |\n| - | - |\n| c | d |");
+  await expect(page.getByRole("button", { name: "Add a row below" })).toBeVisible();
+
+  const buttons = page.locator(".edit-toolbar button");
+  const count = await buttons.count();
+  expect(count).toBeGreaterThanOrEqual(13);
+  for (let i = 0; i < count; i++) {
+    const button = buttons.nth(i);
+    const name = await button.getAttribute("aria-label");
+    expect(name, `button ${i} has a name`).toBeTruthy();
+    await button.hover();
+    await expect(page.getByRole("tooltip")).toContainText(name!);
+  }
+  await page.getByRole("button", { name: "Add a row below" }).hover();
+  await expect(page.getByRole("tooltip")).toContainText("Ctrl+Enter");
+  // The tooltip shows on keyboard focus too.
+  await page.mouse.move(0, 0);
+  await page.getByRole("button", { name: "Bold", exact: true }).focus();
+  await expect(page.getByRole("tooltip")).toContainText("Ctrl+B");
+
+  // Outside the text, "?" opens the list of shortcuts for this screen and the whole app.
+  await page.keyboard.press("?");
+  const sheet = page.getByRole("dialog", { name: "Keyboard shortcuts" });
+  await expect(sheet).toContainText("Go to an entry");
+  await expect(sheet).toContainText("Italic");
+  await expect(sheet).toContainText("Next cell");
+  await expect(sheet).toContainText("Move through a menu or a list");
+  await page.keyboard.press("Escape");
+  await expect(sheet).toHaveCount(0);
 
   await saved(page);
   await discardDraft(page);

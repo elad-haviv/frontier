@@ -12,6 +12,9 @@ import { Properties } from "../components/Properties.tsx";
 import { useRefresh } from "../components/Shell.tsx";
 import { clearBuffer, readBuffer, writeBuffer } from "../drafts.ts";
 import { useDialogs } from "../components/Dialogs.tsx";
+import { Menu, MenuItem, MenuSeparator } from "../components/ui/Menu.tsx";
+import { useScope, useShortcut } from "../keys.ts";
+import { Trash2, Undo2 } from "lucide-react";
 
 type SaveState = "saved" | "saving" | "unsaved" | "offline" | "stale" | "failed";
 
@@ -322,6 +325,25 @@ export function EditPage() {
     navigate(entryUrl(path));
   }
 
+  // The editor's keys: Ctrl+S sends the text now instead of after the pause, Ctrl+Enter is Done.
+  useScope("editor");
+  useScope("table");
+  useShortcut("editor.save", () => {
+    window.clearTimeout(timer.current);
+    void save();
+  });
+  useShortcut("editor.done", () => void done());
+
+  // The folded frontmatter line in the text opens the Properties panel, at its first field.
+  const properties = useRef<HTMLDetailsElement>(null);
+  const openProperties = useCallback(() => {
+    const panel = properties.current;
+    if (!panel) return;
+    panel.open = true;
+    panel.scrollIntoView({ block: "nearest" });
+    panel.querySelector<HTMLElement>("summary")?.focus();
+  }, []);
+
   async function discard() {
     const ok = await dialogs.confirm({
       title: "Discard this draft?",
@@ -399,15 +421,19 @@ export function EditPage() {
           >
             Comments{comments.length > 0 ? ` (${comments.length})` : ""}
           </button>
-          <button type="button" className="quiet" onClick={remove}>
-            Delete
-          </button>
-          <button type="button" className="quiet" onClick={discard}>
-            Discard
-          </button>
           <button type="button" className="primary" onClick={done}>
             Done
           </button>
+          {/* Taking things back and away sit apart from Done, behind one more press. */}
+          <Menu label="More actions" className="editor-more">
+            <MenuItem icon={Undo2} onSelect={() => void discard()}>
+              Discard draft
+            </MenuItem>
+            <MenuSeparator />
+            <MenuItem icon={Trash2} danger onSelect={() => void remove()}>
+              Delete entry
+            </MenuItem>
+          </Menu>
         </span>
       </div>
       {message && (
@@ -418,7 +444,7 @@ export function EditPage() {
           )}
         </p>
       )}
-      <Properties view={view} />
+      <Properties view={view} ref={properties} />
       <CodeEditor
         key={path}
         initial={initial}
@@ -428,6 +454,7 @@ export function EditPage() {
         onFiles={addImages}
         path={path}
         onTable={setInTable}
+        onProperties={openProperties}
       />
       {writing && view.current && (
         <WritingPanel view={view.current} path={path} onClose={() => setWriting(false)} />

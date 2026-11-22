@@ -7,6 +7,9 @@ import {
   useRef,
   useState,
 } from "react";
+import { ChevronLeft, ChevronRight, X } from "lucide-react";
+import { useShortcut } from "../keys.ts";
+import { IconButton } from "./ui/IconButton.tsx";
 
 interface Shot {
   /** The address the page shows (scaled). */
@@ -67,23 +70,21 @@ export function LightboxProvider({ scope, children }: { scope: string; children:
     [shots.length],
   );
 
+  const showing = at !== null;
+  useShortcut("lightbox.close", close, showing);
+  useShortcut("lightbox.next", () => step(1), showing);
+  useShortcut("lightbox.previous", () => step(-1), showing);
+
   useEffect(() => {
-    if (at === null) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") close();
-      else if (e.key === "ArrowRight") step(1);
-      else if (e.key === "ArrowLeft") step(-1);
-    };
-    document.addEventListener("keydown", onKey);
+    if (!showing) return;
     // The page behind must not scroll while the image is open.
     const previous = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     closeButton.current?.focus();
     return () => {
-      document.removeEventListener("keydown", onKey);
       document.body.style.overflow = previous;
     };
-  }, [at, close, step]);
+  }, [showing]);
 
   const shot = at === null ? null : shots[at];
   const many = shots.length > 1;
@@ -130,15 +131,15 @@ export function LightboxProvider({ scope, children }: { scope: string; children:
             <a href={shot.full} target="_blank" rel="noopener noreferrer" className="lightbox-link">
               Original
             </a>
-            <button
-              type="button"
+            <IconButton
               ref={closeButton}
               className="lightbox-button"
-              aria-label="Close"
+              label="Close"
+              icon={X}
+              shortcut="lightbox.close"
+              tipSide="bottom"
               onClick={close}
-            >
-              ✕
-            </button>
+            />
           </div>
 
           <div
@@ -158,22 +159,22 @@ export function LightboxProvider({ scope, children }: { scope: string; children:
 
           {many && !zoomed && (
             <>
-              <button
-                type="button"
+              <IconButton
                 className="lightbox-button lightbox-prev"
-                aria-label="Previous image"
+                label="Previous image"
+                icon={ChevronLeft}
+                size="lg"
+                shortcut="lightbox.previous"
                 onClick={() => step(-1)}
-              >
-                ‹
-              </button>
-              <button
-                type="button"
+              />
+              <IconButton
                 className="lightbox-button lightbox-next"
-                aria-label="Next image"
+                label="Next image"
+                icon={ChevronRight}
+                size="lg"
+                shortcut="lightbox.next"
                 onClick={() => step(1)}
-              >
-                ›
-              </button>
+              />
             </>
           )}
         </div>
