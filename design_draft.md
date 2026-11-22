@@ -112,8 +112,7 @@ the shell and the tree on top.
 
 ## Open Questions
 
-*   **Default type.** Where a folder's default type is kept: in `schema.yaml` (A) or in the folder
-    file (B). See Technical Plan, section 7.
+*   None open. The default type's home was decided by the author (Technical Plan, section 7).
 
 ## Critical User Journeys (CUJs)
 
@@ -376,7 +375,7 @@ history and the export.
 | Action | How it is stored |
 | --- | --- |
 | New folder, nest | a line in the folder file |
-| Rename, move (drag or "Move to…") | one rename intent (`POST /api/renames`, which already handles folders and folder notes). Before it is made, the author sees `previewRename`'s count: entries moved, links rewritten. Undo in the toast deletes the intent. Publishing rewrites the folder file's paths (and the schema's folder lists, if type stays there) in the same version |
+| Rename, move (drag or "Move to…") | one rename intent (`POST /api/renames`, which already handles folders and folder notes). Before it is made, the author sees `previewRename`'s count: entries moved, links rewritten. Undo in the toast deletes the intent. Publishing rewrites the folder file's paths in the same version |
 | Reorder | the `order` of one line |
 | Icon, colour | one line |
 | Delete | one confirm naming the counts ("2 folders, 14 entries, 3 images"); then delete drafts for every file and the removal of the lines, as one group that Undo in the toast discards. Refused, with the reason, when the folder holds append-only files under `99 Appendices` or a file with mixed line endings |
@@ -395,25 +394,27 @@ touch: long press or "⋯" opens the menu; "Move to…" with the folder combobox
 **New entry** opens a small dialog: a name, and the folder combobox set to the folder in view. It
 offers "New folder '…'" when nothing matches.
 
-### 7. Default type: a decision for the author
+### 7. Default type: in the folder file
 
-The schema (`.frontier/schema.yaml`) already maps each type to folders, and Frontier infers an entry's
-type from the longest matching folder (`typeFromFolder`). No route edits that file today: stage 3
-left it to be written by hand. The tree's "Default type" setting needs one home. Two defensible
-answers (see the gate in chat):
+Decided by the author on 2026-11-22: a folder's default type is a `type` on its line in
+`.frontier/folders.json`. One file says everything about a folder.
 
-*   **A. In the schema.** The folder menu edits `schema.yaml`'s `folders` lists through a new
-    `PUT /api/schema`. One file says what types exist and where. Cost: a second file for the tree to
-    write, and a rename must rewrite both. Fails if the author also edits `schema.yaml` by hand in
-    another way, since Frontier rewrites it in its own format.
-*   **B. In the folder file.** Each folder line gets an optional `type`; the schema keeps only the list
-    of types and `what` names, and its `folders` lists are moved into the folder file once, then read
-    from there. One file for everything about a folder. Cost: a one-time move of existing data, and
-    `typeFromFolder` reads a different file. Fails for an older build reading a newer library, which
-    would see no folder types until updated.
-
-Either way a new entry made in that folder gets `type:` written into its front matter, so the type
-travels to Obsidian, and the folder menu offers "Set type on the N entries without one".
+*   **Today** the mapping lives in the `folders` lists of `.frontier/schema.yaml`, or of the built-in
+    schema when that file is absent, and `typeFromFolder` (`packages/vault/src/fields.ts`) reads it.
+*   **The move.** When `folders.json` does not exist yet, the server builds it in memory from the
+    schema's folder lists, so nothing changes for the reader. The first time the author saves a folder
+    change, that file is written with those types in it. From then on `folders.json` is the only
+    source: `typeFromFolder` takes the folder file's types, and the schema's `folders` lists are
+    ignored. Frontier does not rewrite `schema.yaml`; the status page notes "Folder types now come
+    from folders.json; the folder lists in schema.yaml are no longer read" while those lists remain.
+*   **Rule unchanged:** an entry's type comes from the longest matching folder path; a `type:` in the
+    entry's own front matter wins.
+*   **New entries** made in a folder with a type get `type:` written into their front matter (through
+    `setFrontmatterKey`), so the type travels to Obsidian. The folder menu offers "Set type on the N
+    entries here without one", which makes ordinary drafts.
+*   **Renames** rewrite the folder file's paths in the same version, so types follow their folders.
+*   **Older builds** reading a library that has `folders.json` fall back to the schema's lists. That
+    is acceptable: Frontier is deployed as one server, and a rollback is the only way to meet it.
 
 ### 8. The review fixes in 11a
 
