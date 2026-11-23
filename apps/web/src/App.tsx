@@ -7,11 +7,8 @@ import { noteSignedIn, openApp } from "./offline/start.ts";
 import { updates } from "./offline/updates.ts";
 import { connection } from "./sync/connection.ts";
 import { queue } from "./sync/queue.ts";
-import { ConflictPage } from "./pages/Conflict.tsx";
-import { EditPage } from "./pages/Edit.tsx";
 import { EntryPage } from "./pages/Entry.tsx";
 import { UnpublishedPage } from "./pages/Unpublished.tsx";
-import { VersionsPage } from "./pages/Versions.tsx";
 import { AskPage } from "./pages/Ask.tsx";
 import { ConversationPage } from "./pages/Conversation.tsx";
 import { TalkPage } from "./pages/Talk.tsx";
@@ -35,6 +32,18 @@ const ChroniclePage = lazy(() =>
   import("./pages/ChroniclePage.tsx").then((m) => ({ default: m.ChroniclePage })),
 );
 const GraphPage = lazy(() => import("./pages/Graph.tsx").then((m) => ({ default: m.GraphPage })));
+// The pages that edit text carry the editor (CodeMirror, its language, the toolbar and its
+// commands); they load when first opened too. The service worker keeps them for offline use.
+const EditPage = lazy(() => import("./pages/Edit.tsx").then((m) => ({ default: m.EditPage })));
+const ConflictPage = lazy(() =>
+  import("./pages/Conflict.tsx").then((m) => ({ default: m.ConflictPage })),
+);
+const VersionsPage = lazy(() =>
+  import("./pages/Versions.tsx").then((m) => ({ default: m.VersionsPage })),
+);
+
+/** A page that loads when first opened, with the progress line meanwhile. */
+const later = (page: React.ReactNode) => <Suspense fallback={<Progress />}>{page}</Suspense>;
 
 /** A different map gets a fresh page: its own view, drawing surface and history. */
 function OneMap() {
@@ -102,7 +111,7 @@ export function App() {
       <Routes>
         <Route path="/" element={<Home />} />
         <Route path="/e/*" element={<EntryPage />} />
-        <Route path="/edit/*" element={<EditPage />} />
+        <Route path="/edit/*" element={later(<EditPage />)} />
         <Route path="/rename/*" element={<RenameRedirect />} />
         <Route path="/unpublished" element={<UnpublishedPage />} />
         <Route path="/inbox" element={<InboxPage />} />
@@ -134,8 +143,8 @@ export function App() {
           }
         />
         <Route path="/settings" element={<SettingsPage />} />
-        <Route path="/conflict/:id" element={<ConflictPage />} />
-        <Route path="/versions/:id" element={<VersionsPage />} />
+        <Route path="/conflict/:id" element={later(<ConflictPage />)} />
+        <Route path="/versions/:id" element={later(<VersionsPage />)} />
         <Route path="/status" element={<StatusPage />} />
         <Route path="/login" element={<Navigate to="/" replace />} />
         <Route
