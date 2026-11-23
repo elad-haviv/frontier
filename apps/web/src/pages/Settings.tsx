@@ -1,3 +1,6 @@
+import { useNeedsConnection } from "../sync/connection.ts";
+import { ActionButton } from "../components/ui/ActionButton.tsx";
+import { OnThisDevice } from "../components/OnThisDevice.tsx";
 import type { FieldJobState, ModelsResponse, SettingsResponse } from "@frontier/schema";
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
@@ -200,10 +203,10 @@ function AiSettings({ ai, reload }: { ai: SettingsResponse["ai"]; reload: () => 
       </label>
 
       <p className="change-actions">
-        <button type="button" className="primary" disabled={busy} onClick={save}>
+        <ActionButton type="button" className="primary" disabled={busy} onClick={save}>
           Save
-        </button>
-        <button
+        </ActionButton>
+        <ActionButton
           type="button"
           className="quiet"
           disabled={busy || ai.keyFrom === "none" || !ai.models.extraction}
@@ -218,9 +221,9 @@ function AiSettings({ ai, reload }: { ai: SettingsResponse["ai"]; reload: () => 
           }
         >
           Test
-        </button>
+        </ActionButton>
         {ai.keyFrom === "settings" && (
-          <button
+          <ActionButton
             type="button"
             className="plain danger"
             disabled={busy}
@@ -239,7 +242,7 @@ function AiSettings({ ai, reload }: { ai: SettingsResponse["ai"]; reload: () => 
             }}
           >
             Remove the key
-          </button>
+          </ActionButton>
         )}
       </p>
     </section>
@@ -257,6 +260,7 @@ function SignIn({
   const [notice, setNotice] = useState<Notice>(null);
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
+  const offline = useNeedsConnection();
 
   async function run(work: () => Promise<unknown>, done: string) {
     setBusy(true);
@@ -290,7 +294,7 @@ function SignIn({
               <span>
                 {p.name} <em className="muted">added {new Date(p.addedAt).toLocaleDateString()}</em>
               </span>
-              <button
+              <ActionButton
                 type="button"
                 className="plain danger"
                 disabled={busy}
@@ -304,7 +308,7 @@ function SignIn({
                 }}
               >
                 Remove
-              </button>
+              </ActionButton>
             </li>
           ))}
         </ul>
@@ -319,7 +323,7 @@ function SignIn({
         />
       </label>
       <p className="change-actions">
-        <button
+        <ActionButton
           type="button"
           className="primary"
           disabled={busy || name.trim() === ""}
@@ -331,14 +335,14 @@ function SignIn({
           }
         >
           Add a passkey
-        </button>
+        </ActionButton>
       </p>
       {signIn.passkeys.length > 0 && (
         <label className="check">
           <input
             type="checkbox"
             checked={signIn.passwordOff}
-            disabled={busy}
+            disabled={busy || offline !== undefined}
             onChange={(e) =>
               run(
                 () => api.passwordOff(e.target.checked),
@@ -436,28 +440,32 @@ function FolderRun({ on }: { on: boolean }) {
       )}
       <p className="change-actions">
         {!estimate ? (
-          <button
+          <ActionButton
             type="button"
             className="quiet"
             disabled={!on || job.state === "running"}
             onClick={ask}
           >
             Estimate
-          </button>
+          </ActionButton>
         ) : (
-          <button
+          <ActionButton
             type="button"
             className="primary"
             disabled={estimate.entries === 0}
             onClick={start}
           >
             Start
-          </button>
+          </ActionButton>
         )}
         {job.state === "running" && (
-          <button type="button" className="plain danger" onClick={() => api.cancelJob().then(poll)}>
+          <ActionButton
+            type="button"
+            className="plain danger"
+            onClick={() => api.cancelJob().then(poll)}
+          >
             Cancel
-          </button>
+          </ActionButton>
         )}
       </p>
       {job.state !== "none" && (
@@ -571,9 +579,23 @@ export function SettingsPage() {
   }, []);
   useEffect(() => void load(), [load]);
 
-  if (!settings) {
-    return error ? (
-      <div className="center">
+  const on = settings ? settings.ai.keySet && settings.ai.models.extraction !== null : false;
+  return (
+    <article className="entry wide settings">
+      <header className="entry-head">
+        <h1>Settings</h1>
+      </header>
+      {/* From the device alone, before and apart from the server's settings: it shows offline. */}
+      <OnThisDevice />
+      {settings ? (
+        <>
+          <AiSettings ai={settings.ai} reload={load} />
+          <FolderRun on={on} />
+          <Spending />
+          <Schema />
+          <SignIn signIn={settings.signIn} reload={load} />
+        </>
+      ) : error ? (
         <Problem
           reason={error}
           onRetry={() => {
@@ -581,22 +603,9 @@ export function SettingsPage() {
             void load();
           }}
         />
-      </div>
-    ) : (
-      <p className="center muted">Loading…</p>
-    );
-  }
-  const on = settings.ai.keySet && settings.ai.models.extraction !== null;
-  return (
-    <article className="entry wide settings">
-      <header className="entry-head">
-        <h1>Settings</h1>
-      </header>
-      <AiSettings ai={settings.ai} reload={load} />
-      <FolderRun on={on} />
-      <Spending />
-      <Schema />
-      <SignIn signIn={settings.signIn} reload={load} />
+      ) : (
+        <p className="muted">Loading…</p>
+      )}
     </article>
   );
 }

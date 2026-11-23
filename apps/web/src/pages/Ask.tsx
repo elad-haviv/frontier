@@ -1,3 +1,4 @@
+import { ActionButton } from "../components/ui/ActionButton.tsx";
 import { type FormEvent, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { api, ApiFailure, askUrl } from "../api.ts";
@@ -62,9 +63,13 @@ export function AskPage() {
           </p>
         )}
         <p className="change-actions">
-          <button type="submit" className="primary" disabled={!ready || busy || !question.trim()}>
+          <ActionButton
+            type="submit"
+            className="primary"
+            disabled={!ready || busy || !question.trim()}
+          >
             {busy ? "Reading the entries…" : "Ask"}
-          </button>
+          </ActionButton>
         </p>
       </form>
 

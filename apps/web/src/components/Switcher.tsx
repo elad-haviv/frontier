@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api, ApiFailure, entryUrl } from "../api.ts";
+import { useConnection } from "../sync/connection.ts";
 import { Problem } from "./ui/Problem.tsx";
 
 interface Row {
@@ -28,6 +29,8 @@ export function Switcher({ onClose }: { onClose: () => void }) {
   const [attempt, setAttempt] = useState(0);
   const input = useRef<HTMLInputElement>(null);
   const list = useRef<HTMLUListElement>(null);
+  // Offline, names come from the device's index; the text of entries needs the server.
+  const offline = useConnection().state !== "online";
 
   useEffect(() => input.current?.focus(), []);
 
@@ -40,10 +43,11 @@ export function Switcher({ onClose }: { onClose: () => void }) {
         if (err instanceof ApiFailure && err.status === 0) lost = true;
         return { results: [] };
       };
-      const [names, text] = await Promise.all([
-        api.names(q).catch(none),
-        q.length >= 2 ? api.search(q).catch(none) : Promise.resolve({ results: [] }),
-      ]);
+      const names = await api.names(q).catch(none);
+      const text =
+        q.length >= 2 && !offline
+          ? await api.search(q).catch(() => ({ results: [] }))
+          : { results: [] };
       if (!live) return;
       setUnreachable(lost);
       const byName: Row[] = names.results.slice(0, 20).map((n) => ({
@@ -64,7 +68,7 @@ export function Switcher({ onClose }: { onClose: () => void }) {
       live = false;
       window.clearTimeout(wait);
     };
-  }, [query, attempt]);
+  }, [query, attempt, offline]);
 
   useEffect(() => {
     list.current?.querySelector(".is-current")?.scrollIntoView({ block: "nearest" });
@@ -128,6 +132,9 @@ export function Switcher({ onClose }: { onClose: () => void }) {
           ))}
           {rows.length === 0 && !unreachable && (
             <li className="muted switcher-empty">Nothing found.</li>
+          )}
+          {offline && !unreachable && (
+            <li className="muted switcher-empty">Full-text search needs a connection.</li>
           )}
           {unreachable && (
             <li className="switcher-empty">

@@ -1,3 +1,6 @@
+import { OfflineCopy, useReadAgain } from "../components/OfflineCopy.tsx";
+import { markOpened, servedFromDevice } from "../offline/copy.ts";
+import { useNeedsConnection } from "../sync/connection.ts";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { type ChronicleFile, mergeChronicles } from "@frontier/schema";
@@ -15,7 +18,7 @@ import { useRefresh } from "../components/Shell.tsx";
 import { SaveStatus, useSaveState } from "../components/ui/SaveStatus.tsx";
 import { useItemFile } from "../hooks/useItemFile.ts";
 import { useShortcut } from "../keys.ts";
-import type { QueueKey } from "../sync/queue.ts";
+import { type QueueKey, queue } from "../sync/queue.ts";
 
 type Tab = "order" | "scale" | "compare" | "flags" | "setup";
 
@@ -60,11 +63,17 @@ function Chronicle({ id }: { id: string }) {
   const dropped = useRef(new Set<string>());
   const key: QueueKey = `chronicle:${id}`;
   const saving = useSaveState(key);
+  // Copying, the main mark and deleting go straight to the server.
+  const offline = useNeedsConnection();
+  /** When the chronicle was opened from this device's copy, the time that copy was stored. */
+  const [offlineAt, setOfflineAt] = useState<number | null>(null);
+  useEffect(() => markOpened(key), [key]);
 
   const file = useItemFile<ChronicleFile>({
     key,
     load: async () => {
       const loaded = await api.chronicle(id);
+      setOfflineAt(servedFromDevice(loaded));
       setEntries(loaded.entries);
       return { value: loaded.chronicle, revision: loaded.revision, blob: loaded.blob };
     },
@@ -118,6 +127,11 @@ function Chronicle({ id }: { id: string }) {
   });
   const chronicle = file.value;
   const worked = useMemo(() => (chronicle ? work(chronicle) : null), [chronicle]);
+  // Opened from the device's copy: the server's copy is taken in once it answers, unless a change
+  // waits here, which the queue's merge brings together with it.
+  useReadAgain(offlineAt, `/api/chronicles/${id}`, () => {
+    void queue.get(key).then((r) => (r ? undefined : file.reload()));
+  });
 
   // Ctrl+Z and Ctrl+Shift+Z, except while typing in a field, which has its own undo.
   useShortcut("chronicle.undo", file.undo);
@@ -232,6 +246,7 @@ function Chronicle({ id }: { id: string }) {
         {chronicle.main && <span className="chip">main</span>}
         <SaveStatus state={saving.state} variant="chronicle" />
       </header>
+      <OfflineCopy at={offlineAt} className="chronicle-offline" />
       {notice && (
         <p className="banner" role="alert">
           {notice}{" "}
@@ -279,17 +294,36 @@ function Chronicle({ id }: { id: string }) {
             <button type="button" className="quiet" onClick={() => void rename()}>
               Rename
             </button>
-            <button type="button" className="quiet" onClick={() => void copy()}>
+            <button
+              type="button"
+              className="quiet"
+              disabled={offline !== undefined}
+              title={offline}
+              onClick={() => void copy()}
+            >
               Copy, to try another version
             </button>
             {!chronicle.main && (
-              <button type="button" className="quiet" onClick={() => void makeMain()}>
+              <button
+                type="button"
+                className="quiet"
+                disabled={offline !== undefined}
+                title={offline}
+                onClick={() => void makeMain()}
+              >
                 Make this the main chronicle
               </button>
             )}
-            <button type="button" className="plain danger" onClick={() => void remove()}>
+            <button
+              type="button"
+              className="plain danger"
+              disabled={offline !== undefined}
+              title={offline}
+              onClick={() => void remove()}
+            >
               Delete the chronicle
             </button>
+            {offline && <p className="muted">Copying and deleting: {offline.toLowerCase()}.</p>}
           </div>
         </details>
       </div>

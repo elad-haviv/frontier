@@ -1,3 +1,4 @@
+import { ActionButton } from "../components/ui/ActionButton.tsx";
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { api, ApiFailure, entryUrl, type ImportResult } from "../api.ts";
@@ -126,7 +127,7 @@ export function ImportPage() {
           />
         )}
         <p className="change-actions">
-          <button
+          <ActionButton
             type="button"
             className="primary"
             disabled={busy || files.length === 0}
@@ -135,7 +136,7 @@ export function ImportPage() {
             {busy
               ? "Importing…"
               : `Import ${files.length || ""} ${files.length === 1 ? "file" : "files"}`}
-          </button>
+          </ActionButton>
         </p>
 
         {result && (
@@ -170,22 +171,22 @@ export function ImportPage() {
                   ))}
                 </ul>
                 <p className="change-actions">
-                  <button
+                  <ActionButton
                     type="button"
                     className="quiet"
                     disabled={busy}
                     onClick={() => run(clashing(), "replace")}
                   >
                     Replace with the imported text
-                  </button>
-                  <button
+                  </ActionButton>
+                  <ActionButton
                     type="button"
                     className="quiet"
                     disabled={busy}
                     onClick={() => run(clashing(), "both")}
                   >
                     Keep both
-                  </button>
+                  </ActionButton>
                 </p>
               </>
             )}
@@ -230,9 +231,14 @@ export function ImportPage() {
           />
         </label>
         <p className="change-actions">
-          <button type="button" className="primary" disabled={busy || !zip} onClick={importVault}>
+          <ActionButton
+            type="button"
+            className="primary"
+            disabled={busy || !zip}
+            onClick={importVault}
+          >
             {busy && zip ? "Importing…" : "Import the vault"}
-          </button>
+          </ActionButton>
         </p>
         {vaultDone && (
           <p className="banner banner-ok" role="status">

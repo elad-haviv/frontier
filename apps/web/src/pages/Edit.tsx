@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { api, ApiFailure, entryUrl, newDraftId, type PassageComment } from "../api.ts";
+import { api, ApiFailure, entryUrl, fromServer, newDraftId, type PassageComment } from "../api.ts";
 import type { EditorView } from "@codemirror/view";
 import { CodeEditor } from "../components/CodeEditor.tsx";
 import { EditToolbar } from "../components/EditToolbar.tsx";
@@ -15,7 +15,9 @@ import { Menu, MenuItem, MenuSeparator } from "../components/ui/Menu.tsx";
 import { SaveStatus, useSaveState } from "../components/ui/SaveStatus.tsx";
 import { useScope, useShortcut } from "../keys.ts";
 import { type QueueKey, queue } from "../sync/queue.ts";
-import { useNeedsConnection } from "../sync/connection.ts";
+import { connection, useNeedsConnection } from "../sync/connection.ts";
+import { OfflineCopy, useReadAgain } from "../components/OfflineCopy.tsx";
+import { entryAddress, markOpened, servedFromDevice } from "../offline/copy.ts";
 import type { DraftKind } from "@frontier/schema";
 import { setFrontmatterKey } from "@frontier/vault";
 import { MessageSquare, SlidersHorizontal, Trash2, Undo2, WandSparkles } from "lucide-react";
@@ -23,6 +25,9 @@ import { PageAction, usePanel, useRightBar } from "../components/shell/panels.ts
 import { useEditorOutline } from "../components/entry/EditorOutline.tsx";
 import { WideMenuItem } from "../components/entry/WideMenuItem.tsx";
 import { useWide } from "../width.ts";
+
+/** Said when an image is pasted, dropped or picked with no connection. */
+const IMAGES_NEED_CONNECTION = "Images need a connection. Your text stays.";
 
 function pathFrom(pathname: string): string {
   return pathname
@@ -59,6 +64,10 @@ export function EditPage() {
   });
   const latest = useRef("");
   const view = useRef<EditorView | null>(null);
+  /** When the text was opened from this device's copy, the time that copy was stored. */
+  const [offlineAt, setOfflineAt] = useState<number | null>(null);
+  /** The server's copy the text was opened from, to see whether a later read differs. */
+  const openedFrom = useRef({ id: "", revision: 0, blob: "" });
   // The panels beside the text: Properties, Comments and, once a model is chosen, Writing help.
   const bar = useRightBar();
   // Discarding goes straight to the server, so it waits for a connection.
@@ -131,6 +140,11 @@ export function EditPage() {
   /** Stores each image as an unpublished file and writes its embed where the cursor is. */
   const addImages = useCallback(
     async (files: File[]) => {
+      // The server names an upload, and the text embeds that name: images wait for it.
+      if (connection.state !== "online") {
+        setMessage(IMAGES_NEED_CONNECTION);
+        return;
+      }
       for (const file of files) {
         setMessage(`Adding ${file.name}…`);
         try {
@@ -167,6 +181,12 @@ export function EditPage() {
           return;
         }
         text = entry.text;
+        if (live) setOfflineAt(servedFromDevice(entry));
+        openedFrom.current = {
+          id: entry.draft?.id ?? "",
+          revision: entry.draft?.revision ?? 0,
+          blob: entry.blob,
+        };
         draft.current =
           entry.draft && entry.draft.kind !== "delete"
             ? { ...entry.draft, baseBlob: entry.blob }
@@ -201,6 +221,35 @@ export function EditPage() {
       live = false;
     };
   }, [path, creating, newType, key]);
+
+  // Opened: kept on this device among the recent entries.
+  useEffect(() => markOpened(`entry:${path}`), [path]);
+
+  // Opened from the device's copy: once the server answers, and nothing here is unsent, its copy
+  // replaces the one opened if they differ. With a record, the record's base decides on the server.
+  useReadAgain(offlineAt, entryAddress(path), () => {
+    void (async () => {
+      if (await queue.get(key)) return;
+      const entry = await fromServer(() => api.entry(path)).catch(() => null);
+      const v = view.current;
+      if (!entry || !v || (await queue.get(key))) return;
+      setOfflineAt(null);
+      const was = openedFrom.current;
+      const now = { id: entry.draft?.id ?? "", revision: entry.draft?.revision ?? 0 };
+      if (now.id === was.id && now.revision === was.revision && entry.blob === was.blob) return;
+      if (latest.current !== v.state.doc.toString()) return;
+      openedFrom.current = { ...now, blob: entry.blob };
+      draft.current =
+        entry.draft && entry.draft.kind !== "delete"
+          ? { ...entry.draft, baseBlob: entry.blob }
+          : { id: newDraftId(), revision: 0, kind: "edit", baseBlob: entry.blob };
+      latest.current = entry.text;
+      v.dispatch({ changes: { from: 0, to: v.state.doc.length, insert: entry.text } });
+      // The line above reports a change like typing does; this text is the server's already.
+      await queue.drop(key);
+      setMessage("Updated from the server.");
+    })();
+  });
 
   // What the queue hears from the server about this file.
   useEffect(
@@ -494,6 +543,7 @@ export function EditPage() {
           </Menu>
         </span>
       </div>
+      <OfflineCopy at={offlineAt} className="editor-offline" />
       {stale && (
         <p className="banner" role="alert">
           This entry was changed on another device after this text was started. Both texts are kept.{" "}

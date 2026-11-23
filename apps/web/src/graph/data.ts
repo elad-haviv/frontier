@@ -8,6 +8,7 @@
 import { useEffect, useSyncExternalStore } from "react";
 import type { GraphResponse } from "@frontier/schema";
 import { api, ApiFailure } from "../api.ts";
+import { servedFromDevice } from "../offline/copy.ts";
 import { connection } from "../sync/connection.ts";
 import { queue } from "../sync/queue.ts";
 import { type GraphModel, makeModel } from "./model.ts";
@@ -27,6 +28,8 @@ export interface GraphState {
   /** Why the graph could not be read, while no model is held. */
   error: string | null;
   loading: boolean;
+  /** When the graph shown was stored on this device, while it is the device's copy (15b). */
+  at?: number | null;
 }
 
 export const NEEDS_CONNECTION = "The graph needs a connection.";
@@ -92,7 +95,7 @@ export class GraphData {
     this.inFlight = true;
     this.set({ loading: true });
     void this.d.fetch().then(
-      (r) => this.settle({ model: makeModel(r), error: null }),
+      (r) => this.settle({ model: makeModel(r), error: null, at: servedFromDevice(r) }),
       (err: unknown) =>
         this.settle({
           // A graph already held stays shown as it was.

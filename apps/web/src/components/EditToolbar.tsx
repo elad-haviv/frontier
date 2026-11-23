@@ -128,7 +128,7 @@ export function EditToolbar({
             label="Add an image"
             icon={ImagePlus}
             disabled={offline !== undefined}
-            {...(offline ? { disabledReason: offline } : {})}
+            {...(offline ? { disabledReason: "Images need a connection" } : {})}
             onPointerDown={keep}
             onClick={() => picker.current?.click()}
           />

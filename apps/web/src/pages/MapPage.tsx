@@ -1,3 +1,4 @@
+import { OfflineCopy } from "../components/OfflineCopy.tsx";
 import { initialView, measure, type Position, turnTo } from "@frontier/geo";
 import { MapPin, Layers as LayersIcon } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useState } from "react";
@@ -289,6 +290,7 @@ export function MapPage() {
         />
       )}
 
+      <OfflineCopy at={file.offlineAt} className="map-offline" />
       {notice && (
         <p className="banner map-notice" role="status">
           {notice}{" "}

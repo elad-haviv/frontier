@@ -3,6 +3,10 @@
  * record per file) and a `meta` store (this device's id and name). When IndexedDB cannot be opened,
  * as in some private windows, the queue runs in memory and only the device id is kept, in
  * `localStorage`, so a reload does not make a new device.
+ *
+ * From version 2 (stage 15b) the same database holds the device copy for reading offline:
+ * `answers` (successful reads, by address) and `items` (the entries, maps and chronicles opened
+ * lately). In memory the device copy is off: nothing is kept.
  */
 import { type DBSchema, type IDBPDatabase, openDB } from "idb";
 import type { DraftKind, LibraryFileName } from "@frontier/schema";
@@ -52,9 +56,36 @@ export interface Device {
   name: string;
 }
 
+/** A successful read kept for reading offline (`offline/device.ts`). */
+export interface DeviceAnswer {
+  /** The request's address, as `api.ts` makes it, such as `/api/entries?path=…`. */
+  url: string;
+  /** When it was read, in milliseconds since 1970. */
+  at: number;
+  /** Its route's `DEVICE_SCHEMA` number when it was stored. */
+  shape: number;
+  body: unknown;
+  /** Its size as JSON, in bytes. */
+  bytes: number;
+  /** The item it is the body of, such as `entry:<path>`; none for the answers always kept. */
+  item?: string;
+}
+
+/** An entry, map or chronicle on this device, because it was opened lately. */
+export interface DeviceItem {
+  /** `entry:<path>`, `map:<id>` or `chronicle:<id>`, as the queue's keys. */
+  key: string;
+  /** When it was last opened. */
+  opened: number;
+  /** The image addresses stored for it in Cache Storage. */
+  images: string[];
+}
+
 interface Schema extends DBSchema {
   queue: { key: string; value: QueueRecord };
   meta: { key: string; value: unknown };
+  answers: { key: string; value: DeviceAnswer };
+  items: { key: string; value: DeviceItem };
 }
 
 /** What the queue reads and writes, in IndexedDB or in memory. */
@@ -76,14 +107,62 @@ export interface Store {
   setMeta(key: string, value: unknown): Promise<void>;
   removeMeta(key: string): Promise<void>;
   clearMeta(): Promise<void>;
+  /** False when nothing can be kept for reading offline. */
+  readonly device: boolean;
+  answer(url: string): Promise<DeviceAnswer | undefined>;
+  answers(): Promise<DeviceAnswer[]>;
+  putAnswer(answer: DeviceAnswer): Promise<void>;
+  removeAnswer(url: string): Promise<void>;
+  item(key: string): Promise<DeviceItem | undefined>;
+  items(): Promise<DeviceItem[]>;
+  putItem(item: DeviceItem): Promise<void>;
+  removeItem(key: string): Promise<void>;
+  /** Empties `answers` and `items`; the queue and `meta` stay. */
+  clearDevice(): Promise<void>;
 }
 
 export const DB_NAME = "frontier";
+/** 1: the queue and `meta` (11a-2). 2: `answers` and `items`, the device copy (15b). */
+export const DB_VERSION = 2;
 const DEVICE_KEY = "frontier:device";
 
 class IdbStore implements Store {
   readonly kept = true;
+  readonly device = true;
   constructor(private readonly db: IDBPDatabase<Schema>) {}
+
+  answer(url: string) {
+    return this.db.get("answers", url);
+  }
+  answers() {
+    return this.db.getAll("answers");
+  }
+  async putAnswer(answer: DeviceAnswer) {
+    await this.db.put("answers", answer, answer.url);
+  }
+  removeAnswer(url: string) {
+    return this.db.delete("answers", url);
+  }
+  item(key: string) {
+    return this.db.get("items", key);
+  }
+  items() {
+    return this.db.getAll("items");
+  }
+  async putItem(item: DeviceItem) {
+    await this.db.put("items", item, item.key);
+  }
+  removeItem(key: string) {
+    return this.db.delete("items", key);
+  }
+  async clearDevice() {
+    const tx = this.db.transaction(["answers", "items"], "readwrite");
+    await Promise.all([
+      tx.objectStore("answers").clear(),
+      tx.objectStore("items").clear(),
+      tx.done,
+    ]);
+  }
 
   all() {
     return this.db.getAll("queue");
@@ -118,8 +197,28 @@ class IdbStore implements Store {
 
 class MemoryStore implements Store {
   readonly kept = false;
+  readonly device = false;
   private records = new Map<string, QueueRecord>();
   private values = new Map<string, unknown>();
+
+  // The device copy is off in memory: nothing is kept, so reads behave as without it.
+  async answer() {
+    return undefined;
+  }
+  async answers() {
+    return [];
+  }
+  async putAnswer() {}
+  async removeAnswer() {}
+  async item() {
+    return undefined;
+  }
+  async items() {
+    return [];
+  }
+  async putItem() {}
+  async removeItem() {}
+  async clearDevice() {}
 
   async all() {
     return [...this.records.values()].map((r) => structuredClone(r));
@@ -178,18 +277,57 @@ class MemoryStore implements Store {
   }
 }
 
-/** Opens the database, or falls back to memory when IndexedDB cannot be used. */
-export async function openStore(name = DB_NAME): Promise<Store> {
+/** What another tab's newer or older build does to this tab's database, for the shell to say. */
+export const database = {
+  /** Another tab asked for a newer version: this tab closed its connection and must reload. */
+  closed: false,
+  /** This tab's open waits for older tabs to close. */
+  waiting: false,
+  listeners: new Set<() => void>(),
+  set(change: Partial<{ closed: boolean; waiting: boolean }>): void {
+    Object.assign(this, change);
+    for (const l of [...this.listeners]) l();
+  },
+};
+
+/** How long an open blocked by another tab waits before saying so. */
+export const BLOCKED_MS = 5000;
+
+/**
+ * Opens the database, or falls back to memory when IndexedDB cannot be used. The upgrade
+ * branches on the version found, so the queue's records and `meta` are kept as they are.
+ */
+export async function openStore(name = DB_NAME, version = DB_VERSION): Promise<Store> {
+  let waiting: ReturnType<typeof setTimeout> | undefined;
   try {
     if (typeof indexedDB === "undefined") throw new Error("no IndexedDB");
-    const db = await openDB<Schema>(name, 1, {
-      upgrade(db) {
-        db.createObjectStore("queue");
-        db.createObjectStore("meta");
+    const db = await openDB<Schema>(name, version, {
+      upgrade(db, oldVersion) {
+        if (oldVersion < 1) {
+          db.createObjectStore("queue");
+          db.createObjectStore("meta");
+        }
+        if (oldVersion < 2 && version >= 2) {
+          db.createObjectStore("answers");
+          db.createObjectStore("items");
+        }
+      },
+      // An older tab holds the database open: say so after a while, and go on once it closes.
+      blocked() {
+        clearTimeout(waiting);
+        waiting = setTimeout(() => database.set({ waiting: true }), BLOCKED_MS);
+      },
+      // A newer build in another tab wants to upgrade: let it, and ask for a reload here.
+      blocking() {
+        db.close();
+        database.set({ closed: true });
       },
     });
+    clearTimeout(waiting);
+    if (database.waiting) database.set({ waiting: false });
     return new IdbStore(db);
   } catch {
+    clearTimeout(waiting);
     return new MemoryStore();
   }
 }

@@ -1,5 +1,6 @@
 import { CircleAlert, Cloud, CloudOff, LogIn, RotateCw } from "lucide-react";
 import { useConnection } from "../sync/connection.ts";
+import { useUnsent } from "../sync/queue.ts";
 import { askToLogIn } from "./LoginDialog.tsx";
 import { Icon } from "./ui/Icon.tsx";
 import { IconButton } from "./ui/IconButton.tsx";
@@ -21,6 +22,7 @@ export function ConnectionMark({
   tipSide?: "top" | "bottom" | "left" | "right";
 }) {
   const { state, retry } = useConnection();
+  const waiting = useUnsent().length;
   if (state === "online") {
     return (
       <span className="connection is-online" role="status" title="Connected to Frontier">
@@ -47,7 +49,10 @@ export function ConnectionMark({
     return (
       <span className="connection is-offline" role="status">
         <Icon icon={CloudOff} size="sm" />
-        <span className="connection-words">Not connected</span>
+        <span className="connection-words">
+          Not connected
+          {waiting > 0 && ` · ${waiting} ${waiting === 1 ? "change" : "changes"} waiting`}
+        </span>
         <IconButton label="Retry" icon={RotateCw} size="sm" tipSide={tipSide} onClick={retry} />
       </span>
     );

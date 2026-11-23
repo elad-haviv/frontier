@@ -3,6 +3,7 @@ import { Navigate, Route, Routes, useLocation, useParams } from "react-router-do
 import { api } from "./api.ts";
 import { LoginDialog } from "./components/LoginDialog.tsx";
 import { Shell } from "./components/Shell.tsx";
+import { startDeviceCopy } from "./offline/copy.ts";
 import { noteSignedIn, openApp } from "./offline/start.ts";
 import { updates } from "./offline/updates.ts";
 import { connection } from "./sync/connection.ts";
@@ -12,15 +13,7 @@ import { EditPage } from "./pages/Edit.tsx";
 import { EntryPage } from "./pages/Entry.tsx";
 import { UnpublishedPage } from "./pages/Unpublished.tsx";
 import { VersionsPage } from "./pages/Versions.tsx";
-import { AskPage } from "./pages/Ask.tsx";
-import { ConversationPage } from "./pages/Conversation.tsx";
-import { TalkPage } from "./pages/Talk.tsx";
-import { ExportPage } from "./pages/Export.tsx";
-import { GalleryPage } from "./pages/Gallery.tsx";
 import { Home } from "./pages/Home.tsx";
-import { HistoryPage, LibraryHistoryPage } from "./pages/History.tsx";
-import { ImportPage } from "./pages/Import.tsx";
-import { InboxPage } from "./pages/Inbox.tsx";
 import { ChroniclesPage } from "./pages/Chronicles.tsx";
 import { MapsPage } from "./pages/Maps.tsx";
 import { Login } from "./pages/Login.tsx";
@@ -35,6 +28,29 @@ const ChroniclePage = lazy(() =>
   import("./pages/ChroniclePage.tsx").then((m) => ({ default: m.ChroniclePage })),
 );
 const GraphPage = lazy(() => import("./pages/Graph.tsx").then((m) => ({ default: m.GraphPage })));
+// Pages that need the server, and are opened now and then: they load when first opened too, so
+// the first load leaves room for what the app keeps on the device (stage 15b).
+const AskPage = lazy(() => import("./pages/Ask.tsx").then((m) => ({ default: m.AskPage })));
+const ConversationPage = lazy(() =>
+  import("./pages/Conversation.tsx").then((m) => ({ default: m.ConversationPage })),
+);
+const TalkPage = lazy(() => import("./pages/Talk.tsx").then((m) => ({ default: m.TalkPage })));
+const ExportPage = lazy(() =>
+  import("./pages/Export.tsx").then((m) => ({ default: m.ExportPage })),
+);
+const GalleryPage = lazy(() =>
+  import("./pages/Gallery.tsx").then((m) => ({ default: m.GalleryPage })),
+);
+const HistoryPage = lazy(() =>
+  import("./pages/History.tsx").then((m) => ({ default: m.HistoryPage })),
+);
+const LibraryHistoryPage = lazy(() =>
+  import("./pages/History.tsx").then((m) => ({ default: m.LibraryHistoryPage })),
+);
+const ImportPage = lazy(() =>
+  import("./pages/Import.tsx").then((m) => ({ default: m.ImportPage })),
+);
+const InboxPage = lazy(() => import("./pages/Inbox.tsx").then((m) => ({ default: m.InboxPage })));
 
 /** A different map gets a fresh page: its own view, drawing surface and history. */
 function OneMap() {
@@ -70,6 +86,8 @@ export function App() {
     connection.start();
     void queue.start();
     void updates.register();
+    // Reads are kept on this device, and answered from it when the server cannot be reached.
+    startDeviceCopy();
     return () => connection.stop();
   }, [loggedIn]);
 
@@ -99,50 +117,52 @@ export function App() {
 
   return (
     <Shell>
-      <Routes>
-        <Route path="/" element={<Home />} />
-        <Route path="/e/*" element={<EntryPage />} />
-        <Route path="/edit/*" element={<EditPage />} />
-        <Route path="/rename/*" element={<RenameRedirect />} />
-        <Route path="/unpublished" element={<UnpublishedPage />} />
-        <Route path="/inbox" element={<InboxPage />} />
-        <Route path="/import" element={<ImportPage />} />
-        <Route path="/history/*" element={<HistoryPage />} />
-        <Route path="/versions" element={<LibraryHistoryPage />} />
-        <Route path="/maps" element={<MapsPage />} />
-        <Route path="/map/:id" element={<OneMap />} />
-        <Route path="/ask" element={<AskPage />} />
-        <Route path="/ask/:id" element={<ConversationPage />} />
-        <Route path="/talk/*" element={<TalkPage />} />
-        <Route path="/export" element={<ExportPage />} />
-        <Route path="/gallery" element={<GalleryPage />} />
-        <Route path="/chronicles" element={<ChroniclesPage />} />
-        <Route
-          path="/chronicle/:id"
-          element={
-            <Suspense fallback={<Progress />}>
-              <ChroniclePage />
-            </Suspense>
-          }
-        />
-        <Route
-          path="/graph"
-          element={
-            <Suspense fallback={<Progress />}>
-              <GraphPage />
-            </Suspense>
-          }
-        />
-        <Route path="/settings" element={<SettingsPage />} />
-        <Route path="/conflict/:id" element={<ConflictPage />} />
-        <Route path="/versions/:id" element={<VersionsPage />} />
-        <Route path="/status" element={<StatusPage />} />
-        <Route path="/login" element={<Navigate to="/" replace />} />
-        <Route
-          path="*"
-          element={<p className="center muted">There is no page at this address.</p>}
-        />
-      </Routes>
+      <Suspense fallback={<Progress />}>
+        <Routes>
+          <Route path="/" element={<Home />} />
+          <Route path="/e/*" element={<EntryPage />} />
+          <Route path="/edit/*" element={<EditPage />} />
+          <Route path="/rename/*" element={<RenameRedirect />} />
+          <Route path="/unpublished" element={<UnpublishedPage />} />
+          <Route path="/inbox" element={<InboxPage />} />
+          <Route path="/import" element={<ImportPage />} />
+          <Route path="/history/*" element={<HistoryPage />} />
+          <Route path="/versions" element={<LibraryHistoryPage />} />
+          <Route path="/maps" element={<MapsPage />} />
+          <Route path="/map/:id" element={<OneMap />} />
+          <Route path="/ask" element={<AskPage />} />
+          <Route path="/ask/:id" element={<ConversationPage />} />
+          <Route path="/talk/*" element={<TalkPage />} />
+          <Route path="/export" element={<ExportPage />} />
+          <Route path="/gallery" element={<GalleryPage />} />
+          <Route path="/chronicles" element={<ChroniclesPage />} />
+          <Route
+            path="/chronicle/:id"
+            element={
+              <Suspense fallback={<Progress />}>
+                <ChroniclePage />
+              </Suspense>
+            }
+          />
+          <Route
+            path="/graph"
+            element={
+              <Suspense fallback={<Progress />}>
+                <GraphPage />
+              </Suspense>
+            }
+          />
+          <Route path="/settings" element={<SettingsPage />} />
+          <Route path="/conflict/:id" element={<ConflictPage />} />
+          <Route path="/versions/:id" element={<VersionsPage />} />
+          <Route path="/status" element={<StatusPage />} />
+          <Route path="/login" element={<Navigate to="/" replace />} />
+          <Route
+            path="*"
+            element={<p className="center muted">There is no page at this address.</p>}
+          />
+        </Routes>
+      </Suspense>
       <LoginDialog />
     </Shell>
   );

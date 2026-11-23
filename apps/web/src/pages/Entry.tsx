@@ -35,6 +35,15 @@ import {
   useRelocate,
 } from "../components/entry/RenameField.tsx";
 import { useNeedsConnection } from "../sync/connection.ts";
+import { NotOnDevice } from "../components/NotOnDevice.tsx";
+import { OfflineCopy, useReadAgain } from "../components/OfflineCopy.tsx";
+import {
+  entryAddress,
+  markOpened,
+  NOT_ON_DEVICE,
+  notSentYet,
+  servedFromDevice,
+} from "../offline/copy.ts";
 import { useAsync } from "../useAsync.ts";
 import { useWide } from "../width.ts";
 
@@ -68,6 +77,10 @@ export function EntryPage() {
   const path = currentEntryPath(pathname);
   // Keyed by the visit as well as the path, so coming back from the editor shows the new draft.
   const entry = useAsync(() => api.entry(path), `${path}@${key}`);
+  // Opened: kept on this device among the recent entries, to read with no connection.
+  useEffect(() => markOpened(`entry:${path}`), [path]);
+  const offlineAt = entry.state === "ready" ? servedFromDevice(entry.value) : null;
+  useReadAgain(offlineAt, entryAddress(path), entry.retry);
   // Talking with a character is offered once a model for conversations is chosen.
   const ai = useAsync(() => api.conversations(), "conversations-ready");
   const canTalk = ai.state === "ready" && ai.value.ready;
@@ -198,6 +211,7 @@ export function EntryPage() {
   // A failure to open another entry is not shown over the one before it.
   if (entry.state === "failed" || (entry.error && entry.value.path !== path)) {
     const error = entry.error!;
+    if (error.code === NOT_ON_DEVICE) return <NotOnDevice path={path} onConnected={entry.retry} />;
     // A missing entry will not appear by trying again; anything else might.
     return (
       <div className="center">
@@ -294,6 +308,7 @@ export function EntryPage() {
         {entry.error && <Problem reason={entry.error.message} onRetry={entry.retry} />}
         <header className="entry-head">
           <Crumbs path={shownPath} pending={moved} />
+          <OfflineCopy at={offlineAt} />
           <div className="title-row" ref={titleRow}>
             {renaming ? (
               <RenameField
@@ -366,7 +381,12 @@ export function EntryPage() {
               <Link to="/inbox">Accept or revert it in the inbox</Link>
             </p>
           )}
-          {ent.state === "unpublished" && (
+          {notSentYet(ent) && (
+            <p className="draft-note" role="status">
+              Not sent yet: this text is on this device and goes to the server when it can.
+            </p>
+          )}
+          {ent.state === "unpublished" && !notSentYet(ent) && (
             <p className="draft-note">
               {ent.draft?.kind === "delete"
                 ? "Marked for deletion. "

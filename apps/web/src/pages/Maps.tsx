@@ -1,3 +1,4 @@
+import { useNeedsConnection } from "../sync/connection.ts";
 import { type FormEvent, useEffect, useState } from "react";
 import { ActionButton } from "../components/ui/ActionButton.tsx";
 import { Link, useNavigate } from "react-router-dom";
@@ -20,6 +21,7 @@ export function MapsPage() {
   const refresh = useRefresh();
   const [images, setImages] = useState<string[]>([]);
   const [title, setTitle] = useState("");
+  const offline = useNeedsConnection();
   const [kind, setKind] = useState<"sphere" | "flat" | "schematic">("flat");
   const [image, setImage] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -153,7 +155,13 @@ export function MapsPage() {
         </label>
         <label className="field">
           <span>Or add a new image</span>
-          <input type="file" accept="image/*" onChange={(e) => void upload(e.target.files?.[0])} />
+          <input
+            type="file"
+            accept="image/*"
+            disabled={offline !== undefined}
+            title={offline && "Images need a connection"}
+            onChange={(e) => void upload(e.target.files?.[0])}
+          />
         </label>
         {error && (
           <p className="error" role="alert">

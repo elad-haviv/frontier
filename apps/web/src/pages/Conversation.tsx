@@ -1,3 +1,4 @@
+import { ActionButton } from "../components/ui/ActionButton.tsx";
 import { type FormEvent, useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { api, ApiFailure, askUrl, entryUrl, type LoreConversation, type LoreTurn } from "../api.ts";
@@ -114,17 +115,17 @@ function Addition(p: {
         </p>
       )}
       <p className="change-actions">
-        <button
+        <ActionButton
           type="button"
           className="primary"
           disabled={!preview || busy}
           onClick={() => void keep()}
         >
           Keep as a draft
-        </button>
-        <button type="button" className="quiet" disabled={busy} onClick={() => void again()}>
+        </ActionButton>
+        <ActionButton type="button" className="quiet" disabled={busy} onClick={() => void again()}>
           Draft again
-        </button>
+        </ActionButton>
       </p>
     </section>
   );
@@ -197,14 +198,14 @@ function Answer(p: {
           </p>
           {!p.turn.addition && (
             <p className="change-actions">
-              <button
+              <ActionButton
                 type="button"
                 className="quiet"
                 disabled={drafting}
                 onClick={() => void draft()}
               >
                 {drafting ? "Drafting…" : "Draft an addition"}
-              </button>
+              </ActionButton>
             </p>
           )}
           {error && (
@@ -333,12 +334,12 @@ export function ConversationPage() {
           </p>
         )}
         <p className="change-actions">
-          <button type="submit" className="primary" disabled={busy || !question.trim()}>
+          <ActionButton type="submit" className="primary" disabled={busy || !question.trim()}>
             {busy ? "Reading the entries…" : "Ask"}
-          </button>
-          <button type="button" className="plain danger" onClick={() => void remove()}>
+          </ActionButton>
+          <ActionButton type="button" className="plain danger" onClick={() => void remove()}>
             Delete the conversation
-          </button>
+          </ActionButton>
         </p>
       </form>
     </article>

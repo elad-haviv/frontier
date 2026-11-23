@@ -22,7 +22,7 @@ import {
   mergeLibraryFile,
   mergeMaps,
 } from "@frontier/schema";
-import { api, ApiFailure, setDevice } from "../api.ts";
+import { api, ApiFailure, fromServer, setDevice } from "../api.ts";
 import { type Connection, connection as appConnection } from "./connection.ts";
 import { migrateBuffers } from "./migrate.ts";
 import {
@@ -297,6 +297,25 @@ export class Queue {
   private becomeSender(): void {
     this.sender = true;
     this.resume();
+    for (const l of [...this.senderListeners]) l();
+  }
+
+  private senderListeners = new Set<() => void>();
+
+  /** True in the one tab that sends, which also runs the device keeper (`offline/keeper.ts`). */
+  get isSender(): boolean {
+    return this.sender;
+  }
+
+  /** Hears that this tab became the one that sends. */
+  onSender(listener: () => void): () => void {
+    this.senderListeners.add(listener);
+    return () => this.senderListeners.delete(listener);
+  }
+
+  /** The database the queue opened, which the device copy shares (`offline/device.ts`). */
+  database(): Promise<Store> {
+    return this.ready();
   }
 
   private async ready(): Promise<Store> {
@@ -418,6 +437,11 @@ export class Queue {
 
   async setMeta(key: string, value: unknown): Promise<void> {
     await (await this.storage()).setMeta(key, value);
+  }
+
+  /** Empties the device copy, as at logout; the queue's own records are not touched. */
+  async clearDevice(): Promise<void> {
+    await (await this.ready()).clearDevice();
   }
 
   async removeMeta(key: string): Promise<void> {
@@ -872,7 +896,13 @@ export class Queue {
 /** The app's one queue. */
 export const queue = new Queue({
   open: () => openStore(),
-  api,
+  // A merge reads the server's copy, never one the device kept for reading offline.
+  api: {
+    ...api,
+    map: (id) => fromServer(() => api.map(id)),
+    chronicle: (id) => fromServer(() => api.chronicle(id)),
+    libraryFile: (name) => fromServer(() => api.libraryFile(name)),
+  },
   connection: appConnection,
   locks: typeof navigator !== "undefined" ? navigator.locks : undefined,
   channel: () => (typeof BroadcastChannel === "undefined" ? null : new BroadcastChannel(CHANNEL)),

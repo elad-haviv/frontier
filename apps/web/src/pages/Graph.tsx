@@ -4,6 +4,7 @@
  * and the find field are the keyboard's and screen reader's way in; the Filters tab chooses the
  * top-level folders shown.
  */
+import { OfflineCopy } from "../components/OfflineCopy.tsx";
 import { List, Maximize, SlidersHorizontal, ZoomIn, ZoomOut } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
@@ -173,6 +174,7 @@ export function GraphPage() {
     <div className="graph-page">
       {data.loading && <Progress label="Loading the graph again" />}
       <div className="graph-frame">
+        <OfflineCopy at={data.at ?? null} className="graph-offline" />
         {empty ? (
           <Empty reason={empty} onTickAll={tickAll} />
         ) : (

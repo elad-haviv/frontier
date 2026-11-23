@@ -5,7 +5,9 @@
 import { type MapFeature, type MapFile, mergeMaps } from "@frontier/schema";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { api, ApiFailure } from "../api.ts";
+import { api, ApiFailure, fromServer } from "../api.ts";
+import { useReadAgain } from "../components/OfflineCopy.tsx";
+import { markOpened, servedFromDevice } from "../offline/copy.ts";
 import { useDialogs } from "../components/Dialogs.tsx";
 import { useRefresh } from "../components/Shell.tsx";
 import { useSaveState } from "../components/ui/SaveStatus.tsx";
@@ -41,6 +43,8 @@ export function useMapFile(
   const [names, setNames] = useState<Names>({});
   const [children, setChildren] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
+  /** When the map was opened from this device's copy, the time that copy was stored. */
+  const [offlineAt, setOfflineAt] = useState<number | null>(null);
   const key: QueueKey = `map:${id}`;
   const saving = useSaveState(key);
   const [sets, setSets] = useState<MarkerSets>([]);
@@ -67,9 +71,12 @@ export function useMapFile(
     setError(null);
     onOpen();
     setHistory({ past: [], future: [] });
+    // Opened: kept on this device among the recent maps.
+    markOpened(key);
     Promise.all([api.map(id), queue.get(key)]).then(
       ([loaded, unsent]) => {
         if (!live) return;
+        setOfflineAt(servedFromDevice(loaded));
         known.current = {
           draftId: "",
           revision: loaded.revision,
@@ -99,6 +106,29 @@ export function useMapFile(
     };
     // The address is read once, when the map opens.
   }, [id]);
+
+  // Opened from the device's copy: the server's copy replaces it once it answers, when nothing
+  // here is unsent and it differs. With a record, the queue's merge brings the two together.
+  useReadAgain(offlineAt, `/api/maps/${id}`, () => {
+    void (async () => {
+      const loaded = await fromServer(() => api.map(id)).catch(() => null);
+      if (!loaded) return;
+      setOfflineAt(null);
+      setNames((n) => ({ ...n, ...loaded.entries }));
+      if (await queue.get(key)) return;
+      const was = known.current;
+      if (loaded.revision === was.revision && loaded.blob === was.baseBlob) return;
+      known.current = {
+        draftId: "",
+        revision: loaded.revision,
+        baseBlob: loaded.blob,
+        base: loaded.map,
+      };
+      setHistory({ past: [], future: [] });
+      setMap(loaded.map);
+      setNotice("Updated from the server.");
+    })();
+  });
 
   // What the save queue hears from the server about this map.
   useEffect(
@@ -300,6 +330,7 @@ export function useMapFile(
     map,
     mapRef,
     error,
+    offlineAt,
     names,
     children,
     sets,

@@ -1,3 +1,4 @@
+import { ActionButton } from "../components/ui/ActionButton.tsx";
 import type { BranchFile, InboxBranch, InboxProposal, InboxQuarantined } from "@frontier/schema";
 import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
@@ -109,7 +110,7 @@ function Operation({
       <p className="change-actions">
         {applies ? (
           <>
-            <button
+            <ActionButton
               type="button"
               className="primary"
               disabled={busy || (o.op === "add_time" ? !what.trim() || !when.trim() : !type.trim())}
@@ -122,7 +123,7 @@ function Operation({
               }
             >
               Accept
-            </button>
+            </ActionButton>
             <button
               type="button"
               className="quiet"
@@ -131,24 +132,24 @@ function Operation({
             >
               {editing ? "Done editing" : "Edit"}
             </button>
-            <button
+            <ActionButton
               type="button"
               className="plain danger"
               disabled={busy}
               onClick={() => decide({ decision: "reject" })}
             >
               Reject
-            </button>
+            </ActionButton>
           </>
         ) : (
-          <button
+          <ActionButton
             type="button"
             className="quiet"
             disabled={busy}
             onClick={() => decide({ decision: "dismiss" })}
           >
             Dismiss
-          </button>
+          </ActionButton>
         )}
       </p>
     </li>
@@ -284,16 +285,16 @@ export function InboxPage() {
                       <p className="blocked">Can only be accepted: {q.revertBlocked}</p>
                     )}
                     <p className="change-actions">
-                      <button
+                      <ActionButton
                         type="button"
                         className="primary"
                         disabled={busy}
                         onClick={() => act(() => api.decideQuarantine(q.path, q.commit, "accept"))}
                       >
                         Accept
-                      </button>
+                      </ActionButton>
                       {!q.revertBlocked && (
-                        <button
+                        <ActionButton
                           type="button"
                           className="plain danger"
                           disabled={busy}
@@ -302,7 +303,7 @@ export function InboxPage() {
                           }
                         >
                           Revert
-                        </button>
+                        </ActionButton>
                       )}
                     </p>
                   </>
@@ -374,7 +375,7 @@ export function InboxPage() {
                   ) : (
                     <p className="change-actions">
                       {!f.blocked && (
-                        <button
+                        <ActionButton
                           type="button"
                           className="primary"
                           disabled={busy}
@@ -383,10 +384,10 @@ export function InboxPage() {
                           }
                         >
                           Accept
-                        </button>
+                        </ActionButton>
                       )}
                       {!f.blocked && !f.binary && f.kind !== "removed" && (
-                        <button
+                        <ActionButton
                           type="button"
                           className="quiet"
                           disabled={busy}
@@ -398,16 +399,16 @@ export function InboxPage() {
                           }
                         >
                           Accept and edit
-                        </button>
+                        </ActionButton>
                       )}
-                      <button
+                      <ActionButton
                         type="button"
                         className="plain danger"
                         disabled={busy}
                         onClick={() => act(() => api.decideFile(b.name, f.path, f.blob, "reject"))}
                       >
                         Reject
-                      </button>
+                      </ActionButton>
                     </p>
                   )}
                 </li>
@@ -422,7 +423,7 @@ export function InboxPage() {
             )}
             <p className="change-actions">
               {b.state === "open" || b.state === "no_fork" || b.state === "too_many" ? (
-                <button
+                <ActionButton
                   type="button"
                   className="plain danger"
                   disabled={busy}
@@ -437,16 +438,16 @@ export function InboxPage() {
                   }}
                 >
                   Reject all that is left
-                </button>
+                </ActionButton>
               ) : (
-                <button
+                <ActionButton
                   type="button"
                   className="quiet"
                   disabled={busy}
                   onClick={() => act(() => api.decideBranch(b.name, b.tip, "remove"))}
                 >
                   Remove the branch
-                </button>
+                </ActionButton>
               )}
             </p>
           </section>

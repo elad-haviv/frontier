@@ -1,3 +1,4 @@
+import { ActionButton } from "../components/ui/ActionButton.tsx";
 import { type FormEvent, useEffect, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import {
@@ -80,7 +81,7 @@ function ProfileForm(p: {
         approve it: the profile is saved in the library with your next version.
       </p>
       <p className="change-actions">
-        <button
+        <ActionButton
           type="button"
           className="quiet"
           disabled={busy !== null}
@@ -91,7 +92,7 @@ function ProfileForm(p: {
             : traits.length
               ? "Draft again"
               : "Draft a profile from the entries"}
-        </button>
+        </ActionButton>
       </p>
       <ul className="traits">
         {traits.map((t, i) => (
@@ -173,9 +174,9 @@ function ProfileForm(p: {
         </p>
       )}
       <p className="change-actions">
-        <button type="submit" className="primary" disabled={busy !== null}>
+        <ActionButton type="submit" className="primary" disabled={busy !== null}>
           Approve the profile
-        </button>
+        </ActionButton>
       </p>
     </form>
   );
@@ -294,9 +295,9 @@ export function TalkPage() {
                   {l.kept ? (
                     <p className="muted">Added to {name}'s entry as an unsaved change.</p>
                   ) : (
-                    <button type="button" className="plain" onClick={() => void keep(i)}>
+                    <ActionButton type="button" className="plain" onClick={() => void keep(i)}>
                       Add to {name}'s entry
-                    </button>
+                    </ActionButton>
                   )}
                 </li>
               ),
@@ -318,9 +319,9 @@ export function TalkPage() {
               </p>
             )}
             <p className="change-actions">
-              <button type="submit" className="primary" disabled={busy || !message.trim()}>
+              <ActionButton type="submit" className="primary" disabled={busy || !message.trim()}>
                 {busy ? `${name} is thinking…` : "Say it"}
-              </button>
+              </ActionButton>
             </p>
           </form>
           <p className="muted">

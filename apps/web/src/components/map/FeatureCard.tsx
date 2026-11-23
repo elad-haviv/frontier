@@ -1,7 +1,8 @@
 import type { MapFeature } from "@frontier/schema";
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { api, entryUrl, mapUrl } from "../../api.ts";
+import { api, ApiFailure, entryUrl, mapUrl } from "../../api.ts";
+import { NEEDS_CONNECTION } from "../../sync/connection.ts";
 import type { Names } from "../../map/useMapFile.ts";
 
 /** What a tap on a feature shows while reading: its name, the start of its entry, where it leads. */
@@ -32,7 +33,9 @@ export function FeatureCard({
     let live = true;
     api.preview(entry.path).then(
       (p) => live && setText(p.text.replace(/^#.*\n+/, "").slice(0, 320)),
-      () => undefined,
+      // The entry's opening comes from the server; offline the card says so.
+      (err: unknown) =>
+        live && err instanceof ApiFailure && err.status === 0 && setText(NEEDS_CONNECTION),
     );
     return () => {
       live = false;

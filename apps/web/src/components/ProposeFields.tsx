@@ -1,3 +1,4 @@
+import { ActionButton } from "./ui/ActionButton.tsx";
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { api, ApiFailure } from "../api.ts";
@@ -27,9 +28,9 @@ export function ProposeFields({ path }: { path: string }) {
 
   return (
     <p className="propose">
-      <button type="button" className="plain" disabled={busy} onClick={run}>
+      <ActionButton type="button" className="plain" disabled={busy} onClick={run}>
         {busy ? "Reading the entry…" : "Propose fields"}
-      </button>
+      </ActionButton>
       {result && "error" in result && <span className="error"> {result.error}</span>}
       {result && "made" in result && (
         <span className="muted">

@@ -71,7 +71,48 @@ const GATEWAY = new Set([502, 503, 504]);
 const isErrorBody = (body: unknown): body is ErrorBody =>
   typeof (body as ErrorBody | null)?.error?.code === "string";
 
+/**
+ * Reads the device can answer when the server cannot (stage 15b, `offline/device.ts`). `read`
+ * gives the answer for a GET of `url`, or null when the device has nothing to do with that address.
+ * With `direct`, only the server answers, and the device keeps what it says.
+ */
+export interface ReadThrough {
+  read(url: string, network: () => Promise<unknown>, direct: boolean): Promise<unknown> | null;
+}
+
+let readThrough: Promise<ReadThrough | null> | null = null;
+let direct = false;
+
+/** Puts the device layer in front of every GET; null takes it away, as in tests. */
+export function setReadThrough(through: Promise<ReadThrough | null> | null): void {
+  readThrough = through;
+}
+
+/**
+ * Makes the reads started inside `read` go to the server only, as the save queue's and the device
+ * keeper's must: a merge or a refresh built on a device answer would build on old text.
+ */
+export function fromServer<T>(read: () => Promise<T>): Promise<T> {
+  direct = true;
+  try {
+    return read();
+  } finally {
+    direct = false;
+  }
+}
+
 async function call<T>(url: string, init?: RequestInit): Promise<T> {
+  // Read before the first wait, while `fromServer` still holds.
+  const only = direct;
+  if (readThrough && (init?.method ?? "GET") === "GET") {
+    const through = await readThrough;
+    const answer = through?.read(url, () => request(url, init), only);
+    if (answer) return answer as Promise<T>;
+  }
+  return request<T>(url, init);
+}
+
+async function request<T>(url: string, init?: RequestInit): Promise<T> {
   let res: Response;
   const watched = !OPEN.test(url);
   try {
@@ -197,6 +238,8 @@ export const api = {
         under: string | null;
         features: number;
         state: string;
+        /** The version mark the device compares (stage 15b). */
+        v?: string;
       }[];
       problems: { path: string; message: string }[];
     }>("/api/maps"),
@@ -223,7 +266,15 @@ export const api = {
     call<{ sets: { name: string; icons: { name: string; path: string }[] }[] }>("/api/marker-sets"),
   chronicles: () =>
     call<{
-      chronicles: { id: string; title: string; main: boolean; spans: number; state: string }[];
+      chronicles: {
+        id: string;
+        title: string;
+        main: boolean;
+        spans: number;
+        state: string;
+        /** The version mark the device compares (stage 15b). */
+        v?: string;
+      }[];
       problems: { path: string; message: string }[];
     }>("/api/chronicles"),
   chronicle: (id: string) =>

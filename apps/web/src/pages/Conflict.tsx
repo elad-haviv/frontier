@@ -1,3 +1,4 @@
+import { ActionButton } from "../components/ui/ActionButton.tsx";
 import type { PublishPlan } from "@frontier/schema";
 import { useRef, useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
@@ -76,9 +77,9 @@ export function ConflictPage() {
       </div>
 
       <p className="plan-actions">
-        <button type="button" className="quiet" onClick={discard}>
+        <ActionButton type="button" className="quiet" onClick={discard}>
           Discard mine
-        </button>
+        </ActionButton>
         {conflict.theirs !== null && (
           <button
             type="button"
@@ -91,9 +92,9 @@ export function ConflictPage() {
             Start from the vault's
           </button>
         )}
-        <button type="button" className="primary big" disabled={busy} onClick={save}>
+        <ActionButton type="button" className="primary big" disabled={busy} onClick={save}>
           {busy ? "Saving…" : "Save as resolved"}
-        </button>
+        </ActionButton>
       </p>
     </article>
   );

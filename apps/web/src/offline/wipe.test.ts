@@ -55,6 +55,19 @@ describe("wiping the device at logout", () => {
     q.stop();
   });
 
+  it("empties the device copy, and leaves the queue's records to the queue", async () => {
+    const q = queue();
+    const store = await q.database();
+    await store.putAnswer({ url: "/api/graph", at: 1, shape: 1, body: {}, bytes: 2 });
+    await store.putItem({ key: "entry:a.md", opened: 1, images: [] });
+    await q.put("entry:a.md", "Unsent", { kind: "edit", draftId: "", revision: 0, delay: 60_000 });
+    await wipeDevice({ store: q });
+    expect(await store.answers()).toEqual([]);
+    expect(await store.items()).toEqual([]);
+    expect((await q.get("entry:a.md"))?.value).toBe("Unsent");
+    q.stop();
+  });
+
   it("goes on when the browser has no caches or no service workers", async () => {
     const q = queue();
     await q.setMeta(SIGNED_IN, { until: 1 });

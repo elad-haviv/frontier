@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { api } from "../api.ts";
+import { api, ApiFailure } from "../api.ts";
+import { NEEDS_CONNECTION } from "../sync/connection.ts";
 
 interface Shown {
   path: string;
@@ -42,14 +43,19 @@ export function HoverPreview({ scope }: { scope: string }) {
       if (!path) return;
       window.clearTimeout(timer.current);
       timer.current = window.setTimeout(async () => {
+        const at = () => {
+          const box = anchor.getBoundingClientRect();
+          const left = Math.min(box.left, window.innerWidth - 22 * 16 - 16);
+          return { x: Math.max(16, left), y: box.bottom + 8 };
+        };
         try {
           const text = cache.get(path) ?? (await api.preview(path)).text;
           cache.set(path, text);
-          const box = anchor.getBoundingClientRect();
-          const left = Math.min(box.left, window.innerWidth - 22 * 16 - 16);
-          setShown({ path, text, x: Math.max(16, left), y: box.bottom + 8 });
-        } catch {
-          setShown(null);
+          setShown({ path, text, ...at() });
+        } catch (err) {
+          // Previews are not kept on the device: with no server, the card says why it is empty.
+          const lost = err instanceof ApiFailure && err.status === 0;
+          setShown(lost ? { path, text: NEEDS_CONNECTION, ...at() } : null);
         }
       }, 350);
     };

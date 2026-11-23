@@ -1,3 +1,4 @@
+import { ActionButton } from "./ui/ActionButton.tsx";
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { api, ApiFailure, type Discovery, discoveryArtUrl, entryUrl } from "../api.ts";
@@ -69,7 +70,7 @@ export function DiscoveryCard(p: {
       ))}
       {p.canArt && (
         <p className="change-actions">
-          <button
+          <ActionButton
             type="button"
             className="quiet"
             disabled={busy !== null}
@@ -82,7 +83,7 @@ export function DiscoveryCard(p: {
             }
           >
             {busy === "art" ? "Drawing…" : d.art ? "Draw it again" : "Make concept art"}
-          </button>
+          </ActionButton>
         </p>
       )}
       <label className="field">
@@ -105,7 +106,7 @@ export function DiscoveryCard(p: {
         </p>
       )}
       <p className="change-actions">
-        <button
+        <ActionButton
           type="button"
           className="primary"
           disabled={busy !== null || !folder}
@@ -117,8 +118,8 @@ export function DiscoveryCard(p: {
           }
         >
           Keep
-        </button>
-        <button
+        </ActionButton>
+        <ActionButton
           type="button"
           className="plain danger"
           disabled={busy !== null}
@@ -130,7 +131,7 @@ export function DiscoveryCard(p: {
           }
         >
           Discard
-        </button>
+        </ActionButton>
       </p>
     </aside>
   );

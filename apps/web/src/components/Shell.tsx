@@ -41,6 +41,7 @@ import {
 } from "./shell/panels.tsx";
 import { useFocusTrap } from "./shell/useFocusTrap.ts";
 import { UpdateBar } from "./UpdateBar.tsx";
+import { DeviceNotices } from "./InstallCard.tsx";
 import "./Shell.css";
 
 const Refresh = createContext<() => void>(() => undefined);
@@ -337,6 +338,7 @@ export function Shell({ children }: { children: ReactNode }) {
             >
               <Panel id="main" minSize="30%" className="shell-main">
                 <UpdateBar />
+                <DeviceNotices />
                 <main className="content">{children}</main>
               </Panel>
               {rightOpen && (

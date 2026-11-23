@@ -151,6 +151,11 @@ export class Connection {
     return this.probing;
   }
 
+  /** Shows a snapshot kept from an earlier visit until the server sends one, as offline. */
+  remember(snapshot: StatusSnapshot): void {
+    if (this.snapshot === null) this.set(this.state, snapshot);
+  }
+
   /** A request had an answer from the server. */
   reached(): void {
     if (this.state !== "online") this.set("online");
