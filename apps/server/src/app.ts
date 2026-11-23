@@ -14,6 +14,10 @@ import { AiProvider } from "./ai/provider.js";
 import { LoginLimiter } from "./auth/limit.js";
 import { ChronicleStore } from "./chronicles/store.js";
 import { MapStore } from "./maps/store.js";
+import { FolderStore } from "./folders/store.js";
+import { LibraryFileStore } from "./library/files.js";
+import { folderRoutes } from "./routes/folders.js";
+import { libraryFileRoutes } from "./routes/libraryFiles.js";
 import { Conversations } from "./ai/conversations.js";
 import { LoreAsker } from "./ai/lore.js";
 import { loreRoutes } from "./routes/lore.js";
@@ -93,6 +97,9 @@ export interface Services {
   loginLimit: LoginLimiter;
   maps: MapStore;
   chronicles: ChronicleStore;
+  /** Library item files, such as the folder file, through one store. */
+  libraryFiles: LibraryFileStore;
+  folders: FolderStore;
   lore: LoreAsker;
   writing: WritingHelper;
   characters: CharacterTalk;
@@ -242,6 +249,8 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
     drafts,
     changer,
   });
+  const libraryFiles = new LibraryFileStore({ vaultDir, drafts });
+  const folders = new FolderStore({ index, git, drafts, files: libraryFiles, changer });
   const discoverer = new Discoverer({
     stateDir,
     files,
@@ -296,6 +305,8 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
     loginLimit: new LoginLimiter(),
     maps,
     chronicles,
+    libraryFiles,
+    folders,
     lore,
     writing,
     characters,
@@ -310,12 +321,14 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
       await quarantine.refresh();
       maps.refresh();
       chronicles.refresh();
+      libraryFiles.refresh();
       await services.publisher.clearPublished();
       await quarantine.prune();
       status.quarantine(quarantine.count(), [
         ...(quarantine.problem ? [quarantine.problem] : []),
         ...maps.problems.map((p) => `${p.path} is not shown as a map. ${p.message}`),
         ...chronicles.problems.map((p) => `${p.path} is not shown as a chronicle. ${p.message}`),
+        ...libraryFiles.problems.map((p) => `${p.path} cannot be read. ${p.message}`),
       ]);
       await proposals.prune();
       status.inbox(await services.branches.count());
@@ -337,6 +350,7 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
     index,
     drafts,
     status,
+    libraryFiles,
     sync: () => services.sync(),
     reviews: {
       pendingDecisions: () => quarantine.pendingDecisions(),
@@ -472,6 +486,8 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
   passkeyRoutes(app, services);
   mapRoutes(app, services);
   chronicleRoutes(app, services);
+  libraryFileRoutes(app, services);
+  folderRoutes(app, services);
   loreRoutes(app, services);
   writingRoutes(app, services);
   commentRoutes(app, services);

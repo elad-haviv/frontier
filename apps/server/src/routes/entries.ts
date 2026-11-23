@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import {
   type EntryResponse,
+  type FolderFile,
   type SchemaResponse,
   type TreeFolder,
   type TreeResponse,
@@ -10,6 +11,7 @@ import { dirname, isImage, isNote, readFields, stem, typeFromFolder } from "@fro
 import { z } from "zod";
 import { ApiError } from "../errors.js";
 import { type IndexedLink, linkKindOf } from "../index/build.js";
+import { movedPath } from "../publish/publish.js";
 import type { Services } from "../app.js";
 
 const EntryQuery = z
@@ -98,7 +100,11 @@ export function entryRoutes(app: FastifyInstance, s: Services): void {
     what: Object.keys(s.index.schema.what),
   }));
 
-  /** The author's view: what is published, with his drafts on top. */
+  /**
+   * The author's view: what is published, with his drafts on top, his renames applied (a moved
+   * entry keeps its old path as its link until a version is saved), and the folder file's lines:
+   * empty folders, icons, colours, order and type.
+   */
   app.get("/api/tree", async (): Promise<TreeResponse> => {
     const root: TreeFolder = { path: "", folders: [], notes: [] };
     const folders = new Map<string, TreeFolder>([["", root]]);
@@ -110,10 +116,18 @@ export function entryRoutes(app: FastifyInstance, s: Services): void {
       folder(dirname(path)).folders.push(made);
       return made;
     };
+    const renames = s.drafts.listRenames();
+    const after = (path: string) => renames.reduce((p, r) => movedPath(p, r.from, r.to) ?? p, path);
+    const place = (note: TreeResponse["notes"][number]) => {
+      const shown = after(note.path);
+      // The entry is listed where it is going; its link opens it where it still is.
+      const entry = shown === note.path ? note : { ...note, path: shown, moved: note.path };
+      folder(dirname(shown)).notes.push(entry);
+    };
     const { added, removed } = overlay();
     for (const note of s.index.allNotes()) {
       if (removed.includes(note.path)) continue;
-      folder(dirname(note.path)).notes.push({
+      place({
         path: note.path,
         title: note.title,
         state: s.drafts.byPath(note.path)
@@ -126,8 +140,47 @@ export function entryRoutes(app: FastifyInstance, s: Services): void {
     for (const path of added) {
       // An uploaded image is not an entry and has no place in the tree.
       if (!isNote(path)) continue;
-      folder(dirname(path)).notes.push({ path, title: stem(path), state: "unpublished" });
+      place({ path, title: stem(path), state: "unpublished" });
     }
+    // A folder that a rename moves shows where it goes, marked, with the rename's id for Undo.
+    for (const r of renames) {
+      const moved = folders.get(after(r.to));
+      if (moved && !isNote(r.from)) {
+        moved.moved = r.from;
+        moved.renameId = r.id;
+        moved.unpublished = true;
+      }
+    }
+    // The folder file's lines: a folder that holds nothing yet, or no longer, is kept as a line.
+    const lines = s.folders.linesAfterRenames();
+    const written = s.libraryFiles.exists("folders");
+    const library = new Map(
+      ((s.libraryFiles.publishedValue("folders") as FolderFile | undefined)?.folders ?? []).map(
+        (l) => [l.path, JSON.stringify(l)],
+      ),
+    );
+    const own = s.folders.file().folders;
+    lines.forEach((line, i) => {
+      const f = written ? folder(line.path) : folders.get(line.path);
+      if (!f) return;
+      // A line that is new or changed since the last version saved is unpublished.
+      if (written && library.get(own[i]!.path) !== JSON.stringify(own[i])) f.unpublished = true;
+      if (line.icon) f.icon = line.icon;
+      if (line.color) f.color = line.color;
+      if (line.order) f.order = line.order;
+    });
+    const schema = s.index.schema;
+    const mark = (f: TreeFolder): boolean => {
+      let holds = f.notes.length > 0;
+      for (const child of f.folders) holds = mark(child) || holds;
+      if (f.path !== "") {
+        const type = typeFromFolder(schema, `${f.path}/-`);
+        if (type) f.type = type;
+        if (!holds) f.empty = true;
+      }
+      return holds;
+    };
+    mark(root);
     return { folders: root.folders, notes: root.notes };
   });
 

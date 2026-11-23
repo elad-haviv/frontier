@@ -22,15 +22,48 @@ export const SessionResponse = z.object({
 export const EntryState = z.enum(["published", "unpublished", "conflict", "quarantined"]);
 export type EntryState = z.infer<typeof EntryState>;
 
-export const TreeNote = z.object({ path: VaultPath, title: z.string(), state: EntryState });
+export const TreeNote = z.object({
+  path: VaultPath,
+  title: z.string(),
+  state: EntryState,
+  /** Where the entry still is while a rename moves it here: its link opens this path. */
+  moved: VaultPath.optional(),
+});
 
 export interface TreeFolder {
   path: string;
   folders: TreeFolder[];
   notes: z.infer<typeof TreeNote>[];
+  /** From the folder file: a lucide icon name and one of the named colours. */
+  icon?: string | undefined;
+  color?: string | undefined;
+  /** Its place among its siblings; folders without one follow, by name. */
+  order?: string | undefined;
+  /** The type its entries are given, from the folder file or the schema. */
+  type?: string | undefined;
+  /** A line of the folder file with no file under it. */
+  empty?: boolean | undefined;
+  /** Where it is in the library while a rename intent moves it here, until a version is saved. */
+  moved?: string | undefined;
+  /** The id of the rename intent that moves it, for Undo. */
+  renameId?: string | undefined;
+  /** Its line in the folder file differs from the library's, or it is moved. */
+  unpublished?: boolean | undefined;
 }
 export const TreeFolder: z.ZodType<TreeFolder> = z.lazy(() =>
-  z.object({ path: z.string(), folders: z.array(TreeFolder), notes: z.array(TreeNote) }),
+  z.object({
+    path: z.string(),
+    folders: z.array(TreeFolder),
+    notes: z.array(TreeNote),
+    icon: z.string().optional(),
+    color: z.string().optional(),
+    order: z.string().optional(),
+    type: z.string().optional(),
+    empty: z.boolean().optional(),
+    moved: z.string().optional(),
+    renameId: z.string().optional(),
+    unpublished: z.boolean().optional(),
+  }),
 );
 
 /** `GET /api/tree`. The root is a folder with an empty path. */
@@ -229,6 +262,8 @@ export const ConflictReason = z.enum([
   "chronicle_changed_on_both",
   /** A rename cannot be carried out, for the reason given in `mine`. */
   "rename_blocked",
+  /** The folder file changed here and in the library on the same folders. */
+  "folders_changed_on_both",
 ]);
 
 export const PlannedConflict = z.object({
@@ -269,6 +304,57 @@ export const PublishConfirmResponse = z.object({ commit: z.string() });
 /** `POST /api/renames`. `from` is a note, a file or a folder. */
 export const CreateRenameRequest = z.object({ from: VaultPath, to: VaultPath });
 export const CreateRenameResponse = z.object({ id: Id, affected: z.array(VaultPath) });
+
+// ---- Library item files and folders ------------------------------------------------------
+
+/** `GET /api/library-files/:name`: the file as the author sees it. */
+export const LibraryFileResponse = z.object({
+  file: z.unknown(),
+  /** The draft's revision; 0 when there is no draft. */
+  revision: z.number().int().min(0),
+  /** The blob of the file in the library, or "" when it is not there. */
+  blob: z.string(),
+});
+export type LibraryFileResponse = z.infer<typeof LibraryFileResponse>;
+
+/** `PUT /api/library-files/:name`. The file is checked against its kind's schema. */
+export const SaveLibraryFileRequest = z.object({
+  file: z.unknown(),
+  revision: z.number().int().min(0),
+  baseBlob: z.string().optional(),
+  op: Id.optional(),
+});
+export const SaveLibraryFileResponse = z.object({
+  file: z.unknown(),
+  revision: z.number().int().min(0),
+});
+
+/** `POST /api/library-files/:name/resolve` */
+export const ResolveLibraryFileRequest = z.object({ keep: z.enum(["mine", "theirs"]) });
+
+/** `POST /api/folders/delete`: a folder and everything under it, marked for deletion. */
+export const DeleteFolderRequest = z.object({
+  path: VaultPath,
+  /** Only checks and counts, so the question can name the counts; nothing is marked. */
+  dryRun: z.boolean().default(false),
+});
+export const DeleteFolderResponse = z.object({
+  /** The entries marked for deletion. */
+  entries: z.number().int().min(0),
+  /** The folders under it, itself not counted. */
+  folders: z.number().int().min(0),
+});
+/** Why a folder cannot be deleted; the error's code. */
+export const DeleteFolderRefusal = z.enum([
+  "has_drafts",
+  "has_images",
+  "append_only",
+  "read_only_file",
+]);
+
+/** `POST /api/folders/apply-type`: writes the folder's type into its entries that have none. */
+export const ApplyTypeRequest = z.object({ path: VaultPath });
+export const ApplyTypeResponse = z.object({ made: z.number().int().min(0) });
 
 // ---- Attention -----------------------------------------------------------------------------
 

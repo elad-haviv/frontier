@@ -1089,6 +1089,127 @@ describe("renames", () => {
   });
 });
 
+describe("renames and the folder file", () => {
+  const rename = (from: string, to: string) => t.post("/api/renames", { from, to });
+  const FOLDERS = ".frontier/folders.json";
+  const find = (
+    folders: TreeResponse["folders"],
+    path: string,
+  ): TreeResponse["folders"][number] | undefined => {
+    for (const f of folders) {
+      if (f.path === path) return f;
+      const inner = find(f.folders, path);
+      if (inner) return inner;
+    }
+    return undefined;
+  };
+
+  it("rewrites the folder file's paths in the same commit as the rename", async () => {
+    const saved = await t.put("/api/library-files/folders", {
+      file: {
+        version: 1,
+        folders: [
+          { path: "01 Places/Harbor", icon: "anchor", order: "V" },
+          { path: "01 Places/Harbor/Docks" },
+          { path: "02 People", color: "rose" },
+        ],
+      },
+      revision: 0,
+      baseBlob: "",
+    });
+    expect(saved.statusCode, saved.body).toBe(200);
+    const made = await rename("01 Places/Harbor", "02 People/Harbor");
+    expect(made.statusCode, made.body).toBe(200);
+    const { id } = made.json();
+
+    // The tree shows the folder where it is going, its entries linked where they still are.
+    const tree = TreeResponse.parse((await t.get("/api/tree")).json());
+    const moved = find(tree.folders, "02 People/Harbor")!;
+    expect(moved).toMatchObject({ moved: "01 Places/Harbor", renameId: id, icon: "anchor" });
+    expect(moved.notes.map((n) => [n.path, n.moved])).toEqual([
+      ["02 People/Harbor/Harbor.md", "01 Places/Harbor/Harbor.md"],
+      ["02 People/Harbor/Old Quay.md", "01 Places/Harbor/Old Quay.md"],
+    ]);
+    expect(find(moved.folders, "02 People/Harbor/Docks")!.empty).toBe(true);
+    expect(find(tree.folders, "01 Places/Harbor")).toBeUndefined();
+
+    // The rename and the folder file's draft go out together.
+    const u = UnpublishedResponse.parse((await t.get("/api/unpublished")).json());
+    const folderDraft = u.drafts.find((d) => d.path === FOLDERS)!;
+    const p = await plan(
+      u.drafts.map((d) => d.id),
+      [id],
+    );
+    expect(p.groups).toContainEqual([id, folderDraft.id]);
+    const res = await confirm(p.planId);
+    expect(res.statusCode, res.body).toBe(200);
+    expect(mainText(FOLDERS)!.split("\n").slice(3, 6)).toEqual([
+      '    {"path":"02 People/Harbor","icon":"anchor","order":"V"},',
+      '    {"path":"02 People/Harbor/Docks"},',
+      '    {"path":"02 People","color":"rose"}',
+    ]);
+    // Nothing is left unpublished: the draft of the folder file was the version saved.
+    expect(t.services.drafts.list()).toEqual([]);
+    expect(t.services.drafts.listRenames()).toEqual([]);
+  });
+
+  it("holds a rename back while the folder file's draft is not chosen", async () => {
+    await t.put("/api/library-files/folders", {
+      file: { version: 1, folders: [{ path: "01 Places/Harbor", icon: "anchor" }] },
+      revision: 0,
+    });
+    const { id } = (await rename("01 Places/Harbor", "01 Places/Port")).json();
+    const p = await plan([], [id]);
+    const res = await confirm(p.planId);
+    expect(res.statusCode).toBe(400);
+    expect(mainText("01 Places/Port/Port.md")).toBeNull();
+  });
+
+  it("creates the folder file from the schema's lists when it existed only in memory", async () => {
+    t.repo.pushFromOutside({
+      ".frontier/schema.yaml":
+        'version: 1\ntypes:\n  place: { folders: ["01 Places"] }\n  person: { folders: ["02 People"] }\nwhat: {}\n',
+    });
+    await t.services.sync();
+    expect(mainText(FOLDERS)).toBeNull();
+    const { id } = (await rename("01 Places", "Places")).json();
+    const res = await confirm((await plan([], [id])).planId);
+    expect(res.statusCode, res.body).toBe(200);
+    expect(mainText(FOLDERS)).toContain('{"path":"Places","type":"place"}');
+    expect(mainText(FOLDERS)).toContain('{"path":"02 People","type":"person"}');
+    const entry = EntryResponse.parse(
+      (await t.get(`/api/entries?path=${encodeURIComponent("Places/Unwritten.md")}`)).json(),
+    );
+    expect(entry.fields).toMatchObject({ type: "place", typeFrom: "folder" });
+  });
+
+  it("leaves the folder file alone when a rename touches none of its folders", async () => {
+    const { id } = (await rename(MIRA, "02 People/Mira Vale.md")).json();
+    const res = await confirm((await plan([], [id])).planId);
+    expect(res.statusCode, res.body).toBe(200);
+    expect(mainText(FOLDERS)).toBeNull();
+  });
+
+  it("follows a rename published from elsewhere in the folder file's draft", async () => {
+    await t.put("/api/library-files/folders", {
+      file: { version: 1, folders: [{ path: "01 Places/Harbor", icon: "anchor" }] },
+      revision: 0,
+    });
+    // An intent whose rename reached the library some other way is cleared at the next fetch,
+    // and the draft names the folder's new place.
+    await rename("01 Places/Harbor", "01 Places/Port");
+    t.repo.pushFromOutside({
+      "01 Places/Harbor/Harbor.md": null,
+      "01 Places/Harbor/Old Quay.md": null,
+      "01 Places/Port/Port.md": "# Port\n",
+    });
+    await t.services.sync();
+    expect(t.services.drafts.listRenames()).toEqual([]);
+    const draft = t.services.drafts.byPath(FOLDERS)!;
+    expect(await t.services.drafts.text(draft.id)).toContain('"path":"01 Places/Port"');
+  });
+});
+
 describe("where a renamed path ends up", () => {
   it("moves a file, the files in a folder, and the folder's own note", async () => {
     const { movedPath } = await import("../src/publish/publish.js");

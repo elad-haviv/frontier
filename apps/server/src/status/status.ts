@@ -55,6 +55,7 @@ export class StatusService {
       serverDraftChanges: this.serverDraftChanges,
       problems: [
         ...(this.index.schemaProblem ? [this.index.schemaProblem] : []),
+        ...(this.index.schemaNote ? [this.index.schemaNote] : []),
         ...this.fileProblems,
       ],
       attention: {

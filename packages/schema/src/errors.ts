@@ -23,6 +23,9 @@ export const ERROR_STATUS = {
   // What the author was shown has changed since; he looks again before going on.
   changed: 409,
   secrets_key_missing: 409,
+  // A folder cannot be deleted while something under it has an unpublished change, or is an image.
+  has_drafts: 409,
+  has_images: 409,
 } as const;
 
 export type ErrorCode = keyof typeof ERROR_STATUS;

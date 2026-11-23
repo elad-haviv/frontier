@@ -81,8 +81,13 @@ export class VaultIndex {
   private notes = new Map<string, IndexedNote>();
   private backlinkMap = new Map<string, Backlink[]>();
   private resolver: Resolver = createResolver([]);
-  /** The types and `what` names in use: the vault's own file, or the built-in ones. */
-  schema: Schema = BUILT_IN_SCHEMA;
+  /** The types and `what` names of the vault's own schema file, or the built-in ones. */
+  baseSchema: Schema = BUILT_IN_SCHEMA;
+  /**
+   * The folder file's types by folder path, or null while there is no folder file. Set by the
+   * folder store; read each time the schema is read, so a draft of the folder file counts at once.
+   */
+  folderTypes: () => Map<string, string> | null = () => null;
   schemaText = BUILT_IN_SCHEMA_TEXT;
   schemaBuiltIn = true;
   /** Why the vault's schema file is not used, when it exists and cannot be. */
@@ -142,8 +147,33 @@ export class VaultIndex {
     this.commit = commit;
   }
 
+  /**
+   * The schema in use: the schema file's types, with their `folders` lists taken from the folder
+   * file once one exists. Every reader of folder types (`typeFromFolder`) goes through here.
+   */
+  get schema(): Schema {
+    const types = this.folderTypes();
+    if (types === null) return this.baseSchema;
+    const out: Schema["types"] = {};
+    for (const name of Object.keys(this.baseSchema.types)) out[name] = { folders: [] };
+    for (const [path, type] of types) {
+      // A type the schema no longer has still gives its folder that type.
+      (out[type] ??= { folders: [] }).folders.push(path);
+    }
+    return { ...this.baseSchema, types: out };
+  }
+
+  /** Said on the status page while the schema's folder lists are kept but no longer read. */
+  get schemaNote(): string | null {
+    if (this.schemaBuiltIn || this.folderTypes() === null) return null;
+    const listed = Object.values(this.baseSchema.types).some((t) => t.folders.length > 0);
+    return listed
+      ? `The folder lists in ${SCHEMA_FILE} are no longer read: folder types now come from .frontier/folders.json.`
+      : null;
+  }
+
   private readSchema(): void {
-    this.schema = BUILT_IN_SCHEMA;
+    this.baseSchema = BUILT_IN_SCHEMA;
     this.schemaText = BUILT_IN_SCHEMA_TEXT;
     this.schemaBuiltIn = true;
     this.schemaProblem = null;
@@ -154,7 +184,7 @@ export class VaultIndex {
       const schema = parseSchema(text);
       if (schema.version !== 1)
         throw new Error(`It has version ${schema.version}; Frontier reads version 1.`);
-      this.schema = schema;
+      this.baseSchema = schema;
       this.schemaText = text;
       this.schemaBuiltIn = false;
     } catch (err) {

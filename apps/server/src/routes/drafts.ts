@@ -161,7 +161,8 @@ export function draftRoutes(app: FastifyInstance, s: Services): void {
         mainText:
           s.index.note(d.path)?.text ??
           s.maps.publishedText(d.path) ??
-          s.chronicles.publishedText(d.path),
+          s.chronicles.publishedText(d.path) ??
+          s.libraryFiles.publishedText(d.path),
         origins: d.origins,
       })),
     );

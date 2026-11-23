@@ -10,7 +10,7 @@
  * Before kept copies there was one spare slot, `content.v2` with `record.v2.json`. One still
  * found is read as the copy of an earlier device.
  */
-import { existsSync, readdirSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
@@ -129,6 +129,11 @@ export class DraftStore {
 
   async text(id: string): Promise<string> {
     return readFile(join(this.folder(id), "content"), "utf8");
+  }
+
+  /** As `text`, read at once; for the few readers that cannot wait, such as the schema. */
+  textNow(id: string): string {
+    return readFileSync(join(this.folder(id), "content"), "utf8");
   }
 
   /** The stored content as bytes. For an image draft this is the image itself. */

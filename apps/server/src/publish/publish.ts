@@ -9,8 +9,11 @@ import { randomBytes } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
+  type AnyLibraryFile,
   chronicleIdOf,
   type DraftRecord,
+  LIBRARY_FILES,
+  libraryFileOf,
   makeId,
   mapIdOf,
   mergeChronicles,
@@ -18,8 +21,11 @@ import {
   parseChronicle,
   parseMap,
   type PublishPlan,
+  mergeLibraryFile,
+  parseLibraryFile,
   type RenameIntent,
   serialiseChronicle,
+  serialiseLibraryFile,
   serialiseMap,
 } from "@frontier/schema";
 import {
@@ -94,7 +100,12 @@ export interface PublisherDeps {
   onRenamed?: (from: string, to: string) => Promise<void>;
   /** Told the notes whose own draft was just published. */
   onPublished?: (paths: string[]) => void;
+  /** What a library item file reads as while it exists neither as a draft nor in the library. */
+  libraryFiles?: { missing(name: string): unknown };
 }
+
+/** The library files whose items name paths, and so follow a rename. */
+const FOLLOWING = LIBRARY_FILES.filter((k) => k.follow !== undefined);
 
 export class Publisher {
   private plans = new Map<string, StoredPlan>();
@@ -119,6 +130,16 @@ export class Publisher {
       for (const draft of this.d.drafts.list()) {
         const moved = movedPath(draft.path, intent.from, intent.to);
         if (moved !== null) await this.d.drafts.movePath(draft.id, moved);
+      }
+      // A file that names paths, such as the folder file, names the new ones from now on.
+      for (const kind of FOLLOWING) {
+        const draft = this.d.drafts.byPath(kind.path);
+        if (!draft || draft.kind === "delete") continue;
+        const text = await this.d.drafts.text(draft.id);
+        const followed = follow(kind, text, intent.from, intent.to);
+        if (followed !== null && followed !== text) {
+          await this.d.drafts.serverChange(draft.id, followed);
+        }
       }
       await this.d.onRenamed?.(intent.from, intent.to);
       await this.d.drafts.removeRename(intent.id);
@@ -340,6 +361,25 @@ export class Publisher {
       }
     }
 
+    // A file that names paths follows the renames into the same commit: its draft when one is
+    // included, else the library's copy, else the file as it reads in memory (written now).
+    if (summaries.length > 0) {
+      for (const kind of FOLLOWING) {
+        const draft = included.find((i) => i.draft.path === kind.path && i.draft.kind !== "delete");
+        const onMain = index.hasFile(kind.path) ? await git.readFile(kind.path) : null;
+        const missing = this.d.libraryFiles?.missing(kind.name);
+        const before =
+          draft?.text ??
+          onMain?.toString("utf8") ??
+          (missing === undefined ? null : serialiseLibraryFile(kind, missing));
+        if (before === null) continue;
+        let after: string | null = before;
+        for (const r of summaries)
+          after = after === null ? null : follow(kind, after, r.from, r.to);
+        if (after !== null && (after !== before || draft)) texts.set(kind.path, after);
+      }
+    }
+
     const writes: Assembled["writes"] = [];
     for (const [path, text] of texts) {
       const draft = draftAt.get(path);
@@ -449,6 +489,12 @@ export class Publisher {
           if (writer) groups.push([c.draft.id, writer]);
         }
       }
+    }
+    // A rename and the draft of a file that names paths go together, since the rename rewrites it.
+    for (const kind of FOLLOWING) {
+      const draft = this.d.drafts.byPath(kind.path);
+      if (!draft) continue;
+      for (const intent of intents) groups.push([intent.id, draft.id]);
     }
     // A revert and the draft that undoes the note are one change.
     const decisions = (this.d.reviews?.pendingDecisions() ?? []).filter((d) =>
@@ -661,7 +707,32 @@ const FILE_KINDS: FileKind[] = [
   },
 ];
 
+/** Every library item file merges the same way, item by item, through its kind's key. */
+for (const kind of LIBRARY_FILES) {
+  FILE_KINDS.push({
+    mine: (path) => libraryFileOf(path) === kind,
+    conflict: kind.conflict,
+    merge(base, mine, theirs) {
+      const b = parseLibraryFile(kind, base);
+      const m = parseLibraryFile(kind, mine);
+      const t = parseLibraryFile(kind, theirs);
+      if (!b.ok || !m.ok || !t.ok) return { clean: false, text: mine };
+      const merged = mergeLibraryFile(kind, b.file, m.file, t.file);
+      return { clean: merged.clashes.length === 0, text: serialiseLibraryFile(kind, merged.file) };
+    },
+    // Library files name no entries.
+    entryIds: () => [],
+  });
+}
+
 const fileKindOf = (path: string): FileKind | undefined => FILE_KINDS.find((k) => k.mine(path));
+
+/** A library file's text after a rename, or null when the text is not such a file. */
+function follow(kind: AnyLibraryFile, text: string, from: string, to: string): string | null {
+  const parsed = parseLibraryFile(kind, text);
+  if (!parsed.ok) return null;
+  return serialiseLibraryFile(kind, kind.follow!(parsed.file, from, to));
+}
 
 /**
  * Lines at the end of the commit message that name where accepted content came from: the agent's

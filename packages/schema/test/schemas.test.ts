@@ -1,7 +1,12 @@
 import { randomBytes } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import {
+  ApplyTypeResponse,
   AttentionResponse,
+  DeleteFolderRefusal,
+  DeleteFolderRequest,
+  LibraryFileResponse,
+  SaveLibraryFileRequest,
   BackupState,
   DraftRecord,
   DraftVersionsResponse,
@@ -323,7 +328,9 @@ describe("errors", () => {
     expect(statusOf("proposal_moved")).toBe(409);
     expect(statusOf("not_allowed")).toBe(403);
     expect(statusOf("changed")).toBe(409);
-    expect(Object.keys(ERROR_STATUS)).toHaveLength(20);
+    expect(statusOf("has_drafts")).toBe(409);
+    expect(statusOf("has_images")).toBe(409);
+    expect(Object.keys(ERROR_STATUS)).toHaveLength(22);
   });
 
   it("accepts an error body with a known code only", () => {
@@ -331,5 +338,52 @@ describe("errors", () => {
       ErrorBody.parse({ error: { code: "stale_revision", message: "older", id: "k3f9x2ab7qpd" } }),
     ).toBeTruthy();
     expect(ErrorBody.safeParse({ error: { code: "nope", message: "x" } }).success).toBe(false);
+  });
+});
+
+describe("folders and library files", () => {
+  it("reads a tree with the folder file's marks, and one without them", () => {
+    const tree = {
+      folders: [
+        {
+          path: "Islands",
+          folders: [],
+          notes: [{ path: "Islands/A.md", title: "A", state: "published", moved: "Old/A.md" }],
+          icon: "waves",
+          color: "sea",
+          order: "V",
+          type: "place",
+          moved: "Old",
+          renameId: "aaaaaaaaaaaa",
+        },
+        { path: "Empty", folders: [], notes: [], empty: true },
+      ],
+      notes: [],
+    };
+    expect(TreeResponse.parse(tree)).toEqual(tree);
+    expect(
+      TreeResponse.parse({ folders: [{ path: "A", folders: [], notes: [] }], notes: [] }),
+    ).toBeTruthy();
+  });
+
+  it("reads the requests and answers of the folder routes", () => {
+    expect(DeleteFolderRequest.parse({ path: "A/B" })).toEqual({ path: "A/B", dryRun: false });
+    expect(DeleteFolderRequest.safeParse({ path: "../A" }).success).toBe(false);
+    expect(DeleteFolderRefusal.options).toEqual([
+      "has_drafts",
+      "has_images",
+      "append_only",
+      "read_only_file",
+    ]);
+    expect(ApplyTypeResponse.parse({ made: 3 })).toEqual({ made: 3 });
+    expect(
+      SaveLibraryFileRequest.parse({
+        file: { version: 1, folders: [] },
+        revision: 0,
+        op: "aaaaaaaaaaaa",
+      }),
+    ).toBeTruthy();
+    expect(SaveLibraryFileRequest.safeParse({ file: {}, revision: -1 }).success).toBe(false);
+    expect(LibraryFileResponse.parse({ file: {}, revision: 2, blob: "" }).revision).toBe(2);
   });
 });
