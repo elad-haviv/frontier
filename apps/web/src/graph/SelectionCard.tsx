@@ -7,12 +7,15 @@ import "./SelectionCard.css";
 export function SelectionCard({
   node,
   colour,
+  keys = true,
   onOpen,
   onClear,
 }: {
   node: ModelNode;
   /** Its folder's colour; null for the faint ink. */
   colour: string | null;
+  /** Whether the graph's keys are bound, so the tooltip names Esc; not in an entry's Graph tab. */
+  keys?: boolean;
   onOpen: () => void;
   onClear: () => void;
 }) {
@@ -37,7 +40,7 @@ export function SelectionCard({
         label="Clear the selection"
         icon={X}
         size="sm"
-        shortcut="graph.clear"
+        {...(keys ? { shortcut: "graph.clear" } : {})}
         onClick={onClear}
       />
     </section>

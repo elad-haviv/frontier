@@ -1,10 +1,20 @@
-import { expect, type Page, test } from "@playwright/test";
-import { entry, goTo, rightPanel } from "./helpers.ts";
+import { expect, type Locator, type Page, test } from "@playwright/test";
+import {
+  discardDraft,
+  edit,
+  entry,
+  goTo,
+  newEntry,
+  openEditor,
+  rightPanel,
+  saved,
+} from "./helpers.ts";
 
 // Canvas pixels are not read: the tests act through ?focus=, which centres a node, so once the
 // layout has ended (aria-busy false) the node is in the middle of the canvas.
 
 const HARBOR = "01 Places/Harbor/Harbor.md";
+const MIRA = "02 People/Mira.md";
 const graphOn = (path: string) => `/graph?focus=${encodeURIComponent(path)}`;
 const canvas = (page: Page) => page.locator("canvas.graph-canvas");
 const card = (page: Page) => page.getByRole("region", { name: "Selected entry" });
@@ -152,4 +162,110 @@ test("CUJ 5: on a phone, tap to select and tap again to open, pinch to zoom", as
   for (const spread of [30, 45, 60, 80]) await fingers("touchMove", spread);
   await fingers("touchEnd", 80);
   await expect.poll(zoom).toBeGreaterThan(before * 2);
+});
+
+// An entry's Graph tab (14b). Lists are checked for what they hold, since other test files
+// publish entries into the same library.
+
+/** A neighbour in the list under the tab's drawing, by its exact name. */
+const neighbour = (panel: Locator, name: string | RegExp) =>
+  panel
+    .getByRole("list", { name: "Neighbours" })
+    .getByRole("link")
+    .filter({
+      has: panel.page().locator(".local-graph-name", {
+        hasText: typeof name === "string" ? new RegExp(`^${name}$`) : name,
+      }),
+    });
+
+// Another test renames Lantern to Storm Lantern and publishes it.
+const LANTERN = /^(Storm )?Lantern$/;
+
+async function graphTab(page: Page): Promise<Locator> {
+  const panel = await rightPanel(page, "Graph");
+  await expect(panel.locator("canvas.graph-canvas")).toHaveAttribute("aria-busy", "false");
+  return panel;
+}
+
+test("CUJ 4: an entry's neighbours, at depth 1 and 2", async ({ page }) => {
+  await page.goto(entry(MIRA));
+  let panel = await graphTab(page);
+  await expect(panel.locator("canvas.graph-canvas")).toHaveAttribute(
+    "aria-label",
+    /^Graph of Mira and \d+ neighbours/,
+  );
+  for (const name of ["Harbor", "Old Quay", "Shade", "Ledger"]) {
+    await expect(neighbour(panel, name)).toBeVisible();
+  }
+  await expect(neighbour(panel, LANTERN)).toHaveCount(0);
+  // README links to Mira, but notes about the library are left out.
+  await expect(neighbour(panel, "README")).toHaveCount(0);
+
+  await panel.getByRole("button", { name: "Depth 2" }).click();
+  await expect(panel.getByRole("button", { name: "Depth 2" })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  for (const name of ["The Marsh", LANTERN, "Broken", "Rope"]) {
+    await expect(neighbour(panel, name)).toBeVisible();
+  }
+  // Session, in the appendices, links to Harbor and Old Quay, but the appendices are left out.
+  await expect(neighbour(panel, "Session")).toHaveCount(0);
+  expect(await page.evaluate(() => localStorage.getItem("frontier.graph.depth"))).toBe("2");
+
+  // Choosing a neighbour opens it, with the Graph tab still open and it in the middle.
+  await neighbour(panel, "Old Quay").click();
+  await expect(page).toHaveURL(entry("01 Places/Harbor/Old Quay.md"));
+  panel = page.getByRole("tabpanel");
+  await expect(page.getByRole("tab", { name: /^Graph/ })).toHaveAttribute("aria-selected", "true");
+  await expect(panel.locator("canvas.graph-canvas")).toHaveAttribute(
+    "aria-label",
+    /^Graph of Old Quay and/,
+  );
+
+  // "Open in full graph" selects the entry on the graph screen.
+  await page.goto(entry(MIRA));
+  panel = await graphTab(page);
+  await panel.getByRole("link", { name: "Open in full graph" }).click();
+  await expect(page).toHaveURL(/\/graph\?focus=/);
+  expect(new URL(page.url()).searchParams.get("focus")).toBe(MIRA);
+  await settled(page);
+  await expect(card(page)).toContainText("Mira");
+});
+
+test("CUJ 6: a link just written, and a new entry, among the neighbours", async ({
+  page,
+}, info) => {
+  // The tab opens before the queue has sent the change; the link shows once it is sent.
+  await page.goto(entry(MIRA));
+  // On a phone, Edit sits in the top line.
+  await page
+    .locator(".entry-head .edit-link, .phone-bar .edit-link")
+    .locator("visible=true")
+    .click();
+  await expect(page).toHaveURL(edit(MIRA));
+  await page.locator(".cm-content").click();
+  await page.keyboard.press("Control+End");
+  await page.keyboard.type("\nKeeps a coil of [[Rope]].");
+  await page.goBack();
+  await expect(page).toHaveURL(entry(MIRA));
+  let panel = await graphTab(page);
+  await expect(neighbour(panel, "Rope")).toBeVisible();
+  await expect(neighbour(panel, "Rope")).not.toContainText("unpublished");
+
+  // A new entry linking to Mira is among her neighbours, marked unpublished.
+  const gull = `Gull ${info.project.name}`;
+  await newEntry(page, "02 People", gull);
+  await page.locator(".cm-content").click();
+  await page.keyboard.press("Control+End");
+  await page.keyboard.type("Sails past [[Mira]].\n");
+  await saved(page);
+  await page.goto(entry(MIRA));
+  panel = await graphTab(page);
+  await expect(neighbour(panel, gull)).toContainText("unpublished");
+
+  await openEditor(page, `02 People/${gull}.md`);
+  await discardDraft(page);
+  await openEditor(page, MIRA);
+  await discardDraft(page);
 });
