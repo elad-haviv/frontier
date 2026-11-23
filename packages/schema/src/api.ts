@@ -110,6 +110,8 @@ export const EntryResponse = z.object({
   chronicles: z.array(z.object({ id: z.string(), title: z.string(), span: z.string() })),
   /** Present while the note waits in quarantine for the author's decision. */
   quarantine: z.object({ commit: z.string(), pushedBy: z.string(), at: z.string() }).optional(),
+  /** The Git blob hash of the file in the library, or "" when it is not there. A save sends it back. */
+  blob: z.string(),
 });
 export type EntryResponse = z.infer<typeof EntryResponse>;
 
@@ -123,17 +125,35 @@ export const SaveDraftRequest = z.object({
   /** Empty for `delete`. */
   text: z.string(),
   revision: z.number().int().min(0),
+  /**
+   * The blob of the library file this device started from ("" for a new file). Without it, as
+   * from an older build, the server behaves as it did before saves said what they started from.
+   */
+  baseBlob: z.string().optional(),
+  /** Made on the device for this send. A retry sends the same one, and the server writes nothing. */
+  op: Id.optional(),
 });
 export type SaveDraftRequest = z.infer<typeof SaveDraftRequest>;
 
 export const SaveDraftResponse = z.object({ id: Id, revision: z.number().int().min(1) });
 export type SaveDraftResponse = z.infer<typeof SaveDraftResponse>;
 
-/** `GET /api/drafts/:id/versions` */
+/** One device's text kept beside a draft, as the compare screen shows it. */
+export const KeptCopyText = z.object({
+  device: z.string(),
+  /** Made from the device's browser, such as "Safari on iPhone"; empty when not known. */
+  deviceName: z.string(),
+  savedAt: z.string().datetime(),
+  text: z.string(),
+});
+export type KeptCopyText = z.infer<typeof KeptCopyText>;
+
+/** `GET /api/drafts/:id/versions`: the draft and every kept copy, oldest first. */
 export const DraftVersionsResponse = z.object({
   current: z.object({ text: z.string(), revision: z.number().int().min(0) }),
-  other: z.object({ text: z.string() }),
+  others: z.array(KeptCopyText),
 });
+export type DraftVersionsResponse = z.infer<typeof DraftVersionsResponse>;
 
 /** `POST /api/drafts/:id/merge-versions` and `POST /api/drafts/:id/resolve` */
 export const DraftTextRequest = z.object({ text: z.string() });
@@ -263,6 +283,8 @@ export const AttentionResponse = z.object({
   nearFolderNotes: z.array(VaultPath),
   unreadableFields: z.array(z.object({ path: VaultPath, problems: z.array(z.string()) })),
   duplicateIds: z.array(z.object({ id: z.string(), paths: z.array(VaultPath) })),
+  /** Drafts with texts kept from other devices, waiting to be compared and merged. */
+  versions: z.array(z.object({ draftId: Id, path: VaultPath, count: z.number().int().min(1) })),
 });
 export type AttentionResponse = z.infer<typeof AttentionResponse>;
 

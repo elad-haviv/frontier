@@ -43,6 +43,8 @@ export const StatusSnapshot = z.object({
     nearFolderNotes: z.number().int().min(0),
     unreadableFields: z.number().int().min(0),
     duplicateIds: z.number().int().min(0),
+    /** Drafts with texts kept from other devices, waiting to be merged. */
+    keptCopies: z.number().int().min(0),
   }),
 });
 export type StatusSnapshot = z.infer<typeof StatusSnapshot>;

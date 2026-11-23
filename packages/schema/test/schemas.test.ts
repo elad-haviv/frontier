@@ -1,14 +1,19 @@
 import { randomBytes } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import {
+  AttentionResponse,
   BackupState,
   DraftRecord,
+  DraftVersionsResponse,
+  EntryResponse,
   ERROR_STATUS,
   ErrorBody,
   Health,
   Id,
   ImageQuery,
+  KeptCopy,
   makeId,
+  mergeItemLists,
   PublishConfirmRequest,
   PublishPlan,
   RenameIntent,
@@ -50,6 +55,18 @@ describe("stored files", () => {
       delete copy[key];
       expect(DraftRecord.safeParse(copy).success, key).toBe(false);
     }
+  });
+
+  it("reads a draft record with the last op, and a kept copy's record", () => {
+    expect(DraftRecord.parse({ ...record, lastOp: "op0000000001" }).lastOp).toBe("op0000000001");
+    expect(DraftRecord.parse(record).lastOp).toBeUndefined();
+    const kept = {
+      device: "dev000000001",
+      deviceName: "Safari on iPhone",
+      savedAt: record.updatedAt,
+    };
+    expect(KeptCopy.parse(kept)).toEqual(kept);
+    expect(KeptCopy.safeParse({ ...kept, savedAt: "yesterday" }).success).toBe(false);
   });
 
   it("rejects a mixed line ending, a negative revision and an unknown kind", () => {
@@ -102,6 +119,105 @@ describe("API shapes", () => {
     const save = { id: "k3f9x2ab7qpd", path: "a/b.md", kind: "edit", text: "x", revision: 0 };
     expect(SaveDraftRequest.parse(save)).toEqual(save);
     expect(SaveDraftRequest.safeParse({ ...save, id: undefined }).success).toBe(false);
+  });
+
+  it("accepts a save that says what it started from, and one from an older build without it", () => {
+    const old = { id: "k3f9x2ab7qpd", path: "a/b.md", kind: "edit", text: "x", revision: 2 };
+    const now = { ...old, baseBlob: "9c1e0f", op: "op0000000001" };
+    expect(SaveDraftRequest.parse(old)).toEqual(old);
+    expect(SaveDraftRequest.parse(now)).toEqual(now);
+    expect(SaveDraftRequest.parse({ ...now, baseBlob: "" }).baseBlob).toBe("");
+    // An op is an id made on the device, like a draft id.
+    expect(SaveDraftRequest.safeParse({ ...now, op: "../../etc" }).success).toBe(false);
+  });
+
+  it("lists every kept copy beside the draft, and the drafts that have them", () => {
+    const versions = {
+      current: { text: "two\n", revision: 2 },
+      others: [
+        {
+          device: "dev000000001",
+          deviceName: "Safari on iPhone",
+          savedAt: "2026-11-20T18:04:11Z",
+          text: "from the phone\n",
+        },
+      ],
+    };
+    expect(DraftVersionsResponse.parse(versions)).toEqual(versions);
+    expect(
+      DraftVersionsResponse.safeParse({ current: versions.current, other: { text: "" } }).success,
+    ).toBe(false);
+    const attention = {
+      ambiguousLinks: [],
+      duplicateImages: [],
+      mixedEndings: [],
+      brokenAppendixLinks: [],
+      nearFolderNotes: [],
+      unreadableFields: [],
+      duplicateIds: [],
+      versions: [{ draftId: "k3f9x2ab7qpd", path: "a/b.md", count: 2 }],
+    };
+    expect(AttentionResponse.parse(attention)).toEqual(attention);
+    expect(
+      AttentionResponse.safeParse({
+        ...attention,
+        versions: [{ ...attention.versions[0], count: 0 }],
+      }).success,
+    ).toBe(false);
+  });
+
+  it("gives an entry the blob of its library file", () => {
+    const entry = {
+      path: "a/b.md",
+      text: "x",
+      lineEnding: "lf",
+      readOnly: false,
+      state: "published",
+      links: [],
+      backlinks: [],
+      headings: [],
+      draft: null,
+      id: null,
+      fields: {
+        type: null,
+        typeFrom: "none",
+        typeKnown: true,
+        time: [],
+        problems: [],
+        proposed: [],
+      },
+      maps: [],
+      chronicles: [],
+      blob: "9c1e0f",
+    };
+    expect(EntryResponse.parse(entry).blob).toBe("9c1e0f");
+    expect(EntryResponse.safeParse({ ...entry, blob: undefined }).success).toBe(false);
+  });
+
+  it("merges lists by another key when one is given", () => {
+    const base = [
+      { path: "a", n: 1 },
+      { path: "b", n: 1 },
+    ];
+    const mine = [
+      { path: "a", n: 2 },
+      { path: "b", n: 1 },
+      { path: "c", n: 1 },
+    ];
+    const theirs = [
+      { path: "a", n: 1 },
+      { path: "b", n: 3 },
+    ];
+    expect(mergeItemLists(base, mine, theirs, (f) => f.path)).toEqual({
+      items: [
+        { path: "a", n: 2 },
+        { path: "b", n: 3 },
+        { path: "c", n: 1 },
+      ],
+      clashes: [],
+    });
+    const clash = mergeItemLists(base, [{ path: "a", n: 5 }], [{ path: "a", n: 6 }], (f) => f.path);
+    expect(clash.clashes).toEqual(["a"]);
   });
 
   it("accepts the worked publish plan", () => {
@@ -189,6 +305,7 @@ describe("API shapes", () => {
         nearFolderNotes: 5,
         unreadableFields: 0,
         duplicateIds: 0,
+        keptCopies: 1,
       },
     };
     expect(StatusSnapshot.parse(snapshot)).toEqual(snapshot);

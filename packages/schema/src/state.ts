@@ -53,8 +53,22 @@ export const DraftRecord = z.object({
   updatedAt: z.string().datetime(),
   /** Empty for a draft the author typed. */
   origins: z.array(Origin).default([]),
+  /** The `op` of the last save the server accepted, so a retry of it writes nothing. */
+  lastOp: z.string().optional(),
 });
 export type DraftRecord = z.infer<typeof DraftRecord>;
+
+/**
+ * `/data/state/drafts/<id>/versions/<device>.json`: a save from a device that started from older
+ * text, kept beside the draft instead of overwriting it. Its text is in `<device>.txt`.
+ */
+export const KeptCopy = z.object({
+  /** The device's id, or `unknown` for a save without one. */
+  device: z.string(),
+  deviceName: z.string(),
+  savedAt: z.string().datetime(),
+});
+export type KeptCopy = z.infer<typeof KeptCopy>;
 
 /** `/data/state/drafts/renames/<id>.json` */
 export const RenameIntent = z.object({

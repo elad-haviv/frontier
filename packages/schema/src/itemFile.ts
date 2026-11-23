@@ -1,6 +1,6 @@
 /**
  * What maps and chronicles share: a JSON file whose lists hold one item per line, and a merge of
- * two versions of such a list by item id.
+ * two versions of such a list by item id (or another key).
  */
 
 /** The object with the known keys first, in their fixed order, and any others after, as found. */
@@ -55,45 +55,60 @@ export interface MergedList<T> {
 }
 
 /**
- * Merges two versions of one list by item id. What only one side added, changed or removed is
- * taken from that side. In a clash the item from `mine` is kept and its id is reported.
+ * Merges two versions of one list by item id, or by the key `keyOf` gives (for a list whose items
+ * are known by something else, such as a path). What only one side added, changed or removed is
+ * taken from that side. In a clash the item from `mine` is kept and its key is reported.
  */
 export function mergeItemLists<T extends { id: string }>(
   base: T[],
   mine: T[],
   theirs: T[],
+): MergedList<T>;
+export function mergeItemLists<T>(
+  base: T[],
+  mine: T[],
+  theirs: T[],
+  keyOf: (item: T) => string,
+): MergedList<T>;
+export function mergeItemLists<T>(
+  base: T[],
+  mine: T[],
+  theirs: T[],
+  keyOf: (item: T) => string = (item) => (item as { id: string }).id,
 ): MergedList<T> {
-  const baseById = new Map(base.map((i) => [i.id, i]));
-  const mineById = new Map(mine.map((i) => [i.id, i]));
+  const baseById = new Map(base.map((i) => [keyOf(i), i]));
+  const mineById = new Map(mine.map((i) => [keyOf(i), i]));
   const clashes: string[] = [];
   const items: T[] = [];
   const done = new Set<string>();
 
   // Their order is the frame; my additions follow. Both sides only ever append.
   for (const t of theirs) {
-    done.add(t.id);
-    const b = baseById.get(t.id);
-    const m = mineById.get(t.id);
+    const key = keyOf(t);
+    done.add(key);
+    const b = baseById.get(key);
+    const m = mineById.get(key);
     if (!m) {
       // I removed it, or they added it.
       if (!b) items.push(t);
-      else if (!sameValue(b, t)) clashes.push(t.id); // my removal is kept
+      else if (!sameValue(b, t)) clashes.push(key); // my removal is kept
       continue;
     }
     if (sameValue(m, t) || sameValue(b, m)) items.push(t);
     else if (sameValue(b, t)) items.push(m);
     else {
-      clashes.push(t.id);
+      clashes.push(key);
       items.push(m);
     }
   }
   for (const m of mine) {
-    if (done.has(m.id)) continue;
-    const b = baseById.get(m.id);
+    const key = keyOf(m);
+    if (done.has(key)) continue;
+    const b = baseById.get(key);
     if (!b) items.push(m);
     else if (!sameValue(b, m)) {
       // They removed what I changed: mine is kept.
-      clashes.push(m.id);
+      clashes.push(key);
       items.push(m);
     }
     // Otherwise they removed it and I left it alone: it stays removed.
