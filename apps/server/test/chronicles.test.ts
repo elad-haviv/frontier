@@ -32,6 +32,7 @@ async function load(id: string) {
     chronicle: ChronicleFile;
     revision: number;
     state: string;
+    blob: string;
     entries: Record<string, { path: string; title: string }>;
   };
 }
@@ -138,6 +139,64 @@ describe("chronicle files", () => {
     expect(list.chronicles).toEqual([
       { id, title: "Ezob, humans arrive early", main: false, spans: 2, state: "published" },
     ]);
+  });
+
+  it("checks where a save started from once its draft is gone, and writes nothing for a repeated op", async () => {
+    const id = await create();
+    await saveVersion();
+    const loaded = await load(id);
+    const blob = loaded.blob;
+    expect(blob).toMatch(/^[0-9a-f]{40}$/);
+    // The draft this page knew of was saved as a version, and the file is as the page loaded it:
+    // the save starts a new draft.
+    const first = await t.put(`/api/chronicles/${id}`, {
+      chronicle: { ...loaded.chronicle, title: "Renamed here" },
+      revision: 1,
+      baseBlob: blob,
+      op: "sendop000001",
+    });
+    expect(first.statusCode, first.body).toBe(200);
+    expect(first.json().revision).toBe(1);
+    // The same send again, its answer lost on the way: nothing more is written.
+    const repeat = await t.put(`/api/chronicles/${id}`, {
+      chronicle: { ...loaded.chronicle, title: "Renamed here" },
+      revision: 1,
+      baseBlob: blob,
+      op: "sendop000001",
+    });
+    expect(repeat.json()).toMatchObject({ revision: 1, unlinked: [] });
+    expect(repeat.json().chronicle.title).toBe("Renamed here");
+
+    // Saved as a version again, and then changed from outside: the next save is stale, so the
+    // browser merges with what the library holds now.
+    await saveVersion();
+    const now = await load(id);
+    const changed = t.repo.pushFromOutside({
+      [`.frontier/chronicles/${id}.json`]: t.repo
+        .remoteFile(`.frontier/chronicles/${id}.json`)!
+        .replace("Renamed here", "Renamed outside"),
+    });
+    expect(changed).toBeTruthy();
+    await t.services.sync();
+    const stale = await t.put(`/api/chronicles/${id}`, {
+      chronicle: { ...now.chronicle, title: "Mine" },
+      revision: 1,
+      baseBlob: now.blob,
+      op: "sendop000002",
+    });
+    expect(stale.statusCode).toBe(409);
+    expect(stale.json().error.code).toBe("stale_revision");
+    // No kept copy for an item file, and no draft either.
+    expect((await t.get("/api/unpublished")).json().drafts).toEqual([]);
+    const theirs = await load(id);
+    expect(theirs.chronicle.title).toBe("Renamed outside");
+    const merged = await t.put(`/api/chronicles/${id}`, {
+      chronicle: { ...theirs.chronicle, title: "Mine" },
+      revision: 0,
+      baseBlob: theirs.blob,
+      op: "sendop000003",
+    });
+    expect(merged.statusCode, merged.body).toBe(200);
   });
 
   it("starts a new draft when the page saves after its draft was saved as a version", async () => {

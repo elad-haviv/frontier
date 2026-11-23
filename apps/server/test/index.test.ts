@@ -2,7 +2,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import {
   AttentionResponse,
   EntryResponse,
@@ -279,16 +279,24 @@ describe("status", () => {
     }
   });
 
-  it("streams a status event at once and after each change", async () => {
-    const address = await t.app.listen({ port: 0, host: "127.0.0.1" });
-    const res = await fetch(`${address}/api/status/events`, { headers: { cookie: t.cookie } });
-    expect(res.headers.get("content-type")).toBe("text/event-stream");
-    const reader = res.body!.getReader();
-    const read = async () => new TextDecoder().decode((await reader.read()).value);
-    const first = await read();
-    expect(first.startsWith("event: status\ndata: {")).toBe(true);
-    t.services.status.drafts(7, 0);
-    expect(await read()).toContain('"unpublished":7');
-    await reader.cancel();
+  it("streams a status event at once and after each change, and a heartbeat in between", async () => {
+    // The stream's heartbeat timer runs on a clock the test moves.
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+    try {
+      const address = await t.app.listen({ port: 0, host: "127.0.0.1" });
+      const res = await fetch(`${address}/api/status/events`, { headers: { cookie: t.cookie } });
+      expect(res.headers.get("content-type")).toBe("text/event-stream");
+      const reader = res.body!.getReader();
+      const read = async () => new TextDecoder().decode((await reader.read()).value);
+      const first = await read();
+      expect(first.startsWith("event: status\ndata: {")).toBe(true);
+      t.services.status.drafts(7, 0);
+      expect(await read()).toContain('"unpublished":7');
+      vi.advanceTimersByTime(20_000);
+      expect(await read()).toBe(": heartbeat\n\n");
+      await reader.cancel();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

@@ -1,16 +1,26 @@
 /**
  * Unpublished work, kept as files under /data/state/drafts.
  *
- *   drafts/<id>/record.json      the draft's record
- *   drafts/<id>/content          text with "\n" line endings
- *   drafts/<id>/record.v2.json   present only when another device saved an older revision
- *   drafts/<id>/content.v2
- *   drafts/renames/<id>.json     a rename or move, stored as an intent
+ *   drafts/<id>/record.json             the draft's record
+ *   drafts/<id>/content                 text with "\n" line endings
+ *   drafts/<id>/versions/<device>.txt   a kept copy: a save from a device that started from older
+ *   drafts/<id>/versions/<device>.json  text, one per device, with its record
+ *   drafts/renames/<id>.json            a rename or move, stored as an intent
+ *
+ * Before kept copies there was one spare slot, `content.v2` with `record.v2.json`. One still
+ * found is read as the copy of an earlier device.
  */
-import { existsSync } from "node:fs";
+import { existsSync, readdirSync } from "node:fs";
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { DraftRecord, type DraftKind, type Origin, RenameIntent } from "@frontier/schema";
+import {
+  DraftRecord,
+  type DraftKind,
+  KeptCopy,
+  type KeptCopyText,
+  type Origin,
+  RenameIntent,
+} from "@frontier/schema";
 import { ApiError } from "../errors.js";
 import type { StateFiles } from "./files.js";
 
@@ -20,6 +30,10 @@ export interface SaveInput {
   kind: DraftKind;
   text: string;
   revision: number;
+  /** The blob of the library file the device started from; absent from an older build. */
+  baseBlob?: string | undefined;
+  /** The device's id for this send; a retry repeats it. */
+  op?: string | undefined;
 }
 
 /** What the store needs to know about the published file when a draft is first made. */
@@ -27,11 +41,37 @@ export interface PublishedInfo {
   /** The blob hash of the file on `main`, or "" when there is none. */
   blob: string;
   lineEnding: "lf" | "crlf";
+  /** The file's text on `main`, or null when there is none. */
+  text: string | null;
+}
+
+/** The device a save came from. `id` is checked by the route before it names a file. */
+export interface Device {
+  id: string;
+  name: string;
+}
+
+/** A save with no device header, as from an older build. */
+export const UNKNOWN_DEVICE: Device = { id: "unknown", name: "" };
+
+/** The device the single spare slot of an earlier Frontier is read as. */
+const EARLIER = "earlier";
+
+/** What may name a kept copy's files: an id, `unknown` or `earlier`; never a path. */
+const DEVICE_NAME = /^[a-z0-9]{1,32}$/;
+
+/** A record without the op of the save before, for the next save to set its own. */
+function withoutOp(record: DraftRecord): DraftRecord {
+  const copy = { ...record };
+  delete copy.lastOp;
+  return copy;
 }
 
 export class DraftStore {
   private records = new Map<string, DraftRecord>();
   private renames = new Map<string, RenameIntent>();
+  /** How many kept copies each draft has, for drafts that have any. */
+  private kept = new Map<string, number>();
   private readonly dir: string;
 
   constructor(
@@ -49,6 +89,7 @@ export class DraftStore {
   async load(): Promise<void> {
     this.records.clear();
     this.renames.clear();
+    this.kept.clear();
     if (!existsSync(this.dir)) return;
     for (const name of await readdir(this.dir)) {
       if (name === "renames") continue;
@@ -56,8 +97,10 @@ export class DraftStore {
         .readJson(join(this.dir, name, "record.json"), DraftRecord)
         .catch(() => null);
       // A folder without a readable record is an interrupted first save; it holds nothing to keep.
-      if (record && existsSync(join(this.dir, name, "content")))
+      if (record && existsSync(join(this.dir, name, "content"))) {
         this.records.set(record.id, record);
+        this.countKept(record.id);
+      }
     }
     const renameDir = join(this.dir, "renames");
     if (existsSync(renameDir)) {
@@ -131,10 +174,14 @@ export class DraftStore {
       baseBlob: string;
       lineEnding: DraftRecord["lineEnding"];
       origin?: Origin;
+      /** The device's id for this send, kept so a retry of it writes nothing. */
+      op?: string | undefined;
     },
     now = new Date(),
   ): Promise<DraftRecord> {
-    if (this.byPath(input.path)) {
+    const existing = this.byPath(input.path);
+    if (existing && input.op !== undefined && existing.lastOp === input.op) return existing;
+    if (existing) {
       throw new ApiError("not_allowed", "You have an unpublished change to this file already.");
     }
     const record: DraftRecord = {
@@ -147,6 +194,7 @@ export class DraftStore {
       binary: typeof input.content !== "string",
       updatedAt: now.toISOString(),
       origins: input.origin ? [input.origin] : [],
+      ...(input.op !== undefined ? { lastOp: input.op } : {}),
     };
     await this.files.write(join(this.folder(record.id), "content"), input.content);
     await this.files.writeJson(join(this.folder(record.id), "record.json"), record);
@@ -156,30 +204,112 @@ export class DraftStore {
 
   /**
    * Replaces a text draft's content from the server side, such as when a proposed field is
-   * accepted into it. The revision rises like a save, so a device holding the older text is told.
+   * accepted into it, or when a map is saved. The revision rises like a save, so a device holding
+   * the older text is told. With `op`, a repeat of the last accepted send writes nothing.
    */
   async serverChange(
     id: string,
     text: string,
-    origin?: Origin,
+    extra: { origin?: Origin | undefined; op?: string | undefined } = {},
     now = new Date(),
   ): Promise<DraftRecord> {
     const existing = this.records.get(id);
     if (!existing) throw new ApiError("not_found", "This draft no longer exists.");
+    const { origin, op } = extra;
+    if (op !== undefined && existing.lastOp === op) return existing;
     const known = (o: Origin) => origin && o.kind === origin.kind && o.ref === origin.ref;
     const record: DraftRecord = {
-      ...existing,
+      ...withoutOp(existing),
       revision: existing.revision + 1,
       updatedAt: now.toISOString(),
       origins:
         origin && !existing.origins.some(known) ? [...existing.origins, origin] : existing.origins,
+      ...(op !== undefined ? { lastOp: op } : {}),
     };
     await this.put(record, text);
     return record;
   }
 
-  hasSecondVersion(id: string): boolean {
-    return existsSync(join(this.folder(id), "content.v2"));
+  // ---- Kept copies ---------------------------------------------------------------------------
+
+  private versionsDir(id: string): string {
+    return join(this.folder(id), "versions");
+  }
+
+  /** Counts a draft's kept copies on disk, after a change to them. */
+  private countKept(id: string): void {
+    const dir = this.versionsDir(id);
+    let n = existsSync(join(this.folder(id), "content.v2")) ? 1 : 0;
+    if (existsSync(dir)) n += readdirSync(dir).filter((f) => f.endsWith(".txt")).length;
+    if (n > 0) this.kept.set(id, n);
+    else this.kept.delete(id);
+  }
+
+  hasKeptCopies(id: string): boolean {
+    return this.kept.has(id);
+  }
+
+  /** The drafts that have kept copies, and how many each has. */
+  keptList(): { draftId: string; path: string; count: number }[] {
+    return this.list()
+      .filter((r) => this.kept.has(r.id))
+      .map((r) => ({ draftId: r.id, path: r.path, count: this.kept.get(r.id)! }));
+  }
+
+  /** How many drafts have kept copies, for the attention count. */
+  keptCount(): number {
+    return this.kept.size;
+  }
+
+  /** Keeps a device's text beside a draft. A second copy from the same device replaces the first. */
+  private async keep(id: string, device: Device, text: string, now: Date): Promise<void> {
+    // The route lets only an id through; this guards the file name all the same.
+    const name = DEVICE_NAME.test(device.id) && device.id !== EARLIER ? device.id : "unknown";
+    const record: KeptCopy = { device: name, deviceName: device.name, savedAt: now.toISOString() };
+    // Text first: a record must never point at text that is not there yet.
+    await this.files.write(join(this.versionsDir(id), `${name}.txt`), text);
+    await this.files.writeJson(join(this.versionsDir(id), `${name}.json`), record);
+    this.countKept(id);
+  }
+
+  /** Every kept copy of a draft, oldest first. */
+  async keptCopies(id: string): Promise<KeptCopyText[]> {
+    const out: KeptCopyText[] = [];
+    const old = join(this.folder(id), "content.v2");
+    if (existsSync(old)) {
+      const record = await this.files
+        .readJson(join(this.folder(id), "record.v2.json"), DraftRecord)
+        .catch(() => null);
+      out.push({
+        device: EARLIER,
+        deviceName: "",
+        savedAt: record?.updatedAt ?? this.require(id).updatedAt,
+        text: await readFile(old, "utf8"),
+      });
+    }
+    const dir = this.versionsDir(id);
+    if (existsSync(dir)) {
+      for (const file of (await readdir(dir)).filter((f) => f.endsWith(".txt")).sort()) {
+        const device = file.slice(0, -".txt".length);
+        const record = await this.files
+          .readJson(join(dir, `${device}.json`), KeptCopy)
+          .catch(() => null);
+        out.push({
+          device,
+          deviceName: record?.deviceName ?? "",
+          savedAt: record?.savedAt ?? this.require(id).updatedAt,
+          text: await readFile(join(dir, file), "utf8"),
+        });
+      }
+    }
+    return out.sort((a, b) => a.savedAt.localeCompare(b.savedAt));
+  }
+
+  private async dropKept(id: string): Promise<void> {
+    await this.files.remove(this.versionsDir(id));
+    await this.files.remove(join(this.folder(id), "content.v2"));
+    await this.files.remove(join(this.folder(id), "record.v2.json"));
+    this.kept.delete(id);
   }
 
   private async put(record: DraftRecord, text: string): Promise<void> {
@@ -190,16 +320,46 @@ export class DraftStore {
   }
 
   /**
-   * Saves a draft. The browser makes the id and sends the revision it last saw (0 for a new draft).
+   * Saves a draft. The browser makes the id and sends the revision it last saw (0 for a new draft)
+   * and the blob of the library file it started from.
    *
-   * A save with an older revision, or with a new id for a path that already has a draft, is kept as
-   * a second version and answered with `stale_revision`, so no text is lost and none is overwritten.
+   * A repeat of the last accepted `op` writes nothing. A save that started from older text never
+   * builds a draft on it: the text is kept beside the draft as this device's kept copy and the
+   * answer is `stale_revision`, so no text is lost and none is overwritten.
    */
-  async save(input: SaveInput, published: PublishedInfo, now = new Date()): Promise<DraftRecord> {
+  async save(
+    input: SaveInput,
+    published: PublishedInfo,
+    device: Device = UNKNOWN_DEVICE,
+    now = new Date(),
+  ): Promise<DraftRecord> {
     const existing = this.records.get(input.id) ?? this.byPath(input.path);
+    if (existing && input.op !== undefined && existing.lastOp === input.op) return existing;
+    const op = input.op !== undefined ? { lastOp: input.op } : {};
     if (!existing) {
       if (input.revision !== 0) {
-        throw new ApiError("invalid", "This draft is not known to the server. Reload the page.");
+        if (input.baseBlob === undefined) {
+          throw new ApiError("invalid", "This draft is not known to the server. Reload the page.");
+        }
+        if (input.baseBlob !== published.blob) {
+          // The draft this device knew of was saved as a version or discarded, and the file has
+          // moved on since. The draft starts from the library's text; the device's text is kept.
+          const record: DraftRecord = {
+            id: input.id,
+            revision: 1,
+            path: input.path,
+            kind: published.text === null ? "create" : "edit",
+            baseBlob: published.blob,
+            lineEnding: published.lineEnding,
+            binary: false,
+            origins: [],
+            updatedAt: now.toISOString(),
+          };
+          await this.put(record, published.text ?? "");
+          await this.keep(record.id, device, input.text, now);
+          throw this.stale(record.id);
+        }
+        // Otherwise the old draft was discarded elsewhere, and this text starts a new one.
       }
       const record: DraftRecord = {
         id: input.id,
@@ -211,6 +371,7 @@ export class DraftStore {
         binary: false,
         origins: [],
         updatedAt: now.toISOString(),
+        ...op,
       };
       await this.put(record, input.text);
       return record;
@@ -226,49 +387,49 @@ export class DraftStore {
       throw new ApiError("invalid", "This draft is newer than the server's copy. Reload the page.");
     }
     if (existing.id !== input.id || input.revision < existing.revision) {
-      await this.files.write(join(this.folder(existing.id), "content.v2"), input.text);
-      await this.files.writeJson(join(this.folder(existing.id), "record.v2.json"), {
-        ...existing,
-        kind: input.kind,
-        updatedAt: now.toISOString(),
-      });
-      throw new ApiError(
-        "stale_revision",
-        "This file was changed from another device. Both versions are kept for you to merge.",
-        { id: existing.id },
-      );
+      await this.keep(existing.id, device, input.text, now);
+      throw this.stale(existing.id);
     }
 
     const record: DraftRecord = {
-      ...existing,
+      ...withoutOp(existing),
       kind: input.kind,
       revision: existing.revision + 1,
       updatedAt: now.toISOString(),
+      ...op,
     };
     await this.put(record, input.text);
     return record;
   }
 
-  /** The stored text and the one kept from another device. */
-  async versions(
-    id: string,
-  ): Promise<{ current: { text: string; revision: number }; other: { text: string } }> {
+  private stale(id: string): ApiError {
+    return new ApiError(
+      "stale_revision",
+      "This file was changed from another device. Both texts are kept for you to compare.",
+      { id },
+    );
+  }
+
+  /** The stored text and every text kept from other devices. */
+  async versions(id: string): Promise<{
+    current: { text: string; revision: number };
+    others: KeptCopyText[];
+  }> {
     const record = this.require(id);
-    if (!this.hasSecondVersion(id))
-      throw new ApiError("not_found", "This draft has only one version.");
+    if (!this.hasKeptCopies(id))
+      throw new ApiError("not_found", "This draft has no texts from other devices.");
     return {
       current: { text: await this.text(id), revision: record.revision },
-      other: { text: await readFile(join(this.folder(id), "content.v2"), "utf8") },
+      others: await this.keptCopies(id),
     };
   }
 
-  /** Replaces the draft with the text the author merged by hand and drops the second version. */
+  /** Replaces the draft with the text the author merged by hand and drops every kept copy. */
   async mergeVersions(id: string, text: string, now = new Date()): Promise<DraftRecord> {
     const record = this.require(id);
     const next = { ...record, revision: record.revision + 1, updatedAt: now.toISOString() };
     await this.put(next, text);
-    await this.files.remove(join(this.folder(id), "content.v2"));
-    await this.files.remove(join(this.folder(id), "record.v2.json"));
+    await this.dropKept(id);
     return next;
   }
 
@@ -306,6 +467,7 @@ export class DraftStore {
   async discard(id: string): Promise<void> {
     this.require(id);
     this.records.delete(id);
+    this.kept.delete(id);
     await this.files.remove(this.folder(id));
   }
 

@@ -144,6 +144,8 @@ export function entryRoutes(app: FastifyInstance, s: Services): void {
     }
 
     const info = draft ? { id: draft.id, revision: draft.revision, kind: draft.kind } : null;
+    // The library file's blob, which a save sends back to say which text it started from.
+    const blob = note ? ((await s.git.blobHash(path)) ?? "") : "";
     if (draft && draft.kind !== "delete" && !draft.binary) {
       const text = await s.drafts.text(draft.id);
       const { added, removed } = overlay();
@@ -161,6 +163,7 @@ export function entryRoutes(app: FastifyInstance, s: Services): void {
         ...fieldsOf(path, text),
         maps: await mapsOf(path),
         chronicles: await chroniclesOf(path),
+        blob,
       };
     }
 
@@ -181,6 +184,7 @@ export function entryRoutes(app: FastifyInstance, s: Services): void {
       ...fieldsOf(note!.path, note!.text),
       maps: await mapsOf(note!.path),
       chronicles: await chroniclesOf(note!.path),
+      blob,
     };
   });
 

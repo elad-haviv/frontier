@@ -139,10 +139,10 @@ export function loreRoutes(app: FastifyInstance, s: Services): void {
     if (draft?.kind === "delete") {
       throw new ApiError("not_allowed", "This entry is marked for deletion.");
     }
-    if (draft && s.drafts.hasSecondVersion(draft.id)) {
+    if (draft && s.drafts.hasKeptCopies(draft.id)) {
       throw new ApiError(
         "not_allowed",
-        "This entry has two versions from two devices. Merge them first.",
+        "This entry has texts from other devices to compare. Merge them first.",
       );
     }
     const before = await s.changer.text(path);

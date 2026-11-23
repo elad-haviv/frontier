@@ -27,6 +27,8 @@ export class StatusService {
     private readonly facts: {
       library: StatusSnapshot["library"];
       backupOutside: boolean;
+      /** How many drafts have texts kept from other devices. */
+      keptCopies?: () => number;
     } = { library: "github", backupOutside: true },
   ) {}
 
@@ -63,6 +65,7 @@ export class StatusService {
         nearFolderNotes: a.nearFolderNotes.length,
         unreadableFields: a.unreadableFields.length,
         duplicateIds: a.duplicateIds.length,
+        keptCopies: this.facts.keptCopies?.() ?? 0,
       },
     };
   }

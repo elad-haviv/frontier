@@ -44,10 +44,10 @@ export class EntryChanger {
       throw new ApiError("not_allowed", "This entry is marked for deletion.");
     }
     if (draft?.binary) throw new ApiError("not_allowed", "This file is not a note.");
-    if (draft && this.d.drafts.hasSecondVersion(draft.id)) {
+    if (draft && this.d.drafts.hasKeptCopies(draft.id)) {
       throw new ApiError(
         "not_allowed",
-        "This entry has two versions from two devices. Merge them first.",
+        "This entry has texts from other devices to compare. Merge them first.",
       );
     }
     if (this.d.index.readOnly(path) && note) {
@@ -64,7 +64,7 @@ export class EntryChanger {
     if (next === text) return draft ?? null;
 
     const record = draft
-      ? await this.d.drafts.serverChange(draft.id, next, origin)
+      ? await this.d.drafts.serverChange(draft.id, next, { origin })
       : await this.d.drafts.saveFrom({
           id: makeId(randomBytes),
           path,

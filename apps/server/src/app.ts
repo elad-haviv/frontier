@@ -167,6 +167,8 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
   const status = new StatusService(index, {
     library: config.library,
     backupOutside: config.backup.kind === "s3",
+    // Read only when a snapshot is made, after the draft store below exists.
+    keptCopies: () => drafts.keptCount(),
   });
   const files = new StateFiles();
   const settings = new SettingsStore(stateDir, files);

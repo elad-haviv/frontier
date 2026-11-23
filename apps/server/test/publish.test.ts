@@ -1,8 +1,16 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { EntryResponse, PublishPlan, TreeResponse, UnpublishedResponse } from "@frontier/schema";
+import {
+  AttentionResponse,
+  DraftVersionsResponse,
+  EntryResponse,
+  PublishPlan,
+  type StatusSnapshot,
+  TreeResponse,
+  UnpublishedResponse,
+} from "@frontier/schema";
 import { buildApp } from "../src/app.js";
 import { loadConfig } from "../src/config.js";
 import { makeTestApp, type TestApp, testEnv } from "./helpers/app.js";
@@ -126,7 +134,7 @@ describe("drafts", () => {
     ).toBe(200);
   });
 
-  it("counts revisions, and keeps an older save from another device as a second version", async () => {
+  it("counts revisions, and keeps an older save from another device as a kept copy", async () => {
     const first = await save(MIRA, "one\n");
     const second = await save(MIRA, "two\n", { id: first.id, revision: 1 });
     expect(second.revision).toBe(2);
@@ -135,14 +143,17 @@ describe("drafts", () => {
     expect(stale.res.statusCode).toBe(409);
     expect(stale.res.json().error).toMatchObject({ code: "stale_revision", id: first.id });
 
-    const versions = (await t.get(`/api/drafts/${first.id}/versions`)).json();
-    expect(versions).toEqual({
-      current: { text: "two\n", revision: 2 },
-      other: { text: "from the phone\n" },
-    });
+    const versions = DraftVersionsResponse.parse(
+      (await t.get(`/api/drafts/${first.id}/versions`)).json(),
+    );
+    expect(versions.current).toEqual({ text: "two\n", revision: 2 });
+    // A save without a device header, as from an older build, is kept under `unknown`.
+    expect(versions.others).toMatchObject([
+      { device: "unknown", deviceName: "", text: "from the phone\n" },
+    ]);
 
     const blocked = await t.post("/api/publish/plan", { draftIds: [first.id], renameIds: [] });
-    expect(blocked.json().error.message).toMatch(/two versions/);
+    expect(blocked.json().error.message).toMatch(/texts from other devices/);
 
     const merged = await t.post(`/api/drafts/${first.id}/merge-versions`, {
       text: "two\nand the phone\n",
@@ -196,6 +207,379 @@ describe("drafts", () => {
       [MIRA, "edit", false],
     ]);
     expect(t.services.status.snapshot().unpublished).toBe(2);
+  });
+});
+
+const PHONE = "phone0000001";
+const LAPTOP = "laptop000001";
+
+/** A save from the queue of a device: with its headers, the blob it started from and an op. */
+async function send(
+  device: string | null,
+  body: {
+    id: string;
+    path: string;
+    text: string;
+    revision: number;
+    kind?: string;
+    baseBlob?: string;
+    op?: string;
+  },
+  name = "Safari on iPhone",
+) {
+  const res = await t.app.inject({
+    method: "PUT",
+    url: "/api/drafts",
+    headers: {
+      cookie: t.cookie,
+      ...(device === null
+        ? {}
+        : { "frontier-device": device, "frontier-device-name": encodeURIComponent(name) }),
+    },
+    payload: { kind: "edit", ...body },
+  });
+  return { res, body: res.json() };
+}
+
+const entryOf = async (path: string) =>
+  EntryResponse.parse((await t.get("/api/entries?path=" + encodeURIComponent(path))).json());
+const versionsOf = async (id: string) =>
+  DraftVersionsResponse.parse((await t.get(`/api/drafts/${id}/versions`)).json());
+const keptCount = () => t.services.status.snapshot().attention.keptCopies;
+
+describe("saves that say what they started from", () => {
+  const HARBOR = "01 Places/Harbor/Harbor.md";
+
+  it("CUJ 3: a phone's save after the laptop's draft was saved as a version is kept beside it", async () => {
+    // The laptop hears of every new snapshot, as an open page does through the stream.
+    const heard: StatusSnapshot[] = [];
+    const stop = t.services.status.subscribe((snapshot) => heard.push(snapshot));
+
+    // The phone opens Harbor and saves once, on the train.
+    const opened = await entryOf(HARBOR);
+    expect(opened.blob).toMatch(/^[0-9a-f]{40}$/);
+    const draftId = newId();
+    const phoneFirst = await send(PHONE, {
+      id: draftId,
+      path: HARBOR,
+      text: opened.text + "\nTyped on the phone.\n",
+      revision: 0,
+      baseBlob: opened.blob,
+      op: "phoneop00001",
+    });
+    expect(phoneFirst.body).toEqual({ id: draftId, revision: 1 });
+    // The connection drops; the phone keeps typing. Its record still says revision 1, and the
+    // library file it started from.
+    const phoneUnsent = opened.text + "\nTyped on the phone.\nAnd more, with no connection.\n";
+
+    // At home, the laptop opens the draft, edits it and saves a version.
+    const atHome = await entryOf(HARBOR);
+    expect(atHome.draft).toEqual({ id: draftId, revision: 1, kind: "edit" });
+    const laptopText = atHome.text + "Written at home.\n";
+    const laptop = await send(
+      LAPTOP,
+      {
+        id: draftId,
+        path: HARBOR,
+        text: laptopText,
+        revision: 1,
+        baseBlob: atHome.blob,
+        op: "laptopop0001",
+      },
+      "Firefox on Linux",
+    );
+    expect(laptop.body).toEqual({ id: draftId, revision: 2 });
+    const p = await plan([draftId]);
+    expect((await confirm(p.planId, [], "Harbor, from home")).statusCode).toBe(200);
+    expect(mainText(HARBOR)).toBe(laptopText);
+    expect(t.services.drafts.list()).toEqual([]);
+    expect(keptCount()).toBe(0);
+
+    // The phone gets a connection again and sends what it holds.
+    const heardBefore = heard.length;
+    const phone = await send(PHONE, {
+      id: draftId,
+      path: HARBOR,
+      text: phoneUnsent,
+      revision: 1,
+      baseBlob: opened.blob,
+      op: "phoneop00002",
+    });
+    expect(phone.res.statusCode).toBe(409);
+    expect(phone.body.error).toMatchObject({ code: "stale_revision", id: draftId });
+
+    // The server did not build on the phone's text: the draft holds the library's text, and the
+    // phone's is its kept copy.
+    expect(mainText(HARBOR)).toBe(laptopText);
+    const now = await entryOf(HARBOR);
+    expect(now.text).toBe(laptopText);
+    expect(now.draft).toEqual({ id: draftId, revision: 1, kind: "edit" });
+    const versions = await versionsOf(draftId);
+    expect(versions.current.text).toBe(laptopText);
+    expect(versions.others).toEqual([
+      {
+        device: PHONE,
+        deviceName: "Safari on iPhone",
+        savedAt: expect.any(String),
+        text: phoneUnsent,
+      },
+    ]);
+
+    // The laptop's attention count rose without a reload, and the list names the draft.
+    expect(keptCount()).toBe(1);
+    expect(heard.slice(heardBefore).at(-1)?.attention.keptCopies).toBe(1);
+    const attention = AttentionResponse.parse((await t.get("/api/attention")).json());
+    expect(attention.versions).toEqual([{ draftId, path: HARBOR, count: 1 }]);
+
+    // A draft that differs from the library only by its kept copy survives the next fetch, and
+    // cannot be saved as a version until it is merged.
+    await t.services.sync();
+    expect(t.services.drafts.get(draftId)).toBeDefined();
+    expect(
+      (await t.post("/api/publish/plan", { draftIds: [draftId], renameIds: [] })).statusCode,
+    ).toBe(400);
+
+    // Merging keeps what both typed, and clears the kept copies and the count.
+    const merged = laptopText + "And more, with no connection.\n";
+    expect(
+      (await t.post(`/api/drafts/${draftId}/merge-versions`, { text: merged })).statusCode,
+    ).toBe(200);
+    expect(keptCount()).toBe(0);
+    expect(heard.at(-1)?.attention.keptCopies).toBe(0);
+    expect((await entryOf(HARBOR)).text).toBe(merged);
+    stop();
+  });
+
+  it("starts a new draft from a device's text when its old draft was discarded elsewhere", async () => {
+    const opened = await entryOf(MIRA);
+    const id = newId();
+    await send(PHONE, { id, path: MIRA, text: "one\n", revision: 0, baseBlob: opened.blob });
+    // Discarded on the laptop; the library file is unchanged.
+    expect((await t.del(`/api/drafts/${id}`)).statusCode).toBe(200);
+    const again = await send(PHONE, {
+      id,
+      path: MIRA,
+      text: "two\n",
+      revision: 1,
+      baseBlob: opened.blob,
+    });
+    expect(again.body).toEqual({ id, revision: 1 });
+    expect((await entryOf(MIRA)).text).toBe("two\n");
+    expect(keptCount()).toBe(0);
+  });
+
+  it("keeps a device's text when the file it started from was deleted, and a create whose file now exists", async () => {
+    const plain = "03 Things/Plain.md";
+    const opened = await entryOf(plain);
+    t.repo.pushFromOutside({ [plain]: null });
+    await t.services.sync();
+    const id = newId();
+    const res = await send(PHONE, {
+      id,
+      path: plain,
+      text: "Mine, kept.\n",
+      revision: 2,
+      baseBlob: opened.blob,
+    });
+    expect(res.body.error).toMatchObject({ code: "stale_revision", id });
+    // The library has nothing here: the draft is a new file, empty until merged.
+    expect(t.services.drafts.get(id)).toMatchObject({ kind: "create", baseBlob: "" });
+    expect((await versionsOf(id)).others[0]!.text).toBe("Mine, kept.\n");
+
+    // A note this device made, saved as a version elsewhere and changed there since.
+    const made = "01 Places/Saltmother.md";
+    const first = await send(PHONE, {
+      id: newId(),
+      path: made,
+      kind: "create",
+      text: "# Saltmother\n",
+      revision: 0,
+      baseBlob: "",
+    });
+    const p = await plan([first.body.id]);
+    await confirm(p.planId);
+    t.repo.pushFromOutside({ [made]: "# Saltmother\n\nChanged since.\n" });
+    await t.services.sync();
+    const late = await send(PHONE, {
+      id: first.body.id,
+      path: made,
+      kind: "create",
+      text: "# Saltmother\n\nMine.\n",
+      revision: 1,
+      baseBlob: "",
+    });
+    expect(late.body.error.code).toBe("stale_revision");
+    expect(t.services.drafts.get(first.body.id)).toMatchObject({ kind: "edit" });
+    expect((await versionsOf(first.body.id)).current.text).toBe("# Saltmother\n\nChanged since.\n");
+  });
+
+  it("keeps one copy per device: three devices give three, and a second save replaces only its own", async () => {
+    const { id } = await save(MIRA, "the draft\n");
+    await save(MIRA, "the draft, again\n", { id, revision: 1 });
+    for (const [device, name] of [
+      [PHONE, "Safari on iPhone"],
+      [LAPTOP, "Firefox on Linux"],
+      ["tablet000001", "Chrome on Android"],
+    ] as const) {
+      const r = await send(device, { id, path: MIRA, text: `from ${name}\n`, revision: 1 }, name);
+      expect(r.res.statusCode).toBe(409);
+    }
+    await send(PHONE, { id, path: MIRA, text: "from the phone, later\n", revision: 1 });
+    const versions = await versionsOf(id);
+    expect(versions.current).toEqual({ text: "the draft, again\n", revision: 2 });
+    expect(versions.others.map((o) => [o.device, o.deviceName, o.text]).sort()).toEqual([
+      [LAPTOP, "Firefox on Linux", "from Firefox on Linux\n"],
+      [PHONE, "Safari on iPhone", "from the phone, later\n"],
+      ["tablet000001", "Chrome on Android", "from Chrome on Android\n"],
+    ]);
+    expect(AttentionResponse.parse((await t.get("/api/attention")).json()).versions).toEqual([
+      { draftId: id, path: MIRA, count: 3 },
+    ]);
+    expect(keptCount()).toBe(1);
+    // A restart reads them all again.
+    const again = await buildApp(loadConfig(testEnv(t.repo)));
+    expect(again.services.drafts.keptList()).toEqual([{ draftId: id, path: MIRA, count: 3 }]);
+    await again.app.close();
+  });
+
+  it("writes nothing for a repeated op", async () => {
+    const id = newId();
+    const first = await send(PHONE, {
+      id,
+      path: MIRA,
+      text: "one\n",
+      revision: 0,
+      op: "sameop000001",
+    });
+    expect(first.body).toEqual({ id, revision: 1 });
+    const second = await send(PHONE, {
+      id,
+      path: MIRA,
+      text: "two\n",
+      revision: 1,
+      op: "sameop000002",
+    });
+    expect(second.body).toEqual({ id, revision: 2 });
+    const before = readFileSync(
+      join(t.services.config.dataDir, "state", "drafts", id, "record.json"),
+      "utf8",
+    );
+    // The answer to the second send was lost; the device sends it again.
+    const repeat = await send(PHONE, {
+      id,
+      path: MIRA,
+      text: "two\n",
+      revision: 1,
+      op: "sameop000002",
+    });
+    expect(repeat.body).toEqual({ id, revision: 2 });
+    expect(
+      readFileSync(join(t.services.config.dataDir, "state", "drafts", id, "record.json"), "utf8"),
+    ).toBe(before);
+    expect(t.services.drafts.hasKeptCopies(id)).toBe(false);
+    // The op is checked before anything else, even a revision that would be stale.
+    const old = await send(PHONE, {
+      id,
+      path: MIRA,
+      text: "two\n",
+      revision: 0,
+      op: "sameop000002",
+    });
+    expect(old.body).toEqual({ id, revision: 2 });
+  });
+
+  it("reads the spare slot of an earlier Frontier as a copy from an earlier device", async () => {
+    const { id } = await save(MIRA, "current\n");
+    const folder = join(t.services.config.dataDir, "state", "drafts", id);
+    writeFileSync(join(folder, "content.v2"), "from before\n");
+    writeFileSync(
+      join(folder, "record.v2.json"),
+      JSON.stringify({ ...t.services.drafts.get(id), updatedAt: "2026-01-02T03:04:05.000Z" }),
+    );
+    const again = await buildApp(loadConfig(testEnv(t.repo)));
+    expect(again.services.drafts.hasKeptCopies(id)).toBe(true);
+    await again.app.close();
+    await t.services.drafts.load();
+    expect((await versionsOf(id)).others).toEqual([
+      {
+        device: "earlier",
+        deviceName: "",
+        savedAt: "2026-01-02T03:04:05.000Z",
+        text: "from before\n",
+      },
+    ]);
+    await t.post(`/api/drafts/${id}/merge-versions`, { text: "both\n" });
+    expect(existsSync(join(folder, "content.v2"))).toBe(false);
+    expect(t.services.drafts.hasKeptCopies(id)).toBe(false);
+  });
+
+  it("behaves as before for a save without baseBlob", async () => {
+    // No draft and a revision above 0: refused, as today.
+    const lost = await send(null, { id: newId(), path: MIRA, text: "x\n", revision: 3 });
+    expect(lost.body.error.code).toBe("invalid");
+    // A new draft, a save on it, and an older revision kept as a copy.
+    const id = newId();
+    expect((await send(null, { id, path: MIRA, text: "a\n", revision: 0 })).body).toEqual({
+      id,
+      revision: 1,
+    });
+    expect((await send(null, { id, path: MIRA, text: "b\n", revision: 1 })).body).toEqual({
+      id,
+      revision: 2,
+    });
+    expect((await send(null, { id, path: MIRA, text: "c\n", revision: 1 })).res.statusCode).toBe(
+      409,
+    );
+    expect((await versionsOf(id)).others.map((o) => o.device)).toEqual(["unknown"]);
+    // With a revision of 0 the draft builds on the library file, whatever it started from.
+    const fresh = await send(PHONE, {
+      id: newId(),
+      path: "02 People/Shade.md",
+      text: "s\n",
+      revision: 0,
+      baseBlob: "not-the-blob",
+    });
+    expect(fresh.res.statusCode).toBe(200);
+  });
+
+  it("refuses a device header that is not a device id, and cuts a long name", async () => {
+    for (const bad of ["../../../etc", "PHONE0000001", "short", "phone00000012"]) {
+      const r = await send(bad, { id: newId(), path: MIRA, text: "x\n", revision: 0 });
+      expect(r.res.statusCode, bad).toBe(400);
+      expect(r.body.error.code).toBe("invalid");
+    }
+    expect(t.services.drafts.list()).toEqual([]);
+
+    const { id } = await save(MIRA, "the draft\n");
+    const long = "A very long name for a device, with ünïcode and more words than fit";
+    await send(PHONE, { id, path: MIRA, text: "phone\n", revision: 0 }, long);
+    const [copy] = (await versionsOf(id)).others;
+    expect(copy!.deviceName).toBe([...long].slice(0, 40).join("").trim());
+    // A name that is not valid URI encoding is left out rather than refused.
+    const odd = await t.app.inject({
+      method: "PUT",
+      url: "/api/drafts",
+      headers: { cookie: t.cookie, "frontier-device": LAPTOP, "frontier-device-name": "%E0%A4%A" },
+      payload: { id, path: MIRA, kind: "edit", text: "laptop\n", revision: 0 },
+    });
+    expect(odd.statusCode).toBe(409);
+    expect((await versionsOf(id)).others.find((o) => o.device === LAPTOP)?.deviceName).toBe("");
+    expect(
+      readdirSync(join(t.services.config.dataDir, "state", "drafts", id, "versions")).sort(),
+    ).toEqual([`${LAPTOP}.json`, `${LAPTOP}.txt`, `${PHONE}.json`, `${PHONE}.txt`]);
+  });
+
+  it("does not clear a draft whose only difference from the library is its kept copies", async () => {
+    const text = mainText(MIRA)!;
+    const { id } = await save(MIRA, text + "\nMine.\n");
+    await send(PHONE, { id, path: MIRA, text: "phone\n", revision: 0 });
+    // The draft is put back to the library's text, so only the kept copy differs.
+    await t.post(`/api/drafts/${id}/resolve`, { text });
+    await t.services.publisher.clearPublished();
+    expect(t.services.drafts.get(id)).toBeDefined();
+    await t.post(`/api/drafts/${id}/merge-versions`, { text });
+    await t.services.publisher.clearPublished();
+    expect(t.services.drafts.get(id)).toBeUndefined();
   });
 });
 

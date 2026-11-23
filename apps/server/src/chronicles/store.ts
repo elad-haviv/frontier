@@ -100,6 +100,13 @@ export class ChronicleStore {
     return published ? { chronicle: published, revision: 0, state: "published" } : null;
   }
 
+  /** As `get`, with the blob of the library file, which a save sends back to say where it started. */
+  async open(id: string): Promise<(LoadedChronicle & { blob: string }) | null> {
+    const loaded = await this.get(id);
+    if (!loaded) return null;
+    return { ...loaded, blob: (await this.d.git.blobHash(chroniclePath(id))) ?? "" };
+  }
+
   async list(): Promise<LoadedChronicle[]> {
     const ids = new Set(this.published.keys());
     for (const draft of this.d.drafts.list()) {
@@ -120,7 +127,11 @@ export class ChronicleStore {
     return id;
   }
 
-  private async write(chronicle: ChronicleFile, kind: "create" | "edit"): Promise<DraftRecord> {
+  private async write(
+    chronicle: ChronicleFile,
+    kind: "create" | "edit",
+    op?: string,
+  ): Promise<DraftRecord> {
     const path = chroniclePath(chronicle.id);
     return this.d.drafts.saveFrom({
       id: makeId(randomBytes),
@@ -129,6 +140,7 @@ export class ChronicleStore {
       content: serialiseChronicle(chronicle),
       baseBlob: kind === "create" ? "" : ((await this.d.git.blobHash(path)) ?? ""),
       lineEnding: "lf",
+      op,
     });
   }
 
@@ -168,6 +180,7 @@ export class ChronicleStore {
     input: ChronicleFile,
     revision: number,
     link: { span: string; path: string }[] = [],
+    sent: { baseBlob?: string | undefined; op?: string | undefined } = {},
   ): Promise<{
     chronicle: ChronicleFile;
     revision: number;
@@ -175,20 +188,31 @@ export class ChronicleStore {
   }> {
     if (input.id !== id) throw new ApiError("invalid", "The chronicle's id cannot be changed.");
     const draft = this.draftOf(id);
+    // A repeat of the last accepted send: what it stored is the answer.
+    if (draft && sent.op !== undefined && draft.lastOp === sent.op) {
+      const parsed = parseChronicle(await this.d.drafts.text(draft.id));
+      if (parsed.ok) return { chronicle: parsed.chronicle, revision: draft.revision, unlinked: [] };
+    }
     if (!draft && !this.published.has(id)) {
       throw new ApiError("not_found", "There is no such chronicle.");
     }
     if (draft?.kind === "delete") {
       throw new ApiError("not_allowed", "This chronicle is marked for deletion.");
     }
-    // A save with no draft starts one, whatever revision the page last saw: its draft was saved
-    // as a version, or equalled the library's copy, and was cleared.
-    if (draft && revision !== draft.revision) {
-      throw new ApiError(
+    const stale = () =>
+      new ApiError(
         "stale_revision",
         "This chronicle was changed from another device. The two are being merged.",
-        { id: draft.id },
+        draft ? { id: draft.id } : {},
       );
+    if (draft && revision !== draft.revision) throw stale();
+    // A save with no draft starts one: its draft was saved as a version, or equalled the library's
+    // copy, and was cleared. When the device says which file it started from and the library has
+    // moved on since, it merges with the library's copy first. Without that, as from an older
+    // build, it starts one whatever revision the page last saw.
+    if (!draft && revision > 0 && sent.baseBlob !== undefined) {
+      const blob = (await this.d.git.blobHash(chroniclePath(id))) ?? "";
+      if (sent.baseBlob !== blob) throw stale();
     }
 
     const unlinked: { span: string; reason: string }[] = [];
@@ -207,8 +231,8 @@ export class ChronicleStore {
     }
     const chronicle = { ...input, spans };
     const record = draft
-      ? await this.d.drafts.serverChange(draft.id, serialiseChronicle(chronicle))
-      : await this.write(chronicle, "edit");
+      ? await this.d.drafts.serverChange(draft.id, serialiseChronicle(chronicle), { op: sent.op })
+      : await this.write(chronicle, "edit", sent.op);
     return { chronicle, revision: record.revision, unlinked };
   }
 

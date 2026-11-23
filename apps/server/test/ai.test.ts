@@ -358,7 +358,7 @@ describe("field proposals", () => {
     expect(e.draft).toMatchObject({ id: "authordraft1", revision: 2 });
     expect(e.text).toContain("A line of my own.");
     expect(e.fields.time).toHaveLength(1);
-    // A device still holding revision 1 is told, and its text is kept as a second version.
+    // A device still holding revision 1 is told, and its text is kept as that device's copy.
     const stale = await t.put("/api/drafts", {
       id: "authordraft1",
       path: VEL,
@@ -367,6 +367,12 @@ describe("field proposals", () => {
       revision: 1,
     });
     expect(stale.statusCode).toBe(409);
+    const versions = (await t.get("/api/drafts/authordraft1/versions")).json();
+    expect(versions.current.text).toContain("A line of my own.");
+    expect(versions.others).toMatchObject([
+      { device: "unknown", text: BODY + "\nTyped meanwhile.\n" },
+    ]);
+    expect(t.services.status.snapshot().attention.keptCopies).toBe(1);
   });
 
   it("says when a proposal no longer applies, and lets it only be dismissed", async () => {

@@ -94,6 +94,13 @@ export class MapStore {
     return published ? { map: published, revision: 0, state: "published" } : null;
   }
 
+  /** As `get`, with the blob of the library file, which a save sends back to say where it started. */
+  async open(id: string): Promise<(LoadedMap & { blob: string }) | null> {
+    const loaded = await this.get(id);
+    if (!loaded) return null;
+    return { ...loaded, blob: (await this.d.git.blobHash(mapPath(id))) ?? "" };
+  }
+
   async list(): Promise<LoadedMap[]> {
     const ids = new Set(this.published.keys());
     for (const draft of this.d.drafts.list()) {
@@ -171,23 +178,34 @@ export class MapStore {
     input: MapFile,
     revision: number,
     link: { feature: string; path: string }[] = [],
+    sent: { baseBlob?: string | undefined; op?: string | undefined } = {},
   ): Promise<{ map: MapFile; revision: number; unlinked: { feature: string; reason: string }[] }> {
     if (input.id !== id) throw new ApiError("invalid", "The map's id cannot be changed.");
     const path = mapPath(id);
     const draft = this.draftOf(id);
+    // A repeat of the last accepted send: what it stored is the answer.
+    if (draft && sent.op !== undefined && draft.lastOp === sent.op) {
+      const parsed = parseMap(await this.d.drafts.text(draft.id));
+      if (parsed.ok) return { map: parsed.map, revision: draft.revision, unlinked: [] };
+    }
     const published = this.published.has(id);
     if (!draft && !published) throw new ApiError("not_found", "There is no such map.");
     if (draft?.kind === "delete") {
       throw new ApiError("not_allowed", "This map is marked for deletion.");
     }
-    // A save for a map without a draft starts one, whatever revision the page last saw: its draft
-    // was published or equalled the vault's copy and was cleared.
-    if (draft && revision !== draft.revision) {
-      throw new ApiError(
+    const stale = () =>
+      new ApiError(
         "stale_revision",
         "This map was changed from another device. The two are being merged.",
-        { id: draft.id },
+        draft ? { id: draft.id } : {},
       );
+    if (draft && revision !== draft.revision) throw stale();
+    // A save for a map without a draft starts one: its draft was saved as a version or discarded.
+    // When the device says which file it started from and the library has moved on since, it
+    // merges with the library's copy first. Without that, as from an older build, it starts one
+    // whatever revision the page last saw.
+    if (!draft && revision > 0 && sent.baseBlob !== undefined) {
+      if (sent.baseBlob !== ((await this.d.git.blobHash(path)) ?? "")) throw stale();
     }
 
     const unlinked: { feature: string; reason: string }[] = [];
@@ -207,7 +225,7 @@ export class MapStore {
     const map = { ...input, features };
     const text = serialiseMap(map);
     const record = draft
-      ? await this.d.drafts.serverChange(draft.id, text)
+      ? await this.d.drafts.serverChange(draft.id, text, { op: sent.op })
       : await this.d.drafts.saveFrom({
           id: makeId(randomBytes),
           path,
@@ -215,6 +233,7 @@ export class MapStore {
           content: text,
           baseBlob: (await this.d.git.blobHash(path)) ?? "",
           lineEnding: "lf",
+          op: sent.op,
         });
     return { map, revision: record.revision, unlinked };
   }

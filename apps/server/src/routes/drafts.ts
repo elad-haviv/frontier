@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyRequest } from "fastify";
 import {
   CreateRenameRequest,
   DraftTextRequest,
@@ -13,13 +13,46 @@ import {
 import { extension, isEditable, isExcluded, isNote } from "@frontier/vault";
 import { z } from "zod";
 import { ApiError } from "../errors.js";
+import { type Device, UNKNOWN_DEVICE } from "../state/drafts.js";
 import type { Services } from "../app.js";
 
 const IdParam = z.object({ id: Id });
 
+/** How long a device's name may be, in characters. */
+const NAME_LENGTH = 40;
+
+/**
+ * The device a save comes from, from its `Frontier-Device` and `Frontier-Device-Name` headers. The
+ * id names a file, so only Frontier's id format is accepted; a save without one, as from an older
+ * build, comes from device `unknown`. The name is sent URI-encoded.
+ */
+export function deviceOf(request: FastifyRequest): Device {
+  const id = request.headers["frontier-device"];
+  if (id === undefined) return UNKNOWN_DEVICE;
+  if (typeof id !== "string" || !Id.safeParse(id).success) {
+    throw new ApiError("invalid", "The Frontier-Device header is not a device id.");
+  }
+  const raw = request.headers["frontier-device-name"];
+  let name = "";
+  if (typeof raw === "string") {
+    try {
+      name = decodeURIComponent(raw);
+    } catch {
+      name = "";
+    }
+  }
+  // Control characters have no place in a name shown on screen.
+  name = [...name.replace(/\p{Cc}/gu, "")].slice(0, NAME_LENGTH).join("").trim();
+  return { id, name };
+}
+
 export function draftRoutes(app: FastifyInstance, s: Services): void {
-  /** Refuses a draft for a path that may not be changed, and returns what is published there. */
-  async function check(path: string, kind: "edit" | "create" | "delete") {
+  /**
+   * Refuses a draft for a path that may not be changed, and returns what is published there.
+   * `stale` is true for a save that started from a file the server may no longer have: its text is
+   * then kept beside a draft of whatever the library holds, rather than refused.
+   */
+  async function check(path: string, kind: "edit" | "create" | "delete", stale = false) {
     if (extension(path) !== "md" || isExcluded(path)) {
       throw new ApiError(
         "invalid",
@@ -41,15 +74,16 @@ export function draftRoutes(app: FastifyInstance, s: Services): void {
           "This file mixes two kinds of line endings. Fix that first.",
         );
       }
-      if (kind === "create" && !hasDraft) {
+      if (kind === "create" && !hasDraft && !stale) {
         throw new ApiError("invalid", `"${path}" already exists.`);
       }
-    } else if (kind !== "create" && !hasDraft) {
+    } else if (kind !== "create" && !hasDraft && !stale) {
       throw new ApiError("not_found", `There is no note at "${path}".`);
     }
     return {
       blob: published ? ((await s.git.blobHash(path)) ?? "") : "",
       lineEnding: published?.lineEnding === "crlf" ? ("crlf" as const) : ("lf" as const),
+      text: published?.text ?? null,
     };
   }
 
@@ -63,13 +97,23 @@ export function draftRoutes(app: FastifyInstance, s: Services): void {
 
   app.put("/api/drafts", async (request) => {
     const input = SaveDraftRequest.parse(request.body);
-    const published = await check(input.path, input.kind);
-    const record = await s.drafts.save(
-      { ...input, text: input.kind === "delete" ? "" : input.text.replace(/\r\n/g, "\n") },
-      published,
+    const device = deviceOf(request);
+    const published = await check(
+      input.path,
+      input.kind,
+      input.revision > 0 && input.baseBlob !== undefined,
     );
-    s.status.drafts(s.drafts.count(), 0);
-    return { id: record.id, revision: record.revision };
+    try {
+      const record = await s.drafts.save(
+        { ...input, text: input.kind === "delete" ? "" : input.text.replace(/\r\n/g, "\n") },
+        published,
+        device,
+      );
+      return { id: record.id, revision: record.revision };
+    } finally {
+      // A kept copy raises the attention count, so every open page hears of it too.
+      s.status.drafts(s.drafts.count(), 0);
+    }
   });
 
   app.delete("/api/drafts/:id", async (request) => {
@@ -89,6 +133,7 @@ export function draftRoutes(app: FastifyInstance, s: Services): void {
     const { text } = DraftTextRequest.parse(request.body);
     onlyNotes(id);
     const record = await s.drafts.mergeVersions(id, text.replace(/\r\n/g, "\n"));
+    s.status.drafts(s.drafts.count(), 0);
     return { id: record.id, revision: record.revision };
   });
 

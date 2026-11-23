@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import { ChronicleFile, VaultPath } from "@frontier/schema";
+import { Id, ChronicleFile, VaultPath } from "@frontier/schema";
 import { stem } from "@frontier/vault";
 import { z } from "zod";
 import { ApiError } from "../errors.js";
@@ -19,6 +19,9 @@ const Save = z.object({
   chronicle: ChronicleFile,
   revision: z.number().int().min(0),
   link: z.array(z.object({ span: z.string(), path: VaultPath })).default([]),
+  /** The blob of the library file the device started from; absent from an older build. */
+  baseBlob: z.string().optional(),
+  op: Id.optional(),
 });
 const Resolve = z.object({ keep: z.enum(["mine", "theirs"]) });
 
@@ -38,7 +41,7 @@ export function chronicleRoutes(app: FastifyInstance, s: Services): void {
 
   app.get("/api/chronicles/:id", async (request) => {
     const { id } = IdParam.parse(request.params);
-    const loaded = await s.chronicles.get(id);
+    const loaded = await s.chronicles.open(id);
     if (!loaded) throw new ApiError("not_found", "There is no such chronicle.");
     const entries: Record<string, { path: string; title: string }> = {};
     for (const span of loaded.chronicle.spans) {
@@ -58,8 +61,8 @@ export function chronicleRoutes(app: FastifyInstance, s: Services): void {
 
   app.put("/api/chronicles/:id", async (request) => {
     const { id } = IdParam.parse(request.params);
-    const { chronicle, revision, link } = Save.parse(request.body);
-    const result = await s.chronicles.save(id, chronicle, revision, link);
+    const { chronicle, revision, link, baseBlob, op } = Save.parse(request.body);
+    const result = await s.chronicles.save(id, chronicle, revision, link, { baseBlob, op });
     changed();
     return result;
   });

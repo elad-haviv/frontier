@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import { MapFile, VaultPath } from "@frontier/schema";
+import { Id, MapFile, VaultPath } from "@frontier/schema";
 import { isExcluded, isImage, stem } from "@frontier/vault";
 import { z } from "zod";
 import { ApiError } from "../errors.js";
@@ -15,6 +15,9 @@ const Save = z.object({
   map: MapFile,
   revision: z.number().int().min(0),
   link: z.array(z.object({ feature: z.string(), path: VaultPath })).default([]),
+  /** The blob of the library file the device started from; absent from an older build. */
+  baseBlob: z.string().optional(),
+  op: Id.optional(),
 });
 const Resolve = z.object({ keep: z.enum(["mine", "theirs"]) });
 
@@ -35,7 +38,7 @@ export function mapRoutes(app: FastifyInstance, s: Services): void {
 
   app.get("/api/maps/:id", async (request) => {
     const { id } = IdParam.parse(request.params);
-    const loaded = await s.maps.get(id);
+    const loaded = await s.maps.open(id);
     if (!loaded) throw new ApiError("not_found", "There is no such map.");
     const entries: Record<string, { path: string; title: string }> = {};
     const children: Record<string, string> = {};
@@ -60,8 +63,8 @@ export function mapRoutes(app: FastifyInstance, s: Services): void {
 
   app.put("/api/maps/:id", async (request) => {
     const { id } = IdParam.parse(request.params);
-    const { map, revision, link } = Save.parse(request.body);
-    const result = await s.maps.save(id, map, revision, link);
+    const { map, revision, link, baseBlob, op } = Save.parse(request.body);
+    const result = await s.maps.save(id, map, revision, link, { baseBlob, op });
     changed();
     return result;
   });
