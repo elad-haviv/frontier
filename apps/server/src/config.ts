@@ -53,6 +53,11 @@ export interface Config {
   /** The AI provider key from the environment, used when none is stored in settings. */
   openrouterKey: string | null;
   openrouterUrl: string;
+  /**
+   * False when `FRONTIER_SERVICE_WORKER=off`: `/sw.js` then answers the kill worker, which removes
+   * the app's service worker from every browser that has it.
+   */
+  serviceWorker: boolean;
 }
 
 type Env = Record<string, string | undefined>;
@@ -166,6 +171,7 @@ export function loadConfig(env: Env = process.env): Config {
       /\/+$/,
       "",
     ),
+    serviceWorker: optional("FRONTIER_SERVICE_WORKER")?.toLowerCase() !== "off",
     commitAuthor,
     commitBot,
     backup,

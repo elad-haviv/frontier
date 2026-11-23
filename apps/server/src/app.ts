@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { join } from "node:path";
+import { join, relative, sep } from "node:path";
 import fastifyStatic from "@fastify/static";
 import multipart from "@fastify/multipart";
 import rateLimit from "@fastify/rate-limit";
@@ -64,6 +64,7 @@ import { webhookRoutes } from "./routes/webhook.js";
 import { StateFiles } from "./state/files.js";
 import { SettingsStore } from "./state/settings.js";
 import { StatusService } from "./status/status.js";
+import { readBuild, webRoutes } from "./web.js";
 
 declare module "@fastify/secure-session" {
   interface SessionData {
@@ -138,6 +139,17 @@ const OPEN = new Set([
 ]);
 
 const THIRTY_DAYS = 30 * 24 * 60 * 60;
+
+/**
+ * The cache rule for a built file, by its path in the build: what names the other files is read
+ * again each time, files whose names carry their hash are kept, and the icons for a day.
+ */
+function cacheRule(file: string): string | null {
+  if (file === "index.html" || file === "manifest.webmanifest") return "no-cache";
+  if (file.startsWith("assets/")) return "public, max-age=31536000, immutable";
+  if (file.startsWith("icons/")) return "public, max-age=86400";
+  return null;
+}
 
 export interface BuildOptions {
   /** Used by tests to watch Git commands. */
@@ -417,12 +429,18 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
     }
   });
 
-  app.addHook("onSend", async (_request, reply) => {
+  // Which build this server carries, for reading logs and the browser's network panel.
+  const build = readBuild(options.webDir);
+  app.log.info({ build: build.build }, "Serving build");
+
+  app.addHook("onSend", async (request, reply) => {
     reply.header(
       "content-security-policy",
       "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; " +
-        "connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'",
+        "connect-src 'self'; worker-src 'self'; manifest-src 'self'; frame-ancestors 'none'; " +
+        "base-uri 'self'; form-action 'self'",
     );
+    if (request.url.startsWith("/api/")) reply.header("frontier-build", build.build);
     reply.header("x-content-type-options", "nosniff");
     reply.header("referrer-policy", "no-referrer");
   });
@@ -462,7 +480,21 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
 
   const webDir = options.webDir;
   const serveWeb = webDir !== undefined && existsSync(join(webDir, "index.html"));
-  if (serveWeb) await app.register(fastifyStatic, { root: webDir, wildcard: false });
+  if (serveWeb) {
+    // One route per built file, but for the two that `webRoutes` answers itself. The plugin sets
+    // no cache header; `cacheRule` does.
+    await app.register(fastifyStatic, {
+      root: webDir,
+      wildcard: false,
+      globIgnore: ["sw.js", "build.json"],
+      cacheControl: false,
+      setHeaders: (res, path) => {
+        const rule = cacheRule(relative(webDir, path).split(sep).join("/"));
+        if (rule) res.setHeader("cache-control", rule);
+      },
+    });
+    webRoutes(app, { webDir, serviceWorker: config.serviceWorker, build });
+  }
 
   app.setNotFoundHandler((request, reply) => {
     const path = request.url.split("?")[0] ?? "";
