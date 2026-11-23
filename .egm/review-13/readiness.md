@@ -1,0 +1,8 @@
+# Stage 13 — readiness + codebase (raw)
+
+B1 EntryPicker exported from MapPanels used by chronicle/SpanForm.tsx:4 — move to components/EntryPicker.tsx; chronicle.spec .entry-picker.
+B2 /api/gallery icon flag exists; drop; remove /api/map-images & api.mapImages (Maps.tsx:29, MapPanels:423); maps.test has no map-images test.
+B3 corner reach 18px (vertexAt default), shapeAt 22px; state handle reaches.
+B4 styles conflict: resolve route, api.resolveMapStyles, Unpublished.tsx REASON/keep buttons/no edit link (221-225).
+M1 Menu.tsx submenu for Save a picture or plain items. M2 ContextMenu trigger disabled, item disabledReason, onOpenChange. M3 pointer-events none on .map-live/tooltip/preview; handlers on .map-top; tool-* cursor classes. M4 map/useMapKeys.ts bindings + Esc cascade. M5 13c MapPage/FeaturePanel (showsFeature MapPage:948), frontier:map-curve owner. M6 assign tap explore, orbit drag, savePicture etc. to modules. M7 zoneOnPlate signature; view.ts:94 caller. M8 server tsconfig/vitest alias for geo; discover inside test (dropped per zoom-out). M9 EntryCombobox owner/path/props. M10 queue: QueueKey db.ts:11, kindOf default folders!, nameOf, SenderApi, merge(). M11 zod shapes, store wiring app.ts:237, Services:94, FileKind entryIds publish.ts:628. M12 per-test project skip; project name "phone". M13 ai.spec CUJ13 entry-picker 315; mapviews makeMap clash/schematic; label "This map lies under". M14 coverage thresholds; publish clash test. M15 MapPage eager (App.tsx:24) — measure main chunk or lazy.
+Nits: picture.ts no change; testMatch per release; mapStyleRoutes name; styles undo owner; open questions decided.
