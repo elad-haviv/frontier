@@ -1628,8 +1628,8 @@ button.big {
 .install-card p {
   margin: 0 0 0.4rem;
 }
-.install-card .ui-icon,
-.install-card svg {
+.install-card .ui-icon {
+  display: inline-flex;
   vertical-align: -0.15em;
 }
 .device-notice {

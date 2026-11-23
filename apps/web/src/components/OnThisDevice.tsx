@@ -46,8 +46,9 @@ export function OnThisDevice() {
         <>
           <p>
             Frontier keeps the entries, maps and chronicles you opened last on this device, so they
-            open with no connection. Space used: {sizeOf(space)}
+            open with no connection.
           </p>
+          <p>Space used: {sizeOf(space)}</p>
           <button type="button" className="quiet danger" onClick={() => void remove()}>
             Remove everything on this device
           </button>
