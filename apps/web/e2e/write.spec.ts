@@ -1,9 +1,11 @@
-import { expect, test } from "@playwright/test";
+import { expect, type Page, test } from "@playwright/test";
 import {
   answerDialog,
+  AUTH_FILE,
   changeFromOutside,
   commitCount,
   discardDraft,
+  edit,
   entry,
   lastMessage,
   newEntry,
@@ -139,6 +141,126 @@ test("keeps text typed while the server cannot be reached, and sends it afterwar
   await page.reload();
   await expect(page.locator(".cm-content")).toContainText("Typed with no connection.");
   await discardDraft(page);
+});
+
+test("keeps unsent text across a reload, and sends it once the server takes it", async ({
+  page,
+}) => {
+  await openEditor(page, "01 Places/Marsh/The Marsh.md");
+  // The server cannot be reached for saves: they fail as with no connection.
+  await page.route("**/api/drafts", (route) => route.abort("internetdisconnected"));
+  await page.keyboard.type("\nTyped while saves could not get through.\n");
+  await expect(page.locator(".save-offline")).toHaveText("Unsent: kept on this device", {
+    timeout: 15_000,
+  });
+  await page.reload();
+  await expect(page.locator(".cm-content")).toContainText(
+    "Typed while saves could not get through.",
+  );
+  await expect(page.locator(".save-offline")).toBeVisible({ timeout: 15_000 });
+  // The unsent list names the file.
+  await page.locator(".unsent-count").click();
+  await expect(page.locator(".unsent")).toContainText("The Marsh");
+  await page.keyboard.press("Escape");
+
+  await page.unroute("**/api/drafts");
+  await page.locator(".cm-content").click();
+  await page.keyboard.press("Control+s");
+  await expect(page.locator(".save-saved")).toBeVisible({ timeout: 15_000 });
+  await expect(page.locator(".unsent-count")).toHaveCount(0);
+  await page.goto(entry("01 Places/Marsh/The Marsh.md"));
+  await expect(page.locator(".prose")).toContainText("Typed while saves could not get through.");
+  await page.goto(edit("01 Places/Marsh/The Marsh.md"));
+  await discardDraft(page);
+});
+
+test("moves text kept by an earlier build into the queue, and sends it", async ({ page }) => {
+  const path = "03 Things/Scalar.md";
+  await page.goto(entry(path));
+  await page.evaluate((key) => {
+    localStorage.setItem(
+      key,
+      JSON.stringify({
+        id: "olddraft0001",
+        text: "# Scalar\n\nKept by the old buffer.\n",
+        revision: 0,
+      }),
+    );
+  }, `frontier:draft:${path}`);
+  await page.goto(edit(path));
+  await expect(page.locator(".cm-content")).toContainText("Kept by the old buffer.");
+  expect(
+    await page.evaluate(() =>
+      Object.keys(localStorage).filter((k) => k.startsWith("frontier:draft:")),
+    ),
+  ).toEqual([]);
+  await saved(page);
+  await page.goto(entry(path));
+  await expect(page.locator(".prose")).toContainText("Kept by the old buffer.");
+  await page.goto(edit(path));
+  await discardDraft(page);
+});
+
+/** Opens a second browser, logged in, as another device would be. */
+async function device(browser: import("@playwright/test").Browser): Promise<Page> {
+  const context = await browser.newContext({ storageState: AUTH_FILE });
+  return context.newPage();
+}
+
+test("CUJ 3: two devices, one entry: the late text is kept to compare, and nothing is lost", async ({
+  browser,
+}) => {
+  const path = "02 People/Twin.md";
+  const phone = await device(browser);
+  const laptop = await device(browser);
+
+  // On the phone: a first line is saved, then the connection drops while more is typed.
+  await openEditor(phone, path);
+  await phone.keyboard.type("\nA line from the phone.\n");
+  await saved(phone);
+  await phone.route("**/api/drafts", (route) => route.abort("internetdisconnected"));
+  await phone.keyboard.type("Typed on the train, unsent.\n");
+  await expect(phone.locator(".save-offline")).toBeVisible({ timeout: 15_000 });
+
+  // At home: the laptop edits the same entry and saves a version.
+  await openEditor(laptop, path);
+  await expect(laptop.locator(".cm-content")).toContainText("A line from the phone.");
+  await laptop.keyboard.type("Written at home.\n");
+  await saved(laptop);
+  await review(laptop);
+  await publish(laptop, "Twin, from home");
+  expect(onMain(path)).toContain("Written at home.");
+  await laptop.goto(entry(path));
+
+  // The phone gets a connection again.
+  await phone.unroute("**/api/drafts");
+  await phone.locator(".cm-content").click();
+  await phone.keyboard.press("Control+s");
+  await expect(phone.locator(".save-stale")).toHaveText("Two texts to compare", {
+    timeout: 15_000,
+  });
+  // The library was not built on the phone's older text.
+  expect(onMain(path)).toContain("Written at home.");
+
+  // The laptop's count rises without a reload, and leads to both texts.
+  const compare = laptop.getByRole("link", { name: /^Compare/ });
+  await expect(compare).toBeVisible({ timeout: 15_000 });
+  await compare.click();
+  await laptop.getByRole("link", { name: path, exact: true }).click();
+  await expect(laptop.locator("h1")).toHaveText("Two texts to compare");
+  await expect(laptop.locator(".diff")).toContainText("Typed on the train, unsent.");
+  await expect(laptop.locator(".diff")).toContainText("Written at home.");
+  await laptop.getByRole("button", { name: "Keep this one" }).click();
+  await expect(laptop.locator(".changes")).toBeVisible();
+  await expect(compare).toHaveCount(0, { timeout: 15_000 });
+
+  // What the phone typed is in the draft now; it is thrown away so other tests start clean.
+  await laptop.goto(entry(path));
+  await expect(laptop.locator(".prose")).toContainText("Typed on the train, unsent.");
+  await laptop.goto(edit(path));
+  await discardDraft(laptop);
+  await phone.context().close();
+  await laptop.context().close();
 });
 
 test("deletes an entry through a draft and a publish", async ({ page }) => {
