@@ -72,7 +72,7 @@ The author's list, as it came in through the ideas inbox:
   - General: a UX/UI expert review; icons across the app; folders editable like entries (add, nest,
     move, reorder, rename, style, delete), with an icon and a default type per folder, drag and drop,
     quick buttons beside the name and a context menu; a clearer "new entry" control; a graph screen as
-    in Obsidian; drop the top bar and put everything in a collapsible side bar with a menu at the
+    in Obsidian (done in stage 14: the screen in 14a, an entry's Graph tab in 14b); drop the top bar and put everything in a collapsible side bar with a menu at the
     bottom; clearer loading signs on a bad connection.
   - Entries: a sticky breadcrumb of headings while scrolling, with a button for a table of contents
     pane on the right; a toggle for full width; rename inline with a pencil, move with a combobox that

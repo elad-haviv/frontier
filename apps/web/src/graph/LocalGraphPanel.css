@@ -1,0 +1,80 @@
+/* An entry's Graph tab: the switch and the way to the full graph, a square drawing, the list. */
+.local-graph {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.local-graph-note {
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+.local-graph-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+.local-graph-depth {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  background: var(--paper-raised);
+}
+.local-graph-depth button {
+  min-height: 2rem;
+  padding: 0 0.7rem;
+  border-radius: 4px;
+  font-size: 0.85rem;
+}
+.local-graph-depth button[aria-pressed="true"] {
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
+}
+.local-graph-full {
+  font-size: 0.9rem;
+}
+
+/* Square, the width of the side bar or the sheet. */
+.local-graph-frame {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1;
+  overflow: hidden;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--ink) 3%, var(--paper));
+}
+.local-graph-frame .graph-card {
+  bottom: var(--space-2);
+  width: calc(100% - 2 * var(--space-2));
+}
+
+.local-graph-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.local-graph-link {
+  display: flex;
+  flex-direction: column;
+  padding: 0.35rem var(--space-2);
+  border-radius: 4px;
+  color: inherit;
+  text-decoration: none;
+}
+.local-graph-link:hover {
+  background: color-mix(in srgb, var(--ink) 5%, transparent);
+}
+.local-graph-name {
+  color: var(--accent);
+  font-weight: 600;
+}
+.local-graph-folder {
+  color: var(--ink-faint);
+  font-size: 0.8rem;
+}
