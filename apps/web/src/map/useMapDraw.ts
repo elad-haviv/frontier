@@ -6,6 +6,7 @@ import { makeView, type Position, type Shape, type ViewState } from "@frontier/g
 import type { MapFeature, MapFile } from "@frontier/schema";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { imageUrl, mapImageUrl } from "../api.ts";
+import type { PointerKind } from "./gesture.ts";
 import { drawOverlay, type OverlayInput } from "./overlay.ts";
 import { MapRenderer, MapsNeedWebGL } from "./renderer.ts";
 import type { Tool } from "./tools.ts";
@@ -29,10 +30,14 @@ export function useMapDraw(
     names: Names;
     pendingNames: Record<string, string>;
     sets: MarkerSets;
+    /** New paths and zones are curved: the sketch is drawn as its curve. */
+    curve: boolean;
+    /** The kind of pointer that last pressed the map, which sizes the "+" handles. */
+    pressKind: PointerKind;
   },
 ) {
   const { shownMap, presence, view, size, hidden, shownImages, selected, vertex } = input;
-  const { sketch, tool, editing, names, pendingNames, sets } = input;
+  const { sketch, tool, editing, names, pendingNames, sets, curve, pressKind } = input;
   const glCanvas = useRef<HTMLCanvasElement>(null);
   const topCanvas = useRef<HTMLCanvasElement>(null);
   /** The canvas above the features, for what follows the pointer: the hover halo. */
@@ -104,9 +109,10 @@ export function useMapDraw(
         titleOf,
         sketch:
           tool === "path" || tool === "zone" || tool === "measure"
-            ? { kind: tool, points: sketch }
+            ? { kind: tool, points: sketch, curve }
             : null,
         editing,
+        pluses: editing && tool === "select" ? pressKind : null,
       });
     });
     return () => cancelAnimationFrame(handle);
@@ -123,6 +129,8 @@ export function useMapDraw(
     sketch,
     tool,
     editing,
+    curve,
+    pressKind,
     redraw,
     iconsLoaded,
     titleOf,

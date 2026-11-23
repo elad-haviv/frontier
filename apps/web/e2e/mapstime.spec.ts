@@ -1,6 +1,7 @@
 import { expect, type Page, test } from "@playwright/test";
+import { newMapInForm, pickEntry } from "./helpers.ts";
 
-const IMAGE = "99 Appendices/Images/map one.png";
+const IMAGE = "map one.png";
 
 /** Makes the main chronicle of CUJ 16 through the API and returns the ids of its spans. */
 async function makeChronicle(page: Page, title: string, entryPath: string) {
@@ -109,13 +110,7 @@ test("CUJ 16: a fort appears and goes, and a border changes shape, as the years 
     "02 People/Mira.md",
   );
 
-  await page.goto("/maps");
-  await page.locator(".new-map input[type=text]").fill(`Kingdom ${info.project.name}`);
-  await page.locator(".new-map select").nth(0).selectOption("flat");
-  await page.locator(".new-map select").nth(1).selectOption(IMAGE);
-  await page.getByRole("button", { name: "Make the map" }).click();
-  await expect(page.locator(".map-top")).toBeVisible();
-  await expect(page).toHaveURL(/v=/);
+  await newMapInForm(page, `Kingdom ${info.project.name}`, "flat", IMAGE);
 
   // Time on: the main chronicle, at the latest year it knows.
   await page.getByRole("button", { name: "Time", exact: true }).click();
@@ -127,7 +122,12 @@ test("CUJ 16: a fort appears and goes, and a border changes shape, as the years 
   let c = await centre(page);
   await page.getByRole("button", { name: "Zone" }).click();
   // The tool is ready for taps once its hint shows; a tap before that would select instead.
-  await expect(page.locator(".map-hint", { hasText: "Tap to add points." })).toBeVisible();
+  // Its words follow the pointer: a mouse clicks and double-clicks, a finger taps.
+  const words =
+    info.project.name === "desktop"
+      ? "Click to add points · Double-click or Enter to finish · Esc to cancel"
+      : "Tap to add points. Tap the last point again to finish.";
+  await expect(page.locator(".map-hint", { hasText: words })).toBeVisible();
   for (const [dx, dy] of [
     [-90, -110],
     [90, -110],
@@ -138,7 +138,7 @@ test("CUJ 16: a fort appears and goes, and a border changes shape, as the years 
       .toBe("map");
     await page.mouse.click(c.x + dx, c.y + dy);
   }
-  await page.locator(".map-hint").getByRole("button", { name: "Done" }).click();
+  await page.locator(".map-hint").getByRole("button", { name: "Finish zone" }).click();
   const editor = page.locator(".feature-editor");
   await expect(editor).toContainText("Timeless");
   await editor.getByLabel("Tie to a span").selectOption({ label: "The kingdom" });
@@ -177,9 +177,7 @@ test("CUJ 16: a fort appears and goes, and a border changes shape, as the years 
   c = await centre(page);
   await page.getByRole("button", { name: "Marker" }).click();
   await page.mouse.click(c.x, c.y + 20);
-  await editor.getByLabel("Find an entry").fill("Mira");
-  await editor.locator(".entry-picker li button", { hasText: "Mira" }).first().click();
-  await expect(editor.locator(".linked")).toContainText("Mira");
+  await pickEntry(editor, "Mira");
   await expect(editor).toContainText("Follows The war, the span of its entry.");
   await expect(page.locator(".save-saved")).toBeVisible();
   await page.getByRole("button", { name: "Done" }).click();

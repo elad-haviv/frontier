@@ -13,14 +13,27 @@
  * | `box`          | release: `focus` if big enough; a second finger: `boxCancelled`          |
  * | `boxCancelled` | the last finger lifted: `idle`                                           |
  *
- * A `cancel` ends any state as a release that never taps. Only the primary button of a mouse
- * starts a gesture; a touch or a pen always does.
+ * A `cancel` ends any state as a release that never taps. The primary button of a mouse starts a
+ * gesture; the middle one, or the primary with Space held, only pans; a touch or a pen always
+ * starts one. Two fingers zoom about their midpoint and pan by its movement.
  *
  * A mouse moving over the map in `idle` hovers: the machine says what is under it and which
  * cursor to show. Touch and pen moves never hover, since a touch screen has no hover.
  */
-import { type Point as ScreenPoint, type Shape, shapeAt, vertexAt, type View } from "@frontier/geo";
+import {
+  HANDLE_REACH,
+  handleAt,
+  type Point as ScreenPoint,
+  pointInPolygon,
+  type Position,
+  type Shape,
+  shapeAt,
+  type Space,
+  vertexAt,
+  type View,
+} from "@frontier/geo";
 import type { MapFeature } from "@frontier/schema";
+import { plusHandles } from "./handles.ts";
 import type { Tool } from "./tools.ts";
 
 export type PointerKind = "mouse" | "touch" | "pen";
@@ -33,12 +46,17 @@ export interface Point {
 /** A box on the screen: where it was started, then where it reaches. */
 export type Rect = [number, number, number, number];
 
-/** What lies under a press. Only a corner or the selected marker can be dragged. */
+/**
+ * What lies under a press. Only the selected feature's parts can be dragged: a corner, a "+" (which
+ * adds a point there), the marker, or the inside of the zone (which moves the whole zone).
+ */
 export type Target =
   | { kind: "corner"; feature: string; vertex: number }
+  | { kind: "insert"; feature: string; segment: number; at: Position }
   | { kind: "marker"; feature: string }
+  | { kind: "zone"; feature: string }
   | { kind: "feature"; feature: string };
-export type DragTarget = Extract<Target, { kind: "corner" | "marker" }>;
+export type DragTarget = Exclude<Target, { kind: "feature" }>;
 
 export interface GestureEvent {
   type: "down" | "move" | "up" | "cancel";
@@ -53,6 +71,8 @@ export interface GestureEvent {
 export interface GestureContext {
   /** A press marks a box to focus on. */
   focusing: boolean;
+  /** Space is held: a press pans, whatever is under it. */
+  spaceHeld?: boolean;
   /**
    * A tap places something rather than selects: a drawing tool while editing, or exploring.
    * Nothing is hovered then, and the cursor is a crosshair.
@@ -63,7 +83,7 @@ export interface GestureContext {
 }
 
 /** The cursors the map shows, by what is under the pointer and what a press would do. */
-export type Cursor = "pointer" | "grab" | "grabbing" | "crosshair" | "move";
+export type Cursor = "pointer" | "grab" | "grabbing" | "crosshair" | "move" | "copy";
 
 export type Effect =
   | { type: "pan"; dx: number; dy: number }
@@ -71,7 +91,8 @@ export type Effect =
   | { type: "tap"; at: Point; kind: PointerKind }
   /** Remembers the map once, before a drag first moves it, so the drag is one step to undo. */
   | { type: "beginStep" }
-  | { type: "dragTo"; target: DragTarget; at: Point }
+  /** Moves what is dragged to the pointer; `from` is where the press began. */
+  | { type: "dragTo"; target: DragTarget; at: Point; from: Point }
   /** The box being marked, or null when there is none. */
   | { type: "box"; rect: Rect | null }
   /** Fits the view to a box, given as its left, top, right and bottom. */
@@ -91,7 +112,7 @@ export type GestureState =
   /** A press that has not moved past the threshold; `at` is where it began. */
   | ({ name: "press"; target: Target | null } & Finger)
   | ({ name: "pan" } & Finger)
-  | ({ name: "drag"; target: DragTarget } & Finger)
+  | ({ name: "drag"; target: DragTarget; from: Point } & Finger)
   | { name: "pinch"; fingers: [Finger, Finger]; distance: number }
   | { name: "box"; id: number; from: Point; to: Point }
   | { name: "boxCancelled"; ids: number[] };
@@ -111,8 +132,7 @@ export interface Stepped {
 
 const distance = (a: Point, b: Point) => Math.hypot(a.x - b.x, a.y - b.y);
 const stay = (state: GestureState): Stepped => ({ state, effects: [] });
-const draggable = (t: Target | null): t is DragTarget =>
-  t?.kind === "corner" || t?.kind === "marker";
+const draggable = (t: Target | null): t is DragTarget => t !== null && t.kind !== "feature";
 
 /** A pointer type as the browser names it, as one of the machine's kinds. */
 export function kindOf(pointerType: string): PointerKind {
@@ -125,6 +145,7 @@ export function cursorFor(
   ctx: Pick<GestureContext, "focusing" | "placing">,
 ): Cursor {
   if (ctx.focusing || ctx.placing) return "crosshair";
+  if (target?.kind === "insert") return "copy";
   if (draggable(target)) return "move";
   return target ? "pointer" : "grab";
 }
@@ -147,9 +168,14 @@ function pinch({ id, kind, at }: Finger, second: Finger): Stepped {
   });
 }
 
+const MIDDLE = 1;
+
 export function step(state: GestureState, e: GestureEvent, ctx: GestureContext): Stepped {
-  // Only the primary button of a mouse starts a gesture; the others are left alone.
-  if (e.type === "down" && e.kind === "mouse" && e.button !== 0) return stay(state);
+  // The primary button of a mouse starts a gesture and the middle one pans; the others are left
+  // alone.
+  if (e.type === "down" && e.kind === "mouse" && e.button !== 0 && e.button !== MIDDLE) {
+    return stay(state);
+  }
   const finger: Finger = { id: e.id, kind: e.kind, at: e.at };
   const lifted = e.type === "up" || e.type === "cancel";
 
@@ -163,6 +189,14 @@ export function step(state: GestureState, e: GestureEvent, ctx: GestureContext):
         return {
           state: { name: "box", id: e.id, from: e.at, to: e.at },
           effects: [{ type: "box", rect: [e.at.x, e.at.y, e.at.x, e.at.y] }],
+        };
+      }
+      // The middle button, or Space held, pans over anything, the selected zone too.
+      const panOnly = (e.kind === "mouse" && e.button === MIDDLE) || ctx.spaceHeld === true;
+      if (panOnly) {
+        return {
+          state: { name: "pan", ...finger },
+          effects: e.kind === "mouse" ? [{ type: "hover", target: null, at: e.at }] : [],
         };
       }
       const pressed: GestureState = { name: "press", ...finger, target: ctx.pick(e.at, e.kind) };
@@ -184,9 +218,13 @@ export function step(state: GestureState, e: GestureEvent, ctx: GestureContext):
       // Not a drag yet: measured from where the press began, so none of the way is lost.
       if (distance(e.at, state.at) < THRESHOLD[state.kind]) return stay(state);
       if (draggable(state.target)) {
+        const from = state.at;
         return {
-          state: { name: "drag", id: e.id, kind: state.kind, at: e.at, target: state.target },
-          effects: [{ type: "beginStep" }, { type: "dragTo", target: state.target, at: e.at }],
+          state: { name: "drag", id: e.id, kind: state.kind, at: e.at, target: state.target, from },
+          effects: [
+            { type: "beginStep" },
+            { type: "dragTo", target: state.target, at: e.at, from },
+          ],
         };
       }
       const pan: Effect = { type: "pan", dx: e.at.x - state.at.x, dy: e.at.y - state.at.y };
@@ -204,7 +242,7 @@ export function step(state: GestureState, e: GestureEvent, ctx: GestureContext):
       if (lifted) return { state: IDLE, effects: state.kind === "mouse" ? hoverAt(e.at, ctx) : [] };
       const effect: Effect =
         state.name === "drag"
-          ? { type: "dragTo", target: state.target, at: e.at }
+          ? { type: "dragTo", target: state.target, at: e.at, from: state.from }
           : { type: "pan", dx: e.at.x - state.at.x, dy: e.at.y - state.at.y };
       return { state: { ...state, at: e.at }, effects: [effect] };
     }
@@ -219,20 +257,20 @@ export function step(state: GestureState, e: GestureEvent, ctx: GestureContext):
       const fingers: [Finger, Finger] = i === 0 ? [finger, other] : [other, finger];
       const [a, b] = fingers;
       const now = distance(a.at, b.at);
+      // The midpoint's movement pans; the change in spread zooms about the midpoint.
+      const [was0, was1] = state.fingers;
+      const cx = (a.at.x + b.at.x) / 2;
+      const cy = (a.at.y + b.at.y) / 2;
+      const dx = cx - (was0.at.x + was1.at.x) / 2;
+      const dy = cy - (was0.at.y + was1.at.y) / 2;
+      const effects: Effect[] = dx !== 0 || dy !== 0 ? [{ type: "pan", dx, dy }] : [];
       if (now > 0 && state.distance > 0) {
-        return {
-          state: { name: "pinch", fingers, distance: now },
-          effects: [
-            {
-              type: "zoom",
-              cx: (a.at.x + b.at.x) / 2,
-              cy: (a.at.y + b.at.y) / 2,
-              factor: now / state.distance,
-            },
-          ],
-        };
+        effects.push({ type: "zoom", cx, cy, factor: now / state.distance });
       }
-      return stay({ ...state, fingers });
+      return {
+        state: { name: "pinch", fingers, distance: now > 0 ? now : state.distance },
+        effects,
+      };
     }
 
     case "box": {
@@ -272,6 +310,7 @@ export function step(state: GestureState, e: GestureEvent, ctx: GestureContext):
 
 /** What `pick` looks at: the view, the mode and tool, the selection as shown, and the shapes drawn. */
 export interface PickInput {
+  space: Space;
   view: View;
   editing: boolean;
   tool: Tool;
@@ -285,10 +324,11 @@ export interface PickInput {
 const FAR: ScreenPoint = [Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY];
 
 /**
- * What a press is on, in this order: a corner of the selected path or zone, the selected marker
- * (both only while editing with Select), then any feature, then nothing.
+ * What a press is on, in this order, the first three only while editing with Select: a corner of
+ * the selected path or zone; one of its "+" handles (shown, and found, by the pointer's kind); the
+ * selected marker, or the inside of the selected zone; then any feature; then nothing.
  */
-export function pick(input: PickInput, at: Point): Target | null {
+export function pick(input: PickInput, at: Point, kind: PointerKind = "mouse"): Target | null {
   const { view, chosen } = input;
   const p: ScreenPoint = [at.x, at.y];
   if (input.editing && input.tool === "select" && chosen) {
@@ -304,21 +344,48 @@ export function pick(input: PickInput, at: Point): Target | null {
         p,
       );
       if (corner !== null) return { kind: "corner", feature: chosen.id, vertex: corner };
+      const pluses = plusHandles(input.space, view, chosen, kind);
+      const plus = handleAt(
+        pluses.map((h) => h.screen),
+        p,
+        HANDLE_REACH,
+      );
+      if (plus !== null) {
+        const { segment, at: position } = pluses[plus]!;
+        return { kind: "insert", feature: chosen.id, segment, at: position };
+      }
+      if (chosen.kind === "zone" && insideDrawn(input.shapes, chosen.id, p)) {
+        return { kind: "zone", feature: chosen.id };
+      }
     }
   }
   const feature = shapeAt(input.shapes, p);
   return feature === null ? null : { kind: "feature", feature };
 }
 
-/** What a right-click acts on: a corner of the selected feature, a feature, or an empty place. */
+/** Whether a point of the screen is inside a zone as it was drawn, by any of its pieces. */
+function insideDrawn(shapes: Shape[], id: string, p: ScreenPoint): boolean {
+  return shapes.some(
+    (s) =>
+      s.id === id &&
+      s.kind === "zone" &&
+      (s.inside ? s.inside(p) : s.points.length >= 3 && pointInPolygon(p, s.points)),
+  );
+}
+
+/**
+ * What a right-click acts on: a corner or a "+" of the selected feature, a feature, or an empty
+ * place.
+ */
 export type MenuTarget =
   | { kind: "corner"; feature: string; vertex: number }
+  | { kind: "insert"; feature: string; segment: number; at: Position }
   | { kind: "feature"; feature: string }
   | { kind: "nothing" };
 
-/** The context menu's target from what `pick` found: the selected marker is a feature. */
+/** The context menu's target from what `pick` found: the selected marker or zone is a feature. */
 export function menuTargetOf(target: Target | null): MenuTarget {
   if (!target) return { kind: "nothing" };
-  if (target.kind === "corner") return target;
+  if (target.kind === "corner" || target.kind === "insert") return target;
   return { kind: "feature", feature: target.feature };
 }

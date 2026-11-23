@@ -321,7 +321,6 @@ export const api = {
     call<{
       images: GalleryImage[];
     }>("/api/gallery"),
-  mapImages: () => call<{ images: string[] }>("/api/map-images"),
   history: (path?: string) =>
     call<{ versions: Version[] }>(`/api/history${path ? `?path=${encodeURIComponent(path)}` : ""}`),
   versionText: (path: string, commit: string) =>

@@ -9,6 +9,8 @@ import {
   MapPin,
   Pencil,
   Pentagon,
+  Plus,
+  Slash,
   Spline,
   Telescope,
   Trash2,
@@ -52,6 +54,9 @@ export interface MapMenu {
   reorder: (feature: MapFeature, by: 1 | -1) => void;
   remove: (feature: MapFeature) => void;
   removePoint: (feature: MapFeature, vertex: number) => void;
+  insertPoint: (feature: MapFeature, segment: number, at: [number, number]) => void;
+  /** Draws a path or zone curved or straight: all of its shapes. */
+  setCurve: (feature: MapFeature, curved: boolean) => void;
   addMarker: () => void;
   startPath: () => void;
   startZone: () => void;
@@ -70,6 +75,16 @@ function Items({ menu }: { menu: MapMenu }) {
         onSelect={() => menu.removePoint(feature, target.vertex)}
       >
         Remove this point
+      </ContextMenuItem>
+    );
+  }
+  if (target.kind === "insert" && feature) {
+    return (
+      <ContextMenuItem
+        icon={Plus}
+        onSelect={() => menu.insertPoint(feature, target.segment, target.at)}
+      >
+        Add a point here
       </ContextMenuItem>
     );
   }
@@ -112,6 +127,19 @@ function Items({ menu }: { menu: MapMenu }) {
         <ContextMenuItem icon={Pencil} onSelect={() => menu.showInBar(feature)}>
           Edit in the side bar
         </ContextMenuItem>
+        {feature.kind !== "marker" && (
+          <ContextMenuItem
+            icon={(feature as { curve?: string }).curve === "smooth" ? Slash : Spline}
+            keys={shortcutText("map.curve")}
+            onSelect={() =>
+              menu.setCurve(feature, (feature as { curve?: string }).curve !== "smooth")
+            }
+          >
+            {(feature as { curve?: string }).curve === "smooth"
+              ? "Make it straight"
+              : "Make it curved"}
+          </ContextMenuItem>
+        )}
         <ContextMenuSub label="Move to layer" icon={Layers}>
           {menu.map.layers.map((layer) => (
             <ContextMenuItem

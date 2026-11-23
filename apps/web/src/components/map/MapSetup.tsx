@@ -1,5 +1,8 @@
 import type { MapFile } from "@frontier/schema";
+import { useId } from "react";
 import { lies, type OtherMap } from "../../map/layersBeneath.ts";
+import { Combobox } from "../ui/Combobox.tsx";
+import { mapOptions } from "./FeatureEditor.tsx";
 
 /** A flat space with measuring on again. */
 function withoutSchematic(space: MapFile["space"]): MapFile["space"] {
@@ -21,31 +24,33 @@ export function MapSetup({
   onChange: (next: MapFile) => void;
 }) {
   const schematic = map.space.kind === "flat" && map.space.schematic === true;
+  const label = useId();
   return (
     <div className="map-setup">
       <h3>This map</h3>
       {map.space.kind === "sphere" && (
-        <label className="field">
-          <span>Lies under</span>
-          <select
-            aria-label="This map lies under"
+        <div className="field">
+          <span aria-hidden="true">Lies under</span>
+          <span id={label} className="sr-only">
+            This map lies under
+          </span>
+          <Combobox
+            labelledBy={label}
+            // A map cannot lie under one that lies under it.
+            options={mapOptions(
+              otherMaps.filter((m) => m.space.kind === "sphere" && !lies(id, m.id, otherMaps)),
+              "Nothing: it is a world of its own",
+            )}
             value={map.under ?? ""}
-            onChange={(e) => {
+            onChange={(under) => {
               const next = { ...map } as MapFile;
               delete next.under;
-              onChange(e.target.value ? { ...next, under: e.target.value } : next);
+              onChange(under ? { ...next, under } : next);
             }}
-          >
-            <option value="">Nothing: it is a world of its own</option>
-            {otherMaps
-              .filter((m) => m.space.kind === "sphere" && !lies(id, m.id, otherMaps))
-              .map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.title}
-                </option>
-              ))}
-          </select>
-        </label>
+            findLabel="Find a map"
+            empty="No globe has that name."
+          />
+        </div>
       )}
       {map.space.kind === "flat" && (
         <label className="check">

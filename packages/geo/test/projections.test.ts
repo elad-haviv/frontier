@@ -16,7 +16,16 @@ import {
   centreOn,
   cellFor,
   isProjectionId,
+  outline,
+  type View,
 } from "../src/index.js";
+
+/** The rings that fill a zone through these control points, from its closed outline. */
+const ringsOf = (view: View, points: Position[]) =>
+  view.rings!(
+    outline({ kind: "sphere", radius: null, unit: "" }, points, { curve: false, closed: true })
+      .line,
+  );
 
 const W = 900;
 const H = 600;
@@ -144,14 +153,14 @@ describe("cutting at the map's edges", () => {
 
   it("fills a zone across the edge as pieces on both sides, and one around a pole", () => {
     const view = makeView(at("mollweide"), W, H);
-    const across = view.rings!([
+    const across = ringsOf(view, [
       [170, -10],
       [-170, -10],
       [-170, 10],
       [170, 10],
     ]);
     expect(across).toHaveLength(2);
-    const polar = view.rings!([
+    const polar = ringsOf(view, [
       [0, 70],
       [120, 70],
       [-120, 70],
@@ -164,7 +173,7 @@ describe("cutting at the map's edges", () => {
 
   it("cuts a zone between the two hemispheres", () => {
     const view = makeView(at("hemispheres"), W, H);
-    const rings = view.rings!([
+    const rings = ringsOf(view, [
       [-20, -10],
       [20, -10],
       [20, 10],

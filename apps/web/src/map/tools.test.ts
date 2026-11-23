@@ -4,12 +4,17 @@ import { describe, expect, it } from "vitest";
 import { readTime, resolve } from "./time.ts";
 import {
   addSketchPoint,
+  canFinish,
   deleteFeature,
   dragShape,
   finishSketch,
+  insertPoint,
+  moveZone,
   placeMarker,
   removePoint,
   removeReason,
+  setCurve,
+  takeBackPoint,
   tapSelect,
 } from "./tools.ts";
 
@@ -45,12 +50,12 @@ const flat = (features: MapFeature[]) =>
 const plain = { selected: null, pin: null, editing: false, showAll: false };
 
 describe("the marker tool", () => {
-  it("adds a marker to the layer drawn into, selects it, and goes back to Select", () => {
+  it("adds a marker to the layer drawn into and selects it; the tool stays on", () => {
     const step = placeMarker(flat([zone("z")]), "l2", [5, 6]);
     const added = step.map!.features[1]!;
     expect(added).toMatchObject({ kind: "marker", layer: "l2", at: [5, 6], entry: null });
     expect(step.selected).toBe(added.id);
-    expect(step.tool).toBe("select");
+    expect(step.tool).toBeUndefined();
   });
 });
 
@@ -314,6 +319,162 @@ describe("removing a point", () => {
     const [z, m] = resolve(map, null, 0, plain);
     expect(removePoint(flat([]), z!, 0)).toBeNull();
     expect(removePoint(map, m!, 0)).toEqual({ reason: "A marker has no points" });
+  });
+});
+
+describe("editing tools of 13c", () => {
+  /** A chronicle with one point span in the year 300. */
+  const treatyTime = () =>
+    readTime({
+      spans: [
+        {
+          id: "treaty",
+          lane: "l1",
+          name: "treaty",
+          point: true,
+          start: { words: "", low: 300, high: 300 },
+          end: null,
+          length: null,
+          entry: null,
+          note: "",
+        },
+      ],
+    } as unknown as ChronicleFile);
+  const square: [number, number][] = [
+    [0, 0],
+    [100, 0],
+    [100, 100],
+    [0, 100],
+  ];
+  const later = { id: "h1", from: "treaty", points: square };
+  type Timed = { points: number[][]; shapes: { points: number[][] }[] };
+
+  it("finishes a double-click through the last-point rule: its second click is on the point", () => {
+    const map = flat([]);
+    // The first click of the double-click adds a point...
+    const first = addSketchPoint(map, view, "path", [[0, 0]], "l1", [80, 40])!;
+    expect(first.sketch).toEqual([
+      [0, 0],
+      [80, 40],
+    ]);
+    // ...and the second lands on it, which finishes the path.
+    const second = addSketchPoint(map, view, "path", first.sketch!, "l1", [81, 41], true)!;
+    expect(second.map!.features[0]).toMatchObject({
+      kind: "path",
+      curve: "smooth",
+      points: [
+        [0, 0],
+        [80, 40],
+      ],
+    });
+    expect(second).toMatchObject({ sketch: [], tool: "select" });
+  });
+
+  it("knows when a sketch can be finished", () => {
+    expect(canFinish("path", [[0, 0]])).toBe(false);
+    expect(canFinish("path", square.slice(0, 2))).toBe(true);
+    expect(canFinish("zone", square.slice(0, 2))).toBe(false);
+    expect(canFinish("zone", square.slice(0, 3))).toBe(true);
+    expect(canFinish("measure", square)).toBe(false);
+  });
+
+  it("keeps a straight feature without the flag, and writes it after the points", () => {
+    const straight = finishSketch(flat([]), "zone", square, "l1").map!.features[0]!;
+    expect("curve" in straight).toBe(false);
+    const curved = finishSketch(flat([]), "path", square, "l1", true).map!.features[0]!;
+    expect(Object.keys(curved).slice(0, 6)).toEqual([
+      "id",
+      "kind",
+      "layer",
+      "points",
+      "curve",
+      "entry",
+    ]);
+  });
+
+  it("takes back the last point of a sketch", () => {
+    expect(takeBackPoint(square)).toEqual(square.slice(0, 3));
+    expect(takeBackPoint([])).toEqual([]);
+  });
+
+  it("inserts a point after a segment of the shape on screen, and picks it", () => {
+    const map = flat([zone("z", { points: square })]);
+    const drawn = resolve(map, null, 0, plain)[0]!;
+    const done = insertPoint(map, drawn, 3, [0, 50])!;
+    expect((done.feature as unknown as Timed).points).toEqual([...square, [0, 50]]);
+    expect(done.vertex).toBe(4);
+    expect(insertPoint(flat([]), drawn, 0, [1, 1])).toBeNull();
+    const m = resolve(flat([marker("m")]), null, 0, plain)[0]!;
+    expect(insertPoint(flat([marker("m")]), m, 0, [1, 1])).toBeNull();
+  });
+
+  it("at a year where a later shape is in force, each edit changes that shape only", () => {
+    const time = treatyTime();
+    const map = flat([zone("z", { shapes: [later] })]);
+    const drawn = resolve(map, time, 310, plain)[0]!;
+    const first = (map.features[0] as unknown as Timed).points;
+
+    const inserted = insertPoint(map, drawn, 0, [50, 0])!.feature as unknown as Timed;
+    expect(inserted.points).toEqual(first);
+    expect(inserted.shapes[0]!.points).toEqual([[0, 0], [50, 0], ...square.slice(1)]);
+
+    const moved = moveZone(map, drawn, square, [0, 0], [10, 5]) as unknown as Timed;
+    expect(moved.points).toEqual(first);
+    expect(moved.shapes[0]!.points).toEqual(square.map(([x, y]) => [x + 10, y + 5]));
+
+    const removed = removePoint(map, drawn, 0) as { feature: Timed };
+    expect(removed.feature.points).toEqual(first);
+    expect(removed.feature.shapes[0]!.points).toEqual(square.slice(1));
+  });
+
+  it("moves a zone from where it was when the drag began, so it does not drift", () => {
+    const map = flat([zone("z", { points: square })]);
+    const drawn = resolve(map, null, 0, plain)[0]!;
+    const once = moveZone(map, drawn, square, [50, 50], [70, 50]) as unknown as Timed;
+    const again = moveZone(map, drawn, square, [50, 50], [70, 50]) as unknown as Timed;
+    expect(once.points).toEqual(again.points);
+    expect(once.points[0]).toEqual([20, 0]);
+    // Only a zone moves; a gone one gives nothing.
+    expect(moveZone(flat([]), drawn, square, [0, 0], [1, 1])).toBeNull();
+    const m = flat([marker("z")]);
+    expect(moveZone(m, drawn, square, [0, 0], [1, 1])).toBeNull();
+  });
+
+  it("moves a zone on a globe about the poles, staying upright", () => {
+    const globe = {
+      space: { kind: "sphere", radius: null, unit: "km" },
+      features: [
+        zone("z", {
+          points: [
+            [10, 40],
+            [30, 40],
+            [30, 55],
+          ],
+        }),
+      ],
+    } as unknown as MapFile;
+    const drawn = resolve(globe, null, 0, plain)[0]!;
+    const moved = moveZone(
+      globe,
+      drawn,
+      (drawn.feature as unknown as Timed).points as [number, number][],
+      [20, 45],
+      [60, 50],
+    ) as unknown as Timed;
+    expect(moved.points).toEqual([
+      [50, 45],
+      [70, 45],
+      [70, 60],
+    ]);
+  });
+
+  it("curves or straightens all of a feature's shapes at once", () => {
+    const z = zone("z", { shapes: [later] });
+    const curved = setCurve(z, true) as MapFeature & { curve?: string };
+    expect(curved.curve).toBe("smooth");
+    expect((curved as unknown as Timed).shapes).toEqual([later]);
+    expect("curve" in setCurve(curved, false)).toBe(false);
+    expect(setCurve(marker("m"), true)).toEqual(marker("m"));
   });
 });
 

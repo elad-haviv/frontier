@@ -418,7 +418,7 @@ keys.register(
     id: "map.delete",
     keys: ["Delete", "Backspace"],
     scope: "map",
-    label: "Delete the picked point or the selection",
+    label: "Delete the picked point or the selection; while drawing, take back the last point",
     when: "editing",
   },
   {
@@ -445,6 +445,20 @@ keys.register(
   },
   { id: "map.layers", keys: ["l"], scope: "map", label: "Show or hide the Layers tab" },
   { id: "map.time", keys: ["t"], scope: "map", label: "Turn time on or off" },
+  {
+    id: "map.finish",
+    keys: ["Enter"],
+    scope: "map",
+    label: "Finish the path or zone",
+    when: "editing",
+  },
+  {
+    id: "map.curve",
+    keys: ["c"],
+    scope: "map",
+    label: "Straight or curved, while drawing or for the selected path or zone",
+    when: "editing",
+  },
   {
     id: "map.turn",
     keys: ["Enter"],

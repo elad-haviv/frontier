@@ -1,14 +1,17 @@
 /**
  * The pointer on the map: binds the state machine of gesture.ts to the top canvas and carries out
- * its effects (taps, panning, pinching, dragging a marker or a corner, the box marked to focus on,
- * and with a mouse, the hover: the cursor, and the halo on the live canvas).
+ * its effects (taps, panning, pinching, dragging a marker, a corner, a "+" or the selected zone,
+ * the box marked to focus on, and with a mouse, the hover: the cursor, the halo on the live
+ * canvas, and while drawing, the line from the last point to the pointer).
  */
 import {
   focusOn,
   makeView,
+  outline,
   panBy,
   type Position,
   type Shape,
+  type Space,
   type ViewState,
   zoomAt,
 } from "@frontier/geo";
@@ -23,20 +26,25 @@ import {
   kindOf,
   pick,
   type Point,
+  type PointerKind,
   type Rect,
   step,
   type Target,
 } from "./gesture.ts";
-import { drawLive } from "./live.ts";
+import { drawLive, type LiveInput } from "./live.ts";
+import { screenLines } from "./overlay.ts";
 import type { MapTime, Resolved } from "./time.ts";
 import {
   addSketchPoint,
   dragShape,
+  insertPoint,
+  moveZone,
   placeMarker,
   type Step,
   tapSelect,
   type Tool,
 } from "./tools.ts";
+import { focusIsFree } from "../keys.ts";
 import { pointOn } from "./useMapView.ts";
 
 export function usePointer(p: {
@@ -70,8 +78,21 @@ export function usePointer(p: {
   apply: (step: Step) => void;
   /** While the context menu is open, nothing is hovered. */
   paused: boolean;
+  /** New paths and zones are curved: the rubber band shows the curve. */
+  curve: boolean;
+  /** Tells the page the kind of pointer that pressed the map, which sizes the "+" handles. */
+  onPressKind: (kind: PointerKind) => void;
 }) {
   const { size, editing, tool, selected, focusing } = p;
+  /** Space is held: a drag pans, even over the selected zone. */
+  const spaceHeld = useRef(false);
+  /** The shape on screen of what is dragged, as it was when the drag began. */
+  const dragStart = useRef<{ feature: string; points: Position[] } | null>(null);
+  /** The halo's target, and where the mouse is while drawing: the live canvas shows both. */
+  const halo = useRef<Target | null>(null);
+  const bandAt = useRef<Point | null>(null);
+  const drawing = () =>
+    editing && (tool === "path" || tool === "zone" || tool === "measure") && p.sketch.length > 0;
   const [box, setBox] = useState<Rect | null>(null);
   const machine = useRef<GestureState>(IDLE);
   /** What the mouse is over, and where it met it: kept until what it is over changes. */
@@ -85,9 +106,47 @@ export function usePointer(p: {
     return state ? makeView(state, size.width, size.height) : null;
   };
   const chosen = () => p.resolvedRef.current.find((r) => r.feature.id === selected)?.feature;
+  const space = () => p.map?.space as Space | undefined;
+  /** Sets the view at once, so a pan and a zoom in one step build on each other. */
+  const moveView = (next: ViewState) => {
+    (p.viewRef as { current: ViewState | null }).current = next;
+    p.setView(next);
+  };
+
+  /**
+   * The rubber band at a point of the screen: the sketch's outline with the pointer as its next
+   * point, drawn by the same function as a finished feature. None off the globe.
+   */
+  function bandFor(at: Point | null): NonNullable<LiveInput["band"]> | null {
+    const view = viewNow();
+    const s = space();
+    const position = at && view ? view.unproject(at.x, at.y) : null;
+    if (!position || !view || !s || !drawing()) return null;
+    const points = [...p.sketch, position];
+    const curve = tool !== "measure" && p.curve;
+    if (tool !== "zone") {
+      return {
+        line: screenLines(view, outline(s, points, { curve, closed: false }).line),
+        closing: [],
+      };
+    }
+    const o = outline(s, points, { curve, closed: true });
+    const turn = o.spans[points.length - 1] ?? o.line.length - 1;
+    return {
+      line: screenLines(view, o.line.slice(0, turn + 1)),
+      closing: screenLines(view, o.line.slice(turn)),
+    };
+  }
 
   /** Draws the hover halo of a target, or clears it. */
   function drawHalo(target: Target | null) {
+    halo.current = target;
+    paintLive();
+  }
+
+  /** Draws the live canvas: the halo, and the rubber band. */
+  function paintLive() {
+    const target = halo.current;
     const canvas = p.liveCanvas.current;
     if (!canvas) return;
     const ratio = window.devicePixelRatio || 1;
@@ -101,21 +160,26 @@ export function usePointer(p: {
       const at = shape && shape.kind !== "marker" ? shape.points[target.vertex] : undefined;
       corner = at ? (viewNow()?.project(at) ?? null) : null;
     }
+    // A "+" is ringed as a corner is.
+    if (target?.kind === "insert") corner = viewNow()?.project(target.at) ?? null;
     drawLive(canvas.getContext("2d")!, {
       width: size.width,
       height: size.height,
       shapes:
-        target && target.kind !== "corner"
+        target && target.kind !== "corner" && target.kind !== "insert"
           ? p.shapes.current.filter((s) => s.id === target.feature)
           : [],
       corner,
+      band: bandFor(bandAt.current),
     });
   }
+  // A point added, or taken back, moves the band with it.
+  useEffect(() => paintLive(), [p.sketch, p.curve]);
 
   /** Sets what is hovered, when it changed: the halo and the name follow. */
   function hover(target: Target | null, at: Point) {
     const key = target
-      ? `${target.kind}:${target.feature}:${"vertex" in target ? target.vertex : ""}`
+      ? `${target.kind}:${target.feature}:${"vertex" in target ? target.vertex : ""}:${"segment" in target ? target.segment : ""}`
       : "";
     if (key === hoverKey.current) return;
     hoverKey.current = key;
@@ -127,7 +191,10 @@ export function usePointer(p: {
     // A marker's name points at the marker; a path's or zone's at where the pointer met it.
     const marker = p.shapes.current.find((s) => s.id === target.feature && s.kind === "marker") as
       { at: [number, number] } | undefined;
-    const point = target.kind !== "corner" && marker ? { x: marker.at[0], y: marker.at[1] } : at;
+    const point =
+      target.kind !== "corner" && target.kind !== "insert" && marker
+        ? { x: marker.at[0], y: marker.at[1] }
+        : at;
     setHovered({ target, at: point });
   }
 
@@ -135,8 +202,32 @@ export function usePointer(p: {
   function endHover() {
     if (waiting.current) cancelAnimationFrame(waiting.current.frame);
     waiting.current = null;
+    bandAt.current = null;
     hover(null, { x: 0, y: 0 });
+    paintLive();
   }
+
+  // Space held pans, while the keys are the map's: not while typing in a field.
+  useEffect(() => {
+    const down = (e: KeyboardEvent) => {
+      if (e.key !== " " || !focusIsFree(document.activeElement, p.frame.current)) return;
+      spaceHeld.current = true;
+      // The page does not scroll under the map.
+      e.preventDefault();
+    };
+    const up = (e: KeyboardEvent) => {
+      if (e.key === " ") spaceHeld.current = false;
+    };
+    const lost = () => (spaceHeld.current = false);
+    document.addEventListener("keydown", down);
+    document.addEventListener("keyup", up);
+    window.addEventListener("blur", lost);
+    return () => {
+      document.removeEventListener("keydown", down);
+      document.removeEventListener("keyup", up);
+      window.removeEventListener("blur", lost);
+    };
+  }, []);
 
   // A change of mode, tool or view ends the hover; the cursor comes back from the tool's class.
   useEffect(() => {
@@ -146,7 +237,7 @@ export function usePointer(p: {
   }, [editing, tool, p.exploring, focusing, p.paused, selected]);
   useEffect(() => endHover(), [p.viewRef.current, p.map, size]);
 
-  function tap(x: number, y: number) {
+  function tap(x: number, y: number, kind: PointerKind) {
     const v = viewNow();
     const now = p.mapRef.current;
     if (!v || !now) return;
@@ -164,8 +255,20 @@ export function usePointer(p: {
     }
     if (editing && (tool === "path" || tool === "zone" || tool === "measure")) {
       if (!p.map) return;
-      const step = addSketchPoint(p.map, v, tool, p.sketch, p.activeLayer, [x, y]);
+      const step = addSketchPoint(p.map, v, tool, p.sketch, p.activeLayer, [x, y], p.curve);
       if (step) p.apply(step);
+      return;
+    }
+
+    // A "+" of the selected feature puts a point there, on the line, and picks it.
+    const target = editing ? context().pick({ x, y }, kind) : null;
+    const drawn = p.resolvedRef.current.find((r) => r.feature.id === selected);
+    if (target?.kind === "insert" && drawn) {
+      const done = insertPoint(now, drawn, target.segment, target.at);
+      if (done) {
+        p.setFeature(done.feature);
+        p.apply({ vertex: done.vertex });
+      }
       return;
     }
 
@@ -176,6 +279,10 @@ export function usePointer(p: {
     const state = p.viewRef.current;
     switch (effect.type) {
       case "hover":
+        if (drawing() || bandAt.current) {
+          bandAt.current = drawing() ? effect.at : null;
+          paintLive();
+        }
         hover(effect.target, effect.at);
         return;
       case "cursor":
@@ -183,9 +290,10 @@ export function usePointer(p: {
         if (p.topCanvas.current) p.topCanvas.current.style.cursor = effect.name;
         return;
       case "tap":
-        tap(effect.at.x, effect.at.y);
+        tap(effect.at.x, effect.at.y, effect.kind);
         return;
       case "beginStep":
+        dragStart.current = null;
         p.beginStep();
         return;
       case "box":
@@ -200,18 +308,44 @@ export function usePointer(p: {
         if (!state) return;
         // A touch pan draws the picture coarsely until the finger is lifted.
         p.coarse.current = e.kind === "touch";
-        p.setView(panBy(state, effect.dx, effect.dy));
+        moveView(panBy(state, effect.dx, effect.dy));
         return;
       case "zoom":
         if (!state) return;
-        p.setView(zoomAt(state, size.width, size.height, effect.cx, effect.cy, effect.factor));
+        moveView(zoomAt(state, size.width, size.height, effect.cx, effect.cy, effect.factor));
         return;
       case "dragTo": {
-        const position = viewNow()?.unproject(effect.at.x, effect.at.y);
+        const view = viewNow();
+        const position = view?.unproject(effect.at.x, effect.at.y);
         const now = p.mapRef.current;
         const drawn = p.resolvedRef.current.find((r) => r.feature.id === effect.target.feature);
-        if (!position || !now || !drawn) return;
-        const vertex = effect.target.kind === "corner" ? effect.target.vertex : null;
+        // When the pointer leaves the globe, what is dragged stays where it last was.
+        if (!view || !position || !now || !drawn) return;
+        const { target } = effect;
+        if (target.kind === "insert" || target.kind === "zone") {
+          // Both start from the shape as it was at the press, so neither drifts.
+          if (dragStart.current?.feature !== target.feature && drawn.feature.kind !== "marker") {
+            dragStart.current = { feature: target.feature, points: drawn.feature.points };
+          }
+          const start = dragStart.current;
+          if (!start) return;
+          const before: Resolved = {
+            ...drawn,
+            feature: { ...drawn.feature, points: start.points } as MapFeature,
+          };
+          if (target.kind === "insert") {
+            const done = insertPoint(now, before, target.segment, position);
+            if (!done) return;
+            p.setFeature(done.feature, false);
+            p.apply({ vertex: done.vertex });
+          } else {
+            const from = view.unproject(effect.from.x, effect.from.y);
+            const next = from ? moveZone(now, before, start.points, from, position) : null;
+            if (next) p.setFeature(next, false);
+          }
+          return;
+        }
+        const vertex = target.kind === "corner" ? target.vertex : null;
         const next = dragShape(
           now,
           drawn,
@@ -228,11 +362,17 @@ export function usePointer(p: {
 
   const context = (): GestureContext => ({
     focusing,
+    spaceHeld: spaceHeld.current,
     placing: editing ? tool !== "select" : p.exploring,
-    pick: (at) => {
+    pick: (at, kind) => {
       const view = viewNow();
-      if (!view) return null;
-      return pick({ view, editing, tool, chosen: chosen(), shapes: p.shapes.current }, at);
+      const s = space();
+      if (!view || !s) return null;
+      return pick(
+        { space: s, view, editing, tool, chosen: chosen(), shapes: p.shapes.current },
+        at,
+        kind,
+      );
     },
   });
 
@@ -274,6 +414,7 @@ export function usePointer(p: {
     if (type === "down") {
       if (waiting.current) cancelAnimationFrame(waiting.current.frame);
       waiting.current = null;
+      p.onPressKind(event.kind);
       // Pressing the map gives its frame the focus, so the keys act again after a button.
       // No focus ring: the press itself shows where the focus went.
       p.frame.current?.focus({ preventScroll: true, focusVisible: false } as FocusOptions);
@@ -301,6 +442,8 @@ export function usePointer(p: {
       onPointerMove: (e: React.PointerEvent) => handle(e, "move"),
       onPointerUp: (e: React.PointerEvent) => handle(e, "up"),
       onPointerCancel: (e: React.PointerEvent) => handle(e, "cancel"),
+      // The middle button pans the map; the browser's own scrolling would fight it.
+      onMouseDown: (e: React.MouseEvent) => e.button === 1 && e.preventDefault(),
       // Leaving the frame ends the hover.
       onPointerLeave: (e: React.PointerEvent) => {
         if (machine.current.name === "idle" && e.pointerType === "mouse") endHover();

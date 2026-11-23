@@ -1,4 +1,4 @@
-import type { Shape, View } from "@frontier/geo";
+import type { Shape, Space, View } from "@frontier/geo";
 import type { MapFeature } from "@frontier/schema";
 import { describe, expect, it } from "vitest";
 import {
@@ -36,11 +36,18 @@ const cancel = event("cancel");
 
 const corner: Target = { kind: "corner", feature: "z1", vertex: 2 };
 const markerBody: Target = { kind: "marker", feature: "m1" };
+const plusHandle: Target = { kind: "insert", feature: "z1", segment: 0, at: [50, 0] };
+const zoneBody: Target = { kind: "zone", feature: "z1" };
 const feature: Target = { kind: "feature", feature: "p1" };
 
 /** What the machine sees: nothing under the pointer unless a target is given. */
-const context = (target: Target | null = null, focusing = false): GestureContext => ({
+const context = (
+  target: Target | null = null,
+  focusing = false,
+  spaceHeld = false,
+): GestureContext => ({
   focusing,
+  spaceHeld,
   pick: () => target,
 });
 
@@ -94,7 +101,26 @@ describe("idle", () => {
     }
   });
 
-  it.each([1, 2, 3, 4])("ignores a mouse press of button %i", (button) => {
+  it("pans with the middle button over anything, and never taps", () => {
+    const { state, effects } = run(
+      [down(1, 10, 10, "mouse", 1), move(1, 60, 60, "mouse"), up(1, 60, 60, "mouse")],
+      context(zoneBody),
+    );
+    expect(state).toBe(IDLE);
+    expect(effects).toEqual([{ type: "pan", dx: 50, dy: 50 }]);
+    // Let go without moving, it is no tap either.
+    expect(run([down(1, 0, 0, "mouse", 1), up(1, 0, 0, "mouse")]).effects).toEqual([]);
+  });
+
+  it.each(KINDS)("pans with Space held, even on the selected zone (%s)", (kind) => {
+    const { effects } = run(
+      [down(1, 0, 0, kind), move(1, 3, 4, kind), up(1, 3, 4, kind)],
+      context(zoneBody, false, true),
+    );
+    expect(effects).toEqual([{ type: "pan", dx: 3, dy: 4 }]);
+  });
+
+  it.each([2, 3, 4])("ignores a mouse press of button %i", (button) => {
     const { state, effects } = run(
       [down(1, 10, 10, "mouse", button), move(1, 60, 60, "mouse"), up(1, 60, 60, "mouse")],
       context(feature),
@@ -167,17 +193,26 @@ describe("press", () => {
     }
   });
 
-  it.each([corner, markerBody])("moved on a $kind, it drags with one step to undo", (target) => {
-    const { state, effects } = run(
-      [down(1, 0, 0, "mouse"), move(1, 10, 0, "mouse"), move(1, 20, 5, "mouse"), up(1, 20, 5)],
-      context(target),
-    );
-    expect(state).toBe(IDLE);
-    expect(effects).toEqual([
-      { type: "beginStep" },
-      { type: "dragTo", target, at: { x: 10, y: 0 } },
-      { type: "dragTo", target, at: { x: 20, y: 5 } },
-    ]);
+  it.each([corner, markerBody, plusHandle, zoneBody])(
+    "moved on a $kind, it drags with one step to undo, from where the press began",
+    (target) => {
+      const { state, effects } = run(
+        [down(1, 0, 0, "mouse"), move(1, 10, 0, "mouse"), move(1, 20, 5, "mouse"), up(1, 20, 5)],
+        context(target),
+      );
+      expect(state).toBe(IDLE);
+      const from = { x: 0, y: 0 };
+      expect(effects).toEqual([
+        { type: "beginStep" },
+        { type: "dragTo", target, at: { x: 10, y: 0 }, from },
+        { type: "dragTo", target, at: { x: 20, y: 5 }, from },
+      ]);
+    },
+  );
+
+  it('a press on a "+" that does not move is a tap there', () => {
+    const { effects } = run([down(1, 5, 5, "touch"), up(1, 5, 5, "touch")], context(plusHandle));
+    expect(effects).toEqual([{ type: "tap", at: { x: 5, y: 5 }, kind: "touch" }]);
   });
 
   it("moved on a feature that cannot be dragged, it pans", () => {
@@ -278,29 +313,41 @@ describe("drag", () => {
       context(markerBody),
     );
     expect(state).toBe(IDLE);
-    expect(types(effects)).toEqual(["beginStep", "dragTo", "zoom", "zoom"]);
+    expect(types(effects)).toEqual(["beginStep", "dragTo", "pan", "zoom", "pan", "zoom"]);
   });
 });
 
 describe("pinch", () => {
   const pinching = () => run([down(1, 0, 0), down(2, 100, 0)]).state;
 
-  it("zooms about the fingers' middle by how far they spread", () => {
+  it("zooms about the fingers' middle by how far they spread, and pans as the middle moves", () => {
     const { state, effects } = run([move(2, 200, 0), move(1, -100, 100)], context(), pinching());
     expect(effects).toEqual([
+      { type: "pan", dx: 50, dy: 0 },
       { type: "zoom", cx: 100, cy: 0, factor: 2 },
+      { type: "pan", dx: -50, dy: 50 },
       { type: "zoom", cx: 50, cy: 50, factor: Math.hypot(300, 100) / 200 },
     ]);
     expect(state).toMatchObject({ name: "pinch", distance: Math.hypot(300, 100) });
   });
 
+  it("two fingers moved together pan without zooming", () => {
+    const { effects } = run([move(1, 0, 40), move(2, 100, 40)], context(), pinching());
+    expect(effects).toEqual([
+      { type: "pan", dx: 0, dy: 20 },
+      { type: "zoom", cx: 50, cy: 20, factor: Math.hypot(100, 40) / 100 },
+      { type: "pan", dx: 0, dy: 20 },
+      { type: "zoom", cx: 50, cy: 40, factor: 100 / Math.hypot(100, 40) },
+    ]);
+  });
+
   it("does not zoom while the fingers meet", () => {
     const met = run([move(2, 0, 0)], context(), pinching());
-    expect(met.effects).toEqual([]);
+    expect(types(met.effects)).toEqual(["pan"]);
     expect(met.state).toMatchObject({ name: "pinch", distance: 100 });
     // From fingers that started together, nothing zooms.
     const together = run([down(1, 0, 0), down(2, 0, 0), move(2, 50, 0)]);
-    expect(together.effects).toEqual([]);
+    expect(types(together.effects)).toEqual(["pan"]);
   });
 
   it("one finger lifted pans with the other from where it is, and never taps", () => {
@@ -311,6 +358,7 @@ describe("pinch", () => {
     );
     expect(state).toBe(IDLE);
     expect(effects).toEqual([
+      { type: "pan", dx: 25, dy: 0 },
       { type: "zoom", cx: 75, cy: 0, factor: 1.5 },
       { type: "pan", dx: 0, dy: 30 },
     ]);
@@ -445,6 +493,8 @@ describe("hover", () => {
     expect(cursorFor(feature, plain)).toBe("pointer");
     expect(cursorFor(corner, plain)).toBe("move");
     expect(cursorFor(markerBody, plain)).toBe("move");
+    expect(cursorFor(zoneBody, plain)).toBe("move");
+    expect(cursorFor(plusHandle, plain)).toBe("copy");
     for (const target of [null, feature, corner]) {
       expect(cursorFor(target, { focusing: true })).toBe("crosshair");
       expect(cursorFor(target, { focusing: false, placing: true })).toBe("crosshair");
@@ -516,6 +566,8 @@ describe("hover", () => {
 describe("menuTargetOf", () => {
   it("a corner stays a corner, the selected marker or any feature is a feature", () => {
     expect(menuTargetOf(corner)).toEqual(corner);
+    expect(menuTargetOf(plusHandle)).toEqual(plusHandle);
+    expect(menuTargetOf(zoneBody)).toEqual({ kind: "feature", feature: "z1" });
     expect(menuTargetOf(markerBody)).toEqual({ kind: "feature", feature: "m1" });
     expect(menuTargetOf(feature)).toEqual({ kind: "feature", feature: "p1" });
     expect(menuTargetOf(null)).toEqual({ kind: "nothing" });
@@ -552,6 +604,7 @@ describe("pick", () => {
     { id: "m1", kind: "marker", at: [200, 200] },
   ];
   const input = (over: Partial<PickInput> = {}): PickInput => ({
+    space: { kind: "flat", width: 1000, height: 1000, scale: null, unit: "" } as Space,
     view,
     editing: true,
     tool: "select",
@@ -578,8 +631,46 @@ describe("pick", () => {
     });
   });
 
+  it('then a "+" at the middle of a segment, before the inside of the zone', () => {
+    expect(pick(input(), { x: 52, y: 3 })).toEqual({
+      kind: "insert",
+      feature: "z1",
+      segment: 0,
+      at: [50, 0],
+    });
+    // The closing segment has its "+" too.
+    expect(pick(input(), { x: 50, y: 50 })).toMatchObject({ kind: "insert", segment: 2 });
+    expect(pick(input(), { x: 70, y: 30 })).toEqual({ kind: "zone", feature: "z1" });
+  });
+
+  it('shows a "+" only on a segment long enough for the pointer', () => {
+    const small = {
+      ...zone,
+      points: [
+        [0, 0],
+        [40, 0],
+        [40, 40],
+      ],
+    } as MapFeature;
+    const at = { x: 20, y: 1 };
+    // 40 px is room for a mouse's "+", not a finger's.
+    expect(pick(input({ chosen: small }), at, "mouse")).toMatchObject({ kind: "insert" });
+    expect(pick(input({ chosen: small }), at, "touch")).not.toMatchObject({ kind: "insert" });
+  });
+
+  it("the inside of another zone is only a feature", () => {
+    const other = { ...zone, id: "z2" } as MapFeature;
+    expect(pick(input({ chosen: other }), { x: 70, y: 30 })).toEqual({
+      kind: "feature",
+      feature: "z1",
+    });
+  });
+
   it("then any feature, then nothing", () => {
-    expect(pick(input(), { x: 70, y: 30 })).toEqual({ kind: "feature", feature: "z1" });
+    expect(pick(input({ chosen: undefined }), { x: 70, y: 30 })).toEqual({
+      kind: "feature",
+      feature: "z1",
+    });
     expect(pick(input({ chosen: undefined }), { x: 200, y: 200 })).toEqual({
       kind: "feature",
       feature: "m1",

@@ -5,3 +5,5 @@ export * from "./space.js";
 export * from "./view.js";
 export * from "./zone.js";
 export * from "./projections.js";
+export * from "./curve.js";
+export * from "./move.js";

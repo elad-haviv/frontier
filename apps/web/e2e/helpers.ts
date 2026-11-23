@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { expect, type Page } from "@playwright/test";
+import { expect, type Locator, type Page } from "@playwright/test";
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -225,6 +225,58 @@ export async function discardDraft(page: Page): Promise<void> {
   await page.getByRole("menuitem", { name: "Discard draft" }).click();
   await answerDialog(page, "Discard");
   await expect(page.locator(".code-editor")).toHaveCount(0);
+}
+
+/**
+ * Chooses an image in the map image dialog that `opener` opens: found by its file name, picked,
+ * and chosen.
+ */
+export async function chooseMapImage(page: Page, opener: Locator, name: string): Promise<void> {
+  await opener.click();
+  const dialog = page.getByRole("dialog", { name: "Choose an image" });
+  await expect(dialog).toBeVisible();
+  await dialog.getByLabel("Find an image by its name or its entry").fill(name);
+  await dialog
+    .getByRole("button", { name: `Choose ${name}`, exact: true })
+    .first()
+    .click();
+  await dialog.getByRole("button", { name: "Choose", exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+}
+
+/**
+ * Makes a map through the form on the Maps page, its image chosen in the image dialog, and waits
+ * for it to open in editing with its view in the address.
+ */
+export async function newMapInForm(
+  page: Page,
+  title: string,
+  space: "flat" | "sphere" | "schematic",
+  image = "map one.png",
+): Promise<void> {
+  await page.goto("/maps");
+  await page.locator(".new-map input[type=text]").fill(title);
+  await page.locator(".new-map select").selectOption(space);
+  await chooseMapImage(page, page.getByRole("button", { name: "Choose an image…" }), image);
+  await page.getByRole("button", { name: "Make the map" }).click();
+  await expect(page.locator(".map-top")).toBeVisible();
+  // The view is written into the address once the map has been laid out.
+  await expect(page).toHaveURL(/v=/);
+}
+
+/**
+ * Links to an entry through the entry combobox inside `scope`: types `typed` (the name, unless
+ * given) and picks the entry whose name starts with `name`.
+ */
+export async function pickEntry(scope: Locator, name: string, typed = name): Promise<void> {
+  const page = scope.page();
+  await scope.getByRole("combobox", { name: "Entry" }).click();
+  await page.getByPlaceholder("Find an entry").fill(typed);
+  await page
+    .getByRole("option", { name: new RegExp(`^${name}`) })
+    .first()
+    .click();
+  await expect(scope.getByRole("combobox", { name: "Entry" })).toContainText(name);
 }
 
 /** Answers the app's own question box: types a value if one is given, then presses a button. */

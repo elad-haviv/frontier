@@ -3,17 +3,21 @@
  * screen so that a tap can find it.
  */
 import {
-  densify,
   drawingProjection,
+  hasInside,
+  outline,
   type Point,
   type Position,
   type Shape,
   type Space,
   type View,
   zoneOnPlate,
+  zonePolygon,
 } from "@frontier/geo";
 import type { MapFeature, MapFile } from "@frontier/schema";
-import { geoArea, geoOrthographic, geoPath } from "d3-geo";
+import { geoContains, geoOrthographic, geoPath } from "d3-geo";
+import type { PointerKind } from "./gesture.ts";
+import { outlineOf, PLUS_SIZE, plusHandles } from "./handles.ts";
 
 export interface OverlayInput {
   map: MapFile;
@@ -26,10 +30,15 @@ export interface OverlayInput {
   /** The icon image for a feature, once it has loaded. */
   iconFor: (feature: MapFeature) => HTMLImageElement | null;
   titleOf: (feature: MapFeature) => string;
-  /** A path or zone being drawn, or a line being measured. */
-  sketch: { kind: "path" | "zone" | "measure"; points: Position[] } | null;
+  /** A path or zone being drawn, curved or not, or a line being measured. */
+  sketch: { kind: "path" | "zone" | "measure"; points: Position[]; curve?: boolean } | null;
   /** Corner handles are shown while editing. */
   editing: boolean;
+  /**
+   * The "+" handles of the selected path or zone are shown, sized for the pointer that last
+   * pressed the map; null hides them (another tool than Select).
+   */
+  pluses?: PointerKind | null;
   /** How strongly each feature is drawn, and whether with dashes, when the map is seen in time. */
   presence?: ReadonlyMap<string, { opacity: number; dashed: boolean }>;
 }
@@ -78,10 +87,11 @@ export function markerRing(
   ctx.stroke();
 }
 
-/** The screen lines of a run of positions: one per repeat of the picture, or per visible stretch. */
-function lines(space: Space, view: View, points: Position[], close: boolean): Point[][] {
-  const ring = close && points.length > 2 ? [...points, points[0]!] : points;
-  const stepped = densify(space, ring);
+/**
+ * The screen lines of an outline, as `outline` gives it: one per repeat of the picture, or per
+ * visible stretch.
+ */
+export function screenLines(view: View, stepped: Position[]): Point[][] {
   if (view.lines) return view.lines(stepped);
   if (view.state.kind === "globe") {
     const out: Point[][] = [];
@@ -105,21 +115,62 @@ function trace(ctx: CanvasRenderingContext2D, points: Point[]): void {
   points.forEach(([x, y], i) => (i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y)));
 }
 
-/** A zone on the ball, filled by d3 so that it is cut cleanly at the edge of the disc. */
-function fillOnGlobe(ctx: CanvasRenderingContext2D, view: View, points: Position[]): void {
-  if (view.state.kind !== "globe") return;
+/** The screen lines of a run of control points, curved or not, open or closed. */
+export function lines(
+  space: Space,
+  view: View,
+  points: Position[],
+  close: boolean,
+  curve = false,
+): Point[][] {
+  return screenLines(view, outline(space, points, { curve, closed: close }).line);
+}
+
+/**
+ * A zone on the ball, filled by d3 so that it is cut cleanly at the edge of the disc. `ring` is
+ * the zone's closed outline.
+ */
+function fillOnGlobe(ctx: CanvasRenderingContext2D, view: View, ring: Position[]): void {
+  if (view.state.kind !== "globe" || !hasInside(ring)) return;
   const projection = geoOrthographic()
     .rotate([-view.state.lon, -view.state.lat])
     .scale(view.state.k)
     .translate([view.width / 2, view.height / 2])
     .clipAngle(90);
-  let ring = [...points, points[0]!];
-  // d3 takes the inside of a ring to be on one side of its direction; a ring drawn the other way
-  // would cover the rest of the globe.
-  if (geoArea({ type: "Polygon", coordinates: [ring] }) > 2 * Math.PI) ring = ring.reverse();
   ctx.beginPath();
-  geoPath(projection, ctx)({ type: "Polygon", coordinates: [ring] });
+  geoPath(projection, ctx)(zonePolygon(ring));
   ctx.fill();
+}
+
+/**
+ * On the ball, a press is inside a zone when it is inside what is filled: the press taken back to
+ * the globe, tested against the same polygon the fill uses.
+ */
+function insideOnGlobe(view: View, ring: Position[]): (p: Point) => boolean {
+  const polygon = hasInside(ring) ? zonePolygon(ring) : null;
+  return ([x, y]) => {
+    const at = polygon ? view.unproject(x, y) : null;
+    return at !== null && geoContains(polygon!, at);
+  };
+}
+
+/** A "+" handle: a paper disc with a plus in ink. */
+function plus(ctx: CanvasRenderingContext2D, [x, y]: Point): void {
+  const r = PLUS_SIZE / 2;
+  ctx.beginPath();
+  ctx.arc(x, y, r, 0, Math.PI * 2);
+  ctx.fillStyle = PAPER;
+  ctx.fill();
+  ctx.strokeStyle = INK;
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(x - r / 2, y);
+  ctx.lineTo(x + r / 2, y);
+  ctx.moveTo(x, y - r / 2);
+  ctx.lineTo(x, y + r / 2);
+  ctx.lineWidth = 2;
+  ctx.stroke();
 }
 
 export function drawOverlay(ctx: CanvasRenderingContext2D, input: OverlayInput): DrawnShape[] {
@@ -173,23 +224,25 @@ export function drawOverlay(ctx: CanvasRenderingContext2D, input: OverlayInput):
     const colour = colours.get(f.layer) ?? INK;
     const picked = f.id === input.selected;
     ctx.fillStyle = colour + (picked ? "55" : "33");
-    const drawn = lines(map.space, view, f.points, true);
-    if (view.state.kind === "globe") fillOnGlobe(ctx, view, f.points);
-    if (view.rings) {
+    // The closed outline: what is drawn, filled and tapped.
+    const ring = outlineOf(map.space, f).line;
+    const drawn = screenLines(view, ring);
+    if (view.state.kind === "globe") fillOnGlobe(ctx, view, ring);
+    if (view.rings && hasInside(ring)) {
       // In a projection the zone is filled as the pieces it is cut into, and tapped by them too.
       ctx.beginPath();
-      for (const ring of view.rings(f.points)) {
-        trace(ctx, ring);
+      for (const piece of view.rings(ring)) {
+        trace(ctx, piece);
         ctx.closePath();
-        shapes.push({ id: f.id, kind: "zone", points: ring });
+        shapes.push({ id: f.id, kind: "zone", points: piece });
       }
       ctx.fill();
     }
     if (view.state.kind === "plate") {
       // On a globe laid flat the inside is not simply the closed outline: a zone may be cut by
       // the edge of the picture, or reach up to a pole across the whole width.
-      const rings = zoneOnPlate(f.points, view.state.lon).map((ring) =>
-        ring.map((p) => view.projectClamped(p).point),
+      const rings = zoneOnPlate(ring, view.state.lon).map((piece) =>
+        piece.map((p) => view.projectClamped(p).point),
       );
       for (const shift of view.repeats()) {
         ctx.beginPath();
@@ -202,8 +255,9 @@ export function drawOverlay(ctx: CanvasRenderingContext2D, input: OverlayInput):
         ctx.fill();
       }
     }
+    const inside = view.state.kind === "globe" ? insideOnGlobe(view, ring) : undefined;
     for (const line of drawn) {
-      if (view.state.kind === "flat") {
+      if (view.state.kind === "flat" && hasInside(ring)) {
         ctx.beginPath();
         trace(ctx, line);
         ctx.fill();
@@ -220,7 +274,7 @@ export function drawOverlay(ctx: CanvasRenderingContext2D, input: OverlayInput):
       ctx.lineWidth = ZONE_EDGE;
       ctx.stroke();
       if (view.state.kind !== "plate" && view.state.kind !== "projected") {
-        shapes.push({ id: f.id, kind: "zone", points: line });
+        shapes.push({ id: f.id, kind: "zone", points: line, ...(inside ? { inside } : {}) });
       }
     }
   }
@@ -228,7 +282,7 @@ export function drawOverlay(ctx: CanvasRenderingContext2D, input: OverlayInput):
     if (f.kind !== "path") continue;
     look(f);
     const colour = colours.get(f.layer) ?? INK;
-    for (const line of lines(map.space, view, f.points, false)) {
+    for (const line of screenLines(view, outlineOf(map.space, f).line)) {
       ctx.beginPath();
       trace(ctx, line);
       if (f.id === input.selected) {
@@ -328,8 +382,13 @@ export function drawOverlay(ctx: CanvasRenderingContext2D, input: OverlayInput):
 
   plain();
 
-  // Corner handles of the selected path or zone.
+  // Corner handles of the selected path or zone, and its "+" handles between them.
   const chosen = features.find((f) => f.id === input.selected);
+  if (input.editing && chosen && chosen.kind !== "marker" && input.pluses) {
+    for (const h of plusHandles(map.space, view, chosen, input.pluses)) {
+      for (const shift of view.repeats()) plus(ctx, [h.screen[0] + shift, h.screen[1]]);
+    }
+  }
   if (input.editing && chosen && chosen.kind !== "marker") {
     chosen.points.forEach((p, i) => {
       const s = view.project(p);
@@ -349,7 +408,8 @@ export function drawOverlay(ctx: CanvasRenderingContext2D, input: OverlayInput):
   if (input.sketch && input.sketch.points.length > 0) {
     const { kind, points } = input.sketch;
     ctx.setLineDash(kind === "measure" ? [6, 5] : []);
-    for (const line of lines(map.space, view, points, kind === "zone")) {
+    const curve = kind !== "measure" && input.sketch.curve === true;
+    for (const line of lines(map.space, view, points, kind === "zone", curve)) {
       ctx.beginPath();
       trace(ctx, line);
       ctx.strokeStyle = PAPER;

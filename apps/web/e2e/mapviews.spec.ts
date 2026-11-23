@@ -1,5 +1,6 @@
 import { expect, type Page, test } from "@playwright/test";
 import sharp from "sharp";
+import { newMapInForm } from "./helpers.ts";
 
 const IMAGE = "99 Appendices/Images/map one.png";
 
@@ -44,9 +45,12 @@ test("CUJ 18: steps down to a layer under a globe at the same place, and back up
   // The layer is set to lie under the surface.
   await page.goto(`/map/${layer}?edit=1`);
   await page.getByRole("button", { name: "Layers" }).click();
-  await page
-    .getByLabel("This map lies under")
-    .selectOption({ label: `Surface ${info.project.name}` });
+  await page.getByRole("combobox", { name: "This map lies under" }).click();
+  await page.getByPlaceholder("Find a map").fill(`Surface ${info.project.name}`);
+  await page.getByRole("option", { name: `Surface ${info.project.name}`, exact: true }).click();
+  await expect(page.getByRole("combobox", { name: "This map lies under" })).toHaveText(
+    `Surface ${info.project.name}`,
+  );
   await expect(page.locator(".save-saved")).toBeVisible();
 
   // The list says so.
@@ -144,13 +148,7 @@ test("CUJ 19: a world on a schematic map revolves as the years move, and there i
   }, `Heavens years ${info.project.name}`);
 
   // A schematic map, made from the form.
-  await page.goto("/maps");
-  await page.locator(".new-map input[type=text]").fill(`Heavens ${info.project.name}`);
-  await page.locator(".new-map select").nth(0).selectOption("schematic");
-  await page.locator(".new-map select").nth(1).selectOption(IMAGE);
-  await page.getByRole("button", { name: "Make the map" }).click();
-  await expect(page.locator(".map-top")).toBeVisible();
-  await expect(page).toHaveURL(/v=/);
+  await newMapInForm(page, `Heavens ${info.project.name}`, "schematic");
   const id = new URL(page.url()).pathname.split("/").pop()!;
   await expect(page.getByRole("button", { name: "Measure" })).toHaveCount(0);
 
