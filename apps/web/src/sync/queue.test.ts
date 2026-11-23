@@ -797,8 +797,9 @@ describe("the map styles file in the queue", () => {
       canal,
     ]);
     expect(merged).toEqual([sent]);
-    expect(notices[0]!.message).toBe(
-      "Map styles: changes from another device were merged in. Changed in both places, yours kept: River.",
-    );
+    // Since 15c the merge notice says only that changes were merged; with a server that keeps no
+    // copy of the other side, the clash is named in a second notice, as for folders.
+    expect(notices[0]!.message).toBe("Map styles: changes from another device were merged in.");
+    expect(notices[1]!.message).toBe("Map styles: changed in both places, yours kept: River.");
   });
 });
