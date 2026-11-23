@@ -7,7 +7,12 @@ export default defineConfig({
       provider: "v8",
       include: ["src/**/*.ts"],
       exclude: ["src/index.ts"],
-      thresholds: { branches: 85 },
+      // The curve and the zone move are held to more.
+      thresholds: {
+        branches: 85,
+        "src/curve.ts": { branches: 90 },
+        "src/move.ts": { branches: 90 },
+      },
     },
   },
 });

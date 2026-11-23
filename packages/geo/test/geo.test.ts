@@ -1,3 +1,4 @@
+import { geoArea, geoContains } from "d3-geo";
 import { describe, expect, it } from "vitest";
 import {
   centreOn,
@@ -9,6 +10,7 @@ import {
   makeView,
   measure,
   meshFor,
+  outline,
   panBy,
   pointInPolygon,
   type Position,
@@ -19,7 +21,8 @@ import {
   vertexAt,
   type ViewState,
   wrapLongitude,
-  zoneOnPlate,
+  zoneOnPlate as plateRings,
+  zonePolygon,
   zoomAt,
 } from "../src/index.js";
 
@@ -391,6 +394,9 @@ describe("finding what is under a point", () => {
 });
 
 describe("the inside of a zone on a globe laid flat", () => {
+  /** The rings of a zone through these control points, from its closed outline. */
+  const zoneOnPlate = (points: Position[], centre: number) =>
+    plateRings(outline(SPHERE, points, { curve: false, closed: true }).line, centre);
   const inside = (rings: Position[][], p: Position) => rings.some((r) => pointInPolygon(p, r));
   const lons = (rings: Position[][]) => rings.flat().map((p) => p[0]);
 
@@ -486,5 +492,46 @@ describe("the inside of a zone on a globe laid flat", () => {
         0,
       ),
     ).toEqual([]);
+  });
+});
+
+describe("a zone as a polygon", () => {
+  const ring: Position[] = [
+    [10, 0],
+    [20, 0],
+    [20, 10],
+    [10, 0],
+  ];
+
+  it("encloses the smaller part of the globe, whichever way its outline runs", () => {
+    for (const r of [ring, [...ring].reverse()]) {
+      expect(geoArea(zonePolygon(r))).toBeLessThan(2 * Math.PI);
+      expect(geoContains(zonePolygon(r), [18, 3])).toBe(true);
+      expect(geoContains(zonePolygon(r), [-100, 40])).toBe(false);
+    }
+  });
+
+  it("fills a curved outline, and nothing for a zone with no inside", () => {
+    const curved = outline(
+      SPHERE,
+      [
+        [0, 0],
+        [20, 0],
+        [20, 20],
+        [0, 20],
+      ],
+      { curve: true, closed: true },
+    ).line;
+    expect(plateRings(curved, 0)).toHaveLength(1);
+    const flatOut = outline(
+      SPHERE,
+      [
+        [0, 0],
+        [20, 0],
+        [0, 0],
+      ],
+      { curve: true, closed: true },
+    ).line;
+    expect(plateRings(flatOut, 0)).toEqual([]);
   });
 });

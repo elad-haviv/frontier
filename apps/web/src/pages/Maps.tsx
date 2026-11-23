@@ -1,7 +1,8 @@
-import { type FormEvent, useEffect, useState } from "react";
+import { type FormEvent, useState } from "react";
 import { ActionButton } from "../components/ui/ActionButton.tsx";
 import { Link, useNavigate } from "react-router-dom";
-import { api, ApiFailure, mapUrl } from "../api.ts";
+import { api, ApiFailure, imageUrl, mapUrl } from "../api.ts";
+import { MapImagePicker } from "../components/images/MapImagePicker.tsx";
 import { useRefresh } from "../components/Shell.tsx";
 import { queue } from "../sync/queue.ts";
 import { Problem } from "../components/ui/Problem.tsx";
@@ -18,19 +19,12 @@ export function MapsPage() {
   const maps = useAsync(() => api.maps(), "maps");
   const navigate = useNavigate();
   const refresh = useRefresh();
-  const [images, setImages] = useState<string[]>([]);
   const [title, setTitle] = useState("");
   const [kind, setKind] = useState<"sphere" | "flat" | "schematic">("flat");
   const [image, setImage] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-
-  const loadImages = () =>
-    api.mapImages().then(
-      (r) => setImages(r.images),
-      () => undefined,
-    );
-  useEffect(() => void loadImages(), []);
+  const [picking, setPicking] = useState(false);
 
   async function create(e: FormEvent) {
     e.preventDefault();
@@ -60,19 +54,6 @@ export function MapsPage() {
     } catch (err) {
       setError(err instanceof ApiFailure ? err.message : "The map could not be made.");
       setBusy(false);
-    }
-  }
-
-  async function upload(file: File | undefined) {
-    if (!file) return;
-    setError(null);
-    try {
-      const { path } = await api.upload(file);
-      await loadImages();
-      setImage(path);
-      refresh();
-    } catch (err) {
-      setError(err instanceof ApiFailure ? err.message : "The image could not be added.");
     }
   }
 
@@ -140,21 +121,27 @@ export function MapsPage() {
             <option value="sphere">Globe: an image that wraps a whole world</option>
           </select>
         </label>
-        <label className="field">
+        <div className="field">
           <span>Image</span>
-          <select value={image} onChange={(e) => setImage(e.target.value)}>
-            <option value="">Choose an image of the vault…</option>
-            {images.map((p) => (
-              <option key={p} value={p}>
-                {p.split("/").pop()} ({p.split("/").slice(0, -1).join("/")})
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="field">
-          <span>Or add a new image</span>
-          <input type="file" accept="image/*" onChange={(e) => void upload(e.target.files?.[0])} />
-        </label>
+          <span className="chosen-image">
+            {image && <img src={imageUrl(image, 320)} alt="" />}
+            {image && <span className="chosen-image-name">{image.split("/").pop()}</span>}
+            <button type="button" onClick={() => setPicking(true)}>
+              {image ? "Choose another image…" : "Choose an image…"}
+            </button>
+          </span>
+        </div>
+        {picking && (
+          <MapImagePicker
+            onClose={() => setPicking(false)}
+            onPick={(path) => {
+              setPicking(false);
+              setImage(path);
+              // An image uploaded in the dialog is a new unpublished change.
+              refresh();
+            }}
+          />
+        )}
         {error && (
           <p className="error" role="alert">
             {error}

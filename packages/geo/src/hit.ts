@@ -30,7 +30,16 @@ export function pointInPolygon(p: Point, ring: Point[]): boolean {
 export type Shape =
   | { id: string; kind: "marker"; at: Point }
   | { id: string; kind: "path"; points: Point[] }
-  | { id: string; kind: "zone"; points: Point[] };
+  | {
+      id: string;
+      kind: "zone";
+      points: Point[];
+      /**
+       * Whether a point of the screen is inside, when that is not simply inside `points`: on a
+       * globe, a zone is found by what is filled, which is cut at the edge of the disc.
+       */
+      inside?: (p: Point) => boolean;
+    };
 
 /**
  * The shape under a point. Markers win over paths, and paths over zones, because the smaller
@@ -49,19 +58,27 @@ export function shapeAt(shapes: Shape[], p: Point, reach = 22): string | null {
         const d = distanceToSegment(p, s.points[i - 1]!, s.points[i]!);
         if (d <= reach / 2 && (!path || d <= path.d)) path = { id: s.id, d };
       }
-    } else if (s.points.length >= 3 && pointInPolygon(p, s.points)) {
+    } else if (s.inside ? s.inside(p) : s.points.length >= 3 && pointInPolygon(p, s.points)) {
       zone = s.id;
     }
   }
   return marker?.id ?? path?.id ?? zone;
 }
 
-/** The corner of a shape within reach of a point, for dragging it. */
-export function vertexAt(points: Point[], p: Point, reach = 18): number | null {
+/** The nearest of some handles within reach of a point, or null: a corner, or a "+". */
+export function handleAt(handles: Point[], p: Point, reach: number): number | null {
   let best: { i: number; d: number } | null = null;
-  points.forEach((q, i) => {
+  handles.forEach((q, i) => {
     const d = Math.hypot(p[0] - q[0], p[1] - q[1]);
     if (d <= reach && (!best || d < best.d)) best = { i, d };
   });
   return best === null ? null : (best as { i: number }).i;
+}
+
+/** How far from a corner, or a "+", a press still finds it. */
+export const HANDLE_REACH = 18;
+
+/** The corner of a shape within reach of a point, for dragging it. */
+export function vertexAt(points: Point[], p: Point, reach = HANDLE_REACH): number | null {
+  return handleAt(points, p, reach);
 }

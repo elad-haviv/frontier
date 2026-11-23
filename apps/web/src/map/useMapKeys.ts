@@ -21,6 +21,15 @@ export interface MapKeys {
   /** A path, zone or measured line is being drawn. */
   drawing: boolean;
   cancelDrawing: () => void;
+  /** Takes back the last point of the drawing: Delete or Backspace while drawing. */
+  takeBack: () => void;
+  /** Finishes the path or zone being drawn; false when it has too few points. */
+  finish: () => boolean | void;
+  /**
+   * Turns curves on or off: for the next path or zone while a drawing tool is on, else for the
+   * selected path or zone; false when neither applies.
+   */
+  toggleCurve: () => boolean | void;
   tool: Tool;
   /** The tools this map has: a schematic map has no measuring. */
   tools: Tool[];
@@ -103,9 +112,15 @@ export function useMapKeys(k: MapKeys) {
   useShortcut("map.measure", tool("measure"));
   useShortcut("map.undo", () => (editing && free() && k.canUndo ? k.undo() : false));
   useShortcut("map.redo", () => (editing && free() && k.canRedo ? k.redo() : false));
-  useShortcut("map.delete", () =>
-    editing && free() && (k.vertex !== null || k.selected !== null) ? k.remove() : false,
+  useShortcut("map.delete", () => {
+    if (!editing || !free()) return false;
+    if (k.drawing) return k.takeBack();
+    return k.vertex !== null || k.selected !== null ? k.remove() : false;
+  });
+  useShortcut("map.finish", () =>
+    editing && free() && k.drawing && (k.tool === "path" || k.tool === "zone") ? k.finish() : false,
   );
+  useShortcut("map.curve", () => (editing ? k.toggleCurve() : false));
   useShortcut("map.cancel", () => cancelStep(k));
   useShortcut("map.zoomIn", () => k.zoom(1.6));
   useShortcut("map.zoomOut", () => k.zoom(1 / 1.6));

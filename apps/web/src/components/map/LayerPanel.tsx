@@ -1,9 +1,11 @@
 import { extentProblem, type MapFile, wholeExtent } from "@frontier/schema";
 import { type Dispatch, type ReactNode, type SetStateAction, useEffect, useState } from "react";
-import { ArrowDown, ArrowUp, LocateFixed, Trash2 } from "lucide-react";
-import { api } from "../../api.ts";
+import { ArrowDown, ArrowUp, ImagePlus, LocateFixed, Trash2 } from "lucide-react";
 import { newItemId } from "../../map/viewUrl.ts";
+import { MapImagePicker } from "../images/MapImagePicker.tsx";
+import { useRefresh } from "../Shell.tsx";
 import { useDialogs } from "../Dialogs.tsx";
+import { Icon } from "../ui/Icon.tsx";
 import { IconButton } from "../ui/IconButton.tsx";
 import { Menu, MenuItem } from "../ui/Menu.tsx";
 
@@ -124,19 +126,9 @@ export function LayerPanel({
       images: map.images.map((i) => ({ ...i, visible: shownImages.has(i.id) })),
     });
   const dialogs = useDialogs();
+  const refresh = useRefresh();
   const [placing, setPlacing] = useState<string | null>(null);
-  const [vaultImages, setVaultImages] = useState<string[]>([]);
-  useEffect(() => {
-    if (!editing) return;
-    let live = true;
-    api.mapImages().then(
-      (r) => live && setVaultImages(r.images),
-      () => undefined,
-    );
-    return () => {
-      live = false;
-    };
-  }, [editing]);
+  const [picking, setPicking] = useState(false);
   const setImage = (id: string, change: Partial<MapFile["images"][number]>) =>
     onChange({ ...map, images: map.images.map((i) => (i.id === id ? { ...i, ...change } : i)) });
 
@@ -271,19 +263,20 @@ export function LayerPanel({
             ))}
           </ul>
           {editing && (
-            <select
-              className="add-image"
-              aria-label="Add an image"
-              value=""
-              onChange={(e) => e.target.value && onAddImage(e.target.value)}
-            >
-              <option value="">+ Add an image…</option>
-              {vaultImages.map((path) => (
-                <option key={path} value={path}>
-                  {path}
-                </option>
-              ))}
-            </select>
+            <button type="button" className="quiet add-image" onClick={() => setPicking(true)}>
+              <Icon icon={ImagePlus} size="sm" /> Add an image…
+            </button>
+          )}
+          {picking && (
+            <MapImagePicker
+              onClose={() => setPicking(false)}
+              onPick={(path) => {
+                setPicking(false);
+                // An image added in the dialog is a new unpublished upload.
+                refresh();
+                onAddImage(path);
+              }}
+            />
           )}
         </>
       )}
@@ -291,6 +284,9 @@ export function LayerPanel({
       <ul>
         {map.layers.map((layer, i) => (
           <li key={layer.id} className={editing && layer.id === activeLayer ? "is-active" : ""}>
+            {editing && layer.id === activeLayer && (
+              <span className="drawing-into">Drawing into</span>
+            )}
             <label>
               <input
                 type="checkbox"

@@ -47,7 +47,8 @@ export interface View {
    * the rings that fill a zone. Other views leave these out.
    */
   lines?(points: Position[]): Point[][];
-  rings?(points: Position[]): Point[][];
+  /** `ring` is a zone's closed outline, as `outline` gives it. */
+  rings?(ring: Position[]): Point[][];
 }
 
 export function makeView(state: ViewState, width: number, height: number): View {
@@ -88,10 +89,11 @@ export function makeView(state: ViewState, width: number, height: number): View 
       repeats: () => [0],
       lines: (points) =>
         cutRun(points.map(frame.turn), frame.cuts).map((run) => run.map(frame.toScreen)),
-      rings(points) {
+      rings(ring) {
         // The zone is cut at the map's edge in the turned frame, carried along a pole it holds,
-        // and cut again at each cut between lobes.
-        let rings = zoneOnPlate(points.map(frame.turn), 0);
+        // and cut again at each cut between lobes. Turning keeps great circles great circles, so
+        // the outline's fine steps survive it.
+        let rings = zoneOnPlate(ring.map(frame.turn), 0);
         for (const c of frame.cuts) {
           rings = rings.flatMap((r) => [clipRing(r, c, "west"), clipRing(r, c, "east")]);
         }

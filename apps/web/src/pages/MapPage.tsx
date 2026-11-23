@@ -21,16 +21,21 @@ import { useRefresh } from "../components/Shell.tsx";
 import { usePageTitle, usePanel, useRightBar, useSheetFloor } from "../components/shell/panels.tsx";
 import { useToast } from "../components/ui/Toast.tsx";
 import { askSize } from "../map/askSize.ts";
-import { type MenuTarget, menuTargetOf } from "../map/gesture.ts";
+import { useCurveSetting } from "../map/curveSetting.ts";
+import { type MenuTarget, menuTargetOf, type PointerKind } from "../map/gesture.ts";
 import { aboveAndBelow } from "../map/layersBeneath.ts";
 import { savePicture } from "../map/savePicture.ts";
 import {
+  canFinish,
   deleteFeature,
   finishSketch,
+  insertPoint,
   placeMarker,
   removePoint,
   removeReason,
+  setCurve,
   type Step,
+  takeBackPoint,
   type Tool,
 } from "../map/tools.ts";
 import { useDiscovery } from "../map/useDiscovery.ts";
@@ -79,6 +84,11 @@ export function MapPage() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [menuOff, setMenuOff] = useState(
     () => !window.matchMedia("(hover: hover) and (pointer: fine)").matches,
+  );
+  // New paths and zones curved or not; the kind of pointer that last pressed, for the "+" sizes.
+  const [curve, setCurveOn] = useCurveSetting();
+  const [pressKind, setPressKind] = useState<PointerKind>(() =>
+    window.matchMedia("(pointer: coarse)").matches ? "touch" : "mouse",
   );
 
   const time = useMapTime(id, params, setNotice);
@@ -129,6 +139,8 @@ export function MapPage() {
     names: file.names,
     pendingNames: file.pendingNames,
     sets: file.sets,
+    curve,
+    pressKind,
   });
   const { titleOf } = draw;
   const discovery = useDiscovery(id, { ...time, setNotice });
@@ -163,6 +175,8 @@ export function MapPage() {
     apply,
     frame,
     paused: menuOpen,
+    curve,
+    onPressKind: setPressKind,
   });
   const { box, setBox } = pointer;
   useWheelZoom(draw.topCanvas, viewRef, setView, [map === null, draw.glError]);
@@ -210,6 +224,19 @@ export function MapPage() {
     setSelected(null);
   };
   const whole = () => map && setView(initialView(map.space, size.width, size.height));
+  const drawing = sketch.length > 0 && (tool === "path" || tool === "zone" || tool === "measure");
+  /** Finishes the path or zone being drawn, when it has the points it needs. */
+  const finish = () => {
+    if (!map || !canFinish(tool, sketch)) return false;
+    apply(finishSketch(map, tool, sketch, activeLayer, curve));
+  };
+  /** Curved or straight: the next path or zone while drawing, else the selected one. */
+  const toggleCurve = () => {
+    if (tool === "path" || tool === "zone") return setCurveOn(!curve);
+    const chosen = file.mapRef.current?.features.find((f) => f.id === selected);
+    if (tool !== "select" || !chosen || chosen.kind === "marker") return false;
+    file.setFeature(setCurve(chosen, (chosen as { curve?: string }).curve !== "smooth"));
+  };
   const schematicMap = map?.space.kind === "flat" && map.space.schematic === true;
   useMapKeys({
     editing,
@@ -219,8 +246,11 @@ export function MapPage() {
       setFocusing(false);
       setBox(null);
     },
-    drawing: sketch.length > 0 && (tool === "path" || tool === "zone" || tool === "measure"),
+    drawing,
     cancelDrawing: () => setSketch([]),
+    takeBack: () => setSketch(takeBackPoint(sketch)),
+    finish,
+    toggleCurve,
     tool,
     tools: ["select", "marker", "path", "zone", ...(schematicMap ? [] : ["measure" as const])],
     setTool: chooseTool,
@@ -263,7 +293,8 @@ export function MapPage() {
   // once the map is known, and read when the shell draws them.
   let layersPanel: ReactNode = null;
   let featurePanel: ReactNode = null;
-  const showsFeature = feature !== null && (!editing || tool === "select");
+  // The Marker tool stays on: the marker just placed opens its tab, to be linked at once.
+  const showsFeature = feature !== null && (!editing || tool === "select" || tool === "marker");
   usePanel(
     map ? { id: "layers", title: "Layers", icon: LayersIcon, render: () => layersPanel } : null,
   );
@@ -297,7 +328,6 @@ export function MapPage() {
   if (draw.glError) return <p className="center error">{draw.glError}</p>;
 
   const sphere = map.space.kind === "sphere";
-  const finish = () => apply(finishSketch(map, tool, sketch, activeLayer));
 
   // What the mouse is over, as the tooltip and the preview show it.
   const hoveredFeature = pointer.hovered
@@ -306,7 +336,10 @@ export function MapPage() {
   const hovered: Hovered | null =
     pointer.hovered && hoveredFeature
       ? {
-          kind: pointer.hovered.target.kind === "corner" ? "corner" : "feature",
+          kind:
+            pointer.hovered.target.kind === "corner" || pointer.hovered.target.kind === "insert"
+              ? pointer.hovered.target.kind
+              : "feature",
           feature: hoveredFeature,
           title: titleOf(hoveredFeature),
           at: pointer.hovered.at,
@@ -354,6 +387,14 @@ export function MapPage() {
           change(deleteFeature(map, f.id));
           if (selected === f.id) setSelected(null);
         },
+        insertPoint: (f, segment, at) => {
+          const drawn = shown.resolved.find((r) => r.feature.id === f.id);
+          const done = drawn ? insertPoint(map, drawn, segment, at) : null;
+          if (!done) return;
+          file.setFeature(done.feature);
+          setVertex(done.vertex);
+        },
+        setCurve: (f, curved) => file.setFeature(setCurve(f, curved)),
         removePoint: (f, at) => {
           const drawn = shown.resolved.find((r) => r.feature.id === f.id);
           const done = drawn ? removePoint(map, drawn, at) : null;
@@ -557,9 +598,12 @@ export function MapPage() {
         {editing && (
           <MapHints
             tool={tool}
-            sketchLength={sketch.length}
+            sketch={sketch}
             measured={measured}
             sphere={sphere}
+            curve={curve}
+            layer={map.layers.find((l) => l.id === activeLayer)?.name ?? ""}
+            onCurve={setCurveOn}
             onFinish={finish}
             onClear={() => setSketch([])}
             onSize={async () => {

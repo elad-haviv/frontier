@@ -3,7 +3,7 @@
  * entries being linked to its features.
  */
 import { type MapFeature, type MapFile, mergeMaps } from "@frontier/schema";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api, ApiFailure } from "../api.ts";
 import { useDialogs } from "../components/Dialogs.tsx";
@@ -295,16 +295,24 @@ export function useMapFile(
     navigate("/maps");
   }
 
+  // A map of a place chosen while editing is known by its title at once, not only after a reload.
+  const childTitles = useMemo(
+    () => ({ ...Object.fromEntries(otherMaps.map((m) => [m.id, m.title])), ...children }),
+    [otherMaps, children],
+  );
+
   return {
     key,
     map,
     mapRef,
     error,
     names,
-    children,
+    children: childTitles,
     sets,
     otherMaps,
     pendingNames,
+    /** The path of the entry a feature's link waits to be saved with, if any. */
+    pendingPathOf: (feature: string) => linkTitles.current.get(feature)?.path ?? null,
     saving,
     history,
     change,

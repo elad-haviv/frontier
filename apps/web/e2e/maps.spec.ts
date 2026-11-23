@@ -1,18 +1,17 @@
 import { expect, type Page, test } from "@playwright/test";
-import { answerDialog, entry, onMain, openMenu, publish, review } from "./helpers.ts";
+import {
+  answerDialog,
+  chooseMapImage,
+  entry,
+  newMapInForm,
+  onMain,
+  openMenu,
+  pickEntry,
+  publish,
+  review,
+} from "./helpers.ts";
 
-const IMAGE = "99 Appendices/Images/map one.png";
-
-async function makeMap(page: Page, title: string, kind: "flat" | "sphere") {
-  await page.goto("/maps");
-  await page.locator(".new-map input[type=text]").fill(title);
-  await page.locator(".new-map select").nth(0).selectOption(kind);
-  await page.locator(".new-map select").nth(1).selectOption(IMAGE);
-  await page.getByRole("button", { name: "Make the map" }).click();
-  await expect(page.locator(".map-top")).toBeVisible();
-  // The view is written into the address once the map has been laid out.
-  await expect(page).toHaveURL(/v=/);
-}
+const makeMap = newMapInForm;
 
 /** Throws the open map away, so the next test finds nothing unpublished. */
 async function discardMap(page: Page) {
@@ -39,9 +38,7 @@ test("CUJ 7: places a marker for an entry, opens the entry from the map and come
   await page.mouse.click(c.x, c.y);
   const editor = page.locator(".feature-editor");
   await expect(editor).toBeVisible();
-  await editor.getByLabel("Find an entry").fill("Mira");
-  await editor.locator(".entry-picker li button", { hasText: "Mira" }).first().click();
-  await expect(editor.locator(".linked")).toContainText("Mira");
+  await pickEntry(editor, "Mira");
   await expect(page.locator(".save-saved")).toBeVisible();
   // An icon from the vault's marker sets.
   await editor.getByRole("button", { name: "Lamp" }).click();
@@ -120,7 +117,7 @@ test("draws a path and a zone, hides a layer, and undoes", async ({ page }, info
   await page.mouse.click(c.x - 60, c.y - 30);
   await page.mouse.click(c.x, c.y - 10);
   await page.mouse.click(c.x + 60, c.y - 30);
-  await page.locator(".map-hint").getByRole("button", { name: "Done" }).click();
+  await page.locator(".map-hint").getByRole("button", { name: "Finish path" }).click();
   await expect(page.locator(".feature-editor")).toBeVisible();
   await page
     .locator(".feature-editor")
@@ -231,7 +228,11 @@ test("adds a second image, places it by its extent, hides it and takes it off", 
   await page.getByRole("button", { name: "Layers" }).click();
   const panel = page.locator(".layer-panel");
   await expect(panel.getByLabel("Image name")).toHaveCount(1);
-  await panel.getByLabel("Add an image").selectOption("99 Appendices/Images/Sample world.png");
+  await chooseMapImage(
+    page,
+    panel.getByRole("button", { name: "Add an image…" }),
+    "Sample world.png",
+  );
   await expect(panel.getByLabel("Image name")).toHaveCount(2);
   await expect(panel.getByLabel("Image name").nth(1)).toHaveValue("Sample world");
   await expect(panel.getByLabel("Show Sample world")).toBeChecked();
@@ -297,6 +298,8 @@ test("brings one of two markers on the same spot above the other", async ({ page
   }
   const order = async () => (await stored(page)).features.map((f) => f.label);
   await expect.poll(order).toEqual(["First", "Second"]);
+  // The marker tool stays on after a marker; Select picks them again.
+  await page.getByRole("button", { name: "Select", exact: true }).click();
 
   // The later marker lies above, so a tap finds it. It has nothing to pass going forward.
   await page.mouse.click(c.x, c.y - 40);
@@ -343,7 +346,7 @@ test("a zone around a pole is filled up to the pole in the flat view of a globe"
   // The tool is ready for taps once its hint shows; a tap before that would select instead.
   await expect(page.locator(".map-hint", { hasText: "Tap to add points." })).toBeVisible();
   for (const lon of [-100, 0, 100]) await page.mouse.click(...at(lon, 70));
-  await page.locator(".map-hint").getByRole("button", { name: "Done" }).click();
+  await page.locator(".map-hint").getByRole("button", { name: "Finish zone" }).click();
   const editor = page.locator(".feature-editor");
   await expect(editor).toBeVisible();
   await editor.getByLabel(/^Label/).fill("The ice");

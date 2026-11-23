@@ -22,23 +22,33 @@ const embedName = (embed: string) => embed.replace(/^!\[\[|\]\]$/g, "");
 export function ImagePicker({
   onPick,
   onClose,
+  forMap = false,
 }: {
   onPick: (paths: string[], names: string[]) => void;
   onClose: () => void;
+  /**
+   * The image of a map: one image, and none of the marker icons. Upload, paste and a web
+   * address work as for an entry.
+   */
+  forMap?: boolean;
 }) {
   const gallery = useAsync(() => api.gallery(), "image-picker");
   const [chosen, setChosen] = useState<string[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
   const files = useRef<HTMLInputElement>(null);
-  const images = gallery.state === "ready" ? gallery.value.images : [];
+  const all = gallery.state === "ready" ? gallery.value.images : [];
+  const images = forMap ? all.filter((i) => !i.icon) : all;
 
   const toggle = (path: string) =>
-    setChosen((list) => (list.includes(path) ? list.filter((p) => p !== path) : [...list, path]));
+    setChosen((list) =>
+      list.includes(path) ? list.filter((p) => p !== path) : forMap ? [path] : [...list, path],
+    );
 
   /** Uploads each file as an unpublished image, then answers them all. */
   const upload = useCallback(
-    async (list: File[]) => {
+    async (given: File[]) => {
+      const list = forMap ? given.slice(0, 1) : given;
       const done: { path: string; embed: string }[] = [];
       setProblem(null);
       for (const file of list) {
@@ -58,7 +68,7 @@ export function ImagePicker({
         );
       }
     },
-    [onPick],
+    [onPick, forMap],
   );
 
   async function fromWeb(url: string) {
@@ -114,7 +124,12 @@ export function ImagePicker({
   }
 
   return (
-    <DialogFrame title="Add an image" className="image-picker" onCancel={onClose} onSubmit={insert}>
+    <DialogFrame
+      title={forMap ? "Choose an image" : "Add an image"}
+      className="image-picker"
+      onCancel={onClose}
+      onSubmit={insert}
+    >
       <div className="image-picker-sources">
         <button type="button" disabled={busy !== null} onClick={() => files.current?.click()}>
           <Icon icon={Upload} size="sm" /> Upload…
@@ -124,7 +139,7 @@ export function ImagePicker({
           className="image-picker-files"
           type="file"
           accept="image/*"
-          multiple
+          multiple={!forMap}
           tabIndex={-1}
           aria-hidden="true"
           onChange={(e) => {
@@ -162,7 +177,7 @@ export function ImagePicker({
           Cancel
         </button>
         <button type="submit" className="primary" disabled={chosen.length === 0}>
-          {chosen.length > 1 ? `Insert ${chosen.length} images` : "Insert"}
+          {forMap ? "Choose" : chosen.length > 1 ? `Insert ${chosen.length} images` : "Insert"}
         </button>
       </p>
     </DialogFrame>

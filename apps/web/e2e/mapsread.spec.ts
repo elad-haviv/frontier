@@ -321,7 +321,7 @@ test.describe("with a mouse", () => {
     const b = await onGlobe(page, -30, 25);
     await page.mouse.click(a.x, a.y);
     await page.mouse.click(b.x, b.y);
-    const finish = page.locator(".map-hint").getByRole("button", { name: "Done" });
+    const finish = page.locator(".map-hint").getByRole("button", { name: "Finish path" });
     await expect(finish).toBeEnabled();
     await page.keyboard.press("Escape");
     await expect(finish).toBeDisabled();

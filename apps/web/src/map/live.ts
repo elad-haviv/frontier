@@ -1,6 +1,7 @@
 /**
  * Draws the map's live canvas, `.map-live`, above the features: the halo of what the pointer is
- * over. It is redrawn on its own as the pointer moves, so hovering never redraws every feature.
+ * over, and while drawing, the line from the last point to the pointer. It is redrawn on its own
+ * as the pointer moves, so hovering never redraws every feature.
  */
 import type { Point } from "@frontier/geo";
 import {
@@ -19,6 +20,29 @@ export interface LiveInput {
   shapes: DrawnShape[];
   /** A hovered corner of the selected feature, on the screen. */
   corner?: Point | null;
+  /**
+   * The rubber band while drawing: the line the next click would make, and for a zone, fainter,
+   * the side that would close it back to the first point.
+   */
+  band?: { line: Point[][]; closing: Point[][] } | null;
+}
+
+const INK = "#2a2420";
+const PAPER = "#fbf7f0";
+
+/** The band in the look of the sketch it continues: ink on a paper casing. */
+function drawBand(ctx: CanvasRenderingContext2D, lines: Point[][], strength: number): void {
+  ctx.globalAlpha = strength;
+  for (const line of lines) {
+    trace(ctx, line);
+    ctx.strokeStyle = PAPER;
+    ctx.lineWidth = 5;
+    ctx.stroke();
+    ctx.strokeStyle = INK;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
 }
 
 function trace(ctx: CanvasRenderingContext2D, points: Point[]): void {
@@ -34,10 +58,14 @@ export function drawLive(ctx: CanvasRenderingContext2D, input: LiveInput): void 
   const ratio = window.devicePixelRatio || 1;
   ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
   ctx.clearRect(0, 0, input.width, input.height);
-  if (input.shapes.length === 0 && !input.corner) return;
-  const colour = selectColour();
   ctx.lineJoin = "round";
   ctx.lineCap = "round";
+  if (input.band) {
+    drawBand(ctx, input.band.closing, 0.4);
+    drawBand(ctx, input.band.line, 0.85);
+  }
+  if (input.shapes.length === 0 && !input.corner) return;
+  const colour = selectColour();
   ctx.globalAlpha = 0.5;
   for (const s of input.shapes) {
     if (s.kind === "marker") {

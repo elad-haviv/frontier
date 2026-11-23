@@ -3895,3 +3895,93 @@ button[data-offline] {
     top: 3.9rem;
   }
 }
+
+/* Drawing: the Straight / Curved switch, in the hint and in the Edit feature tab (13c). */
+.map-curve {
+  display: inline-flex;
+  vertical-align: middle;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  overflow: hidden;
+}
+.map-curve button {
+  min-height: 1.9rem;
+  padding: 0.1rem 0.6rem;
+  border: 0;
+  border-radius: 0;
+  background: var(--paper);
+  color: var(--ink-soft);
+  font: inherit;
+}
+.map-curve button + button {
+  border-left: 1px solid var(--rule);
+}
+.map-curve button.is-on {
+  background: var(--accent-soft);
+  color: var(--ink);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+.map-draw-hint {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0.3rem 0.5rem;
+  width: max-content;
+  border-radius: 14px;
+}
+.map-hint-layer {
+  color: var(--ink-soft);
+}
+.map-hint .primary[aria-disabled="true"] {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+/* The layer new features go into (MP-6). */
+.layer-panel li.is-active {
+  flex-wrap: wrap;
+}
+.layer-panel .drawing-into {
+  flex: 0 0 100%;
+  color: var(--ink-soft);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+.layer-panel .add-image {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  cursor: pointer;
+}
+.feature-length {
+  display: flex;
+  gap: 0.5rem;
+  margin: 0;
+}
+.new-map .chosen-image {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+.new-map .chosen-image img {
+  width: 4.5rem;
+  height: 3rem;
+  object-fit: cover;
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+}
+@media (max-width: 34rem) {
+  .map-curve button {
+    min-height: 2.75rem;
+  }
+}
+/* On a phone the drawing hint, with its switch and its finish button, sits at the foot of the
+   map, just above the tools, and leaves the top of the map free to draw on. */
+@media (max-width: 47.99rem) {
+  .map-hint.map-draw-hint {
+    top: auto;
+    bottom: 0.6rem;
+  }
+}

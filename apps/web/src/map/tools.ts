@@ -2,8 +2,16 @@
  * What the map's tools do, as plain functions of the map and what was tapped or dragged. Each
  * returns the step to take; the page applies it, the map through the save queue.
  */
-import { type Position, type Shape, shapeAt, vertexAt, type View } from "@frontier/geo";
-import type { MapFeature, MapFile } from "@frontier/schema";
+import {
+  moveBy,
+  type Position,
+  type Shape,
+  shapeAt,
+  type Space,
+  vertexAt,
+  type View,
+} from "@frontier/geo";
+import { type MapFeature, type MapFile, orderFeature } from "@frontier/schema";
 import { type MapTime, orbitAt, type Resolved, turnAbout, writeShape } from "./time.ts";
 import { newItemId } from "./viewUrl.ts";
 
@@ -20,7 +28,10 @@ export interface Step {
   tool?: Tool;
 }
 
-/** A new marker at a place, selected; the tool goes back to Select. */
+/**
+ * A new marker at a place, selected. The Marker tool stays on, so the next one can be placed
+ * while this one is linked in its tab.
+ */
 export function placeMarker(map: MapFile, layer: string, position: Position): Step {
   const feature: MapFeature = {
     id: newItemId(),
@@ -32,26 +43,37 @@ export function placeMarker(map: MapFile, layer: string, position: Position): St
     icon: null,
     child: null,
   };
-  return {
-    map: { ...map, features: [...map.features, feature] },
-    selected: feature.id,
-    tool: "select",
-  };
+  return { map: { ...map, features: [...map.features, feature] }, selected: feature.id };
 }
 
-/** Ends drawing: a path or zone with enough points is added and selected. Back to Select. */
-export function finishSketch(map: MapFile, tool: Tool, sketch: Position[], layer: string): Step {
+/** Whether a sketch has the points its feature needs: two for a path, three for a zone. */
+export function canFinish(tool: Tool, sketch: Position[]): boolean {
+  return tool === "path" || tool === "zone" ? sketch.length >= FEWEST_POINTS[tool] : false;
+}
+
+/**
+ * Ends drawing: a path or zone with enough points is added, curved when `curve` is on, and
+ * selected. Back to Select, so the new shape can be adjusted at once.
+ */
+export function finishSketch(
+  map: MapFile,
+  tool: Tool,
+  sketch: Position[],
+  layer: string,
+  curve = false,
+): Step {
   const kind = tool === "zone" ? "zone" : "path";
-  if (sketch.length >= (kind === "zone" ? 3 : 2)) {
-    const feature = {
+  if (sketch.length >= FEWEST_POINTS[kind]) {
+    const feature = orderFeature({
       id: newItemId(),
       kind,
       layer,
       points: sketch,
+      ...(curve ? { curve: "smooth" } : {}),
       entry: null,
       label: null,
       child: null,
-    } as MapFeature;
+    } as MapFeature);
     return {
       map: { ...map, features: [...map.features, feature] },
       selected: feature.id,
@@ -73,13 +95,16 @@ export function addSketchPoint(
   sketch: Position[],
   layer: string,
   [x, y]: [number, number],
+  curve = false,
 ): Step | null {
   const position = view.unproject(x, y);
   if (!position) return null;
   const last = sketch[sketch.length - 1];
   const lastOnScreen = last ? view.project(last) : null;
   const onLast = lastOnScreen !== null && Math.hypot(lastOnScreen[0] - x, lastOnScreen[1] - y) < 16;
-  if (onLast && tool !== "measure") return finishSketch(map, tool, sketch, layer);
+  // A double-click finishes through this rule: its first click adds a point, its second lands
+  // on that point.
+  if (onLast && tool !== "measure") return finishSketch(map, tool, sketch, layer, curve);
   if (!onLast) return { sketch: [...sketch, position] };
   return null;
 }
@@ -134,6 +159,55 @@ export function dragShape(
 
 /** The fewest points the shape of a path or zone may have. */
 export const FEWEST_POINTS = { path: 2, zone: 3 } as const;
+
+/** A sketch with its last point taken back: Delete or Backspace while drawing. */
+export function takeBackPoint(sketch: Position[]): Position[] {
+  return sketch.slice(0, -1);
+}
+
+/**
+ * The feature with a point put into its shape on screen after point `segment`, at `position`:
+ * a "+" clicked or dragged out. The new point is `vertex`. Null when the feature is gone.
+ */
+export function insertPoint(
+  map: MapFile,
+  drawn: Resolved,
+  segment: number,
+  position: Position,
+): { feature: MapFeature; vertex: number } | null {
+  const feature = map.features.find((f) => f.id === drawn.feature.id);
+  if (!feature || drawn.feature.kind === "marker") return null;
+  const points = [...drawn.feature.points];
+  points.splice(segment + 1, 0, position);
+  return { feature: writeShape(feature, drawn.shape, { points }), vertex: segment + 1 };
+}
+
+/**
+ * The zone with its shape on screen moved as the pointer went from `from` to `to`, starting from
+ * `start`, the points it had when the drag began, so it does not drift. Null when it is gone.
+ */
+export function moveZone(
+  map: MapFile,
+  drawn: Resolved,
+  start: Position[],
+  from: Position,
+  to: Position,
+): MapFeature | null {
+  const feature = map.features.find((f) => f.id === drawn.feature.id);
+  if (!feature || feature.kind !== "zone") return null;
+  return writeShape(feature, drawn.shape, { points: moveBy(map.space as Space, start, from, to) });
+}
+
+/**
+ * The path or zone drawn curved or straight. The one edit that is not to the shape on screen: all
+ * of a feature's shapes are curved or straight together.
+ */
+export function setCurve(feature: MapFeature, curved: boolean): MapFeature {
+  if (feature.kind === "marker") return feature;
+  const next = { ...feature } as MapFeature & { curve?: string };
+  delete next.curve;
+  return orderFeature((curved ? { ...next, curve: "smooth" } : next) as MapFeature);
+}
 
 /** Why a point cannot be taken from a shape on screen, or null when one can. */
 export function removeReason(drawn: MapFeature): string | null {

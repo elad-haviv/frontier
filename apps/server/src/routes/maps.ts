@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { Id, MapFile, VaultPath } from "@frontier/schema";
-import { isExcluded, isImage, stem } from "@frontier/vault";
+import { stem } from "@frontier/vault";
 import { z } from "zod";
 import { ApiError } from "../errors.js";
 import type { Services } from "../app.js";
@@ -84,17 +84,4 @@ export function mapRoutes(app: FastifyInstance, s: Services): void {
   });
 
   app.get("/api/marker-sets", async () => ({ sets: s.maps.markerSets() }));
-
-  /** The images a map can be made from: those in the vault, icons aside, and unpublished uploads. */
-  app.get("/api/map-images", async () => {
-    const icons = s.config.iconFolder + "/";
-    const paths = [
-      ...s.index.files.filter((f) => isImage(f) && !isExcluded(f) && !f.startsWith(icons)),
-      ...s.drafts
-        .list()
-        .filter((d) => d.binary && d.kind === "create" && !s.index.hasFile(d.path))
-        .map((d) => d.path),
-    ];
-    return { images: paths.sort((a, b) => a.localeCompare(b)) };
-  });
 }

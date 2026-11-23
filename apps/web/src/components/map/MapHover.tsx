@@ -5,8 +5,8 @@ import "./MapHover.css";
 
 /** What the mouse is over on the map, as the page tells it. */
 export interface Hovered {
-  /** A feature, or a corner of the selected one. */
-  kind: "feature" | "corner";
+  /** A feature, or a corner or a "+" of the selected one. */
+  kind: "feature" | "corner" | "insert";
   feature: MapFeature;
   /** Its name as the map shows it; empty when it has none. */
   title: string;
@@ -87,7 +87,9 @@ export function MapHover({
   const words =
     hovered.kind === "corner"
       ? "Drag to move · Delete to remove"
-      : hovered.title || UNNAMED[hovered.feature.kind];
+      : hovered.kind === "insert"
+        ? "Add a point"
+        : hovered.title || UNNAMED[hovered.feature.kind];
   return (
     <div ref={box} className="map-tooltip" role="tooltip" style={style}>
       {words}

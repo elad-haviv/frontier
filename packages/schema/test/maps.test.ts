@@ -396,3 +396,38 @@ describe("more map views", () => {
     expect(mergeMaps(base, base, mine).map.under).toBe("aaaaaaaa");
   });
 });
+
+describe("a curved path or zone", () => {
+  const curved = (m: MapFile) => {
+    (m.features[1] as Record<string, unknown>).curve = "smooth";
+  };
+
+  it("leaves a map without curves byte for byte as it was", () => {
+    const text = serialiseMap(base);
+    expect(text).not.toContain("curve");
+    const read = parseMap(text);
+    expect(read.ok && serialiseMap(read.map)).toBe(text);
+  });
+
+  it("writes the flag after the points and reads it back", () => {
+    const text = serialiseMap(edit(curved));
+    expect(text).toContain('[20,40]],"curve":"smooth","entry":null');
+    const read = parseMap(text);
+    expect(read.ok && (read.map.features[1] as { curve?: string }).curve).toBe("smooth");
+  });
+
+  it("refuses any other kind of curve", () => {
+    const bad = edit((m) => {
+      (m.features[1] as Record<string, unknown>).curve = "wavy";
+    });
+    expect(parseMap(JSON.stringify(bad)).ok).toBe(false);
+  });
+
+  it("keeps a curve made on one side when the other side moved another feature", () => {
+    const mine = edit(curved);
+    const theirs = edit((m) => ((m.features[0] as { at: number[] }).at = [1, 1]));
+    const merged = mergeMaps(base, mine, theirs);
+    expect((merged.map.features[1] as { curve?: string }).curve).toBe("smooth");
+    expect((merged.map.features[0] as { at: number[] }).at).toEqual([1, 1]);
+  });
+});

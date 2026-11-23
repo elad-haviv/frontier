@@ -80,7 +80,12 @@ const zonePoints = async (page: Page) =>
 async function placeMarker(page: Page, dx: number, dy: number): Promise<Point> {
   const at = plus(await centre(page), dx, dy);
   await page.getByRole("button", { name: "Marker", exact: true }).click();
-  await expect(page.locator(".map-hint", { hasText: "Tap where the marker goes." })).toBeVisible();
+  // The marker tool's hint: for a mouse, or for a finger.
+  await expect(
+    page.locator(".map-hint", {
+      hasText: /Click where each marker goes|Tap where the marker goes/,
+    }),
+  ).toBeVisible();
   await page.mouse.click(at.x, at.y);
   await expect(page.locator(".feature-editor")).toBeVisible();
   await expect(page.locator(".save-saved")).toBeVisible();
@@ -94,7 +99,9 @@ async function placeMarker(page: Page, dx: number, dy: number): Promise<Point> {
 /** Draws a zone through three points while editing; it is left selected. */
 async function drawZone(page: Page, corners: Point[]) {
   await page.getByRole("button", { name: "Zone", exact: true }).click();
-  await expect(page.locator(".map-hint", { hasText: "Tap to add points." })).toBeVisible();
+  await expect(
+    page.locator(".map-hint", { hasText: /Click to add points|Tap to add points/ }),
+  ).toBeVisible();
   for (const p of corners) await page.mouse.click(p.x, p.y);
   // A tap on the last point finishes the shape.
   await page.mouse.click(corners.at(-1)!.x, corners.at(-1)!.y);
@@ -298,7 +305,6 @@ test.describe("touch", () => {
   test("one finger left after a pinch pans, and never taps", async ({ page }, info) => {
     test.skip(info.project.name !== "phone", "Needs touch");
     const id = await openMap(page, `Lifted ${info.project.name}`, true);
-    // A globe zooms about its middle, so a finger held there stays over the marker.
     const marker = await placeMarker(page, 0, 0);
     const c = await centre(page);
     const fingers = await Fingers.on(page);
@@ -312,8 +318,22 @@ test.describe("touch", () => {
     await fingers.lift(1);
     await page.waitForTimeout(300);
     await expect(page.locator(".feature-card")).toHaveCount(0);
-    // A plain tap there selects the marker, so it was under the finger.
-    await fingers.press(1, marker);
+    // A pinch also pans by its middle (from release 13c), so the marker has moved with the map. A
+    // plain tap where it now is selects it, so the lifted finger would have found it.
+    const [, lon0, lat0, k1] = viewOf(page).map(Number);
+    const box = (await page.locator(".map-top").boundingBox())!;
+    const at = ((await stored(page)).features.find((f) => f.kind === "marker") as { at: number[] })
+      .at;
+    const r = Math.PI / 180;
+    const [l, f, f0] = [(at[0]! - lon0!) * r, at[1]! * r, lat0! * r];
+    const now = {
+      x: box.x + box.width / 2 + k1! * Math.cos(f) * Math.sin(l),
+      y:
+        box.y +
+        box.height / 2 -
+        k1! * (Math.cos(f0) * Math.sin(f) - Math.sin(f0) * Math.cos(f) * Math.cos(l)),
+    };
+    await fingers.press(1, now);
     await fingers.lift(1);
     await expect(page.locator(".feature-card")).toBeVisible();
     await page.locator(".feature-card .card-close").click();
@@ -359,8 +379,9 @@ test.describe("mouse", () => {
     await cleanUp(page, id);
   });
 
-  // Only the primary button starts a gesture (from release 13a-2; before, any button panned).
-  test("a right-button or middle-button press and drag neither pans nor selects", async ({
+  // The primary button starts a gesture and the middle one pans (from release 13c); the right
+  // one is left to the menu.
+  test("a right-button press and drag neither pans nor selects; the middle button pans", async ({
     page,
   }, info) => {
     test.skip(info.project.name !== "desktop", "Needs a mouse");
@@ -368,18 +389,28 @@ test.describe("mouse", () => {
     const c = await placeMarker(page, 0, 0);
     const place = placeOf(page);
 
+    await page.mouse.move(c.x, c.y);
+    await page.mouse.down({ button: "right" });
+    await page.mouse.move(c.x + 40, c.y + 30, { steps: 5 });
+    await page.mouse.up({ button: "right" });
+    await page.keyboard.press("Escape");
+    // And held still, it is no tap either; nor is the middle button held still.
     for (const button of ["right", "middle"] as const) {
       await page.mouse.move(c.x, c.y);
       await page.mouse.down({ button });
-      await page.mouse.move(c.x + 40, c.y + 30, { steps: 5 });
       await page.mouse.up({ button });
-      // And held still, it is no tap either.
-      await page.mouse.move(c.x, c.y);
-      await page.mouse.down({ button });
-      await page.mouse.up({ button });
+      await page.keyboard.press("Escape");
     }
     await page.waitForTimeout(500);
     expect(placeOf(page)).toBe(place);
+    await expect(page.locator(".feature-card")).toHaveCount(0);
+
+    // The middle button pans, even from the marker.
+    await page.mouse.move(c.x, c.y);
+    await page.mouse.down({ button: "middle" });
+    await page.mouse.move(c.x + 40, c.y + 30, { steps: 5 });
+    await page.mouse.up({ button: "middle" });
+    await expect.poll(() => placeOf(page)).not.toBe(place);
     await expect(page.locator(".feature-card")).toHaveCount(0);
     await cleanUp(page, id);
   });

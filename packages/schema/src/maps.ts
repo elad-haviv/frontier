@@ -84,6 +84,12 @@ const featureBase = {
   orbit: z.object({ around: ItemId, period: z.number().positive() }).passthrough().nullish(),
 };
 
+/**
+ * A path or zone drawn as a smooth curve through its points; without it, straight from point to
+ * point. It belongs to the feature: all of its shapes are curved or straight together.
+ */
+const curve = z.literal("smooth").optional();
+
 export const MapFeature = z.discriminatedUnion("kind", [
   z
     .object({
@@ -93,8 +99,12 @@ export const MapFeature = z.discriminatedUnion("kind", [
       icon: z.object({ set: z.string(), name: z.string() }).nullable(),
     })
     .passthrough(),
-  z.object({ ...featureBase, kind: z.literal("path"), points: z.array(Pair).min(2) }).passthrough(),
-  z.object({ ...featureBase, kind: z.literal("zone"), points: z.array(Pair).min(3) }).passthrough(),
+  z
+    .object({ ...featureBase, kind: z.literal("path"), points: z.array(Pair).min(2), curve })
+    .passthrough(),
+  z
+    .object({ ...featureBase, kind: z.literal("zone"), points: z.array(Pair).min(3), curve })
+    .passthrough(),
 ]);
 export type MapFeature = z.infer<typeof MapFeature>;
 
@@ -160,6 +170,7 @@ const ITEM_KEYS: Record<string, string[]> = {
     "layer",
     "at",
     "points",
+    "curve",
     "entry",
     "label",
     "icon",

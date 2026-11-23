@@ -1,6 +1,6 @@
 import { type MapFeature, type MapFile, orderFeature, reorderFeature } from "@frontier/schema";
 import { addShape, reasonFor, removeShape, type Resolved, shapeOf, tie } from "../../map/time.ts";
-import { deleteFeature, removePoint, type Tool } from "../../map/tools.ts";
+import { deleteFeature, removePoint, setCurve, type Tool } from "../../map/tools.ts";
 import type { useMapFile } from "../../map/useMapFile.ts";
 import type { TimeState } from "../../map/useMapTime.ts";
 import { newItemId } from "../../map/viewUrl.ts";
@@ -60,7 +60,8 @@ export function FeaturePanel({
       />
     );
   }
-  if (tool !== "select") return null;
+  // The Marker tool stays on after a marker is placed, and its tab opens to link it.
+  if (tool !== "select" && (tool !== "marker" || feature.kind !== "marker")) return null;
   return (
     <FeatureEditor
       key={feature.id}
@@ -68,6 +69,9 @@ export function FeaturePanel({
       map={map}
       names={names}
       pendingEntry={file.pendingNames[feature.id] ?? null}
+      pendingPath={file.pendingPathOf(feature.id)}
+      {...(onScreen ? { drawn: onScreen.feature } : {})}
+      onCurve={(curved) => setFeature(setCurve(feature, curved))}
       sets={file.sets}
       otherMaps={file.otherMaps}
       vertex={vertex}
