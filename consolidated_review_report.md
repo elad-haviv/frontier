@@ -6,12 +6,12 @@ FeatureRange is lines 1–553; DetailedRange is lines 554–802.
 
 ## Reviewer status
 
-| Stage | Reviewers | Status | Raw report |
-| --- | --- | --- | --- |
-| 5 Zoom out | zoom-out, inventive-catalyst | completed | `.egm/review/zoom_out_report.md` |
-| 6 Comprehension | comprehension | completed | `.egm/review/comprehension_report.md` |
-| 7 Critic | design, structural, style | completed | `.egm/review/critic_report.md` |
-| 8 Intermediate zoom out | zoom-out | completed | `.egm/review/intermediate_zoom_out_report.md` |
+| Stage                      | Reviewers                                         | Status    | Raw report                                       |
+| -------------------------- | ------------------------------------------------- | --------- | ------------------------------------------------ |
+| 5 Zoom out                 | zoom-out, inventive-catalyst                      | completed | `.egm/review/zoom_out_report.md`                 |
+| 6 Comprehension            | comprehension                                     | completed | `.egm/review/comprehension_report.md`            |
+| 7 Critic                   | design, structural, style                         | completed | `.egm/review/critic_report.md`                   |
+| 8 Intermediate zoom out    | zoom-out                                          | completed | `.egm/review/intermediate_zoom_out_report.md`    |
 | 9 Implementation readiness | implementation-readiness, codebase-details, style | completed | `.egm/review/implementation_readiness_report.md` |
 
 The reviewers raised about 120 findings, with heavy overlap. Stage 8 sorted the stage 5–7 fixes into adopt,
@@ -27,11 +27,11 @@ verdicts. Stage 9 then added concrete corrections tied to the code.
      `drafts.ts:200` throws `invalid` before any base check runs.
    - Fix: add a small rule table for the case where no draft exists and the revision is above 0:
 
-     | `baseBlob` | Result |
-     | --- | --- |
-     | differs | kept copy, `stale_revision` |
-     | matches | fresh draft |
-     | missing | today's behaviour |
+     | `baseBlob`              | Result                      |
+     | ----------------------- | --------------------------- |
+     | differs                 | kept copy, `stale_revision` |
+     | matches                 | fresh draft                 |
+     | missing                 | today's behaviour           |
      | path deleted or renamed | kept copy, `stale_revision` |
 
    - Order of checks: the `op` check runs first, then the revision check.
@@ -116,6 +116,7 @@ verdicts. Stage 9 then added concrete corrections tied to the code.
 
     The connection, unsent and attention marks sit in the existing top bar until 11b. (S9r-M8, S9c-M11,
     S6-8)
+
 16. **File list corrections.**
     - The map and chronicle `Save` bodies are in `routes/maps.ts` and `routes/chronicles.ts`.
     - `Maps.tsx` and `History.tsx` save directly today.
@@ -179,17 +180,17 @@ verdicts. Stage 9 then added concrete corrections tied to the code.
 
 ## Rejected or deferred proposals (stage 8)
 
-| Proposal | Verdict |
-| --- | --- |
-| Queue intents (renames, deletes, comments) with `op` | Rejected for stage 11; stage 15 |
-| Translation layer for folder paths during pending renames | Rejected; guards instead |
-| `empty: true` flag and import reconciler | Rejected; the drop rule is deleted |
-| Kept copies for maps, chronicles and the folder file | Deferred to stage 15 |
-| BroadcastChannel leader election, shared stream across tabs, rolling-median slowness | Rejected; Web Locks and one probe |
-| Rename dry-run endpoint | Rejected; the existing create-then-cancel |
-| Dual-writing `content.v2` for rollback | Rejected; honest wording |
-| `navigator.storage.persist()` and its interface | Deferred to stage 15 |
-| Moving MapPage onto `useItemFile` | Rejected for stage 11 |
+| Proposal                                                                             | Verdict                                   |
+| ------------------------------------------------------------------------------------ | ----------------------------------------- |
+| Queue intents (renames, deletes, comments) with `op`                                 | Rejected for stage 11; stage 15           |
+| Translation layer for folder paths during pending renames                            | Rejected; guards instead                  |
+| `empty: true` flag and import reconciler                                             | Rejected; the drop rule is deleted        |
+| Kept copies for maps, chronicles and the folder file                                 | Deferred to stage 15                      |
+| BroadcastChannel leader election, shared stream across tabs, rolling-median slowness | Rejected; Web Locks and one probe         |
+| Rename dry-run endpoint                                                              | Rejected; the existing create-then-cancel |
+| Dual-writing `content.v2` for rollback                                               | Rejected; honest wording                  |
+| `navigator.storage.persist()` and its interface                                      | Deferred to stage 15                      |
+| Moving MapPage onto `useItemFile`                                                    | Rejected for stage 11                     |
 
 ## Traceability
 

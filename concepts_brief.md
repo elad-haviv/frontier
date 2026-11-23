@@ -109,11 +109,13 @@ screen-reader support.
   - offline editing of recent files, new entries, maps and chronicles.
 
   This brief keeps those choices and adds the safety rules.
+
 - **Where folder style and order live.**
   - In the library as a file: versioned and exported, but every drag becomes an unpublished change.
   - In Frontier's own state: instant, but outside history and export.
 
   Open question 1.
+
 - **Empty folders.**
   - Make each new folder with its folder note (a note named after the folder, which Frontier already
     treats as the folder's page and Obsidian shows).

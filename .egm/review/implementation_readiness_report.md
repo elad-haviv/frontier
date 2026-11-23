@@ -1,4 +1,5 @@
 # Stage 9 — Implementation readiness (raw)
+
 B1 steps 5-6: device header written to disk unvalidated (path traversal); fetch throws on non-ISO-8859-1 names. Id format via makeId regex, reject else; absent -> `unknown`; encodeURIComponent name, cut 40; name origin + meta.
 B2 step 9: attention() wrong place (VaultIndex has no drafts); build versions in routes/status.ts; StatusSnapshot.attention versions count (packages/schema/src/status.ts, status/status.ts); emit status after kept copy.
 M3 step 2 wrong files: Save schemas local in routes/maps.ts, routes/chronicles.ts; LoadedMap in stores; api.ts client types.
@@ -18,7 +19,9 @@ M16 mergeItemLists id adapter; list icon names and colour hex values.
 M17 publish.ts 90% branch coverage: publish.test.ts, lore tests.
 M18 dependency versions/React 19 peers; fallback.
 Nits: step 11 nothing to allow; versions response vs DraftVersion, api.ts type, hasVersions name; test file names + EventSource stubs; token hex values; NFR items w/o steps (lazy chunks, logout ask, write limit, offline move refusal); step 55 wording; web has no coverage thresholds.
+
 # Stage 9 — Codebase details (raw)
+
 B1 step 2 wrong files (route-local Save in routes/maps.ts:14, chronicles.ts:18; LoadedMap/LoadedChronicle in stores; web api.ts:404).
 B2 queue can't carry map/chronicle `link` side channel + server-changed value + unlinked; chronicle.spec 313-353 tests it; senders own mergeMaps/mergeChronicles; return path to mounted page.
 B3 device header path traversal; validate Id; absent id.
@@ -44,7 +47,9 @@ M22 drop rule empty; GitHub/sample modes have outside renames (e2e changeFromOut
 M23 useAsync already keeps value; list pages; failure keeps value + Problem.
 M24 logout ask step.
 Nits: 4 doc listeners not 8 + element onKeyDown; Mod-i basicSetup selectParentSyntax -> Prec.high, Esc-Tab built in; step 61 before 59; SITEMAP already lists; frontier.md buffer lines 376,553,1077,1183; token hex values; versions/React 19; clearPublished (publish.ts:137) must keep draft that only has versions.
+
 # Stage 9 — Style on implementation plan (raw)
+
 M1 step 55 drop rule ambiguous (and conflicts) — state outright (or remove per stage 8).
 M2 Verification "top ten" check has no source/pass criterion.
 M3 step 24 bundles five changes; split into sub-bullets, gloss codes.

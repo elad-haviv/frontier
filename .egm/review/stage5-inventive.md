@@ -1,4 +1,5 @@
 # Stage 5 — Inventive catalyst (raw)
+
 1 Major §6 lines 359-369/step55: drop rule vs empty-folder definition contradict -> phantom folders keep stale types (vault re-import, mine-wins resurrecting). Fix: explicit `empty: true`; import reconciles & reports dropped lines.
 2 Major §6 rename row/tree pending/§7: folder file rewritten only at publish; edits to moved folder before publish (style, subfolder, new entry type) target which key? Fix: translation layer applying pending intents to folder paths on read and mapping writes back; or rewrite folder-file draft when intent created, restore on undo.
 3 Major §1 Sending: head-of-line blocking; per-key order and back-off; global pause only on offline/401; skip needs-attention; state needed cross-key orderings.

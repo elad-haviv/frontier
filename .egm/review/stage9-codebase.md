@@ -1,4 +1,5 @@
 # Stage 9 — Codebase details (raw)
+
 B1 step 2 wrong files (route-local Save in routes/maps.ts:14, chronicles.ts:18; LoadedMap/LoadedChronicle in stores; web api.ts:404).
 B2 queue can't carry map/chronicle `link` side channel + server-changed value + unlinked; chronicle.spec 313-353 tests it; senders own mergeMaps/mergeChronicles; return path to mounted page.
 B3 device header path traversal; validate Id; absent id.

@@ -67,7 +67,7 @@ Where: `13b-map-marker-placed.png`. There is a vertical hard edge on the globe a
 **🔴 IC-1. The editor toolbar uses cryptic glyphs with no tooltips.**
 Where: `05/06/07-editor*.png` (the "hover" and "image tool" screenshots are byte-identical to `05`: hovering shows nothing). `components/EditToolbar.tsx:83-179`. `[[ ]]`, `H`, `•`, `▣` (image), `✎` (comment) and `↶ ↷` have `aria-label` but no `title` (only Comment, AI and the table buttons have one). Playwright confirmed `title` is null on Heading.
 Why it matters: `▣` does not say "image" and `✎` usually means "edit", not "comment". New users cannot learn the tools by hovering.
-Recommendation: use a consistent line icon set (Lucide or Phosphor: link, heading, list, bold, italic, image, message-square, undo, redo). Add a styled tooltip with name and shortcut ("Bold  Ctrl+B"), as in Google Docs and Notion.
+Recommendation: use a consistent line icon set (Lucide or Phosphor: link, heading, list, bold, italic, image, message-square, undo, redo). Add a styled tooltip with name and shortcut ("Bold Ctrl+B"), as in Google Docs and Notion.
 
 **🟡 IC-2. Layer and image rows in the map layer panel use bare symbols.**
 Where: `15-map-layers.png`. `⌖ ↑ ↓ ✕` per row, with the red ✕ repeated on every row. Layer names are truncated ("Routes and realr").
@@ -91,7 +91,7 @@ Only Ctrl+K (switcher) and the CodeMirror defaults exist. There is no Ctrl+B or 
 Recommendation: add the standard set: Mod-B/I/K (link) in the editor, Mod-S as "save now" with a visible flash of "Saved", and Mod-Enter for Done. On the map: V/M/P/Z/R for tools, Del/Backspace to delete, Esc to cancel a sketch, Enter to finish, Mod-Z/Shift-Mod-Z. Add a "?" shortcut sheet, as in Figma and Linear.
 
 **🟢 DI-3. Ctrl+K is the best navigation feature and is hidden behind an unlabeled magnifier.**
-Where: `01-home.png`. Show it as a search field ("Search or jump…  Ctrl K") in the top bar, as in Notion and Linear.
+Where: `01-home.png`. Show it as a search field ("Search or jump… Ctrl K") in the top bar, as in Notion and Linear.
 
 ### 2.5 Folder tree and creating entries
 
@@ -133,7 +133,7 @@ Rename / History / Export (`02`) at `--ink-faint` look disabled. Group them into
 ### 2.7 Editor and toolbar
 
 **🔴 ED-1. The "Preview" button does not preview.**
-Where: `05-editor.png`; `Edit.tsx:383-393`. It toggles live-preview *marks hiding*. It is on by default, shown as red text, with only a title tooltip to explain it. Users will click it expecting a rendered reading view and see almost nothing change.
+Where: `05-editor.png`; `Edit.tsx:383-393`. It toggles live-preview _marks hiding_. It is on by default, shown as red text, with only a title tooltip to explain it. Users will click it expecting a rendered reading view and see almost nothing change.
 Recommendation: rename it to a two-state segmented control, "Live preview | Source", as Obsidian names exactly this feature, and show which state is active. Consider also offering a real "Reading view" toggle.
 
 **🟡 ED-2. The editor body is monospace while headings are serif.**
@@ -202,7 +202,7 @@ Recommendation: add an app-level "Offline: changes are kept on this device" bann
 **🔴 MO-1. On a phone, the map's Done/Edit, Undo/Redo and Delete are off-screen.**
 Where: phone map edit capture (iPhone 13). The bar shows "‹ Sample world [Saved as a draft] Layers" and clips the rest. The tool strip clips after "Measure". `22-phone-map.png` shows "L…" clipped in view mode. Nothing signals that these rows scroll horizontally.
 Why it matters: a user can enter edit mode and not find the way out or undo.
-Recommendation: on narrow screens, collapse the header to "‹ Title  [Done]" plus a "⋯" menu. Make the tool strip an icon-only bottom bar (Select, Marker, Path, Zone, Measure, Undo) as in Felt's and Google Maps' mobile editors. Hide the save label behind an icon.
+Recommendation: on narrow screens, collapse the header to "‹ Title [Done]" plus a "⋯" menu. Make the tool strip an icon-only bottom bar (Select, Marker, Path, Zone, Measure, Undo) as in Felt's and Google Maps' mobile editors. Hide the save label behind an icon.
 
 **🟡 MO-2. Secondary navigation is buried at the bottom of the tree drawer.**
 Where: the phone drawer capture. Maps, Chronicles, Gallery, Settings and the rest only appear after scrolling past every folder (`Shell.tsx:213`).

@@ -1,4 +1,5 @@
 # Stage 7 — Design critic (raw)
+
 B1 folder delete overwrites unpublished edit drafts with "" (drafts.ts:240, routes/drafts.ts:68); Undo discards -> edit lost; queue has no group; image drafts can't be saved as delete. Fix: delete intent separate (like renames), single server call/undo, image deletes defined.
 B2 item-file merge needs mounted page; mine-wins overwrites other device's unpublished draft; history lacks drafts. Fix: merge in queue via itemFile merges; keep other side as version.
 M3 server truth table gaps: CUJ3 phone has draftId+rev>0 after publish -> today `invalid` (drafts.ts:200) before base check; cases no-draft/rev>0/base equal; base missing; path deleted/renamed. Full truth table.

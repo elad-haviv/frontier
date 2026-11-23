@@ -1,4 +1,5 @@
 # Stage 8 — Intermediate zoom out (adopt / simplify / defer)
+
 1 Blocker ADOPT small: CUJ3 fails today (drafts.ts:200 `invalid` before base check). Rule: no draft & rev>0: baseBlob differs -> kept copy + stale; matches -> fresh draft; missing -> today; deleted/renamed path -> stale kept. Unit test CUJ3.
 2 Major: narrow G4 to entry text, maps, chronicles, folder file; comments/renames/deletes/apply-type direct online, refused offline; stage 15 decides.
 3 Major: merge in sender with pure mergeMaps/mergeChronicles + stored base; defer item-file kept copies to 15; notice names clashed items; drop history link; MapPage not moved onto useItemFile.

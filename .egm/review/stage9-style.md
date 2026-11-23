@@ -1,4 +1,5 @@
 # Stage 9 — Style on implementation plan (raw)
+
 M1 step 55 drop rule ambiguous (and conflicts) — state outright (or remove per stage 8).
 M2 Verification "top ten" check has no source/pass criterion.
 M3 step 24 bundles five changes; split into sub-bullets, gloss codes.

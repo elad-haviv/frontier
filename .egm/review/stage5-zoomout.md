@@ -1,4 +1,5 @@
 # Stage 5 — Zoom out (raw)
+
 Verified claims match code.
 1 Major §2 steps 5,7,55: base/op checks written 3-4 times; put once in DraftStore.saveFrom/serverChange; extract shared item-file store from maps/chronicles and build folders on it.
 2 Major §1 item-file stale row: queue merge needs no mounted page — senders call pure mergeMaps/mergeChronicles/mergeItemLists; useItemFile stays the one hook (backed by queue); move MapPage onto useItemFile; limit/drop useQueued.

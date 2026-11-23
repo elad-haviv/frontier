@@ -1,4 +1,5 @@
 # Stage 5 — Zoom out (raw)
+
 Verified claims match code.
 1 Major §2 steps 5,7,55: base/op checks written 3-4 times; put once in DraftStore.saveFrom/serverChange; extract shared item-file store from maps/chronicles and build folders on it.
 2 Major §1 item-file stale row: queue merge needs no mounted page — senders call pure mergeMaps/mergeChronicles/mergeItemLists; useItemFile stays the one hook (backed by queue); move MapPage onto useItemFile; limit/drop useQueued.
@@ -14,7 +15,9 @@ Verified claims match code.
 12 Nit moved unpublished folder settings path; mergeItemLists keyed by id -> adapter.
 13 Nit constants in architecture -> move to implementation plan.
 14 Nit react-arborist costs: fixed row height/container, react-dnd no touch, React 19 support; virtual rows unneeded; name fallback.
+
 # Stage 5 — Inventive catalyst (raw)
+
 1 Major §6 lines 359-369/step55: drop rule vs empty-folder definition contradict -> phantom folders keep stale types (vault re-import, mine-wins resurrecting). Fix: explicit `empty: true`; import reconciles & reports dropped lines.
 2 Major §6 rename row/tree pending/§7: folder file rewritten only at publish; edits to moved folder before publish (style, subfolder, new entry type) target which key? Fix: translation layer applying pending intents to folder paths on read and mapping writes back; or rewrite folder-file draft when intent created, restore on undo.
 3 Major §1 Sending: head-of-line blocking; per-key order and back-off; global pause only on offline/401; skip needs-attention; state needed cross-key orderings.

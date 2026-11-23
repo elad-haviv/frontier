@@ -1,4 +1,5 @@
 # Stage 7 — Style (raw)
+
 M1 rollback claim overstated: old build can't see versions/, unsent IDB queue, empty folders, folder types — list or prevent.
 M2 perf claims unmeasured: state today's size, limit, tree target.
 M3 Alt E "largest single cost" uncalibrated.

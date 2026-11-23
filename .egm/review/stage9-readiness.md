@@ -1,4 +1,5 @@
 # Stage 9 — Implementation readiness (raw)
+
 B1 steps 5-6: device header written to disk unvalidated (path traversal); fetch throws on non-ISO-8859-1 names. Id format via makeId regex, reject else; absent -> `unknown`; encodeURIComponent name, cut 40; name origin + meta.
 B2 step 9: attention() wrong place (VaultIndex has no drafts); build versions in routes/status.ts; StatusSnapshot.attention versions count (packages/schema/src/status.ts, status/status.ts); emit status after kept copy.
 M3 step 2 wrong files: Save schemas local in routes/maps.ts, routes/chronicles.ts; LoadedMap in stores; api.ts client types.
