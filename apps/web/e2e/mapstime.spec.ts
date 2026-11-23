@@ -52,6 +52,18 @@ async function makeChronicle(page: Page, title: string, entryPath: string) {
   );
 }
 
+/** What the topmost element at a point is: "map" when a tap there reaches the map's surface. */
+function whatIsAt(page: Page, x: number, y: number) {
+  return page.evaluate(
+    ([px, py]) => {
+      const el = document.elementFromPoint(px!, py!);
+      if (el?.closest(".map-top")) return "map";
+      return el ? `${el.tagName.toLowerCase()}.${String(el.className)}` : "nothing";
+    },
+    [x, y],
+  );
+}
+
 async function centre(page: Page) {
   const box = (await page.locator(".map-top").boundingBox())!;
   return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
@@ -121,6 +133,9 @@ test("CUJ 16: a fort appears and goes, and a border changes shape, as the years 
     [90, -110],
     [0, -50],
   ] as const) {
+    await expect
+      .poll(() => whatIsAt(page, c.x + dx, c.y + dy), { message: "a tap must land on the map" })
+      .toBe("map");
     await page.mouse.click(c.x + dx, c.y + dy);
   }
   await page.locator(".map-hint").getByRole("button", { name: "Done" }).click();

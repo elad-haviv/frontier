@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useState } from "react";
 import { Navigate, Route, Routes, useLocation, useParams } from "react-router-dom";
 import { api } from "./api.ts";
 import { LoginDialog } from "./components/LoginDialog.tsx";
@@ -19,19 +19,29 @@ import { Home } from "./pages/Home.tsx";
 import { HistoryPage, LibraryHistoryPage } from "./pages/History.tsx";
 import { ImportPage } from "./pages/Import.tsx";
 import { InboxPage } from "./pages/Inbox.tsx";
-import { ChroniclePage } from "./pages/ChroniclePage.tsx";
 import { ChroniclesPage } from "./pages/Chronicles.tsx";
-import { MapPage } from "./pages/MapPage.tsx";
 import { MapsPage } from "./pages/Maps.tsx";
 import { Login } from "./pages/Login.tsx";
 import { RenamePage } from "./pages/Rename.tsx";
 import { SettingsPage } from "./pages/Settings.tsx";
 import { StatusPage } from "./pages/Status.tsx";
+import { Progress } from "./components/ui/Progress.tsx";
+
+// The map and chronicle pages carry their renderers and geometry; they load when first opened,
+// so the first page of the app comes up sooner.
+const MapPage = lazy(() => import("./pages/MapPage.tsx").then((m) => ({ default: m.MapPage })));
+const ChroniclePage = lazy(() =>
+  import("./pages/ChroniclePage.tsx").then((m) => ({ default: m.ChroniclePage })),
+);
 
 /** A different map gets a fresh page: its own view, drawing surface and history. */
 function OneMap() {
   const { id = "" } = useParams();
-  return <MapPage key={id} />;
+  return (
+    <Suspense fallback={<Progress />}>
+      <MapPage key={id} />
+    </Suspense>
+  );
 }
 
 export function App() {
@@ -89,7 +99,14 @@ export function App() {
         <Route path="/export" element={<ExportPage />} />
         <Route path="/gallery" element={<GalleryPage />} />
         <Route path="/chronicles" element={<ChroniclesPage />} />
-        <Route path="/chronicle/:id" element={<ChroniclePage />} />
+        <Route
+          path="/chronicle/:id"
+          element={
+            <Suspense fallback={<Progress />}>
+              <ChroniclePage />
+            </Suspense>
+          }
+        />
         <Route path="/settings" element={<SettingsPage />} />
         <Route path="/conflict/:id" element={<ConflictPage />} />
         <Route path="/versions/:id" element={<VersionsPage />} />
