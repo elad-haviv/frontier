@@ -1,324 +1,8 @@
-import type { Length } from "@frontier/geo";
-import { extentProblem, type MapFeature, type MapFile, wholeExtent } from "@frontier/schema";
-import { type ReactNode, useEffect, useState } from "react";
-import { Link } from "react-router-dom";
-import { api, entryUrl, imageUrl, mapUrl } from "../api.ts";
-import { iconLabel, newItemId } from "../map/viewUrl.ts";
-import { useDialogs } from "./Dialogs.tsx";
-
-export type Names = Record<string, { path: string; title: string }>;
-export type MarkerSets = { name: string; icons: { name: string; path: string }[] }[];
-
-const number = (n: number, digits = 1) =>
-  n.toLocaleString(undefined, { maximumFractionDigits: digits });
-
-/** A measured length in words: an angle and a share of the way round, or a distance. */
-export function lengthText(length: Length, sphere: boolean): string {
-  const parts: string[] = [];
-  if (length.distance !== null) parts.push(`${number(length.distance)} ${length.unit}`);
-  if (sphere) {
-    parts.push(`${number(length.raw, 2)}°`);
-    parts.push(`${number((length.fraction ?? 0) * 100, 2)}% of the way round`);
-  } else if (length.distance === null) {
-    parts.push(`${number(length.raw, 0)} map units`);
-  }
-  return parts.join(" · ");
-}
-
-/** What a tap on a feature shows while reading: its name, the start of its entry, where it leads. */
-export function FeatureCard({
-  feature,
-  title,
-  names,
-  children,
-  reason,
-  carry,
-  onClose,
-}: {
-  feature: MapFeature;
-  title: string;
-  names: Names;
-  children: Record<string, string>;
-  /** Why it is faded or dashed at the year shown, when the map is seen in time. */
-  reason?: string | null;
-  /** The year and chronicle, carried into the map of this place. */
-  carry?: string;
-  onClose: () => void;
-}) {
-  const entry = feature.entry ? names[feature.entry] : undefined;
-  const [text, setText] = useState<string | null>(null);
-  useEffect(() => {
-    setText(null);
-    if (!entry) return;
-    let live = true;
-    api.preview(entry.path).then(
-      (p) => live && setText(p.text.replace(/^#.*\n+/, "").slice(0, 320)),
-      () => undefined,
-    );
-    return () => {
-      live = false;
-    };
-  }, [entry?.path]);
-
-  return (
-    <aside className="feature-card" aria-label="Selected place">
-      <button type="button" className="plain card-close" aria-label="Close" onClick={onClose}>
-        ✕
-      </button>
-      <h2>{title || "Unnamed"}</h2>
-      {reason && <p className="card-reason muted">{reason}</p>}
-      {text && <p className="card-text">{text}</p>}
-      {feature.entry && !entry && <p className="muted">Its entry could not be found.</p>}
-      <p className="change-actions">
-        {entry && <Link to={entryUrl(entry.path)}>Open the entry</Link>}
-        {feature.child &&
-          (children[feature.child] ? (
-            <Link to={mapUrl(feature.child) + (carry ? `?${carry}` : "")}>
-              Open the map of this place
-            </Link>
-          ) : (
-            <span className="muted">Its map is missing.</span>
-          ))}
-      </p>
-    </aside>
-  );
-}
-
-/** Finds an entry by name, as the quick switcher does. */
-export function EntryPicker({ onPick }: { onPick: (path: string, title: string) => void }) {
-  const [query, setQuery] = useState("");
-  const [rows, setRows] = useState<{ path: string; title: string; alias?: string }[]>([]);
-  useEffect(() => {
-    if (query.trim() === "") {
-      setRows([]);
-      return;
-    }
-    let live = true;
-    const wait = window.setTimeout(() => {
-      api.names(query.trim()).then(
-        (r) => live && setRows(r.results.slice(0, 6)),
-        () => undefined,
-      );
-    }, 150);
-    return () => {
-      live = false;
-      window.clearTimeout(wait);
-    };
-  }, [query]);
-  return (
-    <div className="entry-picker">
-      <input
-        type="search"
-        aria-label="Find an entry"
-        placeholder="Find an entry by name…"
-        value={query}
-        onChange={(e) => setQuery(e.target.value)}
-      />
-      {rows.length > 0 && (
-        <ul>
-          {rows.map((r) => (
-            <li key={r.path + (r.alias ?? "")}>
-              <button
-                type="button"
-                className="plain"
-                onClick={() => {
-                  onPick(r.path, r.title);
-                  setQuery("");
-                }}
-              >
-                {r.alias ? `${r.alias} (${r.title})` : r.title}
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
-  );
-}
-
-/** The form for the selected feature while editing. */
-export function FeatureEditor({
-  feature,
-  map,
-  names,
-  pendingEntry,
-  sets,
-  otherMaps,
-  vertex,
-  onChange,
-  onLink,
-  onDelete,
-  onRemoveVertex,
-  canMove,
-  onMove,
-  onClose,
-  corners,
-  time,
-  extra,
-}: {
-  /** More parts of the editor, such as how a world revolves. */
-  extra?: ReactNode;
-  /** How many points the shape on screen has, when it is not the feature's first shape. */
-  corners?: number;
-  /** The part that says when the feature exists and lists its shapes. */
-  time?: ReactNode;
-  feature: MapFeature;
-  map: MapFile;
-  names: Names;
-  /** The title of an entry that was just linked and is waiting for the save. */
-  pendingEntry: string | null;
-  sets: MarkerSets;
-  otherMaps: { id: string; title: string }[];
-  vertex: number | null;
-  onChange: (next: MapFeature) => void;
-  onLink: (path: string | null, title: string) => void;
-  onDelete: () => void;
-  onRemoveVertex: () => void;
-  /** Whether there is a feature of its kind in its layer to pass, forward and back. */
-  canMove: { forward: boolean; back: boolean };
-  /** Moves the feature a step forward (1, drawn above the next) or back (-1). */
-  onMove: (by: 1 | -1) => void;
-  onClose: () => void;
-}) {
-  const linked = feature.entry ? names[feature.entry]?.title : pendingEntry;
-  const usable = sets.filter((s) => map.markerSets.includes(s.name));
-  const [set, setSet] = useState(
-    (feature.kind === "marker" && feature.icon?.set) || usable[0]?.name || "",
-  );
-  const icons = usable.find((s) => s.name === set)?.icons ?? [];
-  const minimum = feature.kind === "path" ? 2 : 3;
-
-  return (
-    <aside className="feature-card feature-editor" aria-label="Edit the selected feature">
-      <button type="button" className="plain card-close" aria-label="Close" onClick={onClose}>
-        ✕
-      </button>
-      <label className="field">
-        <span>Entry</span>
-        {linked ? (
-          <span className="linked">
-            {linked}{" "}
-            <button type="button" className="plain danger" onClick={() => onLink(null, "")}>
-              Unlink
-            </button>
-          </span>
-        ) : (
-          <EntryPicker onPick={onLink} />
-        )}
-      </label>
-      <label className="field">
-        <span>Label {linked && <em className="muted">instead of the entry's name</em>}</span>
-        <input
-          type="text"
-          value={feature.label ?? ""}
-          onChange={(e) => onChange({ ...feature, label: e.target.value || null })}
-        />
-      </label>
-      <label className="field">
-        <span>Layer</span>
-        <select
-          value={feature.layer}
-          onChange={(e) => onChange({ ...feature, layer: e.target.value })}
-        >
-          {map.layers.map((l) => (
-            <option key={l.id} value={l.id}>
-              {l.name}
-            </option>
-          ))}
-        </select>
-      </label>
-      <label className="field">
-        <span>A map of this place</span>
-        <select
-          value={feature.child ?? ""}
-          onChange={(e) => onChange({ ...feature, child: e.target.value || null })}
-        >
-          <option value="">None</option>
-          {otherMaps.map((m) => (
-            <option key={m.id} value={m.id}>
-              {m.title}
-            </option>
-          ))}
-        </select>
-      </label>
-      {feature.kind === "marker" && usable.length > 0 && (
-        <div className="field">
-          <span>Icon</span>
-          {usable.length > 1 && (
-            <select aria-label="Marker set" value={set} onChange={(e) => setSet(e.target.value)}>
-              {usable.map((s) => (
-                <option key={s.name} value={s.name}>
-                  {s.name}
-                </option>
-              ))}
-            </select>
-          )}
-          <div className="icon-grid">
-            <button
-              type="button"
-              className={feature.icon === null ? "is-picked" : ""}
-              title="A plain dot"
-              onClick={() => onChange({ ...feature, icon: null })}
-            >
-              ●
-            </button>
-            {icons.map((icon) => (
-              <button
-                key={icon.path}
-                type="button"
-                title={iconLabel(icon.name)}
-                aria-label={iconLabel(icon.name)}
-                className={
-                  feature.icon?.set === set && feature.icon.name === icon.name ? "is-picked" : ""
-                }
-                onClick={() => onChange({ ...feature, icon: { set, name: icon.name } })}
-              >
-                <img src={imageUrl(icon.path)} alt="" loading="lazy" />
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-      <div className="field">
-        <span>
-          Order <em className="muted">among the {feature.kind}s of its layer</em>
-        </span>
-        <span className="order-buttons">
-          <button
-            type="button"
-            className="quiet"
-            disabled={!canMove.forward}
-            onClick={() => onMove(1)}
-          >
-            Bring forward
-          </button>
-          <button
-            type="button"
-            className="quiet"
-            disabled={!canMove.back}
-            onClick={() => onMove(-1)}
-          >
-            Send back
-          </button>
-        </span>
-      </div>
-      {time}
-      {extra}
-      <p className="change-actions">
-        {feature.kind !== "marker" &&
-          vertex !== null &&
-          (corners ?? feature.points.length) > minimum && (
-            <button type="button" className="quiet" onClick={onRemoveVertex}>
-              Remove this point
-            </button>
-          )}
-        <button type="button" className="plain danger" onClick={onDelete}>
-          Delete
-        </button>
-      </p>
-    </aside>
-  );
-}
+import { extentProblem, type MapFile, wholeExtent } from "@frontier/schema";
+import { type Dispatch, type ReactNode, type SetStateAction, useEffect, useState } from "react";
+import { api } from "../../api.ts";
+import { newItemId } from "../../map/viewUrl.ts";
+import { useDialogs } from "../Dialogs.tsx";
 
 const EXTENT_LABELS = {
   sphere: ["West", "South", "East", "North"],
@@ -388,12 +72,10 @@ export function LayerPanel({
   shownImages,
   editing,
   activeLayer,
-  onToggleLayer,
-  onToggleImage,
+  onHidden,
+  onShownImages,
   onActive,
   onChange,
-  onKeepAsOpening,
-  onAddImage,
   timeLine,
   setup,
 }: {
@@ -406,14 +88,38 @@ export function LayerPanel({
   shownImages: Set<string>;
   editing: boolean;
   activeLayer: string;
-  onToggleLayer: (id: string) => void;
-  onToggleImage: (id: string) => void;
+  /** Changes which layers are hidden and which images are shown. */
+  onHidden: Dispatch<SetStateAction<Set<string>>>;
+  onShownImages: Dispatch<SetStateAction<Set<string>>>;
   onActive: (id: string) => void;
   onChange: (next: MapFile) => void;
-  onKeepAsOpening: () => void;
-  /** Adds the vault's image at this path to the map, and shows it. */
-  onAddImage: (path: string) => void;
 }) {
+  const toggle = (set: Set<string>, item: string) => {
+    const next = new Set(set);
+    if (!next.delete(item)) next.add(item);
+    return next;
+  };
+  const onToggleLayer = (layer: string) => onHidden((h) => toggle(h, layer));
+  const onToggleImage = (image: string) => onShownImages((s) => toggle(s, image));
+  /** Adds the vault's image at this path to the map, and shows it. */
+  const onAddImage = (path: string) => {
+    const image = {
+      id: newItemId(),
+      // Named after its file, without the folders and the ending.
+      name: path.replace(/^.*\//, "").replace(/\.[^.]+$/, ""),
+      path,
+      extent: wholeExtent(map.space),
+      visible: true,
+    };
+    onChange({ ...map, images: [...map.images, image] });
+    onShownImages((shown) => new Set(shown).add(image.id));
+  };
+  const onKeepAsOpening = () =>
+    onChange({
+      ...map,
+      layers: map.layers.map((l) => ({ ...l, visible: !hidden.has(l.id) })),
+      images: map.images.map((i) => ({ ...i, visible: shownImages.has(i.id) })),
+    });
   const dialogs = useDialogs();
   const [placing, setPlacing] = useState<string | null>(null);
   const [vaultImages, setVaultImages] = useState<string[]>([]);
