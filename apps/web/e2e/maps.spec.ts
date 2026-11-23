@@ -115,6 +115,8 @@ test("draws a path and a zone, hides a layer, and undoes", async ({ page }, info
   const c = await centre(page);
 
   await page.getByRole("button", { name: "Path" }).click();
+  // The tool is ready for taps once its hint shows; a tap before that would select instead.
+  await expect(page.locator(".map-hint", { hasText: "Tap to add points." })).toBeVisible();
   await page.mouse.click(c.x - 60, c.y - 30);
   await page.mouse.click(c.x, c.y - 10);
   await page.mouse.click(c.x + 60, c.y - 30);
@@ -126,6 +128,8 @@ test("draws a path and a zone, hides a layer, and undoes", async ({ page }, info
     .fill("The Salt Road");
 
   await page.getByRole("button", { name: "Zone" }).click();
+  // The tool is ready for taps once its hint shows; a tap before that would select instead.
+  await expect(page.locator(".map-hint", { hasText: "Tap to add points." })).toBeVisible();
   await page.mouse.click(c.x - 50, c.y + 20);
   await page.mouse.click(c.x + 50, c.y + 20);
   await page.mouse.click(c.x, c.y + 70);
@@ -329,6 +333,8 @@ test("a zone around a pole is filled up to the pole in the flat view of a globe"
   expect(at(0, 90)[1]).toBeGreaterThan(c.box.y + 50);
 
   await page.getByRole("button", { name: "Zone" }).click();
+  // The tool is ready for taps once its hint shows; a tap before that would select instead.
+  await expect(page.locator(".map-hint", { hasText: "Tap to add points." })).toBeVisible();
   for (const lon of [-100, 0, 100]) await page.mouse.click(...at(lon, 70));
   await page.locator(".map-hint").getByRole("button", { name: "Done" }).click();
   const editor = page.locator(".feature-editor");

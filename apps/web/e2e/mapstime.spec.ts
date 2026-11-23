@@ -114,6 +114,8 @@ test("CUJ 16: a fort appears and goes, and a border changes shape, as the years 
   // A border, tied to the kingdom, with a later shape from the treaty.
   let c = await centre(page);
   await page.getByRole("button", { name: "Zone" }).click();
+  // The tool is ready for taps once its hint shows; a tap before that would select instead.
+  await expect(page.locator(".map-hint", { hasText: "Tap to add points." })).toBeVisible();
   for (const [dx, dy] of [
     [-90, -110],
     [90, -110],
