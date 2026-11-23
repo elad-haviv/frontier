@@ -504,6 +504,10 @@ test("CUJ 5: the right-click menu formats and comments on a selection; Shift+rig
   await page.keyboard.press("Shift+Home");
   await page.mouse.click(box.x + 30, box.y + box.height / 2, { button: "right" });
   await page.getByRole("menuitem", { name: "Copy" }).click();
+  await expect
+    .poll(() => page.evaluate(() => navigator.clipboard.readText()))
+    .toBe("### A **misty** harbor morning.");
+  await page.locator(".cm-content").focus();
   await page.keyboard.press("Control+End");
   await page.keyboard.type("\n");
   const end = (await page.locator(".cm-line").last().boundingBox())!;

@@ -88,9 +88,14 @@ export function EditorContextMenu({
     try {
       items = await navigator.clipboard.read();
     } catch {
-      setPasteRefused(true);
-      v.focus();
-      return;
+      // Some browsers give text alone; only when that is refused too does Paste say to use keys.
+      const plain = await navigator.clipboard.readText().catch(() => null);
+      if (plain === null) {
+        setPasteRefused(true);
+        v.focus();
+        return;
+      }
+      items = [new ClipboardItem({ "text/plain": new Blob([plain], { type: "text/plain" }) })];
     }
     const images: File[] = [];
     let text = "";
