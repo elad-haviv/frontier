@@ -1,6 +1,7 @@
 /**
- * The pointer on the map: taps, panning, pinching, dragging a marker or a corner, and the box
- * marked to focus on.
+ * The pointer on the map: binds the state machine of gesture.ts to the top canvas and carries out
+ * its effects (taps, panning, pinching, dragging a marker or a corner, and the box marked to focus
+ * on).
  */
 import {
   focusOn,
@@ -8,12 +9,21 @@ import {
   panBy,
   type Position,
   type Shape,
-  vertexAt,
   type ViewState,
   zoomAt,
 } from "@frontier/geo";
 import type { MapFeature, MapFile } from "@frontier/schema";
 import { type RefObject, useRef, useState } from "react";
+import {
+  type Effect,
+  type GestureEvent,
+  type GestureState,
+  IDLE,
+  kindOf,
+  pick,
+  type Rect,
+  step,
+} from "./gesture.ts";
 import type { MapTime, Resolved } from "./time.ts";
 import {
   addSketchPoint,
@@ -28,7 +38,6 @@ import { pointOn } from "./useMapView.ts";
 export function usePointer(p: {
   map: MapFile | null;
   mapRef: RefObject<MapFile | null>;
-  view: ViewState | null;
   viewRef: RefObject<ViewState | null>;
   setView: (view: ViewState) => void;
   size: { width: number; height: number };
@@ -53,24 +62,19 @@ export function usePointer(p: {
   apply: (step: Step) => void;
 }) {
   const { size, editing, tool, selected, focusing } = p;
-  const [box, setBox] = useState<[number, number, number, number] | null>(null);
-  const pointers = useRef(new Map<number, { x: number; y: number }>());
-  const gesture = useRef<{
-    startX: number;
-    startY: number;
-    moved: boolean;
-    drag: { feature: string; vertex: number | null } | null;
-    pinch: number | null;
-    touch: boolean;
-  } | null>(null);
+  const [box, setBox] = useState<Rect | null>(null);
+  const machine = useRef<GestureState>(IDLE);
 
-  const at = (e: { clientX: number; clientY: number }) => pointOn(p.topCanvas.current!, e);
+  const viewNow = () => {
+    const state = p.viewRef.current;
+    return state ? makeView(state, size.width, size.height) : null;
+  };
+  const chosen = () => p.resolvedRef.current.find((r) => r.feature.id === selected)?.feature;
 
   function tap(x: number, y: number) {
-    const state = p.viewRef.current;
+    const v = viewNow();
     const now = p.mapRef.current;
-    if (!state || !now) return;
-    const v = makeView(state, size.width, size.height);
+    if (!v || !now) return;
     const position = v.unproject(x, y);
 
     if (p.exploring && !editing) {
@@ -90,163 +94,95 @@ export function usePointer(p: {
       return;
     }
 
-    const chosen = p.resolvedRef.current.find((r) => r.feature.id === selected)?.feature;
-    p.apply(tapSelect(v, editing, chosen, p.shapes.current, [x, y]));
+    p.apply(tapSelect(v, editing, chosen(), p.shapes.current, [x, y]));
   }
 
-  function onPointerDown(e: React.PointerEvent) {
-    (e.target as Element).setPointerCapture(e.pointerId);
-    const point = at(e);
-    if (focusing) {
-      // Marking a box to focus on comes before every other use of a drag. A second finger ends it.
-      if (pointers.current.size > 0) {
-        setBox(null);
+  function carryOut(effect: Effect, e: GestureEvent) {
+    const state = p.viewRef.current;
+    switch (effect.type) {
+      case "tap":
+        tap(effect.at.x, effect.at.y);
+        return;
+      case "beginStep":
+        p.beginStep();
+        return;
+      case "box":
+        setBox(effect.rect);
+        return;
+      case "focus":
+        if (!state) return;
+        p.setView(focusOn(state, size.width, size.height, effect.rect));
+        p.setFocusing(false);
+        return;
+      case "pan":
+        if (!state) return;
+        // A touch pan draws the picture coarsely until the finger is lifted.
+        p.coarse.current = e.kind === "touch";
+        p.setView(panBy(state, effect.dx, effect.dy));
+        return;
+      case "zoom":
+        if (!state) return;
+        p.setView(zoomAt(state, size.width, size.height, effect.cx, effect.cy, effect.factor));
+        return;
+      case "dragTo": {
+        const position = viewNow()?.unproject(effect.at.x, effect.at.y);
+        const now = p.mapRef.current;
+        const drawn = p.resolvedRef.current.find((r) => r.feature.id === effect.target.feature);
+        if (!position || !now || !drawn) return;
+        const vertex = effect.target.kind === "corner" ? effect.target.vertex : null;
+        const next = dragShape(
+          now,
+          drawn,
+          vertex,
+          position,
+          p.seenRef.current,
+          p.yearRef.current ?? 0,
+        );
+        if (next) p.setFeature(next, false);
         return;
       }
-      pointers.current.set(e.pointerId, point);
-      setBox([point.x, point.y, point.x, point.y]);
-      return;
     }
-    pointers.current.set(e.pointerId, point);
-    if (pointers.current.size === 2) {
-      const [a, b] = [...pointers.current.values()];
-      if (gesture.current) {
-        gesture.current.pinch = Math.hypot(a!.x - b!.x, a!.y - b!.y);
-        gesture.current.moved = true;
-        gesture.current.drag = null;
-      }
-      return;
-    }
-    // While editing with the select tool, a press on the selected marker or corner drags it.
-    let drag: { feature: string; vertex: number | null } | null = null;
-    const now = p.mapRef.current;
-    const state = p.viewRef.current;
-    if (editing && tool === "select" && selected && now && state) {
-      const v = makeView(state, size.width, size.height);
-      const chosen = p.resolvedRef.current.find((r) => r.feature.id === selected)?.feature;
-      if (chosen?.kind === "marker") {
-        const s = v.project(chosen.at);
-        if (s && Math.hypot(s[0] - point.x, s[1] - point.y) < 24)
-          drag = { feature: chosen.id, vertex: null };
-      } else if (chosen) {
-        const corner = vertexAt(
-          chosen.points.map((q) => v.projectClamped(q).point),
-          [point.x, point.y],
-        );
-        if (corner !== null) drag = { feature: chosen.id, vertex: corner };
-      }
-    }
-    gesture.current = {
-      startX: point.x,
-      startY: point.y,
-      moved: false,
-      drag,
-      pinch: null,
-      touch: e.pointerType === "touch",
+  }
+
+  function handle(e: React.PointerEvent, type: GestureEvent["type"]) {
+    // A pointer moving over the map with nothing pressed is no part of a gesture.
+    if (type === "move" && machine.current.name === "idle") return;
+    const event: GestureEvent = {
+      type,
+      id: e.pointerId,
+      kind: kindOf(e.pointerType),
+      button: e.button,
+      at: pointOn(p.topCanvas.current!, e),
     };
-  }
-
-  function onPointerMove(e: React.PointerEvent) {
-    if (focusing) {
-      if (!pointers.current.has(e.pointerId)) return;
-      const point = at(e);
-      setBox((b) => (b ? [b[0], b[1], point.x, point.y] : b));
-      return;
+    const before = machine.current;
+    const { state, effects } = step(before, event, {
+      focusing,
+      pick: (at) => {
+        const view = viewNow();
+        if (!view) return null;
+        return pick({ view, editing, tool, chosen: chosen(), shapes: p.shapes.current }, at);
+      },
+    });
+    machine.current = state;
+    // Whatever was pressed keeps the pointer until it is lifted, even off the canvas.
+    if (type === "down" && state !== before) {
+      (e.target as Element).setPointerCapture(e.pointerId);
     }
-    const before = pointers.current.get(e.pointerId);
-    const g = gesture.current;
-    if (!before || !g) return;
-    const point = at(e);
-    pointers.current.set(e.pointerId, point);
-    const state = p.viewRef.current;
-    if (!state) return;
-
-    if (pointers.current.size === 2 && g.pinch !== null) {
-      const [a, b] = [...pointers.current.values()];
-      const distance = Math.hypot(a!.x - b!.x, a!.y - b!.y);
-      if (distance > 0 && g.pinch > 0) {
-        p.setView(
-          zoomAt(
-            state,
-            size.width,
-            size.height,
-            (a!.x + b!.x) / 2,
-            (a!.y + b!.y) / 2,
-            distance / g.pinch,
-          ),
-        );
-        g.pinch = distance;
-      }
-      return;
-    }
-    if (!g.moved) {
-      if (Math.hypot(point.x - g.startX, point.y - g.startY) < (g.touch ? 10 : 6)) {
-        // Not a drag yet: keep measuring from where the press began, so none of it is lost.
-        pointers.current.set(e.pointerId, before);
-        return;
-      }
-      g.moved = true;
-      // One drag is one step to undo.
-      if (g.drag) p.beginStep();
-    }
-    if (g.drag) {
-      const position = makeView(state, size.width, size.height).unproject(point.x, point.y);
-      const now = p.mapRef.current;
-      const drawn = p.resolvedRef.current.find((r) => r.feature.id === g.drag!.feature);
-      if (!position || !now || !drawn) return;
-      const next = dragShape(
-        now,
-        drawn,
-        g.drag.vertex,
-        position,
-        p.seenRef.current,
-        p.yearRef.current ?? 0,
-      );
-      if (next) p.setFeature(next, false);
-      return;
-    }
-    p.coarse.current = g.touch;
-    p.setView(panBy(state, point.x - before.x, point.y - before.y));
-  }
-
-  function onPointerUp(e: React.PointerEvent) {
-    const view = p.view;
-    if (focusing) {
-      pointers.current.delete(e.pointerId);
-      const b = box;
-      setBox(null);
-      if (!b || !view) return;
-      const [x0, x1] = [Math.min(b[0], b[2]), Math.max(b[0], b[2])];
-      const [y0, y1] = [Math.min(b[1], b[3]), Math.max(b[1], b[3])];
-      // Too small a box is a slip of the finger, not a place to focus on.
-      if (x1 - x0 < 12 || y1 - y0 < 12) return;
-      p.setView(focusOn(view, size.width, size.height, [x0, y0, x1, y1]));
-      p.setFocusing(false);
-      return;
-    }
-    const g = gesture.current;
-    const point = pointers.current.get(e.pointerId);
-    pointers.current.delete(e.pointerId);
-    if (pointers.current.size > 0) {
-      if (g) g.pinch = null;
-      return;
-    }
-    gesture.current = null;
-    if (p.coarse.current) {
+    for (const effect of effects) carryOut(effect, event);
+    if (state.name === "idle" && p.coarse.current) {
       p.coarse.current = false;
       p.redrawNow();
     }
-    if (g && point && !g.moved) tap(point.x, point.y);
   }
 
   return {
     box,
     setBox,
     handlers: {
-      onPointerDown,
-      onPointerMove,
-      onPointerUp,
-      onPointerCancel: onPointerUp,
+      onPointerDown: (e: React.PointerEvent) => handle(e, "down"),
+      onPointerMove: (e: React.PointerEvent) => handle(e, "move"),
+      onPointerUp: (e: React.PointerEvent) => handle(e, "up"),
+      onPointerCancel: (e: React.PointerEvent) => handle(e, "cancel"),
     },
   };
 }

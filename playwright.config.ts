@@ -42,7 +42,7 @@ export default defineConfig({
       name: "desktop",
       use: { viewport: { width: 1280, height: 800 }, storageState: AUTH, serviceWorkers: "block" },
       dependencies: ["setup"],
-      testMatch: /(reader|chronicle|mapstime|mapviews|editor|shell|tree)\.spec\.ts/,
+      testMatch: /(reader|chronicle|mapstime|mapviews|mapgestures|editor|shell|tree)\.spec\.ts/,
     },
     // The installed app: the service worker the build ships, with the connection cut.
     {

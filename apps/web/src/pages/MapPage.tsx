@@ -106,7 +106,6 @@ export function MapPage() {
     ...file,
     ...draw,
     ...shown,
-    view,
     viewRef,
     setView,
     size,
