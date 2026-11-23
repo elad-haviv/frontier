@@ -187,10 +187,12 @@ export function Shell({ children }: { children: ReactNode }) {
   useEffect(
     () =>
       queue.onNotice((notice) => {
-        if (notice.watched) return;
+        if (notice.watched && !notice.always) return;
         toast({
           message: notice.message,
-          ...(notice.href ? { action: { label: "Open", run: () => navigate(notice.href!) } } : {}),
+          ...(notice.href
+            ? { action: { label: notice.label ?? "Open", run: () => navigate(notice.href!) } }
+            : {}),
         });
       }),
     [toast, navigate],

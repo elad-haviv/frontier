@@ -11,7 +11,7 @@ import { markOpened, servedFromDevice } from "../offline/copy.ts";
 import { useDialogs } from "../components/Dialogs.tsx";
 import { useRefresh } from "../components/Shell.tsx";
 import { useSaveState } from "../components/ui/SaveStatus.tsx";
-import { clashNames, type Known, type LinkItem, type QueueKey, queue } from "../sync/queue.ts";
+import { type Known, type LinkItem, type QueueKey, queue } from "../sync/queue.ts";
 import type { OtherMap } from "./layersBeneath.ts";
 import type { TimeState } from "./useMapTime.ts";
 
@@ -167,12 +167,8 @@ export function useMapFile(
           // Another device changed the map: its version was merged with this one, item by item.
           known.current = e.known;
           setMap(e.value as MapFile);
-          const names = clashNames(e.value, e.clashes);
-          setNotice(
-            names.length === 0
-              ? "Changes from another device were merged in."
-              : `Changes from another device were merged in. Changed in both places, yours were kept: ${names.join(", ")}.`,
-          );
+          // What changed in both places is said once the save answers, with Compare (stage 15c).
+          setNotice("Changes from another device were merged in.");
           void api.map(id).then(
             (theirs) => setNames((n) => ({ ...theirs.entries, ...n })),
             () => undefined,

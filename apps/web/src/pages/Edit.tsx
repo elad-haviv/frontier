@@ -20,8 +20,10 @@ import { useScope, useShortcut } from "../keys.ts";
 import { type QueueKey, queue } from "../sync/queue.ts";
 import { connection, useNeedsConnection } from "../sync/connection.ts";
 import { OfflineCopy, useReadAgain } from "../components/OfflineCopy.tsx";
-import { entryAddress, markOpened, servedFromDevice } from "../offline/copy.ts";
-import type { DraftKind } from "@frontier/schema";
+import { entryAddress, markOpened, NOT_ON_DEVICE, servedFromDevice } from "../offline/copy.ts";
+import { folderTypeOf, type OfflineOpen, openOrCreate } from "../offline/openOrCreate.ts";
+import { NotOnDevice } from "../components/NotOnDevice.tsx";
+import type { DraftKind, FolderFile } from "@frontier/schema";
 import { setFrontmatterKey } from "@frontier/vault";
 import { MessageSquare, SlidersHorizontal, Trash2, Undo2, WandSparkles } from "lucide-react";
 import { PageAction, usePanel, useRightBar } from "../components/shell/panels.tsx";
@@ -57,6 +59,10 @@ export function EditPage() {
 
   const [initial, setInitial] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  /** Offline, an entry the library has whose text is not on this device (stage 15c). */
+  const [notOnDevice, setNotOnDevice] = useState(false);
+  /** Raised to open the file again, as when the connection returns. */
+  const [attempt, setAttempt] = useState(0);
   const [message, setMessage] = useState<string | null>(null);
   /** The draft the server kept this device's text beside, after it started from older text. */
   const [stale, setStale] = useState<string | null>(null);
@@ -187,6 +193,7 @@ export function EditPage() {
   useEffect(() => {
     let live = true;
     setStale(null);
+    setNotOnDevice(false);
     (async () => {
       let text = "";
       try {
@@ -207,15 +214,54 @@ export function EditPage() {
             ? { ...entry.draft, baseBlob: entry.blob }
             : { id: newDraftId(), revision: 0, kind: "edit", baseBlob: entry.blob };
       } catch (err) {
-        if (!(err instanceof ApiFailure) || err.status !== 404 || !creating) {
+        // No connection: the same open-or-create rule, against this device's unsent changes and
+        // the compact index (stage 15c).
+        const unreachable =
+          err instanceof ApiFailure && (err.status === 0 || err.code === NOT_ON_DEVICE);
+        let rule: OfflineOpen | null = null;
+        if (unreachable) {
+          const record = await queue.get(key);
+          const index = await api.graph().catch(() => null);
+          rule = openOrCreate({
+            path,
+            hasRecord: !!record && record.kind !== "delete",
+            indexPaths: index ? index.nodes.map((n) => n.path) : null,
+            creating,
+          });
+          if (!live) return;
+          if (rule === "not-on-device") {
+            setNotOnDevice(true);
+            return;
+          }
+        }
+        if (rule === "record") {
+          // The unsent change below gives the text, the draft and the base.
+          draft.current = { id: newDraftId(), revision: 0, kind: "create", baseBlob: "" };
+        } else if (
+          rule === "create" ||
+          (err instanceof ApiFailure && err.status === 404 && creating)
+        ) {
+          const name = (path.split("/").pop() ?? "").replace(/\.md$/i, "");
+          text = `# ${name}\n\n`;
+          // The folder's type travels with the entry, so Obsidian sees it too. Offline it comes
+          // from the folder file kept on this device when the page that asked did not give it.
+          const type =
+            newType ??
+            (rule === "create"
+              ? folderTypeOf(
+                  path,
+                  await api
+                    .libraryFile("folders")
+                    .then((f) => f.file as FolderFile)
+                    .catch(() => null),
+                )
+              : null);
+          if (type) text = setFrontmatterKey(text, "type", type);
+          draft.current = { id: newDraftId(), revision: 0, kind: "create", baseBlob: "" };
+        } else {
           if (live) setError(err instanceof ApiFailure ? err.message : "Could not open this file.");
           return;
         }
-        const name = (path.split("/").pop() ?? "").replace(/\.md$/i, "");
-        text = `# ${name}\n\n`;
-        // The folder's type travels with the entry, so Obsidian sees it too.
-        if (newType) text = setFrontmatterKey(text, "type", newType);
-        draft.current = { id: newDraftId(), revision: 0, kind: "create", baseBlob: "" };
       }
       // Text this device has not sent yet is newer than the server's: it is what was typed last.
       const unsent = await queue.get(key);
@@ -235,7 +281,7 @@ export function EditPage() {
     return () => {
       live = false;
     };
-  }, [path, creating, newType, key]);
+  }, [path, creating, newType, key, attempt]);
 
   // Opened: kept on this device among the recent entries.
   useEffect(() => markOpened(`entry:${path}`), [path]);
@@ -460,6 +506,13 @@ export function EditPage() {
   }
 
   async function remove() {
+    // A new entry the server has seen is a draft there, and discarding it is a direct call.
+    if (draft.current.kind === "create" && draft.current.revision > 0) {
+      if (connection.state !== "online") {
+        setMessage("This entry was sent already: deleting it needs a connection.");
+        return;
+      }
+    }
     const ok = await dialogs.confirm({
       title: "Delete this entry?",
       body: "It is removed from the library when you save a version. Until then you can still bring it back.",
@@ -483,7 +536,8 @@ export function EditPage() {
         }
       }
       refresh();
-      navigate("/unpublished");
+      // With no connection the list of unpublished changes cannot be read: the start page instead.
+      navigate(connection.state === "online" ? "/unpublished" : "/");
     } catch (err) {
       setMessage(err instanceof ApiFailure ? err.message : "Could not delete.");
     }
@@ -502,6 +556,9 @@ export function EditPage() {
       : undefined,
   };
 
+  if (notOnDevice) {
+    return <NotOnDevice path={path} onConnected={() => setAttempt((n) => n + 1)} />;
+  }
   if (error) {
     return (
       <div className="center">

@@ -1,5 +1,21 @@
-import { expect, type Page, test } from "@playwright/test";
-import { discardDraft, edit, entry, openMenu, openSideBar } from "./helpers.ts";
+import {
+  type APIRequestContext,
+  type Browser,
+  type CDPSession,
+  expect,
+  type Page,
+  test,
+} from "@playwright/test";
+import {
+  AUTH_FILE,
+  discardDraft,
+  edit,
+  entry,
+  newEntry,
+  newMapInForm,
+  openMenu,
+  openSideBar,
+} from "./helpers.ts";
 
 /**
  * The installable app, with the service worker the build ships. A worker answers navigations and
@@ -236,11 +252,7 @@ test("a map on the device opens with its image, and a marker added offline is se
   context,
 }) => {
   await install(page);
-  await page.goto("/maps");
-  await page.locator(".new-map input[type=text]").fill(`Train chart ${Date.now()}`);
-  await page.locator(".new-map select").nth(0).selectOption("flat");
-  await page.locator(".new-map select").nth(1).selectOption("99 Appendices/Images/map one.png");
-  await page.getByRole("button", { name: "Make the map" }).click();
+  await newMapInForm(page, `Train chart ${Date.now()}`, "flat");
   await expect(page.locator(".map-canvas").first()).toHaveAttribute("data-images", "1");
   const id = new URL(page.url()).pathname.split("/").pop()!;
   await kept(page, `/api/maps/${id}`, "/api/marker-sets");
@@ -289,6 +301,256 @@ test("CUJ 8: the graph offline, drawn from the compact index", async ({ page }) 
   await expect(page.getByRole("region", { name: "Selected entry" })).toContainText("Harbor");
   await page.context().setOffline(false);
 });
+
+/** A second device: another browser, signed in, online. */
+async function laptopOf(browser: Browser): Promise<APIRequestContext> {
+  const context = await browser.newContext({ storageState: AUTH_FILE });
+  return context.request;
+}
+
+/** A draft id as a browser makes one. */
+const draftId = () =>
+  Array.from(
+    { length: 12 },
+    () => "abcdefghijklmnopqrstuvwxyz0123456789"[Math.floor(Math.random() * 36)],
+  ).join("");
+
+/** Saves the given drafts as a version, from a device's requests. */
+async function saveVersion(request: APIRequestContext, draftIds: string[]): Promise<void> {
+  const plan = await request.post("/api/publish/plan", { data: { draftIds, renameIds: [] } });
+  expect(plan.ok(), await plan.text()).toBe(true);
+  const { planId, merges } = (await plan.json()) as { planId: string; merges: { id: string }[] };
+  const done = await request.post("/api/publish/confirm", {
+    data: { planId, confirmedMergeIds: merges.map((m) => m.id), message: "From the laptop" },
+  });
+  expect(done.ok(), await done.text()).toBe(true);
+}
+
+/** The number of drafts with kept copies, as the attention count has it. */
+const keptCopies = async (request: APIRequestContext) =>
+  ((await (await request.get("/api/status")).json()) as { attention: { keptCopies: number } })
+    .attention.keptCopies;
+
+test("CUJ 3: a new entry made offline, its path taken meanwhile, ends as two texts to compare", async ({
+  page,
+  context,
+  browser,
+}) => {
+  const name = `Gull ${Date.now()}`;
+  const path = `02 People/${name}.md`;
+  await install(page);
+  await read(page, MIRA);
+  await kept(page, "/api/graph", "/api/tree");
+  await reloadOffline(page);
+
+  // On the phone, with no connection: New entry opens a new entry, as online.
+  await newEntry(page, "02 People", name);
+  await expect(page.locator(".editor-path")).toHaveText(name);
+  await page.locator(".cm-content").click();
+  await page.keyboard.press("Control+End");
+  await page.keyboard.type("Sister of [[Mira]].");
+  await expect(page.locator(".connection.is-offline").first()).toContainText("1 change waiting");
+  // Leaving it and coming back shows the text, from the change not sent yet.
+  await page.getByRole("button", { name: "Done", exact: true }).click();
+  await expect(page.locator(".entry h1").first()).toHaveText(name);
+  await page.goto(entry(MIRA));
+  await page.goto(entry(path));
+  await expect(page.locator(".entry h1").first()).toHaveText(name);
+  await expect(page.locator(".prose")).toContainText("Sister of");
+  await expect(page.getByText("Not sent yet:")).toBeVisible();
+
+  // Meanwhile the laptop makes the same entry and saves a version.
+  const laptop = await laptopOf(browser);
+  const theirs = draftId();
+  const made = await laptop.put("/api/drafts", {
+    data: {
+      id: theirs,
+      path,
+      kind: "create",
+      text: `# ${name}\n\nFrom the laptop.\n`,
+      revision: 0,
+      baseBlob: "",
+    },
+  });
+  expect(made.ok(), await made.text()).toBe(true);
+  await saveVersion(laptop, [theirs]);
+
+  // The phone reconnects: the server keeps its text beside a draft of the laptop's.
+  await page.goto(entry(MIRA));
+  await context.setOffline(false);
+  const toast = page.locator(".ui-toast").filter({ hasText: `${name}: two texts to compare` });
+  await expect(toast).toBeVisible({ timeout: 20_000 });
+  await toast.getByRole("button", { name: "Open" }).click();
+  await expect(page.locator(".versions-page h1")).toHaveText("Two texts to compare");
+  await expect(page.locator(".versions-page")).toContainText("Sister of");
+  await expect(page.locator(".versions-page")).toContainText("From the laptop.");
+
+  // Clean up: the draft goes, and the entry is taken out of the library again.
+  const id = new URL(page.url()).pathname.split("/").pop()!;
+  await laptop.delete(`/api/drafts/${id}`);
+  const opened = (await (await laptop.get(entryAnswer(path))).json()) as { blob: string };
+  const gone = draftId();
+  await laptop.put("/api/drafts", {
+    data: { id: gone, path, kind: "delete", text: "", revision: 0, baseBlob: opened.blob },
+  });
+  await saveVersion(laptop, [gone]);
+});
+
+test("CUJ 4: a map changed on the train and at home keeps the other side, compared per item", async ({
+  page,
+  context,
+  browser,
+}) => {
+  await install(page);
+  // A flat map with one marker, Lighthouse, in the middle of its image.
+  const id = await page.evaluate(async (title) => {
+    const json = { "content-type": "application/json" };
+    const made = await fetch("/api/maps", {
+      method: "POST",
+      headers: json,
+      body: JSON.stringify({ title, kind: "flat", image: "99 Appendices/Images/map one.png" }),
+    });
+    const { id } = (await made.json()) as { id: string };
+    const loaded = await (await fetch(`/api/maps/${id}`)).json();
+    const map = loaded.map;
+    map.features = [
+      {
+        id: "lightho1",
+        kind: "marker",
+        layer: map.layers[0].id,
+        at: [map.space.width / 2, map.space.height / 2],
+        entry: null,
+        label: "Lighthouse",
+        icon: null,
+        child: null,
+      },
+    ];
+    await fetch(`/api/maps/${id}`, {
+      method: "PUT",
+      headers: json,
+      body: JSON.stringify({ map, revision: loaded.revision, baseBlob: loaded.blob }),
+    });
+    return id;
+  }, `Coast ${Date.now()}`);
+  await page.goto(`/map/${id}?edit=1`);
+  await expect(page.locator(".map-canvas").first()).toHaveAttribute("data-images", "1");
+  await kept(page, `/api/maps/${id}`);
+
+  // On the train: the phone moves Lighthouse with a finger.
+  await reloadOffline(page);
+  await expect(page.locator(".map-canvas").first()).toHaveAttribute("data-images", "1", {
+    timeout: 15_000,
+  });
+  await expect(page).toHaveURL(/v=/);
+  await page.waitForTimeout(300);
+  const editButton = page.getByRole("button", { name: "Edit", exact: true });
+  if (await editButton.isVisible()) await editButton.click();
+  // Where the marker is on the screen: the map's space from the device's copy, the view from the
+  // address.
+  const box = (await page.locator(".map-top").boundingBox())!;
+  const [, vx, vy, k] = decodeURIComponent(new URL(page.url()).searchParams.get("v") ?? "")
+    .split(",")
+    .map(Number);
+  const space = await page.evaluate(async (url) => {
+    const open = indexedDB.open("frontier");
+    return new Promise<{ width: number; height: number }>((resolve) => {
+      open.onsuccess = () => {
+        const read = open.result.transaction("answers").objectStore("answers").get(url);
+        read.onsuccess = () => resolve(read.result.body.map.space);
+      };
+    });
+  }, `/api/maps/${id}`);
+  const at = {
+    x: box.x + box.width / 2 + (space.width / 2 - vx!) * k!,
+    y: box.y + box.height / 2 + (space.height / 2 - vy!) * k!,
+  };
+  const fingers = await Fingers.on(page);
+  await fingers.tap(at);
+  await expect(page.locator(".feature-editor")).toBeVisible();
+  await fingers.press(1, at);
+  await fingers.move(1, { x: at.x + 40, y: at.y + 10 });
+  await fingers.lift(1);
+  await expect(page.locator(".connection.is-offline").first()).toContainText("1 change waiting");
+
+  // At home: the laptop renames it, and its save is sent first.
+  const laptop = await laptopOf(browser);
+  const home = (await (await laptop.get(`/api/maps/${id}`)).json()) as {
+    map: { features: { label: string }[] };
+    revision: number;
+    blob: string;
+  };
+  home.map.features[0]!.label = "Old Light";
+  const renamed = await laptop.put(`/api/maps/${id}`, {
+    data: { map: home.map, revision: home.revision, baseBlob: home.blob },
+  });
+  expect(renamed.ok(), await renamed.text()).toBe(true);
+  const before = await keptCopies(laptop);
+
+  // The phone reconnects: the two are merged, and the laptop's side is kept on the server.
+  await context.setOffline(false);
+  const toast = page.locator(".ui-toast").filter({ hasText: "changed in both places: Lighthouse" });
+  await expect(toast).toBeVisible({ timeout: 20_000 });
+  await expect(toast).toContainText("Yours is in the map; the other version is kept.");
+  await toast.getByRole("button", { name: "Compare" }).click();
+  const compare = page.locator(".versions-page");
+  await expect(compare.locator("h1")).toHaveText("Changed in both places");
+  const item = compare.getByRole("region", { name: "Lighthouse" });
+  await expect(item.locator("thead")).toContainText("This map now");
+  await expect(item.locator("thead")).toContainText("Server copy at");
+  await expect(item.getByRole("row", { name: /^Name/ })).toContainText("Old Light");
+  await expect(item.getByRole("row", { name: /^Place/ })).toContainText("moved");
+  expect(await keptCopies(laptop)).toBe(before + 1);
+
+  // Dismissed, the attention count goes down; the map keeps the phone's place.
+  await compare.getByRole("button", { name: "Dismiss" }).click();
+  await expect(page).toHaveURL(new RegExp(`/map/${id}`));
+  await expect.poll(() => keptCopies(laptop)).toBe(before);
+  await laptop.delete(`/api/maps/${id}`);
+});
+
+/**
+ * Fingers on the screen, as in `mapsedit.spec.ts`: a start or a move sends every finger that is
+ * down, as a touch screen does.
+ */
+class Fingers {
+  private down = new Map<number, { x: number; y: number }>();
+  private constructor(private cdp: CDPSession) {}
+
+  static async on(page: Page) {
+    return new Fingers(await page.context().newCDPSession(page));
+  }
+
+  private send(type: "touchStart" | "touchMove" | "touchEnd", ids = [...this.down.keys()]) {
+    const touchPoints = ids.map((id) => ({ id, ...this.down.get(id)! }));
+    return this.cdp.send("Input.dispatchTouchEvent", { type, touchPoints });
+  }
+
+  async press(id: number, at: { x: number; y: number }) {
+    this.down.set(id, at);
+    await this.send("touchStart");
+  }
+
+  async move(id: number, to: { x: number; y: number }, steps = 5) {
+    const from = this.down.get(id)!;
+    for (let i = 1; i <= steps; i++) {
+      this.down.set(id, {
+        x: from.x + ((to.x - from.x) * i) / steps,
+        y: from.y + ((to.y - from.y) * i) / steps,
+      });
+      await this.send("touchMove");
+    }
+  }
+
+  async lift(id: number) {
+    await this.send("touchEnd", [id]);
+    this.down.delete(id);
+  }
+
+  async tap(at: { x: number; y: number }) {
+    await this.press(1, at);
+    await this.lift(1);
+  }
+}
 
 test("On this device shows in Settings with no connection", async ({ page }) => {
   await install(page);

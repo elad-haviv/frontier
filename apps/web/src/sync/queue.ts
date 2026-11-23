@@ -21,6 +21,7 @@ import {
   mergeChronicles,
   mergeLibraryFile,
   mergeMaps,
+  unionClashes,
 } from "@frontier/schema";
 import { api, ApiFailure, fromServer, setDevice } from "../api.ts";
 import { type Connection, connection as appConnection } from "./connection.ts";
@@ -81,6 +82,10 @@ export interface Notice {
   message: string;
   /** Where to look, when there is a page for it. */
   href?: string;
+  /** What the way to `href` is called, such as "Compare"; "Open" when not given. */
+  label?: string;
+  /** Said even when the file's page is open, which does not say it itself. */
+  always?: boolean;
   /** True when a page subscribed to the file is open in this tab and shows it itself. */
   watched: boolean;
 }
@@ -132,6 +137,8 @@ interface Answer {
   value: unknown;
   unlinked: { id: string; reason: string }[];
   known: Known;
+  /** The draft the server kept the other side of the record's clashes beside (stage 15c). */
+  kept?: string | undefined;
 }
 
 /** The library item file a key names, such as the folder file; undefined for any other key. */
@@ -180,6 +187,21 @@ export function clashNames(value: unknown, clashes: string[]): string[] {
     const name = item?.label ?? item?.name;
     return typeof name === "string" && name ? name : c;
   });
+}
+
+/** Names the clashing items of a sent record: by this side's item, else by the other side's. */
+function sentClashNames(record: QueueRecord): string[] {
+  return (record.clashes ?? []).map((c) => {
+    const mine = clashNames(record.value, [c])[0]!;
+    return mine !== c ? mine : clashNames(record.base, [c])[0]!;
+  });
+}
+
+/** Where this device's side of a clash now is, for the notice: "the map", "the folder list". */
+function whereKept(key: QueueKey): string {
+  const library = libraryKindOf(key);
+  if (library) return library.noun === "folders" ? "the folder list" : `the ${library.noun}`;
+  return kindOf(key) === "map" ? "the map" : "the chronicle";
 }
 
 /** Puts the entries the server wrote for linked features or spans into `value`. */
@@ -575,6 +597,8 @@ export class Queue {
   private async call(r: QueueRecord): Promise<Answer> {
     const id = subject(r.key);
     const sent = { ...(r.baseBlob !== undefined ? { baseBlob: r.baseBlob } : {}), op: r.op };
+    // Item files carry the keys of the items a merge kept from this side (stage 15c).
+    const items = { ...sent, ...(r.clashes?.length ? { clashes: r.clashes } : {}) };
     const links = (r.link ?? []).filter((l): l is { id: string; path: string } => l.path !== null);
     switch (kindOf(r.key)) {
       case "entry": {
@@ -598,12 +622,13 @@ export class Queue {
           r.value as MapFile,
           r.revision,
           links.map((l) => ({ feature: l.id, path: l.path })),
-          sent,
+          items,
         );
         return {
           value: res.map,
           unlinked: res.unlinked.map((u) => ({ id: u.feature, reason: u.reason })),
           known: { draftId: "", revision: res.revision, baseBlob: r.baseBlob, base: res.map },
+          kept: res.kept,
         };
       }
       case "chronicle": {
@@ -612,12 +637,13 @@ export class Queue {
           r.value as ChronicleFile,
           r.revision,
           links.map((l) => ({ span: l.id, path: l.path })),
-          sent,
+          items,
         );
         return {
           value: res.chronicle,
           unlinked: res.unlinked.map((u) => ({ id: u.span, reason: u.reason })),
           known: { draftId: "", revision: res.revision, baseBlob: r.baseBlob, base: res.chronicle },
+          kept: res.kept,
         };
       }
       case "library": {
@@ -625,12 +651,13 @@ export class Queue {
           r.key as LibraryFileName,
           r.value,
           r.revision,
-          sent,
+          items,
         );
         return {
           value: res.file,
           unlinked: [],
           known: { draftId: "", revision: res.revision, baseBlob: r.baseBlob, base: res.file },
+          kept: res.kept,
         };
       }
     }
@@ -653,6 +680,8 @@ export class Queue {
         nextTry: Math.min(now.nextTry, this.now() + PAUSE_MS),
       };
       delete next.error;
+      // The server has the clashes this send carried; a later merge brings its own.
+      delete next.clashes;
       if (kindOf(key) !== "entry") {
         // The entries the server wrote are laid over what was changed since, unless the feature
         // or span was linked again or unlinked meanwhile.
@@ -679,6 +708,25 @@ export class Queue {
       unlinked: answer.unlinked,
       known: answer.known,
     });
+    if (sent.clashes?.length) {
+      const names = sentClashNames(sent).join(", ");
+      this.notify(
+        answer.kept
+          ? {
+              key,
+              message: `${nameOf(sent)}: changed in both places: ${names}. Yours is in ${whereKept(key)}; the other version is kept.`,
+              href: `/versions/${answer.kept}`,
+              label: "Compare",
+              always: true,
+            }
+          : // An older server keeps nothing: the notice says whose side is left.
+            {
+              key,
+              message: `${nameOf(sent)}: changed in both places, yours kept: ${names}.`,
+              always: true,
+            },
+      );
+    }
   }
 
   /** The answer table for everything but a save. */
@@ -786,6 +834,9 @@ export class Queue {
         nextTry: this.now(),
       };
       delete next.error;
+      // The items kept from this side, with those of a merge before whose send failed.
+      const all = unionClashes(r.clashes, clashes);
+      if (all.length > 0) next.clashes = all;
       return next;
     });
     if (!record) return null;
@@ -796,13 +847,8 @@ export class Queue {
       base: theirs.value,
     };
     this.emit({ type: "merged", key, value: merged, clashes, known });
-    const names = clashNames(merged, clashes);
-    this.notify({
-      key,
-      message:
-        `${nameOf(record)}: changes from another device were merged in.` +
-        (names.length > 0 ? ` Changed in both places, yours kept: ${names.join(", ")}.` : ""),
-    });
+    // What clashed is said once the save answers, with the other side kept on the server.
+    this.notify({ key, message: `${nameOf(record)}: changes from another device were merged in.` });
     return record;
   }
 

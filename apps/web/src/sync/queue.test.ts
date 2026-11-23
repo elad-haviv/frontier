@@ -464,9 +464,98 @@ describe("maps and chronicles in the queue", () => {
     await q.sendNow(MAP);
     const merged = events.find((e) => e.type === "merged");
     expect(merged).toMatchObject({ clashes: ["f1"], known: { revision: 3, baseBlob: "b1" } });
-    expect(notices[0]!.message).toBe(
-      "Ezob: changes from another device were merged in. Changed in both places, yours kept: My Harbor.",
+    expect(notices[0]!.message).toBe("Ezob: changes from another device were merged in.");
+    await vi.waitFor(async () => expect(await q.get(MAP)).toBeUndefined());
+    // The merged save carried the clashing keys (stage 15c).
+    expect((api.calls.at(-1) as unknown[])[5]).toMatchObject({ clashes: ["f1"] });
+    // A server that keeps nothing (older than 15c) answers without `kept`: today's words.
+    expect(notices[1]).toMatchObject({
+      message: "Ezob: changed in both places, yours kept: My Harbor.",
+      always: true,
+    });
+    expect(notices[1]!.href).toBeUndefined();
+  });
+
+  it("stores the clashes on the record, unions them over a failed send, and clears them once saved (15c)", async () => {
+    const theirs1: MapFile = {
+      ...baseMap,
+      features: [marker("f1", "Their Harbor"), marker("f2", "Quay")],
+    };
+    const theirs2: MapFile = {
+      ...theirs1,
+      features: [marker("f1", "Their Harbor"), marker("f2", "Their Quay")],
+    };
+    const failures = [
+      new ApiFailure(409, "stale_revision", "Changed."),
+      new ApiFailure(409, "stale_revision", "Changed again."),
+    ];
+    const api = fakeApi();
+    const plain = api.saveMap;
+    api.saveMap = vi.fn(async (...args: Parameters<SenderApi["saveMap"]>) => {
+      const failure = failures.shift();
+      if (failure) throw failure;
+      return { ...(await plain(...args)), kept: "keptdraft001" };
+    });
+    const theirs = [theirs1, theirs2];
+    api.map = vi.fn(async () => ({ map: theirs.shift() ?? theirs2, revision: 3, blob: "b1" }));
+    const q = makeQueue(api);
+    const notices: Notice[] = [];
+    q.onNotice((notice) => notices.push(notice));
+    const records: (string[] | undefined)[] = [];
+    q.subscribe(MAP, (e) => {
+      if (e.type === "record") records.push(e.record?.clashes);
+    });
+    await q.put(
+      MAP,
+      { ...baseMap, features: [marker("f1", "My Harbor"), marker("f2", "My Quay")] },
+      { base: baseMap, revision: 1, baseBlob: "b0" },
     );
+    await q.sendNow(MAP);
+    await vi.waitFor(async () => expect(await q.get(MAP)).toBeUndefined(), { timeout: 5000 });
+    // The first merge clashed on f1; the second, after its send failed, on f2 too.
+    expect(records).toContainEqual(["f1"]);
+    expect(records).toContainEqual(["f1", "f2"]);
+    const sends = api.calls.filter((c) => c[0] === "map");
+    expect(sends.at(-1)![5]).toMatchObject({ clashes: ["f1", "f2"] });
+    expect(notices.find((n) => n.href)).toMatchObject({
+      message:
+        "Ezob: changed in both places: My Harbor, My Quay. Yours is in the map; the other version is kept.",
+      href: "/versions/keptdraft001",
+      label: "Compare",
+      always: true,
+    });
+  });
+
+  it("clears the clashes of a record changed while its send was on its way (15c)", async () => {
+    let release: () => void = () => undefined;
+    let first = true;
+    const api = fakeApi();
+    const plain = api.saveMap;
+    api.saveMap = vi.fn(async (...args: Parameters<SenderApi["saveMap"]>) => {
+      if (first) {
+        first = false;
+        throw new ApiFailure(409, "stale_revision", "Changed.");
+      }
+      await new Promise<void>((r) => (release = r));
+      return plain(...args);
+    });
+    api.map = vi.fn(async () => ({
+      map: { ...baseMap, features: [marker("f1", "Theirs")] },
+      revision: 3,
+      blob: "b1",
+    }));
+    const q = makeQueue(api);
+    const mine = { ...baseMap, features: [marker("f1", "Mine")] };
+    await q.put(MAP, mine, { base: baseMap, revision: 1, baseBlob: "b0" });
+    void q.sendNow(MAP);
+    // The merged send is on its way, carrying f1.
+    await vi.waitFor(() => expect(api.saveMap).toHaveBeenCalledTimes(2));
+    expect((await q.get(MAP))?.clashes).toEqual(["f1"]);
+    await q.put(MAP, { ...mine, title: "Changed meanwhile" }, { delay: 60_000 });
+    release();
+    await vi.waitFor(async () => expect((await q.get(MAP))?.state).toBe("waiting"));
+    await vi.waitFor(async () => expect((await q.get(MAP))?.clashes).toBeUndefined());
+    expect((await q.get(MAP))?.value).toMatchObject({ title: "Changed meanwhile" });
   });
 
   it("combines the links of two changes by feature, and takes an unlinked one back", async () => {
@@ -636,8 +725,8 @@ describe("library files in the queue", () => {
     ]);
     expect(revision).toBe(3);
     expect(meta.baseBlob).toBe("theirblob");
-    expect(notices[0]!.message).toBe(
-      "Folders: changes from another device were merged in. Changed in both places, yours kept: A.",
-    );
+    expect(notices[0]!.message).toBe("Folders: changes from another device were merged in.");
+    expect(meta).toMatchObject({ clashes: ["A"] });
+    expect(notices[1]!.message).toBe("Folders: changed in both places, yours kept: A.");
   });
 });
