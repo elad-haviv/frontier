@@ -26,6 +26,8 @@ export const ERROR_STATUS = {
   // A folder cannot be deleted while something under it has an unpublished change, or is an image.
   has_drafts: 409,
   has_images: 409,
+  // An image could not be taken from a web address; the server log says why.
+  image_fetch_failed: 422,
 } as const;
 
 export type ErrorCode = keyof typeof ERROR_STATUS;

@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import {
+  ImageFromUrlRequest,
   ApplyTypeResponse,
   AttentionResponse,
   DeleteFolderRefusal,
@@ -330,7 +331,14 @@ describe("errors", () => {
     expect(statusOf("changed")).toBe(409);
     expect(statusOf("has_drafts")).toBe(409);
     expect(statusOf("has_images")).toBe(409);
-    expect(Object.keys(ERROR_STATUS)).toHaveLength(22);
+    expect(statusOf("image_fetch_failed")).toBe(422);
+    expect(Object.keys(ERROR_STATUS)).toHaveLength(23);
+  });
+
+  it("takes a web address of at most 2,048 characters for an image", () => {
+    const url = `https://example.org/${"a".repeat(2028)}`;
+    expect(ImageFromUrlRequest.parse({ url })).toEqual({ url });
+    expect(ImageFromUrlRequest.safeParse({ url: `${url}b` }).success).toBe(false);
   });
 
   it("accepts an error body with a known code only", () => {

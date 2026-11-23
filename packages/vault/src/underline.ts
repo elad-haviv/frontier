@@ -28,8 +28,7 @@ const INLINE_PARENTS = new Set([
 const OPEN = /^<u>$/i;
 const CLOSE = /^<\/u>$/i;
 
-const isTag = (node: Nodes, tag: RegExp): node is Html =>
-  node.type === "html" && tag.test(node.value);
+const isTag = (node: Nodes, tag: RegExp): boolean => node.type === "html" && tag.test(node.value);
 
 /**
  * Pairs the tags among one parent's children. A tag left without its partner is shown as the
@@ -62,7 +61,7 @@ function pair(children: Nodes[]): Nodes[] {
     isTag(node, OPEN) || isTag(node, CLOSE)
       ? ({
           type: "text",
-          value: node.value,
+          value: (node as Html).value,
           ...(node.position ? { position: node.position } : {}),
         } as Text)
       : node,
