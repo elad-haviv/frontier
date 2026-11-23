@@ -1,6 +1,7 @@
 import { defineConfig, devices } from "@playwright/test";
 
-const PORT = 3987;
+// E2E_PORT lets two checkouts (such as worktrees) run their browser tests side by side.
+const PORT = Number(process.env.E2E_PORT ?? 3987);
 const AUTH = "test-results/.auth.json";
 
 /**

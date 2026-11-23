@@ -7,3 +7,4 @@ package-lock.json
 docs
 .e2e-data
 test-results
+.claude

@@ -10,6 +10,7 @@ export default tseslint.config(
       "**/fixture-vault/**",
       "**/.big-fixture/**",
       ".e2e-data/**",
+      ".claude/**",
       "test-results/**",
     ],
   },
