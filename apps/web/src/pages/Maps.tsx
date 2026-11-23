@@ -1,4 +1,5 @@
 import { type FormEvent, useEffect, useState } from "react";
+import { ActionButton } from "../components/ui/ActionButton.tsx";
 import { Link, useNavigate } from "react-router-dom";
 import { api, ApiFailure, mapUrl } from "../api.ts";
 import { useRefresh } from "../components/Shell.tsx";
@@ -160,9 +161,13 @@ export function MapsPage() {
           </p>
         )}
         <p className="change-actions">
-          <button type="submit" className="primary" disabled={busy || !title.trim() || !image}>
+          <ActionButton
+            type="submit"
+            className="primary"
+            disabled={busy || !title.trim() || !image}
+          >
             Make the map
-          </button>
+          </ActionButton>
         </p>
       </form>
     </article>

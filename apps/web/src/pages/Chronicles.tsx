@@ -1,4 +1,5 @@
 import { type FormEvent, useState } from "react";
+import { ActionButton } from "../components/ui/ActionButton.tsx";
 import { Link, useNavigate } from "react-router-dom";
 import { api, ApiFailure, chronicleUrl } from "../api.ts";
 import { useRefresh } from "../components/Shell.tsx";
@@ -89,9 +90,9 @@ export function ChroniclesPage() {
           </p>
         )}
         <p className="change-actions">
-          <button type="submit" className="primary" disabled={busy || !title.trim()}>
+          <ActionButton type="submit" className="primary" disabled={busy || !title.trim()}>
             Make the chronicle
-          </button>
+          </ActionButton>
         </p>
       </form>
     </article>

@@ -10,7 +10,7 @@ import {
 } from "@frontier/vault";
 import type { SchemaResponse } from "@frontier/schema";
 import type { EditorView } from "@codemirror/view";
-import { type Ref, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api } from "../api.ts";
 
 const LISTS = [
@@ -63,11 +63,11 @@ interface Loaded {
  */
 export function Properties({
   view,
-  ref,
+  focus = 0,
 }: {
   view: { current: EditorView | null };
-  /** The panel itself, so the editor's folded frontmatter line can open it. */
-  ref?: Ref<HTMLDetailsElement>;
+  /** Changes when the editor's folded frontmatter line asks for the first field. */
+  focus?: number;
 }) {
   const [values, setValues] = useState<Loaded | null>(null);
   const [schema, setSchema] = useState<SchemaResponse | null>(null);
@@ -134,9 +134,15 @@ export function Properties({
     return all;
   };
 
+  // Read from the text when the panel opens: it shows the note as it is now.
+  const box = useRef<HTMLElement>(null);
+  useEffect(() => load(), []);
+  useEffect(() => {
+    if (focus > 0 && values) box.current?.querySelector<HTMLElement>("input, select")?.focus();
+  }, [focus, values === null]);
+
   return (
-    <details ref={ref} className="props" onToggle={(e) => e.currentTarget.open && load()}>
-      <summary>Properties</summary>
+    <section ref={box} className="props" aria-label="Properties">
       {error && <p className="error">{error}</p>}
       {values && (
         <>
@@ -243,6 +249,6 @@ export function Properties({
           </div>
         </>
       )}
-    </details>
+    </section>
   );
 }

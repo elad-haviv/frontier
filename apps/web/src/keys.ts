@@ -294,6 +294,12 @@ keys.register(
   { id: "app.switcher", keys: ["Mod-k"], scope: "app", label: "Go to an entry" },
   { id: "app.keys", keys: ["?"], scope: "app", label: "Show keyboard shortcuts" },
   {
+    id: "app.sidebar",
+    keys: ["Mod-\\"],
+    scope: "app",
+    label: "Fold or unfold the side bar",
+  },
+  {
     id: "switcher.move",
     keys: ["ArrowDown", "ArrowUp"],
     scope: "app",

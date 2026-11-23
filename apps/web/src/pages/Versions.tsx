@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { ActionButton } from "../components/ui/ActionButton.tsx";
 import { useNavigate, useParams } from "react-router-dom";
 import type { KeptCopyText } from "@frontier/schema";
 import { api, ApiFailure } from "../api.ts";
@@ -100,36 +101,36 @@ export function VersionsPage() {
       </h3>
       <Diff before={data.current} after={copy.text} />
       <p className="plan-actions">
-        <button
+        <ActionButton
           type="button"
           className="quiet"
           disabled={busy}
           onClick={() => void keep(copy.text)}
         >
           Keep this one
-        </button>
-        <button
+        </ActionButton>
+        <ActionButton
           type="button"
           className="quiet"
           disabled={busy}
           onClick={() => void keep(data.current)}
         >
           Keep the draft
-        </button>
+        </ActionButton>
       </p>
       <h3>Or combine them by hand</h3>
       <div className="boxed">
         <CodeEditor initial={data.current} onChange={(t) => (text.current = t)} />
       </div>
       <p className="plan-actions">
-        <button
+        <ActionButton
           type="button"
           className="primary big"
           disabled={busy}
           onClick={() => void keep(text.current)}
         >
           Keep this text
-        </button>
+        </ActionButton>
       </p>
     </article>
   );

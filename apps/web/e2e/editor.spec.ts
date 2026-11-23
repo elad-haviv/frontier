@@ -8,6 +8,7 @@ import {
   onMain,
   openEditor,
   publish,
+  rightPanel,
   REMOTE,
   review,
   saved,
@@ -77,7 +78,7 @@ test("the properties panel writes other names into the frontmatter only", async 
   // Live preview folds the frontmatter into one line; the source shows it as written.
   await page.getByRole("button", { name: "Preview" }).click();
   const before = await page.locator(".cm-content").innerText();
-  await page.locator(".props summary").click();
+  await rightPanel(page, "Properties");
   const field = page.locator(".props-field", { hasText: "Other names" }).locator("input");
   await field.fill("The Grey Book, Tally");
   await field.press("Enter");
@@ -116,7 +117,7 @@ test("dates and a type set in the properties panel show under the entry's title"
 }) => {
   await openEditor(page, "01 Places/Unwritten.md");
   await page.getByRole("button", { name: "Preview" }).click();
-  await page.locator(".props summary").click();
+  await rightPanel(page, "Properties");
   await page.locator(".props-field", { hasText: "Type" }).locator("select").selectOption("place");
   await page.getByRole("button", { name: "+ Add a date" }).click();
   const row = page.locator(".props-time-row").first();
@@ -286,7 +287,10 @@ test("live preview folds the frontmatter into one line that opens the Properties
   await expect(folded).toContainText("Properties: keeper, zeta, 2 aliases");
   await expect(page.locator(".cm-content")).not.toContainText("aliases: [Book, The Ledger]");
   await folded.getByRole("button").click();
-  await expect(page.locator(".props")).toHaveAttribute("open", "");
+  await expect(page.getByRole("tab", { name: "Properties" })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
   await expect(
     page.locator(".props-field", { hasText: "Other names" }).locator("input"),
   ).toHaveValue("Book, The Ledger");

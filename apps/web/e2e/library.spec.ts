@@ -49,7 +49,7 @@ test("imports a note, saves it, changes it, and restores the first version from 
   await page.goto(entry(path));
   await expect(page.locator(".prose")).toContainText("The second telling.");
   await openMenu(page, "More actions");
-  await page.getByRole("menuitem", { name: "History" }).click();
+  await page.getByRole("menuitem", { name: "History", exact: true }).click();
   const rows = page.locator(".versions > li");
   await expect(rows).toHaveCount(2);
   await expect(rows.nth(0)).toContainText(`Retell ${name}`);

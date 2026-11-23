@@ -138,12 +138,52 @@ export async function openMenu(page: Page, name: string): Promise<void> {
   await expect(page.getByRole("menu")).toBeVisible();
 }
 
+/** On a phone, opens the side bar's drawer; on a desktop the side bar is always there. */
+export async function openSideBar(page: Page): Promise<void> {
+  const menu = page.getByRole("button", { name: "Open the side bar", exact: true });
+  if (await menu.isVisible()) {
+    await menu.click();
+    await expect(page.getByRole("dialog", { name: "Side bar" })).toBeVisible();
+  } else {
+    // A folded side bar is unfolded, so the folders show.
+    const unfold = page.getByRole("button", { name: "Unfold the side bar", exact: true });
+    if (await unfold.isVisible()) await unfold.click();
+  }
+}
+
+/** Goes to one of the side bar's places, such as "Maps" or "Inbox", as the author would. */
+export async function goTo(page: Page, place: string): Promise<void> {
+  await openSideBar(page);
+  await page
+    .locator(".left-bar .side-link")
+    .filter({ hasText: new RegExp(`^${place}`) })
+    .first()
+    .click();
+}
+
+/** Opens a panel of the right side bar (the bottom sheet on a phone) by its tab, and gives it. */
+export async function rightPanel(page: Page, name: string) {
+  const tab = page.getByRole("tab", { name: new RegExp(`^${name}\\b`) });
+  if ((await tab.count()) === 0 || (await tab.getAttribute("aria-selected")) !== "true") {
+    if ((await tab.count()) === 0) {
+      // The side bar is closed: the page's own button for the panel opens it.
+      await page
+        .getByRole("button", { name: new RegExp(`^${name}\\b`) })
+        .first()
+        .click();
+    }
+    await page.getByRole("tab", { name: new RegExp(`^${name}\\b`) }).click();
+  }
+  const panel = page.getByRole("tabpanel");
+  await expect(panel).toBeVisible();
+  return panel;
+}
+
 /** Makes a new entry through the New entry dialog, choosing its folder in the folder list. */
 export async function newEntry(page: Page, folder: string, name: string): Promise<void> {
-  // On a phone the button is in the folder drawer.
-  const drawer = page.locator(".menu");
-  if (await drawer.isVisible()) await drawer.click();
-  await page.locator(".new-entry").click();
+  // On a phone the button is in the side bar's drawer.
+  await openSideBar(page);
+  await page.getByRole("button", { name: "New entry", exact: true }).click();
   const dialog = page.getByRole("dialog");
   await dialog.getByLabel("Name").fill(name);
   await dialog.getByRole("combobox", { name: "Folder", exact: true }).click();

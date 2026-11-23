@@ -4,7 +4,8 @@ import { Link, useLocation } from "react-router-dom";
 import { api, chronicleUrl, editUrl, entryUrl, historyUrl, mapUrl, talkUrl } from "../api.ts";
 import { HoverPreview } from "../components/HoverPreview.tsx";
 import { LightboxProvider } from "../components/Lightbox.tsx";
-import { currentEntryPath, useWords } from "../components/Shell.tsx";
+import { currentEntryPath, scrollPageToTop, useWords } from "../components/Shell.tsx";
+import { PageAction } from "../components/shell/panels.tsx";
 import { Fields } from "../components/Fields.tsx";
 import { ProposeFields } from "../components/ProposeFields.tsx";
 import { Markdown } from "../render/Markdown.tsx";
@@ -59,7 +60,7 @@ export function EntryPage() {
   useEffect(() => {
     if (!view) return;
     if (!hash) {
-      window.scrollTo({ top: 0 });
+      scrollPageToTop();
       return;
     }
     const wanted = decodeURIComponent(hash.slice(1)).trim().toLowerCase();
@@ -100,9 +101,12 @@ export function EntryPage() {
           <h1>{view!.title}</h1>
           {!e.readOnly && e.draft?.kind !== "delete" && (
             <span className="entry-actions">
-              <Link to={editUrl(e.path)} className="edit-link">
-                Edit
-              </Link>
+              {/* On a phone, Edit moves into the top line, beside the title. */}
+              <PageAction>
+                <Link to={editUrl(e.path)} className="edit-link">
+                  Edit
+                </Link>
+              </PageAction>
               {/* One clear action; the rest wait behind "⋯", as the review asked. */}
               <Menu label="More actions">
                 <MenuLink

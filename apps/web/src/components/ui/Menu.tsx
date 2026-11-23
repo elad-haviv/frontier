@@ -63,12 +63,15 @@ export function MenuItem({
   icon,
   danger = false,
   disabled = false,
+  disabledReason,
 }: {
   children: ReactNode;
   onSelect: () => void;
   icon?: LucideIcon;
   danger?: boolean;
   disabled?: boolean;
+  /** Said beside a disabled item, so the author knows why it cannot be chosen. */
+  disabledReason?: string | undefined;
 }) {
   return (
     <Dropdown.Item
@@ -78,6 +81,7 @@ export function MenuItem({
     >
       {icon && <Icon icon={icon} size="sm" />}
       <span>{children}</span>
+      {disabled && disabledReason && <span className="ui-menu-note">{disabledReason}</span>}
     </Dropdown.Item>
   );
 }

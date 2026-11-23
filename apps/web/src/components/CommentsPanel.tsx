@@ -1,4 +1,5 @@
 import type { EditorView } from "@codemirror/view";
+import { ActionButton } from "./ui/ActionButton.tsx";
 import { EditorSelection } from "@codemirror/state";
 import { type FormEvent, useState } from "react";
 import { api, ApiFailure, type PassageComment } from "../api.ts";
@@ -177,9 +178,13 @@ export function CommentsPanel(p: {
             </label>
           </fieldset>
           <p className="change-actions">
-            <button type="submit" className="primary" disabled={busy !== null || !text.trim()}>
+            <ActionButton
+              type="submit"
+              className="primary"
+              disabled={busy !== null || !text.trim()}
+            >
               Keep the comment
-            </button>
+            </ActionButton>
             <button type="button" className="plain" onClick={() => setAdding(null)}>
               Cancel
             </button>
@@ -212,33 +217,33 @@ export function CommentsPanel(p: {
               <p className="comment-actions">
                 <span className="chip chip-quiet">{c.for === "ai" ? "for the AI" : "for me"}</span>
                 {c.for === "ai" && p.canAi && at && (
-                  <button
+                  <ActionButton
                     type="button"
                     className="quiet"
                     disabled={busy !== null}
                     onClick={() => void workOn(c)}
                   >
                     {busy === c.id ? "Working…" : "Work on it"}
-                  </button>
+                  </ActionButton>
                 )}
                 {(c.for === "ai" || p.canAi) && (
-                  <button
+                  <ActionButton
                     type="button"
                     className="plain"
                     disabled={busy !== null}
                     onClick={() => void hand(c)}
                   >
                     {c.for === "ai" ? "Make it mine" : "Give to the AI"}
-                  </button>
+                  </ActionButton>
                 )}
-                <button
+                <ActionButton
                   type="button"
                   className="plain"
                   disabled={busy !== null}
                   onClick={() => void done(c.id)}
                 >
                   Done
-                </button>
+                </ActionButton>
               </p>
               {work?.id === c.id && (
                 <div className="comment-work">

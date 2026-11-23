@@ -47,3 +47,9 @@
   margin: 0.3rem 0.2rem;
   background: var(--rule);
 }
+.ui-menu-note {
+  margin-left: auto;
+  padding-left: 0.8rem;
+  color: var(--ink-faint);
+  font-size: 0.8rem;
+}

@@ -1,4 +1,5 @@
 import { type FormEvent, useState } from "react";
+import { ActionButton } from "../components/ui/ActionButton.tsx";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { api, ApiFailure, entryUrl } from "../api.ts";
 import { useRefresh } from "../components/Shell.tsx";
@@ -85,9 +86,9 @@ export function RenamePage() {
           <Link to={entryUrl(from)} className="quiet-link">
             Cancel
           </Link>
-          <button type="submit" className="primary big" disabled={busy || unchanged}>
+          <ActionButton type="submit" className="primary big" disabled={busy || unchanged}>
             {busy ? "Checking…" : "Rename"}
-          </button>
+          </ActionButton>
         </p>
       </form>
     </article>

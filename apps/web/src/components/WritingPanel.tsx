@@ -1,4 +1,5 @@
 import type { EditorView } from "@codemirror/view";
+import { ActionButton } from "./ui/ActionButton.tsx";
 import { type FormEvent, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, ApiFailure, askUrl, type LoreTurn } from "../api.ts";
@@ -118,7 +119,7 @@ export function WritingPanel(p: { view: EditorView; path: string; onClose: () =>
       </p>
       <div className="writing-hows" role="group" aria-label="Rewrite it">
         {HOWS.map(([how, label]) => (
-          <button
+          <ActionButton
             key={how}
             type="button"
             className="quiet"
@@ -126,7 +127,7 @@ export function WritingPanel(p: { view: EditorView; path: string; onClose: () =>
             onClick={() => void ask(how)}
           >
             {busy === how ? "Writing…" : label}
-          </button>
+          </ActionButton>
         ))}
       </div>
       <form
@@ -143,9 +144,9 @@ export function WritingPanel(p: { view: EditorView; path: string; onClose: () =>
           value={own}
           onChange={(e) => setOwn(e.target.value)}
         />
-        <button type="submit" className="quiet" disabled={busy !== null || !own.trim()}>
+        <ActionButton type="submit" className="quiet" disabled={busy !== null || !own.trim()}>
           Rewrite
-        </button>
+        </ActionButton>
       </form>
       {rewrite !== null && (
         <>
@@ -171,9 +172,9 @@ export function WritingPanel(p: { view: EditorView; path: string; onClose: () =>
           value={question}
           onChange={(e) => setQuestion(e.target.value)}
         />
-        <button type="submit" className="quiet" disabled={busy !== null || !question.trim()}>
+        <ActionButton type="submit" className="quiet" disabled={busy !== null || !question.trim()}>
           {busy === "ask" ? "Reading…" : "Ask"}
-        </button>
+        </ActionButton>
       </form>
       {answer && (
         <div className="writing-answer">

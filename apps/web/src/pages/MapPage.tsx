@@ -26,7 +26,7 @@ import {
   reorderFeature,
   wholeExtent,
 } from "@frontier/schema";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { api, ApiFailure, type Discovery, imageUrl, mapImageUrl, mapUrl } from "../api.ts";
 import { DiscoveryCard } from "../components/DiscoveryCard.tsx";
@@ -39,7 +39,15 @@ import {
   type Names,
 } from "../components/MapPanels.tsx";
 import { useRefresh } from "../components/Shell.tsx";
+import {
+  PageAction,
+  usePageTitle,
+  usePanel,
+  useRightBar,
+  useSheetFloor,
+} from "../components/shell/panels.tsx";
 import { SaveStatus, useSaveState } from "../components/ui/SaveStatus.tsx";
+import { useNeedsConnection } from "../sync/connection.ts";
 import { clashNames, type Known, type LinkItem, type QueueKey, queue } from "../sync/queue.ts";
 import { TurnPanel } from "../components/MapTurn.tsx";
 import { type ChronicleChoice, FeatureTime, OrbitEditor, TimeBar } from "../components/MapTime.tsx";
@@ -78,6 +86,7 @@ import {
   Spline,
   Trash2,
   Undo2,
+  Layers as LayersIcon,
 } from "lucide-react";
 
 /** A flat space with measuring on again. */
@@ -118,7 +127,10 @@ export function MapPage() {
   const [vertex, setVertex] = useState<number | null>(null);
   const [sketch, setSketch] = useState<Position[]>([]);
   const [activeLayer, setActiveLayer] = useState("");
-  const [panel, setPanel] = useState(false);
+  // Layers and the selected feature are panels of the side bar, beside the map, not over it.
+  const bar = useRightBar();
+  // Deleting the map goes straight to the server, so it waits for a connection.
+  const offline = useNeedsConnection();
   const key: QueueKey = `map:${id}`;
   const saving = useSaveState(key);
   const [sets, setSets] = useState<MarkerSets>([]);
@@ -683,7 +695,6 @@ export function MapPage() {
     const hit = shapeAt(shapes.current, [x, y]);
     setSelected(hit);
     setVertex(null);
-    if (hit) setPanel(false);
   }
 
   function onPointerDown(e: React.PointerEvent) {
@@ -929,6 +940,32 @@ export function MapPage() {
       ? `t=${year}${chronicleId && chronicleId !== defaultChronicle ? `&c=${chronicleId}` : ""}`
       : "";
 
+  // The panels are declared here, before the page may stop early; what they draw is set below,
+  // once the map is known, and read when the shell draws them.
+  let layersPanel: ReactNode = null;
+  let featurePanel: ReactNode = null;
+  const showsFeature = feature !== null && (!editing || tool === "select");
+  usePanel(
+    map ? { id: "layers", title: "Layers", icon: LayersIcon, render: () => layersPanel } : null,
+  );
+  usePanel(
+    showsFeature
+      ? {
+          id: "feature",
+          title: editing ? "Edit feature" : "Selected",
+          icon: MapPin,
+          render: () => featurePanel,
+        }
+      : null,
+  );
+  // A feature chosen on the map opens its panel.
+  const showPanel = bar.show;
+  useEffect(() => {
+    if (showsFeature) showPanel("feature");
+  }, [selected, showsFeature, showPanel]);
+  usePageTitle(map?.title ?? "Map");
+  useSheetFloor(frame, "bottom", map !== null);
+
   if (error) {
     return (
       <div className="center">
@@ -1044,6 +1081,214 @@ export function MapPage() {
     await api.deleteMap(id).catch(() => undefined);
     refresh();
     navigate("/maps");
+  }
+
+  layersPanel = (
+    <LayerPanel
+      timeLine={timeLine}
+      setup={
+        <div className="map-setup">
+          <h3>This map</h3>
+          {map.space.kind === "sphere" && (
+            <label className="field">
+              <span>Lies under</span>
+              <select
+                aria-label="This map lies under"
+                value={map.under ?? ""}
+                onChange={(e) => {
+                  const next = { ...map } as MapFile;
+                  delete next.under;
+                  change(e.target.value ? { ...next, under: e.target.value } : next);
+                }}
+              >
+                <option value="">Nothing: it is a world of its own</option>
+                {otherMaps
+                  .filter((m) => m.space.kind === "sphere" && !lies(m.id))
+                  .map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.title}
+                    </option>
+                  ))}
+              </select>
+            </label>
+          )}
+          {map.space.kind === "flat" && (
+            <label className="check">
+              <input
+                type="checkbox"
+                checked={schematic}
+                onChange={(e) =>
+                  map.space.kind === "flat" &&
+                  change({
+                    ...map,
+                    space: e.target.checked
+                      ? { ...map.space, schematic: true }
+                      : withoutSchematic(map.space),
+                  })
+                }
+              />{" "}
+              Schematic: a diagram, with no measuring
+            </label>
+          )}
+        </div>
+      }
+      map={map}
+      hidden={hidden}
+      shownImages={shownImages}
+      editing={editing}
+      activeLayer={activeLayer}
+      onToggleLayer={(layer) =>
+        setHidden((h) => {
+          const next = new Set(h);
+          if (!next.delete(layer)) next.add(layer);
+          return next;
+        })
+      }
+      onToggleImage={(image) =>
+        setShownImages((s) => {
+          const next = new Set(s);
+          if (!next.delete(image)) next.add(image);
+          return next;
+        })
+      }
+      onActive={setActiveLayer}
+      onChange={change}
+      onAddImage={(path) => {
+        const image = {
+          id: newItemId(),
+          // Named after its file, without the folders and the ending.
+          name: path.replace(/^.*\//, "").replace(/\.[^.]+$/, ""),
+          path,
+          extent: wholeExtent(map.space),
+          visible: true,
+        };
+        change({ ...map, images: [...map.images, image] });
+        setShownImages((shown) => new Set(shown).add(image.id));
+      }}
+      onKeepAsOpening={() =>
+        change({
+          ...map,
+          layers: map.layers.map((l) => ({ ...l, visible: !hidden.has(l.id) })),
+          images: map.images.map((i) => ({ ...i, visible: shownImages.has(i.id) })),
+        })
+      }
+    />
+  );
+  if (feature && !editing) {
+    featurePanel = (
+      <FeatureCard
+        feature={feature}
+        title={titleOf(feature)}
+        names={names}
+        children={children}
+        reason={seen ? reasonFor(feature, seen, year ?? 0, spanName) : null}
+        {...(carry ? { carry } : {})}
+        onClose={() => setSelected(null)}
+      />
+    );
+  } else if (feature && editing && tool === "select") {
+    featurePanel = (
+      <FeatureEditor
+        key={feature.id}
+        feature={feature}
+        map={map}
+        names={names}
+        pendingEntry={pendingNames[feature.id] ?? null}
+        sets={sets}
+        otherMaps={otherMaps}
+        vertex={vertex}
+        onChange={(next) => setFeature(next)}
+        onLink={(path, title) => {
+          setPendingNames((p) => {
+            const next = { ...p };
+            if (path) next[feature.id] = title;
+            else delete next[feature.id];
+            return next;
+          });
+          if (path) linkTitles.current.set(feature.id, { path, title });
+          else linkTitles.current.delete(feature.id);
+          // The link travels with the save; a link still waiting is taken back by an unlink.
+          const now = mapRef.current ?? map;
+          change(
+            {
+              ...now,
+              features: now.features.map((f) =>
+                f.id === feature.id ? { ...feature, entry: null } : f,
+              ),
+            },
+            true,
+            [{ id: feature.id, path: path || null }],
+          );
+        }}
+        onDelete={() => {
+          change({ ...map, features: map.features.filter((f) => f.id !== feature.id) });
+          setSelected(null);
+        }}
+        onRemoveVertex={() => {
+          const drawn = onScreen?.feature;
+          if (!drawn || drawn.kind === "marker" || vertex === null) return;
+          setFeature(
+            writeShape(feature, onScreen.shape, {
+              points: drawn.points.filter((_, i) => i !== vertex),
+            }),
+          );
+          setVertex(null);
+        }}
+        {...(onScreen && onScreen.feature.kind !== "marker"
+          ? { corners: onScreen.feature.points.length }
+          : {})}
+        extra={
+          map.space.kind === "flat" && feature.kind === "marker" ? (
+            <OrbitEditor
+              feature={feature}
+              markers={map.features
+                .filter((f) => f.kind === "marker")
+                .map((f) => ({ id: f.id, title: titleOf(f) }))}
+              onChange={(orbit) => {
+                const next = { ...feature } as MapFeature & { orbit?: unknown };
+                delete next.orbit;
+                setFeature(orderFeature((orbit ? { ...next, orbit } : next) as MapFeature));
+              }}
+            />
+          ) : null
+        }
+        time={
+          seen && onScreen ? (
+            <FeatureTime
+              feature={feature}
+              time={seen}
+              onScreen={onScreen.shape}
+              pinned={pin?.feature === feature.id ? pin.shape : undefined}
+              nameOf={spanName}
+              onTie={(span) => setFeature(tie(feature, span))}
+              onPin={(shape) => setPin({ feature: feature.id, shape })}
+              onAddShape={(from) => {
+                // The new shape starts as the one on screen, and is the one edited next.
+                const shape = newItemId();
+                setFeature(addShape(feature, shape, from, shapeOf(onScreen.feature)));
+                setPin({ feature: feature.id, shape });
+              }}
+              onRemoveShape={(shape) => {
+                setPin(null);
+                setFeature(removeShape(feature, shape));
+              }}
+            />
+          ) : (
+            <p className="muted feature-time">
+              {chronicles.length > 0
+                ? "Turn time on to see when this exists."
+                : "Make a chronicle to say when this exists."}
+            </p>
+          )
+        }
+        canMove={{
+          forward: reorderFeature(map.features, feature.id, 1) !== map.features,
+          back: reorderFeature(map.features, feature.id, -1) !== map.features,
+        }}
+        onMove={(by) => change({ ...map, features: reorderFeature(map.features, feature.id, by) })}
+        onClose={() => setSelected(null)}
+      />
+    );
   }
 
   return (
@@ -1172,33 +1417,37 @@ export function MapPage() {
           <button
             type="button"
             className="quiet"
-            aria-pressed={panel}
-            onClick={() => {
-              setPanel(!panel);
-              // One panel at a time: on a phone they share the bottom of the screen.
-              setSelected(null);
-            }}
+            aria-pressed={bar.open === "layers"}
+            onClick={() => bar.toggle("layers")}
           >
             Layers
           </button>
         </span>
         {/* Done and "⋯" stay on the first line on a phone, so the way out is always on screen. */}
         <span className="map-main">
-          <button
-            type="button"
-            className={editing ? "primary" : "quiet"}
-            onClick={() => {
-              if (editing) void queue.sendNow(key);
-              setEditing(!editing);
-              setTool("select");
-              setSketch([]);
-              setSelected(null);
-            }}
-          >
-            {editing ? "Done" : "Edit"}
-          </button>
+          <PageAction>
+            <button
+              type="button"
+              className={editing ? "primary" : "quiet"}
+              onClick={() => {
+                if (editing) void queue.sendNow(key);
+                setEditing(!editing);
+                setTool("select");
+                setSketch([]);
+                setSelected(null);
+              }}
+            >
+              {editing ? "Done" : "Edit"}
+            </button>
+          </PageAction>
           <Menu label="More actions" className="map-more">
-            <MenuItem icon={Trash2} danger onSelect={() => void remove()}>
+            <MenuItem
+              icon={Trash2}
+              danger
+              disabled={offline !== undefined}
+              disabledReason={offline}
+              onSelect={() => void remove()}
+            >
               Delete map
             </MenuItem>
           </Menu>
@@ -1365,98 +1614,6 @@ export function MapPage() {
           </p>
         )}
 
-        {panel && (
-          <LayerPanel
-            timeLine={timeLine}
-            setup={
-              <div className="map-setup">
-                <h3>This map</h3>
-                {map.space.kind === "sphere" && (
-                  <label className="field">
-                    <span>Lies under</span>
-                    <select
-                      aria-label="This map lies under"
-                      value={map.under ?? ""}
-                      onChange={(e) => {
-                        const next = { ...map } as MapFile;
-                        delete next.under;
-                        change(e.target.value ? { ...next, under: e.target.value } : next);
-                      }}
-                    >
-                      <option value="">Nothing: it is a world of its own</option>
-                      {otherMaps
-                        .filter((m) => m.space.kind === "sphere" && !lies(m.id))
-                        .map((m) => (
-                          <option key={m.id} value={m.id}>
-                            {m.title}
-                          </option>
-                        ))}
-                    </select>
-                  </label>
-                )}
-                {map.space.kind === "flat" && (
-                  <label className="check">
-                    <input
-                      type="checkbox"
-                      checked={schematic}
-                      onChange={(e) =>
-                        map.space.kind === "flat" &&
-                        change({
-                          ...map,
-                          space: e.target.checked
-                            ? { ...map.space, schematic: true }
-                            : withoutSchematic(map.space),
-                        })
-                      }
-                    />{" "}
-                    Schematic: a diagram, with no measuring
-                  </label>
-                )}
-              </div>
-            }
-            map={map}
-            hidden={hidden}
-            shownImages={shownImages}
-            editing={editing}
-            activeLayer={activeLayer}
-            onToggleLayer={(layer) =>
-              setHidden((h) => {
-                const next = new Set(h);
-                if (!next.delete(layer)) next.add(layer);
-                return next;
-              })
-            }
-            onToggleImage={(image) =>
-              setShownImages((s) => {
-                const next = new Set(s);
-                if (!next.delete(image)) next.add(image);
-                return next;
-              })
-            }
-            onActive={setActiveLayer}
-            onChange={change}
-            onAddImage={(path) => {
-              const image = {
-                id: newItemId(),
-                // Named after its file, without the folders and the ending.
-                name: path.replace(/^.*\//, "").replace(/\.[^.]+$/, ""),
-                path,
-                extent: wholeExtent(map.space),
-                visible: true,
-              };
-              change({ ...map, images: [...map.images, image] });
-              setShownImages((shown) => new Set(shown).add(image.id));
-            }}
-            onKeepAsOpening={() =>
-              change({
-                ...map,
-                layers: map.layers.map((l) => ({ ...l, visible: !hidden.has(l.id) })),
-                images: map.images.map((i) => ({ ...i, visible: shownImages.has(i.id) })),
-              })
-            }
-          />
-        )}
-
         {openFound && found.items.some((d) => d.id === openFound) && !editing && (
           <DiscoveryCard
             key={openFound}
@@ -1479,121 +1636,6 @@ export function MapPage() {
               setOpenFound(null);
             }}
             onClose={() => setOpenFound(null)}
-          />
-        )}
-        {feature && !editing && (
-          <FeatureCard
-            feature={feature}
-            title={titleOf(feature)}
-            names={names}
-            children={children}
-            reason={seen ? reasonFor(feature, seen, year ?? 0, spanName) : null}
-            {...(carry ? { carry } : {})}
-            onClose={() => setSelected(null)}
-          />
-        )}
-        {feature && editing && tool === "select" && (
-          <FeatureEditor
-            key={feature.id}
-            feature={feature}
-            map={map}
-            names={names}
-            pendingEntry={pendingNames[feature.id] ?? null}
-            sets={sets}
-            otherMaps={otherMaps}
-            vertex={vertex}
-            onChange={(next) => setFeature(next)}
-            onLink={(path, title) => {
-              setPendingNames((p) => {
-                const next = { ...p };
-                if (path) next[feature.id] = title;
-                else delete next[feature.id];
-                return next;
-              });
-              if (path) linkTitles.current.set(feature.id, { path, title });
-              else linkTitles.current.delete(feature.id);
-              // The link travels with the save; a link still waiting is taken back by an unlink.
-              const now = mapRef.current ?? map;
-              change(
-                {
-                  ...now,
-                  features: now.features.map((f) =>
-                    f.id === feature.id ? { ...feature, entry: null } : f,
-                  ),
-                },
-                true,
-                [{ id: feature.id, path: path || null }],
-              );
-            }}
-            onDelete={() => {
-              change({ ...map, features: map.features.filter((f) => f.id !== feature.id) });
-              setSelected(null);
-            }}
-            onRemoveVertex={() => {
-              const drawn = onScreen?.feature;
-              if (!drawn || drawn.kind === "marker" || vertex === null) return;
-              setFeature(
-                writeShape(feature, onScreen.shape, {
-                  points: drawn.points.filter((_, i) => i !== vertex),
-                }),
-              );
-              setVertex(null);
-            }}
-            {...(onScreen && onScreen.feature.kind !== "marker"
-              ? { corners: onScreen.feature.points.length }
-              : {})}
-            extra={
-              map.space.kind === "flat" && feature.kind === "marker" ? (
-                <OrbitEditor
-                  feature={feature}
-                  markers={map.features
-                    .filter((f) => f.kind === "marker")
-                    .map((f) => ({ id: f.id, title: titleOf(f) }))}
-                  onChange={(orbit) => {
-                    const next = { ...feature } as MapFeature & { orbit?: unknown };
-                    delete next.orbit;
-                    setFeature(orderFeature((orbit ? { ...next, orbit } : next) as MapFeature));
-                  }}
-                />
-              ) : null
-            }
-            time={
-              seen && onScreen ? (
-                <FeatureTime
-                  feature={feature}
-                  time={seen}
-                  onScreen={onScreen.shape}
-                  pinned={pin?.feature === feature.id ? pin.shape : undefined}
-                  nameOf={spanName}
-                  onTie={(span) => setFeature(tie(feature, span))}
-                  onPin={(shape) => setPin({ feature: feature.id, shape })}
-                  onAddShape={(from) => {
-                    // The new shape starts as the one on screen, and is the one edited next.
-                    const shape = newItemId();
-                    setFeature(addShape(feature, shape, from, shapeOf(onScreen.feature)));
-                    setPin({ feature: feature.id, shape });
-                  }}
-                  onRemoveShape={(shape) => {
-                    setPin(null);
-                    setFeature(removeShape(feature, shape));
-                  }}
-                />
-              ) : (
-                <p className="muted feature-time">
-                  {chronicles.length > 0
-                    ? "Turn time on to see when this exists."
-                    : "Make a chronicle to say when this exists."}
-                </p>
-              )
-            }
-            canMove={{
-              forward: reorderFeature(map.features, feature.id, 1) !== map.features,
-              back: reorderFeature(map.features, feature.id, -1) !== map.features,
-            }}
-            onMove={(by) =>
-              change({ ...map, features: reorderFeature(map.features, feature.id, by) })
-            }
-            onClose={() => setSelected(null)}
           />
         )}
       </div>

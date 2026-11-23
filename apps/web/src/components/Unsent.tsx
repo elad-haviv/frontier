@@ -70,7 +70,7 @@ function Row({ record }: { record: QueueRecord }) {
  * The count of changes still on this device, which opens the list of them: each file with its
  * age and any error, and Retry and Discard for those the server refused.
  */
-export function Unsent() {
+export function Unsent({ compact = false }: { compact?: boolean }) {
   const records = useUnsent();
   if (records.length === 0) return null;
   const attention = records.filter((r) => r.state === "attention").length;
@@ -80,7 +80,7 @@ export function Unsent() {
       <Popover.Trigger asChild>
         <button
           type="button"
-          className={`unsent-count${attention > 0 ? " needs-attention" : ""}`}
+          className={`unsent-count${attention > 0 ? " needs-attention" : ""}${compact ? " is-compact" : ""}`}
           title={
             kept
               ? "Changes kept on this device, not sent yet"
@@ -88,11 +88,17 @@ export function Unsent() {
           }
         >
           <Icon icon={CloudOff} size="sm" />
-          Unsent<span className="badge">{records.length}</span>
+          {compact ? <span className="sr-only">Unsent</span> : "Unsent"}
+          <span className="badge">{records.length}</span>
         </button>
       </Popover.Trigger>
       <Popover.Portal>
-        <Popover.Content className="unsent" align="end" sideOffset={6} collisionPadding={8}>
+        <Popover.Content
+          className="unsent"
+          align={compact ? "start" : "end"}
+          sideOffset={6}
+          collisionPadding={8}
+        >
           <h2 className="unsent-title">Not sent yet</h2>
           <p className="muted unsent-note">
             {kept

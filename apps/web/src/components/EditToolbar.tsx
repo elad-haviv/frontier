@@ -22,6 +22,8 @@ import { useRef } from "react";
 import { linePrefix, wrap } from "./editCommands.ts";
 import { tableCommand } from "./tableKeys.ts";
 import { IconButton } from "./ui/IconButton.tsx";
+import { useSheetFloor } from "./shell/panels.tsx";
+import { useNeedsConnection } from "../sync/connection.ts";
 
 type Ref = { current: EditorView | null };
 
@@ -62,9 +64,14 @@ export function EditToolbar({
   // Buttons must not take the focus from the editor, or the phone keyboard closes.
   const keep = (e: React.PointerEvent) => e.preventDefault();
   const picker = useRef<HTMLInputElement>(null);
+  // On a phone the panels' sheet opens above the toolbar, so its buttons stay in reach.
+  const bar = useRef<HTMLDivElement>(null);
+  useSheetFloor(bar);
+  // Images, comments and writing help go straight to the server, so they wait for a connection.
+  const offline = useNeedsConnection();
 
   return (
-    <div className="edit-toolbar" role="toolbar" aria-label="Formatting">
+    <div ref={bar} className="edit-toolbar" role="toolbar" aria-label="Formatting">
       {inTable &&
         TABLE_BUTTONS.map(([action, icon, label]) => (
           <IconButton
@@ -120,6 +127,8 @@ export function EditToolbar({
           <IconButton
             label="Add an image"
             icon={ImagePlus}
+            disabled={offline !== undefined}
+            {...(offline ? { disabledReason: offline } : {})}
             onPointerDown={keep}
             onClick={() => picker.current?.click()}
           />
@@ -142,6 +151,8 @@ export function EditToolbar({
         <IconButton
           label="Comment"
           icon={MessageSquarePlus}
+          disabled={offline !== undefined}
+          {...(offline ? { disabledReason: offline } : {})}
           onPointerDown={keep}
           onClick={onComment}
         />
@@ -150,6 +161,8 @@ export function EditToolbar({
         <IconButton
           label="Writing help"
           icon={WandSparkles}
+          disabled={offline !== undefined}
+          {...(offline ? { disabledReason: offline } : {})}
           onPointerDown={keep}
           onClick={onWrite}
         />

@@ -1,0 +1,85 @@
+/* The phone's one slim line on top. */
+.phone-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  height: var(--bar);
+  padding: 0 var(--space-1);
+  padding-left: max(var(--space-1), env(safe-area-inset-left));
+  padding-right: max(var(--space-1), env(safe-area-inset-right));
+  margin-top: env(safe-area-inset-top);
+  border-bottom: 1px solid var(--rule);
+  background: var(--paper);
+}
+.phone-bar .ui-icon-button {
+  color: var(--ink);
+}
+
+.phone-menu {
+  position: relative;
+  flex: none;
+}
+/* Something waits in the drawer: a dot on the menu button. */
+.phone-dot {
+  position: absolute;
+  top: 0.45rem;
+  right: 0.45rem;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background: var(--accent);
+  pointer-events: none;
+}
+
+.phone-title {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+.phone-title-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--serif);
+  font-weight: 600;
+  font-size: 1rem;
+}
+
+.phone-marks {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+.phone-compare.side-link {
+  min-height: 2.5rem;
+  gap: var(--space-1);
+  padding: 0 var(--space-2);
+}
+.phone-compare .side-link-label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+
+/* The page's main action, put here by the page. */
+.phone-action {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+.phone-action:empty {
+  display: none;
+}
+.phone-action .primary,
+.phone-action .edit-link,
+.phone-action .quiet {
+  margin: 0;
+  padding: 0.35rem 0.8rem;
+}

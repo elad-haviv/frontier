@@ -33,7 +33,8 @@ test("adds a passkey, logs in with it, and switches the password off and on agai
   await page.context().clearCookies();
   await page.goto("/login");
   await page.getByRole("button", { name: "Use a passkey" }).click();
-  await expect(page.locator(".topnav")).toBeVisible();
+  // In: the shell's search is there, in the side bar or on the phone's top line.
+  await expect(page.getByRole("button", { name: "Search", exact: true })).toBeVisible();
   await page.goto("/settings");
   await expect(page.locator(".passkeys")).toContainText("Test phone");
 

@@ -1,4 +1,5 @@
 import type { PublishPlan, UnpublishedResponse } from "@frontier/schema";
+import { ActionButton } from "../components/ui/ActionButton.tsx";
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { chronicleIdOf, mapIdOf } from "@frontier/schema";
@@ -136,8 +137,8 @@ export function UnpublishedPage() {
   async function settleMap(path: string, keep: "mine" | "theirs") {
     const id = mapIdOf(path);
     const chronicle = chronicleIdOf(path);
-    if (id) await api.resolveMap(id, keep).catch(() => undefined);
-    else if (chronicle) await api.resolveChronicle(chronicle, keep).catch(() => undefined);
+    if (id) await api.resolveMap(id, keep).catch(fail);
+    else if (chronicle) await api.resolveChronicle(chronicle, keep).catch(fail);
     else return;
     setPlan(null);
     await load();
@@ -228,9 +229,13 @@ export function UnpublishedPage() {
                   {d.kind !== "delete" && chronicleIdOf(d.path) && (
                     <Link to={chronicleUrl(chronicleIdOf(d.path)!)}>Open the chronicle</Link>
                   )}
-                  <button type="button" className="plain danger" onClick={() => discard(d.id)}>
+                  <ActionButton
+                    type="button"
+                    className="plain danger"
+                    onClick={() => discard(d.id)}
+                  >
                     Discard
-                  </button>
+                  </ActionButton>
                 </p>
               </li>
             ))}
@@ -249,9 +254,13 @@ export function UnpublishedPage() {
                 </label>
                 <p className="muted">Links in {r.affected.length} notes will be rewritten.</p>
                 <p className="change-actions">
-                  <button type="button" className="plain danger" onClick={() => cancelRename(r.id)}>
+                  <ActionButton
+                    type="button"
+                    className="plain danger"
+                    onClick={() => cancelRename(r.id)}
+                  >
                     Cancel rename
-                  </button>
+                  </ActionButton>
                 </p>
               </li>
             ))}
@@ -269,30 +278,30 @@ export function UnpublishedPage() {
                     : "Goes out together with the change that puts the note back."}
                 </p>
                 <p className="change-actions">
-                  <button
+                  <ActionButton
                     type="button"
                     className="plain danger"
                     onClick={async () => {
-                      await api.withdrawDecision(d.id).catch(() => undefined);
+                      await api.withdrawDecision(d.id).catch(fail);
                       setPlan(null);
                       await load();
                       refresh();
                     }}
                   >
                     Withdraw
-                  </button>
+                  </ActionButton>
                 </p>
               </li>
             ))}
           </ul>
-          <button
+          <ActionButton
             type="button"
             className="primary big"
             disabled={busy || chosen === 0}
             onClick={review}
           >
             {busy ? "Checking the vault…" : `Review ${chosen} change${chosen === 1 ? "" : "s"}`}
-          </button>
+          </ActionButton>
         </>
       )}
 
@@ -364,20 +373,20 @@ export function UnpublishedPage() {
                     {(c.reason === "map_changed_on_both" ||
                       c.reason === "chronicle_changed_on_both") && (
                       <span className="change-actions">
-                        <button
+                        <ActionButton
                           type="button"
                           className="quiet"
                           onClick={() => settleMap(c.path, "mine")}
                         >
                           {c.reason === "map_changed_on_both" ? "Keep my map" : "Keep my chronicle"}
-                        </button>
-                        <button
+                        </ActionButton>
+                        <ActionButton
                           type="button"
                           className="quiet"
                           onClick={() => settleMap(c.path, "theirs")}
                         >
                           Take the vault's
-                        </button>
+                        </ActionButton>
                       </span>
                     )}
                     {c.reason !== "rename_blocked" &&
@@ -408,14 +417,14 @@ export function UnpublishedPage() {
             <button type="button" className="quiet" onClick={() => setPlan(null)}>
               Back
             </button>
-            <button
+            <ActionButton
               type="button"
               className="primary big"
               disabled={busy || publishable === 0 || message.trim() === ""}
               onClick={publish}
             >
               {busy ? words.acting : words.act}
-            </button>
+            </ActionButton>
           </p>
         </section>
       )}

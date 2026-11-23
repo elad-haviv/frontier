@@ -193,3 +193,18 @@ export function useConnection(): {
   );
   return { ...view, retry: () => void connection.retry() };
 }
+
+/** What a control that needs the server says while the server cannot be reached. */
+export const NEEDS_CONNECTION = "Needs a connection";
+
+/**
+ * For writes that go straight to the server rather than through the save queue (comments,
+ * renames, saving a version…): the reason to refuse them now, or undefined while online.
+ */
+export function useNeedsConnection(): string | undefined {
+  const view = useSyncExternalStore(
+    (l) => connection.subscribe(l),
+    () => connection.current(),
+  );
+  return view.state === "online" ? undefined : NEEDS_CONNECTION;
+}

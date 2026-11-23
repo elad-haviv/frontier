@@ -15,8 +15,10 @@ import { Menu, MenuItem, MenuSeparator } from "../components/ui/Menu.tsx";
 import { SaveStatus, useSaveState } from "../components/ui/SaveStatus.tsx";
 import { useScope, useShortcut } from "../keys.ts";
 import { type QueueKey, queue } from "../sync/queue.ts";
+import { useNeedsConnection } from "../sync/connection.ts";
 import type { DraftKind } from "@frontier/schema";
-import { Trash2, Undo2 } from "lucide-react";
+import { MessageSquare, SlidersHorizontal, Trash2, Undo2, WandSparkles } from "lucide-react";
+import { PageAction, usePanel, useRightBar } from "../components/shell/panels.tsx";
 
 function pathFrom(pathname: string): string {
   return pathname
@@ -51,8 +53,12 @@ export function EditPage() {
   });
   const latest = useRef("");
   const view = useRef<EditorView | null>(null);
-  // Writing help is offered once a model for it is chosen.
-  const [writing, setWriting] = useState(false);
+  // The panels beside the text: Properties, Comments and, once a model is chosen, Writing help.
+  const bar = useRightBar();
+  // Discarding goes straight to the server, so it waits for a connection.
+  const offline = useNeedsConnection();
+  /** Changes each time Writing help is asked for, so it starts afresh on the passage. */
+  const [writing, setWriting] = useState(0);
   const [canWrite, setCanWrite] = useState(false);
   useEffect(() => {
     api.conversations().then(
@@ -64,11 +70,10 @@ export function EditPage() {
   const [comments, setComments] = useState<PassageComment[]>([]);
   const [commenting, setCommenting] = useState<{
     adding: (Anchor & { from: number; to: number }) | null;
-    /** Changes each time the panel is opened, so it starts afresh. */
+    /** Changes each time a comment is started, so the panel starts afresh. */
     n: number;
-  } | null>(() =>
-    new URLSearchParams(search).get("comments") === "1" ? { adding: null, n: 0 } : null,
-  );
+  }>({ adding: null, n: 0 });
+  const askedForComments = new URLSearchParams(search).get("comments") === "1";
   const commentsNow = useRef<PassageComment[]>([]);
   // Highlights move with typing; after a pause they are found again from the words, so an undone
   // deletion or a replaced text brings them back. The pause also redraws the panel's list.
@@ -246,11 +251,11 @@ export function EditPage() {
       return;
     }
     setMessage(null);
-    setWriting(false);
     setCommenting((c) => ({
       adding: { ...anchorAt(v.state.doc.toString(), at.from, at.to), ...at },
-      n: (c?.n ?? 0) + 1,
+      n: c.n + 1,
     }));
+    bar.show("comments");
   }
 
   // Coming back to this tab: if the server changed the draft meanwhile, such as by accepting a
@@ -291,14 +296,75 @@ export function EditPage() {
   useShortcut("editor.done", () => void done());
 
   // The folded frontmatter line in the text opens the Properties panel, at its first field.
-  const properties = useRef<HTMLDetailsElement>(null);
+  const [focusProperties, setFocusProperties] = useState(0);
+  const showPanel = bar.show;
   const openProperties = useCallback(() => {
-    const panel = properties.current;
-    if (!panel) return;
-    panel.open = true;
-    panel.scrollIntoView({ block: "nearest" });
-    panel.querySelector<HTMLElement>("summary")?.focus();
-  }, []);
+    setFocusProperties((n) => n + 1);
+    showPanel("properties");
+  }, [showPanel]);
+
+  // Opened from the entry's count of comments: the Comments panel shows at once.
+  const shownComments = useRef(false);
+  useEffect(() => {
+    if (initial === null || !askedForComments || shownComments.current) return;
+    shownComments.current = true;
+    showPanel("comments");
+  }, [initial, askedForComments, showPanel]);
+
+  usePanel(
+    initial === null
+      ? null
+      : {
+          id: "properties",
+          title: "Properties",
+          icon: SlidersHorizontal,
+          render: () => <Properties key={path} view={view} focus={focusProperties} />,
+        },
+  );
+  usePanel(
+    initial === null
+      ? null
+      : {
+          id: "comments",
+          title: "Comments",
+          icon: MessageSquare,
+          ...(comments.length > 0 ? { badge: comments.length } : {}),
+          render: () =>
+            view.current && (
+              <CommentsPanel
+                key={`${path}:${commenting.n}`}
+                view={view.current}
+                path={path}
+                comments={comments}
+                adding={commenting.adding}
+                canAi={canWrite}
+                onChanged={() => {
+                  setCommenting((c) => ({ ...c, adding: null }));
+                  void loadComments();
+                }}
+                onClose={() => bar.hide()}
+              />
+            ),
+        },
+  );
+  usePanel(
+    initial === null || !canWrite
+      ? null
+      : {
+          id: "writing",
+          title: "Writing help",
+          icon: WandSparkles,
+          render: () =>
+            view.current && (
+              <WritingPanel
+                key={`${path}:${writing}`}
+                view={view.current}
+                path={path}
+                onClose={() => bar.hide()}
+              />
+            ),
+        },
+  );
 
   async function discard() {
     const ok = await dialogs.confirm({
@@ -378,17 +444,33 @@ export function EditPage() {
           <button
             type="button"
             className="quiet"
-            aria-pressed={commenting !== null}
-            onClick={() => setCommenting((c) => (c ? null : { adding: null, n: Date.now() }))}
+            aria-pressed={bar.open === "properties"}
+            onClick={() => bar.toggle("properties")}
+          >
+            Properties
+          </button>
+          <button
+            type="button"
+            className="quiet"
+            aria-pressed={bar.open === "comments"}
+            onClick={() => bar.toggle("comments")}
           >
             Comments{comments.length > 0 ? ` (${comments.length})` : ""}
           </button>
-          <button type="button" className="primary" onClick={done}>
-            Done
-          </button>
+          {/* On a phone, Done moves into the top line, beside the title. */}
+          <PageAction>
+            <button type="button" className="primary" onClick={done}>
+              Done
+            </button>
+          </PageAction>
           {/* Taking things back and away sit apart from Done, behind one more press. */}
           <Menu label="More actions" className="editor-more">
-            <MenuItem icon={Undo2} onSelect={() => void discard()}>
+            <MenuItem
+              icon={Undo2}
+              disabled={offline !== undefined}
+              disabledReason={offline}
+              onSelect={() => void discard()}
+            >
               Discard draft
             </MenuItem>
             <MenuSeparator />
@@ -409,7 +491,6 @@ export function EditPage() {
           {message ?? saving.error}
         </p>
       )}
-      <Properties view={view} ref={properties} />
       <CodeEditor
         key={path}
         initial={initial}
@@ -421,21 +502,6 @@ export function EditPage() {
         onTable={setInTable}
         onProperties={openProperties}
       />
-      {writing && view.current && (
-        <WritingPanel view={view.current} path={path} onClose={() => setWriting(false)} />
-      )}
-      {commenting && view.current && (
-        <CommentsPanel
-          key={commenting.n}
-          view={view.current}
-          path={path}
-          comments={comments}
-          adding={commenting.adding}
-          canAi={canWrite}
-          onChanged={() => void loadComments()}
-          onClose={() => setCommenting(null)}
-        />
-      )}
       <EditToolbar
         view={view}
         onFiles={addImages}
@@ -444,8 +510,8 @@ export function EditPage() {
         {...(canWrite
           ? {
               onWrite: () => {
-                setCommenting(null);
-                setWriting(true);
+                setWriting((n) => n + 1);
+                bar.show("writing");
               },
             }
           : {})}

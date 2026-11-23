@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { entry, noSidewaysScroll } from "./helpers.ts";
+import { entry, noSidewaysScroll, openSideBar } from "./helpers.ts";
 
 test("refuses the wrong password", async ({ browser }) => {
   // A fresh browser with no session.
@@ -81,9 +81,9 @@ test("lists what needs attention on the status page", async ({ page }) => {
   await noSidewaysScroll(page);
 });
 
-test("opens the folder list and finds an entry in it", async ({ page, isMobile }) => {
+test("opens the folder list and finds an entry in it", async ({ page }) => {
   await page.goto(entry("README.md"));
-  if (isMobile) await page.locator(".menu").click();
+  await openSideBar(page);
   await page.locator(".tree-folder", { hasText: "Harbor" }).click();
   await expect(page.locator(".entry h1").first()).toHaveText("Harbor");
 });

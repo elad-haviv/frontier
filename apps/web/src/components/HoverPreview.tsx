@@ -59,11 +59,12 @@ export function HoverPreview({ scope }: { scope: string }) {
     };
     root.addEventListener("mouseover", over);
     root.addEventListener("mouseout", out);
-    window.addEventListener("scroll", out, { passive: true });
+    // The page scrolls in its own area, so scrolls are heard on the way down to it.
+    document.addEventListener("scroll", out, { passive: true, capture: true });
     return () => {
       root.removeEventListener("mouseover", over);
       root.removeEventListener("mouseout", out);
-      window.removeEventListener("scroll", out);
+      document.removeEventListener("scroll", out, { capture: true });
       window.clearTimeout(timer.current);
     };
   }, [scope]);
