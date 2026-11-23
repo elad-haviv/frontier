@@ -186,9 +186,14 @@ Each goal states how it is checked.
 *   **Full offline use.** A phone needs a connection. The only offline provision is a draft buffer in the
     browser, so text typed during a dropped connection is kept and sent later. Obsidian remains available
     for writing with no connection.
+    *Reversed by the author on 2026-11-22: offline work is now wanted, and is built in stages 11 to 15
+    ([`concepts_brief.md`](../../concepts_brief.md); the save queue it needs is in
+    [stage 11](stage-11-foundations-shell-tree.md)).*
 *   **Retiring Obsidian.** Frontier does not remove or migrate away from the Obsidian setup.
 *   **Rendering Obsidian plugin syntax.** The vault contains no Leaflet, Tasks, mind-map, callout or tag
     syntax, so none is supported. The graph view and canvas are not rebuilt.
+    *The graph part was reversed by the author on 2026-11-22: a graph screen is planned for stage 14
+    ([`concepts_brief.md`](../../concepts_brief.md)). The canvas is still not rebuilt.*
 *   **Mass AI backfill.** Frontier does not run AI over the whole vault and write fields in bulk. Fields
     become canon one confirmation at a time. The author may ask for proposals for a whole folder; they
     stay proposals until he confirms each one.
@@ -373,7 +378,7 @@ No questions are open. These were raised during drafting and settled by the auth
 |  Map renderer (WebGL + canvas)   |           |  Vault service --- Git gateway --+             |
 |  Timeline                        |           |   parse, links,    pull, commit, |             |
 |  Chat / Explore                  |           |   rename           push, branches|             |
-|  Draft buffer (IndexedDB)        |           |                                  v             |
+|  Save queue (IndexedDB)          |           |                                  v             |
 +----------------------------------+           |  Index            /data/vault  (Git clone)     |
                                                |  (in memory)      /data/state  (working files) |
                                                |                   /data/assets (tiles, thumbs) |
@@ -552,7 +557,8 @@ equals the last fetched `main`: Frontier never makes a local commit in it.
     "on timeline" that come from the index.
 *   **Drafts**: typing saves to the browser's IndexedDB at once and to the server about a second later.
     With no connection, text stays in the browser and is sent when the connection returns. Each entry shows
-    one of: published, unpublished, conflict, waiting to send.
+    one of: published, unpublished, conflict, waiting to send. (Since stage 11 this is the save queue of
+    [stage 11, section 1](stage-11-foundations-shell-tree.md#1-the-save-queue-11a-2).)
 *   **Images**: the server returns resized versions by requested width and caches them on disk. An original
     (the largest today is 9 MB) is sent only when the author opens it at full size.
 *   **Phone layout**: a bottom bar with search, entries, unpublished changes and status in stages 1 and 2;
@@ -1074,7 +1080,7 @@ Versions are pinned in `package-lock.json` at the time of the first install.
 | `apps/web` | `react`, `react-dom`, `react-router`, `vite` | Interface and build |
 | `apps/web` | `unified`, `remark-parse`, `remark-gfm`, `remark-rehype`, `rehype-sanitize`, `rehype-react`, `unist-util-visit` | Rendering Markdown, tables, sanitising; wikilinks and embeds are turned into links by Frontier's own remark plugin |
 | `apps/web` | `codemirror`, `@codemirror/state`, `@codemirror/view`, `@codemirror/language`, `@codemirror/lang-markdown`, `@codemirror/autocomplete`, `@lezer/markdown` | Editor and live preview |
-| `apps/web` | `idb`, `diff` | Browser draft store, showing differences |
+| `apps/web` | `idb`, `diff` | Browser save queue ([stage 11](stage-11-foundations-shell-tree.md)), showing differences |
 | `apps/web` | `@playwright/test` | Browser tests |
 
 Git is used through the `git` program, not a library. The server sends vault text to the browser as it
@@ -1182,6 +1188,8 @@ is empty. `lineEnding` is `lf` or `crlf`.
 
 The browser store (IndexedDB, through `idb`) has one table, `drafts`, keyed by draft id:
 `{ id, path, kind, text, revision, sent }`. A row is removed once the server confirms that revision.
+*Replaced in stage 11 by the save queue, one record per file, and by one kept copy per device in
+place of `content.v2`: see [stage 11, sections 1 and 2](stage-11-foundations-shell-tree.md#1-the-save-queue-11a-2).*
 
 ### API
 

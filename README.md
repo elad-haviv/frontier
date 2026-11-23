@@ -24,6 +24,7 @@ Stage 1 of nine is in progress. What exists so far:
 | Stage 3: inbox for agent branches; type and date fields; AI provider, cap and field proposals; quarantine; passkey login                     | Built; the AI needs an OpenRouter key, and quarantine needs the sync changed |
 | Stage 4: maps (flat maps and globes, markers, paths, zones, layers, measuring)                                                               | Built; to be tried on the real images                                        |
 | Own library: Frontier keeps the knowledge base itself, with versions, import and export                                                      | Built; the preview still shows the sample                                    |
+| Stage 11a: icons, tooltips, menus, one keys registry; a save queue on the device, saves that say what they started from                      | Built; covered by tests. 11b (the shell) and 11c (folder tree) to come       |
 
 The app writes to its vault: drafts are saved on the server and Publish makes one commit.
 

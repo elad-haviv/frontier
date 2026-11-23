@@ -23,30 +23,6 @@ One place for what is being built, what is waiting, and ideas. The design in
   - Fits the existing rule: an AI change to a selection is a proposal shown as a difference, which
     you accept or reject before it enters the draft.
 
-- 2026-11-22: **Interface overhaul and offline work** (the author's list, kept whole; being taken
-  through EGM brainstorm as stage 11 onwards; the fresh UX review is in `ux-review/expert-review.md`).
-  - General: a UX/UI expert review; icons across the app; folders editable like entries (add, nest,
-    move, reorder, rename, style, delete), with an icon and a default type per folder, drag and drop,
-    quick buttons beside the name and a context menu; a clearer "new entry" control; a graph screen as
-    in Obsidian; drop the top bar and put everything in a collapsible side bar with a menu at the
-    bottom; clearer loading signs on a bad connection.
-  - Entries: a sticky breadcrumb of headings while scrolling, with a button for a table of contents
-    pane on the right; a toggle for full width; rename inline with a pencil, move with a combobox that
-    suggests folders; history and export in a right side bar, history with an expand button.
-  - Editor: properties in a right side bar; a clearer toolbar with icons, styled tooltips and perhaps
-    a status bar naming the hovered tool; an image gallery dialog (browse, upload or drop, paste,
-    URL saved to the server, search); a style picker (headings and so on); bullet and numbered lists;
-    indenting with Tab (Tab does not work now); code blocks and quotes; underline and strikethrough
-    if Markdown allows; a context menu; comment in the toolbar and in the context menu.
-  - Maps: the same gallery when choosing a map image; a collapsible right side bar that shows the open
-    panel (layers and so on); the entry field for markers as the same combobox, editable in the side
-    bar; "map of this place" as a combobox, not a plain select; a viewing mode next to editing, with
-    tooltips and floating entry previews on hover; a context menu and keyboard shortcuts; while drawing
-    a path, a line to the cursor; straight or curved paths; kinds of path (river, road, border, ...)
-    with control over each; tooltips everywhere; a hover highlight on objects; a + at the middle of
-    each segment of a path or zone to add a point; drag a whole zone by holding inside it.
-  - System: work offline and sync the differences when the network returns.
-
 <!-- Format:
 - 2026-11-21: The idea, as said. (Notes: which stage it probably belongs to, open questions.)
 -->
@@ -76,6 +52,44 @@ One place for what is being built, what is waiting, and ideas. The design in
       rewrites links inside a `when` field
 - [ ] Have the sync on the Hermes box changed for quarantine (the changes will be written in
       `docs/sync-changes.md`)
+
+## Now: stages 11 to 15, the interface and offline work
+
+Design: [stage 11](designs/stage-11-foundations-shell-tree.md), approved after a five-stage review.
+Stages 12 (entries and editor), 13 (maps), 14 (graph) and 15 (offline) each get their own design.
+
+- [x] 11a-1 Fixes and shared pieces: icons, tooltips, menus, the combobox, one keys registry, New
+      entry with a folder, the phone map header, contrast
+- [x] 11a-2 Saving and connection: one save queue on the device, saves that say what they started
+      from, one kept copy per device on the server, one connection signal, loading and failure shown
+- [ ] 11b The shell: left and right side bars, the phone drawer and bottom sheet
+- [ ] 11c The folder tree: the folder file, drag and drop, folder icons, colours and default types
+
+The author's list, as it came in through the ideas inbox:
+
+- 2026-11-22: **Interface overhaul and offline work** (the author's list, kept whole; taken
+  through EGM brainstorm as stages 11 to 15; the fresh UX review is in `ux-review/expert-review.md`).
+  - General: a UX/UI expert review; icons across the app; folders editable like entries (add, nest,
+    move, reorder, rename, style, delete), with an icon and a default type per folder, drag and drop,
+    quick buttons beside the name and a context menu; a clearer "new entry" control; a graph screen as
+    in Obsidian; drop the top bar and put everything in a collapsible side bar with a menu at the
+    bottom; clearer loading signs on a bad connection.
+  - Entries: a sticky breadcrumb of headings while scrolling, with a button for a table of contents
+    pane on the right; a toggle for full width; rename inline with a pencil, move with a combobox that
+    suggests folders; history and export in a right side bar, history with an expand button.
+  - Editor: properties in a right side bar; a clearer toolbar with icons, styled tooltips and perhaps
+    a status bar naming the hovered tool; an image gallery dialog (browse, upload or drop, paste,
+    URL saved to the server, search); a style picker (headings and so on); bullet and numbered lists;
+    indenting with Tab (Tab does not work now); code blocks and quotes; underline and strikethrough
+    if Markdown allows; a context menu; comment in the toolbar and in the context menu.
+  - Maps: the same gallery when choosing a map image; a collapsible right side bar that shows the open
+    panel (layers and so on); the entry field for markers as the same combobox, editable in the side
+    bar; "map of this place" as a combobox, not a plain select; a viewing mode next to editing, with
+    tooltips and floating entry previews on hover; a context menu and keyboard shortcuts; while drawing
+    a path, a line to the cursor; straight or curved paths; kinds of path (river, road, border, ...)
+    with control over each; tooltips everywhere; a hover highlight on objects; a + at the middle of
+    each segment of a path or zone to add a point; drag a whole zone by holding inside it.
+  - System: work offline and sync the differences when the network returns.
 
 ## Now: stage 3
 
