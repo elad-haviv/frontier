@@ -16,7 +16,7 @@ import { useDialogs } from "../components/Dialogs.tsx";
  * the result is sanitised: no script, no event handlers, no frames. Underline, written `<u>…</u>`,
  * is the one tag read, by remarkUnderline, which makes it a node of its own.
  */
-export const schema = {
+const schema = {
   ...defaultSchema,
   tagNames: [...(defaultSchema.tagNames ?? []), "u"],
   attributes: {

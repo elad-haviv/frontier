@@ -11,7 +11,15 @@ import { indentLess, indentMore } from "@codemirror/commands";
 import { Prec, type Extension } from "@codemirror/state";
 import { type Command, keymap, type KeyBinding } from "@codemirror/view";
 import { useEffect, useRef, useSyncExternalStore } from "react";
-import { wrapCommand } from "./components/editCommands.ts";
+import {
+  type BlockStyle,
+  command,
+  indentListItem,
+  outdentListItem,
+  setBlockStyle,
+  toggleInline,
+  toggleList,
+} from "./components/editCommands.ts";
 import { nextCell, previousCell, tableCommand } from "./components/tableKeys.ts";
 
 /**
@@ -317,9 +325,25 @@ keys.register(
   // The editor. Bold to Done are run by CodeMirror from editorKeymap() below.
   { id: "editor.bold", keys: ["Mod-b"], scope: "editor", label: "Bold" },
   { id: "editor.italic", keys: ["Mod-i"], scope: "editor", label: "Italic" },
+  { id: "editor.underline", keys: ["Mod-u"], scope: "editor", label: "Underline" },
+  { id: "editor.strike", keys: ["Shift-Mod-x"], scope: "editor", label: "Strikethrough" },
+  { id: "editor.numbered", keys: ["Shift-Mod-7"], scope: "editor", label: "Numbered list" },
+  { id: "editor.bullets", keys: ["Shift-Mod-8"], scope: "editor", label: "Bullet list" },
+  ...[1, 2, 3, 4, 5, 6].map((n) => ({
+    id: `editor.heading${n}`,
+    keys: [`Shift-Mod-${n}`],
+    scope: "editor" as const,
+    label: `Heading ${n}`,
+  })),
+  { id: "editor.paragraph", keys: ["Shift-Mod-0"], scope: "editor", label: "Paragraph" },
   { id: "editor.save", keys: ["Mod-s"], scope: "editor", label: "Save now" },
   { id: "editor.done", keys: ["Mod-Enter"], scope: "editor", label: "Done" },
-  { id: "editor.indent", keys: ["Tab"], scope: "editor", label: "Indent" },
+  {
+    id: "editor.indent",
+    keys: ["Tab"],
+    scope: "editor",
+    label: "Indent; in a list, put the item under the one above",
+  },
   { id: "editor.outdent", keys: ["Shift-Tab"], scope: "editor", label: "Indent less" },
   {
     id: "editor.undo",
@@ -474,7 +498,8 @@ const runBound = (id: string, registry: Registry) => (): boolean => registry.run
 /**
  * The editor's keys as a CodeMirror keymap, ahead of CodeMirror's own: table keys first, so Tab
  * moves between cells inside a table and indents elsewhere, and Mod-Enter adds a row in a table
- * and means Done elsewhere. Ctrl+I is italic here, not CodeMirror's "select the parent syntax".
+ * and means Done elsewhere. Ctrl+I is italic here, not CodeMirror's "select the parent syntax",
+ * and Ctrl+U underline, not "undo the selection".
  */
 export function editorKeymap(registry = keys): Extension {
   const key = (id: string) => registry.get(id)!.keys;
@@ -487,13 +512,44 @@ export function editorKeymap(registry = keys): Extension {
     ...bind("table.addColumn", tableCommand("addColumn")),
     ...bind("table.deleteRow", tableCommand("deleteRow")),
     ...bind("table.deleteColumn", tableCommand("deleteColumn")),
-    ...bind("editor.bold", wrapCommand("**", "**")),
-    ...bind("editor.italic", wrapCommand("*", "*")),
+    ...bind(
+      "editor.bold",
+      command((s) => toggleInline(s, "bold")),
+    ),
+    ...bind(
+      "editor.italic",
+      command((s) => toggleInline(s, "italic")),
+    ),
+    ...bind(
+      "editor.underline",
+      command((s) => toggleInline(s, "underline")),
+    ),
+    ...bind(
+      "editor.strike",
+      command((s) => toggleInline(s, "strike")),
+    ),
+    ...bind(
+      "editor.numbered",
+      command((s) => toggleList(s, "numbered")),
+    ),
+    ...bind(
+      "editor.bullets",
+      command((s) => toggleList(s, "bullet")),
+    ),
+    ...(["paragraph", "h1", "h2", "h3", "h4", "h5", "h6"] as BlockStyle[]).flatMap((style) =>
+      bind(
+        style === "paragraph" ? "editor.paragraph" : `editor.heading${style[1]}`,
+        command(
+          (s) => setBlockStyle(s, style) ?? { changes: s.changes([]), selection: s.selection },
+        ),
+      ),
+    ),
     // The browser's "Save page" never opens from the editor, even before the page binds Save.
     ...bind("editor.save", runBound("editor.save", registry), { preventDefault: true }),
     ...bind("editor.done", runBound("editor.done", registry)),
-    ...bind("editor.indent", indentMore),
-    ...bind("editor.outdent", indentLess),
+    // In a list Tab nests the item; elsewhere it indents the line.
+    ...bind("editor.indent", (v) => command(indentListItem)(v) || indentMore(v)),
+    ...bind("editor.outdent", (v) => command(outdentListItem)(v) || indentLess(v)),
   ];
   return Prec.high(keymap.of(bindings));
 }

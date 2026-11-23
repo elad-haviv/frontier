@@ -21,6 +21,16 @@ import type {
   UnpublishedResponse,
 } from "@frontier/schema";
 
+/** An image of the library, as the gallery and the image dialog show it. */
+export interface GalleryImage {
+  path: string;
+  /** In the marker icons' folder. */
+  icon: boolean;
+  usedBy: { path: string; title: string }[];
+  /** Uploaded, and not yet published. */
+  unpublished?: boolean;
+}
+
 export class ApiFailure extends Error {
   constructor(
     readonly status: number,
@@ -152,6 +162,9 @@ export const api = {
     form.append("file", file, file.name);
     return call<{ path: string; embed: string }>("/api/images", { method: "POST", body: form });
   },
+  /** Has the server take an image from a web address; it is kept as an upload. */
+  imageFromUrl: (url: string) =>
+    post<{ path: string; embed: string }>("/api/images/from-url", { url }),
   rename: (from: string, to: string) =>
     post<{ id: string; affected: string[] }>("/api/renames", { from, to }),
 
@@ -239,7 +252,7 @@ export const api = {
   deleteChronicle: (id: string) => send<{ ok: true }>("DELETE", `/api/chronicles/${id}`),
   gallery: () =>
     call<{
-      images: { path: string; icon: boolean; usedBy: { path: string; title: string }[] }[];
+      images: GalleryImage[];
     }>("/api/gallery"),
   mapImages: () => call<{ images: string[] }>("/api/map-images"),
   history: (path?: string) =>

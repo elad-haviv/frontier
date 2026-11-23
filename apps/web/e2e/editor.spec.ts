@@ -7,6 +7,8 @@ import {
   entry,
   onMain,
   openEditor,
+  openImageDialog,
+  pressTool,
   publish,
   rightPanel,
   REMOTE,
@@ -14,7 +16,7 @@ import {
   saved,
 } from "./helpers.ts";
 
-test("adds an image from the toolbar, shows it before publishing, then publishes it", async ({
+test("adds an image through the image dialog's Upload…, shows it before publishing, then publishes it", async ({
   page,
 }, info) => {
   // The test runs at phone and desktop size on one server, so each run adds an image of its own.
@@ -26,9 +28,11 @@ test("adds an image from the toolbar, shows it before publishing, then publishes
     .toBuffer();
   await openEditor(page, "03 Things/Ledger.md");
   await page.keyboard.type("\n");
-  await page
-    .locator(".edit-toolbar-file input")
-    .setInputFiles({ name: `${image}.png`, mimeType: "image/png", buffer: png });
+  const dialog = await openImageDialog(page);
+  const chooser = page.waitForEvent("filechooser");
+  await dialog.getByRole("button", { name: "Upload…" }).click();
+  await (await chooser).setFiles({ name: `${image}.png`, mimeType: "image/png", buffer: png });
+  await expect(dialog).toHaveCount(0);
   await expect(page.locator(".cm-content")).toContainText(`![[${image}.png]]`);
   await saved(page);
 
@@ -62,9 +66,17 @@ test("live preview hides marks away from the cursor and leaves the text as writt
   await line.click();
   await expect(line).toContainText("**old** [[Harbor|quay]]");
 
-  // Switched off, every line shows its source.
+  // In Source, every line shows its marks.
   await page.keyboard.press("Control+End");
-  await page.getByRole("button", { name: "Preview" }).click();
+  await page.getByRole("button", { name: "Source", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Source", exact: true })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  await expect(page.getByRole("button", { name: "Live preview" })).toHaveAttribute(
+    "aria-pressed",
+    "false",
+  );
   await expect(line).toContainText("**old** [[Harbor|quay]]");
   await saved(page);
   await page.goto(entry("02 People/Mira.md"));
@@ -76,7 +88,7 @@ test("live preview hides marks away from the cursor and leaves the text as writt
 test("the properties panel writes other names into the frontmatter only", async ({ page }) => {
   await openEditor(page, "03 Things/Ledger.md");
   // Live preview folds the frontmatter into one line; the source shows it as written.
-  await page.getByRole("button", { name: "Preview" }).click();
+  await page.getByRole("button", { name: "Source", exact: true }).click();
   const before = await page.locator(".cm-content").innerText();
   await rightPanel(page, "Properties");
   const field = page.locator(".props-field", { hasText: "Other names" }).locator("input");
@@ -99,7 +111,7 @@ test("the properties panel writes other names into the frontmatter only", async 
 
 test("Tab moves between the cells of a table", async ({ page }) => {
   await openEditor(page, "02 People/Mira.md");
-  await page.getByRole("button", { name: "Preview" }).click();
+  await page.getByRole("button", { name: "Source", exact: true }).click();
   await page.keyboard.type("\n| a | b |\n| - | - |\n|  |  |");
   // To the start of the last row, then cell by cell.
   await page.keyboard.press("Home");
@@ -116,7 +128,7 @@ test("dates and a type set in the properties panel show under the entry's title"
   page,
 }) => {
   await openEditor(page, "01 Places/Unwritten.md");
-  await page.getByRole("button", { name: "Preview" }).click();
+  await page.getByRole("button", { name: "Source", exact: true }).click();
   await rightPanel(page, "Properties");
   await page.locator(".props-field", { hasText: "Type" }).locator("select").selectOption("place");
   await page.getByRole("button", { name: "+ Add a date" }).click();
@@ -154,11 +166,11 @@ test("dragging an image's edge in live preview writes its width into the embed",
     .toBeGreaterThan(0);
   const source = page.locator(".cm-line", { hasText: "The chart:" });
   const showSource = async () => {
-    await page.getByRole("button", { name: "Preview" }).click();
+    await page.getByRole("button", { name: "Source", exact: true }).click();
     await expect(page.locator(".cm-lp-image")).toHaveCount(0);
   };
   const showPreview = async () => {
-    await page.getByRole("button", { name: "Preview" }).click();
+    await page.getByRole("button", { name: "Live preview" }).click();
     await expect(img).toBeVisible();
   };
 
@@ -237,7 +249,7 @@ test("adds and deletes table rows and columns from the toolbar and the keyboard"
   page,
 }) => {
   await openEditor(page, "02 People/Mira.md");
-  await page.getByRole("button", { name: "Preview" }).click();
+  await page.getByRole("button", { name: "Source", exact: true }).click();
   const addRow = page.getByRole("button", { name: "Add a row below" });
   await expect(addRow).toHaveCount(0);
   const table = "| Name | Age |\n| :--- | --: |\n| Ada | 3 |";
@@ -304,7 +316,7 @@ test("Ctrl+B and Ctrl+I mark text, Tab indents, Ctrl+S saves and Ctrl+Enter is D
   page,
 }) => {
   await openEditor(page, "02 People/Mira.md");
-  await page.getByRole("button", { name: "Preview" }).click();
+  await page.getByRole("button", { name: "Source", exact: true }).click();
   const text = page.locator(".cm-content");
   await page.keyboard.type("\nheavy");
   await page.keyboard.press("Shift+Home");
@@ -316,12 +328,16 @@ test("Ctrl+B and Ctrl+I mark text, Tab indents, Ctrl+S saves and Ctrl+Enter is D
   await page.keyboard.type("light");
   await expect(text).toContainText("**heavy** and *light*");
 
-  // Tab indents the line and keeps the cursor in the text.
+  // Tab puts a list item under the one above and keeps the cursor in the text; a first item
+  // stays, and a line outside a list indents.
   await page.keyboard.press("End");
-  await page.keyboard.type("\n- a point");
+  await page.keyboard.type("\n- a list");
+  await page.keyboard.press("Tab");
+  await expect(page.locator(".cm-line", { hasText: "- a list" })).toHaveText("- a list");
+  await page.keyboard.type("\na point");
   await page.keyboard.press("Tab");
   const item = page.locator(".cm-line", { hasText: "- a point" });
-  await expect.poll(() => item.evaluate((line) => line.textContent)).toMatch(/^\s{2,}- a point/);
+  await expect.poll(() => item.evaluate((line) => line.textContent)).toMatch(/^ {2}- a point/);
   await expect(text).toBeFocused();
 
   // Ctrl+S sends the text at once; Ctrl+Enter leaves the editor for the entry.
@@ -339,13 +355,14 @@ test("every toolbar button has a name and a tooltip with its shortcut, and ? lis
 }) => {
   await openEditor(page, "02 People/Mira.md");
   // With the cursor in a table, its buttons are shown too.
-  await page.getByRole("button", { name: "Preview" }).click();
+  await page.getByRole("button", { name: "Source", exact: true }).click();
   await page.keyboard.type("\n| a | b |\n| - | - |\n| c | d |");
   await expect(page.getByRole("button", { name: "Add a row below" })).toBeVisible();
 
-  const buttons = page.locator(".edit-toolbar button");
+  // The buttons the bar has room for are shown; the "⋯" holds the rest, so no tool is lost.
+  const buttons = page.locator(".edit-toolbar button:visible");
   const count = await buttons.count();
-  expect(count).toBeGreaterThanOrEqual(13);
+  expect(count).toBeGreaterThanOrEqual(6);
   for (let i = 0; i < count; i++) {
     const button = buttons.nth(i);
     const name = await button.getAttribute("aria-label");
@@ -353,9 +370,18 @@ test("every toolbar button has a name and a tooltip with its shortcut, and ? lis
     await button.hover();
     await expect(page.getByRole("tooltip")).toContainText(name!);
   }
+  await page.mouse.move(0, 0);
+  await page.getByRole("button", { name: "More tools" }).click();
+  const hidden = await page.getByRole("menuitem").count();
+  expect(count - 1 + hidden).toBeGreaterThanOrEqual(21);
+  await page.keyboard.press("Escape");
   await page.getByRole("button", { name: "Add a row below" }).hover();
   await expect(page.getByRole("tooltip")).toContainText("Ctrl+Enter");
-  // The tooltip shows on keyboard focus too.
+  // The tooltip shows on keyboard focus too, here out of the table, where Bold has room.
+  await page.locator(".cm-content").click();
+  await page.keyboard.press("Control+End");
+  await page.keyboard.type("\n\nafter");
+  await expect(page.getByRole("button", { name: "Add a row below" })).toHaveCount(0);
   await page.mouse.move(0, 0);
   await page.getByRole("button", { name: "Bold", exact: true }).focus();
   await expect(page.getByRole("tooltip")).toContainText("Ctrl+B");
@@ -370,6 +396,152 @@ test("every toolbar button has a name and a tooltip with its shortcut, and ? lis
   await page.keyboard.press("Escape");
   await expect(sheet).toHaveCount(0);
 
+  await saved(page);
+  await discardDraft(page);
+});
+
+test("CUJ 3: writes with the toolbar: a heading, underline, a numbered list nested by Tab, then Source", async ({
+  page,
+}) => {
+  await openEditor(page, "03 Things/Scalar.md");
+  const text = () => page.locator(".cm-content").innerText();
+  await page.keyboard.type("\n");
+  // The style picker shows the line's style, and sets it.
+  await page.getByRole("button", { name: "Style: Paragraph" }).click();
+  await page.getByRole("menuitem", { name: /^Heading 2/ }).click();
+  await page.keyboard.type("Tides");
+  await expect(page.getByRole("button", { name: "Style: Heading 2" })).toBeVisible();
+  await page.keyboard.type("\nThe sea is grey.");
+  // The cursor in "is": Underline takes the word it is in.
+  await page.keyboard.press("Home");
+  for (let i = 0; i < 9; i++) await page.keyboard.press("ArrowRight");
+  await pressTool(page, "Underline");
+  await expect.poll(text).toContain("The sea <u>is</u> grey.");
+  await page.keyboard.press("Control+End");
+  await page.keyboard.type("\nebb\nflood\nslack");
+  await page.keyboard.press("Shift+ArrowUp");
+  await page.keyboard.press("Shift+ArrowUp");
+  await pressTool(page, "Numbered list");
+  await expect.poll(text).toContain("1. ebb\n2. flood\n3. slack");
+  await page.keyboard.press("ArrowUp");
+  await page.locator(".cm-line", { hasText: "flood" }).click();
+  await page.keyboard.press("Tab");
+  await expect.poll(text).toContain("1. ebb\n   1. flood\n2. slack");
+
+  // Live preview shows the heading and the underline away from the cursor.
+  await page.keyboard.press("Control+End");
+  await expect(page.locator(".cm-lp-h2")).toContainText("Tides");
+  await expect(page.locator(".cm-lp-u")).toHaveText("is");
+  await expect(page.locator(".cm-line", { hasText: "The sea" })).toHaveText("The sea is grey.");
+  // Source shows the Markdown as written.
+  await page.getByRole("button", { name: "Source", exact: true }).click();
+  await expect(page.locator(".cm-lp-u")).toHaveCount(0);
+  await expect(page.locator(".cm-line", { hasText: "The sea" })).toHaveText(
+    "The sea <u>is</u> grey.",
+  );
+  await expect.poll(text).toContain("## Tides");
+  // Ctrl+U takes the underline away again.
+  await page.locator(".cm-line", { hasText: "The sea" }).click();
+  await page.keyboard.press("Home");
+  for (let i = 0; i < 12; i++) await page.keyboard.press("ArrowRight");
+  await page.keyboard.press("Control+u");
+  await expect.poll(text).toContain("The sea is grey.");
+  await saved(page);
+  await page.getByRole("button", { name: "Live preview" }).click();
+  await discardDraft(page);
+});
+
+test("CUJ 5: the right-click menu formats and comments on a selection; Shift+right-click is the browser's", async ({
+  page,
+  context,
+  isMobile,
+}) => {
+  test.skip(isMobile, "Phones have no right-click menu; the toolbar's ⋯ holds the tools.");
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await openEditor(page, "02 People/Mira.md");
+  await page.keyboard.type("\nA misty harbor morning.");
+  const line = page.locator(".cm-line", { hasText: "harbor morning" });
+  // Select "misty", then right-click it.
+  await page.keyboard.press("Home");
+  await page.keyboard.press("Control+ArrowRight");
+  await page.keyboard.press("Control+ArrowRight");
+  await page.keyboard.press("Control+Shift+ArrowLeft");
+  const box = (await line.boundingBox())!;
+  await page.mouse.click(box.x + 30, box.y + box.height / 2, { button: "right" });
+  const menu = page.getByRole("menu");
+  for (const item of [
+    "Cut",
+    "Copy",
+    "Paste",
+    "Bold",
+    "Italic",
+    "Strikethrough",
+    "Underline",
+    "Inline code",
+    "Style",
+    "Link to an entry",
+    "Add an image",
+    "Comment",
+  ]) {
+    await expect(menu.getByRole("menuitem", { name: new RegExp(`^${item}`) })).toBeVisible();
+  }
+  await menu.getByRole("menuitem", { name: /^Bold/ }).click();
+  await expect(menu).toHaveCount(0);
+  await expect(page.locator(".cm-content")).toBeFocused();
+  await page.getByRole("button", { name: "Source", exact: true }).click();
+  await expect(line).toHaveText("A **misty** harbor morning.");
+
+  // The style submenu.
+  await page.mouse.click(box.x + 30, box.y + box.height / 2, { button: "right" });
+  await menu.getByRole("menuitem", { name: "Style" }).click();
+  await page.getByRole("menuitem", { name: /^Heading 3/ }).click();
+  await expect(page.locator(".cm-line", { hasText: "misty" })).toHaveText(
+    "### A **misty** harbor morning.",
+  );
+
+  // Copy, then Paste, through the clipboard.
+  await page.keyboard.press("End");
+  await page.keyboard.press("Shift+Home");
+  await page.mouse.click(box.x + 30, box.y + box.height / 2, { button: "right" });
+  await page.getByRole("menuitem", { name: "Copy" }).click();
+  await page.keyboard.press("Control+End");
+  await page.keyboard.type("\n");
+  const end = (await page.locator(".cm-line").last().boundingBox())!;
+  await page.mouse.click(end.x + 5, end.y + end.height / 2, { button: "right" });
+  await page.getByRole("menuitem", { name: "Paste" }).click();
+  await expect(page.locator(".cm-line", { hasText: "harbor morning" })).toHaveCount(2);
+
+  // Comment opens the form for the selected phrase.
+  const again = page.locator(".cm-line", { hasText: "harbor morning" }).first();
+  await again.click();
+  await page.keyboard.press("End");
+  await page.keyboard.press("Shift+Home");
+  const at = (await again.boundingBox())!;
+  await page.mouse.click(at.x + 40, at.y + at.height / 2, { button: "right" });
+  await page.getByRole("menuitem", { name: "Comment" }).click();
+  await expect(page.locator(".comments-panel .writing-passage")).toContainText("harbor morning");
+
+  // Shift+right-click leaves the menu to the browser: ours does not open.
+  await page.mouse.move(at.x + 40, at.y + at.height / 2);
+  await page.keyboard.down("Shift");
+  await page.mouse.click(at.x + 40, at.y + at.height / 2, { button: "right" });
+  await page.keyboard.up("Shift");
+  await expect(page.getByRole("menu")).toHaveCount(0);
+  await page.keyboard.press("Escape");
+
+  await saved(page);
+  await page.getByRole("button", { name: "Live preview" }).click();
+  await discardDraft(page);
+});
+
+test("the link tool finds an entry by name and writes the link at the cursor", async ({ page }) => {
+  await openEditor(page, "03 Things/Scalar.md");
+  await page.keyboard.type("\nSee ");
+  await pressTool(page, "Link to an entry");
+  await page.getByPlaceholder("Find an entry").fill("mir");
+  await page.getByRole("option", { name: "Mira" }).click();
+  await expect(page.locator(".cm-content")).toContainText("See [[Mira]]");
+  await expect(page.locator(".cm-content")).toBeFocused();
   await saved(page);
   await discardDraft(page);
 });

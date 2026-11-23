@@ -53,3 +53,49 @@
   color: var(--ink-faint);
   font-size: 0.8rem;
 }
+.ui-menu-keys {
+  margin-left: auto;
+  padding-left: 0.8rem;
+  color: var(--ink-faint);
+  font-family: var(--sans);
+  font-size: 0.8rem;
+}
+/* The current choice of a picker, and an item whose further menu is open. */
+.ui-menu-item[aria-current="true"],
+.ui-menu-item[data-state="open"] {
+  color: var(--accent);
+}
+.ui-menu-item[aria-current="true"] .ui-icon {
+  color: var(--accent);
+}
+.ui-menu-sub .ui-menu-chevron {
+  margin-left: auto;
+}
+/* A menu's button with words, such as the style picker: like the icon buttons, a little wider. */
+.ui-menu-trigger {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  height: 2.5rem;
+  padding: 0 0.5rem;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: none;
+  color: var(--ink-soft);
+  font: inherit;
+  font-size: 0.9rem;
+  white-space: nowrap;
+}
+.ui-menu-trigger:hover {
+  color: var(--ink);
+  background: color-mix(in srgb, var(--ink) 6%, transparent);
+}
+.ui-menu-trigger[aria-expanded="true"] {
+  color: var(--accent);
+}
+.ui-menu-trigger-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

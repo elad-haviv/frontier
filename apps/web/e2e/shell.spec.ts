@@ -225,15 +225,32 @@ test("writes that go straight to the server wait for a connection, and say so", 
   await page.keyboard.type("\nTyped with no connection.\n");
   await expect(page.locator(".save-offline")).toBeVisible({ timeout: 15_000 });
 
-  // Comments and images need the server: their buttons refuse, and say why.
+  // Comments and images need the server: their buttons refuse, and say why. On a phone they are
+  // in the toolbar's "⋯", where the items say so beside them.
   const comment = page.getByRole("button", { name: "Comment", exact: true });
-  await expect(comment).toBeDisabled();
-  await comment.hover();
-  await expect(page.getByRole("tooltip")).toContainText("Needs a connection");
-  await expect(page.getByRole("button", { name: "Add an image" })).toBeDisabled();
+  if (await comment.isVisible()) {
+    await expect(comment).toBeDisabled();
+    await comment.hover();
+    await expect(page.getByRole("tooltip")).toContainText("Needs a connection");
+    await expect(page.getByRole("button", { name: "Add an image" })).toBeDisabled();
+  } else {
+    await page.getByRole("button", { name: "More tools" }).click();
+    const item = page.getByRole("menuitem", { name: /^Comment/ });
+    await expect(item).toBeDisabled();
+    await expect(item).toContainText("Needs a connection");
+    await expect(page.getByRole("menuitem", { name: /^Add an image/ })).toBeDisabled();
+    await page.keyboard.press("Escape");
+  }
 
   await context.setOffline(false);
   await expect(page.locator(".save-saved")).toBeVisible({ timeout: 15_000 });
-  await expect(comment).toBeEnabled({ timeout: 15_000 });
+  if (await comment.isVisible()) await expect(comment).toBeEnabled({ timeout: 15_000 });
+  else {
+    await page.getByRole("button", { name: "More tools" }).click();
+    await expect(page.getByRole("menuitem", { name: /^Comment/ })).toBeEnabled({
+      timeout: 15_000,
+    });
+    await page.keyboard.press("Escape");
+  }
   await discardDraft(page);
 });

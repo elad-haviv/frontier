@@ -23,6 +23,9 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.ui-combobox-value.is-empty {
+  color: var(--ink-faint);
+}
 .ui-combobox {
   z-index: var(--layer-popover);
   width: var(--radix-popover-trigger-width);

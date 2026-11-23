@@ -8,6 +8,7 @@ import {
   openEditor,
   publish,
   review,
+  pressTool,
 } from "./helpers.ts";
 
 // One test at a time changes the AI settings, which are shared by the whole server.
@@ -165,7 +166,8 @@ test("writing help rewrites a passage in the editor, shown as a difference first
   await openEditor(page, "02 People/Shade.md");
   // The cursor in the paragraph is enough: the whole paragraph is the passage.
   await page.locator(".cm-content").getByText("A quiet figure.").click();
-  await page.getByRole("button", { name: "Writing help" }).click();
+  // At phone size, Writing help and Comment are in the toolbar's "⋯".
+  await pressTool(page, "Writing help");
   const panel = page.locator(".writing-panel");
   await expect(panel.locator(".writing-passage")).toContainText("A quiet figure.");
   await panel.getByRole("button", { name: "Shorter" }).click();
@@ -176,7 +178,7 @@ test("writing help rewrites a passage in the editor, shown as a difference first
   await expect(page.locator(".cm-content")).not.toContainText("A quiet figure.");
 
   // Asked about the passage, the lore answers in the panel.
-  await page.getByRole("button", { name: "Writing help" }).click();
+  await pressTool(page, "Writing help");
   await panel.getByLabel("Ask the lore about this passage").fill("Who is this?");
   await panel.getByRole("button", { name: "Ask" }).click();
   await expect(panel.locator(".writing-answer")).toContainText("Open the conversation");
@@ -196,7 +198,7 @@ test("comments on a passage: one for the author, one the AI works on", async ({ 
 
   await openEditor(page, "02 People/Shade.md");
   await page.locator(".cm-content").getByText("A quiet figure.").click();
-  await page.getByRole("button", { name: "Comment", exact: true }).click();
+  await pressTool(page, "Comment");
   const panel = page.locator(".comments-panel");
   await expect(panel.locator(".writing-passage")).toContainText("A quiet figure.");
   await panel.getByLabel("Your comment").fill("Say what she does at night");
@@ -217,7 +219,7 @@ test("comments on a passage: one for the author, one the AI works on", async ({ 
 
   // A comment for the author stays, and the entry's page counts it.
   await page.locator(".cm-content").getByText("A rewritten passage").click();
-  await page.getByRole("button", { name: "Comment", exact: true }).click();
+  await pressTool(page, "Comment");
   await panel.getByLabel("Your comment").fill("Check her age");
   await panel.getByRole("button", { name: "Keep the comment" }).click();
   await expect(panel.locator(".comment-list > li")).toHaveCount(1);

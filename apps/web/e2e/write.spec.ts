@@ -15,6 +15,7 @@ import {
   publish,
   review,
   saved,
+  pressTool,
 } from "./helpers.ts";
 
 test("CUJ 1: write, leave, come back, publish as one commit", async ({ page, context }) => {
@@ -280,15 +281,21 @@ test("the toolbar inserts a link, a heading and bold without leaving the editor"
 }) => {
   await openEditor(page, "03 Things/Scalar.md");
   await page.keyboard.type("\nplain");
-  await page.locator(".edit-toolbar button[aria-label=Heading]").click();
+  await page.getByRole("button", { name: "Style: Paragraph" }).click();
+  await page.getByRole("menuitem", { name: /^Heading 2/ }).click();
   await expect(page.locator(".cm-content")).toContainText("## plain");
+  await expect(page.locator(".cm-content")).toBeFocused();
   await page.keyboard.press("Control+End");
   await page.keyboard.type("\n");
-  await page.locator(".edit-toolbar button[aria-label='Link to an entry']").click();
-  await page.keyboard.type("mir");
-  await page.locator(".cm-tooltip-autocomplete li", { hasText: "Mira" }).click();
+  await pressTool(page, "Link to an entry");
+  await page.getByPlaceholder("Find an entry").fill("mir");
+  await page.getByRole("option", { name: "Mira" }).click();
   await expect(page.locator(".cm-content")).toContainText("[[Mira]]");
-  await page.locator(".edit-toolbar button[aria-label=Undo]").click();
+  // Typing "[[" still offers names, too.
+  await page.keyboard.type(" and [[mir");
+  await page.locator(".cm-tooltip-autocomplete li", { hasText: "Mira" }).click();
+  await expect(page.locator(".cm-content")).toContainText("[[Mira]] and [[Mira]]");
+  await pressTool(page, "Undo");
   await saved(page);
   await discardDraft(page);
 });

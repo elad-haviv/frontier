@@ -1,0 +1,9 @@
+/* The area that takes the right-click adds no box of its own, so the editor keeps its place in
+   the page's column. */
+.editor-context-area {
+  display: contents;
+}
+/* Wide enough for the longest item with its keys beside it. */
+.editor-context-menu {
+  min-width: 15rem;
+}

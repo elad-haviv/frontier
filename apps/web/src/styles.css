@@ -1304,31 +1304,7 @@ button.big {
   color: var(--ink-soft);
 }
 
-.edit-toolbar {
-  position: sticky;
-  bottom: 0;
-  z-index: 10;
-  display: flex;
-  gap: 0.25rem;
-  padding: 0.35rem 0.5rem;
-  padding-bottom: max(0.35rem, env(safe-area-inset-bottom));
-  background: var(--paper);
-  border-top: 1px solid var(--rule);
-  overflow-x: auto;
-}
-
-.edit-toolbar button {
-  flex: none;
-  min-width: 2.75rem;
-  height: 2.5rem;
-  padding: 0 0.6rem;
-  border: 1px solid var(--rule);
-  border-radius: 5px;
-  background: var(--paper-raised);
-  color: var(--ink-soft);
-  font-size: 0.95rem;
-}
-
+/* A gap that pushes what follows to the end of a bar of tools. */
 .edit-toolbar-gap {
   flex: 1;
 }
@@ -1362,6 +1338,13 @@ button.big {
 }
 .code-editor .cm-lp-em {
   font-style: italic;
+}
+.code-editor .cm-lp-strike {
+  text-decoration: line-through;
+}
+.code-editor .cm-lp-u {
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
 }
 .code-editor .cm-lp-link {
   color: var(--accent);
@@ -1431,16 +1414,28 @@ button.big {
   color: var(--accent);
 }
 
-.edit-toolbar-file {
-  flex: none;
-  display: flex;
+/* Live preview or Source: two buttons as one control, the one in use marked. */
+.editor-view {
+  display: inline-flex;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  overflow: hidden;
 }
-.edit-toolbar-file input {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  opacity: 0;
-  pointer-events: none;
+.editor-view button {
+  border: 0;
+  border-radius: 0;
+}
+.editor-view button + button {
+  border-left: 1px solid var(--rule);
+}
+.editor-view button[aria-pressed="true"] {
+  background: var(--accent-soft);
+  color: var(--ink);
+}
+@media (max-width: 30rem) {
+  .editor-bar .editor-view {
+    order: 2;
+  }
 }
 
 .props {
@@ -1476,11 +1471,8 @@ button.big {
 }
 
 /* The editor's own heading style underlines; the size already says it is a heading. */
-.code-editor .cm-lp-h span:not(.cm-lp-link) {
+.code-editor .cm-lp-h span:not(.cm-lp-link, .cm-lp-u) {
   text-decoration: none;
-}
-.edit-toolbar button {
-  min-width: 2.5rem;
 }
 
 /* Inbox */
@@ -3632,24 +3624,6 @@ input.map-title {
   }
   .editor-path {
     max-width: 55%;
-  }
-  /* Every toolbar button on the screen at once, Redo included. */
-  .edit-toolbar {
-    gap: 2px;
-    padding-left: 0.3rem;
-    padding-right: 0.3rem;
-  }
-  .edit-toolbar-file {
-    flex: 1 0 auto;
-  }
-  .edit-toolbar button {
-    flex: 1 0 auto;
-    min-width: 2.05rem;
-    padding: 0 0.25rem;
-    font-size: 0.85rem;
-  }
-  .edit-toolbar-gap {
-    flex: 0 0 0.3rem;
   }
   /* The map keeps the screen: one row, the title never squeezed below a readable width, the
      controls scrolling beside it. */
