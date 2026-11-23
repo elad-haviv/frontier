@@ -24,19 +24,37 @@ export default defineConfig({
   },
   projects: [
     { name: "setup", testMatch: /auth\.setup\.ts/ },
-    // Everything runs at phone size with touch, since the phone is the harder case.
+    // Everything runs at phone size with touch, since the phone is the harder case. The service
+    // worker is blocked here, so every request reaches the server as the tests expect.
     {
       name: "phone",
-      use: { ...devices["iPhone 13"], defaultBrowserType: "chromium", storageState: AUTH },
+      use: {
+        ...devices["iPhone 13"],
+        defaultBrowserType: "chromium",
+        storageState: AUTH,
+        serviceWorkers: "block",
+      },
       dependencies: ["setup"],
-      testIgnore: /auth\.setup\.ts/,
+      testIgnore: /offline\.spec\.ts|auth\.setup\.ts/,
     },
     // Reading is also checked at desktop size, where the layout differs.
     {
       name: "desktop",
-      use: { viewport: { width: 1280, height: 800 }, storageState: AUTH },
+      use: { viewport: { width: 1280, height: 800 }, storageState: AUTH, serviceWorkers: "block" },
       dependencies: ["setup"],
       testMatch: /(reader|chronicle|mapstime|mapviews|editor|shell|tree)\.spec\.ts/,
+    },
+    // The installed app: the service worker the build ships, with the connection cut.
+    {
+      name: "offline",
+      use: {
+        ...devices["iPhone 13"],
+        defaultBrowserType: "chromium",
+        storageState: AUTH,
+        serviceWorkers: "allow",
+      },
+      dependencies: ["setup"],
+      testMatch: /offline\.spec\.ts/,
     },
   ],
   webServer: {

@@ -315,6 +315,49 @@ describe("the save queue", () => {
   });
 });
 
+describe("what the queue keeps beside its records", () => {
+  it("reads and writes a value through its one database, without starting to send", async () => {
+    const api = fakeApi();
+    const q = makeQueue(api);
+    expect(await q.meta("signedIn")).toBeUndefined();
+    await q.setMeta("signedIn", { until: 1234 });
+    expect(await q.meta("signedIn")).toEqual({ until: 1234 });
+    // Nothing was started: no device made, nothing sent.
+    expect(q.device).toBeNull();
+    // Another page of the same browser reads it too.
+    const again = makeQueue(api, fakeConnection(), q.dbName);
+    expect(await again.meta("signedIn")).toEqual({ until: 1234 });
+    // Clearing the queue, as at logout, takes it away.
+    await again.clear();
+    expect(await again.meta("signedIn")).toBeUndefined();
+  });
+
+  it("tells the other tabs when one clears the queue", async () => {
+    const channel = `queue-test-channel-${++n}`;
+    const name = `queue-test-${++n}`;
+    const tab = (open = () => openStore(name)) =>
+      new Queue({
+        open,
+        api: fakeApi(),
+        connection: fakeConnection("offline"),
+        channel: () => new BroadcastChannel(channel),
+      });
+    const one = tab();
+    const other = tab();
+    queues.push(one, other);
+    await Promise.all([one.start(), other.start()]);
+    const heard = vi.fn();
+    const stop = other.onCleared(heard);
+    const mine = vi.fn();
+    one.onCleared(mine);
+    await one.clear();
+    await vi.waitFor(() => expect(heard).toHaveBeenCalledTimes(1));
+    // The tab that cleared knows already.
+    expect(mine).not.toHaveBeenCalled();
+    stop();
+  });
+});
+
 const layer = { id: "layer001", name: "Places", visible: true, color: "#000000" };
 const marker = (id: string, label: string, at: [number, number] = [1, 1]) => ({
   id,

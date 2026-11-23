@@ -3,6 +3,8 @@ import { Navigate, Route, Routes, useLocation, useParams } from "react-router-do
 import { api } from "./api.ts";
 import { LoginDialog } from "./components/LoginDialog.tsx";
 import { Shell } from "./components/Shell.tsx";
+import { noteSignedIn, openApp } from "./offline/start.ts";
+import { updates } from "./offline/updates.ts";
 import { connection } from "./sync/connection.ts";
 import { queue } from "./sync/queue.ts";
 import { ConflictPage } from "./pages/Conflict.tsx";
@@ -48,20 +50,20 @@ export function App() {
   const [loggedIn, setLoggedIn] = useState<boolean | null>(null);
   const location = useLocation();
 
+  // Signed in, signed in with the server out of reach, or the login page (`offline/start.ts`).
   const check = useCallback(() => {
-    api.session().then(
-      (s) => setLoggedIn(s.loggedIn),
-      () => setLoggedIn(false),
-    );
+    void openApp({ session: api.session, store: queue, connection }).then(setLoggedIn);
   }, []);
   useEffect(check, [check]);
 
   // Once in: the connection service listens to the server, and the save queue starts sending,
-  // after taking in what the browser buffer of an earlier build still holds.
+  // after taking in what the browser buffer of an earlier build still holds. The service worker
+  // is registered only now, so a browser that is logged out never gets one back.
   useEffect(() => {
     if (!loggedIn) return;
     connection.start();
     void queue.start();
+    void updates.register();
     return () => connection.stop();
   }, [loggedIn]);
 
@@ -70,7 +72,17 @@ export function App() {
   if (!loggedIn) {
     return (
       <Routes>
-        <Route path="/login" element={<Login onLoggedIn={() => setLoggedIn(true)} />} />
+        <Route
+          path="/login"
+          element={
+            <Login
+              onLoggedIn={() => {
+                void noteSignedIn(queue);
+                setLoggedIn(true);
+              }}
+            />
+          }
+        />
         <Route
           path="*"
           element={<Navigate to="/login" replace state={{ from: location.pathname }} />}
@@ -80,7 +92,7 @@ export function App() {
   }
 
   return (
-    <Shell onLoggedOut={() => setLoggedIn(false)}>
+    <Shell>
       <Routes>
         <Route path="/" element={<Home />} />
         <Route path="/e/*" element={<EntryPage />} />

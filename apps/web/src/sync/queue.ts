@@ -215,6 +215,8 @@ export class Queue {
   private subs = new Map<QueueKey, Set<(event: QueueEvent) => void>>();
   private listListeners = new Set<() => void>();
   private noticeListeners = new Set<(notice: Notice) => void>();
+  private clearedListeners = new Set<() => void>();
+  private opening: Promise<Store> | null = null;
   private inFlight = new Set<QueueKey>();
   /** Calls waiting for a key to be sent, by key. */
   private waiting = new Map<QueueKey, (() => void)[]>();
@@ -239,7 +241,7 @@ export class Queue {
   /** Opens the storage, reads what is unsent, and starts sending if this tab holds the lock. */
   start(): Promise<void> {
     this.starting ??= (async () => {
-      const store = await this.d.open();
+      const store = await this.storage();
       this.store = store;
       this.device = await deviceOf(store);
       setDevice(this.device);
@@ -300,6 +302,12 @@ export class Queue {
   private async ready(): Promise<Store> {
     await this.start();
     return this.store!;
+  }
+
+  /** The storage, opened once and shared by everything that reads it. */
+  private storage(): Promise<Store> {
+    this.opening ??= this.d.open();
+    return this.opening;
   }
 
   // ---- What pages call ---------------------------------------------------------------------
@@ -398,6 +406,28 @@ export class Queue {
   subscribeList(listener: () => void): () => void {
     this.listListeners.add(listener);
     return () => this.listListeners.delete(listener);
+  }
+
+  /**
+   * A value this device keeps beside the queue, such as `signedIn`. Read before the queue starts,
+   * as at the app's start, it opens the storage without sending anything.
+   */
+  async meta<T>(key: string): Promise<T | undefined> {
+    return (await this.storage()).meta<T>(key);
+  }
+
+  async setMeta(key: string, value: unknown): Promise<void> {
+    await (await this.storage()).setMeta(key, value);
+  }
+
+  async removeMeta(key: string): Promise<void> {
+    await (await this.storage()).removeMeta(key);
+  }
+
+  /** Hears that another tab cleared the queue, as at logout. */
+  onCleared(listener: () => void): () => void {
+    this.clearedListeners.add(listener);
+    return () => this.clearedListeners.delete(listener);
   }
 
   /** Hears the messages the sender has for the author. */
@@ -820,6 +850,7 @@ export class Queue {
       }
       case "cleared":
         for (const key of [...this.cache.keys()]) this.changed(key, undefined, false);
+        for (const l of [...this.clearedListeners]) l();
         break;
       case "event":
         this.deliver(message.event);

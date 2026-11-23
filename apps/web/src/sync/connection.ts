@@ -58,6 +58,16 @@ export class Connection {
     this.open();
   }
 
+  /**
+   * Starts as offline, as when the app opens signed in but the server has not answered: the
+   * stream and a probe start as usual, and the first answer says what holds.
+   */
+  startOffline(): void {
+    this.set("offline");
+    this.start();
+    void this.probe();
+  }
+
   stop(): void {
     this.started = false;
     this.d.events?.removeEventListener("online", this.onOnline);

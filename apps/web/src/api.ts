@@ -1,4 +1,5 @@
 import { startAuthentication, startRegistration } from "@simplewebauthn/browser";
+import { CLIENT_API } from "@frontier/schema";
 import { connection } from "./sync/connection.ts";
 import { randomId } from "./sync/db.ts";
 import type {
@@ -45,41 +46,53 @@ export function setDevice(known: { id: string; name: string } | null): void {
 /** Routes that answer without a session, whose answers say nothing about the connection's state. */
 const OPEN = /^\/api\/(session|login|passkeys\/login\/)/;
 
-/** Every request's headers: the device, and its name URI-encoded, since a header holds only ASCII. */
-function headers(init?: RequestInit): HeadersInit | undefined {
-  if (!device) return init?.headers;
+/**
+ * Every request's headers: the shape of writes this build sends, and, once known, the device and
+ * its name URI-encoded, since a header holds only ASCII.
+ */
+function headers(init?: RequestInit): Record<string, string> {
   return {
     ...(init?.headers as Record<string, string> | undefined),
-    "frontier-device": device.id,
-    "frontier-device-name": encodeURIComponent(device.name),
+    "frontier-api": String(CLIENT_API),
+    ...(device
+      ? { "frontier-device": device.id, "frontier-device-name": encodeURIComponent(device.name) }
+      : {}),
   };
 }
+
+const unreachable = () =>
+  new ApiFailure(0, "offline", "Can't reach Frontier. Check your connection, then try again.");
+
+/** What a proxy in front of a stopped server answers. Frontier's own 502 and 503 carry its error. */
+const GATEWAY = new Set([502, 503, 504]);
+
+const isErrorBody = (body: unknown): body is ErrorBody =>
+  typeof (body as ErrorBody | null)?.error?.code === "string";
 
 async function call<T>(url: string, init?: RequestInit): Promise<T> {
   let res: Response;
   const watched = !OPEN.test(url);
   try {
-    const h = headers(init);
-    res = await fetch(url, { credentials: "same-origin", ...init, ...(h ? { headers: h } : {}) });
+    res = await fetch(url, { credentials: "same-origin", ...init, headers: headers(init) });
   } catch {
     if (watched) connection.unreachable();
-    throw new ApiFailure(
-      0,
-      "offline",
-      "Can't reach Frontier. Check your connection, then try again.",
-    );
+    throw unreachable();
+  }
+  const read = await res.json().then(
+    (body: unknown) => ({ body }),
+    () => null,
+  );
+  // A gateway's page, or a captive portal's, is not the server: as if it could not be reached.
+  if (res.ok ? read === null : GATEWAY.has(res.status) && !isErrorBody(read?.body)) {
+    if (watched) connection.unreachable();
+    throw unreachable();
   }
   if (watched) {
     if (res.status === 401) connection.unauthorised();
     else connection.reached();
   }
-  if (res.ok) return (await res.json()) as T;
-  let body: ErrorBody | null = null;
-  try {
-    body = (await res.json()) as ErrorBody;
-  } catch {
-    /* not JSON */
-  }
+  if (res.ok) return read!.body as T;
+  const body = isErrorBody(read?.body) ? read.body : null;
   const failure = new ApiFailure(
     res.status,
     body?.error.code ?? "unknown",
@@ -588,15 +601,11 @@ export async function downloadExport(kind: ExportKind, pick: ExportPick): Promis
     res = await fetch(`/api/export/${kind}`, {
       method: "POST",
       credentials: "same-origin",
-      headers: { "content-type": "application/json" },
+      headers: headers({ headers: { "content-type": "application/json" } }),
       body: JSON.stringify(pick),
     });
   } catch {
-    throw new ApiFailure(
-      0,
-      "offline",
-      "Can't reach Frontier. Check your connection, then try again.",
-    );
+    throw unreachable();
   }
   if (!res.ok) {
     const body = (await res.json().catch(() => null)) as ErrorBody | null;
