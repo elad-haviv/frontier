@@ -7,3 +7,4 @@ export * from "./paths.js";
 export * from "./rename.js";
 export * from "./resolve.js";
 export * from "./fields.js";
+export * from "./underline.js";

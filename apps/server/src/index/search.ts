@@ -95,7 +95,11 @@ export class SearchIndex {
 
 /** About 160 characters of the text around the first place a matched word appears. */
 export function snippet(body: string, terms: string[]): string {
-  const flat = body.replace(/\s+/g, " ").trim();
+  // Underline tags are marks, not words, and would read as code in a snippet.
+  const flat = body
+    .replace(/<\/?u>/gi, "")
+    .replace(/\s+/g, " ")
+    .trim();
   const lower = flat.toLowerCase();
   let at = -1;
   for (const term of terms) {

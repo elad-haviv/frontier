@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { SwitcherResponse } from "@frontier/schema";
+import { snippet } from "../src/index/search.js";
 import { makeTestApp, type TestApp } from "./helpers/app.js";
 
 let t: TestApp;
@@ -127,6 +128,10 @@ describe("full-text search", () => {
     const long = (await search("?q=marsh%20salt%20bell")).find((x) => x.title === "Long")!;
     expect(long.snippet.length).toBeLessThan(175);
     expect(long.snippet.endsWith(" …")).toBe(true);
+  });
+
+  it("leaves underline tags out of a snippet", () => {
+    expect(snippet("A <u>marked</u> word.", ["marked"])).toBe("A marked word.");
   });
 
   it("sees a new note after the vault changes", async () => {

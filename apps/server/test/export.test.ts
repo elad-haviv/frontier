@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import yauzl from "yauzl";
+import { underlineForPandoc } from "../src/export/formats.js";
 import { makeTestApp, type TestApp } from "./helpers/app.js";
 
 let t: TestApp;
@@ -242,5 +243,63 @@ describe("what the newer formats must not carry", () => {
     );
     expect(Object.keys(md)).toContain("index-2.md");
     expect(md["index-2.md"]).not.toContain("secret ending");
+  });
+});
+
+describe("underline", () => {
+  const UNDER = "03 Places/Underlined.md";
+  async function startUnderlined() {
+    await start();
+    t.repo.pushFromOutside({
+      [UNDER]:
+        "# Underlined\n\nA <u>marked</u> word, and `<u>code</u>` kept.\n\n```\n<u>fenced</u>\n```\n",
+    });
+    await t.services.sync();
+  }
+
+  it("draws <u> in web pages, and leaves code as written", async () => {
+    await startUnderlined();
+    const res = await t.post("/api/export/site", { title: "T", folder: "03 Places" });
+    const page = (await unzip(res.rawPayload))["underlined.html"]!;
+    expect(page).toContain("A <u>marked</u> word");
+    expect(page).toContain("<code>&#x3C;u>code&#x3C;/u></code>");
+    expect(page).toContain("&#x3C;u>fenced&#x3C;/u>");
+  });
+
+  it("underlines in the Word document", async () => {
+    await startUnderlined();
+    const res = await t.post("/api/export/docx", { title: "T", folder: "03 Places" });
+    expect(res.statusCode, res.body).toBe(200);
+    const xml = (await unzip(res.rawPayload))["word/document.xml"]!;
+    const run = /<w:r>(?:(?!<\/w:r>).)*marked<\/w:t><\/w:r>/s.exec(xml)?.[0] ?? "";
+    expect(run).toContain("<w:u ");
+  });
+
+  it("underlines in slides", async () => {
+    await startUnderlined();
+    const res = await t.post("/api/export/slides", { title: "T", folder: "03 Places" });
+    expect(res.statusCode, res.body).toBe(200);
+    const files = await unzip(res.rawPayload);
+    const slides = Object.entries(files)
+      .filter(([name]) => name.startsWith("ppt/slides/slide"))
+      .map(([, xml]) => xml);
+    expect(slides.some((xml) => /u="sng"(?:(?!<\/a:r>).)*marked/s.test(xml))).toBe(true);
+  });
+
+  it("rewrites matched tags for pandoc, which writes Typst's #underline", () => {
+    const text =
+      "A <u>marked</u> word and <U>two\nlines</U>.\n\n`<u>code</u>` and <u>a `span` inside</u>\n\n" +
+      "```\n<u>fenced</u>\n````\nstill fenced\n```\n\n<u>open\n\nclose</u> and </u>alone\n";
+    const rewritten = underlineForPandoc(text);
+    expect(rewritten).toBe(
+      "A [marked]{.underline} word and [two\nlines]{.underline}.\n\n" +
+        "`<u>code</u>` and [a `span` inside]{.underline}\n\n" +
+        "```\n<u>fenced</u>\n````\nstill fenced\n```\n\n<u>open\n\nclose</u> and </u>alone\n",
+    );
+    const typst = execFileSync("pandoc", ["-f", "markdown", "-t", "typst"], {
+      input: rewritten,
+      encoding: "utf8",
+    });
+    expect(typst).toContain("#underline[marked]");
   });
 });
