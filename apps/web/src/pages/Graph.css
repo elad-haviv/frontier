@@ -1,0 +1,82 @@
+/* The graph fills the page; its controls float over the canvas's corners. */
+.graph-page {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+.graph-frame {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--ink) 3%, var(--paper));
+}
+
+.graph-tools {
+  position: absolute;
+  top: var(--space-3);
+  left: var(--space-3);
+  z-index: var(--layer-sticky);
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+}
+.graph-zoom,
+.graph-panel-buttons {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  background: var(--paper-raised);
+}
+.graph-panel-buttons {
+  position: absolute;
+  top: var(--space-3);
+  right: var(--space-3);
+  z-index: var(--layer-sticky);
+}
+.graph-panel-buttons [aria-pressed="true"] {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.graph-message {
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: var(--space-2);
+  height: 100%;
+  padding: var(--space-6) var(--space-4);
+  text-align: center;
+}
+.graph-empty h2 {
+  margin: 0;
+  font-family: var(--serif);
+  font-size: 1.4rem;
+}
+.graph-empty p {
+  margin: 0;
+}
+.graph-empty button {
+  margin-top: var(--space-2);
+}
+
+/* On a phone the slim line holds Filters, and the zoom buttons stack below the find field. */
+@media (max-width: 47.99rem) {
+  .graph-panel-buttons {
+    display: none;
+  }
+  .graph-tools {
+    right: var(--space-3);
+  }
+  .graph-tools .graph-find {
+    flex: 1;
+    width: auto;
+    min-width: 0;
+  }
+  .graph-tools .graph-zoom {
+    flex: none;
+  }
+}

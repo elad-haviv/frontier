@@ -33,12 +33,13 @@ export interface PanelSpec {
 }
 
 /** The kinds of screen; the side bars are remembered per kind. */
-export type ScreenKind = "editor" | "map" | "chronicle" | "page";
+export type ScreenKind = "editor" | "map" | "chronicle" | "graph" | "page";
 
 export function kindOf(pathname: string): ScreenKind {
   if (pathname.startsWith("/edit/")) return "editor";
   if (pathname.startsWith("/map/")) return "map";
   if (pathname.startsWith("/chronicle/")) return "chronicle";
+  if (pathname === "/graph") return "graph";
   return "page";
 }
 
@@ -57,12 +58,12 @@ export interface ScreenPrefs {
 const PREFS = "frontier.shell.";
 
 export function readPrefs(kind: ScreenKind): ScreenPrefs {
-  // Maps and chronicles need the width more than the folder list, so they start with the rail.
+  // Maps, chronicles and the graph need the width more than the folder list: they start with the rail.
   const fallback: ScreenPrefs = {
     width: 340,
     tab: null,
     open: false,
-    rail: kind === "map" || kind === "chronicle",
+    rail: kind === "map" || kind === "chronicle" || kind === "graph",
   };
   try {
     const raw = localStorage.getItem(PREFS + kind);

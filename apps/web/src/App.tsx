@@ -27,12 +27,13 @@ import { SettingsPage } from "./pages/Settings.tsx";
 import { StatusPage } from "./pages/Status.tsx";
 import { Progress } from "./components/ui/Progress.tsx";
 
-// The map and chronicle pages carry their renderers and geometry; they load when first opened,
+// The map, chronicle and graph pages carry their renderers and geometry; they load when first opened,
 // so the first page of the app comes up sooner.
 const MapPage = lazy(() => import("./pages/MapPage.tsx").then((m) => ({ default: m.MapPage })));
 const ChroniclePage = lazy(() =>
   import("./pages/ChroniclePage.tsx").then((m) => ({ default: m.ChroniclePage })),
 );
+const GraphPage = lazy(() => import("./pages/Graph.tsx").then((m) => ({ default: m.GraphPage })));
 
 /** A different map gets a fresh page: its own view, drawing surface and history. */
 function OneMap() {
@@ -104,6 +105,14 @@ export function App() {
           element={
             <Suspense fallback={<Progress />}>
               <ChroniclePage />
+            </Suspense>
+          }
+        />
+        <Route
+          path="/graph"
+          element={
+            <Suspense fallback={<Progress />}>
+              <GraphPage />
             </Suspense>
           }
         />

@@ -1,0 +1,68 @@
+/* The find field over the canvas's top-left corner, and its list of entries below it. */
+.graph-find {
+  position: relative;
+  width: min(16rem, calc(100vw - 9.5rem));
+}
+.graph-find-field {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: 2.5rem;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  background: var(--paper-raised);
+  color: var(--ink-soft);
+}
+.graph-find-field:focus-within {
+  border-color: var(--accent);
+}
+.graph-find-input {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  font-size: 1rem;
+  outline: none;
+}
+.graph-find-list {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: var(--layer-popover);
+  width: max(100%, 16rem);
+  max-width: calc(100vw - 2rem);
+  max-height: min(18rem, 50vh);
+  overflow-y: auto;
+  padding: 0.3rem;
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  background: var(--paper-raised);
+  box-shadow: var(--shadow);
+}
+.graph-find-item {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+  min-height: 2.25rem;
+  padding: 0.35rem 0.6rem;
+  border-radius: 5px;
+  color: var(--ink);
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+.graph-find-item[data-selected="true"] {
+  background: var(--accent-soft);
+}
+.graph-find-folder {
+  color: var(--ink-faint);
+  font-size: 0.8rem;
+}
+.graph-find-empty {
+  padding: 0.6rem;
+  color: var(--ink-faint);
+  font-size: 0.9rem;
+}

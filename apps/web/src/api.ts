@@ -8,6 +8,7 @@ import type {
   EntryResponse,
   ErrorBody,
   FieldJobState,
+  GraphResponse,
   ModelsResponse,
   SettingsResponse,
   InboxResponse,
@@ -128,6 +129,8 @@ export const api = {
   login: (password: string) => post<{ ok: true }>("/api/login", { password }),
   logout: () => post<{ ok: true }>("/api/logout"),
   tree: () => call<TreeResponse>("/api/tree"),
+  /** Every entry and every link between two entries, with the top-level folders' colours. */
+  graph: () => call<GraphResponse>("/api/graph"),
   entry: (path: string) => call<EntryResponse>(`/api/entries?path=${encodeURIComponent(path)}`),
   status: () => call<StatusSnapshot>("/api/status"),
   attention: () => call<AttentionResponse>("/api/attention"),
