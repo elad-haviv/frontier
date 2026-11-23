@@ -365,6 +365,25 @@ export class GitGateway {
     });
   }
 
+  /** Every file's blob hash at a commit, by path, from one `ls-tree`; empty when there is none. */
+  blobs(commit = "HEAD"): Promise<Map<string, string>> {
+    return this.locked(async () => {
+      const r = await this.run(["ls-tree", "-r", "-z", "--full-tree", commit], {
+        allow: (c) => c === 128,
+      });
+      const out = new Map<string, string>();
+      if (r.code !== 0) return out;
+      for (const line of r.stdout.toString("utf8").split("\0")) {
+        // "<mode> <type> <hash>\t<path>"
+        const tab = line.indexOf("\t");
+        if (tab === -1) continue;
+        const [, type, hash] = line.slice(0, tab).split(" ");
+        if (type === "blob" && hash) out.set(line.slice(tab + 1), hash);
+      }
+      return out;
+    });
+  }
+
   /** The blob hash Git would give these bytes. */
   hashOf(content: Buffer): Promise<string> {
     return this.locked(() =>

@@ -137,7 +137,15 @@ describe("chronicle files", () => {
     expect(await load(id)).toMatchObject({ state: "published", revision: 0 });
     const list = (await t.get("/api/chronicles")).json();
     expect(list.chronicles).toEqual([
-      { id, title: "Ezob, humans arrive early", main: false, spans: 2, state: "published" },
+      {
+        id,
+        title: "Ezob, humans arrive early",
+        main: false,
+        spans: 2,
+        state: "published",
+        // Published, with no draft: the blob's first 12 characters only.
+        v: (await load(id)).blob.slice(0, 12),
+      },
     ]);
   });
 

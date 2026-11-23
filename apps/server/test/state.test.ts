@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { Settings } from "@frontier/schema";
 import { startPolling } from "../src/git/poll.js";
 import { StateFiles } from "../src/state/files.js";
+import { DraftStore } from "../src/state/drafts.js";
 import { SettingsStore } from "../src/state/settings.js";
 
 let dir: string;
@@ -112,5 +113,46 @@ describe("timer fetch", () => {
     expect(errors).toHaveLength(1);
     await new Promise((r) => setTimeout(r, 20));
     expect(calls).toBe(settled);
+  });
+});
+
+describe("the drafts count", () => {
+  it("rises on every draft save, server change, move and discard", async () => {
+    const drafts = new DraftStore(dir, new StateFiles());
+    const published = { blob: "", text: null, lineEnding: "lf" as const };
+    expect(drafts.changes).toBe(0);
+    const save = (text: string, revision: number) =>
+      drafts.save({ id: "countdraft01", path: "a.md", kind: "create", text, revision }, published);
+    await save("One", 0);
+    expect(drafts.changes).toBe(1);
+    // A second save of the same draft leaves the number of drafts as it was; the count rises.
+    await save("Two", 1);
+    expect(drafts.changes).toBe(2);
+    await drafts.serverChange("countdraft01", "Three");
+    expect(drafts.changes).toBe(3);
+    await drafts.movePath("countdraft01", "b.md");
+    expect(drafts.changes).toBe(4);
+    await drafts.discard("countdraft01");
+    expect(drafts.changes).toBe(5);
+  });
+
+  it("is in the status snapshot", async () => {
+    const { makeTestApp } = await import("./helpers/app.js");
+    const t = await makeTestApp();
+    try {
+      await t.login();
+      const before = (await t.get("/api/status")).json().drafts as number;
+      const res = await t.put("/api/drafts", {
+        id: "countdraft02",
+        path: "02 People/Mira.md",
+        kind: "edit",
+        text: "Changed.\n",
+        revision: 0,
+      });
+      expect(res.statusCode, res.body).toBe(200);
+      expect((await t.get("/api/status")).json().drafts).toBe(before + 1);
+    } finally {
+      await t.close();
+    }
   });
 });

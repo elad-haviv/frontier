@@ -60,6 +60,7 @@ describe("the graph", () => {
       title: "Harbor",
       type: null,
       aliases: ["The Port", "Greywater"],
+      v: expect.stringMatching(/^[0-9a-f]{12}$/),
     });
     expect(node(UNWRITTEN)).not.toHaveProperty("aliases");
   });
@@ -104,6 +105,7 @@ describe("the graph", () => {
       type: "person",
       aliases: ["Mi"],
       unpublished: true,
+      v: expect.stringMatching(/^[0-9a-f]{12}\.1$/),
     });
     expect(into(MIRA).sort()).toEqual([QUAY, HARBOR, SHADE, LEDGER].sort());
   });
@@ -118,6 +120,8 @@ describe("the graph", () => {
       title: "Gull",
       type: null,
       unpublished: true,
+      // A new file has no blob yet, only its draft's revision.
+      v: ".1",
     });
     expect(out("02 People/Gull.md")).toEqual([MIRA]);
     expect(out(MIRA)).toEqual(["02 People/Gull.md"]);
@@ -132,6 +136,51 @@ describe("the graph", () => {
     const { paths, node } = await graph();
     expect(paths).not.toContain("02 People/The Shade.md");
     expect(node(SHADE)?.title).toBe("Shade");
+  });
+});
+
+describe("the compact index", () => {
+  it("marks each node's version: the blob, then the draft's revision", async () => {
+    const before = (await graph()).node(MIRA)!.v!;
+    expect(before).toMatch(/^[0-9a-f]{12}$/);
+    const id = draftId();
+    const save = (text: string, revision: number) =>
+      t.put("/api/drafts", { id, path: MIRA, kind: "edit", text, revision });
+    expect((await save("One.\n", 0)).statusCode).toBe(200);
+    expect((await graph()).node(MIRA)!.v).toBe(`${before}.1`);
+    expect((await save("Two.\n", 1)).statusCode).toBe(200);
+    expect((await graph()).node(MIRA)!.v).toBe(`${before}.2`);
+    // A note that is not drafted keeps its mark.
+    expect((await graph()).node(HARBOR)!.v).toMatch(/^[0-9a-f]{12}$/);
+  });
+
+  it("changes a note's mark when a new version of the library holds it", async () => {
+    const before = (await graph()).node(LEDGER)!.v;
+    t.repo.pushFromOutside({ [LEDGER]: "# Ledger\n\nRewritten elsewhere.\n" });
+    await t.services.sync();
+    const after = (await graph()).node(LEDGER)!.v;
+    expect(after).toMatch(/^[0-9a-f]{12}$/);
+    expect(after).not.toBe(before);
+  });
+
+  it("takes the id from the entry's field", async () => {
+    await draft("02 People/Gull.md", "create", "---\nid: gull0001\n---\n# Gull\n");
+    const { node } = await graph();
+    expect(node("02 People/Gull.md")?.id).toBe("gull0001");
+    expect(node(HARBOR)).not.toHaveProperty("id");
+  });
+
+  it("lists the library's other files and unpublished uploads, not hidden ones or notes", async () => {
+    await t.services.drafts.saveBinary(
+      "graphupload01",
+      "99 Appendices/Images/new-map.png",
+      Buffer.from([1, 2, 3]),
+    );
+    const { g } = await graph();
+    expect(g.files).toContain("99 Appendices/Images/lamp.png");
+    expect(g.files).toContain("99 Appendices/Images/new-map.png");
+    expect(g.files!.some((f) => f.startsWith(".obsidian/"))).toBe(false);
+    expect(g.files!.some((f) => f.endsWith(".md"))).toBe(false);
   });
 });
 
@@ -209,6 +258,8 @@ describe("buildGraph", () => {
       removed: [],
       folders: { version: 1, folders: [] },
     });
-    expect(after).toEqual(before);
+    // The upload is one of the library's other files; nothing else changes.
+    expect(after.files).toEqual([...before.files!, "99 Appendices/Images/new.png"].sort());
+    expect({ ...after, files: [] }).toEqual({ ...before, files: [] });
   });
 });

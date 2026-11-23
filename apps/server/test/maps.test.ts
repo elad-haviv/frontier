@@ -107,6 +107,23 @@ describe("map files", () => {
     expect(bad.statusCode).toBe(400);
   });
 
+  it("marks each map in the list with its version: the blob, then the draft's revision", async () => {
+    const id = await create();
+    const v = async () =>
+      ((await t.get("/api/maps")).json().maps as { id: string; v: string }[]).find(
+        (m) => m.id === id,
+      )!.v;
+    // New: no blob yet, the draft at revision 1.
+    expect(await v()).toBe(".1");
+    const { map } = await load(id);
+    expect((await save(id, { ...map, title: "Ezob, again" }, 1)).statusCode).toBe(200);
+    expect(await v()).toBe(".2");
+    expect((await publishAll()).res.statusCode).toBe(200);
+    const published = await v();
+    expect(published).toBe((await load(id)).blob.slice(0, 12));
+    expect(published).toMatch(/^[0-9a-f]{12}$/);
+  });
+
   it("saves the whole map, one item per line, and publishes it like a note", async () => {
     const id = await create();
     const { map } = await load(id);

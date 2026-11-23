@@ -73,6 +73,11 @@ export class DraftStore {
   /** How many kept copies each draft has, for drafts that have any. */
   private kept = new Map<string, number>();
   private readonly dir: string;
+  /**
+   * Rises on every write of a draft and every discard, whoever made it, for the status snapshot:
+   * a device keeping copies for offline reading reads them again when it changes.
+   */
+  changes = 0;
 
   constructor(
     stateDir: string,
@@ -162,6 +167,7 @@ export class DraftStore {
     await this.files.write(join(this.folder(id), "content"), content);
     await this.files.writeJson(join(this.folder(id), "record.json"), record);
     this.records.set(id, record);
+    this.changes++;
     return record;
   }
 
@@ -204,6 +210,7 @@ export class DraftStore {
     await this.files.write(join(this.folder(record.id), "content"), input.content);
     await this.files.writeJson(join(this.folder(record.id), "record.json"), record);
     this.records.set(record.id, record);
+    this.changes++;
     return record;
   }
 
@@ -322,6 +329,7 @@ export class DraftStore {
     await this.files.write(join(this.folder(record.id), "content"), text);
     await this.files.writeJson(join(this.folder(record.id), "record.json"), record);
     this.records.set(record.id, record);
+    this.changes++;
   }
 
   /**
@@ -468,12 +476,14 @@ export class DraftStore {
     const next = { ...record, path };
     await this.files.writeJson(join(this.folder(id), "record.json"), next);
     this.records.set(id, next);
+    this.changes++;
     return next;
   }
 
   async discard(id: string): Promise<void> {
     this.require(id);
     this.records.delete(id);
+    this.changes++;
     this.kept.delete(id);
     await this.files.remove(this.folder(id));
   }

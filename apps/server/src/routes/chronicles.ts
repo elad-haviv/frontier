@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import { Id, ChronicleFile, VaultPath } from "@frontier/schema";
+import { Id, ChronicleFile, chroniclePath, VaultPath, versionMark } from "@frontier/schema";
 import { stem } from "@frontier/vault";
 import { z } from "zod";
 import { ApiError } from "../errors.js";
@@ -28,16 +28,21 @@ const Resolve = z.object({ keep: z.enum(["mine", "theirs"]) });
 export function chronicleRoutes(app: FastifyInstance, s: Services): void {
   const changed = () => s.status.drafts(s.drafts.count(), 0);
 
-  app.get("/api/chronicles", async () => ({
-    chronicles: (await s.chronicles.list()).map(({ chronicle, state }) => ({
-      id: chronicle.id,
-      title: chronicle.title,
-      main: chronicle.main,
-      spans: chronicle.spans.length,
-      state,
-    })),
-    problems: s.chronicles.problems,
-  }));
+  app.get("/api/chronicles", async () => {
+    const blobs = await s.git.blobs().catch(() => new Map<string, string>());
+    return {
+      chronicles: (await s.chronicles.list()).map(({ chronicle, state, revision }) => ({
+        id: chronicle.id,
+        title: chronicle.title,
+        main: chronicle.main,
+        spans: chronicle.spans.length,
+        state,
+        // What a device holding this chronicle compares, to know whether to read it again.
+        v: versionMark(blobs.get(chroniclePath(chronicle.id)), revision),
+      })),
+      problems: s.chronicles.problems,
+    };
+  });
 
   app.get("/api/chronicles/:id", async (request) => {
     const { id } = IdParam.parse(request.params);

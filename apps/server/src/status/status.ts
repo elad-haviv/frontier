@@ -29,6 +29,8 @@ export class StatusService {
       backupOutside: boolean;
       /** How many drafts have texts kept from other devices. */
       keptCopies?: () => number;
+      /** The draft store's count of draft writes and discards. */
+      draftChanges?: () => number;
     } = { library: "github", backupOutside: true },
   ) {}
 
@@ -53,6 +55,7 @@ export class StatusService {
       },
       ai: { on: this.aiOn, lastError: this.aiError },
       serverDraftChanges: this.serverDraftChanges,
+      drafts: this.facts.draftChanges?.() ?? 0,
       problems: [
         ...(this.index.schemaProblem ? [this.index.schemaProblem] : []),
         ...(this.index.schemaNote ? [this.index.schemaNote] : []),

@@ -289,7 +289,14 @@ describe("API shapes", () => {
     const graph = {
       nodes: [
         { path: "01 Places/Harbor/Harbor.md", title: "Harbor", type: "place", aliases: ["Port"] },
-        { path: "02 People/Gull.md", title: "Gull", type: null, unpublished: true },
+        {
+          path: "02 People/Gull.md",
+          title: "Gull",
+          type: null,
+          unpublished: true,
+          id: "gull",
+          v: ".2",
+        },
       ],
       edges: [[1, 0]],
       folders: [
@@ -297,6 +304,7 @@ describe("API shapes", () => {
         { path: "02 People", color: null },
       ],
       nested: [{ path: "01 Places/Harbor", color: "teal" }],
+      files: ["99 Appendices/Images/lamp.png"],
     };
     expect(GraphResponse.parse(graph)).toEqual(graph);
     expect(GraphResponse.safeParse({ ...graph, edges: [[0, 2]] }).success).toBe(false);
@@ -329,6 +337,7 @@ describe("API shapes", () => {
       inbox: { branches: 1, operations: 2, quarantined: 0 },
       ai: { on: false, lastError: null },
       serverDraftChanges: 0,
+      drafts: 7,
       problems: [],
       attention: {
         ambiguousLinks: 0,

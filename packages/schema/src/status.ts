@@ -33,6 +33,11 @@ export const StatusSnapshot = z.object({
   }),
   /** Rises each time the server itself changes a draft, so an open editor can reload it. */
   serverDraftChanges: z.number().int().min(0),
+  /**
+   * Rises on every draft save, server change and discard, from any device, so a device keeping
+   * copies for offline reading reads them again even when the unpublished count stays the same.
+   */
+  drafts: z.number().int().min(0),
   /** Files Frontier reads its rules from that could not be read, in words. */
   problems: z.array(z.string()),
   attention: z.object({

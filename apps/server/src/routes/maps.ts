@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import { Id, MapFile, VaultPath } from "@frontier/schema";
+import { Id, MapFile, mapPath, VaultPath, versionMark } from "@frontier/schema";
 import { isExcluded, isImage, stem } from "@frontier/vault";
 import { z } from "zod";
 import { ApiError } from "../errors.js";
@@ -24,17 +24,22 @@ const Resolve = z.object({ keep: z.enum(["mine", "theirs"]) });
 export function mapRoutes(app: FastifyInstance, s: Services): void {
   const changed = () => s.status.drafts(s.drafts.count(), 0);
 
-  app.get("/api/maps", async () => ({
-    maps: (await s.maps.list()).map(({ map, state }) => ({
-      id: map.id,
-      title: map.title,
-      space: map.space,
-      under: map.under ?? null,
-      features: map.features.length,
-      state,
-    })),
-    problems: s.maps.problems,
-  }));
+  app.get("/api/maps", async () => {
+    const blobs = await s.git.blobs().catch(() => new Map<string, string>());
+    return {
+      maps: (await s.maps.list()).map(({ map, state, revision }) => ({
+        id: map.id,
+        title: map.title,
+        space: map.space,
+        under: map.under ?? null,
+        features: map.features.length,
+        state,
+        // What a device holding this map compares, to know whether to read it again.
+        v: versionMark(blobs.get(mapPath(map.id)), revision),
+      })),
+      problems: s.maps.problems,
+    };
+  });
 
   app.get("/api/maps/:id", async (request) => {
     const { id } = IdParam.parse(request.params);

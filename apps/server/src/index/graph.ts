@@ -6,6 +6,9 @@
  * so it agrees with the entry page: a delete removes its node and the edges to and from it; an edit
  * or create takes its outbound edges from its own text, resolved as the entry page resolves a
  * draft's links. No other note's links are resolved again, and pending renames are not applied.
+ *
+ * It is also the compact index a device keeps for reading offline: each node carries its `id` and
+ * a version mark `v`, and `files` lists the library's other files, so links resolve on the device.
  */
 import {
   type DraftRecord,
@@ -15,10 +18,12 @@ import {
   type GraphNode,
   type GraphResponse,
   sortFolders,
+  versionMark,
 } from "@frontier/schema";
 import {
   aliasesOf,
   APPENDIX_ROOT,
+  isExcluded,
   isNote,
   type Resolution,
   readFields,
@@ -28,7 +33,7 @@ import {
 import type { VaultIndex } from "./build.js";
 
 export interface GraphInput {
-  index: Pick<VaultIndex, "allNotes" | "analyse" | "schema">;
+  index: Pick<VaultIndex, "allNotes" | "analyse" | "schema"> & Partial<Pick<VaultIndex, "files">>;
   drafts: DraftRecord[];
   /** The text of each edit or create draft of a note, by path. */
   texts: Map<string, string>;
@@ -37,6 +42,8 @@ export interface GraphInput {
   removed: string[];
   /** The folder file as the author sees it. */
   folders: FolderFile;
+  /** The library files' blob hashes by path, for the version marks. */
+  blobs?: Map<string, string>;
 }
 
 const topOf = (path: string): string | null => {
@@ -46,6 +53,8 @@ const topOf = (path: string): string | null => {
 
 export function buildGraph(input: GraphInput): GraphResponse {
   const { index, drafts, texts, added, removed } = input;
+  const blobs = input.blobs ?? new Map<string, string>();
+  const revisions = new Map(drafts.map((d) => [d.path, d.revision]));
   const schema = index.schema;
   const typeOf = (path: string, fieldType: string | null) =>
     fieldType ?? typeFromFolder(schema, path);
@@ -60,6 +69,8 @@ export function buildGraph(input: GraphInput): GraphResponse {
         title: note.title,
         type: typeOf(note.path, note.fields.type),
         ...(note.aliases.length > 0 ? { aliases: note.aliases } : {}),
+        ...(note.fields.id ? { id: note.fields.id } : {}),
+        v: versionMark(blobs.get(note.path), revisions.get(note.path)),
       },
       links: note.links,
     });
@@ -71,13 +82,16 @@ export function buildGraph(input: GraphInput): GraphResponse {
     const text = texts.get(draft.path);
     if (text === undefined) continue;
     const aliases = aliasesOf(text);
+    const fields = readFields(text);
     byPath.set(draft.path, {
       node: {
         path: draft.path,
         title: stem(draft.path),
-        type: typeOf(draft.path, readFields(text).type),
+        type: typeOf(draft.path, fields.type),
         ...(aliases.length > 0 ? { aliases } : {}),
         unpublished: true,
+        ...(fields.id ? { id: fields.id } : {}),
+        v: versionMark(blobs.get(draft.path), draft.revision),
       },
       links: index.analyse(draft.path, text, added, removed).links,
     });
@@ -103,6 +117,11 @@ export function buildGraph(input: GraphInput): GraphResponse {
     nodes: paths.map((p) => byPath.get(p)!.node),
     edges,
     ...folderColours(input.folders, paths),
+    files: [
+      ...(index.files ?? []).filter((f) => !isNote(f) && !isExcluded(f) && !removed.includes(f)),
+      // Uploaded images not yet published.
+      ...added.filter((f) => !isNote(f)),
+    ].sort(),
   };
 }
 
