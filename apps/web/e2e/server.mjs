@@ -17,7 +17,28 @@ Object.assign(process.env, {
   SESSION_KEY: Buffer.alloc(32, 9).toString("base64"),
   FRONTIER_INITIAL_PASSWORD: "browser-test-password",
   ICON_FOLDER: "99 Appendices/Icons",
+  // The image dialog's web address is tried against the picture server below, on loopback.
+  IMAGE_FETCH_ALLOW_LOOPBACK: "1",
 });
+
+// A stand-in for a site on the web with one picture, at the server's port plus 100, so the
+// browser tests know where it is.
+const PICTURE = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+  "base64",
+);
+const pictures = createServer((req, res) => {
+  if (req.url?.split("?")[0].endsWith(".png")) {
+    res.writeHead(200, { "content-type": "image/png" });
+    res.end(PICTURE);
+  } else {
+    res.writeHead(404);
+    res.end();
+  }
+});
+await new Promise((resolve) =>
+  pictures.listen(Number(process.env.PORT) + 100, "127.0.0.1", resolve),
+);
 
 // For a lore question it answers from the first entry it was given, quoting that entry's first
 // line of text; a question with "unknown" in it is not in the lore. Asked for an addition, it
