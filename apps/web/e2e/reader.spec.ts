@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { entry, noSidewaysScroll, openSideBar } from "./helpers.ts";
+import { entry, noSidewaysScroll, openSideBar, pushToMain } from "./helpers.ts";
 
 test("refuses the wrong password", async ({ browser }) => {
   // A fresh browser with no session.
@@ -62,6 +62,82 @@ test("shows images, a missing image as a missing link, and opens the lightbox", 
   await expect(box).toHaveClass(/is-zoomed/);
   await page.keyboard.press("Escape");
   await expect(box).toHaveCount(0);
+});
+
+test("CUJ 1: says where the reader is in a long entry, and goes to a heading from the outline", async ({
+  page,
+}, info) => {
+  const who = info.project.name;
+  const name = `Tidewater ${who}`;
+  const path = `01 Places/${name}.md`;
+  const sections = [
+    "Founding",
+    "Streets",
+    "Tides",
+    "Boats",
+    "Markets",
+    "Bells",
+    "Storms",
+    "Lamps",
+    "Graves",
+    "Songs",
+  ];
+  const words = "Grey water against the stones of the quay, and nets left to dry. ".repeat(12);
+  const text = `# ${name}\n\n${sections.map((s) => `## ${s}\n\n${words}\n\n${words}\n`).join("\n")}`;
+  pushToMain({ [path]: text }, `Add ${name}`);
+  // Opening the inbox fetches the vault, which brings the entry.
+  await page.goto("/inbox");
+  await expect
+    .poll(async () =>
+      (await page.request.get(`/api/entries?path=${encodeURIComponent(path)}`)).status(),
+    )
+    .toBe(200);
+  await page.goto(entry(path));
+  await expect(page.locator(".entry h1").first()).toHaveText(name);
+
+  // Scrolled to the seventh section, the title has gone and the line says where the reader is.
+  await page
+    .locator(".prose h2", { hasText: "Storms" })
+    .evaluate((h) => h.scrollIntoView({ block: "start" }));
+  const phone = who === "phone";
+  if (phone) {
+    await expect(page.locator(".phone-title-text")).toHaveText(`${name} › Storms`);
+    await page.locator(".phone-bar").getByRole("button", { name: "Outline" }).click();
+  } else {
+    const line = page.locator(".sticky-line");
+    await expect(line).toHaveClass(/is-shown/);
+    await expect(line.locator(".sticky-folder")).toHaveText("01 Places");
+    await expect(line.locator(".sticky-name")).toHaveText(name);
+    await expect(line.locator(".sticky-heading")).toHaveText("Storms");
+    await line.getByRole("button", { name: "Outline" }).click();
+  }
+  const outline = page.getByRole("navigation", { name: "Outline" });
+  await expect(outline.locator('[aria-current="location"]')).toHaveText("Storms");
+
+  // Choosing the third heading goes there, and the line follows.
+  await outline.getByRole("button", { name: "Tides" }).click();
+  await expect(page.locator(".prose h2", { hasText: "Tides" })).toBeInViewport();
+  if (phone) {
+    await expect(page.locator(".phone-title-text")).toHaveText(`${name} › Tides`);
+  } else {
+    const line = page.locator(".sticky-line");
+    await expect(line.locator(".sticky-heading")).toHaveText("Tides");
+    await expect(outline.locator('[aria-current="location"]')).toHaveText("Tides");
+    // Full width, remembered on the device, widens the page; the switch turns it back.
+    const article = page.locator("article.entry");
+    // The measure widens; with the side bar open the page may be narrower than either.
+    const measure = () => article.evaluate((a) => parseFloat(getComputedStyle(a).maxWidth));
+    const narrow = await measure();
+    await line.getByRole("button", { name: "Full width" }).click();
+    await expect(article).toHaveClass(/is-wide/);
+    expect(await measure()).toBeGreaterThan(narrow);
+    await line.getByRole("button", { name: "Full width" }).click();
+    await expect(article).not.toHaveClass(/is-wide/);
+    // The folder opens the side bar's tree there.
+    await line.locator(".sticky-folder").click();
+    await expect(page.locator('.tree-row[data-path="01 Places"]')).toBeInViewport();
+  }
+  await noSidewaysScroll(page);
 });
 
 test("marks read-only files and offers no Edit for them", async ({ page }) => {

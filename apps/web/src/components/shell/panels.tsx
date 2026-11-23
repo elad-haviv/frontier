@@ -8,6 +8,7 @@ import {
   createContext,
   type ReactNode,
   type RefObject,
+  useCallback,
   useContext,
   useEffect,
   useLayoutEffect,
@@ -110,6 +111,12 @@ export class ShellStore {
   title: PageTitle | null = null;
   /** Where the phone line holds the page's main action. */
   actionSlot: HTMLElement | null = null;
+  /**
+   * A folder a page asked to see in the left bar's tree, until the tree has shown it. `n` rises
+   * with each ask, so the same folder can be asked for again.
+   */
+  reveal: { path: string; n: number } | null = null;
+  private asked = 0;
 
   subscribe = (listener: () => void): (() => void) => {
     this.listeners.add(listener);
@@ -210,6 +217,17 @@ export class ShellStore {
     else this.show(id);
   }
 
+  /** Opens the left bar (the drawer on a phone) with its tree open at a folder. */
+  revealInTree(path: string): void {
+    this.reveal = { path, n: ++this.asked };
+    this.changed();
+  }
+
+  /** The tree has shown the folder. Nothing anyone draws changes, so no one is told. */
+  revealed(): void {
+    this.reveal = null;
+  }
+
   setTitle(title: PageTitle | null): void {
     if (title === null && this.title === null) return;
     this.title = title;
@@ -286,6 +304,34 @@ export function useRightBar(): {
     [store],
   );
   return { open: store?.open ?? null, ...actions };
+}
+
+/**
+ * Opens a panel of the right side bar (the bottom sheet on a phone) by its id, as a page's own
+ * button for it does. A panel not declared yet opens as soon as it is.
+ */
+export function useOpenPanel(): (id: string) => void {
+  const store = useStore();
+  return useCallback((id: string) => store?.show(id), [store]);
+}
+
+/** Opens the left bar's tree at a folder, from a page: the folder named in its sticky line. */
+export function useRevealInTree(): (path: string) => void {
+  const store = useStore();
+  return useCallback((path: string) => store?.revealInTree(path), [store]);
+}
+
+/** The folder a page asked the tree to show, for the tree. */
+export function useRevealRequest(): { path: string; n: number } | null {
+  const store = useStore();
+  useSyncExternalStore(store?.subscribe ?? noSubscribe, store?.snapshot ?? noSnapshot);
+  return store?.reveal ?? null;
+}
+
+/** For the tree, once it has shown the folder asked for. */
+export function useRevealDone(): () => void {
+  const store = useStore();
+  return useCallback(() => store?.revealed(), [store]);
 }
 
 const noSubscribe = () => () => undefined;

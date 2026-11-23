@@ -195,9 +195,14 @@ describe("API shapes", () => {
       maps: [],
       chronicles: [],
       blob: "9c1e0f",
+      rename: null,
     };
     expect(EntryResponse.parse(entry).blob).toBe("9c1e0f");
     expect(EntryResponse.safeParse({ ...entry, blob: undefined }).success).toBe(false);
+    // The one rename waiting for it, if any.
+    const renamed = { ...entry, rename: { id: "abcdefabcdef", to: "c/d.md" } };
+    expect(EntryResponse.parse(renamed).rename).toEqual({ id: "abcdefabcdef", to: "c/d.md" });
+    expect(EntryResponse.safeParse({ ...entry, rename: undefined }).success).toBe(false);
   });
 
   it("merges lists by another key when one is given", () => {

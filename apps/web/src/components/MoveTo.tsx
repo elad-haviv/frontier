@@ -3,8 +3,7 @@ import { useId, useMemo, useState } from "react";
 import { DialogFrame } from "./Dialogs.tsx";
 import { eachFolder, nameOf, parentOf, type Row } from "./tree/model.ts";
 import { Combobox, type ComboboxOption } from "./ui/Combobox.tsx";
-
-const TOP = "Top of the library";
+import { TOP } from "./folders.ts";
 
 /**
  * Moves a folder or an entry by choosing where it goes: what dragging does, for touch and for

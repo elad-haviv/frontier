@@ -1,0 +1,98 @@
+/* The sticky line holds no room in the page: it rests at the top of the page area, out of sight,
+   and slides in once the title has gone. */
+.sticky-holder {
+  position: sticky;
+  top: 0;
+  z-index: var(--layer-sticky);
+  height: 0;
+}
+
+.sticky-line {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  height: 2.75rem;
+  padding: 0 var(--space-3) 0 var(--space-4);
+  border-bottom: 1px solid var(--rule);
+  background: color-mix(in srgb, var(--paper) 94%, transparent);
+  backdrop-filter: blur(6px);
+  transform: translateY(-100%);
+  opacity: 0;
+  transition:
+    transform 0.16s ease,
+    opacity 0.16s ease;
+}
+.sticky-line.is-shown {
+  transform: none;
+  opacity: 1;
+}
+@media (prefers-reduced-motion: reduce) {
+  .sticky-line {
+    transition: none;
+  }
+}
+
+/* The places, each shortening to "…": the folder first, then the entry, the heading last. */
+.sticky-crumbs {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  font-size: 0.88rem;
+  white-space: nowrap;
+}
+.sticky-crumb {
+  min-width: 2.5ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+button.sticky-crumb {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  cursor: pointer;
+}
+button.sticky-crumb:hover {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.sticky-folder {
+  flex: 0 4 auto;
+  color: var(--ink-faint);
+  font-size: 0.78rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.sticky-name {
+  flex: 0 2 auto;
+  color: var(--ink);
+  font-family: var(--serif);
+  font-weight: 600;
+}
+.sticky-heading {
+  flex: 0 1 auto;
+  color: var(--ink-soft);
+}
+.sticky-sep {
+  flex: none;
+  color: var(--ink-faint);
+}
+
+.sticky-actions {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+.sticky-actions .edit-link {
+  margin: 0;
+  padding: 0.2rem 0.75rem;
+}
+
+/* A phone has its slim top line instead. */
+.is-phone .sticky-holder {
+  display: none;
+}

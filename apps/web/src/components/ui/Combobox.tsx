@@ -24,6 +24,8 @@ export function Combobox({
   findLabel,
   empty = "Nothing matches.",
   create,
+  open: openAsked,
+  onOpenChange,
 }: {
   /** The id of the visible label that names the choice. */
   labelledBy: string;
@@ -38,8 +40,19 @@ export function Combobox({
    * "New folder 'Islands'". `label` words the offer; `onCreate` is given the typed text.
    */
   create?: { label: (typed: string) => string; onCreate: (typed: string) => void };
+  /**
+   * Whether the list is open, for a list opened from elsewhere, such as a menu's "Move to…".
+   * Without it the list opens and closes by itself.
+   */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }) {
-  const [open, setOpen] = useState(false);
+  const [openHere, setOpenHere] = useState(false);
+  const open = openAsked ?? openHere;
+  const setOpen = (next: boolean) => {
+    setOpenHere(next);
+    onOpenChange?.(next);
+  };
   const [typed, setTyped] = useState("");
   const wanted = typed.trim();
   const offer =
