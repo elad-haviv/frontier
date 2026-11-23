@@ -409,8 +409,11 @@ test("CUJ 3: writes with the toolbar: a heading, underline, a numbered list nest
   // The style picker shows the line's style, and sets it.
   await page.getByRole("button", { name: "Style: Paragraph" }).click();
   await page.getByRole("menuitem", { name: /^Heading 2/ }).click();
-  await page.keyboard.type("Tides");
   await expect(page.getByRole("button", { name: "Style: Heading 2" })).toBeVisible();
+  // The menu hands focus back to the editor; typing before then is lost on a slow phone.
+  await expect(page.locator(".cm-content")).toBeFocused();
+  await page.keyboard.type("Tides");
+  await expect.poll(text).toContain("## Tides");
   await page.keyboard.type("\nThe sea is grey.");
   // The cursor in "is": Underline takes the word it is in.
   await page.keyboard.press("Home");

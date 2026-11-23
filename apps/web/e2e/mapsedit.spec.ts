@@ -440,7 +440,7 @@ test.describe("with a mouse", () => {
     const tag = Date.now().toString(36);
     await dialog
       .getByLabel("From a web address")
-      .fill(`http://127.0.0.1:${PICTURES}/web/Coast%20${tag}.png`);
+      .fill(`http://127.0.0.2:${PICTURES}/web/Coast%20${tag}.png`);
     await dialog.getByRole("button", { name: "Add", exact: true }).click();
     await expect(dialog).toHaveCount(0);
     await expect.poll(async () => (await stored(page)).images.length).toBe(2);

@@ -96,7 +96,7 @@ test("CUJ 4: adds an image three ways: from the library, by upload, by paste and
   await expect(dialog.getByRole("alert")).toHaveText(
     "Frontier could not get an image from that address.",
   );
-  await address.fill(`http://127.0.0.1:${PICTURES}/web/Harbor%20Light%20${tag}.png?size=large`);
+  await address.fill(`http://127.0.0.2:${PICTURES}/web/Harbor%20Light%20${tag}.png?size=large`);
   await dialog.getByRole("button", { name: "Add", exact: true }).click();
   await expect(dialog).toHaveCount(0);
   await expect.poll(text).toContain(`![[Harbor Light ${tag}.png]]`);

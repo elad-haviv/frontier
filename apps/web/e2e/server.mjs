@@ -27,6 +27,9 @@ const PICTURE = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
   "base64",
 );
+// Not 127.0.0.1: where localhost resolves there (the CI machines), PUBLIC_URL makes it this
+// server's own address, which the image route refuses. Linux answers on all of 127/8.
+const PICTURE_HOST = "127.0.0.2";
 const pictures = createServer((req, res) => {
   if (req.url?.split("?")[0].endsWith(".png")) {
     res.writeHead(200, { "content-type": "image/png" });
@@ -37,7 +40,7 @@ const pictures = createServer((req, res) => {
   }
 });
 await new Promise((resolve) =>
-  pictures.listen(Number(process.env.PORT) + 100, "127.0.0.1", resolve),
+  pictures.listen(Number(process.env.PORT) + 100, PICTURE_HOST, resolve),
 );
 
 // For a lore question it answers from the first entry it was given, quoting that entry's first
