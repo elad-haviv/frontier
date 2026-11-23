@@ -1,14 +1,6 @@
 import { type MapFeature, type MapFile, orderFeature, reorderFeature } from "@frontier/schema";
-import {
-  addShape,
-  reasonFor,
-  removeShape,
-  type Resolved,
-  shapeOf,
-  tie,
-  writeShape,
-} from "../../map/time.ts";
-import type { Tool } from "../../map/tools.ts";
+import { addShape, reasonFor, removeShape, type Resolved, shapeOf, tie } from "../../map/time.ts";
+import { deleteFeature, removePoint, type Tool } from "../../map/tools.ts";
 import type { useMapFile } from "../../map/useMapFile.ts";
 import type { TimeState } from "../../map/useMapTime.ts";
 import { newItemId } from "../../map/viewUrl.ts";
@@ -32,6 +24,8 @@ export function FeaturePanel({
   titleOf,
   onVertex,
   onSelect,
+  onCopyLink,
+  onEdit,
 }: {
   feature: MapFeature;
   map: MapFile;
@@ -45,6 +39,9 @@ export function FeaturePanel({
   titleOf: (feature: MapFeature) => string;
   onVertex: (vertex: number | null) => void;
   onSelect: (feature: string | null) => void;
+  /** Copies a link to this place, and starts editing with it selected: from the Selected tab. */
+  onCopyLink: () => void;
+  onEdit: () => void;
 }) {
   const { names, setFeature, change } = file;
   const { seen, year, spanName, carry, pin, setPin } = time;
@@ -57,6 +54,8 @@ export function FeaturePanel({
         children={file.children}
         reason={seen ? reasonFor(feature, seen, year ?? 0, spanName) : null}
         {...(carry ? { carry } : {})}
+        onCopyLink={onCopyLink}
+        onEdit={onEdit}
         onClose={() => onSelect(null)}
       />
     );
@@ -75,17 +74,14 @@ export function FeaturePanel({
       onChange={(next) => setFeature(next)}
       onLink={(path, title) => file.link(feature, path, title)}
       onDelete={() => {
-        change({ ...map, features: map.features.filter((f) => f.id !== feature.id) });
+        change(deleteFeature(map, feature.id));
         onSelect(null);
       }}
       onRemoveVertex={() => {
-        const drawn = onScreen?.feature;
-        if (!drawn || drawn.kind === "marker" || vertex === null) return;
-        setFeature(
-          writeShape(feature, onScreen.shape, {
-            points: drawn.points.filter((_, i) => i !== vertex),
-          }),
-        );
+        if (!onScreen || vertex === null) return;
+        const done = removePoint(map, onScreen, vertex);
+        if (!done || !("feature" in done)) return;
+        setFeature(done.feature);
         onVertex(null);
       }}
       {...(onScreen && onScreen.feature.kind !== "marker"

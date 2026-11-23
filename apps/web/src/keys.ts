@@ -51,6 +51,8 @@ export interface Shortcut {
    * run by the listener.
    */
   handledBy?: string;
+  /** For a screen with a viewing and an editing mode: the one mode the key acts in, if only one. */
+  when?: "viewing" | "editing";
 }
 
 type Action = () => boolean | void;
@@ -133,6 +135,16 @@ export function isTyping(target: unknown): boolean {
     );
   }
   return false;
+}
+
+/**
+ * Whether a key that a focused control also uses (an arrow, Enter, Delete, Backspace, Space) is
+ * free for a screen: the focus is on the screen's own frame, or on nothing. Elsewhere the control
+ * keeps the key, so an arrow still moves through a list in a side bar.
+ */
+export function focusIsFree(active: unknown, own: unknown): boolean {
+  if (!active || active === own) return true;
+  return (active as { tagName?: string }).tagName === "BODY";
 }
 
 const onMac = () =>
@@ -392,13 +404,47 @@ keys.register(
     label: "Delete this column",
   },
 
-  // The map
+  // The map. Each label says whether the key acts while viewing, while editing, or both.
+  { id: "map.edit", keys: ["e"], scope: "map", label: "Edit the map", when: "viewing" },
+  { id: "map.done", keys: ["Mod-Enter"], scope: "map", label: "Done editing", when: "editing" },
+  { id: "map.select", keys: ["v"], scope: "map", label: "Select tool", when: "editing" },
+  { id: "map.marker", keys: ["m"], scope: "map", label: "Marker tool", when: "editing" },
+  { id: "map.path", keys: ["p"], scope: "map", label: "Path tool", when: "editing" },
+  { id: "map.zone", keys: ["z"], scope: "map", label: "Zone tool", when: "editing" },
+  { id: "map.measure", keys: ["r"], scope: "map", label: "Measure tool", when: "editing" },
+  { id: "map.undo", keys: ["Mod-z"], scope: "map", label: "Undo", when: "editing" },
+  { id: "map.redo", keys: ["Shift-Mod-z", "Mod-y"], scope: "map", label: "Redo", when: "editing" },
   {
-    id: "map.stopFocus",
+    id: "map.delete",
+    keys: ["Delete", "Backspace"],
+    scope: "map",
+    label: "Delete the picked point or the selection",
+    when: "editing",
+  },
+  {
+    id: "map.cancel",
     keys: ["Escape"],
     scope: "map",
-    label: "Stop choosing an area to focus on",
+    label:
+      "Stop, one step at a time: the focus box, the drawing, the tool, the point, the selection",
   },
+  { id: "map.zoomIn", keys: ["=", "+"], scope: "map", label: "Zoom in" },
+  { id: "map.zoomOut", keys: ["-"], scope: "map", label: "Zoom out" },
+  { id: "map.fit", keys: ["0"], scope: "map", label: "Show the whole map" },
+  {
+    id: "map.pan",
+    keys: ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"],
+    scope: "map",
+    label: "Move the map",
+  },
+  {
+    id: "map.panFar",
+    keys: ["Shift-ArrowUp", "Shift-ArrowDown", "Shift-ArrowLeft", "Shift-ArrowRight"],
+    scope: "map",
+    label: "Move the map further",
+  },
+  { id: "map.layers", keys: ["l"], scope: "map", label: "Show or hide the Layers tab" },
+  { id: "map.time", keys: ["t"], scope: "map", label: "Turn time on or off" },
   {
     id: "map.turn",
     keys: ["Enter"],

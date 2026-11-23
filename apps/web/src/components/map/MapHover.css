@@ -1,0 +1,31 @@
+/* The name of what the mouse is over on the map, and the entry's preview that takes its place.
+   Neither catches the pointer, so every press and move reaches the map under them. */
+.map-tooltip,
+.map-hover-card {
+  position: absolute;
+  z-index: 4;
+  pointer-events: none;
+}
+.map-tooltip {
+  max-width: 18rem;
+  padding: 0.25rem 0.55rem;
+  border-radius: 5px;
+  background: var(--ink);
+  color: var(--paper);
+  font-family: var(--sans);
+  font-size: 0.82rem;
+  line-height: 1.35;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  box-shadow: var(--shadow);
+}
+.map-hover-card .map-preview {
+  position: static;
+  max-width: min(22rem, calc(100vw - 2rem));
+}
+.map-preview .map-preview-child {
+  margin-top: 0.4rem;
+  color: var(--ink);
+  font-size: 0.82rem;
+}

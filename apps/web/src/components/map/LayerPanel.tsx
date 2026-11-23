@@ -1,8 +1,11 @@
 import { extentProblem, type MapFile, wholeExtent } from "@frontier/schema";
 import { type Dispatch, type ReactNode, type SetStateAction, useEffect, useState } from "react";
+import { ArrowDown, ArrowUp, LocateFixed, Trash2 } from "lucide-react";
 import { api } from "../../api.ts";
 import { newItemId } from "../../map/viewUrl.ts";
 import { useDialogs } from "../Dialogs.tsx";
+import { IconButton } from "../ui/IconButton.tsx";
+import { Menu, MenuItem } from "../ui/Menu.tsx";
 
 const EXTENT_LABELS = {
   sphere: ["West", "South", "East", "North"],
@@ -218,45 +221,43 @@ export function LayerPanel({
                       value={image.name}
                       onChange={(e) => setImage(image.id, { name: e.target.value })}
                     />
-                    <button
-                      type="button"
+                    <IconButton
+                      label={`Place ${image.name}`}
+                      icon={LocateFixed}
+                      size="sm"
                       className="plain"
-                      aria-label={`Place ${image.name}`}
                       aria-expanded={placing === image.id}
-                      title="Where the image sits on the map"
                       onClick={() => setPlacing(placing === image.id ? null : image.id)}
-                    >
-                      ⌖
-                    </button>
-                    <button
-                      type="button"
+                    />
+                    <IconButton
+                      label={`Move ${image.name} up`}
+                      icon={ArrowUp}
+                      size="sm"
                       className="plain"
-                      aria-label={`Move ${image.name} up`}
-                      title="Drawn earlier, under the ones below"
                       disabled={i === 0}
+                      disabledReason="It is drawn first, under the others"
                       onClick={() => moveImage(image.id, -1)}
-                    >
-                      ↑
-                    </button>
-                    <button
-                      type="button"
+                    />
+                    <IconButton
+                      label={`Move ${image.name} down`}
+                      icon={ArrowDown}
+                      size="sm"
                       className="plain"
-                      aria-label={`Move ${image.name} down`}
-                      title="Drawn later, over the ones above"
                       disabled={i === map.images.length - 1}
+                      disabledReason="It is drawn last, over the others"
                       onClick={() => moveImage(image.id, 1)}
-                    >
-                      ↓
-                    </button>
-                    <button
-                      type="button"
-                      className="plain danger"
-                      aria-label={`Take ${image.name} off the map`}
-                      disabled={map.images.length === 1}
-                      onClick={() => removeImage(image.id)}
-                    >
-                      ✕
-                    </button>
+                    />
+                    <Menu label={`More for ${image.name}`} className="plain row-more">
+                      <MenuItem
+                        icon={Trash2}
+                        danger
+                        disabled={map.images.length === 1}
+                        disabledReason="A map keeps at least one image"
+                        onSelect={() => void removeImage(image.id)}
+                      >
+                        {`Take ${image.name} off the map`}
+                      </MenuItem>
+                    </Menu>
                     {placing === image.id && (
                       <ExtentForm
                         map={map}
@@ -318,33 +319,35 @@ export function LayerPanel({
                   onFocus={() => onActive(layer.id)}
                   onChange={(e) => setLayer(layer.id, { name: e.target.value })}
                 />
-                <button
-                  type="button"
+                <IconButton
+                  label="Move up"
+                  icon={ArrowUp}
+                  size="sm"
                   className="plain"
-                  aria-label="Move up"
                   disabled={i === 0}
+                  disabledReason="It is the first layer"
                   onClick={() => move(layer.id, -1)}
-                >
-                  ↑
-                </button>
-                <button
-                  type="button"
+                />
+                <IconButton
+                  label="Move down"
+                  icon={ArrowDown}
+                  size="sm"
                   className="plain"
-                  aria-label="Move down"
                   disabled={i === map.layers.length - 1}
+                  disabledReason="It is the last layer"
                   onClick={() => move(layer.id, 1)}
-                >
-                  ↓
-                </button>
-                <button
-                  type="button"
-                  className="plain danger"
-                  aria-label={`Delete ${layer.name}`}
-                  disabled={map.layers.length === 1}
-                  onClick={() => removeLayer(layer.id)}
-                >
-                  ✕
-                </button>
+                />
+                <Menu label={`More for ${layer.name}`} className="plain row-more">
+                  <MenuItem
+                    icon={Trash2}
+                    danger
+                    disabled={map.layers.length === 1}
+                    disabledReason="A map keeps at least one layer"
+                    onSelect={() => void removeLayer(layer.id)}
+                  >
+                    {`Delete ${layer.name}`}
+                  </MenuItem>
+                </Menu>
               </>
             )}
           </li>

@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { createRegistry, displayKey, isTyping, keys, matches, type KeyPress } from "./keys.ts";
+import {
+  createRegistry,
+  displayKey,
+  focusIsFree,
+  isTyping,
+  keys,
+  matches,
+  type KeyPress,
+} from "./keys.ts";
 
 const press = (key: string, more: Partial<KeyPress> = {}): KeyPress & { prevented: boolean } => {
   const e = {
@@ -213,6 +221,66 @@ describe("the graph's keys", () => {
     const e = press("Enter");
     expect(r.handle(e)).toBe(false);
     expect(e.prevented).toBe(false);
+  });
+});
+
+describe("the map's keys", () => {
+  const map = () => {
+    const r = createRegistry();
+    r.register(...keys.all().filter((s) => s.scope === "map"));
+    return r;
+  };
+  const frame = { tagName: "DIV" };
+  const button = { tagName: "BUTTON" };
+  const body = { tagName: "BODY" };
+
+  it("use no Alt, so AltGr cannot press one, and none the browser keeps", () => {
+    const mine = keys.all().filter((s) => s.scope === "map");
+    expect(mine.length).toBeGreaterThan(15);
+    for (const s of mine) {
+      for (const k of s.keys) {
+        expect(k.toLowerCase()).not.toMatch(/(^|-)alt-/);
+        expect(["Mod-w", "Mod-t", "Mod-n", "Shift-Mod-w", "Mod-+", "Mod--", "Mod-="]).not.toContain(
+          k,
+        );
+      }
+    }
+  });
+
+  it("read the minus key and Shift with the arrows", () => {
+    expect(matches("-", press("-"))).toBe(true);
+    const far = keys.get("map.panFar")!;
+    expect(far.keys.some((k) => matches(k, press("ArrowLeft", { shiftKey: true })))).toBe(true);
+    expect(far.keys.some((k) => matches(k, press("ArrowLeft")))).toBe(false);
+    const near = keys.get("map.pan")!;
+    expect(near.keys.some((k) => matches(k, press("ArrowLeft", { shiftKey: true })))).toBe(false);
+  });
+
+  it("pass an arrow on when a control has the focus, and take it on the frame or nothing", () => {
+    const r = map();
+    const log: string[] = [];
+    let active: unknown = button;
+    r.bind("map.pan", {
+      current: () => {
+        if (!focusIsFree(active, frame)) return false;
+        log.push("pan");
+      },
+    });
+    const e = press("ArrowLeft", { target: button });
+    expect(r.handle(e)).toBe(false);
+    expect(e.prevented).toBe(false);
+    for (const now of [frame, body, null]) {
+      active = now;
+      expect(r.handle(press("ArrowLeft"))).toBe(true);
+    }
+    expect(log).toEqual(["pan", "pan", "pan"]);
+  });
+
+  it("say which mode each acts in, when only one", () => {
+    expect(keys.get("map.edit")?.when).toBe("viewing");
+    expect(keys.get("map.marker")?.when).toBe("editing");
+    expect(keys.get("map.zoomOut")?.when).toBeUndefined();
+    expect(keys.get("map.stopFocus")).toBeUndefined();
   });
 });
 

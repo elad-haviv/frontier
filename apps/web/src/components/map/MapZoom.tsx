@@ -1,4 +1,7 @@
-/** The zoom buttons in the corner of the map. */
+import { Maximize2, Minus, Plus } from "lucide-react";
+import { IconButton } from "../ui/IconButton.tsx";
+
+/** The zoom buttons in the corner of the map, each with its name and key in a tooltip. */
 export function MapZoom({
   onZoom,
   onWhole,
@@ -8,15 +11,27 @@ export function MapZoom({
 }) {
   return (
     <div className="map-zoom">
-      <button type="button" aria-label="Zoom in" onClick={() => onZoom(1.6)}>
-        +
-      </button>
-      <button type="button" aria-label="Zoom out" onClick={() => onZoom(1 / 1.6)}>
-        −
-      </button>
-      <button type="button" aria-label="Show the whole map" onClick={onWhole}>
-        ⤢
-      </button>
+      <IconButton
+        label="Zoom in"
+        icon={Plus}
+        shortcut="map.zoomIn"
+        tipSide="left"
+        onClick={() => onZoom(1.6)}
+      />
+      <IconButton
+        label="Zoom out"
+        icon={Minus}
+        shortcut="map.zoomOut"
+        tipSide="left"
+        onClick={() => onZoom(1 / 1.6)}
+      />
+      <IconButton
+        label="Show the whole map"
+        icon={Maximize2}
+        shortcut="map.fit"
+        tipSide="left"
+        onClick={onWhole}
+      />
     </div>
   );
 }

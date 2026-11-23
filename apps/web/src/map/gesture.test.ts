@@ -2,12 +2,14 @@ import type { Shape, View } from "@frontier/geo";
 import type { MapFeature } from "@frontier/schema";
 import { describe, expect, it } from "vitest";
 import {
+  cursorFor,
   type Effect,
   type GestureContext,
   type GestureEvent,
   type GestureState,
   IDLE,
   kindOf,
+  menuTargetOf,
   pick,
   type PickInput,
   type PointerKind,
@@ -42,14 +44,25 @@ const context = (target: Target | null = null, focusing = false): GestureContext
   pick: () => target,
 });
 
-/** Runs events from a state, and gives the last state and every effect on the way. */
-function run(events: GestureEvent[], ctx = context(), from: GestureState = IDLE) {
+/** Whether an effect is the hover's: what is under a mouse, and the cursor. */
+const hovers = (e: Effect) => e.type === "hover" || e.type === "cursor";
+
+/**
+ * Runs events from a state, and gives the last state and every effect on the way. The hover's
+ * effects are left out unless asked for, so the gestures read on their own.
+ */
+function run(
+  events: GestureEvent[],
+  ctx = context(),
+  from: GestureState = IDLE,
+  withHover = false,
+) {
   let state = from;
   const effects: Effect[] = [];
   for (const e of events) {
     const next = step(state, e, ctx);
     state = next.state;
-    effects.push(...next.effects);
+    effects.push(...next.effects.filter((x) => withHover || !hovers(x)));
   }
   return { state, effects };
 }
@@ -403,6 +416,112 @@ describe("box", () => {
   });
 });
 
+describe("hover", () => {
+  it("a mouse moving with nothing pressed hovers what is under it, with its cursor", () => {
+    const { state, effects } = step(IDLE, move(1, 40, 50, "mouse"), context(feature));
+    expect(state).toBe(IDLE);
+    expect(effects).toEqual([
+      { type: "hover", target: feature, at: { x: 40, y: 50 } },
+      { type: "cursor", name: "pointer" },
+    ]);
+  });
+
+  it.each(["touch", "pen"] as const)("a %s moving with nothing pressed hovers nothing", (kind) => {
+    let asked = false;
+    const ctx: GestureContext = {
+      focusing: false,
+      pick: () => {
+        asked = true;
+        return feature;
+      },
+    };
+    expect(step(IDLE, move(1, 40, 50, kind), ctx)).toEqual({ state: IDLE, effects: [] });
+    expect(asked).toBe(false);
+  });
+
+  it("the cursor says what a press would do", () => {
+    const plain = { focusing: false };
+    expect(cursorFor(null, plain)).toBe("grab");
+    expect(cursorFor(feature, plain)).toBe("pointer");
+    expect(cursorFor(corner, plain)).toBe("move");
+    expect(cursorFor(markerBody, plain)).toBe("move");
+    for (const target of [null, feature, corner]) {
+      expect(cursorFor(target, { focusing: true })).toBe("crosshair");
+      expect(cursorFor(target, { focusing: false, placing: true })).toBe("crosshair");
+    }
+  });
+
+  it("with a drawing tool or while focusing, nothing is hovered and the cursor is a crosshair", () => {
+    for (const ctx of [
+      { ...context(feature), placing: true },
+      { ...context(feature), focusing: true },
+    ]) {
+      expect(step(IDLE, move(1, 1, 2, "mouse"), ctx).effects).toEqual([
+        { type: "hover", target: null, at: { x: 1, y: 2 } },
+        { type: "cursor", name: "crosshair" },
+      ]);
+    }
+  });
+
+  it("a mouse press ends the hover; a touch press has nothing to end", () => {
+    expect(run([down(1, 5, 6, "mouse")], context(feature), IDLE, true).effects).toEqual([
+      { type: "hover", target: null, at: { x: 5, y: 6 } },
+    ]);
+    expect(run([down(1, 5, 6, "touch")], context(feature), IDLE, true).effects).toEqual([]);
+  });
+
+  it("a mouse pan grabs, and once let go hovers again where it is", () => {
+    const { effects } = run(
+      [down(1, 0, 0, "mouse"), move(1, 20, 0, "mouse"), up(1, 20, 0, "mouse")],
+      context(null),
+      IDLE,
+      true,
+    );
+    expect(effects).toEqual([
+      { type: "hover", target: null, at: { x: 0, y: 0 } },
+      { type: "cursor", name: "grabbing" },
+      { type: "pan", dx: 20, dy: 0 },
+      { type: "hover", target: null, at: { x: 20, y: 0 } },
+      { type: "cursor", name: "grab" },
+    ]);
+  });
+
+  it("a touch pan sets no cursor and hovers nothing once lifted", () => {
+    const { effects } = run([down(1, 0, 0), move(1, 20, 0), up(1, 20, 0)], context(), IDLE, true);
+    expect(effects).toEqual([{ type: "pan", dx: 20, dy: 0 }]);
+  });
+
+  it("a mouse drag of a corner keeps its cursor, and hovers the corner once let go", () => {
+    const { effects } = run(
+      [down(1, 0, 0, "mouse"), move(1, 20, 0, "mouse"), up(1, 20, 0, "mouse")],
+      context(corner),
+      IDLE,
+      true,
+    );
+    expect(types(effects)).toEqual(["hover", "beginStep", "dragTo", "hover", "cursor"]);
+    expect(effects.at(-1)).toEqual({ type: "cursor", name: "move" });
+  });
+
+  it("a mouse tap does not hover again: the next move does", () => {
+    const { effects } = run(
+      [down(1, 0, 0, "mouse"), up(1, 0, 0, "mouse")],
+      context(feature),
+      IDLE,
+      true,
+    );
+    expect(types(effects)).toEqual(["hover", "tap"]);
+  });
+});
+
+describe("menuTargetOf", () => {
+  it("a corner stays a corner, the selected marker or any feature is a feature", () => {
+    expect(menuTargetOf(corner)).toEqual(corner);
+    expect(menuTargetOf(markerBody)).toEqual({ kind: "feature", feature: "m1" });
+    expect(menuTargetOf(feature)).toEqual({ kind: "feature", feature: "p1" });
+    expect(menuTargetOf(null)).toEqual({ kind: "nothing" });
+  });
+});
+
 describe("kindOf", () => {
   it("names a browser's pointer types, and takes anything else for a mouse", () => {
     expect(["mouse", "touch", "pen", ""].map(kindOf)).toEqual(["mouse", "touch", "pen", "mouse"]);
@@ -466,6 +585,24 @@ describe("pick", () => {
       feature: "m1",
     });
     expect(pick(input(), { x: 500, y: 500 })).toBeNull();
+  });
+
+  it("a corner on the far side of a globe cannot be picked", () => {
+    const far = {
+      ...zone,
+      points: [
+        [0, 0],
+        [100, 0],
+        [2000, 2000],
+      ],
+    } as MapFeature;
+    // The clamped place of the far corner would be (2000, 2000); nothing is found near it.
+    expect(pick(input({ chosen: far, shapes: [] }), { x: 2000, y: 2000 })).toBeNull();
+    expect(pick(input({ chosen: far, shapes: [] }), { x: 99, y: 1 })).toEqual({
+      kind: "corner",
+      feature: "z1",
+      vertex: 1,
+    });
   });
 
   it("drags nothing while viewing or with another tool: a corner is only a feature", () => {

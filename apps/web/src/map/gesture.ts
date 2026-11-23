@@ -15,6 +15,9 @@
  *
  * A `cancel` ends any state as a release that never taps. Only the primary button of a mouse
  * starts a gesture; a touch or a pen always does.
+ *
+ * A mouse moving over the map in `idle` hovers: the machine says what is under it and which
+ * cursor to show. Touch and pen moves never hover, since a touch screen has no hover.
  */
 import { type Point as ScreenPoint, type Shape, shapeAt, vertexAt, type View } from "@frontier/geo";
 import type { MapFeature } from "@frontier/schema";
@@ -50,9 +53,17 @@ export interface GestureEvent {
 export interface GestureContext {
   /** A press marks a box to focus on. */
   focusing: boolean;
+  /**
+   * A tap places something rather than selects: a drawing tool while editing, or exploring.
+   * Nothing is hovered then, and the cursor is a crosshair.
+   */
+  placing?: boolean;
   /** What lies under a point of the screen. */
   pick: (at: Point, kind: PointerKind) => Target | null;
 }
+
+/** The cursors the map shows, by what is under the pointer and what a press would do. */
+export type Cursor = "pointer" | "grab" | "grabbing" | "crosshair" | "move";
 
 export type Effect =
   | { type: "pan"; dx: number; dy: number }
@@ -64,7 +75,10 @@ export type Effect =
   /** The box being marked, or null when there is none. */
   | { type: "box"; rect: Rect | null }
   /** Fits the view to a box, given as its left, top, right and bottom. */
-  | { type: "focus"; rect: Rect };
+  | { type: "focus"; rect: Rect }
+  /** What a mouse is over, or null for nothing; `at` is where it is. */
+  | { type: "hover"; target: Target | null; at: Point }
+  | { type: "cursor"; name: Cursor };
 
 interface Finger {
   id: number;
@@ -105,6 +119,25 @@ export function kindOf(pointerType: string): PointerKind {
   return pointerType === "touch" || pointerType === "pen" ? pointerType : "mouse";
 }
 
+/** The cursor over a target: what a press there would do. */
+export function cursorFor(
+  target: Target | null,
+  ctx: Pick<GestureContext, "focusing" | "placing">,
+): Cursor {
+  if (ctx.focusing || ctx.placing) return "crosshair";
+  if (draggable(target)) return "move";
+  return target ? "pointer" : "grab";
+}
+
+/** What a mouse at a point hovers, and the cursor there. */
+function hoverAt(at: Point, ctx: GestureContext): Effect[] {
+  const target = ctx.focusing || ctx.placing ? null : ctx.pick(at, "mouse");
+  return [
+    { type: "hover", target, at },
+    { type: "cursor", name: cursorFor(target, ctx) },
+  ];
+}
+
 /** A second finger: the two pinch from where they are. */
 function pinch({ id, kind, at }: Finger, second: Finger): Stepped {
   return stay({
@@ -122,6 +155,8 @@ export function step(state: GestureState, e: GestureEvent, ctx: GestureContext):
 
   switch (state.name) {
     case "idle": {
+      // A mouse moving with nothing pressed hovers; a touch or a pen never does.
+      if (e.type === "move" && e.kind === "mouse") return { state, effects: hoverAt(e.at, ctx) };
       if (e.type !== "down") return stay(state);
       if (ctx.focusing) {
         // Marking a box to focus on comes before every other use of a drag.
@@ -130,7 +165,12 @@ export function step(state: GestureState, e: GestureEvent, ctx: GestureContext):
           effects: [{ type: "box", rect: [e.at.x, e.at.y, e.at.x, e.at.y] }],
         };
       }
-      return stay({ name: "press", ...finger, target: ctx.pick(e.at, e.kind) });
+      const pressed: GestureState = { name: "press", ...finger, target: ctx.pick(e.at, e.kind) };
+      // A press ends the hover: the name and the preview close.
+      if (e.kind === "mouse") {
+        return { state: pressed, effects: [{ type: "hover", target: null, at: e.at }] };
+      }
+      return stay(pressed);
     }
 
     case "press": {
@@ -149,9 +189,10 @@ export function step(state: GestureState, e: GestureEvent, ctx: GestureContext):
           effects: [{ type: "beginStep" }, { type: "dragTo", target: state.target, at: e.at }],
         };
       }
+      const pan: Effect = { type: "pan", dx: e.at.x - state.at.x, dy: e.at.y - state.at.y };
       return {
         state: { name: "pan", id: e.id, kind: state.kind, at: e.at },
-        effects: [{ type: "pan", dx: e.at.x - state.at.x, dy: e.at.y - state.at.y }],
+        effects: state.kind === "mouse" ? [{ type: "cursor", name: "grabbing" }, pan] : [pan],
       };
     }
 
@@ -159,7 +200,8 @@ export function step(state: GestureState, e: GestureEvent, ctx: GestureContext):
     case "drag": {
       if (e.type === "down") return pinch(state, finger);
       if (e.id !== state.id) return stay(state);
-      if (lifted) return stay(IDLE);
+      // A mouse let go hovers again where it is, so the cursor says what is under it.
+      if (lifted) return { state: IDLE, effects: state.kind === "mouse" ? hoverAt(e.at, ctx) : [] };
       const effect: Effect =
         state.name === "drag"
           ? { type: "dragTo", target: state.target, at: e.at }
@@ -239,6 +281,9 @@ export interface PickInput {
   shapes: Shape[];
 }
 
+/** Stands in for a point that is not on the screen: never within reach. */
+const FAR: ScreenPoint = [Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY];
+
 /**
  * What a press is on, in this order: a corner of the selected path or zone, the selected marker
  * (both only while editing with Select), then any feature, then nothing.
@@ -253,8 +298,9 @@ export function pick(input: PickInput, at: Point): Target | null {
         return { kind: "marker", feature: chosen.id };
       }
     } else {
+      // A corner on the far side of a globe is not drawn, so it cannot be picked.
       const corner = vertexAt(
-        chosen.points.map((q) => view.projectClamped(q).point),
+        chosen.points.map((q) => view.project(q) ?? FAR),
         p,
       );
       if (corner !== null) return { kind: "corner", feature: chosen.id, vertex: corner };
@@ -262,4 +308,17 @@ export function pick(input: PickInput, at: Point): Target | null {
   }
   const feature = shapeAt(input.shapes, p);
   return feature === null ? null : { kind: "feature", feature };
+}
+
+/** What a right-click acts on: a corner of the selected feature, a feature, or an empty place. */
+export type MenuTarget =
+  | { kind: "corner"; feature: string; vertex: number }
+  | { kind: "feature"; feature: string }
+  | { kind: "nothing" };
+
+/** The context menu's target from what `pick` found: the selected marker is a feature. */
+export function menuTargetOf(target: Target | null): MenuTarget {
+  if (!target) return { kind: "nothing" };
+  if (target.kind === "corner") return target;
+  return { kind: "feature", feature: target.feature };
 }

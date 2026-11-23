@@ -12,6 +12,8 @@ export function FeatureCard({
   children,
   reason,
   carry,
+  onCopyLink,
+  onEdit,
   onClose,
 }: {
   feature: MapFeature;
@@ -22,6 +24,10 @@ export function FeatureCard({
   reason?: string | null;
   /** The year and chronicle, carried into the map of this place. */
   carry?: string;
+  /** Copies a link that opens the map centred on this feature. */
+  onCopyLink: () => void;
+  /** Starts editing the map with this feature selected. */
+  onEdit: () => void;
   onClose: () => void;
 }) {
   const entry = feature.entry ? names[feature.entry] : undefined;
@@ -58,6 +64,14 @@ export function FeatureCard({
           ) : (
             <span className="muted">Its map is missing.</span>
           ))}
+      </p>
+      <p className="change-actions card-tools">
+        <button type="button" className="quiet" onClick={onCopyLink}>
+          Copy a link to this place
+        </button>
+        <button type="button" className="quiet" onClick={onEdit}>
+          Edit this feature
+        </button>
       </p>
     </aside>
   );

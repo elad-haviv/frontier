@@ -2,8 +2,8 @@
  * The map's view: where it looks, the size of its frame, zooming with the wheel, and the address,
  * which keeps the view and what is shown so that a link opens the map as it was.
  */
-import { centreOn, initialView, type ViewState, zoomAt } from "@frontier/geo";
-import type { MapFile } from "@frontier/schema";
+import { centreOn, initialView, type Position, type ViewState, zoomAt } from "@frontier/geo";
+import type { MapFeature, MapFile } from "@frontier/schema";
 import { type RefObject, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { mapUrl } from "../api.ts";
@@ -53,15 +53,18 @@ export function useMapView(
     hidden,
     shownImages,
     onWanted,
+    placeOf,
   }: {
     params: URLSearchParams;
     setParams: (next: URLSearchParams, options: { replace: boolean }) => void;
     editing: boolean;
-    time: Pick<TimeState, "timeOn" | "year" | "chronicleId" | "defaultChronicle">;
+    time: Pick<TimeState, "timeOn" | "year" | "chronicleId" | "defaultChronicle" | "seen">;
     hidden: Set<string>;
     shownImages: Set<string>;
     /** Selects the feature the address asks for. */
     onWanted: (feature: string) => void;
+    /** Where a feature is at the year shown: its marker, or the first point of its shape. */
+    placeOf: (feature: MapFeature) => Position;
   },
 ) {
   const navigate = useNavigate();
@@ -71,6 +74,10 @@ export function useMapView(
   const frame = useRef<HTMLDivElement>(null);
   const viewRef = useRef<ViewState | null>(null);
   viewRef.current = view;
+  const placeRef = useRef(placeOf);
+  placeRef.current = placeOf;
+  /** The first view, centred on the feature the address asked for, until the year is known. */
+  const centred = useRef<{ feature: MapFeature; state: ViewState } | null>(null);
 
   // The canvas follows the size of its frame.
   useEffect(() => {
@@ -92,11 +99,22 @@ export function useMapView(
       initialView(map.space, size.width, size.height);
     const wanted = map.features.find((f) => f.id === params.get("f"));
     if (wanted && !params.get("v")) {
-      state = centreOn(state, wanted.kind === "marker" ? wanted.at : wanted.points[0]!);
+      state = centreOn(state, placeOf(wanted));
       onWanted(wanted.id);
+      if (params.get("t") !== null) centred.current = { feature: wanted, state };
     }
     setView(state);
   }, [map, view, size]);
+
+  // With a year in the address, the feature is centred again on the shape in force at that year
+  // once the chronicle is read, unless the view has been moved since.
+  useEffect(() => {
+    const first = centred.current;
+    if (!time.seen || !first) return;
+    centred.current = null;
+    if (viewRef.current === first.state)
+      setView(centreOn(first.state, placeRef.current(first.feature)));
+  }, [time.seen]);
 
   // The view and what is shown are kept in the address, replacing it, so Back leaves the map.
   useEffect(() => {
@@ -129,10 +147,30 @@ export function useMapView(
     navigate(`${mapUrl(other)}?${next.toString()}`);
   };
 
+  /**
+   * A link to a feature at this place: the map's address with `f`, and the year and chronicle
+   * when time is on, but no view, so that the map opens centred on the feature.
+   */
+  const placeLink = (feature: string) => {
+    const next = new URLSearchParams({ f: feature });
+    if (timeOn && year !== null) next.set("t", String(year));
+    if (timeOn && chronicleId && chronicleId !== defaultChronicle) next.set("c", chronicleId);
+    return `${window.location.origin}${window.location.pathname}?${next.toString()}`;
+  };
+
+  /** A link to the map as it is seen now: the address, with its view, but not editing. */
+  const viewLink = () => {
+    const url = new URL(window.location.href);
+    url.searchParams.delete("edit");
+    url.searchParams.delete("f");
+    if (view) url.searchParams.set("v", writeView(view));
+    return url.toString();
+  };
+
   const zoom = (factor: number) =>
     view && setView(zoomAt(view, size.width, size.height, size.width / 2, size.height / 2, factor));
 
-  return { view, setView, viewRef, size, frame, goLayer, zoom };
+  return { view, setView, viewRef, size, frame, goLayer, zoom, placeLink, viewLink };
 }
 
 /**

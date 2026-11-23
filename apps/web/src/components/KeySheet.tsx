@@ -23,7 +23,10 @@ export function KeySheet({ onClose }: { onClose: () => void }) {
             <dl>
               {g.items.map((s) => (
                 <div key={s.id} className="key-sheet-row">
-                  <dt>{s.label}</dt>
+                  <dt>
+                    {s.label}
+                    {s.when && <em className="key-sheet-when"> while {s.when}</em>}
+                  </dt>
                   <dd>
                     {s.keys.map((k, i) => (
                       <span key={k}>

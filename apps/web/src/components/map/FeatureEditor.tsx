@@ -3,7 +3,9 @@ import { type ReactNode, useState } from "react";
 import { imageUrl } from "../../api.ts";
 import type { MarkerSets, Names } from "../../map/useMapFile.ts";
 import { iconLabel } from "../../map/viewUrl.ts";
+import { shortcutText } from "../../keys.ts";
 import { EntryPicker } from "../EntryPicker.tsx";
+import { Tip } from "../ui/Tip.tsx";
 
 /** The form for the selected feature while editing. */
 export function FeatureEditor({
@@ -123,28 +125,33 @@ export function FeatureEditor({
             </select>
           )}
           <div className="icon-grid">
-            <button
-              type="button"
-              className={feature.icon === null ? "is-picked" : ""}
-              title="A plain dot"
-              onClick={() => onChange({ ...feature, icon: null })}
-            >
-              ●
-            </button>
-            {icons.map((icon) => (
+            <Tip label="A plain dot">
               <button
-                key={icon.path}
                 type="button"
-                title={iconLabel(icon.name)}
-                aria-label={iconLabel(icon.name)}
-                className={
-                  feature.icon?.set === set && feature.icon.name === icon.name ? "is-picked" : ""
-                }
-                onClick={() => onChange({ ...feature, icon: { set, name: icon.name } })}
+                aria-label="A plain dot"
+                aria-pressed={feature.icon === null}
+                className={feature.icon === null ? "is-picked" : ""}
+                onClick={() => onChange({ ...feature, icon: null })}
               >
-                <img src={imageUrl(icon.path)} alt="" loading="lazy" />
+                ●
               </button>
-            ))}
+            </Tip>
+            {icons.map((icon) => {
+              const picked = feature.icon?.set === set && feature.icon.name === icon.name;
+              return (
+                <Tip key={icon.path} label={iconLabel(icon.name)}>
+                  <button
+                    type="button"
+                    aria-label={iconLabel(icon.name)}
+                    aria-pressed={picked}
+                    className={picked ? "is-picked" : ""}
+                    onClick={() => onChange({ ...feature, icon: { set, name: icon.name } })}
+                  >
+                    <img src={imageUrl(icon.path)} alt="" loading="lazy" width={24} height={24} />
+                  </button>
+                </Tip>
+              );
+            })}
           </div>
         </div>
       )}
@@ -174,13 +181,24 @@ export function FeatureEditor({
       {time}
       {extra}
       <p className="change-actions">
-        {feature.kind !== "marker" &&
-          vertex !== null &&
-          (corners ?? feature.points.length) > minimum && (
-            <button type="button" className="quiet" onClick={onRemoveVertex}>
+        {feature.kind !== "marker" && vertex !== null && (
+          <Tip
+            label="Remove this point"
+            keys={shortcutText("map.delete")}
+            {...((corners ?? feature.points.length) > minimum
+              ? {}
+              : { note: `A ${feature.kind} needs at least ${minimum} points` })}
+          >
+            <button
+              type="button"
+              className="quiet"
+              aria-disabled={(corners ?? feature.points.length) <= minimum || undefined}
+              onClick={() => (corners ?? feature.points.length) > minimum && onRemoveVertex()}
+            >
               Remove this point
             </button>
-          )}
+          </Tip>
+        )}
         <button type="button" className="plain danger" onClick={onDelete}>
           Delete
         </button>

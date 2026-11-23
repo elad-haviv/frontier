@@ -43,6 +43,9 @@
   --icon-sm: 1rem;
   --icon-md: 1.25rem;
   --icon-lg: 1.5rem;
+
+  /* What marks the selected and the hovered feature on a map, over the map's own image. */
+  --map-select: #c2410c;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -58,6 +61,7 @@
     --accent-soft: #3a261d;
     --warn: #f08c82;
     --shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+    --map-select: #fb923c;
   }
 }
 
@@ -3808,4 +3812,86 @@ button[data-offline] {
 /* The editor's file name is in the phone's top line already. */
 .shell.is-phone .editor-bar .editor-path {
   display: none;
+}
+
+/* ---- Stage 13b: viewing a map ------------------------------------------------------------- */
+
+/* The map's frame takes the focus when pressed, so the map's keys act; the ring stays inside. */
+.map-frame:focus-visible {
+  outline-offset: -3px;
+}
+/* The live canvas, above the features, carries the hover halo. It never catches the pointer:
+   every press, move and right-click reaches the canvas under it. */
+.map-live {
+  pointer-events: none;
+}
+.map-zoom .ui-icon-button {
+  width: 2.5rem;
+  height: 2.5rem;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  background: var(--paper);
+  color: var(--ink);
+}
+/* A word over the map that goes by itself, at the foot of the map. */
+.map-hint.map-said {
+  top: auto;
+  bottom: 0.9rem;
+  z-index: 3;
+}
+.feature-card .card-tools {
+  margin-top: 0.4rem;
+}
+.layer-panel li .ui-icon-button.plain {
+  min-width: 2rem;
+  min-height: 2rem;
+  padding: 0;
+}
+/* The marker icons: big enough to tell apart, the chosen one plainly marked. */
+.icon-grid img {
+  width: 24px;
+  height: 24px;
+}
+.icon-grid button[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+
+/* On a desktop the tools lie over the top of the map, so the map keeps its size when editing
+   starts (MP-7); the drawing hints sit below them. */
+@media (min-width: 48rem) {
+  .map-page {
+    display: grid;
+    grid-template-rows: auto auto minmax(0, 1fr) auto;
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .map-page > .map-bar {
+    grid-row: 1;
+  }
+  .map-page > .map-notice {
+    grid-row: 2;
+  }
+  .map-page > .map-frame {
+    grid-row: 3;
+    grid-column: 1;
+  }
+  .map-page > .map-tools {
+    z-index: 4;
+    grid-row: 3;
+    grid-column: 1;
+    align-self: start;
+    justify-self: start;
+    max-width: calc(100% - 1.2rem);
+    margin: 0.6rem;
+    border: 1px solid var(--rule);
+    border-radius: 8px;
+    box-shadow: var(--shadow);
+  }
+  .map-page > .time-bar {
+    grid-row: 4;
+  }
+  .map-page:has(> .map-tools) .map-frame .map-hint:not(.map-said) {
+    top: 3.9rem;
+  }
 }
