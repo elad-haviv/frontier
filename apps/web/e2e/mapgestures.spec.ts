@@ -1,8 +1,8 @@
 import { type CDPSession, expect, type Page, test } from "@playwright/test";
 
 /**
- * The gestures on a map that the other map tests do not make: pinches, second fingers and the
- * tap thresholds. Touch goes through Chromium's own touch
+ * The gestures on a map that the other map tests do not make: pinches, second fingers, the tap
+ * thresholds and buttons other than the primary one. Touch goes through Chromium's own touch
  * input, since Playwright's touchscreen has one finger.
  */
 
@@ -355,6 +355,31 @@ test.describe("mouse", () => {
     await page.mouse.move(c.x + 7, c.y, { steps: 5 });
     await page.mouse.up();
     await expect.poll(() => placeOf(page)).not.toBe(place);
+    await expect(page.locator(".feature-card")).toHaveCount(0);
+    await cleanUp(page, id);
+  });
+
+  // Only the primary button starts a gesture (from release 13a-2; before, any button panned).
+  test("a right-button or middle-button press and drag neither pans nor selects", async ({
+    page,
+  }, info) => {
+    test.skip(info.project.name !== "desktop", "Needs a mouse");
+    const id = await openMap(page, `Buttons ${info.project.name}`, true);
+    const c = await placeMarker(page, 0, 0);
+    const place = placeOf(page);
+
+    for (const button of ["right", "middle"] as const) {
+      await page.mouse.move(c.x, c.y);
+      await page.mouse.down({ button });
+      await page.mouse.move(c.x + 40, c.y + 30, { steps: 5 });
+      await page.mouse.up({ button });
+      // And held still, it is no tap either.
+      await page.mouse.move(c.x, c.y);
+      await page.mouse.down({ button });
+      await page.mouse.up({ button });
+    }
+    await page.waitForTimeout(500);
+    expect(placeOf(page)).toBe(place);
     await expect(page.locator(".feature-card")).toHaveCount(0);
     await cleanUp(page, id);
   });
