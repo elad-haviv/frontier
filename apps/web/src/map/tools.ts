@@ -96,7 +96,10 @@ export function tapSelect(
   [x, y]: [number, number],
 ): Step {
   if (editing && chosen && chosen.kind !== "marker") {
-    const corners = chosen.points.map((p) => view.projectClamped(p).point);
+    // A corner on the far side of a globe is not drawn, so it cannot be picked.
+    const corners = chosen.points.map(
+      (p): [number, number] => view.project(p) ?? [Number.POSITIVE_INFINITY, 0],
+    );
     const corner = vertexAt(corners, [x, y]);
     if (corner !== null) return { vertex: corner };
   }
@@ -127,4 +130,36 @@ export function dragShape(
   const placed =
     orbit && "at" in shape ? { at: turnAbout(shape.at, orbit.centre, -orbit.degrees) } : shape;
   return writeShape(feature, drawn.shape, placed);
+}
+
+/** The fewest points the shape of a path or zone may have. */
+export const FEWEST_POINTS = { path: 2, zone: 3 } as const;
+
+/** Why a point cannot be taken from a shape on screen, or null when one can. */
+export function removeReason(drawn: MapFeature): string | null {
+  if (drawn.kind === "marker") return "A marker has no points";
+  const fewest = FEWEST_POINTS[drawn.kind];
+  return drawn.points.length > fewest ? null : `A ${drawn.kind} needs at least ${fewest} points`;
+}
+
+/**
+ * The feature with one point taken from its shape on screen, whichever of its shapes that is; or
+ * the reason it cannot be, when that shape has its fewest points. Null when the feature is gone.
+ */
+export function removePoint(
+  map: MapFile,
+  drawn: Resolved,
+  vertex: number,
+): { feature: MapFeature } | { reason: string } | null {
+  const feature = map.features.find((f) => f.id === drawn.feature.id);
+  if (!feature) return null;
+  const reason = removeReason(drawn.feature);
+  if (reason || drawn.feature.kind === "marker") return { reason: reason ?? "" };
+  const points = drawn.feature.points.filter((_, i) => i !== vertex);
+  return { feature: writeShape(feature, drawn.shape, { points }) };
+}
+
+/** The map without one of its features. */
+export function deleteFeature(map: MapFile, id: string): MapFile {
+  return { ...map, features: map.features.filter((f) => f.id !== id) };
 }

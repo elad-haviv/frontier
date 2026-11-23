@@ -4,6 +4,7 @@ import ReactMarkdown from "react-markdown";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
 import remarkGfm from "remark-gfm";
+import { remarkUnderline } from "@frontier/vault";
 import { editUrl } from "../api.ts";
 import { useLightbox } from "../components/Lightbox.tsx";
 import { currentEntryPath } from "../components/Shell.tsx";
@@ -12,10 +13,12 @@ import { useDialogs } from "../components/Dialogs.tsx";
 
 /**
  * Everything rendered from Markdown is untrusted. Raw HTML in a note is not rendered at all, and
- * the result is sanitised: no script, no event handlers, no frames.
+ * the result is sanitised: no script, no event handlers, no frames. Underline, written `<u>…</u>`,
+ * is the one tag read, by remarkUnderline, which makes it a node of its own.
  */
 const schema = {
   ...defaultSchema,
+  tagNames: [...(defaultSchema.tagNames ?? []), "u"],
   attributes: {
     ...defaultSchema.attributes,
     a: [...(defaultSchema.attributes?.["a"] ?? []), "dataKind", "dataTarget"],
@@ -130,7 +133,7 @@ export const Markdown = memo(function Markdown({
 }) {
   return (
     <ReactMarkdown
-      remarkPlugins={[remarkGfm, [wikilinks, { links }]]}
+      remarkPlugins={[remarkGfm, remarkUnderline, [wikilinks, { links }]]}
       rehypePlugins={[[rehypeSanitize, schema]]}
       components={{
         a: Anchor,

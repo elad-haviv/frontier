@@ -409,6 +409,10 @@ export const ImageQuery = z.object({
 /** `POST /api/images` (stage 2) */
 export const UploadImageResponse = z.object({ path: VaultPath, embed: z.string() });
 
+/** `POST /api/images/from-url` (stage 12): an image taken from a web address, kept as an upload. */
+export const ImageFromUrlRequest = z.object({ url: z.string().max(2048) });
+export type ImageFromUrlRequest = z.infer<typeof ImageFromUrlRequest>;
+
 // ---- Search (stage 2) ----------------------------------------------------------------------
 
 export const SearchQuery = z.object({

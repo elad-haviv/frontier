@@ -1,10 +1,9 @@
-import { useEffect, useRef, useState } from "react";
+import { type CSSProperties, type ReactNode, useEffect, useRef, useState } from "react";
 import { api, ApiFailure } from "../api.ts";
 import { NEEDS_CONNECTION } from "../sync/connection.ts";
 
 interface Shown {
   path: string;
-  text: string;
   x: number;
   y: number;
 }
@@ -24,12 +23,95 @@ function pathOf(anchor: HTMLAnchorElement): string | null {
 }
 
 /**
+ * The opening of an entry, for a preview: from the shared cache, else asked of the server once.
+ * Null while it is on its way, when it cannot be read, and when there is no path; "Needs a
+ * connection" when the server cannot be reached.
+ */
+export function usePreviewText(path: string | null): string | null {
+  const [text, setText] = useState<{ path: string; text: string } | null>(() =>
+    path && cache.has(path) ? { path, text: cache.get(path)! } : null,
+  );
+  useEffect(() => {
+    if (!path) return;
+    const known = cache.get(path);
+    if (known !== undefined) {
+      setText({ path, text: known });
+      return;
+    }
+    let live = true;
+    api.preview(path).then(
+      (p) => {
+        cache.set(path, p.text);
+        if (live) setText({ path, text: p.text });
+      },
+      (err) => {
+        // Previews are not kept on the device: with no server, the card says why it is empty.
+        if (live && err instanceof ApiFailure && err.status === 0) {
+          setText({ path, text: NEEDS_CONNECTION });
+        }
+      },
+    );
+    return () => {
+      live = false;
+    };
+  }, [path]);
+  return path && text?.path === path ? text.text : null;
+}
+
+/** An entry's opening as plain text: marks are stripped, nothing is rendered as markup. */
+function plainText(text: string): string {
+  return text
+    .replace(/^#+\s+.*$/m, "")
+    .replace(/!\[\[[^\]]*\]\]/g, "")
+    .replace(/\[\[([^\]|]*\|)?([^\]]*)\]\]/g, "$2")
+    .replace(/[*_`>#]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
+ * The card of a preview: the entry's name and the start of its text. `children` adds lines below,
+ * such as the map of a place. It is placed by `style`.
+ */
+export function PreviewCard({
+  path,
+  text,
+  style,
+  className,
+  children,
+}: {
+  path: string;
+  text: string;
+  style: CSSProperties;
+  className?: string;
+  children?: ReactNode;
+}) {
+  const name = (path.split("/").pop() ?? "").replace(/\.md$/i, "");
+  const plain = plainText(text);
+  return (
+    <div
+      className={`hover-preview${className ? ` ${className}` : ""}`}
+      role="tooltip"
+      style={style}
+    >
+      <strong>{name}</strong>
+      <p>
+        {plain.slice(0, 280) || "This entry is empty."}
+        {plain.length > 280 ? " …" : ""}
+      </p>
+      {children}
+    </div>
+  );
+}
+
+/**
  * Shows the opening of a linked entry when its link is hovered. For mouse pointers only: on a
  * touch screen a tap follows the link, as expected.
  */
 export function HoverPreview({ scope }: { scope: string }) {
   const [shown, setShown] = useState<Shown | null>(null);
   const timer = useRef<number | undefined>(undefined);
+  const text = usePreviewText(shown?.path ?? null);
 
   useEffect(() => {
     if (!window.matchMedia("(hover: hover) and (pointer: fine)").matches) return;
@@ -42,21 +124,10 @@ export function HoverPreview({ scope }: { scope: string }) {
       const path = pathOf(anchor);
       if (!path) return;
       window.clearTimeout(timer.current);
-      timer.current = window.setTimeout(async () => {
-        const at = () => {
-          const box = anchor.getBoundingClientRect();
-          const left = Math.min(box.left, window.innerWidth - 22 * 16 - 16);
-          return { x: Math.max(16, left), y: box.bottom + 8 };
-        };
-        try {
-          const text = cache.get(path) ?? (await api.preview(path)).text;
-          cache.set(path, text);
-          setShown({ path, text, ...at() });
-        } catch (err) {
-          // Previews are not kept on the device: with no server, the card says why it is empty.
-          const lost = err instanceof ApiFailure && err.status === 0;
-          setShown(lost ? { path, text: NEEDS_CONNECTION, ...at() } : null);
-        }
+      timer.current = window.setTimeout(() => {
+        const box = anchor.getBoundingClientRect();
+        const left = Math.min(box.left, window.innerWidth - 22 * 16 - 16);
+        setShown({ path, x: Math.max(16, left), y: box.bottom + 8 });
       }, 350);
     };
     const out = () => {
@@ -75,23 +146,6 @@ export function HoverPreview({ scope }: { scope: string }) {
     };
   }, [scope]);
 
-  if (!shown) return null;
-  const name = (shown.path.split("/").pop() ?? "").replace(/\.md$/i, "");
-  // Shown as plain text: marks are stripped, nothing from the note is rendered as markup.
-  const plain = shown.text
-    .replace(/^#+\s+.*$/m, "")
-    .replace(/!\[\[[^\]]*\]\]/g, "")
-    .replace(/\[\[([^\]|]*\|)?([^\]]*)\]\]/g, "$2")
-    .replace(/[*_`>#]/g, "")
-    .replace(/\s+/g, " ")
-    .trim();
-  return (
-    <div className="hover-preview" role="tooltip" style={{ left: shown.x, top: shown.y }}>
-      <strong>{name}</strong>
-      <p>
-        {plain.slice(0, 280) || "This entry is empty."}
-        {plain.length > 280 ? " …" : ""}
-      </p>
-    </div>
-  );
+  if (!shown || text === null) return null;
+  return <PreviewCard path={shown.path} text={text} style={{ left: shown.x, top: shown.y }} />;
 }

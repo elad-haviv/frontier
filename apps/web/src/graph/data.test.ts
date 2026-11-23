@@ -90,6 +90,21 @@ describe("the graph's data", () => {
     expect(s.answers).toHaveLength(3);
   });
 
+  it("shows what the server has when first used, and fetches again once a waiting entry is sent", async () => {
+    const s = source();
+    // The tab opens while the queue still holds a change it has not sent.
+    s.queueNow({ "entry:02 People/Mira.md": 0 });
+    s.data.use();
+    expect(s.answers).toHaveLength(1);
+    s.answers[0]!.resolve(one("02 People/Mira.md"));
+    await settle();
+    expect(s.data.current().model?.nodes).toHaveLength(1);
+    s.queueNow({ "entry:02 People/Mira.md": 0 });
+    expect(s.answers).toHaveLength(1);
+    s.queueNow({});
+    expect(s.answers).toHaveLength(2);
+  });
+
   it("says the graph needs a connection, unless a graph is already held", async () => {
     const s = source();
     s.data.use();

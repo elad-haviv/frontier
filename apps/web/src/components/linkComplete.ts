@@ -26,6 +26,16 @@ export function linkText(n: Name): string {
 }
 
 /**
+ * What a link to the entry at `path` is written with: its name, or its path when another entry
+ * shares the name. The rule renames use too.
+ */
+export async function linkTarget(path: string, title: string): Promise<string> {
+  const all = await names().catch(() => [] as Name[]);
+  const row = all.find((n) => n.path === path && !n.alias);
+  return row ? linkText(row) : title;
+}
+
+/**
  * Offers entry names after "[[". Choosing one writes the link; an alias is written as
  * "[[Entry|Alias]]", the way Obsidian writes it.
  */

@@ -329,6 +329,7 @@ export function plainForQuotes(text: string): string {
     text
       .replace(/\[\[[^\]|]*\|([^\]]*)\]\]/g, "$1")
       .replace(/\[\[([^\]#]*)(#[^\]]*)?\]\]/g, "$1")
+      .replace(/<\/?u>/gi, "")
       .replace(/[*_`~]/g, "")
       .replace(/[“”]/g, '"')
       .replace(/[‘’]/g, "'"),

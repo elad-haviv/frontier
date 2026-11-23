@@ -1,12 +1,30 @@
 import { PROJECTIONS, type ProjectionId, switchView, type ViewState } from "@frontier/geo";
 import type { MapFile } from "@frontier/schema";
-import { ChevronLeft, Trash2 } from "lucide-react";
+import {
+  ChevronLeft,
+  Clock,
+  ImageDown,
+  Layers,
+  Link2,
+  Rotate3d,
+  Telescope,
+  Trash2,
+} from "lucide-react";
+import { shortcutText } from "../../keys.ts";
 import type { OtherMap } from "../../map/layersBeneath.ts";
 import { useNeedsConnection } from "../../sync/connection.ts";
 import { PageAction } from "../shell/panels.tsx";
-import { IconLink } from "../ui/IconButton.tsx";
-import { Menu, MenuItem } from "../ui/Menu.tsx";
+import { IconButton, IconLink } from "../ui/IconButton.tsx";
+import { Menu, MenuItem, MenuSeparator } from "../ui/Menu.tsx";
 import { SaveStatus, type useSaveState } from "../ui/SaveStatus.tsx";
+import { Tip } from "../ui/Tip.tsx";
+
+/** The sizes a picture of the map is saved at, as times the size of the screen. */
+const PICTURES = [
+  { scale: 1, label: "Save a picture at screen size" },
+  { scale: 2, label: "Save a picture at twice the size" },
+  { scale: 4, label: "Save a picture at four times the size" },
+];
 
 /** The map's bar: its title, the view, layers above and below, and Edit or Done. */
 export function MapBar({
@@ -23,6 +41,7 @@ export function MapBar({
   below,
   onLayer,
   onPicture,
+  onCopyView,
   canExplore,
   exploring,
   onExplore,
@@ -50,6 +69,8 @@ export function MapBar({
   onLayer: (id: string) => void;
   /** Saves a picture at this many times the size of the screen. */
   onPicture: (scale: number) => void;
+  /** Copies a link to the map as it is seen now. */
+  onCopyView: () => void;
   canExplore: boolean;
   exploring: boolean;
   onExplore: () => void;
@@ -81,108 +102,125 @@ export function MapBar({
       {editing && <SaveStatus state={saving.state} />}
       <span className="map-actions">
         {sphere && view && (
-          <select
-            className="map-down"
-            aria-label="View"
-            value={view.kind === "projected" ? view.projection : view.kind}
-            onChange={(e) => {
-              const to = e.target.value as "globe" | "plate" | ProjectionId;
-              onView(switchView(view, to, size.width, size.height));
-              if (to === "globe" || to === "plate") {
-                onTurning(false);
-                onStopFocus();
-              }
-            }}
-          >
-            <option value="globe">Globe</option>
-            <option value="plate">Flat</option>
-            {PROJECTIONS.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name}
-              </option>
-            ))}
-          </select>
+          <Tip label="View: the globe, laid flat, or a projection">
+            <select
+              className="map-down"
+              aria-label="View"
+              value={view.kind === "projected" ? view.projection : view.kind}
+              onChange={(e) => {
+                const to = e.target.value as "globe" | "plate" | ProjectionId;
+                onView(switchView(view, to, size.width, size.height));
+                if (to === "globe" || to === "plate") {
+                  onTurning(false);
+                  onStopFocus();
+                }
+              }}
+            >
+              <option value="globe">Globe</option>
+              <option value="plate">Flat</option>
+              {PROJECTIONS.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+          </Tip>
         )}
         {view?.kind === "projected" && (
-          <button
-            type="button"
+          <IconButton
+            label="Turn"
+            icon={Rotate3d}
+            showLabel
             className="quiet"
             aria-pressed={turning}
             onClick={() => onTurning(!turning)}
-          >
-            Turn
-          </button>
+          />
         )}
         {above && (
-          <button
-            type="button"
-            className="quiet"
-            title={`Up to ${above.title}`}
-            onClick={() => onLayer(above.id)}
-          >
-            ▲ Up
-          </button>
+          <Tip label={`Up to ${above.title}`}>
+            <button type="button" className="quiet" onClick={() => onLayer(above.id)}>
+              ▲ Up
+            </button>
+          </Tip>
         )}
         {below.length === 1 && (
-          <button
-            type="button"
-            className="quiet"
-            title={`Down to ${below[0]!.title}`}
-            onClick={() => onLayer(below[0]!.id)}
-          >
-            ▼ Down
-          </button>
+          <Tip label={`Down to ${below[0]!.title}`}>
+            <button type="button" className="quiet" onClick={() => onLayer(below[0]!.id)}>
+              ▼ Down
+            </button>
+          </Tip>
         )}
         {below.length > 1 && (
-          <select
-            className="map-down"
-            aria-label="Down to a layer below"
-            value=""
-            onChange={(e) => e.target.value && onLayer(e.target.value)}
-          >
-            <option value="">▼ Down</option>
-            {below.map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.title}
-              </option>
-            ))}
-          </select>
-        )}
-        {!editing && (
-          <select
-            className="map-down"
-            aria-label="Save a picture"
-            value=""
-            onChange={(e) => e.target.value && onPicture(Number(e.target.value))}
-          >
-            <option value="">Picture</option>
-            <option value="1">Save at screen size</option>
-            <option value="2">Save at twice the size</option>
-            <option value="4">Save at four times the size</option>
-          </select>
+          <Tip label="Down to a layer below">
+            <select
+              className="map-down"
+              aria-label="Down to a layer below"
+              value=""
+              onChange={(e) => e.target.value && onLayer(e.target.value)}
+            >
+              <option value="">▼ Down</option>
+              {below.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.title}
+                </option>
+              ))}
+            </select>
+          </Tip>
         )}
         {canExplore && !editing && (
-          <button type="button" className="quiet" aria-pressed={exploring} onClick={onExplore}>
-            Explore
-          </button>
+          <IconButton
+            label="Explore"
+            icon={Telescope}
+            showLabel
+            className="quiet"
+            aria-pressed={exploring}
+            onClick={onExplore}
+          />
         )}
         {hasTime && (
-          <button type="button" className="quiet" aria-pressed={timeOn} onClick={onTime}>
-            Time
-          </button>
+          <IconButton
+            label="Time"
+            icon={Clock}
+            shortcut="map.time"
+            showLabel
+            className="quiet"
+            aria-pressed={timeOn}
+            onClick={onTime}
+          />
         )}
-        <button type="button" className="quiet" aria-pressed={layersOpen} onClick={onLayers}>
-          Layers
-        </button>
+        <IconButton
+          label="Layers"
+          icon={Layers}
+          shortcut="map.layers"
+          showLabel
+          className="quiet"
+          aria-pressed={layersOpen}
+          onClick={onLayers}
+        />
       </span>
       {/* Done and "⋯" stay on the first line on a phone, so the way out is always on screen. */}
       <span className="map-main">
         <PageAction>
-          <button type="button" className={editing ? "primary" : "quiet"} onClick={onEdit}>
-            {editing ? "Done" : "Edit"}
-          </button>
+          <Tip
+            label={editing ? "Done editing" : "Edit the map"}
+            keys={shortcutText(editing ? "map.done" : "map.edit")}
+          >
+            <button type="button" className={editing ? "primary" : "quiet"} onClick={onEdit}>
+              {editing ? "Done" : "Edit"}
+            </button>
+          </Tip>
         </PageAction>
         <Menu label="More actions" className="map-more">
+          {!editing &&
+            PICTURES.map((p) => (
+              <MenuItem key={p.scale} icon={ImageDown} onSelect={() => onPicture(p.scale)}>
+                {p.label}
+              </MenuItem>
+            ))}
+          <MenuItem icon={Link2} onSelect={onCopyView}>
+            Copy a link to this view
+          </MenuItem>
+          <MenuSeparator />
           <MenuItem
             icon={Trash2}
             danger

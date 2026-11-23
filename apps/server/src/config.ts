@@ -54,6 +54,11 @@ export interface Config {
   openrouterKey: string | null;
   openrouterUrl: string;
   /**
+   * Lets an image be taken from a web address on this machine's loopback addresses, on any port,
+   * so the tests can serve one. Off by default, and refused in production.
+   */
+  imageFetchAllowLoopback: boolean;
+  /**
    * False when `FRONTIER_SERVICE_WORKER=off`: `/sw.js` then answers the kill worker, which removes
    * the app's service worker from every browser that has it.
    */
@@ -133,6 +138,14 @@ export function loadConfig(env: Env = process.env): Config {
       "SECRETS_KEY must be 32 bytes in base64. Generate one with: openssl rand -base64 32",
     );
   }
+  const imageFetchAllowLoopback = ["1", "true"].includes(
+    optional("IMAGE_FETCH_ALLOW_LOOPBACK")?.toLowerCase() ?? "",
+  );
+  if (imageFetchAllowLoopback && optional("NODE_ENV") === "production") {
+    throw new ConfigError(
+      "IMAGE_FETCH_ALLOW_LOOPBACK is for tests and cannot be set in production.",
+    );
+  }
   if (sessionKey.length !== 32) {
     throw new ConfigError(
       "SESSION_KEY must be 32 bytes in base64. Generate one with: openssl rand -base64 32",
@@ -171,6 +184,7 @@ export function loadConfig(env: Env = process.env): Config {
       /\/+$/,
       "",
     ),
+    imageFetchAllowLoopback,
     serviceWorker: optional("FRONTIER_SERVICE_WORKER")?.toLowerCase() !== "off",
     commitAuthor,
     commitBot,

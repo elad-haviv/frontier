@@ -53,3 +53,8 @@
   color: var(--ink-faint);
   font-size: 0.8rem;
 }
+/* A key that acts only while viewing, or only while editing, says so after its name. */
+.key-sheet-when {
+  color: var(--ink-faint);
+  font-size: 0.82rem;
+}

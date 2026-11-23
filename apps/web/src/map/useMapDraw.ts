@@ -35,6 +35,8 @@ export function useMapDraw(
   const { sketch, tool, editing, names, pendingNames, sets } = input;
   const glCanvas = useRef<HTMLCanvasElement>(null);
   const topCanvas = useRef<HTMLCanvasElement>(null);
+  /** The canvas above the features, for what follows the pointer: the hover halo. */
+  const liveCanvas = useRef<HTMLCanvasElement>(null);
   const renderer = useRef<MapRenderer | null>(null);
   /** Where each feature landed on the screen at the last draw. */
   const shapes = useRef<Shape[]>([]);
@@ -130,6 +132,7 @@ export function useMapDraw(
   return {
     glCanvas,
     topCanvas,
+    liveCanvas,
     shapes,
     coarse,
     glError,

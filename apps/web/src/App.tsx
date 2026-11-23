@@ -8,11 +8,8 @@ import { noteSignedIn, openApp } from "./offline/start.ts";
 import { updates } from "./offline/updates.ts";
 import { connection } from "./sync/connection.ts";
 import { queue } from "./sync/queue.ts";
-import { ConflictPage } from "./pages/Conflict.tsx";
-import { EditPage } from "./pages/Edit.tsx";
 import { EntryPage } from "./pages/Entry.tsx";
 import { UnpublishedPage } from "./pages/Unpublished.tsx";
-import { VersionsPage } from "./pages/Versions.tsx";
 import { Home } from "./pages/Home.tsx";
 import { ChroniclesPage } from "./pages/Chronicles.tsx";
 import { MapsPage } from "./pages/Maps.tsx";
@@ -51,6 +48,15 @@ const ImportPage = lazy(() =>
   import("./pages/Import.tsx").then((m) => ({ default: m.ImportPage })),
 );
 const InboxPage = lazy(() => import("./pages/Inbox.tsx").then((m) => ({ default: m.InboxPage })));
+// The pages that edit text carry the editor (CodeMirror, its language, the toolbar and its
+// commands); they load when first opened too. The service worker keeps them for offline use.
+const EditPage = lazy(() => import("./pages/Edit.tsx").then((m) => ({ default: m.EditPage })));
+const ConflictPage = lazy(() =>
+  import("./pages/Conflict.tsx").then((m) => ({ default: m.ConflictPage })),
+);
+const VersionsPage = lazy(() =>
+  import("./pages/Versions.tsx").then((m) => ({ default: m.VersionsPage })),
+);
 
 /** A different map gets a fresh page: its own view, drawing surface and history. */
 function OneMap() {

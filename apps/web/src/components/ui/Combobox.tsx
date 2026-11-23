@@ -24,8 +24,10 @@ export function Combobox({
   findLabel,
   empty = "Nothing matches.",
   create,
-  open: openAsked,
+  onSearch,
+  open: openGiven,
   onOpenChange,
+  placeholder = "",
 }: {
   /** The id of the visible label that names the choice. */
   labelledBy: string;
@@ -41,14 +43,21 @@ export function Combobox({
    */
   create?: { label: (typed: string) => string; onCreate: (typed: string) => void };
   /**
-   * Whether the list is open, for a list opened from elsewhere, such as a menu's "Move to…".
-   * Without it the list opens and closes by itself.
+   * Given, the list is searched elsewhere (by the server): each change of the typed text is
+   * passed here, and `options` are shown as they come, with no second filtering.
+   */
+  onSearch?: (typed: string) => void;
+  /**
+   * Whether the list is open, for a list opened from elsewhere, such as a menu's "Move to…" or
+   * the link tool. Without it the list opens and closes by itself.
    */
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
+  /** Shown on the button while nothing is chosen. */
+  placeholder?: string;
 }) {
   const [openHere, setOpenHere] = useState(false);
-  const open = openAsked ?? openHere;
+  const open = openGiven ?? openHere;
   const setOpen = (next: boolean) => {
     setOpenHere(next);
     onOpenChange?.(next);
@@ -63,7 +72,10 @@ export function Combobox({
       open={open}
       onOpenChange={(next) => {
         setOpen(next);
-        if (!next) setTyped("");
+        if (!next) {
+          setTyped("");
+          onSearch?.("");
+        }
       }}
     >
       <Popover.Trigger asChild>
@@ -75,17 +87,22 @@ export function Combobox({
           aria-labelledby={labelledBy}
           className="ui-combobox-trigger"
         >
-          <span className="ui-combobox-value">{chosen?.label ?? value}</span>
+          <span className={`ui-combobox-value${value === "" && !chosen ? " is-empty" : ""}`}>
+            {chosen?.label ?? (value || placeholder)}
+          </span>
           <Icon icon={ChevronsUpDown} size="sm" />
         </button>
       </Popover.Trigger>
       <Popover.Content className="ui-combobox" align="start" sideOffset={4} collisionPadding={8}>
-        <Command label={findLabel} loop>
+        <Command label={findLabel} loop shouldFilter={!onSearch}>
           <Command.Input
             className="ui-combobox-find"
             placeholder={findLabel}
             value={typed}
-            onValueChange={setTyped}
+            onValueChange={(next) => {
+              setTyped(next);
+              onSearch?.(next);
+            }}
           />
           <Command.List className="ui-combobox-list">
             <Command.Empty className="ui-combobox-empty">{empty}</Command.Empty>

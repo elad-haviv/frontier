@@ -74,9 +74,10 @@ test("saves a picture of a map at twice the size of the screen", async ({ page }
     true,
   );
   const frame = (await page.locator(".map-top").boundingBox())!;
+  await openMenu(page, "More actions");
   const [download] = await Promise.all([
     page.waitForEvent("download"),
-    page.getByLabel("Save a picture").selectOption("2"),
+    page.getByRole("menuitem", { name: "Save a picture at twice the size" }).click(),
   ]);
   expect(download.suggestedFilename()).toBe("Pictured.png");
   const png = Buffer.concat(await (await download.createReadStream()).toArray());

@@ -1,13 +1,20 @@
-import { randomBytes } from "node:crypto";
 import type { FastifyInstance } from "fastify";
-import { ImageQuery, makeId } from "@frontier/schema";
-import { basename, isExcluded, isImage, nextFreeName } from "@frontier/vault";
+import { ImageFromUrlRequest, ImageQuery } from "@frontier/schema";
+import { isExcluded, isImage } from "@frontier/vault";
 import sharp from "sharp";
 import { ApiError } from "../errors.js";
 import type { Services } from "../app.js";
+import { ImageFetchError, nameFromUrl } from "../images/fromUrl.js";
+import { cleanImageName, saveImage } from "../images/save.js";
+
+/** The one answer to every failed fetch: what went wrong is for the server log, not the page. */
+const FETCH_FAILED = "Frontier could not get an image from that address.";
 
 export function imageRoutes(app: FastifyInstance, s: Services): void {
-  /** Every image of the library, with the entries that show or link it. */
+  /**
+   * Every image of the library, with the entries that show or link it, and the images uploaded
+   * but not yet published, marked.
+   */
   app.get("/api/gallery", async () => {
     const usedBy = new Map<string, { path: string; title: string }[]>();
     for (const note of s.index.allNotes()) {
@@ -30,7 +37,12 @@ export function imageRoutes(app: FastifyInstance, s: Services): void {
         icon: path.startsWith(icons),
         usedBy: (usedBy.get(path) ?? []).sort((x, y) => x.title.localeCompare(y.title)),
       }));
-    return { images };
+    const uploaded = s.drafts
+      .list()
+      .filter((d) => d.binary && d.kind === "create" && isImage(d.path) && !s.index.hasFile(d.path))
+      .map((d) => ({ path: d.path, icon: false, usedBy: [], unpublished: true }))
+      .sort((x, y) => x.path.localeCompare(y.path));
+    return { images: [...images, ...uploaded] };
   });
 
   app.get("/api/images", async (request, reply) => {
@@ -73,17 +85,55 @@ export function imageRoutes(app: FastifyInstance, s: Services): void {
     } catch {
       throw new ApiError("invalid", "This file is not an image Frontier can read.");
     }
-    const wanted = basename(file.filename.replace(/\\/g, "/"))
-      .replace(/[\\/:*?"<>|#^[\]]/g, "")
-      .trim();
+    const wanted = cleanImageName(file.filename);
     if (!isImage(wanted)) {
       throw new ApiError("invalid", "The file needs an image extension, such as .png or .jpg.");
     }
-    const taken = [...s.index.files, ...s.drafts.list().map((d) => d.path)];
-    const name = nextFreeName(wanted, taken);
-    const path = `${s.config.uploadFolder}/${name}`;
-    await s.drafts.saveBinary(makeId(randomBytes), path, content);
-    s.status.drafts(s.drafts.count(), 0);
-    return { path, embed: `![[${name}]]` };
+    return saveImage(s, wanted, content);
   });
+
+  /**
+   * Takes an image from a web address and keeps it as an upload. The server fetches it with the
+   * safeguards in images/fromUrl.ts; at most ten a minute.
+   */
+  app.post(
+    "/api/images/from-url",
+    {
+      config: {
+        rateLimit: {
+          max: 10,
+          timeWindow: "1 minute",
+          errorResponseBuilder: () =>
+            new ApiError(
+              "rate_limited",
+              "Too many images from web addresses at once. Wait a minute and try again.",
+            ),
+        },
+      },
+    },
+    async (request) => {
+      const { url: address } = ImageFromUrlRequest.parse(request.body);
+      let url: URL;
+      try {
+        url = new URL(address.trim());
+      } catch {
+        throw new ApiError("invalid", "That is not a web address.");
+      }
+      if (url.protocol !== "http:" && url.protocol !== "https:") {
+        throw new ApiError("invalid", "A web address starts with http:// or https://.");
+      }
+      try {
+        const image = await s.imageFetcher.fetch(url.toString());
+        const name = nameFromUrl(url, image.extension, cleanImageName);
+        const saved = await saveImage(s, name, image.bytes);
+        // The query is left out of the log: it can hold a key.
+        request.log.info({ host: url.hostname, size: image.bytes.length, result: "saved" });
+        return saved;
+      } catch (err) {
+        if (!(err instanceof ImageFetchError)) throw err;
+        request.log.warn({ host: url.hostname, result: "refused", reason: err.reason });
+        throw new ApiError("image_fetch_failed", FETCH_FAILED);
+      }
+    },
+  );
 }

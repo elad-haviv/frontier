@@ -43,6 +43,9 @@
   --icon-sm: 1rem;
   --icon-md: 1.25rem;
   --icon-lg: 1.5rem;
+
+  /* What marks the selected and the hovered feature on a map, over the map's own image. */
+  --map-select: #c2410c;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -58,6 +61,7 @@
     --accent-soft: #3a261d;
     --warn: #f08c82;
     --shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+    --map-select: #fb923c;
   }
 }
 
@@ -1314,31 +1318,7 @@ button.big {
   color: var(--ink-soft);
 }
 
-.edit-toolbar {
-  position: sticky;
-  bottom: 0;
-  z-index: 10;
-  display: flex;
-  gap: 0.25rem;
-  padding: 0.35rem 0.5rem;
-  padding-bottom: max(0.35rem, env(safe-area-inset-bottom));
-  background: var(--paper);
-  border-top: 1px solid var(--rule);
-  overflow-x: auto;
-}
-
-.edit-toolbar button {
-  flex: none;
-  min-width: 2.75rem;
-  height: 2.5rem;
-  padding: 0 0.6rem;
-  border: 1px solid var(--rule);
-  border-radius: 5px;
-  background: var(--paper-raised);
-  color: var(--ink-soft);
-  font-size: 0.95rem;
-}
-
+/* A gap that pushes what follows to the end of a bar of tools. */
 .edit-toolbar-gap {
   flex: 1;
 }
@@ -1372,6 +1352,13 @@ button.big {
 }
 .code-editor .cm-lp-em {
   font-style: italic;
+}
+.code-editor .cm-lp-strike {
+  text-decoration: line-through;
+}
+.code-editor .cm-lp-u {
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
 }
 .code-editor .cm-lp-link {
   color: var(--accent);
@@ -1441,16 +1428,28 @@ button.big {
   color: var(--accent);
 }
 
-.edit-toolbar-file {
-  flex: none;
-  display: flex;
+/* Live preview or Source: two buttons as one control, the one in use marked. */
+.editor-view {
+  display: inline-flex;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  overflow: hidden;
 }
-.edit-toolbar-file input {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  opacity: 0;
-  pointer-events: none;
+.editor-view button {
+  border: 0;
+  border-radius: 0;
+}
+.editor-view button + button {
+  border-left: 1px solid var(--rule);
+}
+.editor-view button[aria-pressed="true"] {
+  background: var(--accent-soft);
+  color: var(--ink);
+}
+@media (max-width: 30rem) {
+  .editor-bar .editor-view {
+    order: 2;
+  }
 }
 
 .props {
@@ -1486,11 +1485,8 @@ button.big {
 }
 
 /* The editor's own heading style underlines; the size already says it is a heading. */
-.code-editor .cm-lp-h span:not(.cm-lp-link) {
+.code-editor .cm-lp-h span:not(.cm-lp-link, .cm-lp-u) {
   text-decoration: none;
-}
-.edit-toolbar button {
-  min-width: 2.5rem;
 }
 
 /* Inbox */
@@ -3683,24 +3679,6 @@ input.map-title {
   .editor-path {
     max-width: 55%;
   }
-  /* Every toolbar button on the screen at once, Redo included. */
-  .edit-toolbar {
-    gap: 2px;
-    padding-left: 0.3rem;
-    padding-right: 0.3rem;
-  }
-  .edit-toolbar-file {
-    flex: 1 0 auto;
-  }
-  .edit-toolbar button {
-    flex: 1 0 auto;
-    min-width: 2.05rem;
-    padding: 0 0.25rem;
-    font-size: 0.85rem;
-  }
-  .edit-toolbar-gap {
-    flex: 0 0 0.3rem;
-  }
   /* The map keeps the screen: one row, the title never squeezed below a readable width, the
      controls scrolling beside it. */
   .map-bar .map-title {
@@ -3871,4 +3849,86 @@ button[data-offline] {
 /* The editor's file name is in the phone's top line already. */
 .shell.is-phone .editor-bar .editor-path {
   display: none;
+}
+
+/* ---- Stage 13b: viewing a map ------------------------------------------------------------- */
+
+/* The map's frame takes the focus when pressed, so the map's keys act; the ring stays inside. */
+.map-frame:focus-visible {
+  outline-offset: -3px;
+}
+/* The live canvas, above the features, carries the hover halo. It never catches the pointer:
+   every press, move and right-click reaches the canvas under it. */
+.map-live {
+  pointer-events: none;
+}
+.map-zoom .ui-icon-button {
+  width: 2.5rem;
+  height: 2.5rem;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  background: var(--paper);
+  color: var(--ink);
+}
+/* A word over the map that goes by itself, at the foot of the map. */
+.map-hint.map-said {
+  top: auto;
+  bottom: 0.9rem;
+  z-index: 3;
+}
+.feature-card .card-tools {
+  margin-top: 0.4rem;
+}
+.layer-panel li .ui-icon-button.plain {
+  min-width: 2rem;
+  min-height: 2rem;
+  padding: 0;
+}
+/* The marker icons: big enough to tell apart, the chosen one plainly marked. */
+.icon-grid img {
+  width: 24px;
+  height: 24px;
+}
+.icon-grid button[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+
+/* On a desktop the tools lie over the top of the map, so the map keeps its size when editing
+   starts (MP-7); the drawing hints sit below them. */
+@media (min-width: 48rem) {
+  .map-page {
+    display: grid;
+    grid-template-rows: auto auto minmax(0, 1fr) auto;
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .map-page > .map-bar {
+    grid-row: 1;
+  }
+  .map-page > .map-notice {
+    grid-row: 2;
+  }
+  .map-page > .map-frame {
+    grid-row: 3;
+    grid-column: 1;
+  }
+  .map-page > .map-tools {
+    z-index: 4;
+    grid-row: 3;
+    grid-column: 1;
+    align-self: start;
+    justify-self: start;
+    max-width: calc(100% - 1.2rem);
+    margin: 0.6rem;
+    border: 1px solid var(--rule);
+    border-radius: 8px;
+    box-shadow: var(--shadow);
+  }
+  .map-page > .time-bar {
+    grid-row: 4;
+  }
+  .map-page:has(> .map-tools) .map-frame .map-hint:not(.map-said) {
+    top: 3.9rem;
+  }
 }

@@ -166,6 +166,11 @@ export function GraphCanvas({
       x1 = Math.max(x1, n.x! + n.r);
       y1 = Math.max(y1, n.y! + n.r);
     }
+    if (scene.current.centre !== null) {
+      // The local graph's centre, fixed at the origin, stays in the middle of the screen.
+      [x1, y1] = [Math.max(-x0, x1), Math.max(-y0, y1)];
+      [x0, y0] = [-x1, -y1];
+    }
     const k = clampZoom(
       Math.min(
         (width - 2 * FIT_PAD) / Math.max(1, x1 - x0),

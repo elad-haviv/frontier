@@ -139,6 +139,9 @@ describe("looking up the lore", () => {
     expect(plainForQuotes("Counted  in *slow* beats, [[Vaakh|the pulse]] and [[Stone]]")).toBe(
       "counted in slow beats, the pulse and stone",
     );
+    expect(plainForQuotes("the <u>underlined</u> <U>words</U> stay")).toBe(
+      "the underlined words stay",
+    );
   });
 });
 

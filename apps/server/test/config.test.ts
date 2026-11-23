@@ -117,4 +117,18 @@ describe("configuration", () => {
     expect(() => loadConfig({ ...local, SESSION_KEY: "c2hvcnQ=" })).toThrow(/32 bytes/);
     expect(() => loadConfig({ ...local, PUBLIC_URL: "not a url" })).toThrow(/full address/);
   });
+
+  it("lets tests take images from loopback addresses, never in production", () => {
+    expect(loadConfig(local).imageFetchAllowLoopback).toBe(false);
+    expect(loadConfig({ ...local, IMAGE_FETCH_ALLOW_LOOPBACK: "1" }).imageFetchAllowLoopback).toBe(
+      true,
+    );
+    expect(
+      loadConfig({ ...local, IMAGE_FETCH_ALLOW_LOOPBACK: "0", NODE_ENV: "production" })
+        .imageFetchAllowLoopback,
+    ).toBe(false);
+    expect(() =>
+      loadConfig({ ...local, IMAGE_FETCH_ALLOW_LOOPBACK: "true", NODE_ENV: "production" }),
+    ).toThrow(/IMAGE_FETCH_ALLOW_LOOPBACK/);
+  });
 });

@@ -197,6 +197,28 @@ export async function newEntry(page: Page, folder: string, name: string): Promis
   await expect(dialog).toHaveCount(0);
 }
 
+/**
+ * Presses one of the editor's tools: its toolbar button where the bar has room for it, or the item
+ * in the toolbar's "⋯" where it does not, as on a phone.
+ */
+export async function pressTool(page: Page, name: string): Promise<void> {
+  const button = page.locator(".edit-toolbar").getByRole("button", { name, exact: true });
+  if (await button.isVisible()) {
+    await button.click();
+    return;
+  }
+  await page.getByRole("button", { name: "More tools", exact: true }).click();
+  await page.getByRole("menuitem", { name: new RegExp(`^${name}`) }).click();
+}
+
+/** Opens the image dialog from the toolbar. */
+export async function openImageDialog(page: Page) {
+  await pressTool(page, "Add an image");
+  const dialog = page.getByRole("dialog", { name: "Add an image" });
+  await expect(dialog).toBeVisible();
+  return dialog;
+}
+
 /** Throws away the draft that is open in the editor, so the next test starts from the vault. */
 export async function discardDraft(page: Page): Promise<void> {
   await openMenu(page, "More actions");

@@ -1,5 +1,5 @@
 import { aliasesOf, dirname, splitFrontmatter, stem } from "@frontier/vault";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { api, ApiFailure, chronicleUrl, editUrl, entryUrl, mapUrl, talkUrl } from "../api.ts";
 import { HoverPreview } from "../components/HoverPreview.tsx";
@@ -18,7 +18,7 @@ import { ProposeFields } from "../components/ProposeFields.tsx";
 import { Markdown } from "../render/Markdown.tsx";
 import { Menu, MenuItem, MenuSeparator } from "../components/ui/Menu.tsx";
 import { IconButton } from "../components/ui/IconButton.tsx";
-import { FileDown, FolderInput, History, Pencil, TableOfContents } from "lucide-react";
+import { FileDown, FolderInput, History, Pencil, TableOfContents, Waypoints } from "lucide-react";
 import { Problem } from "../components/ui/Problem.tsx";
 import { Progress } from "../components/ui/Progress.tsx";
 import { useToast } from "../components/ui/Toast.tsx";
@@ -46,6 +46,9 @@ import {
 } from "../offline/copy.ts";
 import { useAsync } from "../useAsync.ts";
 import { useWide } from "../width.ts";
+
+// The graph's code loads only when an entry's Graph tab is opened.
+const LocalGraphPanel = lazy(() => import("../graph/LocalGraphPanel.tsx"));
 
 /** Below this width the shell is a phone's, and a panel chosen covers half the page. */
 const PHONE = "(max-width: 47.99rem)";
@@ -185,6 +188,21 @@ export function EntryPage() {
               name={name}
               unsaved={e.state === "unpublished" || e.rename !== null}
             />
+          ),
+        },
+  );
+
+  usePanel(
+    !e
+      ? null
+      : {
+          id: "graph",
+          title: "Graph",
+          icon: Waypoints,
+          render: () => (
+            <Suspense fallback={<Progress label="Loading the graph" />}>
+              <LocalGraphPanel key={e.path} path={e.path} />
+            </Suspense>
           ),
         },
   );
@@ -334,6 +352,13 @@ export function EntryPage() {
             )}
             <span className="entry-actions">
               {outlineButton("entry-outline")}
+              <IconButton
+                label="Graph"
+                icon={Waypoints}
+                size="sm"
+                aria-pressed={bar.open === "graph"}
+                onClick={() => (bar.open === "graph" ? bar.hide() : openPanel("graph"))}
+              />
               {editable && (
                 <>
                   {/* On a phone, Edit moves into the top line, beside the title. */}

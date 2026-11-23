@@ -28,6 +28,9 @@ const WIKI = /(!?)\[\[([^[\]\n]+?)\]\]/g;
 const STRONG = /(\*\*|__)(?=\S)(.+?)(?<=\S)\1/g;
 const EM = /(?<![*\w])(\*|_)(?=\S)([^*_\n]+?)(?<=\S)\1(?![*\w])/g;
 const CODE = /(`+)[^`\n]+?\1/g;
+const STRIKE = /(~~)(?=\S)(.+?)(?<=\S)~~/g;
+/** Underline, written as Obsidian writes it; the closing tag is one longer than the opening. */
+const UNDERLINE = /<u>(.+?)<\/u>/gi;
 
 function inCode(view: EditorView, pos: number): boolean {
   for (
@@ -122,19 +125,24 @@ function build(view: EditorView): DecorationSet {
       }
 
       for (const [re, cls] of [
+        [UNDERLINE, "cm-lp-u"],
         [STRONG, "cm-lp-strong"],
         [EM, "cm-lp-em"],
+        [STRIKE, "cm-lp-strike"],
       ] as const) {
         re.lastIndex = 0;
         for (let m: RegExpExecArray | null; (m = re.exec(line.text));) {
           const start = line.from + m.index;
           const end = start + m[0].length;
-          const len = m[1]!.length;
-          if (!free(start, end) || inCode(view, start)) continue;
-          taken.push([start, end]);
-          out.push(hide.range(start, start + len));
-          out.push(mark(cls).range(start + len, end - len));
-          out.push(hide.range(end - len, end));
+          // The marks' lengths at each end: "**" and "**", or "<u>" and "</u>".
+          const open = re === UNDERLINE ? 3 : m[1]!.length;
+          const close = re === UNDERLINE ? 4 : open;
+          // Underline may hold bold and the rest, so only it may overlap them.
+          if ((re !== UNDERLINE && !free(start, end)) || inCode(view, start)) continue;
+          if (re !== UNDERLINE) taken.push([start, end]);
+          out.push(hide.range(start, start + open));
+          out.push(mark(cls).range(start + open, end - close));
+          out.push(hide.range(end - close, end));
         }
       }
     }

@@ -48,6 +48,7 @@ import { ApiError } from "./errors.js";
 import { appTokenSource } from "./git/appAuth.js";
 import { GitError, GitGateway } from "./git/gateway.js";
 import { ImageServer } from "./images/serve.js";
+import { type FetchLimits, ImageFetcher, type Resolve } from "./images/fromUrl.js";
 import { BranchInbox } from "./inbox/branches.js";
 import { inboxRoutes } from "./routes/inbox.js";
 import { Publisher } from "./publish/publish.js";
@@ -85,6 +86,8 @@ export interface Services {
   files: StateFiles;
   settings: SettingsStore;
   images: ImageServer;
+  /** Takes images from web addresses, with the safeguards that keep the server's network safe. */
+  imageFetcher: ImageFetcher;
   drafts: DraftStore;
   publisher: Publisher;
   branches: BranchInbox;
@@ -164,6 +167,10 @@ export interface BuildOptions {
   fetch?: typeof fetch;
   /** Folder of the built web app. When it holds a build, the server also serves the interface. */
   webDir?: string;
+  /** Stands in for DNS when tests take an image from a web address. */
+  resolveHost?: Resolve;
+  /** Shorter limits for taking an image from a web address, for tests. */
+  imageFetchLimits?: Partial<FetchLimits>;
 }
 
 /** Builds the server. The caller decides when to clone, sync and listen. */
@@ -194,6 +201,12 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
   const files = new StateFiles();
   const settings = new SettingsStore(stateDir, files);
   const images = new ImageServer(vaultDir, config.dataDir);
+  const imageFetcher = new ImageFetcher({
+    publicUrl: config.publicUrl,
+    allowLoopback: config.imageFetchAllowLoopback,
+    ...(options.resolveHost ? { resolve: options.resolveHost } : {}),
+    ...(options.imageFetchLimits ? { limits: options.imageFetchLimits } : {}),
+  });
   const drafts = new DraftStore(stateDir, files);
   await drafts.load();
   const backup = new Backup({
@@ -303,6 +316,7 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
     files,
     settings,
     images,
+    imageFetcher,
     drafts,
     backup,
     search,

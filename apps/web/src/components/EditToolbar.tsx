@@ -1,29 +1,21 @@
-import { startCompletion } from "@codemirror/autocomplete";
-import { redo, undo } from "@codemirror/commands";
 import type { EditorView } from "@codemirror/view";
 import {
   BetweenHorizontalEnd,
   BetweenVerticalEnd,
-  Bold,
-  Brackets,
-  Heading2,
-  ImagePlus,
-  Italic,
-  List,
   type LucideIcon,
-  MessageSquarePlus,
-  Redo2,
   TableColumnsSplit,
   TableRowsSplit,
-  Undo2,
-  WandSparkles,
 } from "lucide-react";
 import { useRef } from "react";
-import { linePrefix, wrap } from "./editCommands.ts";
+import { shortcutText } from "../keys.ts";
+import { useNeedsConnection } from "../sync/connection.ts";
+import { BLOCK_STYLES, type BlockStyle, run, setBlockStyle } from "./editCommands.ts";
+import { GROUPS, STYLE_ICONS, type ToolHandlers, tools } from "./editorTools.ts";
+import { useSheetFloor } from "./shell/panels.tsx";
 import { tableCommand } from "./tableKeys.ts";
 import { IconButton } from "./ui/IconButton.tsx";
-import { useSheetFloor } from "./shell/panels.tsx";
-import { useNeedsConnection } from "../sync/connection.ts";
+import { Menu, MenuItem } from "./ui/Menu.tsx";
+import "./EditToolbar.css";
 
 type Ref = { current: EditorView | null };
 
@@ -39,149 +31,135 @@ const TABLE_BUTTONS: readonly [
 ];
 
 /**
- * Buttons for the marks that are slow to reach on a phone keyboard. They sit at the bottom of the
- * screen, above the keyboard when it is open. While the cursor is in a table, buttons to add and
- * delete its rows and columns come first.
+ * The editor's tools, at the bottom of the screen, above the keyboard when it is open: the style
+ * picker, then the groups of formats, lists, things to insert, comment and writing help, and undo.
+ * Groups that do not fit are hidden by CSS container queries, last group first, and the "⋯" at
+ * the end holds them, so the bar never wraps or scrolls and nothing is measured. While the cursor
+ * is in a table, buttons to add and delete its rows and columns come first.
  */
 export function EditToolbar({
   view,
-  onFiles,
   inTable = false,
-  onWrite,
-  onComment,
+  style,
+  ...handlers
 }: {
   view: Ref;
-  onFiles?: (files: File[]) => void;
   inTable?: boolean;
-  /** Opens writing help; absent while no model is chosen. */
-  onWrite?: () => void;
-  /** Opens a new comment on the selection, or on the paragraph the cursor is in. */
-  onComment?: () => void;
-}) {
+  /** The style of the cursor's line, which the style picker shows. */
+  style: BlockStyle;
+} & ToolHandlers) {
   const act = (fn: (v: EditorView) => void) => () => {
     if (view.current) fn(view.current);
   };
   // Buttons must not take the focus from the editor, or the phone keyboard closes.
   const keep = (e: React.PointerEvent) => e.preventDefault();
-  const picker = useRef<HTMLInputElement>(null);
   // On a phone the panels' sheet opens above the toolbar, so its buttons stay in reach.
   const bar = useRef<HTMLDivElement>(null);
   useSheetFloor(bar);
   // Images, comments and writing help go straight to the server, so they wait for a connection.
   const offline = useNeedsConnection();
+  const list = tools(handlers);
+  const current = BLOCK_STYLES.find((s) => s.style === style)!;
+  const backToText = () => view.current?.focus();
 
   return (
-    <div ref={bar} className="edit-toolbar" role="toolbar" aria-label="Formatting">
-      {inTable &&
-        TABLE_BUTTONS.map(([action, icon, label]) => (
-          <IconButton
-            key={action}
-            className="edit-toolbar-table"
-            label={label}
-            icon={icon}
-            shortcut={`table.${action}`}
-            onPointerDown={keep}
-            onClick={act((v) => {
-              tableCommand(action)(v);
-              v.focus();
-            })}
-          />
+    <div
+      ref={bar}
+      className={`edit-toolbar${inTable ? " has-table" : ""}`}
+      role="toolbar"
+      aria-label="Formatting"
+    >
+      <div className="edit-toolbar-row">
+        {inTable && (
+          <div className="edit-toolbar-group" data-group="table">
+            {TABLE_BUTTONS.map(([action, icon, label]) => (
+              <IconButton
+                key={action}
+                className="edit-toolbar-table"
+                label={label}
+                icon={icon}
+                shortcut={`table.${action}`}
+                onPointerDown={keep}
+                onClick={act((v) => {
+                  tableCommand(action)(v);
+                  v.focus();
+                })}
+              />
+            ))}
+          </div>
+        )}
+        <div className="edit-toolbar-group edit-toolbar-style" data-group="style">
+          <Menu
+            label={`Style: ${current.label}`}
+            icon={STYLE_ICONS[style]}
+            text={current.label}
+            align="start"
+            side="top"
+            onClosed={backToText}
+          >
+            {BLOCK_STYLES.map((s) => (
+              <MenuItem
+                key={s.style}
+                icon={STYLE_ICONS[s.style]}
+                keys={shortcutText(s.shortcut)}
+                checked={s.style === style}
+                onSelect={act((v) => {
+                  run(v, setBlockStyle(v.state, s.style));
+                  v.focus();
+                })}
+              >
+                {s.label}
+              </MenuItem>
+            ))}
+          </Menu>
+        </div>
+        {GROUPS.map(({ group }) => (
+          <div key={group} className="edit-toolbar-group" data-group={group}>
+            {list
+              .filter((t) => t.group === group)
+              .map((t) => (
+                <IconButton
+                  key={t.id}
+                  label={t.label}
+                  icon={t.icon}
+                  {...(t.shortcut ? { shortcut: t.shortcut } : {})}
+                  disabled={t.online === true && offline !== undefined}
+                  {...(t.online && offline ? { disabledReason: t.offlineReason ?? offline } : {})}
+                  onPointerDown={keep}
+                  onClick={act(t.act)}
+                />
+              ))}
+          </div>
         ))}
-      <IconButton
-        label="Link to an entry"
-        icon={Brackets}
-        onPointerDown={keep}
-        onClick={act((v) => {
-          wrap(v, "[[", "]]");
-          startCompletion(v);
-        })}
-      />
-      <IconButton
-        label="Heading"
-        icon={Heading2}
-        onPointerDown={keep}
-        onClick={act((v) => linePrefix(v, "## "))}
-      />
-      <IconButton
-        label="List item"
-        icon={List}
-        onPointerDown={keep}
-        onClick={act((v) => linePrefix(v, "- "))}
-      />
-      <IconButton
-        label="Bold"
-        icon={Bold}
-        shortcut="editor.bold"
-        onPointerDown={keep}
-        onClick={act((v) => wrap(v, "**", "**"))}
-      />
-      <IconButton
-        label="Italic"
-        icon={Italic}
-        shortcut="editor.italic"
-        onPointerDown={keep}
-        onClick={act((v) => wrap(v, "*", "*"))}
-      />
-      {onFiles && (
-        <span className="edit-toolbar-file">
-          <IconButton
-            label="Add an image"
-            icon={ImagePlus}
-            disabled={offline !== undefined}
-            {...(offline ? { disabledReason: "Images need a connection" } : {})}
-            onPointerDown={keep}
-            onClick={() => picker.current?.click()}
-          />
-          <input
-            ref={picker}
-            type="file"
-            accept="image/*"
-            multiple
-            tabIndex={-1}
-            aria-hidden="true"
-            onChange={(e) => {
-              const picked = [...(e.target.files ?? [])];
-              e.target.value = "";
-              if (picked.length) onFiles(picked);
-            }}
-          />
-        </span>
-      )}
-      {onComment && (
-        <IconButton
-          label="Comment"
-          icon={MessageSquarePlus}
-          disabled={offline !== undefined}
-          {...(offline ? { disabledReason: offline } : {})}
-          onPointerDown={keep}
-          onClick={onComment}
-        />
-      )}
-      {onWrite && (
-        <IconButton
-          label="Writing help"
-          icon={WandSparkles}
-          disabled={offline !== undefined}
-          {...(offline ? { disabledReason: offline } : {})}
-          onPointerDown={keep}
-          onClick={onWrite}
-        />
-      )}
-      <span className="edit-toolbar-gap" />
-      <IconButton
-        label="Undo"
-        icon={Undo2}
-        shortcut="editor.undo"
-        onPointerDown={keep}
-        onClick={act((v) => void undo(v))}
-      />
-      <IconButton
-        label="Redo"
-        icon={Redo2}
-        shortcut="editor.redo"
-        onPointerDown={keep}
-        onClick={act((v) => void redo(v))}
-      />
+        <Menu
+          label="More tools"
+          className="edit-toolbar-more-button"
+          contentClassName="edit-toolbar-more"
+          side="top"
+          portal={false}
+          onClosed={backToText}
+        >
+          {GROUPS.map(({ group, label }) => (
+            <div key={group} className="edit-toolbar-more-group" data-group={group}>
+              <span className="edit-toolbar-more-label">{label}</span>
+              {list
+                .filter((t) => t.group === group)
+                .map((t) => (
+                  <MenuItem
+                    key={t.id}
+                    icon={t.icon}
+                    keys={shortcutText(t.shortcut)}
+                    disabled={t.online === true && offline !== undefined}
+                    disabledReason={t.online && offline ? (t.offlineReason ?? offline) : undefined}
+                    onSelect={act(t.act)}
+                  >
+                    {t.label}
+                  </MenuItem>
+                ))}
+            </div>
+          ))}
+        </Menu>
+      </div>
     </div>
   );
 }

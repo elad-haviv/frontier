@@ -1,9 +1,12 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { api, ApiFailure, entryUrl, fromServer, newDraftId, type PassageComment } from "../api.ts";
 import type { EditorView } from "@codemirror/view";
 import { CodeEditor } from "../components/CodeEditor.tsx";
 import { EditToolbar } from "../components/EditToolbar.tsx";
+import { EditorContextMenu } from "../components/EditorContextMenu.tsx";
+import { type BlockStyle, insertEmbeds, lineStyle, run } from "../components/editCommands.ts";
+import { LinkToEntry } from "../components/LinkToEntry.tsx";
 import { passageOf, WritingPanel } from "../components/WritingPanel.tsx";
 import { CommentsPanel } from "../components/CommentsPanel.tsx";
 import { type Anchor, anchorAt, locate, MIN_QUOTE } from "../components/anchor.ts";
@@ -28,6 +31,11 @@ import { useWide } from "../width.ts";
 
 /** Said when an image is pasted, dropped or picked with no connection. */
 const IMAGES_NEED_CONNECTION = "Images need a connection. Your text stays.";
+
+// The image dialog loads when it is first opened, so the editor opens as fast as before.
+const ImagePicker = lazy(() =>
+  import("../components/images/ImagePicker.tsx").then((m) => ({ default: m.ImagePicker })),
+);
 
 function pathFrom(pathname: string): string {
   return pathname
@@ -118,6 +126,15 @@ export function EditPage() {
     placeMarks(list);
   }, [path, placeMarks]);
   const [inTable, setInTable] = useState(false);
+  // The style of the cursor's line, for the toolbar's style picker.
+  const [style, setStyle] = useState<BlockStyle>("paragraph");
+  // Told whenever the text or the cursor moves.
+  const onCursorMoved = useCallback((inside: boolean) => {
+    setInTable(inside);
+    if (view.current) setStyle(lineStyle(view.current.state));
+  }, []);
+  const [linking, setLinking] = useState(false);
+  const [picking, setPicking] = useState(false);
   const [preview, setPreview] = useState(() => {
     try {
       return localStorage.getItem("frontier.preview") !== "0";
@@ -126,15 +143,13 @@ export function EditPage() {
     }
   });
 
-  function togglePreview() {
-    setPreview((on) => {
-      try {
-        localStorage.setItem("frontier.preview", on ? "0" : "1");
-      } catch {
-        /* the choice lasts for this visit only */
-      }
-      return !on;
-    });
+  function showPreview(on: boolean) {
+    setPreview(on);
+    try {
+      localStorage.setItem("frontier.preview", on ? "1" : "0");
+    } catch {
+      /* the choice lasts for this visit only */
+    }
   }
 
   /** Stores each image as an unpublished file and writes its embed where the cursor is. */
@@ -474,6 +489,19 @@ export function EditPage() {
     }
   }
 
+  /** What the toolbar and the right-click menu open. */
+  const tools = {
+    onLink: () => setLinking(true),
+    onImage: () => setPicking(true),
+    onComment: comment,
+    onWrite: canWrite
+      ? () => {
+          setWriting((n) => n + 1);
+          bar.show("writing");
+        }
+      : undefined,
+  };
+
   if (error) {
     return (
       <div className="center">
@@ -492,17 +520,29 @@ export function EditPage() {
         </span>
         <SaveStatus state={stale ? "stale" : saving.state} />
         <span className="editor-actions">
-          <button
-            type="button"
-            className="quiet"
-            aria-pressed={preview}
-            // Keeps the cursor in the text, and the phone keyboard open.
-            onPointerDown={(e) => e.preventDefault()}
-            onClick={togglePreview}
-            title="Hide Markdown marks away from the line you are on"
-          >
-            Preview
-          </button>
+          <span className="editor-view" role="group" aria-label="How the text is shown">
+            <button
+              type="button"
+              className="quiet"
+              aria-pressed={preview}
+              // Keeps the cursor in the text, and the phone keyboard open.
+              onPointerDown={(e) => e.preventDefault()}
+              onClick={() => showPreview(true)}
+              title="Show the text as it reads; marks show on the line you are on"
+            >
+              Live preview
+            </button>
+            <button
+              type="button"
+              className="quiet"
+              aria-pressed={!preview}
+              onPointerDown={(e) => e.preventDefault()}
+              onClick={() => showPreview(false)}
+              title="Show every Markdown mark, in a fixed-width font"
+            >
+              Source
+            </button>
+          </span>
           <button
             type="button"
             className="quiet"
@@ -555,32 +595,40 @@ export function EditPage() {
           {message ?? saving.error}
         </p>
       )}
-      <CodeEditor
-        key={path}
-        initial={initial}
-        onChange={onChange}
-        viewRef={view}
-        preview={preview}
-        onFiles={addImages}
-        path={path}
-        onTable={setInTable}
-        onProperties={openProperties}
-        onCursor={outline.onCursor}
-      />
-      <EditToolbar
-        view={view}
-        onFiles={addImages}
-        inTable={inTable}
-        onComment={comment}
-        {...(canWrite
-          ? {
-              onWrite: () => {
-                setWriting((n) => n + 1);
-                bar.show("writing");
-              },
-            }
-          : {})}
-      />
+      <EditorContextMenu view={view} onFiles={addImages} {...tools}>
+        <CodeEditor
+          key={path}
+          initial={initial}
+          onChange={onChange}
+          viewRef={view}
+          preview={preview}
+          onFiles={addImages}
+          path={path}
+          onTable={onCursorMoved}
+          onProperties={openProperties}
+          onCursor={outline.onCursor}
+        />
+      </EditorContextMenu>
+      <EditToolbar view={view} inTable={inTable} style={style} {...tools} />
+      {linking && view.current && (
+        <LinkToEntry view={view.current} onClose={() => setLinking(false)} />
+      )}
+      {picking && (
+        <Suspense fallback={null}>
+          <ImagePicker
+            onClose={() => {
+              setPicking(false);
+              view.current?.focus();
+            }}
+            onPick={(_paths, names) => {
+              setPicking(false);
+              refresh();
+              const v = view.current;
+              if (v) run(v, insertEmbeds(v.state, names));
+            }}
+          />
+        </Suspense>
+      )}
     </div>
   );
 }

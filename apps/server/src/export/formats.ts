@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { NodeCompiler } from "@myriaddreamin/typst-ts-node-compiler";
-import { basename } from "@frontier/vault";
+import { basename, remarkUnderline } from "@frontier/vault";
 import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
 import rehypeStringify from "rehype-stringify";
 import remarkGfm from "remark-gfm";
@@ -65,6 +65,7 @@ function finishHtml() {
 
 const schema = {
   ...defaultSchema,
+  tagNames: [...(defaultSchema.tagNames ?? []), "u"],
   protocols: { ...defaultSchema.protocols, href: ["http", "https", "mailto", "unshared"] },
   clobberPrefix: "",
 };
@@ -73,6 +74,7 @@ async function toHtml(markdown: string): Promise<string> {
   const file = await unified()
     .use(remarkParse)
     .use(remarkGfm)
+    .use(remarkUnderline)
     .use(remarkRehype)
     .use(rehypeSanitize, schema)
     .use(finishHtml)
@@ -156,6 +158,63 @@ export async function site(d: ExportDeps, title: string, choice: Choice): Promis
   return zipped(zip);
 }
 
+/** A code span, or an underline tag, in order through a paragraph. */
+const SPAN_OR_TAG = /(`+)[\s\S]*?\1|<u>|<\/u>/gi;
+
+/**
+ * Underline for pandoc, which reads `<u>` as raw HTML and drops it: each matched `<u>x</u>` in a
+ * paragraph becomes `[x]{.underline}`, which pandoc writes as underline in Word, Typst and slides.
+ * Code spans and fenced code are left as written, and so is a tag without its partner.
+ */
+export function underlineForPandoc(markdown: string): string {
+  const lines = markdown.split("\n");
+  const out: string[] = [];
+  let fence: string | null = null;
+  let paragraph: string[] = [];
+  const flush = () => {
+    if (paragraph.length) out.push(pairTags(paragraph.join("\n")));
+    paragraph = [];
+  };
+  for (const line of lines) {
+    const mark = /^ {0,3}(`{3,}|~{3,})/.exec(line)?.[1];
+    if (fence !== null || mark) {
+      flush();
+      if (fence === null) fence = mark!;
+      else if (mark && mark[0] === fence[0] && mark.length >= fence.length) fence = null;
+      out.push(line);
+    } else if (line.trim() === "") {
+      flush();
+      out.push(line);
+    } else {
+      paragraph.push(line);
+    }
+  }
+  flush();
+  return out.join("\n");
+}
+
+function pairTags(text: string): string {
+  const open: number[] = [];
+  const pairs: [number, number][] = [];
+  for (const m of text.matchAll(SPAN_OR_TAG)) {
+    if (m[1] !== undefined) continue;
+    if (m[0].length === 3) open.push(m.index);
+    else if (open.length) pairs.push([open.pop()!, m.index]);
+  }
+  // From the end, so earlier places stay where they were.
+  const edits = pairs
+    .flatMap(([from, to]): [number, number, string][] => [
+      [from, 3, "["],
+      [to, 4, "]{.underline}"],
+    ])
+    .sort((x, y) => y[0] - x[0]);
+  let result = text;
+  for (const [at, length, insert] of edits) {
+    result = result.slice(0, at) + insert + result.slice(at + length);
+  }
+  return result;
+}
+
 /** The entries joined as one Markdown document for pandoc, with images written next to it. */
 async function oneDocument(
   d: ExportDeps,
@@ -188,7 +247,7 @@ async function oneDocument(
     ? `*${MARK} marks the name of an entry that is not part of this document.*\n\n`
     : "";
   const front = `---\ntitle: ${JSON.stringify(title)}\n---\n\n`;
-  return `${front}${note}${parts.join("\n\n")}\n`;
+  return `${front}${note}${underlineForPandoc(parts.join("\n\n"))}\n`;
 }
 
 async function pandoc(args: string[], cwd: string): Promise<void> {
@@ -383,7 +442,7 @@ export async function slides(d: ExportDeps, title: string, choice: Choice): Prom
     const close = outside
       ? `\n\n# About ${MARK}\n\n${MARK} marks the name of an entry that is not part of these slides.\n`
       : "";
-    const text = `---\ntitle: ${JSON.stringify(title)}\n---\n\n${parts.join("\n\n")}${close}\n`;
+    const text = `---\ntitle: ${JSON.stringify(title)}\n---\n\n${underlineForPandoc(parts.join("\n\n"))}${close}\n`;
     await writeFile(join(dir, "main.md"), text);
     await pandoc(
       ["main.md", "-f", "markdown", "-o", "out.pptx", "--slide-level=2", "--resource-path=."],
