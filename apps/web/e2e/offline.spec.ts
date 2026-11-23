@@ -221,8 +221,13 @@ test("CUJ 5: an entry not on the device says so; what needs the server is disabl
   await page.keyboard.press("Escape");
 
   // Images need a connection; the text does not.
+  // On a phone the image tool is in the toolbar's "⋯".
   await page.goto(edit(HARBOR));
-  await expect(page.getByRole("button", { name: "Add an image" })).toBeDisabled();
+  await page.getByRole("button", { name: "More tools", exact: true }).click();
+  const image = page.getByRole("menuitem", { name: /^Add an image/ });
+  await expect(image).toBeDisabled();
+  await expect(image).toContainText("Images need a connection");
+  await page.keyboard.press("Escape");
   await context.setOffline(false);
 });
 
