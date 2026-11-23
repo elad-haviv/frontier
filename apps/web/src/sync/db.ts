@@ -5,10 +5,11 @@
  * `localStorage`, so a reload does not make a new device.
  */
 import { type DBSchema, type IDBPDatabase, openDB } from "idb";
-import type { DraftKind } from "@frontier/schema";
+import type { DraftKind, LibraryFileName } from "@frontier/schema";
 
-/** An entry, a map, a chronicle, or the folder file. */
-export type QueueKey = `entry:${string}` | `map:${string}` | `chronicle:${string}` | "folders";
+/** An entry, a map, a chronicle, or a library item file (such as the folder file) by its name. */
+export type QueueKey =
+  `entry:${string}` | `map:${string}` | `chronicle:${string}` | LibraryFileName;
 
 /** A feature or span to link to the entry at `path`; a null path takes back an earlier link. */
 export interface LinkItem {

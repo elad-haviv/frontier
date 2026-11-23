@@ -23,6 +23,7 @@ export function Combobox({
   onChange,
   findLabel,
   empty = "Nothing matches.",
+  create,
 }: {
   /** The id of the visible label that names the choice. */
   labelledBy: string;
@@ -32,11 +33,26 @@ export function Combobox({
   /** The placeholder and name of the field that narrows the list, such as "Find a folder". */
   findLabel: string;
   empty?: string;
+  /**
+   * Offers to make a new choice from what was typed when no choice has that name, such as
+   * "New folder 'Islands'". `label` words the offer; `onCreate` is given the typed text.
+   */
+  create?: { label: (typed: string) => string; onCreate: (typed: string) => void };
 }) {
   const [open, setOpen] = useState(false);
+  const [typed, setTyped] = useState("");
+  const wanted = typed.trim();
+  const offer =
+    create && wanted !== "" && !options.some((o) => o.label.toLowerCase() === wanted.toLowerCase());
   const chosen = options.find((o) => o.value === value);
   return (
-    <Popover.Root open={open} onOpenChange={setOpen}>
+    <Popover.Root
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next);
+        if (!next) setTyped("");
+      }}
+    >
       <Popover.Trigger asChild>
         <button
           type="button"
@@ -52,9 +68,28 @@ export function Combobox({
       </Popover.Trigger>
       <Popover.Content className="ui-combobox" align="start" sideOffset={4} collisionPadding={8}>
         <Command label={findLabel} loop>
-          <Command.Input className="ui-combobox-find" placeholder={findLabel} />
+          <Command.Input
+            className="ui-combobox-find"
+            placeholder={findLabel}
+            value={typed}
+            onValueChange={setTyped}
+          />
           <Command.List className="ui-combobox-list">
             <Command.Empty className="ui-combobox-empty">{empty}</Command.Empty>
+            {offer && (
+              <Command.Item
+                forceMount
+                value={`\u0000new ${wanted}`}
+                className="ui-combobox-item ui-combobox-create"
+                onSelect={() => {
+                  create.onCreate(wanted);
+                  setOpen(false);
+                  setTyped("");
+                }}
+              >
+                <span>{create.label(wanted)}</span>
+              </Command.Item>
+            )}
             {options.map((o) => (
               <Command.Item
                 key={o.value}

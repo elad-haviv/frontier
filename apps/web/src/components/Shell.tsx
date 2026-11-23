@@ -159,7 +159,8 @@ export function Shell({ children, onLoggedOut }: { children: ReactNode; onLogged
   const [version, setVersion] = useState(0);
   const [switching, setSwitching] = useState(false);
   const [sheet, setSheet] = useState(false);
-  const [making, setMaking] = useState(false);
+  /** The folder the new-entry dialog starts in, while it is open. */
+  const [making, setMaking] = useState<string | null>(null);
   const menuButton = useRef<HTMLButtonElement>(null);
   const rightSize = useRef<number | null>(null);
   const dialogs = useDialogs();
@@ -241,7 +242,11 @@ export function Shell({ children, onLoggedOut }: { children: ReactNode; onLogged
     onSearch: () => setSwitching(true),
     onNewEntry: () => {
       setDrawer(false);
-      setMaking(true);
+      setMaking(folderInView);
+    },
+    onNewEntryIn: (folder: string) => {
+      setDrawer(false);
+      setMaking(folder);
     },
     onKeys: () => {
       setDrawer(false);
@@ -343,16 +348,18 @@ export function Shell({ children, onLoggedOut }: { children: ReactNode; onLogged
             {phone && <BottomSheet />}
             {switching && <Switcher onClose={() => setSwitching(false)} />}
             {sheet && <KeySheet onClose={() => setSheet(false)} />}
-            {making && (
+            {making !== null && (
               <NewEntry
                 tree={tree}
-                folder={folderInView}
+                folder={making}
                 onRetry={refresh}
-                onMake={(path) => {
-                  setMaking(false);
-                  navigate(`${editUrl(path)}?new=1`);
+                onMake={(path, type) => {
+                  setMaking(null);
+                  navigate(
+                    `${editUrl(path)}?new=1${type ? `&type=${encodeURIComponent(type)}` : ""}`,
+                  );
                 }}
-                onClose={() => setMaking(false)}
+                onClose={() => setMaking(null)}
               />
             )}
           </div>

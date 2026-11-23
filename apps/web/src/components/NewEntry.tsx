@@ -1,4 +1,6 @@
-import type { TreeFolder, TreeResponse } from "@frontier/schema";
+import { FOLDERS, type TreeFolder, type TreeResponse } from "@frontier/schema";
+import { libraryFileClient } from "../sync/libraryFile.ts";
+import { findFolder } from "./tree/model.ts";
 import { useId, useMemo, useRef, useState } from "react";
 import type { Loaded } from "../useAsync.ts";
 import { DialogFrame } from "./Dialogs.tsx";
@@ -24,6 +26,15 @@ function foldersOf(tree: TreeResponse): string[] {
   return out;
 }
 
+/** A folder path that is safe: each part a safe name, no empty parts. */
+export function safeFolder(path: string): string {
+  return path
+    .split("/")
+    .map((p) => p.replace(/[\\:*?"<>|#^[\]]/g, "").trim())
+    .filter((p) => p !== "" && p !== "." && p !== ".." && !p.startsWith("."))
+    .join("/");
+}
+
 /** A name that is safe as a file name: no path signs, no ".md" typed by habit. */
 export function safeName(name: string): string {
   return name
@@ -46,8 +57,8 @@ export function NewEntry({
   tree: Loaded<TreeResponse>;
   /** The folder in view, offered first. "" is the top of the library. */
   folder: string;
-  /** Called with the new entry's path. */
-  onMake: (path: string) => void;
+  /** Called with the new entry's path, and the type its folder gives its entries, if any. */
+  onMake: (path: string, type?: string) => void;
   onRetry: () => void;
   onClose: () => void;
 }) {
@@ -57,12 +68,15 @@ export function NewEntry({
   const field = useRef<HTMLInputElement>(null);
   const folderLabel = useId();
 
+  /** A folder made here, from the name typed into the folder list. */
+  const [made, setMade] = useState<string | null>(null);
   const options = useMemo<ComboboxOption[]>(() => {
     const paths = tree.state === "ready" ? foldersOf(tree.value) : [];
     // The folder in view is offered even before the tree has arrived.
     if (folder && !paths.includes(folder)) paths.unshift(folder);
+    if (made && !paths.includes(made)) paths.push(made);
     return [{ value: "", label: TOP }, ...paths.map((p) => ({ value: p, label: p }))];
-  }, [tree, folder]);
+  }, [tree, folder, made]);
 
   function make() {
     const safe = safeName(name);
@@ -71,7 +85,28 @@ export function NewEntry({
       field.current?.focus();
       return;
     }
-    onMake(`${where ? where + "/" : ""}${safe}.md`);
+    const path = `${where ? where + "/" : ""}${safe}.md`;
+    // A folder made here is kept as a line of the folder file, so it stays if the entry does not.
+    if (made && where === made) {
+      void libraryFileClient(FOLDERS)
+        .change((f) =>
+          f.folders.some((l) => l.path === made)
+            ? f
+            : { ...f, folders: [...f.folders, { path: made }] },
+        )
+        .catch(() => undefined);
+    }
+    onMake(path, typeOf(where));
+  }
+
+  /** The type a folder gives its entries: its own, or the nearest one above it. */
+  function typeOf(path: string): string | undefined {
+    if (tree.state !== "ready") return undefined;
+    for (let p = path; p !== ""; p = p.includes("/") ? p.slice(0, p.lastIndexOf("/")) : "") {
+      const type = findFolder(tree.value, p)?.type;
+      if (type) return type;
+    }
+    return undefined;
   }
 
   return (
@@ -104,6 +139,15 @@ export function NewEntry({
           onChange={setWhere}
           findLabel="Find a folder"
           empty="No folder has that name."
+          create={{
+            label: (typed) => `New folder "${safeFolder(typed)}"`,
+            onCreate: (typed) => {
+              const path = safeFolder(typed);
+              if (!path) return;
+              setMade(path);
+              setWhere(path);
+            },
+          }}
         />
         {tree.state === "loading" && <Progress label="Loading the folders" />}
       </div>

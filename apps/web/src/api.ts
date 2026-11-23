@@ -11,6 +11,7 @@ import type {
   ModelsResponse,
   SettingsResponse,
   InboxResponse,
+  LibraryFileName,
   MapFile,
   ChronicleFile,
   SchemaResponse,
@@ -405,6 +406,27 @@ export const api = {
   confirm: (planId: string, confirmedMergeIds: string[], message: string) =>
     post<{ commit: string }>("/api/publish/confirm", { planId, confirmedMergeIds, message }),
   cancelRename: (id: string) => send<{ ok: true }>("DELETE", `/api/renames/${id}`),
+  /** A library item file, such as the folder file, as the author sees it. */
+  libraryFile: (name: LibraryFileName) =>
+    call<{ file: unknown; revision: number; blob: string }>(`/api/library-files/${name}`),
+  /** Pages save through the queue (`sync/queue.ts`), which calls this. */
+  saveLibraryFile: (
+    name: LibraryFileName,
+    file: unknown,
+    revision: number,
+    sent: { baseBlob?: string; op?: string } = {},
+  ) =>
+    send<{ file: unknown; revision: number }>("PUT", `/api/library-files/${name}`, {
+      file,
+      revision,
+      ...sent,
+    }),
+  resolveLibraryFile: (name: LibraryFileName, keep: "mine" | "theirs") =>
+    post<{ ok: true }>(`/api/library-files/${name}/resolve`, { keep }),
+  /** Marks a folder and everything under it for deletion; with `dryRun`, only checks and counts. */
+  deleteFolder: (path: string, dryRun = false) =>
+    post<{ entries: number; folders: number }>("/api/folders/delete", { path, dryRun }),
+  applyType: (path: string) => post<{ made: number }>("/api/folders/apply-type", { path }),
 };
 
 /** A new draft id: 12 lower-case letters and digits, made in the browser. */

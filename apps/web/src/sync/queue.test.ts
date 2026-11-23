@@ -1,9 +1,18 @@
 import "fake-indexeddb/auto";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { type ChronicleFile, type MapFile } from "@frontier/schema";
+import { type ChronicleFile, type FolderFile, type MapFile } from "@frontier/schema";
 import { ApiFailure } from "../api.ts";
 import { openStore } from "./db.ts";
-import { backoff, Queue, type QueueEvent, type SenderApi, type Notice } from "./queue.ts";
+import {
+  backoff,
+  kindOf,
+  nameOf,
+  Queue,
+  type QueueEvent,
+  type QueueKey,
+  type SenderApi,
+  type Notice,
+} from "./queue.ts";
 import type { ConnectionState } from "./connection.ts";
 
 let n = 0;
@@ -45,6 +54,13 @@ function fakeApi(over: Partial<SenderApi> = {}): SenderApi & { calls: unknown[][
       throw new Error("not given");
     }),
     chronicle: vi.fn(async () => {
+      throw new Error("not given");
+    }),
+    saveLibraryFile: vi.fn(async (name, file, revision, sent) => {
+      calls.push(["library", name, file, revision, sent]);
+      return { file, revision: revision + 1 };
+    }),
+    libraryFile: vi.fn(async () => {
       throw new Error("not given");
     }),
     ...over,
@@ -491,5 +507,94 @@ describe("maps and chronicles in the queue", () => {
     expect(second.spans[0]).toMatchObject({ note: "Written during the save", entry: "entryid1" });
     expect(api.calls[1]![4]).toEqual([]);
     expect(api.calls[1]![3]).toBe(2);
+  });
+});
+
+describe("library files in the queue", () => {
+  const folders = (lines: FolderFile["folders"]): FolderFile => ({ version: 1, folders: lines });
+  const base = folders([{ path: "A" }, { path: "B" }]);
+
+  it("knows each kind by its key, and refuses a key of no kind", () => {
+    expect(kindOf("folders")).toBe("library");
+    expect(kindOf("entry:A.md")).toBe("entry");
+    expect(() => kindOf("styles" as QueueKey)).toThrow();
+    expect(nameOf({ key: "folders", value: base })).toBe("Folders");
+  });
+
+  it("sends the folder file with its revision and where it started", async () => {
+    const api = fakeApi();
+    const q = makeQueue(api);
+    const events: QueueEvent[] = [];
+    q.subscribe("folders", (e) => events.push(e));
+    await q.put("folders", base, { base: folders([]), revision: 0, baseBlob: "" });
+    await q.sendNow("folders");
+    expect(await q.get("folders")).toBeUndefined();
+    const [kind, name, file, revision, sent] = api.calls[0] as [
+      string,
+      string,
+      FolderFile,
+      number,
+      { baseBlob: string; op: string },
+    ];
+    expect([kind, name, file, revision, sent.baseBlob]).toEqual([
+      "library",
+      "folders",
+      base,
+      0,
+      "",
+    ]);
+    expect(events.find((e) => e.type === "saved")).toMatchObject({
+      known: { revision: 1, base },
+    });
+  });
+
+  it("merges a stale folder file by path from the stored base, and names the clashing folders", async () => {
+    // Another device gave B an icon and A a colour; this one reordered A and coloured it too.
+    const theirs = folders([
+      { path: "A", color: "rose" },
+      { path: "B", icon: "ship" },
+    ]);
+    let stale = true;
+    const api = fakeApi();
+    const plain = api.saveLibraryFile;
+    api.saveLibraryFile = vi.fn(async (...args: Parameters<SenderApi["saveLibraryFile"]>) => {
+      if (stale) {
+        stale = false;
+        throw new ApiFailure(409, "stale_revision", "Changed from another device.");
+      }
+      return plain(...args);
+    });
+    api.libraryFile = vi.fn(async () => ({ file: theirs, revision: 3, blob: "theirblob" }));
+    const q = makeQueue(api);
+    const notices: Notice[] = [];
+    q.onNotice((notice) => notices.push(notice));
+    await q.put(
+      "folders",
+      folders([{ path: "A", color: "moss", order: "V" }, { path: "B" }, { path: "C" }]),
+      {
+        base,
+        revision: 1,
+        baseBlob: "b0",
+      },
+    );
+    await q.sendNow("folders");
+    await vi.waitFor(async () => expect(await q.get("folders")).toBeUndefined());
+    const [, , sent, revision, meta] = api.calls.at(-1) as [
+      string,
+      string,
+      FolderFile,
+      number,
+      { baseBlob: string },
+    ];
+    expect(sent.folders).toEqual([
+      { path: "A", color: "moss", order: "V" },
+      { path: "B", icon: "ship" },
+      { path: "C" },
+    ]);
+    expect(revision).toBe(3);
+    expect(meta.baseBlob).toBe("theirblob");
+    expect(notices[0]!.message).toBe(
+      "Folders: changes from another device were merged in. Changed in both places, yours kept: A.",
+    );
   });
 });

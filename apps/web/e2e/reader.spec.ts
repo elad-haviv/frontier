@@ -84,6 +84,9 @@ test("lists what needs attention on the status page", async ({ page }) => {
 test("opens the folder list and finds an entry in it", async ({ page }) => {
   await page.goto(entry("README.md"));
   await openSideBar(page);
-  await page.locator(".tree-folder", { hasText: "Harbor" }).click();
+  await page
+    .getByRole("treeitem", { name: "Harbor", exact: true })
+    .getByRole("link", { name: "Harbor", exact: true })
+    .click();
   await expect(page.locator(".entry h1").first()).toHaveText("Harbor");
 });

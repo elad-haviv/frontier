@@ -17,6 +17,7 @@ import { useScope, useShortcut } from "../keys.ts";
 import { type QueueKey, queue } from "../sync/queue.ts";
 import { useNeedsConnection } from "../sync/connection.ts";
 import type { DraftKind } from "@frontier/schema";
+import { setFrontmatterKey } from "@frontier/vault";
 import { MessageSquare, SlidersHorizontal, Trash2, Undo2, WandSparkles } from "lucide-react";
 import { PageAction, usePanel, useRightBar } from "../components/shell/panels.tsx";
 
@@ -35,6 +36,8 @@ export function EditPage() {
   const refresh = useRefresh();
   const path = pathFrom(pathname);
   const creating = new URLSearchParams(search).get("new") === "1";
+  /** The type the new entry's folder gives, written into its properties when the text is made. */
+  const newType = creating ? new URLSearchParams(search).get("type") : null;
 
   const [initial, setInitial] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -172,6 +175,8 @@ export function EditPage() {
         }
         const name = (path.split("/").pop() ?? "").replace(/\.md$/i, "");
         text = `# ${name}\n\n`;
+        // The folder's type travels with the entry, so Obsidian sees it too.
+        if (newType) text = setFrontmatterKey(text, "type", newType);
         draft.current = { id: newDraftId(), revision: 0, kind: "create", baseBlob: "" };
       }
       // Text this device has not sent yet is newer than the server's: it is what was typed last.
@@ -192,7 +197,7 @@ export function EditPage() {
     return () => {
       live = false;
     };
-  }, [path, creating, key]);
+  }, [path, creating, newType, key]);
 
   // What the queue hears from the server about this file.
   useEffect(

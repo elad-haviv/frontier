@@ -1,6 +1,7 @@
 import type { TreeResponse } from "@frontier/schema";
 import {
   CircleDot,
+  FolderPlus,
   GitCompareArrows,
   Images,
   Inbox,
@@ -12,7 +13,7 @@ import {
   ScrollText,
   Search,
 } from "lucide-react";
-import type { ReactNode } from "react";
+import { type ReactNode, useState } from "react";
 import { Link, NavLink } from "react-router-dom";
 import { useConnection } from "../../sync/connection.ts";
 import type { Async } from "../../useAsync.ts";
@@ -122,17 +123,40 @@ export function TreeSection({
   tree,
   current,
   onRetry,
+  onNewEntryIn,
 }: {
   tree: Async<TreeResponse>;
   current: string;
   onRetry: () => void;
+  onNewEntryIn: (folder: string) => void;
 }) {
+  const [asked, setAsked] = useState(0);
   return (
     <section className="left-tree" aria-label="Library">
-      <h2 className="left-heading">Library</h2>
+      <div className="left-heading-row">
+        <h2 className="left-heading">Library</h2>
+        {tree.state === "ready" && (
+          <IconButton
+            label="New folder"
+            icon={FolderPlus}
+            size="sm"
+            tipSide="right"
+            className="left-new-folder"
+            onClick={() => setAsked((n) => n + 1)}
+          />
+        )}
+      </div>
       {tree.state === "loading" && <p className="muted pad">Loading…</p>}
       {tree.state === "failed" && <Problem reason={tree.error.message} onRetry={onRetry} />}
-      {tree.state === "ready" && <Tree tree={tree.value} current={current} />}
+      {tree.state === "ready" && (
+        <Tree
+          tree={tree.value}
+          current={current}
+          onNewEntry={onNewEntryIn}
+          onChanged={onRetry}
+          newFolderAsked={asked}
+        />
+      )}
     </section>
   );
 }
@@ -148,6 +172,7 @@ export function LeftBar({
   onRetryTree,
   onSearch,
   onNewEntry,
+  onNewEntryIn,
   onKeys,
   onLogout,
   onCollapse,
@@ -159,6 +184,8 @@ export function LeftBar({
   onRetryTree: () => void;
   onSearch: () => void;
   onNewEntry: () => void;
+  /** Opens the new-entry dialog in a given folder, from the tree. */
+  onNewEntryIn: (folder: string) => void;
   onKeys: () => void;
   onLogout: () => void;
   /** Folds the bar to its rail; absent in the drawer. */
@@ -211,7 +238,12 @@ export function LeftBar({
       </div>
       <div className="left-scroll">
         {drawer && places}
-        <TreeSection tree={tree} current={current} onRetry={onRetryTree} />
+        <TreeSection
+          tree={tree}
+          current={current}
+          onRetry={onRetryTree}
+          onNewEntryIn={onNewEntryIn}
+        />
         {!drawer && places}
       </div>
       <div className="left-foot">

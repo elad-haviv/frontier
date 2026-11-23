@@ -12,10 +12,14 @@
  */
 import { useEffect, useState, useSyncExternalStore } from "react";
 import {
+  type AnyLibraryFile,
   type ChronicleFile,
   type DraftKind,
+  type LibraryFileName,
+  libraryFileNamed,
   type MapFile,
   mergeChronicles,
+  mergeLibraryFile,
   mergeMaps,
 } from "@frontier/schema";
 import { api, ApiFailure, setDevice } from "../api.ts";
@@ -88,6 +92,10 @@ export interface SenderApi {
   saveChronicle: typeof api.saveChronicle;
   map: (id: string) => Promise<{ map: MapFile; revision: number; blob: string }>;
   chronicle: (id: string) => Promise<{ chronicle: ChronicleFile; revision: number; blob: string }>;
+  saveLibraryFile: typeof api.saveLibraryFile;
+  libraryFile: (
+    name: LibraryFileName,
+  ) => Promise<{ file: unknown; revision: number; blob: string }>;
 }
 
 export interface QueueDeps {
@@ -126,21 +134,26 @@ interface Answer {
   known: Known;
 }
 
-const kindOf = (key: QueueKey) =>
-  key.startsWith("entry:")
-    ? ("entry" as const)
-    : key.startsWith("map:")
-      ? ("map" as const)
-      : key.startsWith("chronicle:")
-        ? ("chronicle" as const)
-        : ("folders" as const);
+/** The library item file a key names, such as the folder file; undefined for any other key. */
+export const libraryKindOf = (key: QueueKey): AnyLibraryFile | undefined =>
+  key.includes(":") ? undefined : libraryFileNamed(key);
+
+/** The kind of file a key names. A key of no known kind is a mistake in the code. */
+export function kindOf(key: QueueKey): "entry" | "map" | "chronicle" | "library" {
+  if (key.startsWith("entry:")) return "entry";
+  if (key.startsWith("map:")) return "map";
+  if (key.startsWith("chronicle:")) return "chronicle";
+  if (libraryKindOf(key)) return "library";
+  throw new Error(`"${key}" is not a key of the save queue.`);
+}
 
 /** The part of the key after its kind: the path of an entry, the id of a map or a chronicle. */
 export const subject = (key: QueueKey): string => key.slice(key.indexOf(":") + 1);
 
-/** A file's name for the author: an entry's name, or a map's or chronicle's title. */
+/** A file's name for the author: an entry's name, a map's or chronicle's title, a file's label. */
 export function nameOf(record: Pick<QueueRecord, "key" | "value">): string {
-  if (record.key === "folders") return "Folders";
+  const library = libraryKindOf(record.key);
+  if (library) return library.label;
   if (kindOf(record.key) === "entry") {
     return (subject(record.key).split("/").pop() ?? "").replace(/\.md$/i, "");
   }
@@ -156,7 +169,10 @@ function itemsOf(value: unknown): { id: string; label?: unknown; name?: unknown 
   );
 }
 
-/** Names what clashed in a merge: an item's label or name, or the property's own name. */
+/**
+ * Names what clashed in a merge: an item's label or name, or the property's own name. A library
+ * file's items are named by their key, such as a folder's path.
+ */
 export function clashNames(value: unknown, clashes: string[]): string[] {
   const items = itemsOf(value);
   return clashes.map((c) => {
@@ -550,9 +566,19 @@ export class Queue {
           known: { draftId: "", revision: res.revision, baseBlob: r.baseBlob, base: res.chronicle },
         };
       }
-      default:
-        // The folder file arrives with the folder tree (11c).
-        throw new ApiFailure(400, "invalid", "Folders cannot be saved yet.");
+      case "library": {
+        const res = await this.d.api.saveLibraryFile(
+          r.key as LibraryFileName,
+          r.value,
+          r.revision,
+          sent,
+        );
+        return {
+          value: res.file,
+          unlinked: [],
+          known: { draftId: "", revision: res.revision, baseBlob: r.baseBlob, base: res.file },
+        };
+      }
     }
   }
 
@@ -660,6 +686,9 @@ export class Queue {
       if (kindOf(key) === "map") {
         const t = await this.d.api.map(id);
         theirs = { value: t.map, revision: t.revision, blob: t.blob };
+      } else if (kindOf(key) === "library") {
+        const t = await this.d.api.libraryFile(key as LibraryFileName);
+        theirs = { value: t.file, revision: t.revision, blob: t.blob };
       } else {
         const t = await this.d.api.chronicle(id);
         theirs = { value: t.chronicle, revision: t.revision, blob: t.blob };
@@ -673,7 +702,12 @@ export class Queue {
     const record = await this.store!.update(key, (r) => {
       if (!r) return null;
       const base = r.base ?? theirs.value;
-      if (kindOf(key) === "map") {
+      const library = libraryKindOf(key);
+      if (library) {
+        const m = mergeLibraryFile(library, base, r.value, theirs.value);
+        merged = m.file;
+        clashes = m.clashes;
+      } else if (kindOf(key) === "map") {
         const m = mergeMaps(base as MapFile, r.value as MapFile, theirs.value as MapFile);
         merged = m.map;
         clashes = m.clashes;

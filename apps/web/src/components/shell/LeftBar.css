@@ -214,3 +214,11 @@
   font-size: 0.65rem;
   line-height: 1.1rem;
 }
+
+/* The library's heading, with New folder beside it. */
+.left-heading-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-right: var(--space-1);
+}

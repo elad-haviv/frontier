@@ -2,7 +2,9 @@ import type { PublishPlan, UnpublishedResponse } from "@frontier/schema";
 import { ActionButton } from "../components/ui/ActionButton.tsx";
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { chronicleIdOf, mapIdOf } from "@frontier/schema";
+import { chronicleIdOf, type LibraryFileName, libraryFileOf, mapIdOf } from "@frontier/schema";
+import { queue } from "../sync/queue.ts";
+import { libraryFileClient } from "../sync/libraryFile.ts";
 import { api, ApiFailure, chronicleUrl, editUrl, entryUrl, imageUrl, mapUrl } from "../api.ts";
 import { Diff } from "../components/Diff.tsx";
 import { useRefresh, useWords } from "../components/Shell.tsx";
@@ -24,6 +26,10 @@ const REASON: Record<string, string> = {
     "This map was changed here and in the vault in the same places. Keep one of the two.",
   rename_blocked: "This rename cannot be carried out.",
 };
+
+/** The reason for a library file's clash, named by the file. */
+const libraryReason = (noun: string) =>
+  `The ${noun} were changed here and in the vault in the same places. Keep one of the two.`;
 
 export function UnpublishedPage() {
   const dialogs = useDialogs();
@@ -114,7 +120,11 @@ export function UnpublishedPage() {
       danger: true,
     });
     if (!ok) return;
+    // A library file's change still on this device would bring the draft back: it goes first.
+    const library = libraryFileOf(data?.drafts.find((d) => d.id === id)?.path ?? "");
+    if (library) await queue.drop(library.name);
     await api.discardDraft(id).catch(fail);
+    if (library) await libraryFileClient(library).reload();
     setPlan(null);
     await load();
     refresh();
@@ -137,9 +147,13 @@ export function UnpublishedPage() {
   async function settleMap(path: string, keep: "mine" | "theirs") {
     const id = mapIdOf(path);
     const chronicle = chronicleIdOf(path);
+    const library = libraryFileOf(path);
     if (id) await api.resolveMap(id, keep).catch(fail);
     else if (chronicle) await api.resolveChronicle(chronicle, keep).catch(fail);
-    else return;
+    else if (library) {
+      await api.resolveLibraryFile(library.name as LibraryFileName, keep).catch(fail);
+      await libraryFileClient(library).reload();
+    } else return;
     setPlan(null);
     await load();
     refresh();
@@ -203,7 +217,7 @@ export function UnpublishedPage() {
                     onChange={() => toggle(selected, d.id, setSelected)}
                   />
                   <span className={`tag tag-${d.kind}`}>{KIND[d.kind]}</span>
-                  <span className="change-path">{d.path}</span>
+                  <span className="change-path">{libraryFileOf(d.path)?.label ?? d.path}</span>
                 </label>
                 {d.origins.some((o) => o.kind === "lore") && (
                   <p className="muted">
@@ -222,7 +236,8 @@ export function UnpublishedPage() {
                   {d.kind !== "delete" &&
                     !d.binary &&
                     !mapIdOf(d.path) &&
-                    !chronicleIdOf(d.path) && <Link to={editUrl(d.path)}>Keep editing</Link>}
+                    !chronicleIdOf(d.path) &&
+                    !libraryFileOf(d.path) && <Link to={editUrl(d.path)}>Keep editing</Link>}
                   {d.kind !== "delete" && mapIdOf(d.path) && (
                     <Link to={mapUrl(mapIdOf(d.path)!) + "?edit=1"}>Open the map</Link>
                   )}
@@ -364,40 +379,67 @@ export function UnpublishedPage() {
             <>
               <h3>Held back</h3>
               <ul className="changes">
-                {plan.conflicts.map((c) => (
-                  <li key={c.draftId}>
-                    <p className="change-path">{c.path}</p>
-                    <p className="error">
-                      {REASON[c.reason]} {c.reason === "rename_blocked" && c.mine}
-                    </p>
-                    {(c.reason === "map_changed_on_both" ||
-                      c.reason === "chronicle_changed_on_both") && (
-                      <span className="change-actions">
-                        <ActionButton
-                          type="button"
-                          className="quiet"
-                          onClick={() => settleMap(c.path, "mine")}
-                        >
-                          {c.reason === "map_changed_on_both" ? "Keep my map" : "Keep my chronicle"}
-                        </ActionButton>
-                        <ActionButton
-                          type="button"
-                          className="quiet"
-                          onClick={() => settleMap(c.path, "theirs")}
-                        >
-                          Take the vault's
-                        </ActionButton>
-                      </span>
-                    )}
-                    {c.reason !== "rename_blocked" &&
-                      c.reason !== "map_changed_on_both" &&
-                      c.reason !== "chronicle_changed_on_both" && (
-                        <Link to={`/conflict/${c.draftId}`} state={{ conflict: c }}>
-                          Resolve
-                        </Link>
+                {plan.conflicts.map((c) => {
+                  const library = libraryFileOf(c.path);
+                  return (
+                    <li key={c.draftId}>
+                      <p className="change-path">{library?.label ?? c.path}</p>
+                      <p className="error">
+                        {library && c.reason === library.conflict
+                          ? libraryReason(library.noun)
+                          : REASON[c.reason]}{" "}
+                        {c.reason === "rename_blocked" && c.mine}
+                      </p>
+                      {library && c.reason === library.conflict && (
+                        <span className="change-actions">
+                          <ActionButton
+                            type="button"
+                            className="quiet"
+                            onClick={() => settleMap(c.path, "mine")}
+                          >
+                            Keep my {library.noun}
+                          </ActionButton>
+                          <ActionButton
+                            type="button"
+                            className="quiet"
+                            onClick={() => settleMap(c.path, "theirs")}
+                          >
+                            Take the vault's
+                          </ActionButton>
+                        </span>
                       )}
-                  </li>
-                ))}
+                      {(c.reason === "map_changed_on_both" ||
+                        c.reason === "chronicle_changed_on_both") && (
+                        <span className="change-actions">
+                          <ActionButton
+                            type="button"
+                            className="quiet"
+                            onClick={() => settleMap(c.path, "mine")}
+                          >
+                            {c.reason === "map_changed_on_both"
+                              ? "Keep my map"
+                              : "Keep my chronicle"}
+                          </ActionButton>
+                          <ActionButton
+                            type="button"
+                            className="quiet"
+                            onClick={() => settleMap(c.path, "theirs")}
+                          >
+                            Take the vault's
+                          </ActionButton>
+                        </span>
+                      )}
+                      {c.reason !== "rename_blocked" &&
+                        c.reason !== "map_changed_on_both" &&
+                        c.reason !== "chronicle_changed_on_both" &&
+                        !(library && c.reason === library.conflict) && (
+                          <Link to={`/conflict/${c.draftId}`} state={{ conflict: c }}>
+                            Resolve
+                          </Link>
+                        )}
+                    </li>
+                  );
+                })}
               </ul>
               <p className="muted">The rest can still be published now.</p>
             </>
