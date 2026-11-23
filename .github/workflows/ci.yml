@@ -13,6 +13,8 @@ jobs:
         with:
           node-version: 22
           cache: npm
+      # pandoc makes the Word, PDF and slide exports, which the export tests make for real.
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends pandoc
       - run: npm ci
       - run: npm run lint
       - run: npm run format
