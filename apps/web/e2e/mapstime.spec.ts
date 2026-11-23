@@ -188,6 +188,13 @@ test("CUJ 16: a fort appears and goes, and a border changes shape, as the years 
     const m = await centre(page);
     await page.mouse.click(m.x, m.y + 20);
   };
+  // A tap just after the year moves can land before the fort is drawn again; tap until it opens.
+  const openFort = async () =>
+    expect(async () => {
+      await drawn(page);
+      await tapFort();
+      await expect(card.locator("h2")).toHaveText("Mira", { timeout: 500 });
+    }).toPass();
   await year(page, 0);
   await tapFort();
   await expect(card).toHaveCount(0);
@@ -195,14 +202,12 @@ test("CUJ 16: a fort appears and goes, and a border changes shape, as the years 
   await page.getByRole("button", { name: /^Later/ }).click();
   await expect(page.getByLabel("Year", { exact: true })).toHaveValue("270");
   await drawn(page);
-  await tapFort();
-  await expect(card.locator("h2")).toHaveText("Mira");
+  await openFort();
   await expect(card.locator(".card-reason")).toHaveText("Perhaps: begins year 270 to 290.");
   await card.getByRole("button", { name: "Close" }).click();
 
   await year(page, 295);
-  await tapFort();
-  await expect(card.locator("h2")).toHaveText("Mira");
+  await openFort();
   await expect(card.locator(".card-reason")).toHaveCount(0);
   await card.getByRole("button", { name: "Close" }).click();
 
@@ -229,8 +234,7 @@ test("CUJ 16: a fort appears and goes, and a border changes shape, as the years 
   await page.reload();
   await expect(page.getByLabel("Year", { exact: true })).toHaveValue("280");
   await expect(page).toHaveURL(/v=/);
-  await page.waitForTimeout(300);
-  await tapFort();
+  await openFort();
   await expect(card.locator(".card-reason")).toHaveText("Perhaps: begins year 270 to 290.");
   await card.getByRole("button", { name: "Close" }).click();
 
@@ -243,11 +247,7 @@ test("CUJ 16: a fort appears and goes, and a border changes shape, as the years 
   await page.getByRole("button", { name: "Time off" }).click();
   await expect(page.locator(".time-bar")).toHaveCount(0);
   // The frame grows when the bar goes, and the map is drawn again a moment later.
-  await expect(async () => {
-    await drawn(page);
-    await tapFort();
-    await expect(card.locator("h2")).toHaveText("Mira", { timeout: 500 });
-  }).toPass();
+  await openFort();
   await expect(page).not.toHaveURL(/t=/);
 
   await page.evaluate(async (chronicle) => {
