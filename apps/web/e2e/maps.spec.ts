@@ -269,12 +269,19 @@ test("adds a second image, places it by its extent, hides it and takes it off", 
   await expect(page.locator(".save-saved")).toBeVisible();
   expect((await stored(page)).images[1]?.visible).toBe(true);
 
-  // Taking it off the map asks first.
-  await panel.getByRole("button", { name: "Take Sample world off the map" }).click();
+  // Taking it off the map, from the row's menu, asks first.
+  await panel.getByRole("button", { name: "More for Sample world" }).click();
+  await page.getByRole("menuitem", { name: "Take Sample world off the map" }).click();
   await answerDialog(page, "Take it off");
   await expect(panel.getByLabel("Image name")).toHaveCount(1);
   await expect.poll(async () => (await stored(page)).images.length).toBe(1);
-  await expect(panel.getByRole("button", { name: /^Take .* off the map$/ })).toBeDisabled();
+  // The last image cannot be taken off.
+  await panel
+    .getByRole("button", { name: /^More for / })
+    .first()
+    .click();
+  await expect(page.getByRole("menuitem", { name: /^Take .* off the map/ })).toBeDisabled();
+  await page.keyboard.press("Escape");
   await discardMap(page);
 });
 

@@ -10,13 +10,14 @@ import "./ContextMenu.css";
  * A menu opened by a right-click, or a long press on touch, on `children`. Items are
  * ContextMenuItem, ContextMenuSub and ContextMenuSeparator; the same actions should also be
  * reachable without a right-click, such as from a "⋯" button. `disabled` leaves the right-click
- * to the browser. `onOpenChange` and `onCloseAutoFocus` are Radix's, for a menu that must put the
- * focus back somewhere of its own.
+ * to the browser. `open` and `onOpenChange` let the page hold whether the menu is open, and
+ * `onCloseAutoFocus` is Radix's, for a menu that must put the focus back somewhere of its own.
  */
 export function ContextMenu({
   children,
   items,
   disabled = false,
+  open,
   onOpenChange,
   onCloseAutoFocus,
   className,
@@ -24,12 +25,16 @@ export function ContextMenu({
   children: ReactElement;
   items: ReactNode;
   disabled?: boolean;
+  open?: boolean;
   onOpenChange?: (open: boolean) => void;
   onCloseAutoFocus?: (event: Event) => void;
   className?: string;
 }) {
   return (
-    <Context.Root {...(onOpenChange ? { onOpenChange } : {})}>
+    <Context.Root
+      {...(open !== undefined ? { open } : {})}
+      {...(onOpenChange ? { onOpenChange } : {})}
+    >
       <Context.Trigger asChild disabled={disabled}>
         {children}
       </Context.Trigger>

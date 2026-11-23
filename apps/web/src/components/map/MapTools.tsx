@@ -11,12 +11,12 @@ import {
 import type { Tool } from "../../map/tools.ts";
 import { IconButton } from "../ui/IconButton.tsx";
 
-const TOOLS: { tool: Tool; label: string; icon: LucideIcon }[] = [
-  { tool: "select", label: "Select", icon: MousePointer2 },
-  { tool: "marker", label: "Marker", icon: MapPin },
-  { tool: "path", label: "Path", icon: Spline },
-  { tool: "zone", label: "Zone", icon: Pentagon },
-  { tool: "measure", label: "Measure", icon: Ruler },
+const TOOLS: { tool: Tool; label: string; icon: LucideIcon; shortcut: string }[] = [
+  { tool: "select", label: "Select", icon: MousePointer2, shortcut: "map.select" },
+  { tool: "marker", label: "Marker", icon: MapPin, shortcut: "map.marker" },
+  { tool: "path", label: "Path", icon: Spline, shortcut: "map.path" },
+  { tool: "zone", label: "Zone", icon: Pentagon, shortcut: "map.zone" },
+  { tool: "measure", label: "Measure", icon: Ruler, shortcut: "map.measure" },
 ];
 
 /** The tools while editing, with undo and redo. A schematic map has no measuring. */
@@ -44,6 +44,7 @@ export function MapTools({
           key={t.tool}
           label={t.label}
           icon={t.icon}
+          shortcut={t.shortcut}
           showLabel
           aria-pressed={tool === t.tool}
           onClick={() => onTool(t.tool)}
@@ -53,6 +54,7 @@ export function MapTools({
       <IconButton
         label="Undo"
         icon={Undo2}
+        shortcut="map.undo"
         disabled={!canUndo}
         disabledReason="Nothing to undo yet"
         onClick={onUndo}
@@ -60,6 +62,7 @@ export function MapTools({
       <IconButton
         label="Redo"
         icon={Redo2}
+        shortcut="map.redo"
         disabled={!canRedo}
         disabledReason="Nothing to redo"
         onClick={onRedo}

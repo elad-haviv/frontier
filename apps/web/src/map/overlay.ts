@@ -34,8 +34,49 @@ export interface OverlayInput {
   presence?: ReadonlyMap<string, { opacity: number; dashed: boolean }>;
 }
 
+/** Where a feature landed on the screen; a marker also says how far it reaches from its middle. */
+export type DrawnShape = Shape & { radius?: number };
+
 const INK = "#2a2420";
 const PAPER = "#fbf7f0";
+
+/** The width of a path's line, and of a zone's edge, in pixels. */
+export const PATH_WIDTH = 2.5;
+export const ZONE_EDGE = 1.5;
+/** The paper casing under a path: wider than its line, so the line reads on any image. */
+export const CASING = PATH_WIDTH + 2.5;
+
+/** How far a marker reaches from its middle: its icon, or its dot with the paper edge. */
+export const markerRadius = (icon: boolean) => (icon ? 14 : 7);
+
+/**
+ * The colour that marks the selection and the hover, from `--map-select` in styles.css, read
+ * once per draw so that it follows the theme.
+ */
+export function selectColour(): string {
+  if (typeof document === "undefined") return "#c2410c";
+  const value = getComputedStyle(document.documentElement).getPropertyValue("--map-select");
+  return value.trim() || "#c2410c";
+}
+
+/** The two rings around a selected or hovered marker: paper, and the accent outside it. */
+export function markerRing(
+  ctx: CanvasRenderingContext2D,
+  [x, y]: Point,
+  radius: number,
+  colour: string,
+): void {
+  ctx.beginPath();
+  ctx.arc(x, y, radius + 2.5, 0, Math.PI * 2);
+  ctx.strokeStyle = PAPER;
+  ctx.lineWidth = 3;
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(x, y, radius + 5, 0, Math.PI * 2);
+  ctx.strokeStyle = colour;
+  ctx.lineWidth = 2.5;
+  ctx.stroke();
+}
 
 /** The screen lines of a run of positions: one per repeat of the picture, or per visible stretch. */
 function lines(space: Space, view: View, points: Position[], close: boolean): Point[][] {
@@ -81,8 +122,9 @@ function fillOnGlobe(ctx: CanvasRenderingContext2D, view: View, points: Position
   ctx.fill();
 }
 
-export function drawOverlay(ctx: CanvasRenderingContext2D, input: OverlayInput): Shape[] {
+export function drawOverlay(ctx: CanvasRenderingContext2D, input: OverlayInput): DrawnShape[] {
   const { map, view } = input;
+  const accent = input.selected ? selectColour() : "";
   const ratio = window.devicePixelRatio || 1;
   ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
   ctx.clearRect(0, 0, view.width, view.height);
@@ -105,7 +147,7 @@ export function drawOverlay(ctx: CanvasRenderingContext2D, input: OverlayInput):
     ctx.stroke();
   }
 
-  const shapes: Shape[] = [];
+  const shapes: DrawnShape[] = [];
   const colours = new Map(map.layers.map((l) => [l.id, l.color]));
   const order = new Map(map.layers.map((l, i) => [l.id, i]));
   const features = map.features
@@ -168,8 +210,14 @@ export function drawOverlay(ctx: CanvasRenderingContext2D, input: OverlayInput):
       }
       ctx.beginPath();
       trace(ctx, line);
+      if (picked) {
+        // The selection: an accent outline under the zone's own edge.
+        ctx.strokeStyle = accent;
+        ctx.lineWidth = ZONE_EDGE + 2;
+        ctx.stroke();
+      }
       ctx.strokeStyle = colour;
-      ctx.lineWidth = picked ? 3 : 1.5;
+      ctx.lineWidth = ZONE_EDGE;
       ctx.stroke();
       if (view.state.kind !== "plate" && view.state.kind !== "projected") {
         shapes.push({ id: f.id, kind: "zone", points: line });
@@ -183,11 +231,17 @@ export function drawOverlay(ctx: CanvasRenderingContext2D, input: OverlayInput):
     for (const line of lines(map.space, view, f.points, false)) {
       ctx.beginPath();
       trace(ctx, line);
+      if (f.id === input.selected) {
+        // The selection: an accent casing under the paper casing and the line.
+        ctx.strokeStyle = accent;
+        ctx.lineWidth = PATH_WIDTH + 6;
+        ctx.stroke();
+      }
       ctx.strokeStyle = PAPER;
-      ctx.lineWidth = f.id === input.selected ? 7 : 5;
+      ctx.lineWidth = CASING;
       ctx.stroke();
       ctx.strokeStyle = colour;
-      ctx.lineWidth = f.id === input.selected ? 4 : 2.5;
+      ctx.lineWidth = PATH_WIDTH;
       ctx.stroke();
       shapes.push({ id: f.id, kind: "path", points: line });
     }
@@ -213,14 +267,15 @@ export function drawOverlay(ctx: CanvasRenderingContext2D, input: OverlayInput):
       if (x < -40 || x > view.width + 40 || y < -40 || y > view.height + 40) continue;
       const picked = f.id === input.selected;
       const icon = input.iconFor(f);
+      const radius = markerRadius(icon !== null);
       let below = 9;
       if (icon) {
-        const size = picked ? 34 : 28;
+        const size = 28;
         ctx.drawImage(icon, x - size / 2, y - size / 2, size, size);
         below = size / 2 + 2;
       } else {
         ctx.beginPath();
-        ctx.arc(x, y, picked ? 8 : 6, 0, Math.PI * 2);
+        ctx.arc(x, y, 6, 0, Math.PI * 2);
         ctx.fillStyle = colour;
         ctx.fill();
         ctx.strokeStyle = PAPER;
@@ -228,11 +283,8 @@ export function drawOverlay(ctx: CanvasRenderingContext2D, input: OverlayInput):
         ctx.stroke();
       }
       if (picked) {
-        ctx.beginPath();
-        ctx.arc(x, y, icon ? 21 : 12, 0, Math.PI * 2);
-        ctx.strokeStyle = colour;
-        ctx.lineWidth = 2;
-        ctx.stroke();
+        markerRing(ctx, [x, y], radius, accent);
+        below = radius + 9;
       }
       if (style.dashed) {
         // Undated: a dashed ring, outside the ring that marks the selection.
@@ -244,7 +296,7 @@ export function drawOverlay(ctx: CanvasRenderingContext2D, input: OverlayInput):
         ctx.stroke();
         ctx.setLineDash([]);
       }
-      shapes.push({ id: f.id, kind: "marker", at: [x, y] });
+      shapes.push({ id: f.id, kind: "marker", at: [x, y], radius });
       const title = input.titleOf(f);
       if (title) labels.push({ title, x, y: y + below, picked, opacity: style.opacity });
     }
