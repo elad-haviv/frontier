@@ -148,11 +148,12 @@ describe("full-text search", () => {
     const { VaultIndex } = await import("../src/index/build.js");
     const { SearchIndex } = await import("../src/index/search.js");
     const vaultPackage = join(dirname(fileURLToPath(import.meta.url)), "../../../packages/vault");
-    execFileSync("npx", ["tsx", "scripts/make-big-fixture.ts"], {
+    execFileSync("npx", ["tsx", "scripts/make-big-fixture.ts", "search"], {
       cwd: vaultPackage,
       stdio: "ignore",
     });
-    const big = join(vaultPackage, "test", ".big-fixture");
+    // A folder of this test's own: the other timing test makes one at the same time.
+    const big = join(vaultPackage, "test", ".big-fixture", "search");
     try {
       const index = new VaultIndex(big);
       index.build("timing");

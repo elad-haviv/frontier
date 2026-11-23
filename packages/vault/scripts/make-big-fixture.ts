@@ -1,8 +1,9 @@
 /**
  * Copies the fixture vault's notes until there are 500, for timing tests.
- * Output goes to test/.big-fixture, which is not committed.
+ * Output goes to test/.big-fixture, which is not committed, or to a folder of that name inside
+ * it, so tests running side by side each have their own.
  *
- *   npm run big-fixture -w packages/vault
+ *   npm run big-fixture -w packages/vault [-- name]
  */
 import { cpSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -10,7 +11,7 @@ import { fileURLToPath } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const source = join(here, "..", "test", "fixture-vault");
-const target = join(here, "..", "test", ".big-fixture");
+const target = join(here, "..", "test", ".big-fixture", ...process.argv.slice(2, 3));
 const WANTED = 500;
 
 rmSync(target, { recursive: true, force: true });
