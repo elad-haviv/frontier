@@ -5,21 +5,30 @@
  *   drafts/<id>/content                 text with "\n" line endings
  *   drafts/<id>/versions/<device>.txt   a kept copy: a save from a device that started from older
  *   drafts/<id>/versions/<device>.json  text, one per device, with its record
+ *   drafts/<id>/versions/server.txt     the other side of an item clash in a map, a chronicle or a
+ *   drafts/<id>/versions/server.json    library item file, which a device's merged save replaced
  *   drafts/renames/<id>.json            a rename or move, stored as an intent
+ *   drafts/renamed.json                 the renames and moves that reached the library, the last 500
  *
  * Before kept copies there was one spare slot, `content.v2` with `record.v2.json`. One still
  * found is read as the copy of an earlier device.
  */
+import { randomBytes } from "node:crypto";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
+  combineKept,
   DraftRecord,
   type DraftKind,
+  itemShapeOf,
   KeptCopy,
   type KeptCopyText,
+  makeId,
   type Origin,
+  RenamedLog,
   RenameIntent,
+  unionClashes,
 } from "@frontier/schema";
 import { ApiError } from "../errors.js";
 import type { StateFiles } from "./files.js";
@@ -57,8 +66,48 @@ export const UNKNOWN_DEVICE: Device = { id: "unknown", name: "" };
 /** The device the single spare slot of an earlier Frontier is read as. */
 const EARLIER = "earlier";
 
-/** What may name a kept copy's files: an id, `unknown` or `earlier`; never a path. */
+/** The slot that holds the other side of an item clash, beside the devices' slots. */
+export const SERVER_SLOT = "server";
+
+/** How many published renames `renamed.json` remembers. */
+const RENAMED_KEPT = 500;
+
+/** What may name a kept copy's files: an id, `unknown`, `earlier` or `server`; never a path. */
 const DEVICE_NAME = /^[a-z0-9]{1,32}$/;
+
+/**
+ * Keeps the other side of an item clash before a device's merged save replaces it (stage 15c), for
+ * the stores of maps, chronicles and library item files. Without a draft, one is made first from
+ * the library's copy, which is then the other side. Returns the draft the save goes to.
+ */
+export async function keepOtherSide(
+  drafts: DraftStore,
+  draft: DraftRecord | undefined,
+  clashes: string[],
+  library: () => Promise<{ path: string; text: string; blob: string }>,
+): Promise<DraftRecord> {
+  let record = draft;
+  if (!record) {
+    const from = await library();
+    record = await drafts.saveFrom({
+      id: makeId(randomBytes),
+      path: from.path,
+      kind: from.blob === "" ? "create" : "edit",
+      content: from.text,
+      baseBlob: from.blob,
+      lineEnding: "lf",
+    });
+  }
+  await drafts.keepOther(record.id, await drafts.text(record.id), clashes);
+  return record;
+}
+
+/** The `kept` of a repeated send's answer: the draft, when the send had clashes and it keeps one. */
+export const keptOf = (
+  drafts: DraftStore,
+  id: string,
+  clashes: string[] | undefined,
+): { kept?: string } => (clashes?.length && drafts.hasServerCopy(id) ? { kept: id } : {});
 
 /** A record without the op of the save before, for the next save to set its own. */
 function withoutOp(record: DraftRecord): DraftRecord {
@@ -72,6 +121,10 @@ export class DraftStore {
   private renames = new Map<string, RenameIntent>();
   /** How many kept copies each draft has, for drafts that have any. */
   private kept = new Map<string, number>();
+  /** The drafts whose kept copies include the other side of an item clash. */
+  private serverKept = new Set<string>();
+  /** The renames and moves that reached the library, oldest first. */
+  private renamed: RenamedLog = [];
   private readonly dir: string;
   /**
    * Rises on every write of a draft and every discard, whoever made it, for the status snapshot:
@@ -95,9 +148,13 @@ export class DraftStore {
     this.records.clear();
     this.renames.clear();
     this.kept.clear();
+    this.serverKept.clear();
+    this.renamed = [];
     if (!existsSync(this.dir)) return;
+    this.renamed =
+      (await this.files.readJson(this.renamedFile(), RenamedLog).catch(() => null)) ?? [];
     for (const name of await readdir(this.dir)) {
-      if (name === "renames") continue;
+      if (name === "renames" || name.endsWith(".json")) continue;
       const record = await this.files
         .readJson(join(this.dir, name, "record.json"), DraftRecord)
         .catch(() => null);
@@ -255,10 +312,25 @@ export class DraftStore {
     if (existsSync(dir)) n += readdirSync(dir).filter((f) => f.endsWith(".txt")).length;
     if (n > 0) this.kept.set(id, n);
     else this.kept.delete(id);
+    if (existsSync(join(dir, `${SERVER_SLOT}.txt`))) this.serverKept.add(id);
+    else this.serverKept.delete(id);
   }
 
   hasKeptCopies(id: string): boolean {
     return this.kept.has(id);
+  }
+
+  /** Whether the draft keeps the other side of an item clash. */
+  hasServerCopy(id: string): boolean {
+    return this.serverKept.has(id);
+  }
+
+  /**
+   * Whether the draft has texts from devices to compare and merge by hand. The other side of an
+   * item clash is only shown, so it holds nothing back: saving the draft as a version clears it.
+   */
+  hasDeviceCopies(id: string): boolean {
+    return (this.kept.get(id) ?? 0) > (this.serverKept.has(id) ? 1 : 0);
   }
 
   /** The drafts that have kept copies, and how many each has. */
@@ -276,7 +348,10 @@ export class DraftStore {
   /** Keeps a device's text beside a draft. A second copy from the same device replaces the first. */
   private async keep(id: string, device: Device, text: string, now: Date): Promise<void> {
     // The route lets only an id through; this guards the file name all the same.
-    const name = DEVICE_NAME.test(device.id) && device.id !== EARLIER ? device.id : "unknown";
+    const name =
+      DEVICE_NAME.test(device.id) && device.id !== EARLIER && device.id !== SERVER_SLOT
+        ? device.id
+        : "unknown";
     const record: KeptCopy = { device: name, deviceName: device.name, savedAt: now.toISOString() };
     // Text first: a record must never point at text that is not there yet.
     await this.files.write(join(this.versionsDir(id), `${name}.txt`), text);
@@ -311,17 +386,68 @@ export class DraftStore {
           deviceName: record?.deviceName ?? "",
           savedAt: record?.savedAt ?? this.require(id).updatedAt,
           text: await readFile(join(dir, file), "utf8"),
+          ...(record?.source ? { source: record.source } : {}),
+          ...(record?.clashes ? { clashes: record.clashes } : {}),
         });
       }
     }
     return out.sort((a, b) => a.savedAt.localeCompare(b.savedAt));
   }
 
-  private async dropKept(id: string): Promise<void> {
-    await this.files.remove(this.versionsDir(id));
-    await this.files.remove(join(this.folder(id), "content.v2"));
-    await this.files.remove(join(this.folder(id), "record.v2.json"));
-    this.kept.delete(id);
+  /**
+   * Keeps the other side of an item clash (stage 15c): `text` is the draft's text that a device's
+   * merged save is about to replace, and `clashes` the keys of the items both sides changed. A
+   * copy kept by an earlier clash is combined with it item by item, so nothing it kept is lost:
+   * the new clashing items come from `text`, earlier ones stay as they were.
+   */
+  async keepOther(id: string, text: string, clashes: string[], at = new Date()): Promise<void> {
+    const record = this.require(id);
+    const dir = this.versionsDir(id);
+    const earlier = await this.files
+      .readJson(join(dir, `${SERVER_SLOT}.json`), KeptCopy)
+      .catch(() => null);
+    let kept = text;
+    let all = unionClashes(clashes);
+    if (earlier && existsSync(join(dir, `${SERVER_SLOT}.txt`))) {
+      const before = earlier.clashes ?? [];
+      all = unionClashes(before, clashes);
+      const shape = itemShapeOf(record.path);
+      const older = shape?.parse(await readFile(join(dir, `${SERVER_SLOT}.txt`), "utf8"));
+      const newer = shape?.parse(text);
+      if (shape && older && newer) {
+        const keep = before.filter((c) => !clashes.includes(c));
+        kept = shape.serialise(combineKept(shape, older, newer, keep));
+      }
+    }
+    const copy: KeptCopy = {
+      device: SERVER_SLOT,
+      deviceName: "",
+      savedAt: at.toISOString(),
+      source: "server",
+      clashes: all,
+    };
+    await this.files.write(join(dir, `${SERVER_SLOT}.txt`), kept);
+    await this.files.writeJson(join(dir, `${SERVER_SLOT}.json`), copy);
+    this.countKept(id);
+  }
+
+  /**
+   * Removes one kept copy by its slot (a device's id, `earlier` or `server`), or every one without
+   * a slot. Removing one that is not there does nothing.
+   */
+  async dropKept(id: string, slot?: string): Promise<void> {
+    this.require(id);
+    if (slot === undefined || slot === EARLIER) {
+      await this.files.remove(join(this.folder(id), "content.v2"));
+      await this.files.remove(join(this.folder(id), "record.v2.json"));
+    }
+    if (slot === undefined) await this.files.remove(this.versionsDir(id));
+    else if (slot !== EARLIER) {
+      if (!DEVICE_NAME.test(slot)) throw new ApiError("invalid", "There is no such kept copy.");
+      await this.files.remove(join(this.versionsDir(id), `${slot}.txt`));
+      await this.files.remove(join(this.versionsDir(id), `${slot}.json`));
+    }
+    this.countKept(id);
   }
 
   private async put(record: DraftRecord, text: string): Promise<void> {
@@ -396,7 +522,10 @@ export class DraftStore {
       throw new ApiError("invalid", "An uploaded image cannot be edited as text.");
     }
     if (existing.id === input.id && existing.path !== input.path) {
-      throw new ApiError("invalid", "A draft cannot change which file it belongs to.");
+      // The draft this device knew was renamed or moved on another device: the text is kept
+      // beside it where it is now, never refused and never written back at the old path.
+      await this.keep(existing.id, device, input.text, now);
+      throw this.stale(existing.id);
     }
     if (existing.id === input.id && input.revision > existing.revision) {
       throw new ApiError("invalid", "This draft is newer than the server's copy. Reload the page.");
@@ -417,6 +546,39 @@ export class DraftStore {
     return record;
   }
 
+  /**
+   * Keeps a device's text beside the draft at `path` (stage 15c): a new entry whose path, or a
+   * path differing only in letter case, was taken meanwhile, or an edit of an entry renamed or
+   * moved elsewhere. With no draft there, one is made from `start`, as the library's text or the
+   * text the device started from. Always ends with `stale_revision`, naming that draft.
+   */
+  async keepBeside(
+    path: string,
+    start: { kind: DraftKind; text: string; baseBlob: string; lineEnding: "lf" | "crlf" },
+    text: string,
+    device: Device = UNKNOWN_DEVICE,
+    now = new Date(),
+  ): Promise<never> {
+    let draft = this.byPath(path);
+    if (draft?.binary) throw new ApiError("invalid", "An uploaded image cannot be edited as text.");
+    if (!draft) {
+      draft = {
+        id: makeId(randomBytes),
+        revision: 1,
+        path,
+        kind: start.kind,
+        baseBlob: start.baseBlob,
+        lineEnding: start.lineEnding,
+        binary: false,
+        origins: [],
+        updatedAt: now.toISOString(),
+      };
+      await this.put(draft, start.text);
+    }
+    await this.keep(draft.id, device, text, now);
+    throw this.stale(draft.id);
+  }
+
   private stale(id: string): ApiError {
     return new ApiError(
       "stale_revision",
@@ -427,6 +589,7 @@ export class DraftStore {
 
   /** The stored text and every text kept from other devices. */
   async versions(id: string): Promise<{
+    path: string;
     current: { text: string; revision: number };
     others: KeptCopyText[];
   }> {
@@ -434,6 +597,7 @@ export class DraftStore {
     if (!this.hasKeptCopies(id))
       throw new ApiError("not_found", "This draft has no texts from other devices.");
     return {
+      path: record.path,
       current: { text: await this.text(id), revision: record.revision },
       others: await this.keptCopies(id),
     };
@@ -512,6 +676,21 @@ export class DraftStore {
   async removeRename(id: string): Promise<void> {
     if (!this.renames.delete(id)) throw new ApiError("not_found", "There is no such rename.");
     await this.files.remove(join(this.dir, "renames", `${id}.json`));
+  }
+
+  private renamedFile(): string {
+    return join(this.dir, "renamed.json");
+  }
+
+  /** Notes a rename or move that reached the library, keeping the last 500. */
+  async noteRenamed(from: string, to: string, now = new Date()): Promise<void> {
+    this.renamed = [...this.renamed, { from, to, at: now.toISOString() }].slice(-RENAMED_KEPT);
+    await this.files.writeJson(this.renamedFile(), this.renamed);
+  }
+
+  /** The renames and moves that reached the library, oldest first. */
+  renamedLog(): RenamedLog {
+    return this.renamed;
   }
 
   /** How many unpublished changes there are, for the status area. */

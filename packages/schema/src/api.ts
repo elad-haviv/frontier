@@ -183,11 +183,16 @@ export const KeptCopyText = z.object({
   deviceName: z.string(),
   savedAt: z.string().datetime(),
   text: z.string(),
+  /** `server` for the other side of an item clash (stage 15c), with the keys of its items. */
+  source: z.literal("server").optional(),
+  clashes: z.array(z.string()).optional(),
 });
 export type KeptCopyText = z.infer<typeof KeptCopyText>;
 
 /** `GET /api/drafts/:id/versions`: the draft and every kept copy, oldest first. */
 export const DraftVersionsResponse = z.object({
+  /** The draft's path, which says how its texts are compared (stage 15c). */
+  path: VaultPath.optional(),
   current: z.object({ text: z.string(), revision: z.number().int().min(0) }),
   others: z.array(KeptCopyText),
 });
@@ -323,6 +328,14 @@ export type CreateRenameResponse = z.infer<typeof CreateRenameResponse>;
 
 // ---- Library item files and folders ------------------------------------------------------
 
+/**
+ * The keys of the items a device's merge found changed on both sides (stage 15c), sent with the
+ * merged save of a map, a chronicle or a library item file. The server keeps the side the save
+ * replaces as a kept copy of the draft, and answers `kept` with the draft's id. Older builds send
+ * none, and nothing is kept.
+ */
+export const ClashKeys = z.array(z.string().min(1).max(200)).max(5000);
+
 /** `GET /api/library-files/:name`: the file as the author sees it. */
 export const LibraryFileResponse = z.object({
   file: z.unknown(),
@@ -339,10 +352,13 @@ export const SaveLibraryFileRequest = z.object({
   revision: z.number().int().min(0),
   baseBlob: z.string().optional(),
   op: Id.optional(),
+  clashes: ClashKeys.optional(),
 });
 export const SaveLibraryFileResponse = z.object({
   file: z.unknown(),
   revision: z.number().int().min(0),
+  /** The draft the other side of a clash was kept beside, when one was (stage 15c). */
+  kept: Id.optional(),
 });
 
 /** `POST /api/library-files/:name/resolve` */

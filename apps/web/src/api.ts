@@ -237,6 +237,8 @@ export const api = {
   }) => send<{ id: string; revision: number }>("PUT", "/api/drafts", draft),
   discardDraft: (id: string) => send<{ ok: true }>("DELETE", `/api/drafts/${id}`),
   versions: (id: string) => call<DraftVersionsResponse>(`/api/drafts/${id}/versions`),
+  /** Dismisses the other side of an item clash kept beside a draft (stage 15c). */
+  dismissKept: (id: string) => send<{ ok: true }>("DELETE", `/api/drafts/${id}/versions/server`),
   mergeVersions: (id: string, text: string) =>
     post<{ id: string; revision: number }>(`/api/drafts/${id}/merge-versions`, { text }),
   resolve: (id: string, text: string) =>
@@ -265,13 +267,15 @@ export const api = {
     map: MapFile,
     revision: number,
     link: { feature: string; path: string }[],
-    sent: { baseBlob?: string; op?: string } = {},
+    sent: { baseBlob?: string; op?: string; clashes?: string[] } = {},
   ) =>
-    send<{ map: MapFile; revision: number; unlinked: { feature: string; reason: string }[] }>(
-      "PUT",
-      `/api/maps/${id}`,
-      { map, revision, link, ...sent },
-    ),
+    send<{
+      map: MapFile;
+      revision: number;
+      unlinked: { feature: string; reason: string }[];
+      /** The draft the other side of a clash was kept beside (stage 15c). */
+      kept?: string;
+    }>("PUT", `/api/maps/${id}`, { map, revision, link, ...sent }),
   resolveMap: (id: string, keep: "mine" | "theirs") =>
     post<{ ok: true }>(`/api/maps/${id}/resolve`, { keep }),
   deleteMap: (id: string) => send<{ ok: true }>("DELETE", `/api/maps/${id}`),
@@ -306,12 +310,13 @@ export const api = {
     chronicle: ChronicleFile,
     revision: number,
     link: { span: string; path: string }[] = [],
-    sent: { baseBlob?: string; op?: string } = {},
+    sent: { baseBlob?: string; op?: string; clashes?: string[] } = {},
   ) =>
     send<{
       chronicle: ChronicleFile;
       revision: number;
       unlinked: { span: string; reason: string }[];
+      kept?: string;
     }>("PUT", `/api/chronicles/${id}`, { chronicle, revision, link, ...sent }),
   makeMainChronicle: (id: string) => post<{ ok: true }>(`/api/chronicles/${id}/main`, {}),
   resolveChronicle: (id: string, keep: "mine" | "theirs") =>
@@ -493,9 +498,9 @@ export const api = {
     name: LibraryFileName,
     file: unknown,
     revision: number,
-    sent: { baseBlob?: string; op?: string } = {},
+    sent: { baseBlob?: string; op?: string; clashes?: string[] } = {},
   ) =>
-    send<{ file: unknown; revision: number }>("PUT", `/api/library-files/${name}`, {
+    send<{ file: unknown; revision: number; kept?: string }>("PUT", `/api/library-files/${name}`, {
       file,
       revision,
       ...sent,

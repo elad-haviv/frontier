@@ -17,7 +17,7 @@ import {
   serialiseLibraryFile,
 } from "@frontier/schema";
 import { ApiError } from "../errors.js";
-import type { DraftStore } from "../state/drafts.js";
+import { type DraftStore, keepOtherSide, keptOf } from "../state/drafts.js";
 
 /** What a kind adds to the table, given by the part of the server that owns it. */
 export interface LibraryFileHooks {
@@ -180,14 +180,24 @@ export class LibraryFileStore {
     name: string,
     input: unknown,
     revision: number,
-    sent: { baseBlob?: string | undefined; op?: string | undefined } = {},
-  ): Promise<{ file: unknown; revision: number }> {
+    sent: {
+      baseBlob?: string | undefined;
+      op?: string | undefined;
+      clashes?: string[] | undefined;
+    } = {},
+  ): Promise<{ file: unknown; revision: number; kept?: string }> {
     const kind = this.kind(name);
     const draft = this.draftOf(kind);
     // A repeat of the last accepted send: what it stored is the answer.
     if (draft && sent.op !== undefined && draft.lastOp === sent.op) {
       const parsed = parseLibraryFile(kind, await this.d.drafts.text(draft.id));
-      if (parsed.ok) return { file: parsed.file, revision: draft.revision };
+      if (parsed.ok) {
+        return {
+          file: parsed.file,
+          revision: draft.revision,
+          ...keptOf(this.d.drafts, draft.id, sent.clashes),
+        };
+      }
     }
     const file = this.checked(kind, input);
     const stale = () =>
@@ -202,8 +212,21 @@ export class LibraryFileStore {
     // copy as it is now; one file is shared by every device, so nothing may be built on an old one.
     if (!draft && sent.baseBlob !== undefined && sent.baseBlob !== blob) throw stale();
     const text = serialiseLibraryFile(kind, file);
-    const record = await this.write(kind, draft, text, blob, sent.op);
-    return { file, revision: record.revision };
+    // The device merged items both sides changed and kept its own: the side it replaces is kept
+    // beside the draft, made first from the library's copy (or the empty file) when there is none.
+    const other = sent.clashes?.length
+      ? await keepOtherSide(this.d.drafts, draft, sent.clashes, async () => ({
+          path: kind.path,
+          text: serialiseLibraryFile(kind, this.current(name).file),
+          blob,
+        }))
+      : draft;
+    const record = await this.write(kind, other, text, blob, sent.op);
+    return {
+      file,
+      revision: record.revision,
+      ...(sent.clashes?.length ? { kept: record.id } : {}),
+    };
   }
 
   private async write(

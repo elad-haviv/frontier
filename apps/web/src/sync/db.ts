@@ -38,6 +38,12 @@ export interface QueueRecord {
   value: unknown;
   /** Maps and chronicles only: what to link, combined by feature or span id. */
   link?: LinkItem[];
+  /**
+   * Item files only (stage 15c): the keys of the items a merge found changed on both sides, whose
+   * other side the server keeps when this record is saved. Each merge adds its own; a successful
+   * save clears them.
+   */
+  clashes?: string[];
   /** Made on this device for this send; a retry sends the same one. */
   op: string;
   /** `attention` waits for the author's Retry or Discard. */

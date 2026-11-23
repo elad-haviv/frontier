@@ -21,7 +21,7 @@ import type { EntryChanger } from "../entries/change.js";
 import { ApiError } from "../errors.js";
 import type { GitGateway } from "../git/gateway.js";
 import type { VaultIndex } from "../index/build.js";
-import type { DraftStore } from "../state/drafts.js";
+import { type DraftStore, keepOtherSide, keptOf } from "../state/drafts.js";
 
 export type ChronicleState = "published" | "unpublished" | "new";
 
@@ -180,18 +180,30 @@ export class ChronicleStore {
     input: ChronicleFile,
     revision: number,
     link: { span: string; path: string }[] = [],
-    sent: { baseBlob?: string | undefined; op?: string | undefined } = {},
+    sent: {
+      baseBlob?: string | undefined;
+      op?: string | undefined;
+      clashes?: string[] | undefined;
+    } = {},
   ): Promise<{
     chronicle: ChronicleFile;
     revision: number;
     unlinked: { span: string; reason: string }[];
+    kept?: string;
   }> {
     if (input.id !== id) throw new ApiError("invalid", "The chronicle's id cannot be changed.");
     const draft = this.draftOf(id);
     // A repeat of the last accepted send: what it stored is the answer.
     if (draft && sent.op !== undefined && draft.lastOp === sent.op) {
       const parsed = parseChronicle(await this.d.drafts.text(draft.id));
-      if (parsed.ok) return { chronicle: parsed.chronicle, revision: draft.revision, unlinked: [] };
+      if (parsed.ok) {
+        return {
+          chronicle: parsed.chronicle,
+          revision: draft.revision,
+          unlinked: [],
+          ...keptOf(this.d.drafts, draft.id, sent.clashes),
+        };
+      }
     }
     if (!draft && !this.published.has(id)) {
       throw new ApiError("not_found", "There is no such chronicle.");
@@ -230,10 +242,25 @@ export class ChronicleStore {
       }
     }
     const chronicle = { ...input, spans };
-    const record = draft
-      ? await this.d.drafts.serverChange(draft.id, serialiseChronicle(chronicle), { op: sent.op })
+    // The device merged items both sides changed and kept its own: the side it replaces is kept
+    // beside the draft, made first from the library's copy when there is none.
+    const path = chroniclePath(id);
+    const other = sent.clashes?.length
+      ? await keepOtherSide(this.d.drafts, draft, sent.clashes, async () => ({
+          path,
+          text: this.publishedText(path) ?? "",
+          blob: (await this.d.git.blobHash(path)) ?? "",
+        }))
+      : draft;
+    const record = other
+      ? await this.d.drafts.serverChange(other.id, serialiseChronicle(chronicle), { op: sent.op })
       : await this.write(chronicle, "edit", sent.op);
-    return { chronicle, revision: record.revision, unlinked };
+    return {
+      chronicle,
+      revision: record.revision,
+      unlinked,
+      ...(sent.clashes?.length ? { kept: record.id } : {}),
+    };
   }
 
   /** Marks one chronicle as the main one and takes the mark off any other, each as a draft. */

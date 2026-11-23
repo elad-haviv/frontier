@@ -1,5 +1,12 @@
 import type { FastifyInstance } from "fastify";
-import { Id, ChronicleFile, chroniclePath, VaultPath, versionMark } from "@frontier/schema";
+import {
+  ClashKeys,
+  Id,
+  ChronicleFile,
+  chroniclePath,
+  VaultPath,
+  versionMark,
+} from "@frontier/schema";
 import { stem } from "@frontier/vault";
 import { z } from "zod";
 import { ApiError } from "../errors.js";
@@ -22,6 +29,8 @@ const Save = z.object({
   /** The blob of the library file the device started from; absent from an older build. */
   baseBlob: z.string().optional(),
   op: Id.optional(),
+  /** The items a merge found changed on both sides (stage 15c): the other side is kept. */
+  clashes: ClashKeys.optional(),
 });
 const Resolve = z.object({ keep: z.enum(["mine", "theirs"]) });
 
@@ -66,8 +75,12 @@ export function chronicleRoutes(app: FastifyInstance, s: Services): void {
 
   app.put("/api/chronicles/:id", async (request) => {
     const { id } = IdParam.parse(request.params);
-    const { chronicle, revision, link, baseBlob, op } = Save.parse(request.body);
-    const result = await s.chronicles.save(id, chronicle, revision, link, { baseBlob, op });
+    const { chronicle, revision, link, baseBlob, op, clashes } = Save.parse(request.body);
+    const result = await s.chronicles.save(id, chronicle, revision, link, {
+      baseBlob,
+      op,
+      clashes,
+    });
     changed();
     return result;
   });
