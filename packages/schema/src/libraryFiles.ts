@@ -9,8 +9,8 @@ import type { ConflictReason } from "./api.js";
 import { mergeItemLists, serialiseItemFile } from "./itemFile.js";
 
 /** The names of the library item files: the save queue's key and the routes' `:name`. */
-export type LibraryFileName = "folders";
-export const LIBRARY_FILE_NAMES: readonly LibraryFileName[] = ["folders"];
+export type LibraryFileName = "folders" | "map-styles";
+export const LIBRARY_FILE_NAMES: readonly LibraryFileName[] = ["folders", "map-styles"];
 
 export interface LibraryFileKind<F> {
   name: LibraryFileName;

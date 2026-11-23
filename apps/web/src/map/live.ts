@@ -4,14 +4,8 @@
  * as the pointer moves, so hovering never redraws every feature.
  */
 import type { Point } from "@frontier/geo";
-import {
-  CASING,
-  type DrawnShape,
-  markerRing,
-  PATH_WIDTH,
-  selectColour,
-  ZONE_EDGE,
-} from "./overlay.ts";
+import { casingOf, selectionOf } from "./mapStyles.ts";
+import { type DrawnShape, markerRing, PATH_WIDTH, selectColour, ZONE_EDGE } from "./overlay.ts";
 
 export interface LiveInput {
   width: number;
@@ -51,8 +45,9 @@ function trace(ctx: CanvasRenderingContext2D, points: Point[]): void {
 }
 
 /**
- * The hover halo: the selection's look at half strength. A path's halo is cut away where its line
- * and casing are, so it lies beside the line rather than over it.
+ * The hover halo: the selection's look at half strength, sized from the line's own width. A
+ * path's halo is cut away where its line and casing are, so it lies beside the line rather than
+ * over it.
  */
 export function drawLive(ctx: CanvasRenderingContext2D, input: LiveInput): void {
   const ratio = window.devicePixelRatio || 1;
@@ -73,18 +68,19 @@ export function drawLive(ctx: CanvasRenderingContext2D, input: LiveInput): void 
     } else if (s.kind === "path") {
       trace(ctx, s.points);
       ctx.strokeStyle = colour;
-      ctx.lineWidth = PATH_WIDTH + 6;
+      const width = s.width ?? PATH_WIDTH;
+      ctx.lineWidth = selectionOf("path", width);
       ctx.stroke();
       ctx.save();
       ctx.globalAlpha = 1;
       ctx.globalCompositeOperation = "destination-out";
-      ctx.lineWidth = CASING;
+      ctx.lineWidth = casingOf(width);
       ctx.stroke();
       ctx.restore();
     } else {
       trace(ctx, s.points);
       ctx.strokeStyle = colour;
-      ctx.lineWidth = ZONE_EDGE + 2;
+      ctx.lineWidth = selectionOf("zone", s.width ?? ZONE_EDGE);
       ctx.stroke();
     }
   }

@@ -17,7 +17,7 @@ export default defineConfig({
     // The save queue and the connection service run on browser APIs.
     environmentMatchGlobs: [["src/sync/**", "happy-dom"]],
     // The map's pure modules keep their branches covered: the pointer's state machine, the
-    // tools, the "+" handles and the curve setting.
+    // tools, the "+" handles, the curve setting and the styles' precedence.
     coverage: {
       enabled: true,
       provider: "v8",
@@ -26,11 +26,13 @@ export default defineConfig({
         "src/map/tools.ts",
         "src/map/handles.ts",
         "src/map/curveSetting.ts",
+        "src/map/mapStyles.ts",
       ],
       thresholds: {
         "src/map/gesture.ts": { branches: 90 },
         "src/map/tools.ts": { branches: 90 },
         "src/map/handles.ts": { branches: 90 },
+        "src/map/mapStyles.ts": { branches: 90 },
       },
     },
   },

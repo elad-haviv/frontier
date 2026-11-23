@@ -1,9 +1,10 @@
 import { measure, type Space } from "@frontier/geo";
-import type { MapFeature, MapFile } from "@frontier/schema";
+import type { MapFeature, MapFile, MapStyle } from "@frontier/schema";
 import { type ReactNode, useId, useState } from "react";
 import { imageUrl } from "../../api.ts";
 import { isCurved, outlineOf } from "../../map/handles.ts";
 import { lengthText } from "../../map/lengthText.ts";
+import { styleState, stylesFor } from "../../map/mapStyles.ts";
 import type { MarkerSets, Names } from "../../map/useMapFile.ts";
 import { iconLabel } from "../../map/viewUrl.ts";
 import { shortcutText } from "../../keys.ts";
@@ -23,6 +24,19 @@ export function mapOptions(maps: { id: string; title: string }[], none = "None")
       const n = (seen.get(m.title) ?? 0) + 1;
       seen.set(m.title, n);
       return { value: m.id, label: n === 1 ? m.title : `${m.title} (${n})` };
+    }),
+  ];
+}
+
+/** The choices of a style combobox: "None" first, then the styles of one kind, labels unique. */
+export function styleOptions(styles: MapStyle[], kind: MapStyle["for"]): ComboboxOption[] {
+  const seen = new Map<string, number>();
+  return [
+    { value: "", label: "None" },
+    ...stylesFor(styles, kind).map((s) => {
+      const n = (seen.get(s.name) ?? 0) + 1;
+      seen.set(s.name, n);
+      return { value: s.id, label: n === 1 ? s.name : `${s.name} (${n})` };
     }),
   ];
 }
@@ -49,7 +63,16 @@ export function FeatureEditor({
   corners,
   time,
   extra,
+  styles = [],
+  onStyle,
+  onEditStyles,
 }: {
+  /** The library's path and zone styles. */
+  styles?: MapStyle[];
+  /** Gives the path or zone a style, or none. */
+  onStyle?: (style: string | null) => void;
+  /** Opens the Styles tab. */
+  onEditStyles?: () => void;
   /** More parts of the editor, such as how a world revolves. */
   extra?: ReactNode;
   /** How many points the shape on screen has, when it is not the feature's first shape. */
@@ -163,6 +186,29 @@ export function FeatureEditor({
                 </button>
               </Tip>
             ))}
+          </span>
+        </div>
+      )}
+      {feature.kind !== "marker" && (
+        <div className="field feature-style">
+          <span id={`${ids}-style`}>{feature.kind === "path" ? "Path style" : "Zone style"}</span>
+          {styleState(feature, styles) === "deleted" && (
+            <em className="muted style-deleted">Style: deleted</em>
+          )}
+          <span className="feature-style-row">
+            <Combobox
+              labelledBy={`${ids}-style`}
+              options={styleOptions(styles, feature.kind)}
+              value={styleState(feature, styles) === "found" ? (feature.style ?? "") : ""}
+              onChange={(style) => onStyle?.(style || null)}
+              findLabel="Find a style"
+              empty="No style has that name."
+            />
+            {onEditStyles && (
+              <button type="button" className="quiet" onClick={onEditStyles}>
+                Edit styles…
+              </button>
+            )}
           </span>
         </div>
       )}

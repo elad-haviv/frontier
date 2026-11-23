@@ -6,7 +6,11 @@ import {
   AttentionResponse,
   DraftVersionsResponse,
   EntryResponse,
+  MAP_STYLES_FILE,
+  type MapStyle,
+  type MapStylesFile,
   PublishPlan,
+  serialiseMapStyles,
   type StatusSnapshot,
   TreeResponse,
   UnpublishedResponse,
@@ -1235,6 +1239,96 @@ describe("renames and the folder file", () => {
     expect(t.services.drafts.listRenames()).toEqual([]);
     const draft = t.services.drafts.byPath(FOLDERS)!;
     expect(await t.services.drafts.text(draft.id)).toContain('"path":"01 Places/Port"');
+  });
+});
+
+describe("the map styles file at publish", () => {
+  const river: MapStyle = {
+    id: "k3v9x2pa",
+    name: "River",
+    for: "path",
+    color: "#2f6f9f",
+    width: 3,
+    dash: "solid",
+  };
+  const border: MapStyle = {
+    id: "q8m1z0tr",
+    name: "Border",
+    for: "path",
+    color: null,
+    width: 2,
+    dash: "dash-dot",
+  };
+  const styles = (...list: MapStyle[]): MapStylesFile => ({ version: 1, styles: list });
+  const load = async () =>
+    (await t.get("/api/library-files/map-styles")).json() as {
+      file: MapStylesFile;
+      revision: number;
+      blob: string;
+    };
+  const saveStyles = (file: MapStylesFile, baseBlob: string) =>
+    t.put("/api/library-files/map-styles", { file, revision: 0, baseBlob });
+  const publishAll = async () => {
+    const un = UnpublishedResponse.parse((await t.get("/api/unpublished")).json());
+    const p = await plan(un.drafts.map((d) => d.id));
+    return {
+      plan: p,
+      res: await confirm(
+        p.planId,
+        p.merges.map((m) => m.id),
+      ),
+    };
+  };
+  /** Both styles in the library, as if a version had been saved with them. */
+  const start = async () => {
+    expect((await saveStyles(styles(river, border), "")).statusCode).toBe(200);
+    expect((await publishAll()).res.statusCode).toBe(200);
+    return (await load()).blob;
+  };
+
+  it("merges two devices' edits to different styles", async () => {
+    const blob = await start();
+    await saveStyles(styles({ ...river, width: 4 }, border), blob);
+    // Another device changed the border and saved a version first.
+    t.repo.pushFromOutside({
+      [MAP_STYLES_FILE]: serialiseMapStyles(styles(river, { ...border, dash: "long" })),
+    });
+    const { plan: p, res } = await publishAll();
+    expect(p.conflicts).toEqual([]);
+    expect(res.statusCode, res.body).toBe(200);
+    const onMain = mainText(MAP_STYLES_FILE)!;
+    expect(onMain).toContain(
+      '"id":"k3v9x2pa","name":"River","for":"path","color":"#2f6f9f","width":4',
+    );
+    expect(onMain).toContain('"width":2,"dash":"long"');
+  });
+
+  it("holds back the same style changed in both places, settled by keeping mine or theirs", async () => {
+    let blob = await start();
+    const clash = async (mine: string, theirs: string) => {
+      await saveStyles(styles({ ...river, color: mine }, border), blob);
+      t.repo.pushFromOutside({
+        [MAP_STYLES_FILE]: serialiseMapStyles(styles({ ...river, color: theirs }, border)),
+      });
+      const { plan: p } = await publishAll();
+      expect(p.conflicts.map((c) => [c.path, c.reason])).toEqual([
+        [MAP_STYLES_FILE, "map_styles_changed_on_both"],
+      ]);
+    };
+
+    await clash("#111111", "#222222");
+    const kept = await t.post("/api/library-files/map-styles/resolve", { keep: "mine" });
+    expect(kept.statusCode, kept.body).toBe(200);
+    expect((await publishAll()).res.statusCode).toBe(200);
+    expect(mainText(MAP_STYLES_FILE)).toContain('"color":"#111111"');
+
+    blob = (await load()).blob;
+    await clash("#333333", "#444444");
+    const taken = await t.post("/api/library-files/map-styles/resolve", { keep: "theirs" });
+    expect(taken.statusCode, taken.body).toBe(200);
+    expect(t.services.drafts.byPath(MAP_STYLES_FILE)).toBeUndefined();
+    expect((await load()).file.styles[0]!.color).toBe("#444444");
+    expect(mainText(MAP_STYLES_FILE)).toContain('"color":"#444444"');
   });
 });
 

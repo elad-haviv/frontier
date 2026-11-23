@@ -1,6 +1,12 @@
 import "fake-indexeddb/auto";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { type ChronicleFile, type FolderFile, type MapFile } from "@frontier/schema";
+import {
+  type ChronicleFile,
+  type FolderFile,
+  type MapFile,
+  type MapStyle,
+  type MapStylesFile,
+} from "@frontier/schema";
 import { ApiFailure } from "../api.ts";
 import { openStore } from "./db.ts";
 import {
@@ -559,9 +565,13 @@ describe("library files in the queue", () => {
 
   it("knows each kind by its key, and refuses a key of no kind", () => {
     expect(kindOf("folders")).toBe("library");
+    expect(kindOf("map-styles")).toBe("library");
+    expect(kindOf("map:abcdefgh")).toBe("map");
+    expect(kindOf("chronicle:abcdefgh")).toBe("chronicle");
     expect(kindOf("entry:A.md")).toBe("entry");
     expect(() => kindOf("styles" as QueueKey)).toThrow();
     expect(nameOf({ key: "folders", value: base })).toBe("Folders");
+    expect(nameOf({ key: "map-styles", value: { version: 1, styles: [] } })).toBe("Map styles");
   });
 
   it("sends the folder file with its revision and where it started", async () => {
@@ -638,6 +648,68 @@ describe("library files in the queue", () => {
     expect(meta.baseBlob).toBe("theirblob");
     expect(notices[0]!.message).toBe(
       "Folders: changes from another device were merged in. Changed in both places, yours kept: A.",
+    );
+  });
+});
+
+describe("the map styles file in the queue", () => {
+  const river: MapStyle = {
+    id: "k3v9x2pa",
+    name: "River",
+    for: "path",
+    color: "#2f6f9f",
+    width: 3,
+    dash: "solid",
+  };
+  const border: MapStyle = {
+    id: "q8m1z0tr",
+    name: "Border",
+    for: "path",
+    color: null,
+    width: 2,
+    dash: "dash-dot",
+  };
+  const styles = (...list: MapStyle[]): MapStylesFile => ({ version: 1, styles: list });
+
+  it("merges a stale styles save style by style, and names the clashing styles", async () => {
+    // Another device widened the river and made the border long-dashed; this one coloured the
+    // river and added a canal.
+    const base = styles(river, border);
+    const theirs = styles({ ...river, width: 4, color: "#000000" }, { ...border, dash: "long" });
+    const canal: MapStyle = { ...river, id: "c4n4l000", name: "Canal" };
+    let stale = true;
+    const api = fakeApi();
+    const plain = api.saveLibraryFile;
+    api.saveLibraryFile = vi.fn(async (...args: Parameters<SenderApi["saveLibraryFile"]>) => {
+      if (stale) {
+        stale = false;
+        throw new ApiFailure(409, "stale_revision", "Changed from another device.");
+      }
+      return plain(...args);
+    });
+    api.libraryFile = vi.fn(async () => ({ file: theirs, revision: 2, blob: "theirblob" }));
+    const q = makeQueue(api);
+    const notices: Notice[] = [];
+    q.onNotice((notice) => notices.push(notice));
+    const merged: unknown[] = [];
+    q.subscribe("map-styles", (e) => e.type === "merged" && merged.push(e.value));
+    await q.put("map-styles", styles({ ...river, color: "#ffffff" }, border, canal), {
+      base,
+      revision: 1,
+      baseBlob: "b0",
+    });
+    await q.sendNow("map-styles");
+    await vi.waitFor(async () => expect(await q.get("map-styles")).toBeUndefined());
+    const [kind, name, sent] = api.calls.at(-1) as [string, string, MapStylesFile];
+    expect([kind, name]).toEqual(["library", "map-styles"]);
+    expect(sent.styles).toEqual([
+      { ...river, color: "#ffffff" },
+      { ...border, dash: "long" },
+      canal,
+    ]);
+    expect(merged).toEqual([sent]);
+    expect(notices[0]!.message).toBe(
+      "Map styles: changes from another device were merged in. Changed in both places, yours kept: River.",
     );
   });
 });

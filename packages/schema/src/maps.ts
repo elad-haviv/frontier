@@ -90,6 +90,15 @@ const featureBase = {
  */
 const curve = z.literal("smooth").optional();
 
+/**
+ * The id of a path or zone style in the map styles file. A style that is not there, or is for the
+ * other kind, counts as none, and the id is kept so that the look comes back with the style.
+ */
+const style = z
+  .string()
+  .regex(/^[a-z0-9]{8}$/)
+  .optional();
+
 export const MapFeature = z.discriminatedUnion("kind", [
   z
     .object({
@@ -100,10 +109,10 @@ export const MapFeature = z.discriminatedUnion("kind", [
     })
     .passthrough(),
   z
-    .object({ ...featureBase, kind: z.literal("path"), points: z.array(Pair).min(2), curve })
+    .object({ ...featureBase, kind: z.literal("path"), points: z.array(Pair).min(2), curve, style })
     .passthrough(),
   z
-    .object({ ...featureBase, kind: z.literal("zone"), points: z.array(Pair).min(3), curve })
+    .object({ ...featureBase, kind: z.literal("zone"), points: z.array(Pair).min(3), curve, style })
     .passthrough(),
 ]);
 export type MapFeature = z.infer<typeof MapFeature>;
@@ -174,6 +183,7 @@ const ITEM_KEYS: Record<string, string[]> = {
     "entry",
     "label",
     "icon",
+    "style",
     "child",
     "span",
     "shapes",

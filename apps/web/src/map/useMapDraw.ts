@@ -2,12 +2,12 @@
  * Draws the map: its images with WebGL, and its features on the canvas above, which also tells
  * where each feature landed so that a tap can find it.
  */
-import { makeView, type Position, type Shape, type ViewState } from "@frontier/geo";
-import type { MapFeature, MapFile } from "@frontier/schema";
+import { makeView, type Position, type ViewState } from "@frontier/geo";
+import type { MapFeature, MapFile, MapStyle } from "@frontier/schema";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { imageUrl, mapImageUrl } from "../api.ts";
 import type { PointerKind } from "./gesture.ts";
-import { drawOverlay, type OverlayInput } from "./overlay.ts";
+import { type DrawnShape, drawOverlay, type OverlayInput } from "./overlay.ts";
 import { MapRenderer, MapsNeedWebGL } from "./renderer.ts";
 import type { Tool } from "./tools.ts";
 import type { MarkerSets, Names } from "./useMapFile.ts";
@@ -34,17 +34,19 @@ export function useMapDraw(
     curve: boolean;
     /** The kind of pointer that last pressed the map, which sizes the "+" handles. */
     pressKind: PointerKind;
+    /** The library's path and zone styles. */
+    styles: readonly MapStyle[];
   },
 ) {
   const { shownMap, presence, view, size, hidden, shownImages, selected, vertex } = input;
-  const { sketch, tool, editing, names, pendingNames, sets, curve, pressKind } = input;
+  const { sketch, tool, editing, names, pendingNames, sets, curve, pressKind, styles } = input;
   const glCanvas = useRef<HTMLCanvasElement>(null);
   const topCanvas = useRef<HTMLCanvasElement>(null);
   /** The canvas above the features, for what follows the pointer: the hover halo. */
   const liveCanvas = useRef<HTMLCanvasElement>(null);
   const renderer = useRef<MapRenderer | null>(null);
   /** Where each feature landed on the screen at the last draw. */
-  const shapes = useRef<Shape[]>([]);
+  const shapes = useRef<DrawnShape[]>([]);
   /** While a finger pans, the images are drawn at a lower resolution. */
   const coarse = useRef(false);
   const icons = useRef(new Map<string, HTMLImageElement>());
@@ -101,6 +103,7 @@ export function useMapDraw(
       shapes.current = drawOverlay(canvas.getContext("2d")!, {
         map: shownMap ?? map,
         presence,
+        styles,
         view: makeView(view, size.width, size.height),
         hidden,
         selected,
@@ -131,6 +134,7 @@ export function useMapDraw(
     editing,
     curve,
     pressKind,
+    styles,
     redraw,
     iconsLoaded,
     titleOf,
@@ -147,7 +151,7 @@ export function useMapDraw(
     titleOf,
     iconFor,
     /** What a saved picture draws over its images. */
-    overlay: { hidden, presence, iconFor, titleOf },
+    overlay: { hidden, presence, styles, iconFor, titleOf },
     /** Draws again, as after a pan with a finger, at the full resolution. */
     redrawNow: () => setRedraw((n) => n + 1),
   };

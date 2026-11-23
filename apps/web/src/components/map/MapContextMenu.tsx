@@ -1,4 +1,4 @@
-import type { MapFeature, MapFile } from "@frontier/schema";
+import type { MapFeature, MapFile, MapStyle } from "@frontier/schema";
 import {
   ArrowDownToLine,
   ArrowUpToLine,
@@ -6,6 +6,7 @@ import {
   Layers,
   Link2,
   Map as MapIcon,
+  Palette,
   MapPin,
   Pencil,
   Pentagon,
@@ -19,6 +20,7 @@ import {
 import type { ReactElement } from "react";
 import { shortcutText } from "../../keys.ts";
 import type { MenuTarget } from "../../map/gesture.ts";
+import { styleOf, stylesFor } from "../../map/mapStyles.ts";
 import {
   ContextMenu,
   ContextMenuItem,
@@ -57,6 +59,10 @@ export interface MapMenu {
   insertPoint: (feature: MapFeature, segment: number, at: [number, number]) => void;
   /** Draws a path or zone curved or straight: all of its shapes. */
   setCurve: (feature: MapFeature, curved: boolean) => void;
+  /** The library's path and zone styles. */
+  styles: MapStyle[];
+  /** Gives a path or zone a style, or none. */
+  setStyle: (feature: MapFeature, style: string | null) => void;
   addMarker: () => void;
   startPath: () => void;
   startZone: () => void;
@@ -139,6 +145,27 @@ function Items({ menu }: { menu: MapMenu }) {
               ? "Make it straight"
               : "Make it curved"}
           </ContextMenuItem>
+        )}
+        {feature.kind !== "marker" && (
+          <ContextMenuSub
+            label={feature.kind === "path" ? "Path style" : "Zone style"}
+            icon={Palette}
+          >
+            {[null, ...stylesFor(menu.styles, feature.kind)].map((style) => {
+              const current = styleOf(feature, menu.styles)?.id ?? null;
+              const id = style?.id ?? null;
+              return (
+                <ContextMenuItem
+                  key={id ?? "none"}
+                  disabled={id === current}
+                  disabledReason={id ? "It has this style" : "It has no style"}
+                  onSelect={() => menu.setStyle(feature, id)}
+                >
+                  {style?.name ?? "None"}
+                </ContextMenuItem>
+              );
+            })}
+          </ContextMenuSub>
         )}
         <ContextMenuSub label="Move to layer" icon={Layers}>
           {menu.map.layers.map((layer) => (
