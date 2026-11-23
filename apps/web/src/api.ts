@@ -3,6 +3,7 @@ import { connection } from "./sync/connection.ts";
 import { randomId } from "./sync/db.ts";
 import type {
   AttentionResponse,
+  CreateRenameResponse,
   DraftKind,
   DraftVersionsResponse,
   EntryResponse,
@@ -152,8 +153,7 @@ export const api = {
     form.append("file", file, file.name);
     return call<{ path: string; embed: string }>("/api/images", { method: "POST", body: form });
   },
-  rename: (from: string, to: string) =>
-    post<{ id: string; affected: string[] }>("/api/renames", { from, to }),
+  rename: (from: string, to: string) => post<CreateRenameResponse>("/api/renames", { from, to }),
 
   /** Pages save through the queue (`sync/queue.ts`), which calls this. */
   saveDraft: (draft: {

@@ -122,7 +122,6 @@ const PAGE_NAMES: [RegExp, string][] = [
   [/^\/history\//, "History"],
   [/^\/settings/, "Settings"],
   [/^\/status/, "Status"],
-  [/^\/rename\//, "Rename or move"],
   [/^\/conflict\//, "Conflict"],
 ];
 
@@ -216,6 +215,15 @@ export function Shell({ children, onLoggedOut }: { children: ReactNode; onLogged
   useEffect(() => {
     if (!phone) setDrawer(false);
   }, [phone]);
+  // A page asked to see a folder in the tree: the side bar unfolds, or on a phone the drawer
+  // opens; the tree then opens the folder (Tree).
+  const reveal = store.reveal?.n;
+  useEffect(() => {
+    if (reveal === undefined) return;
+    if (phone) setDrawer(true);
+    else fold(false);
+    // Only a new ask opens the bar.
+  }, [reveal]);
 
   async function logout() {
     const unsent = queue.current().length;

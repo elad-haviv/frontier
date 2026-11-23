@@ -686,8 +686,48 @@ button.big {
 }
 
 .title-row h1 {
+  min-width: 0;
+}
+
+/* The title, with the pencil that renames it close beside. */
+.entry-title {
   flex: 1;
   min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-1);
+}
+.entry-title .entry-rename {
+  flex: none;
+  color: var(--ink-faint);
+  opacity: 0.7;
+}
+.entry-title:hover .entry-rename,
+.entry-title .entry-rename:focus-visible {
+  opacity: 1;
+}
+
+/* A rename waiting to be saved: the folder it goes to, marked. */
+.crumbs.is-pending {
+  color: var(--accent);
+}
+.crumbs-mark {
+  margin-left: var(--space-2);
+  padding: 0 0.35rem;
+  border: 1px solid currentColor;
+  border-radius: 3px;
+  font-size: 0.62rem;
+  letter-spacing: 0.08em;
+}
+.draft-undo {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
 }
 
 .edit-link {
@@ -718,6 +758,12 @@ button.big {
 
 .entry.wide {
   max-width: 52rem;
+}
+
+/* Full width, chosen on the device, for wide tables and pictures: entries and the editor. */
+.entry.is-wide,
+.editor-page.is-wide {
+  max-width: 72rem;
 }
 
 .editor-page {
@@ -1226,7 +1272,7 @@ button.big {
   padding: 0 0.75rem;
 }
 
-/* ---- Search results, outline, hover preview, editing toolbar ------------------------------ */
+/* ---- Search results, hover preview, editing toolbar ------------------------------ */
 
 .switcher-label {
   margin: 0.5rem 0.7rem 0.2rem;
@@ -1240,42 +1286,6 @@ button.big {
   font-size: 0.82rem;
   color: var(--ink-soft);
   font-family: var(--serif);
-}
-
-.outline {
-  margin: -0.4rem 0 1.4rem;
-  font-size: 0.9rem;
-}
-
-.outline summary {
-  cursor: pointer;
-  color: var(--ink-soft);
-  font-size: 0.78rem;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
-
-.outline ul {
-  list-style: none;
-  margin: 0.6rem 0 0;
-  padding: 0 0 0 0.9rem;
-  border-left: 1px solid var(--rule);
-  display: grid;
-  gap: 0.3rem;
-}
-
-.outline a {
-  color: var(--ink-soft);
-  text-decoration: none;
-}
-
-.outline-2 {
-  padding-left: 0.9rem;
-}
-
-.outline-3 {
-  padding-left: 1.8rem;
-  font-size: 0.85rem;
 }
 
 .hover-preview {
@@ -2247,8 +2257,11 @@ input.map-title {
     gap: 0;
   }
   .title-row h1 {
-    flex: 1 1 100%;
     overflow-wrap: anywhere;
+  }
+  .title-row .entry-title,
+  .title-row .rename-field {
+    flex: 1 1 100%;
   }
   .entry-actions {
     margin-bottom: 0.4rem;

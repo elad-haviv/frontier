@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { commitCount, entry, onMain, openMenu, publish, review } from "./helpers.ts";
+import { commitCount, entry, onMain, openMenu, publish, review, rightPanel } from "./helpers.ts";
 
 test("imports a note, saves it, changes it, and restores the first version from its history", async ({
   page,
@@ -45,15 +45,21 @@ test("imports a note, saves it, changes it, and restores the first version from 
   await review(page);
   await publish(page, `Retell ${name}`);
 
-  // The history lists both versions; the first can be brought back.
+  // The History tab lists both versions; each opens the History page at that version, where the
+  // first can be brought back.
   await page.goto(entry(path));
   await expect(page.locator(".prose")).toContainText("The second telling.");
   await openMenu(page, "More actions");
   await page.getByRole("menuitem", { name: "History", exact: true }).click();
+  const tab = await rightPanel(page, "History");
+  const versions = tab.getByRole("link");
+  await expect(versions).toHaveCount(2);
+  await expect(versions.nth(0)).toContainText(`Retell ${name}`);
+  await expect(versions.nth(1)).toContainText(`Import ${name}`);
+  await versions.nth(1).click();
   const rows = page.locator(".versions > li");
   await expect(rows).toHaveCount(2);
   await expect(rows.nth(0)).toContainText(`Retell ${name}`);
-  await rows.nth(1).locator("summary").click();
   await expect(rows.nth(1).locator(".diff")).toContainText("The first telling.");
   await rows.nth(1).getByRole("button", { name: "Restore this version" }).click();
   await expect(page.locator(".prose")).toContainText("The first telling.");

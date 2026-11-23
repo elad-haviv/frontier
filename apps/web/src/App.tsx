@@ -22,7 +22,6 @@ import { InboxPage } from "./pages/Inbox.tsx";
 import { ChroniclesPage } from "./pages/Chronicles.tsx";
 import { MapsPage } from "./pages/Maps.tsx";
 import { Login } from "./pages/Login.tsx";
-import { RenamePage } from "./pages/Rename.tsx";
 import { SettingsPage } from "./pages/Settings.tsx";
 import { StatusPage } from "./pages/Status.tsx";
 import { Progress } from "./components/ui/Progress.tsx";
@@ -42,6 +41,12 @@ function OneMap() {
       <MapPage key={id} />
     </Suspense>
   );
+}
+
+/** Renaming happens on the entry's own page now; an old address opens the entry. */
+function RenameRedirect() {
+  const { pathname } = useLocation();
+  return <Navigate to={"/e/" + pathname.slice("/rename/".length)} replace />;
 }
 
 export function App() {
@@ -85,7 +90,7 @@ export function App() {
         <Route path="/" element={<Home />} />
         <Route path="/e/*" element={<EntryPage />} />
         <Route path="/edit/*" element={<EditPage />} />
-        <Route path="/rename/*" element={<RenamePage />} />
+        <Route path="/rename/*" element={<RenameRedirect />} />
         <Route path="/unpublished" element={<UnpublishedPage />} />
         <Route path="/inbox" element={<InboxPage />} />
         <Route path="/import" element={<ImportPage />} />

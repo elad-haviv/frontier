@@ -1,0 +1,56 @@
+/* Renaming in place: the title becomes a field in the title's own type, so nothing jumps. */
+.rename-field {
+  flex: 1;
+  min-width: 0;
+  position: relative;
+}
+
+.rename-field-input {
+  width: 100%;
+  margin: 0;
+  padding: 0 var(--space-2);
+  margin-left: calc(-1 * var(--space-2));
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  background: var(--paper-raised);
+  color: var(--ink);
+  font-family: var(--serif);
+  font-weight: 600;
+  font-size: clamp(1.9rem, 6vw, 2.7rem);
+  line-height: 1.12;
+  letter-spacing: -0.01em;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent);
+}
+.rename-field-input:focus {
+  outline: none;
+}
+.rename-field-input[aria-invalid="true"] {
+  border-color: var(--warn);
+}
+
+.rename-field-hint,
+.rename-field-problem {
+  margin: var(--space-1) 0 0;
+  font-size: 0.82rem;
+}
+
+/* Move to…: one line under the title, with the folder list open from it. */
+.move-field {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin: var(--space-3) 0 0;
+}
+.move-field-label {
+  font-size: 0.82rem;
+  color: var(--ink-soft);
+}
+.move-field .ui-combobox-trigger {
+  min-width: min(16rem, 100%);
+}
+.move-field-problem {
+  flex-basis: 100%;
+  margin: 0;
+  font-size: 0.85rem;
+}

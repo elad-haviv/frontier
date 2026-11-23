@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 import sharp from "sharp";
-import { openMenu } from "./helpers.ts";
+import { openMenu, rightPanel } from "./helpers.ts";
 
 test("exports a folder as web pages, and an entry as a Word document", async ({ page }) => {
   await page.goto("/export");
@@ -29,17 +29,27 @@ test("exports a folder as web pages, and an entry as a Word document", async ({ 
   );
   expect(parsed.entries.length).toBeGreaterThan(0);
 
-  // From an entry's page, one entry.
+  // From an entry's page, one entry, in its Export tab.
   await page.goto("/e/02%20People/Mira.md");
   await openMenu(page, "More actions");
   await page.getByRole("menuitem", { name: "Export", exact: true }).click();
-  await expect(page.locator(".export")).toContainText("One entry");
-  await expect(page.getByLabel("Title")).toHaveValue("Mira");
+  const tab = await rightPanel(page, "Export");
+  await expect(tab.getByRole("button")).toHaveText([
+    "Web page",
+    "Word",
+    "PDF",
+    "Markdown",
+    "Slides",
+  ]);
   const [word] = await Promise.all([
     page.waitForEvent("download"),
-    page.getByRole("button", { name: "Word document" }).click(),
+    tab.getByRole("button", { name: "Word" }).click(),
   ]);
   expect(word.suggestedFilename()).toBe("Mira.docx");
+  // The Export page still exports one entry from its address.
+  await page.goto("/export?path=" + encodeURIComponent("02 People/Mira.md"));
+  await expect(page.locator(".export")).toContainText("One entry");
+  await expect(page.getByLabel("Title")).toHaveValue("Mira");
 });
 
 test("saves a picture of a map at twice the size of the screen", async ({ page }, info) => {

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { api, ApiFailure, entryUrl, historyUrl, newDraftId, type Version } from "../api.ts";
 import { Diff } from "../components/Diff.tsx";
@@ -16,12 +16,15 @@ function VersionRow({
   version,
   current,
   latest,
+  opened = false,
   onRestored,
 }: {
   version: Version;
   /** The file's path today. */
   current: string;
   latest: boolean;
+  /** Shown open and brought into view, as when chosen in the entry's History tab. */
+  opened?: boolean;
   onRestored: () => void;
 }) {
   // The file may have had another name at this version.
@@ -72,14 +75,22 @@ function VersionRow({
     }
   }
 
+  const row = useRef<HTMLLIElement>(null);
+  useEffect(() => {
+    if (!opened) return;
+    load(true);
+    row.current?.scrollIntoView({ block: "start" });
+    // Once, when the list arrives.
+  }, [opened]);
+
   return (
-    <li>
+    <li ref={row}>
       <p className="change-head">
         <span className="version-when">{when(version.at)}</span>
         <span className="change-path">{version.message}</span>
       </p>
       {then !== current && <p className="muted">Then named {then}.</p>}
-      <details onToggle={(e) => load(e.currentTarget.open)}>
+      <details open={opened || undefined} onToggle={(e) => load(e.currentTarget.open)}>
         <summary>Show what changed</summary>
         {error && <p className="error">{error}</p>}
         {!texts && !error && <p className="muted">Loading…</p>}
@@ -98,9 +109,11 @@ function VersionRow({
 
 /** Every saved version of one entry, newest first. */
 export function HistoryPage() {
-  const { pathname } = useLocation();
+  const { pathname, search } = useLocation();
   const navigate = useNavigate();
   const refresh = useRefresh();
+  /** The version to show open, from the entry's History tab. */
+  const chosen = new URLSearchParams(search).get("v");
   const path = pathname
     .slice("/history/".length)
     .split("/")
@@ -134,6 +147,7 @@ export function HistoryPage() {
               version={v}
               current={path}
               latest={i === 0}
+              opened={v.commit === chosen}
               onRestored={() => {
                 refresh();
                 navigate(entryUrl(path));

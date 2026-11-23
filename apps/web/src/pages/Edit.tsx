@@ -20,6 +20,9 @@ import type { DraftKind } from "@frontier/schema";
 import { setFrontmatterKey } from "@frontier/vault";
 import { MessageSquare, SlidersHorizontal, Trash2, Undo2, WandSparkles } from "lucide-react";
 import { PageAction, usePanel, useRightBar } from "../components/shell/panels.tsx";
+import { useEditorOutline } from "../components/entry/EditorOutline.tsx";
+import { WideMenuItem } from "../components/entry/WideMenuItem.tsx";
+import { useWide } from "../width.ts";
 
 function pathFrom(pathname: string): string {
   return pathname
@@ -371,6 +374,11 @@ export function EditPage() {
         },
   );
 
+  // The outline of the text, and full width, as on the entry's page.
+  const outline = useEditorOutline(view);
+  usePanel(initial === null ? null : outline.panel);
+  const [wide] = useWide();
+
   async function discard() {
     const ok = await dialogs.confirm({
       title: "Discard this draft?",
@@ -428,7 +436,7 @@ export function EditPage() {
   if (initial === null) return <p className="center muted">Opening…</p>;
 
   return (
-    <div className="editor-page">
+    <div className={`editor-page${wide ? " is-wide" : ""}`}>
       <div className="editor-bar">
         <span className="editor-path" title={path}>
           {path.split("/").pop()?.replace(/\.md$/i, "")}
@@ -478,6 +486,7 @@ export function EditPage() {
             >
               Discard draft
             </MenuItem>
+            <WideMenuItem />
             <MenuSeparator />
             <MenuItem icon={Trash2} danger onSelect={() => void remove()}>
               Delete entry
@@ -506,6 +515,7 @@ export function EditPage() {
         path={path}
         onTable={setInTable}
         onProperties={openProperties}
+        onCursor={outline.onCursor}
       />
       <EditToolbar
         view={view}
