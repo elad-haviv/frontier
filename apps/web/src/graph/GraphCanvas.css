@@ -1,0 +1,54 @@
+/* The stage holds the canvas and the hover link; the browser neither scrolls nor zooms it. */
+.graph-stage {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: grab;
+}
+.graph-stage:active {
+  cursor: grabbing;
+}
+.graph-stage:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+  border-radius: 0;
+}
+
+.graph-canvas {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* Over the hovered node, so the preview card opens from it as from a link in the text. */
+.graph-hit {
+  position: absolute;
+  border-radius: 50%;
+  cursor: pointer;
+  -webkit-touch-callout: none;
+}
+
+.graph-arranging {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  margin: 0;
+  color: var(--ink-faint);
+  font-size: 0.9rem;
+  pointer-events: none;
+}
+
+/* A folder's colour beside its name; the faint ink when it has none. */
+.graph-swatch {
+  flex: none;
+  width: 0.7rem;
+  height: 0.7rem;
+  border-radius: 50%;
+  background: var(--ink-faint);
+}

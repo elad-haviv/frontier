@@ -57,6 +57,7 @@ import { VaultIndex } from "./index/build.js";
 import { SearchIndex } from "./index/search.js";
 import { authRoutes } from "./routes/auth.js";
 import { entryRoutes } from "./routes/entries.js";
+import { graphRoutes } from "./routes/graph.js";
 import { imageRoutes } from "./routes/images.js";
 import { searchRoutes } from "./routes/search.js";
 import { statusRoutes } from "./routes/status.js";
@@ -509,6 +510,7 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
 
   authRoutes(app, services);
   entryRoutes(app, services);
+  graphRoutes(app, services);
   draftRoutes(app, services);
   imageRoutes(app, services);
   inboxRoutes(app, services);
