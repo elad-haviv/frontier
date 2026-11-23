@@ -145,6 +145,11 @@ export const EntryResponse = z.object({
   quarantine: z.object({ commit: z.string(), pushedBy: z.string(), at: z.string() }).optional(),
   /** The Git blob hash of the file in the library, or "" when it is not there. A save sends it back. */
   blob: z.string(),
+  /**
+   * The rename waiting to be saved that moves this entry, and where it goes. An entry has at most
+   * one: a second rename or move replaces it.
+   */
+  rename: z.object({ id: Id, to: VaultPath }).nullable(),
 });
 export type EntryResponse = z.infer<typeof EntryResponse>;
 
@@ -303,7 +308,16 @@ export const PublishConfirmResponse = z.object({ commit: z.string() });
 
 /** `POST /api/renames`. `from` is a note, a file or a folder. */
 export const CreateRenameRequest = z.object({ from: VaultPath, to: VaultPath });
-export const CreateRenameResponse = z.object({ id: Id, affected: z.array(VaultPath) });
+/**
+ * `replaced` is the rename this one took the place of, so Undo can bring it back: an entry keeps
+ * one rename, from where it is in the library to where it goes.
+ */
+export const CreateRenameResponse = z.object({
+  id: Id,
+  affected: z.array(VaultPath),
+  replaced: z.object({ from: VaultPath, to: VaultPath }).nullable(),
+});
+export type CreateRenameResponse = z.infer<typeof CreateRenameResponse>;
 
 // ---- Library item files and folders ------------------------------------------------------
 

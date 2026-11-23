@@ -197,6 +197,9 @@ export function entryRoutes(app: FastifyInstance, s: Services): void {
     }
 
     const info = draft ? { id: draft.id, revision: draft.revision, kind: draft.kind } : null;
+    // The one rename waiting for this entry, if any; a folder's rename is the folder's own.
+    const intent = s.drafts.listRenames().find((r) => r.from === path);
+    const rename = intent ? { id: intent.id, to: intent.to } : null;
     // The library file's blob, which a save sends back to say which text it started from.
     const blob = note ? ((await s.git.blobHash(path)) ?? "") : "";
     if (draft && draft.kind !== "delete" && !draft.binary) {
@@ -217,6 +220,7 @@ export function entryRoutes(app: FastifyInstance, s: Services): void {
         maps: await mapsOf(path),
         chronicles: await chroniclesOf(path),
         blob,
+        rename,
       };
     }
 
@@ -238,6 +242,7 @@ export function entryRoutes(app: FastifyInstance, s: Services): void {
       maps: await mapsOf(note!.path),
       chronicles: await chroniclesOf(note!.path),
       blob,
+      rename,
     };
   });
 
