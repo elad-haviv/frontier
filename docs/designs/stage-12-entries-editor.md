@@ -207,6 +207,12 @@ the entry and editor page roots, which widens the measure from 44 rem (entry) an
   - insert: horizontal rule; link (opens the entry combobox at the cursor; inserts `[[name]]`, using the
     file's stem when it is unique in the library and its path otherwise, the rule renames already use);
     image (opens the dialog).
+- **The entry combobox** (`apps/web/src/components/EntryCombobox.tsx`), made in 12b for the link tool
+  and shared with stage 13's map features: props `{ labelledBy, value: path | null, onChange(path |
+  null, title), allowNone?: boolean }`. It is the stage 11 `Combobox` given its options by the existing
+  names search (`api.names(query)`), with the search done by the server (`onSearch`, and no second
+  filtering in the list); `allowNone` adds "No entry" first. The link tool uses it with no value and
+  without `allowNone`.
 - **Toolbar:** groups divided by thin rules; the style picker is a menu whose trigger shows the current
   line's style. CSS container queries hide groups at set widths, last group first, and "⋯" holds whatever
   is hidden, so the toolbar never wraps or scrolls and nothing is measured in script. The table group
@@ -385,17 +391,20 @@ Two releases. Each must pass the Verification Plan before it is merged and deplo
     dialog.
 25. `apps/web/src/components/images/ImagePicker.tsx` + `.css`, `images/LibraryView.tsx` + `.css`,
     `images/UrlField.tsx` (Create). `apps/web/src/pages/Gallery.tsx` (Modify): uses `LibraryView`.
-26. `apps/web/src/api.ts` (Modify): `imageFromUrl(url)`; the gallery's `unpublished` flag.
-27. `apps/server/src/images/save.ts` (Create): the upload's save step, moved out of `routes/images.ts`
+26. `apps/web/src/components/EntryCombobox.tsx` (Create): section 5's entry combobox, used by the link
+    tool in `EditToolbar.tsx` and `EditorContextMenu.tsx`; `apps/web/src/components/ui/Combobox.tsx`
+    (Modify): `onSearch`, with cmdk's `shouldFilter={false}`.
+27. `apps/web/src/api.ts` (Modify): `imageFromUrl(url)`; the gallery's `unpublished` flag.
+28. `apps/server/src/images/save.ts` (Create): the upload's save step, moved out of `routes/images.ts`
     (Modify) and shared by both routes. `apps/server/src/images/fromUrl.ts` (Create): section 7.
     `apps/server/package.json` (Modify): `ipaddr.js`, `undici`.
-28. `apps/server/src/routes/images.ts` (Modify): `POST /api/images/from-url` with its rate limit;
+29. `apps/server/src/routes/images.ts` (Modify): `POST /api/images/from-url` with its rate limit;
     `/api/gallery` adds unpublished images. `apps/server/src/config.ts` (Modify):
     `IMAGE_FETCH_ALLOW_LOOPBACK`.
-29. `packages/schema/src/api.ts` (Modify): `ImageFromUrlRequest = z.object({ url: z.string().max(2048) })`.
-30. `apps/server/test/upload.test.ts` (Modify): every case in the Risks table's first row against a local
+30. `packages/schema/src/api.ts` (Modify): `ImageFromUrlRequest = z.object({ url: z.string().max(2048) })`.
+31. `apps/server/test/upload.test.ts` (Modify): every case in the Risks table's first row against a local
     test server, size and time limits, SVG refused, name rules.
-31. E2E (Modify): `editor.spec.ts` (CUJ 3, CUJ 5; "Preview" becomes "Live preview"/"Source" at lines 66,
+32. E2E (Modify): `editor.spec.ts` (CUJ 3, CUJ 5; "Preview" becomes "Live preview"/"Source" at lines 66,
     78, 101, 118, 156, 160, 338; the toolbar count at 333; the upload test at 16 goes through "Upload…"),
     `write.spec.ts` (the Heading button becomes the style picker; "Link to an entry" uses the combobox),
     `ai.spec.ts` (Writing help and Comment through "⋯" at phone size), `gallery.spec.ts` (the library view;

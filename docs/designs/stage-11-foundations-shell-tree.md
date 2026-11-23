@@ -835,9 +835,13 @@ Four releases, in order. Each must pass the Verification Plan before it is merge
 76. `packages/schema/src/index.ts` (Modify): export it. `packages/schema/test/folders.test.ts` (Create):
     parse, one line per folder, merge two reorders of different folders, `orderBetween` for any two keys,
     unknown icon or colour refused.
-77. `apps/server/src/folders/store.ts` (Create): loads the folder file (draft first, then library), or
-    builds it in memory from the schema's lists; saves it as a draft with `revision`, `baseBlob` and `op`
-    through `saveFrom`/`serverChange`; the grouped delete; apply-type.
+77. `apps/server/src/library/itemFile.ts` (Create): one store for library item files, driven by a table of
+    `LibraryFileKind` entries (path, schema, list key, merge key). It loads a file (draft first, then
+    library), saves it as a draft with `revision`, `baseBlob` and `op` through `saveFrom`/`serverChange`,
+    and resolves a clash, for any kind in the table. `apps/server/src/folders/store.ts` (Create) registers
+    the folder file as the first kind (with the in-memory build from the schema's lists) and holds the
+    grouped delete and apply-type. Stage 13 adds the map styles file as the second kind
+    ([stage 13](stage-13-maps.md)), so nothing here may be folder-only.
 78. `apps/server/src/routes/folders.ts` (Create) and `apps/server/src/app.ts` (Modify): the routes in
     item 74, registered.
 79. `apps/web/src/components/Tree.tsx` (Rewrite): the tree on `react-arborist` (or the fallback): drag and
@@ -845,7 +849,7 @@ Four releases, in order. Each must pass the Verification Plan before it is merge
     long press on touch; moved and empty folders marked; refusals shown in the toast.
 80. `apps/web/src/components/FolderSettings.tsx` (Create): icon, colour and type for one folder, in a
     popover.
-81. `apps/web/src/sync/queue.ts` (Modify): the `folders` sender, merging with `mergeFolders`.
+81. `apps/web/src/sync/queue.ts` (Modify): a generic library-file sender (key per kind), merging with each kind's merge (`mergeFolders` for folders); `kindOf` no longer defaults to folders.
 82. `apps/web/src/components/NewEntry.tsx` (Modify): "New folder '…'"; writes `type:` with
     `setFrontmatterKey` when the chosen folder has one.
 83. `apps/server/src/index/build.ts` (Modify): `readSchema` lays the folder file's types over the schema's
