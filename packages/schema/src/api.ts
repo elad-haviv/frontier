@@ -269,6 +269,8 @@ export const ConflictReason = z.enum([
   "rename_blocked",
   /** The folder file changed here and in the library on the same folders. */
   "folders_changed_on_both",
+  /** The map styles file changed here and in the library on the same styles. */
+  "map_styles_changed_on_both",
 ]);
 
 export const PlannedConflict = z.object({

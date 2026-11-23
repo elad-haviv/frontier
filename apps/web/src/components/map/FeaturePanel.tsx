@@ -1,4 +1,11 @@
-import { type MapFeature, type MapFile, orderFeature, reorderFeature } from "@frontier/schema";
+import {
+  type MapFeature,
+  type MapFile,
+  type MapStyle,
+  orderFeature,
+  reorderFeature,
+} from "@frontier/schema";
+import { withStyle } from "../../map/mapStyles.ts";
 import { addShape, reasonFor, removeShape, type Resolved, shapeOf, tie } from "../../map/time.ts";
 import { deleteFeature, removePoint, setCurve, type Tool } from "../../map/tools.ts";
 import type { useMapFile } from "../../map/useMapFile.ts";
@@ -26,7 +33,13 @@ export function FeaturePanel({
   onSelect,
   onCopyLink,
   onEdit,
+  styles,
+  onEditStyles,
 }: {
+  /** The library's path and zone styles. */
+  styles: MapStyle[];
+  /** Opens the Styles tab. */
+  onEditStyles: () => void;
   feature: MapFeature;
   map: MapFile;
   editing: boolean;
@@ -72,6 +85,9 @@ export function FeaturePanel({
       pendingPath={file.pendingPathOf(feature.id)}
       {...(onScreen ? { drawn: onScreen.feature } : {})}
       onCurve={(curved) => setFeature(setCurve(feature, curved))}
+      styles={styles}
+      onStyle={(style) => setFeature(withStyle(feature, style))}
+      onEditStyles={onEditStyles}
       sets={file.sets}
       otherMaps={file.otherMaps}
       vertex={vertex}

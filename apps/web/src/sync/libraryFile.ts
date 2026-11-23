@@ -90,7 +90,8 @@ export class LibraryFileClient<F> {
   async change(fn: (file: F) => F): Promise<void> {
     await this.start();
     const before = this.snapshot.value;
-    if (before === null) throw new ApiFailure(0, "offline", "The folders could not be read.");
+    if (before === null)
+      throw new ApiFailure(0, "offline", `The ${this.kind.noun} could not be read.`);
     const next = fn(before);
     if (next === before) return;
     this.show({ value: next });

@@ -14,10 +14,19 @@ import {
   zoneOnPlate,
   zonePolygon,
 } from "@frontier/geo";
-import type { MapFeature, MapFile } from "@frontier/schema";
+import type { MapFeature, MapFile, MapStyle } from "@frontier/schema";
 import { geoContains, geoOrthographic, geoPath } from "d3-geo";
 import type { PointerKind } from "./gesture.ts";
 import { outlineOf, PLUS_SIZE, plusHandles } from "./handles.ts";
+import {
+  casingOf,
+  dashOf,
+  fillAlpha,
+  paintOf,
+  type Paint,
+  selectionOf,
+  undatedOf,
+} from "./mapStyles.ts";
 
 export interface OverlayInput {
   map: MapFile;
@@ -41,19 +50,22 @@ export interface OverlayInput {
   pluses?: PointerKind | null;
   /** How strongly each feature is drawn, and whether with dashes, when the map is seen in time. */
   presence?: ReadonlyMap<string, { opacity: number; dashed: boolean }>;
+  /** The library's path and zone styles; a feature without one is drawn in its layer's look. */
+  styles?: readonly MapStyle[];
 }
 
-/** Where a feature landed on the screen; a marker also says how far it reaches from its middle. */
-export type DrawnShape = Shape & { radius?: number };
+/**
+ * Where a feature landed on the screen; a marker also says how far it reaches from its middle,
+ * and a path or zone how wide its line is, which sizes its hover halo.
+ */
+export type DrawnShape = Shape & { radius?: number; width?: number };
 
 const INK = "#2a2420";
 const PAPER = "#fbf7f0";
 
-/** The width of a path's line, and of a zone's edge, in pixels. */
+/** The width of a path's line, and of a zone's edge, in pixels, without a style. */
 export const PATH_WIDTH = 2.5;
 export const ZONE_EDGE = 1.5;
-/** The paper casing under a path: wider than its line, so the line reads on any image. */
-export const CASING = PATH_WIDTH + 2.5;
 
 /** How far a marker reaches from its middle: its icon, or its dot with the paper edge. */
 export const markerRadius = (icon: boolean) => (icon ? 14 : 7);
@@ -173,6 +185,77 @@ function plus(ctx: CanvasRenderingContext2D, [x, y]: Point): void {
   ctx.stroke();
 }
 
+/**
+ * Strokes the line traced on `ctx` in a look: its colour, width and dashes, butt-capped when
+ * dashed. The solid round look is put back after.
+ */
+function stroke(
+  ctx: CanvasRenderingContext2D,
+  colour: string,
+  paint: Pick<Paint, "width" | "dash" | "cap">,
+): void {
+  ctx.strokeStyle = colour;
+  ctx.lineWidth = paint.width;
+  ctx.setLineDash(paint.dash);
+  ctx.lineCap = paint.cap;
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.lineCap = "round";
+}
+
+/**
+ * An undated line: over the line in its own look, a narrower dotted stroke in the paper colour,
+ * so that it looks perforated. Dotted is none of the styles' patterns, so it is never taken for one.
+ */
+function perforate(ctx: CanvasRenderingContext2D, width: number): void {
+  const dots = undatedOf(width);
+  stroke(ctx, PAPER, { width: dots.width, dash: dots.dash, cap: "butt" });
+}
+
+/**
+ * A sample of a style, for the Styles tab and the legend: a curved line for a path, a filled
+ * patch for a zone, drawn with the overlay's own strokes. A style without a colour is drawn in
+ * `fallback`, which stands for "its layer's colour".
+ */
+export function drawSample(
+  ctx: CanvasRenderingContext2D,
+  style: Pick<MapStyle, "for" | "color" | "width" | "dash" | "fill">,
+  width: number,
+  height: number,
+  fallback = "#7d746b",
+): void {
+  const ratio = window.devicePixelRatio || 1;
+  ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+  ctx.clearRect(0, 0, width, height);
+  ctx.lineJoin = "round";
+  ctx.lineCap = "round";
+  const colour = style.color ?? fallback;
+  const dash = dashOf(style.dash, style.width);
+  const look = { width: style.width, dash, cap: dash.length > 0 ? "butt" : "round" } as const;
+  const pad = Math.max(4, style.width + 3);
+  ctx.beginPath();
+  if (style.for === "path") {
+    const [left, right] = [pad, width - pad];
+    ctx.moveTo(left, height * 0.65);
+    ctx.bezierCurveTo(
+      width * 0.35,
+      height * 0.05,
+      width * 0.65,
+      height * 0.95,
+      right,
+      height * 0.35,
+    );
+    ctx.strokeStyle = PAPER;
+    ctx.lineWidth = casingOf(style.width);
+    ctx.stroke();
+  } else {
+    ctx.rect(pad, pad, width - pad * 2, height - pad * 2);
+    ctx.fillStyle = colour + fillAlpha(style.fill ?? 0.2, false);
+    ctx.fill();
+  }
+  stroke(ctx, colour, look);
+}
+
 export function drawOverlay(ctx: CanvasRenderingContext2D, input: OverlayInput): DrawnShape[] {
   const { map, view } = input;
   const accent = input.selected ? selectColour() : "";
@@ -205,13 +288,13 @@ export function drawOverlay(ctx: CanvasRenderingContext2D, input: OverlayInput):
     .filter((f) => !input.hidden.has(f.layer))
     .sort((a, b) => (order.get(a.layer) ?? 0) - (order.get(b.layer) ?? 0));
 
-  /** Sets the strength and the dashes for one feature; `plain` puts them back. */
+  /** Sets the strength for one feature, and says whether it is undated; `plain` puts it back. */
   const look = (f: MapFeature): { opacity: number; dashed: boolean } => {
     const style = input.presence?.get(f.id) ?? { opacity: 1, dashed: false };
     ctx.globalAlpha = style.opacity;
-    ctx.setLineDash(style.dashed ? [7, 5] : []);
     return style;
   };
+  const styles = input.styles ?? [];
   const plain = () => {
     ctx.globalAlpha = 1;
     ctx.setLineDash([]);
@@ -220,10 +303,11 @@ export function drawOverlay(ctx: CanvasRenderingContext2D, input: OverlayInput):
   // Zones first, then paths, then markers, so the small things stay reachable.
   for (const f of features) {
     if (f.kind !== "zone") continue;
-    look(f);
-    const colour = colours.get(f.layer) ?? INK;
+    const undated = look(f).dashed;
+    const paint = paintOf(f, colours.get(f.layer), styles);
+    const colour = paint.colour;
     const picked = f.id === input.selected;
-    ctx.fillStyle = colour + (picked ? "55" : "33");
+    ctx.fillStyle = colour + fillAlpha(paint.fill, picked);
     // The closed outline: what is drawn, filled and tapped.
     const ring = outlineOf(map.space, f).line;
     const drawn = screenLines(view, ring);
@@ -234,7 +318,7 @@ export function drawOverlay(ctx: CanvasRenderingContext2D, input: OverlayInput):
       for (const piece of view.rings(ring)) {
         trace(ctx, piece);
         ctx.closePath();
-        shapes.push({ id: f.id, kind: "zone", points: piece });
+        shapes.push({ id: f.id, kind: "zone", points: piece, width: paint.width });
       }
       ctx.fill();
     }
@@ -250,7 +334,7 @@ export function drawOverlay(ctx: CanvasRenderingContext2D, input: OverlayInput):
           const moved = ring.map(([x, y]): Point => [x + shift, y]);
           trace(ctx, moved);
           ctx.closePath();
-          shapes.push({ id: f.id, kind: "zone", points: moved });
+          shapes.push({ id: f.id, kind: "zone", points: moved, width: paint.width });
         }
         ctx.fill();
       }
@@ -267,37 +351,41 @@ export function drawOverlay(ctx: CanvasRenderingContext2D, input: OverlayInput):
       if (picked) {
         // The selection: an accent outline under the zone's own edge.
         ctx.strokeStyle = accent;
-        ctx.lineWidth = ZONE_EDGE + 2;
+        ctx.lineWidth = selectionOf("zone", paint.width);
         ctx.stroke();
       }
-      ctx.strokeStyle = colour;
-      ctx.lineWidth = ZONE_EDGE;
-      ctx.stroke();
+      stroke(ctx, colour, paint);
+      if (undated) perforate(ctx, paint.width);
       if (view.state.kind !== "plate" && view.state.kind !== "projected") {
-        shapes.push({ id: f.id, kind: "zone", points: line, ...(inside ? { inside } : {}) });
+        shapes.push({
+          id: f.id,
+          kind: "zone",
+          points: line,
+          width: paint.width,
+          ...(inside ? { inside } : {}),
+        });
       }
     }
   }
   for (const f of features) {
     if (f.kind !== "path") continue;
-    look(f);
-    const colour = colours.get(f.layer) ?? INK;
+    const undated = look(f).dashed;
+    const paint = paintOf(f, colours.get(f.layer), styles);
     for (const line of screenLines(view, outlineOf(map.space, f).line)) {
       ctx.beginPath();
       trace(ctx, line);
       if (f.id === input.selected) {
         // The selection: an accent casing under the paper casing and the line.
         ctx.strokeStyle = accent;
-        ctx.lineWidth = PATH_WIDTH + 6;
+        ctx.lineWidth = selectionOf("path", paint.width);
         ctx.stroke();
       }
       ctx.strokeStyle = PAPER;
-      ctx.lineWidth = CASING;
+      ctx.lineWidth = casingOf(paint.width);
       ctx.stroke();
-      ctx.strokeStyle = colour;
-      ctx.lineWidth = PATH_WIDTH;
-      ctx.stroke();
-      shapes.push({ id: f.id, kind: "path", points: line });
+      stroke(ctx, paint.colour, paint);
+      if (undated) perforate(ctx, paint.width);
+      shapes.push({ id: f.id, kind: "path", points: line, width: paint.width });
     }
   }
 

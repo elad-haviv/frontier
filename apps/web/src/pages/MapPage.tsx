@@ -1,5 +1,5 @@
 import { initialView, makeView, measure, panBy, type Position, turnTo } from "@frontier/geo";
-import { MapPin, Layers as LayersIcon } from "lucide-react";
+import { MapPin, Layers as LayersIcon, Palette } from "lucide-react";
 import { orderFeature, reorderFeature } from "@frontier/schema";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
@@ -9,6 +9,7 @@ import { OfflineCopy } from "../components/OfflineCopy.tsx";
 import { DiscoveryPins, OpenDiscovery } from "../components/map/DiscoveryPins.tsx";
 import { FeaturePanel } from "../components/map/FeaturePanel.tsx";
 import { LayerPanel } from "../components/map/LayerPanel.tsx";
+import { Legend } from "../components/map/Legend.tsx";
 import { MapBar } from "../components/map/MapBar.tsx";
 import { MapContextMenu, type MapMenu } from "../components/map/MapContextMenu.tsx";
 import { type Hovered, MapHover } from "../components/map/MapHover.tsx";
@@ -16,6 +17,7 @@ import { FocusBox, MapHints } from "../components/map/MapHints.tsx";
 import { MapSetup } from "../components/map/MapSetup.tsx";
 import { MapTools } from "../components/map/MapTools.tsx";
 import { MapZoom } from "../components/map/MapZoom.tsx";
+import { StylesPanel } from "../components/map/StylesPanel.tsx";
 import { TimeBar } from "../components/MapTime.tsx";
 import { TurnPanel } from "../components/MapTurn.tsx";
 import { useRefresh } from "../components/Shell.tsx";
@@ -25,6 +27,7 @@ import { askSize } from "../map/askSize.ts";
 import { useCurveSetting } from "../map/curveSetting.ts";
 import { type MenuTarget, menuTargetOf, type PointerKind } from "../map/gesture.ts";
 import { aboveAndBelow } from "../map/layersBeneath.ts";
+import { legendOf, withStyle } from "../map/mapStyles.ts";
 import { savePicture } from "../map/savePicture.ts";
 import {
   canFinish,
@@ -43,6 +46,7 @@ import { useDiscovery } from "../map/useDiscovery.ts";
 import { useMapDraw } from "../map/useMapDraw.ts";
 import { useMapFile } from "../map/useMapFile.ts";
 import { useMapKeys } from "../map/useMapKeys.ts";
+import { useMapStyles } from "../map/useMapStyles.ts";
 import { useMapTime, useShownAt } from "../map/useMapTime.ts";
 import { openingShown, pointOn, useMapView, useWheelZoom } from "../map/useMapView.ts";
 import { usePointer } from "../map/usePointer.ts";
@@ -107,6 +111,8 @@ export function MapPage() {
   const { map, change } = file;
   const shown = useShownAt(map, time, { selected, editing, hidden });
   const { onScreen } = shown;
+  // The library's path and zone styles, shared by every open map.
+  const { styles } = useMapStyles();
   // A picked corner lasts while its shape stays on screen.
   useEffect(() => setVertex(null), [onScreen?.shape]);
   const { view, setView, viewRef, size, frame, goLayer, zoom, placeLink, viewLink } = useMapView(
@@ -142,6 +148,7 @@ export function MapPage() {
     sets: file.sets,
     curve,
     pressKind,
+    styles,
   });
   const { titleOf } = draw;
   const discovery = useDiscovery(id, { ...time, setNotice });
@@ -294,6 +301,12 @@ export function MapPage() {
   // once the map is known, and read when the shell draws them.
   let layersPanel: ReactNode = null;
   let featurePanel: ReactNode = null;
+  // The Styles tab is there while editing; the styles are the library's, not this map's.
+  usePanel(
+    map && editing
+      ? { id: "styles", title: "Styles", icon: Palette, render: () => <StylesPanel /> }
+      : null,
+  );
   // The Marker tool stays on: the marker just placed opens its tab, to be linked at once.
   const showsFeature = feature !== null && (!editing || tool === "select" || tool === "marker");
   usePanel(
@@ -396,6 +409,8 @@ export function MapPage() {
           setVertex(done.vertex);
         },
         setCurve: (f, curved) => file.setFeature(setCurve(f, curved)),
+        styles,
+        setStyle: (f, style) => file.setFeature(withStyle(f, style)),
         removePoint: (f, at) => {
           const drawn = shown.resolved.find((r) => r.feature.id === f.id);
           const done = drawn ? removePoint(map, drawn, at) : null;
@@ -416,8 +431,17 @@ export function MapPage() {
       }
     : null;
 
+  // The legend: the styles of the features drawn now, in shown layers and present at the year.
+  const legend = legendOf(
+    shown.resolved
+      .filter((r) => !hidden.has(r.feature.layer))
+      .filter((r) => r.presence !== "not_yet" && r.presence !== "gone")
+      .map((r) => r.feature),
+    styles,
+  );
   layersPanel = (
     <LayerPanel
+      legend={<Legend styles={legend} />}
       timeLine={shown.timeLine}
       setup={<MapSetup id={id} map={map} otherMaps={file.otherMaps} onChange={change} />}
       map={map}
@@ -447,6 +471,8 @@ export function MapPage() {
         onSelect={setSelected}
         onCopyLink={() => copyPlace(feature.id)}
         onEdit={() => startEditing(feature.id)}
+        styles={styles}
+        onEditStyles={() => bar.show("styles")}
       />
     );
   }

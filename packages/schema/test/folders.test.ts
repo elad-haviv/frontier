@@ -219,7 +219,7 @@ describe("renames and the table of library files", () => {
   });
 
   it("finds the folder file by path and by name, and reads a missing one as empty", () => {
-    expect(LIBRARY_FILES.map((k) => k.name)).toEqual(["folders"]);
+    expect(LIBRARY_FILES.map((k) => k.name)).toEqual(["folders", "map-styles"]);
     expect(libraryFileOf(FOLDER_FILE)?.label).toBe("Folders");
     expect(libraryFileOf(".frontier/maps/abcdefgh.json")).toBeUndefined();
     expect(libraryFileNamed("folders")?.path).toBe(FOLDER_FILE);

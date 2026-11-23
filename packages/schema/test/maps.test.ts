@@ -431,3 +431,36 @@ describe("a curved path or zone", () => {
     expect((merged.map.features[0] as { at: number[] }).at).toEqual([1, 1]);
   });
 });
+
+describe("a path or zone style", () => {
+  const styled = (m: MapFile) => {
+    (m.features[1] as Record<string, unknown>).style = "k3v9x2pa";
+  };
+
+  it("leaves a map without styles byte for byte as it was", () => {
+    expect(serialiseMap(base)).not.toContain("style");
+  });
+
+  it("writes the style after the label and before the map of the place, and reads it back", () => {
+    const text = serialiseMap(edit(styled));
+    expect(text).toContain('"label":"The Salt Road","style":"k3v9x2pa","child":null');
+    const read = parseMap(text);
+    expect(read.ok && (read.map.features[1] as { style?: string }).style).toBe("k3v9x2pa");
+  });
+
+  it("refuses a style id that is not eight letters and digits", () => {
+    const bad = edit((m) => {
+      (m.features[1] as Record<string, unknown>).style = "River";
+    });
+    expect(parseMap(JSON.stringify(bad)).ok).toBe(false);
+  });
+
+  it("keeps a style given on one side when the other side moved another feature", () => {
+    const merged = mergeMaps(
+      base,
+      edit(styled),
+      edit((m) => ((m.features[0] as { at: number[] }).at = [1, 1])),
+    );
+    expect((merged.map.features[1] as { style?: string }).style).toBe("k3v9x2pa");
+  });
+});

@@ -83,7 +83,10 @@ export function LayerPanel({
   onChange,
   timeLine,
   setup,
+  legend,
 }: {
+  /** The legend of the styles drawn now, at the top. */
+  legend?: ReactNode;
   /** The map's own settings while editing: what it lies under, and whether it is schematic. */
   setup?: ReactNode;
   /** How the features stand to the chosen chronicle, while the map is seen in time. */
@@ -188,6 +191,7 @@ export function LayerPanel({
 
   return (
     <aside className="layer-panel" aria-label="Images and layers">
+      {legend}
       {timeLine && <p className="muted time-line">{timeLine}</p>}
       {editing && setup}
       {(editing || map.images.length > 1) && (
