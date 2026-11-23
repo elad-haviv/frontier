@@ -1,5 +1,5 @@
 import { expect, type Page, test } from "@playwright/test";
-import { discardDraft, edit, entry, openMenu, openSideBar } from "./helpers.ts";
+import { discardDraft, edit, entry, newMapInForm, openMenu, openSideBar } from "./helpers.ts";
 
 /**
  * The installable app, with the service worker the build ships. A worker answers navigations and
@@ -236,11 +236,8 @@ test("a map on the device opens with its image, and a marker added offline is se
   context,
 }) => {
   await install(page);
-  await page.goto("/maps");
-  await page.locator(".new-map input[type=text]").fill(`Train chart ${Date.now()}`);
-  await page.locator(".new-map select").nth(0).selectOption("flat");
-  await page.locator(".new-map select").nth(1).selectOption("99 Appendices/Images/map one.png");
-  await page.getByRole("button", { name: "Make the map" }).click();
+  // The map's image comes from the image dialog since 13c.
+  await newMapInForm(page, `Train chart ${Date.now()}`, "flat");
   await expect(page.locator(".map-canvas").first()).toHaveAttribute("data-images", "1");
   const id = new URL(page.url()).pathname.split("/").pop()!;
   await kept(page, `/api/maps/${id}`, "/api/marker-sets");
