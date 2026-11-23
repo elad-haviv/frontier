@@ -349,7 +349,8 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
       await comments.renamed(from, to);
     },
     onPublished: (paths) => {
-      // Runs after the publish call has answered; a failure shows in the status area.
+      // Runs after the publish call has answered; a failure shows in the status area. When the
+      // settings cannot be read at all, as when the server is stopping, the step is left out.
       void (async () => {
         if (!(await settings.read())?.ai.proposeOnPublish || !(await ai.ready("extraction")))
           return;
@@ -357,7 +358,7 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
           await fields.propose(path).catch(() => undefined);
         }
         await reportAi();
-      })();
+      })().catch(() => undefined);
     },
   });
   await reportAi();
