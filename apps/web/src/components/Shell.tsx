@@ -14,7 +14,9 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { Group, Panel, Separator } from "react-resizable-panels";
 import { X } from "lucide-react";
 import type { StatusSnapshot } from "@frontier/schema";
-import { api, editUrl } from "../api.ts";
+import { api, ApiFailure, editUrl } from "../api.ts";
+import { updates } from "../offline/updates.ts";
+import { wipeDevice } from "../offline/wipe.ts";
 import { connection, useConnection } from "../sync/connection.ts";
 import { queue } from "../sync/queue.ts";
 import { useAsync } from "../useAsync.ts";
@@ -38,6 +40,7 @@ import {
   writePrefs,
 } from "./shell/panels.tsx";
 import { useFocusTrap } from "./shell/useFocusTrap.ts";
+import { UpdateBar } from "./UpdateBar.tsx";
 import "./Shell.css";
 
 const Refresh = createContext<() => void>(() => undefined);
@@ -122,7 +125,6 @@ const PAGE_NAMES: [RegExp, string][] = [
   [/^\/history\//, "History"],
   [/^\/settings/, "Settings"],
   [/^\/status/, "Status"],
-  [/^\/rename\//, "Rename or move"],
   [/^\/conflict\//, "Conflict"],
 ];
 
@@ -147,7 +149,7 @@ function Drawer({ onClose, children }: { onClose: () => void; children: ReactNod
   );
 }
 
-export function Shell({ children, onLoggedOut }: { children: ReactNode; onLoggedOut: () => void }) {
+export function Shell({ children }: { children: ReactNode }) {
   const { pathname } = useLocation();
   const navigate = useNavigate();
   const phone = usePhone();
@@ -216,6 +218,15 @@ export function Shell({ children, onLoggedOut }: { children: ReactNode; onLogged
   useEffect(() => {
     if (!phone) setDrawer(false);
   }, [phone]);
+  // A page asked to see a folder in the tree: the side bar unfolds, or on a phone the drawer
+  // opens; the tree then opens the folder (Tree).
+  const reveal = store.reveal?.n;
+  useEffect(() => {
+    if (reveal === undefined) return;
+    if (phone) setDrawer(true);
+    else fold(false);
+    // Only a new ask opens the bar.
+  }, [reveal]);
 
   async function logout() {
     const unsent = queue.current().length;
@@ -228,11 +239,32 @@ export function Shell({ children, onLoggedOut }: { children: ReactNode; onLogged
       });
       if (!ok) return;
     }
-    await api.logout().catch(() => undefined);
-    // A borrowed device keeps nothing: the queue and this device's id go.
+    // Only the server's answer removes the session cookie, so nothing is wiped without it.
+    try {
+      await api.logout();
+    } catch (err) {
+      const offline = !(err instanceof ApiFailure) || err.status === 0;
+      toast({
+        message: `Could not log out: ${offline ? "no connection." : (err as ApiFailure).message}`,
+      });
+      return;
+    }
+    // A borrowed device keeps nothing: the queue and this device's id go, then the app's caches
+    // and its service worker. The other tabs hear it and reload too.
     await queue.clear();
-    onLoggedOut();
+    await wipeDevice({
+      store: queue,
+      caches: typeof caches === "undefined" ? undefined : caches,
+      container: navigator.serviceWorker,
+    });
+    window.location.assign("/login");
   }
+
+  // Another tab logged out: this one goes to the login page as well.
+  useEffect(() => queue.onCleared(() => window.location.reload()), []);
+
+  // Moving within the app is a moment to look for a new version (at most once a minute).
+  useEffect(() => updates.update(), [pathname]);
 
   // New entries are made in the folder of the entry in view, unless the author picks another.
   const folderInView = current.includes("/") ? current.slice(0, current.lastIndexOf("/")) : "";
@@ -304,6 +336,7 @@ export function Shell({ children, onLoggedOut }: { children: ReactNode; onLogged
               }}
             >
               <Panel id="main" minSize="30%" className="shell-main">
+                <UpdateBar />
                 <main className="content">{children}</main>
               </Panel>
               {rightOpen && (

@@ -20,5 +20,7 @@
     "vite.config.ts",
     "vitest.config.ts",
     "../../packages/geo/src/d3-geo-projection.d.ts"
-  ]
+  ],
+  // The service worker runs in another global scope; it has its own `src/sw/tsconfig.json`.
+  "exclude": ["src/sw"]
 }

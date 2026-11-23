@@ -14,6 +14,7 @@ import {
   EntryResponse,
   ERROR_STATUS,
   ErrorBody,
+  GraphResponse,
   Health,
   Id,
   ImageQuery,
@@ -195,9 +196,14 @@ describe("API shapes", () => {
       maps: [],
       chronicles: [],
       blob: "9c1e0f",
+      rename: null,
     };
     expect(EntryResponse.parse(entry).blob).toBe("9c1e0f");
     expect(EntryResponse.safeParse({ ...entry, blob: undefined }).success).toBe(false);
+    // The one rename waiting for it, if any.
+    const renamed = { ...entry, rename: { id: "abcdefabcdef", to: "c/d.md" } };
+    expect(EntryResponse.parse(renamed).rename).toEqual({ id: "abcdefabcdef", to: "c/d.md" });
+    expect(EntryResponse.safeParse({ ...entry, rename: undefined }).success).toBe(false);
   });
 
   it("merges lists by another key when one is given", () => {
@@ -278,6 +284,28 @@ describe("API shapes", () => {
       notes: [{ path: "README.md", title: "README", state: "unpublished" }],
     };
     expect(TreeResponse.parse(tree)).toEqual(tree);
+  });
+
+  it("accepts a graph and refuses an edge to a node it lacks", () => {
+    const graph = {
+      nodes: [
+        { path: "01 Places/Harbor/Harbor.md", title: "Harbor", type: "place", aliases: ["Port"] },
+        { path: "02 People/Gull.md", title: "Gull", type: null, unpublished: true },
+      ],
+      edges: [[1, 0]],
+      folders: [
+        { path: "01 Places", color: "sea" },
+        { path: "02 People", color: null },
+      ],
+      nested: [{ path: "01 Places/Harbor", color: "teal" }],
+    };
+    expect(GraphResponse.parse(graph)).toEqual(graph);
+    expect(GraphResponse.safeParse({ ...graph, edges: [[0, 2]] }).success).toBe(false);
+    expect(GraphResponse.safeParse({ ...graph, edges: [[-1, 0]] }).success).toBe(false);
+    expect(
+      GraphResponse.safeParse({ ...graph, folders: [{ path: "01 Places", color: "blue" }] })
+        .success,
+    ).toBe(false);
   });
 
   it("allows only the fixed image widths", () => {

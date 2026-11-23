@@ -1,6 +1,8 @@
-import { FOLDERS, type TreeFolder, type TreeResponse } from "@frontier/schema";
+import { FOLDERS, type TreeResponse } from "@frontier/schema";
+import { checkEntryName } from "@frontier/vault";
 import { libraryFileClient } from "../sync/libraryFile.ts";
 import { findFolder } from "./tree/model.ts";
+import { foldersOf, TOP } from "./folders.ts";
 import { useId, useMemo, useRef, useState } from "react";
 import type { Loaded } from "../useAsync.ts";
 import { DialogFrame } from "./Dialogs.tsx";
@@ -9,23 +11,6 @@ import { Problem } from "./ui/Problem.tsx";
 import { Progress } from "./ui/Progress.tsx";
 import "./NewEntry.css";
 
-const TOP = "Top of the library";
-
-/** Every folder in the tree, in the tree's order, by its full path. */
-function foldersOf(tree: TreeResponse): string[] {
-  const out: string[] = [];
-  const walk = (folders: TreeFolder[]) => {
-    for (const f of [...folders].sort((a, b) =>
-      a.path.localeCompare(b.path, undefined, { numeric: true, sensitivity: "base" }),
-    )) {
-      out.push(f.path);
-      walk(f.folders);
-    }
-  };
-  walk(tree.folders);
-  return out;
-}
-
 /** A folder path that is safe: each part a safe name, no empty parts. */
 export function safeFolder(path: string): string {
   return path
@@ -33,14 +18,6 @@ export function safeFolder(path: string): string {
     .map((p) => p.replace(/[\\:*?"<>|#^[\]]/g, "").trim())
     .filter((p) => p !== "" && p !== "." && p !== ".." && !p.startsWith("."))
     .join("/");
-}
-
-/** A name that is safe as a file name: no path signs, no ".md" typed by habit. */
-export function safeName(name: string): string {
-  return name
-    .replace(/[\\/:*?"<>|#^[\]]/g, "")
-    .replace(/\.md$/i, "")
-    .trim();
 }
 
 /**
@@ -79,13 +56,13 @@ export function NewEntry({
   }, [tree, folder, made]);
 
   function make() {
-    const safe = safeName(name);
-    if (!safe) {
-      setProblem("Give the entry a name.");
+    const checked = checkEntryName(name);
+    if (!checked.ok) {
+      setProblem(checked.problem);
       field.current?.focus();
       return;
     }
-    const path = `${where ? where + "/" : ""}${safe}.md`;
+    const path = `${where ? where + "/" : ""}${checked.name}.md`;
     // A folder made here is kept as a line of the folder file, so it stays if the entry does not.
     if (made && where === made) {
       void libraryFileClient(FOLDERS)

@@ -1081,6 +1081,34 @@ describe("renames", () => {
     expect(t.services.drafts.listRenames()).toEqual([]);
   });
 
+  it("keeps one rename per entry: a rename then a move gives one intent from where it is", async () => {
+    const first = (await rename(MIRA, "02 People/Mira Vale.md")).json();
+    expect(first.replaced).toBeNull();
+    // Named where it is, as the entry's page names it.
+    const second = await rename(MIRA, "03 Things/Mira Vale.md");
+    expect(second.statusCode, second.body).toBe(200);
+    expect(second.json().replaced).toEqual({ from: MIRA, to: "02 People/Mira Vale.md" });
+    expect(t.services.drafts.listRenames()).toEqual([
+      expect.objectContaining({ id: second.json().id, from: MIRA, to: "03 Things/Mira Vale.md" }),
+    ]);
+    // Named where it goes, as the tree names it.
+    const third = (await rename("03 Things/Mira Vale.md", "03 Things/Mira the Bold.md")).json();
+    expect(t.services.drafts.listRenames()).toEqual([
+      expect.objectContaining({ id: third.id, from: MIRA, to: "03 Things/Mira the Bold.md" }),
+    ]);
+    const entry = EntryResponse.parse(
+      (await t.get(`/api/entries?path=${encodeURIComponent(MIRA)}`)).json(),
+    );
+    expect(entry.rename).toEqual({ id: third.id, to: "03 Things/Mira the Bold.md" });
+    // Back to where it is in the library is no rename; Undo is.
+    expect((await rename(MIRA, MIRA)).statusCode).toBe(400);
+    expect(t.services.drafts.listRenames()).toHaveLength(1);
+    const p = await plan([], [third.id]);
+    await confirm(p.planId, [], "Rename Mira");
+    expect(mainText("03 Things/Mira the Bold.md")).toContain("# Mira");
+    expect(mainText("02 People/Shade.md")).toContain("[[Mira the Bold]]");
+  });
+
   it("keeps rename intents across a restart", async () => {
     const { id } = (await rename(MIRA, "02 People/Mira Vale.md")).json();
     const again = await buildApp(loadConfig(testEnv(t.repo)));

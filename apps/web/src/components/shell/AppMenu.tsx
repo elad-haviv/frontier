@@ -1,4 +1,5 @@
 import { Activity, Download, History, Keyboard, LogOut, Settings, Upload } from "lucide-react";
+import { NEEDS_CONNECTION, useConnection } from "../../sync/connection.ts";
 import { Menu, MenuItem, MenuLink, MenuSeparator } from "../ui/Menu.tsx";
 
 /**
@@ -14,6 +15,7 @@ export function AppMenu({
   onLogout: () => void;
   align?: "start" | "end";
 }) {
+  const offline = useConnection().state === "offline";
   return (
     <Menu label="App menu" className="app-menu" align={align}>
       <MenuLink icon={Upload} to="/import">
@@ -35,7 +37,13 @@ export function AppMenu({
         Keyboard shortcuts
       </MenuItem>
       <MenuSeparator />
-      <MenuItem icon={LogOut} onSelect={onLogout}>
+      {/* Only the server's answer ends the session, so leaving needs it. */}
+      <MenuItem
+        icon={LogOut}
+        onSelect={onLogout}
+        disabled={offline}
+        disabledReason={NEEDS_CONNECTION}
+      >
         Log out
       </MenuItem>
     </Menu>

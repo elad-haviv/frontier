@@ -8,3 +8,5 @@ export * from "./chronicles.js";
 export * from "./libraryFiles.js";
 export * from "./folders.js";
 export * from "./libraryKinds.js";
+export * from "./client.js";
+export * from "./graph.js";

@@ -7,6 +7,7 @@ import {
   renameInFolders,
   type TreeResponse,
 } from "@frontier/schema";
+import { checkEntryName } from "@frontier/vault";
 import {
   ChevronDown,
   ChevronRight,
@@ -53,6 +54,7 @@ import { useAsync } from "../useAsync.ts";
 import { useDialogs } from "./Dialogs.tsx";
 import { FolderSettings, type FolderStyle } from "./FolderSettings.tsx";
 import { MoveTo } from "./MoveTo.tsx";
+import { useRevealDone, useRevealRequest } from "./shell/panels.tsx";
 import { folderIcon } from "./tree/folderIcons.ts";
 import {
   entriesUnder,
@@ -373,8 +375,12 @@ export function Tree({
 
   const rename = useCallback(
     async (row: Row, name: string) => {
-      const clean = name.replace(/[\\/:*?"<>|#^[\]]/g, "").trim();
-      if (!clean || clean === row.name) return;
+      // A folder's name follows the rules of an entry's; a field left empty changes nothing.
+      if (name.trim() === "") return;
+      const checked = checkEntryName(name);
+      if (!checked.ok) return refuse(checked.problem);
+      const clean = checked.name;
+      if (clean === row.name) return;
       const parent = parentOf(row.path);
       await relocate(row, `${parent ? parent + "/" : ""}${clean}`);
     },
@@ -389,8 +395,10 @@ export function Tree({
       label: "Name",
       action: "Make the folder",
     });
-    const clean = name?.replace(/[\\/:*?"<>|#^[\]]/g, "").trim();
-    if (!clean) return;
+    if (!name?.trim()) return;
+    const checked = checkEntryName(name);
+    if (!checked.ok) return refuse(checked.problem);
+    const clean = checked.name;
     const path = `${parent ? parent + "/" : ""}${clean}`;
     if (findFolder(shown, path)) return refuse(`There is a folder "${clean}" there already.`);
     await setLine(path, {});
@@ -559,6 +567,32 @@ export function Tree({
     else if (folderId && t.get(folderId)) t.openParents(folderId);
     recount();
   }, [current, data, recount]);
+
+  // A page asked to see a folder: it opens, with the folders above it, and comes into view
+  // with the focus on it, once its row is drawn.
+  const reveal = useRevealRequest();
+  const revealDone = useRevealDone();
+  useEffect(() => {
+    const t = arborist.current;
+    if (!t || !reveal) return;
+    revealDone();
+    const id = `f:${reveal.path}`;
+    if (!t.get(id)) return;
+    t.openParents(id);
+    t.open(id);
+    recount();
+    let tries = 0;
+    const show = () => {
+      const row = document.querySelector<HTMLElement>(
+        `.tree-row[data-path="${CSS.escape(reveal.path)}"]`,
+      );
+      if (!row && ++tries < 20) return void requestAnimationFrame(show);
+      row?.scrollIntoView({ block: "center" });
+      t.focus(id);
+      row?.closest<HTMLElement>("[role=treeitem]")?.focus();
+    };
+    requestAnimationFrame(show);
+  }, [reveal, revealDone, recount]);
 
   /** How each row is drawn now; rows read it through a context, so they are never remounted. */
   const draw = (props: NodeRendererProps<Row>) => {

@@ -56,6 +56,7 @@ export function CodeEditor({
   path = "",
   onTable,
   onProperties,
+  onCursor,
 }: {
   initial: string;
   onChange?: (text: string) => void;
@@ -72,6 +73,8 @@ export function CodeEditor({
   onTable?: (inside: boolean) => void;
   /** Called when the folded frontmatter line is chosen in live preview. */
   onProperties?: () => void;
+  /** Told the cursor's line (from 1) when the text or the cursor changes, as for the outline. */
+  onCursor?: (line: number) => void;
 }) {
   const host = useRef<HTMLDivElement>(null);
   const changed = useRef(onChange);
@@ -82,6 +85,8 @@ export function CodeEditor({
   table.current = onTable;
   const properties = useRef(onProperties);
   properties.current = onProperties;
+  const cursor = useRef(onCursor);
+  cursor.current = onCursor;
   const previewSlot = useRef(new Compartment());
   const made = useRef<EditorView | null>(null);
 
@@ -117,7 +122,11 @@ export function CodeEditor({
           theme,
           EditorView.updateListener.of((update) => {
             if (update.docChanged) changed.current?.(update.state.doc.toString());
-            if (update.docChanged || update.selectionSet) table.current?.(inTable(update.state));
+            if (update.docChanged || update.selectionSet) {
+              table.current?.(inTable(update.state));
+              const { doc, selection } = update.state;
+              cursor.current?.(doc.lineAt(selection.main.head).number);
+            }
           }),
         ],
       }),

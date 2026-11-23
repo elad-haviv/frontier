@@ -1,0 +1,12 @@
+{
+  "extends": "../../../../tsconfig.base.json",
+  "compilerOptions": {
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "lib": ["ES2023", "WebWorker"],
+    "noEmit": true,
+    "allowImportingTsExtensions": true,
+    "types": ["vite-plugin-pwa/client"]
+  },
+  "include": ["./**/*.ts"]
+}

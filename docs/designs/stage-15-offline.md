@@ -954,6 +954,15 @@ nothing about the library, and they stay.
 | `vite-plugin-pwa` or Workbox lags Vite | One plugin and three small Workbox modules; the worker source is ours; if the plugin blocks a Vite upgrade, `injectManifest` is replaced by a small Vite plugin that writes the same manifest list (Alternative A) |
 | The browser tests break when a service worker controls the page | The `phone` and `desktop` projects block service workers and skip the offline tests; a separate `offline` project allows them (Verification Plan); a spike checks what Playwright sees first (15a step 1) |
 
+**Dated note (2026-11-23): the 15a spike.** With `@playwright/test` 1.63.0 in Chromium, against the
+production build with an active worker: `context.setOffline(true)` makes both the page's fetches and the
+worker's own fetches fail, while answers from the worker's caches still arrive (a navigation, the built
+files, a stored image). `context.route` sees the page's requests the worker does not answer (every
+`/api/` data request) and the worker's own fetches (`request.serviceWorker()` set); it does not see
+requests the worker answers from its cache, navigations included. So the fallback holds where it
+applies: `offline.spec.ts` reads the worker's work from the page (`navigator.serviceWorker.controller`,
+`caches.keys()`), and `context.route` stays fit for `/api/` data, which the worker never answers.
+
 ## Alternatives Considered
 
 ### Alternative A: A hand-written service worker

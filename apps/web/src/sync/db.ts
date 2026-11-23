@@ -74,6 +74,7 @@ export interface Store {
   clear(): Promise<void>;
   meta<T>(key: string): Promise<T | undefined>;
   setMeta(key: string, value: unknown): Promise<void>;
+  removeMeta(key: string): Promise<void>;
   clearMeta(): Promise<void>;
 }
 
@@ -106,6 +107,9 @@ class IdbStore implements Store {
   }
   async setMeta(key: string, value: unknown) {
     await this.db.put("meta", value, key);
+  }
+  removeMeta(key: string) {
+    return this.db.delete("meta", key);
   }
   clearMeta() {
     return this.db.clear("meta");
@@ -151,6 +155,16 @@ class MemoryStore implements Store {
         localStorage.setItem(DEVICE_KEY, JSON.stringify(value));
       } catch {
         /* as above */
+      }
+    }
+  }
+  async removeMeta(key: string) {
+    this.values.delete(key);
+    if (key === "device") {
+      try {
+        localStorage.removeItem(DEVICE_KEY);
+      } catch {
+        /* nothing to remove */
       }
     }
   }

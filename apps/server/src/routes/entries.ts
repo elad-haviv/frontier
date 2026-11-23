@@ -9,6 +9,7 @@ import {
 } from "@frontier/schema";
 import { dirname, isImage, isNote, readFields, stem, typeFromFolder } from "@frontier/vault";
 import { z } from "zod";
+import { overlay } from "../entries/overlay.js";
 import { ApiError } from "../errors.js";
 import { type IndexedLink, linkKindOf } from "../index/build.js";
 import { movedPath } from "../publish/publish.js";
@@ -43,18 +44,6 @@ function shown(links: IndexedLink[]): EntryResponse["links"] {
 }
 
 export function entryRoutes(app: FastifyInstance, s: Services): void {
-  /** Paths that drafts add to, or take away from, what is published. */
-  const overlay = () => {
-    const drafts = s.drafts.list();
-    return {
-      added: drafts
-        // Notes and uploaded images, so links and embeds resolve; a map is neither.
-        .filter((d) => d.kind === "create" && (d.binary || isNote(d.path)) && !s.index.note(d.path))
-        .map((d) => d.path),
-      removed: drafts.filter((d) => d.kind === "delete").map((d) => d.path),
-    };
-  };
-
   /** The structured fields of a text, with the links inside each date resolved. */
   const fieldsOf = (path: string, text: string): Pick<EntryResponse, "id" | "fields"> => {
     const fields = readFields(text);
@@ -124,7 +113,7 @@ export function entryRoutes(app: FastifyInstance, s: Services): void {
       const entry = shown === note.path ? note : { ...note, path: shown, moved: note.path };
       folder(dirname(shown)).notes.push(entry);
     };
-    const { added, removed } = overlay();
+    const { added, removed } = overlay(s);
     for (const note of s.index.allNotes()) {
       if (removed.includes(note.path)) continue;
       place({
@@ -197,11 +186,14 @@ export function entryRoutes(app: FastifyInstance, s: Services): void {
     }
 
     const info = draft ? { id: draft.id, revision: draft.revision, kind: draft.kind } : null;
+    // The one rename waiting for this entry, if any; a folder's rename is the folder's own.
+    const intent = s.drafts.listRenames().find((r) => r.from === path);
+    const rename = intent ? { id: intent.id, to: intent.to } : null;
     // The library file's blob, which a save sends back to say which text it started from.
     const blob = note ? ((await s.git.blobHash(path)) ?? "") : "";
     if (draft && draft.kind !== "delete" && !draft.binary) {
       const text = await s.drafts.text(draft.id);
-      const { added, removed } = overlay();
+      const { added, removed } = overlay(s);
       const { headings, links } = s.index.analyse(path, text, added, removed);
       return {
         path,
@@ -217,6 +209,7 @@ export function entryRoutes(app: FastifyInstance, s: Services): void {
         maps: await mapsOf(path),
         chronicles: await chroniclesOf(path),
         blob,
+        rename,
       };
     }
 
@@ -238,6 +231,7 @@ export function entryRoutes(app: FastifyInstance, s: Services): void {
       maps: await mapsOf(note!.path),
       chronicles: await chroniclesOf(note!.path),
       blob,
+      rename,
     };
   });
 
@@ -247,7 +241,7 @@ export function entryRoutes(app: FastifyInstance, s: Services): void {
    */
   app.get("/api/images/find", async (request): Promise<{ path: string | null }> => {
     const { name, from } = FindQuery.parse(request.query);
-    const { added, removed } = overlay();
+    const { added, removed } = overlay(s);
     const r = s.index.analyse(from, `![[${name}]]`, added, removed).links[0]?.resolution;
     return { path: r?.kind === "file" && isImage(r.path) ? r.path : null };
   });

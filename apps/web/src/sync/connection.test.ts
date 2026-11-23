@@ -110,6 +110,21 @@ describe("the connection service", () => {
     c.stop();
   });
 
+  it("starts offline when asked, until the probe answers", async () => {
+    let answerProbe: (res: Response) => void = () => undefined;
+    const fetch = vi.fn(() => new Promise<Response>((resolve) => (answerProbe = resolve)));
+    const { c } = make(fetch as unknown as typeof globalThis.fetch);
+    c.startOffline();
+    expect(c.state).toBe("offline");
+    // The stream is started as usual, and the server is asked at once.
+    expect(FakeSource.made).toHaveLength(1);
+    expect(fetch).toHaveBeenCalledWith("/api/status", { credentials: "same-origin" });
+    answerProbe(new Response(JSON.stringify({ unpublished: 2 }), { status: 200 }));
+    await vi.waitFor(() => expect(c.state).toBe("online"));
+    expect(c.snapshot).toEqual({ unpublished: 2 });
+    c.stop();
+  });
+
   it("treats any other answer to the probe as online", async () => {
     const { c } = make(vi.fn(() => answer(503)) as never);
     await c.probe();

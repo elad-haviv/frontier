@@ -26,13 +26,14 @@ import { nextCell, previousCell, tableCommand } from "./components/tableKeys.ts"
  * Where a shortcut applies, from the outside in. When two bound shortcuts share keys, the one
  * of the later scope in this list wins: a dialog over a page, a table inside the editor.
  */
-export const SCOPES = ["app", "chronicle", "map", "editor", "table", "dialog"] as const;
+export const SCOPES = ["app", "chronicle", "map", "graph", "editor", "table", "dialog"] as const;
 export type Scope = (typeof SCOPES)[number];
 
 export const SCOPE_NAMES: Record<Scope, string> = {
   app: "Everywhere",
   chronicle: "Chronicle",
   map: "Map",
+  graph: "Graph",
   editor: "Editor",
   table: "In a table",
   dialog: "Dialogs and menus",
@@ -90,9 +91,10 @@ export function isFree(e: { defaultPrevented?: boolean }): boolean {
 const MODIFIERS = new Set(["mod", "ctrl", "cmd", "meta", "alt", "shift"]);
 
 function parse(spec: string) {
-  // "Mod--" would be a minus; no shortcut here needs one, so a plain split is enough.
-  const parts = spec.split("-");
-  const key = parts.pop()!;
+  // A spec ending in "-" names the minus key: "-" is minus alone, "Mod--" is Mod with minus.
+  const minus = spec === "-" || spec.endsWith("--");
+  const parts = spec === "-" ? [] : (minus ? spec.slice(0, -2) : spec).split("-");
+  const key = minus ? "-" : parts.pop()!;
   const mods = new Set(parts.map((p) => p.toLowerCase()));
   for (const m of mods) if (!MODIFIERS.has(m)) throw new Error(`Unknown modifier in "${spec}"`);
   return {
@@ -404,6 +406,14 @@ keys.register(
     label: "Turn the map to the typed angle",
     handledBy: "the Turn panel",
   },
+
+  // The graph
+  { id: "graph.find", keys: ["/"], scope: "graph", label: "Find an entry in the graph" },
+  { id: "graph.open", keys: ["Enter"], scope: "graph", label: "Open the selected entry" },
+  { id: "graph.clear", keys: ["Escape"], scope: "graph", label: "Clear the selection" },
+  { id: "graph.fit", keys: ["0"], scope: "graph", label: "Fit the graph" },
+  { id: "graph.zoomIn", keys: ["="], scope: "graph", label: "Zoom in" },
+  { id: "graph.zoomOut", keys: ["-"], scope: "graph", label: "Zoom out" },
 
   // The chronicle
   { id: "chronicle.undo", keys: ["Mod-z"], scope: "chronicle", label: "Undo" },

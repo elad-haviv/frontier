@@ -1,4 +1,5 @@
 import { type RefObject, useEffect, useRef } from "react";
+import { isFree } from "../../keys.ts";
 
 const FOCUSABLE =
   'a[href], button, input, select, textarea, [tabindex]:not([tabindex="-1"]), [contenteditable="true"]';
@@ -30,7 +31,8 @@ export function useFocusTrap(
       (focusables(root)[0] ?? root).focus();
     }
     const onKey = (e: KeyboardEvent) => {
-      if (e.defaultPrevented) return;
+      // A key a tooltip used on the way (Escape closing it) still closes the trap.
+      if (!isFree(e)) return;
       if (e.key === "Escape") {
         e.preventDefault();
         escape.current();

@@ -1,37 +1,69 @@
-import { aliasesOf, splitFrontmatter } from "@frontier/vault";
-import { useEffect, useMemo } from "react";
+import { aliasesOf, dirname, splitFrontmatter, stem } from "@frontier/vault";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
-import { api, chronicleUrl, editUrl, entryUrl, historyUrl, mapUrl, talkUrl } from "../api.ts";
+import { api, ApiFailure, chronicleUrl, editUrl, entryUrl, mapUrl, talkUrl } from "../api.ts";
 import { HoverPreview } from "../components/HoverPreview.tsx";
 import { LightboxProvider } from "../components/Lightbox.tsx";
-import { currentEntryPath, scrollPageToTop, useWords } from "../components/Shell.tsx";
-import { PageAction } from "../components/shell/panels.tsx";
+import { currentEntryPath, scrollPageToTop, useRefresh, useWords } from "../components/Shell.tsx";
+import {
+  PageAction,
+  useOpenPanel,
+  usePageTitle,
+  usePanel,
+  useRevealInTree,
+  useRightBar,
+} from "../components/shell/panels.tsx";
 import { Fields } from "../components/Fields.tsx";
 import { ProposeFields } from "../components/ProposeFields.tsx";
 import { Markdown } from "../render/Markdown.tsx";
-import { Menu, MenuLink } from "../components/ui/Menu.tsx";
-import { FileDown, FolderInput, History } from "lucide-react";
+import { Menu, MenuItem, MenuSeparator } from "../components/ui/Menu.tsx";
+import { IconButton } from "../components/ui/IconButton.tsx";
+import { FileDown, FolderInput, History, Pencil, TableOfContents } from "lucide-react";
 import { Problem } from "../components/ui/Problem.tsx";
 import { Progress } from "../components/ui/Progress.tsx";
+import { useToast } from "../components/ui/Toast.tsx";
+import { StickyLine } from "../components/entry/StickyLine.tsx";
+import { useCurrentHeading } from "../components/entry/useCurrentHeading.ts";
+import { OutlinePanel } from "../components/entry/OutlinePanel.tsx";
+import { HistoryPanel } from "../components/entry/HistoryPanel.tsx";
+import { ExportPanel } from "../components/entry/ExportPanel.tsx";
+import { WideMenuItem } from "../components/entry/WideMenuItem.tsx";
+import {
+  MoveField,
+  pendingPath,
+  RenameField,
+  useRelocate,
+} from "../components/entry/RenameField.tsx";
+import { useNeedsConnection } from "../sync/connection.ts";
 import { useAsync } from "../useAsync.ts";
+import { useWide } from "../width.ts";
 
-function Crumbs({ path }: { path: string }) {
+/** Below this width the shell is a phone's, and a panel chosen covers half the page. */
+const PHONE = "(max-width: 47.99rem)";
+
+function Crumbs({ path, pending }: { path: string; pending: boolean }) {
   const folders = path.split("/").slice(0, -1);
-  if (folders.length === 0) return null;
+  if (folders.length === 0 && !pending) return null;
   return (
-    <p className="crumbs">
+    <p className={`crumbs${pending ? " is-pending" : ""}`}>
+      {folders.length === 0 && "Top of the library"}
       {folders.map((f, i) => (
         <span key={i}>
           {i > 0 && <span aria-hidden="true"> › </span>}
           {f}
         </span>
       ))}
+      {pending && <span className="crumbs-mark">unpublished</span>}
     </p>
   );
 }
 
+const join = (folder: string, name: string) => `${folder ? folder + "/" : ""}${name}.md`;
+
 export function EntryPage() {
   const words = useWords();
+  const refresh = useRefresh();
+  const toast = useToast();
   const { pathname, hash, key } = useLocation();
   const path = currentEntryPath(pathname);
   // Keyed by the visit as well as the path, so coming back from the editor shows the new draft.
@@ -41,20 +73,32 @@ export function EntryPage() {
   const canTalk = ai.state === "ready" && ai.value.ready;
   const comments = useAsync(() => api.commentCount(path), `comments:${path}@${key}`);
   const openComments = comments.state === "ready" ? comments.value.open : 0;
+  const offline = useNeedsConnection();
+  const [wide, setWide] = useWide();
+  const [renaming, setRenaming] = useState(false);
+  const [moving, setMoving] = useState(false);
+  const openPanel = useOpenPanel();
+  const bar = useRightBar();
+  const revealInTree = useRevealInTree();
+  const prose = useRef<HTMLDivElement>(null);
+  const titleRow = useRef<HTMLDivElement>(null);
 
+  // The entry as loaded, which keeps its identity until another arrives; `entry` itself is new
+  // at every render.
+  const loaded = entry.state === "ready" ? entry.value : null;
   const view = useMemo(() => {
-    if (entry.state !== "ready") return null;
-    const { body } = splitFrontmatter(entry.value.text);
+    if (!loaded) return null;
+    const { body } = splitFrontmatter(loaded.text);
     // From the entry shown, which while another loads is still the one before.
-    const shown = entry.value.path;
+    const shown = loaded.path;
     const name = (shown.split("/").pop() ?? shown).replace(/\.md$/i, "");
     // The page title is the note's name, as in Obsidian. A first heading that only repeats the
     // name is left out of the text; any other heading is a section and stays.
     const opening = /^\s*#[ \t]+([^\n]*)\n?/.exec(body);
     const repeats = opening !== null && opening[1]!.trim().toLowerCase() === name.toLowerCase();
     const text = repeats ? body.slice(opening[0].length) : body;
-    return { text, title: name, aliases: aliasesOf(entry.value.text) };
-  }, [entry]);
+    return { text, aliases: aliasesOf(loaded.text) };
+  }, [loaded]);
 
   // Jump to the heading named in the address, once the text is on the page.
   useEffect(() => {
@@ -71,6 +115,84 @@ export function EntryPage() {
     ].find((h) => h.textContent?.trim().toLowerCase() === wanted);
     heading?.scrollIntoView({ block: "start" });
   }, [view, hash]);
+
+  // A rename or move in progress ends with the entry it was started on.
+  useEffect(() => {
+    setRenaming(false);
+    setMoving(false);
+  }, [path]);
+
+  const { headings, current, titleGone } = useCurrentHeading(prose, titleRow, view);
+  const e = loaded;
+  // Where it will be once its rename is saved; the page shows that name and folder.
+  const shownPath = e ? pendingPath(e) : path;
+  const name = stem(shownPath);
+  const folder = dirname(shownPath);
+  const editable = !!e && !e.readOnly && e.draft?.kind !== "delete";
+  const reached = current >= 0 ? (headings[current]?.text ?? null) : null;
+  const relocate = useRelocate(e, entry.retry);
+
+  /** Goes to a heading chosen in the outline. On a phone the sheet steps aside for the text. */
+  function goTo(i: number) {
+    headings[i]?.el.scrollIntoView({ block: "start" });
+    if (window.matchMedia(PHONE).matches) bar.hide();
+  }
+
+  usePanel(
+    headings.length === 0
+      ? null
+      : {
+          id: "outline",
+          title: "Outline",
+          icon: TableOfContents,
+          render: () => <OutlinePanel items={headings} current={current} onChoose={goTo} />,
+        },
+  );
+  usePanel(
+    !e || !editable
+      ? null
+      : {
+          id: "history",
+          title: "History",
+          icon: History,
+          render: () => <HistoryPanel key={e.path} path={e.path} />,
+        },
+  );
+  usePanel(
+    !e || !editable
+      ? null
+      : {
+          id: "export",
+          title: "Export",
+          icon: FileDown,
+          render: () => (
+            <ExportPanel
+              key={e.path}
+              path={e.path}
+              name={name}
+              unsaved={e.state === "unpublished" || e.rename !== null}
+            />
+          ),
+        },
+  );
+
+  const outlineButton = (className?: string) =>
+    headings.length > 0 ? (
+      <IconButton
+        label="Outline"
+        icon={TableOfContents}
+        size="sm"
+        {...(className ? { className } : {})}
+        aria-pressed={bar.open === "outline"}
+        onClick={() => (bar.open === "outline" ? bar.hide() : openPanel("outline"))}
+      />
+    ) : undefined;
+
+  // On a phone, once the title has gone, the slim top line says where the reader is.
+  usePageTitle(
+    titleGone && reached ? `${name} › ${reached}` : name,
+    titleGone ? outlineButton("phone-outline") : undefined,
+  );
 
   if (entry.state === "loading") return <p className="center muted">Opening…</p>;
   // A failure to open another entry is not shown over the one before it.
@@ -90,160 +212,259 @@ export function EntryPage() {
     );
   }
 
-  const e = entry.value;
+  const ent = entry.value;
+  /** The title and the menu come into view first, so what they open is seen. */
+  const fromTop = (open: () => void) => () => {
+    if (titleGone) scrollPageToTop();
+    // After the menu has closed, so the focus can go to what opens.
+    setTimeout(open);
+  };
+  const startRename = fromTop(() => setRenaming(true));
+  const startMove = fromTop(() => setMoving(true));
+
+  async function undoRename(id: string) {
+    try {
+      await api.cancelRename(id);
+      refresh();
+      entry.retry();
+    } catch (err) {
+      toast({
+        message: err instanceof ApiFailure ? err.message : "The rename could not be undone.",
+      });
+    }
+  }
+
+  const menu = (
+    <Menu label="More actions">
+      <MenuItem
+        icon={Pencil}
+        disabled={offline !== undefined}
+        disabledReason={offline}
+        onSelect={startRename}
+      >
+        Rename
+      </MenuItem>
+      <MenuItem
+        icon={FolderInput}
+        disabled={offline !== undefined}
+        disabledReason={offline}
+        onSelect={startMove}
+      >
+        Move to…
+      </MenuItem>
+      <WideMenuItem />
+      <MenuSeparator />
+      <MenuItem icon={History} onSelect={() => openPanel("history")}>
+        History
+      </MenuItem>
+      <MenuItem icon={FileDown} onSelect={() => openPanel("export")}>
+        Export
+      </MenuItem>
+    </Menu>
+  );
+
+  const moved = ent.rename !== null && dirname(ent.rename.to) !== dirname(ent.path);
+  const renamed = ent.rename !== null && stem(ent.rename.to) !== stem(ent.path);
+
   return (
-    <article className="entry">
-      {entry.reloading && <Progress label="Opening" />}
-      {entry.error && <Problem reason={entry.error.message} onRetry={entry.retry} />}
-      <header className="entry-head">
-        <Crumbs path={e.path} />
-        <div className="title-row">
-          <h1>{view!.title}</h1>
-          {!e.readOnly && e.draft?.kind !== "delete" && (
+    <>
+      <StickyLine
+        shown={titleGone}
+        folder={folder}
+        name={name}
+        heading={reached}
+        wide={wide}
+        onFolder={() => revealInTree(folder)}
+        onTop={scrollPageToTop}
+        onOutline={headings.length > 0 ? () => openPanel("outline") : undefined}
+        onWide={() => setWide(!wide)}
+        actions={
+          editable && (
+            <>
+              <Link to={editUrl(ent.path)} className="edit-link">
+                Edit
+              </Link>
+              {menu}
+            </>
+          )
+        }
+      />
+      <article className={`entry${wide ? " is-wide" : ""}`}>
+        {entry.reloading && <Progress label="Opening" />}
+        {entry.error && <Problem reason={entry.error.message} onRetry={entry.retry} />}
+        <header className="entry-head">
+          <Crumbs path={shownPath} pending={moved} />
+          <div className="title-row" ref={titleRow}>
+            {renaming ? (
+              <RenameField
+                name={name}
+                onRename={(to) => relocate(join(folder, to))}
+                onClose={() => setRenaming(false)}
+              />
+            ) : (
+              <div className="entry-title">
+                <h1>{name}</h1>
+                {editable && (
+                  <IconButton
+                    label="Rename"
+                    icon={Pencil}
+                    size="sm"
+                    className="entry-rename"
+                    disabled={offline !== undefined}
+                    {...(offline ? { disabledReason: offline } : {})}
+                    onClick={() => setRenaming(true)}
+                  />
+                )}
+              </div>
+            )}
             <span className="entry-actions">
-              {/* On a phone, Edit moves into the top line, beside the title. */}
-              <PageAction>
-                <Link to={editUrl(e.path)} className="edit-link">
-                  Edit
-                </Link>
-              </PageAction>
-              {/* One clear action; the rest wait behind "⋯", as the review asked. */}
-              <Menu label="More actions">
-                <MenuLink
-                  icon={FolderInput}
-                  to={"/rename/" + e.path.split("/").map(encodeURIComponent).join("/")}
-                >
-                  Rename
-                </MenuLink>
-                <MenuLink icon={History} to={historyUrl(e.path)}>
-                  History
-                </MenuLink>
-                <MenuLink icon={FileDown} to={`/export?path=${encodeURIComponent(e.path)}`}>
-                  Export
-                </MenuLink>
-              </Menu>
+              {outlineButton("entry-outline")}
+              {editable && (
+                <>
+                  {/* On a phone, Edit moves into the top line, beside the title. */}
+                  <PageAction>
+                    <Link to={editUrl(ent.path)} className="edit-link">
+                      Edit
+                    </Link>
+                  </PageAction>
+                  {/* One clear action; the rest wait behind "⋯", as the review asked. */}
+                  {menu}
+                </>
+              )}
             </span>
+          </div>
+          {moving && (
+            <MoveField
+              folder={folder}
+              onMove={(to) => relocate(join(to, name))}
+              onClose={() => setMoving(false)}
+            />
+          )}
+          {ent.rename && (
+            <p className="draft-note">
+              Not {words.own ? "saved" : "published"} yet:{" "}
+              {[
+                renamed && `renamed from ${stem(ent.path)}`,
+                moved && `moved from ${dirname(ent.path) || "the top of the library"}`,
+              ]
+                .filter(Boolean)
+                .join(" and ")}
+              .{" "}
+              <button
+                type="button"
+                className="draft-undo"
+                onClick={() => void undoRename(ent.rename!.id)}
+              >
+                Undo
+              </button>
+            </p>
+          )}
+          {ent.quarantine && (
+            <p className="draft-note quarantine-note" role="status">
+              This note arrived unreviewed, pushed by {ent.quarantine.pushedBy}. It is kept out of
+              the memory bank until you decide.{" "}
+              <Link to="/inbox">Accept or revert it in the inbox</Link>
+            </p>
+          )}
+          {ent.state === "unpublished" && (
+            <p className="draft-note">
+              {ent.draft?.kind === "delete"
+                ? "Marked for deletion. "
+                : ent.draft?.kind === "create"
+                  ? "A new entry, not published yet. "
+                  : "You are reading your unpublished draft. "}
+              <Link to="/unpublished">{words.review}</Link>
+            </p>
+          )}
+          {(view!.aliases.length > 0 || ent.readOnly) && (
+            <p className="chips">
+              {view!.aliases.map((a) => (
+                <span className="chip" key={a} title="Also known as">
+                  {a}
+                </span>
+              ))}
+              {ent.readOnly && (
+                <span
+                  className="chip chip-quiet"
+                  title={
+                    ent.lineEnding === "mixed"
+                      ? "This file mixes two kinds of line endings"
+                      : "Appendix files are append-only"
+                  }
+                >
+                  read-only
+                </span>
+              )}
+            </p>
+          )}
+          <Fields fields={ent.fields} />
+          {canTalk && (ent.fields.type === "person" || ent.fields.type === "deity") && (
+            <p className="talk-with">
+              <Link to={talkUrl(ent.path)}>
+                Talk with {ent.path.split("/").pop()!.replace(/\.md$/i, "")}
+              </Link>
+            </p>
+          )}
+          {openComments > 0 && !ent.readOnly && (
+            <p className="on-maps">
+              <Link to={`${editUrl(ent.path)}?comments=1`}>
+                {openComments} open {openComments === 1 ? "comment" : "comments"}
+              </Link>
+            </p>
+          )}
+          {ent.maps.length > 0 && (
+            <p className="on-maps">
+              On maps:{" "}
+              {ent.maps.map((m, i) => (
+                <span key={m.id}>
+                  {i > 0 && ", "}
+                  <Link to={mapUrl(m.id, m.feature)}>{m.title}</Link>
+                </span>
+              ))}
+            </p>
+          )}
+          {ent.chronicles.length > 0 && (
+            <p className="on-maps">
+              On chronicles:{" "}
+              {ent.chronicles.map((c, i) => (
+                <span key={c.id}>
+                  {i > 0 && ", "}
+                  <Link to={`${chronicleUrl(c.id)}?span=${encodeURIComponent(c.span)}`}>
+                    {c.title}
+                  </Link>
+                </span>
+              ))}
+            </p>
+          )}
+          {ent.state === "published" && !ent.readOnly && <ProposeFields path={ent.path} />}
+        </header>
+
+        <div className="prose" ref={prose}>
+          {view!.text.trim() === "" ? (
+            <p className="muted">This entry is empty.</p>
+          ) : (
+            <LightboxProvider scope=".prose">
+              <Markdown text={view!.text} links={ent.links} />
+            </LightboxProvider>
           )}
         </div>
-        {e.quarantine && (
-          <p className="draft-note quarantine-note" role="status">
-            This note arrived unreviewed, pushed by {e.quarantine.pushedBy}. It is kept out of the
-            memory bank until you decide. <Link to="/inbox">Accept or revert it in the inbox</Link>
-          </p>
-        )}
-        {e.state === "unpublished" && (
-          <p className="draft-note">
-            {e.draft?.kind === "delete"
-              ? "Marked for deletion. "
-              : e.draft?.kind === "create"
-                ? "A new entry, not published yet. "
-                : "You are reading your unpublished draft. "}
-            <Link to="/unpublished">{words.review}</Link>
-          </p>
-        )}
-        {(view!.aliases.length > 0 || e.readOnly) && (
-          <p className="chips">
-            {view!.aliases.map((a) => (
-              <span className="chip" key={a} title="Also known as">
-                {a}
-              </span>
-            ))}
-            {e.readOnly && (
-              <span
-                className="chip chip-quiet"
-                title={
-                  e.lineEnding === "mixed"
-                    ? "This file mixes two kinds of line endings"
-                    : "Appendix files are append-only"
-                }
-              >
-                read-only
-              </span>
-            )}
-          </p>
-        )}
-        <Fields fields={e.fields} />
-        {canTalk && (e.fields.type === "person" || e.fields.type === "deity") && (
-          <p className="talk-with">
-            <Link to={talkUrl(e.path)}>
-              Talk with {e.path.split("/").pop()!.replace(/\.md$/i, "")}
-            </Link>
-          </p>
-        )}
-        {openComments > 0 && !e.readOnly && (
-          <p className="on-maps">
-            <Link to={`${editUrl(e.path)}?comments=1`}>
-              {openComments} open {openComments === 1 ? "comment" : "comments"}
-            </Link>
-          </p>
-        )}
-        {e.maps.length > 0 && (
-          <p className="on-maps">
-            On maps:{" "}
-            {e.maps.map((m, i) => (
-              <span key={m.id}>
-                {i > 0 && ", "}
-                <Link to={mapUrl(m.id, m.feature)}>{m.title}</Link>
-              </span>
-            ))}
-          </p>
-        )}
-        {e.chronicles.length > 0 && (
-          <p className="on-maps">
-            On chronicles:{" "}
-            {e.chronicles.map((c, i) => (
-              <span key={c.id}>
-                {i > 0 && ", "}
-                <Link to={`${chronicleUrl(c.id)}?span=${encodeURIComponent(c.span)}`}>
-                  {c.title}
-                </Link>
-              </span>
-            ))}
-          </p>
-        )}
-        {e.state === "published" && !e.readOnly && <ProposeFields path={e.path} />}
-      </header>
 
-      {e.headings.filter((h) => h.level <= 3).length >= 3 && (
-        <details className="outline">
-          <summary>On this page</summary>
-          <ul>
-            {e.headings
-              .filter((h) => h.level <= 3)
-              .map((h) => (
-                <li key={h.line} className={`outline-${h.level}`}>
-                  <a href={`#${encodeURIComponent(h.text)}`}>{h.text}</a>
+        <HoverPreview scope=".prose" />
+
+        {ent.backlinks.length > 0 && (
+          <footer className="backlinks">
+            <h2>Mentioned in</h2>
+            <ul>
+              {[...new Map(ent.backlinks.map((b) => [b.path, b])).values()].map((b) => (
+                <li key={b.path}>
+                  <Link to={entryUrl(b.path)}>{b.title}</Link>
+                  <span className="muted"> · {b.path.split("/").slice(0, -1).join(" › ")}</span>
                 </li>
               ))}
-          </ul>
-        </details>
-      )}
-
-      <div className="prose">
-        {view!.text.trim() === "" ? (
-          <p className="muted">This entry is empty.</p>
-        ) : (
-          <LightboxProvider scope=".prose">
-            <Markdown text={view!.text} links={e.links} />
-          </LightboxProvider>
+            </ul>
+          </footer>
         )}
-      </div>
-
-      <HoverPreview scope=".prose" />
-
-      {e.backlinks.length > 0 && (
-        <footer className="backlinks">
-          <h2>Mentioned in</h2>
-          <ul>
-            {[...new Map(e.backlinks.map((b) => [b.path, b])).values()].map((b) => (
-              <li key={b.path}>
-                <Link to={entryUrl(b.path)}>{b.title}</Link>
-                <span className="muted"> · {b.path.split("/").slice(0, -1).join(" › ")}</span>
-              </li>
-            ))}
-          </ul>
-        </footer>
-      )}
-    </article>
+      </article>
+    </>
   );
 }

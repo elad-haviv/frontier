@@ -2,6 +2,7 @@ import { randomBytes } from "node:crypto";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import {
   CreateRenameRequest,
+  type CreateRenameResponse,
   DraftTextRequest,
   Id,
   makeId,
@@ -191,13 +192,33 @@ export function draftRoutes(app: FastifyInstance, s: Services): void {
     return { commit: await s.publisher.confirm(planId, confirmedMergeIds, message) };
   });
 
-  app.post("/api/renames", async (request) => {
+  /**
+   * Records a rename. Something has at most one: a rename of what another rename already moves,
+   * named where it is or where it goes, replaces that one with a single rename from where it is
+   * in the library, so renames never chain.
+   */
+  app.post("/api/renames", async (request): Promise<CreateRenameResponse> => {
     const { from, to } = CreateRenameRequest.parse(request.body);
-    const intent = { id: makeId(randomBytes), from, to, createdAt: new Date().toISOString() };
-    const affected = await s.publisher.previewRename(intent);
+    const earlier = s.drafts.listRenames().find((r) => r.from === from || r.to === from);
+    const start = earlier?.from ?? from;
+    if (start === to) {
+      throw new ApiError("invalid", "It is there already. Undo the rename to keep it there.");
+    }
+    const intent = {
+      id: makeId(randomBytes),
+      from: start,
+      to,
+      createdAt: new Date().toISOString(),
+    };
+    const affected = await s.publisher.previewRename(intent, earlier?.id);
+    if (earlier) await s.drafts.removeRename(earlier.id);
     await s.drafts.addRename(intent);
     s.status.drafts(s.drafts.count(), 0);
-    return { id: intent.id, affected };
+    return {
+      id: intent.id,
+      affected,
+      replaced: earlier ? { from: earlier.from, to: earlier.to } : null,
+    };
   });
 
   app.delete("/api/renames/:id", async (request) => {

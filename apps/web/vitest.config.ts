@@ -16,5 +16,12 @@ export default defineConfig({
     include: ["src/**/*.test.ts", "src/**/*.test.tsx"],
     // The save queue and the connection service run on browser APIs.
     environmentMatchGlobs: [["src/sync/**", "happy-dom"]],
+    // The pointer's state machine keeps its branches covered.
+    coverage: {
+      enabled: true,
+      provider: "v8",
+      include: ["src/map/gesture.ts"],
+      thresholds: { "src/map/gesture.ts": { branches: 90 } },
+    },
   },
 });

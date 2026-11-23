@@ -106,6 +106,13 @@ describe("configuration", () => {
     );
   });
 
+  it("keeps the service worker on unless it is switched off", () => {
+    expect(loadConfig(local).serviceWorker).toBe(true);
+    expect(loadConfig({ ...local, FRONTIER_SERVICE_WORKER: "on" }).serviceWorker).toBe(true);
+    expect(loadConfig({ ...local, FRONTIER_SERVICE_WORKER: "off" }).serviceWorker).toBe(false);
+    expect(loadConfig({ ...local, FRONTIER_SERVICE_WORKER: " OFF " }).serviceWorker).toBe(false);
+  });
+
   it("checks the session key length and the public address", () => {
     expect(() => loadConfig({ ...local, SESSION_KEY: "c2hvcnQ=" })).toThrow(/32 bytes/);
     expect(() => loadConfig({ ...local, PUBLIC_URL: "not a url" })).toThrow(/full address/);

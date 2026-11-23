@@ -31,9 +31,15 @@
 .shell-right {
   height: 100%;
 }
+/* The page, with the update bar above it when a new version waits. */
+.shell-main {
+  display: flex;
+  flex-direction: column;
+}
 
 .content {
-  height: 100%;
+  flex: 1;
+  min-height: 0;
   min-width: 0;
   overflow: auto;
   overscroll-behavior: contain;

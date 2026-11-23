@@ -408,15 +408,20 @@ export class Publisher {
     return { writes, deletes, renames: summaries, blocked, groups };
   }
 
-  /** The notes a rename would rewrite, given every current draft. Throws ApiError when it cannot be done. */
-  async previewRename(intent: RenameIntent): Promise<string[]> {
+  /**
+   * The notes a rename would rewrite, given every current draft and every other rename but the
+   * one it replaces, if any. Throws ApiError when it cannot be done.
+   */
+  async previewRename(intent: RenameIntent, replacing?: string): Promise<string[]> {
     const included = await Promise.all(
       this.d.drafts.list().map(async (draft) => ({
         draft,
         text: draft.binary ? "" : await this.d.drafts.text(draft.id),
       })),
     );
-    const earlier = this.d.drafts.listRenames().filter((r) => r.id !== intent.id);
+    const earlier = this.d.drafts
+      .listRenames()
+      .filter((r) => r.id !== intent.id && r.id !== replacing);
     const result = await this.assemble(included, [...earlier, intent]);
     const block = result.blocked.find((b) => b.draftId === intent.id);
     if (block) throw new ApiError("invalid", block.mine);

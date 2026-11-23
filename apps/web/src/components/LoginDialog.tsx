@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { api, ApiFailure } from "../api.ts";
+import { noteSignedIn } from "../offline/start.ts";
 import { connection, useConnection } from "../sync/connection.ts";
+import { queue } from "../sync/queue.ts";
 import { DialogFrame } from "./Dialogs.tsx";
 import "./LoginDialog.css";
 
@@ -50,6 +52,7 @@ export function LoginDialog() {
     try {
       await how();
       setPassword("");
+      void noteSignedIn(queue);
       await connection.loggedIn();
     } catch (err) {
       setError(err instanceof ApiFailure ? err.message : "That did not work. Try again.");

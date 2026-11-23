@@ -123,9 +123,9 @@ describe("map files", () => {
     const un = UnpublishedResponse.parse((await t.get("/api/unpublished")).json());
     expect(un.drafts).toHaveLength(1);
     expect(un.drafts[0]).toMatchObject({ path: file(id), kind: "create", mainText: null });
-    expect(un.drafts[0]!.text.split("\n").filter((l) => l.startsWith('    {"id":"f'))).toHaveLength(
-      2,
-    );
+    expect(
+      un.drafts[0]!.text.split("\n").filter((l) => /^ {4}\{"id":"f[12]"/.test(l)),
+    ).toHaveLength(2);
 
     const { res } = await publishAll("Add the map of Ezob");
     expect(res.statusCode, res.body).toBe(200);

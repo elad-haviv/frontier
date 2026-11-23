@@ -72,6 +72,15 @@ describe("matching keys", () => {
     expect(displayKey("?", false)).toBe("?");
   });
 
+  it("reads a bare minus, and Mod with minus", () => {
+    expect(matches("-", press("-"))).toBe(true);
+    expect(matches("-", press("-", { ctrlKey: true }))).toBe(false);
+    expect(matches("Mod--", press("-", { ctrlKey: true }))).toBe(true);
+    expect(matches("Mod--", press("-"))).toBe(false);
+    expect(displayKey("-", false)).toBe("-");
+    expect(displayKey("Mod--", false)).toBe("Ctrl+-");
+  });
+
   it("knows a typing field", () => {
     expect(isTyping(input)).toBe(true);
     expect(isTyping({ tagName: "INPUT", type: "checkbox" })).toBe(false);
@@ -159,6 +168,54 @@ describe("the registry", () => {
   });
 });
 
+describe("the graph's keys", () => {
+  const graph = () => {
+    const r = createRegistry();
+    r.register(...keys.all().filter((s) => s.scope === "graph" || s.id === "app.keys"));
+    return r;
+  };
+
+  it("are listed in the sheet only while the graph binds them", () => {
+    const r = graph();
+    expect(r.sheet().find((g) => g.scope === "graph")).toBeUndefined();
+    const offs = ["graph.find", "graph.open", "graph.zoomOut"].map((id) =>
+      r.bind(id, { current: () => undefined }),
+    );
+    const listed = r.sheet().find((g) => g.scope === "graph");
+    expect(listed?.name).toBe("Graph");
+    expect(listed?.items.map((s) => s.id)).toEqual([
+      "graph.find",
+      "graph.open",
+      "graph.clear",
+      "graph.fit",
+      "graph.zoomIn",
+      "graph.zoomOut",
+    ]);
+    for (const off of offs) off();
+    expect(r.sheet().find((g) => g.scope === "graph")).toBeUndefined();
+  });
+
+  it('leave "/" and "-" to a typing field', () => {
+    const r = graph();
+    const log: string[] = [];
+    bind(r, "graph.find", log);
+    bind(r, "graph.zoomOut", log);
+    expect(r.handle(press("/", { target: input }))).toBe(false);
+    expect(r.handle(press("-", { target: input }))).toBe(false);
+    expect(r.handle(press("-"))).toBe(true);
+    expect(r.handle(press("/"))).toBe(true);
+    expect(log).toEqual(["graph.zoomOut", "graph.find"]);
+  });
+
+  it("pass Enter on when the action declines it", () => {
+    const r = graph();
+    r.bind("graph.open", { current: () => false });
+    const e = press("Enter");
+    expect(r.handle(e)).toBe(false);
+    expect(e.prevented).toBe(false);
+  });
+});
+
 describe("the sheet", () => {
   it("lists the app's keys and the keys menus and dialogs handle, wherever it opens", () => {
     const r = registry();
@@ -180,6 +237,8 @@ describe("the sheet", () => {
     for (const s of keys.all()) {
       expect(s.label.length).toBeGreaterThan(0);
       expect(s.keys.length).toBeGreaterThan(0);
+      // Each can be written out for the sheet, Space and the minus key among them.
+      for (const k of s.keys) expect(displayKey(k, false)).not.toBe("");
     }
     const listed = new Set(keys.all().map((s) => s.id));
     for (const id of ["app.switcher", "app.keys", "editor.bold", "editor.done", "table.next"]) {

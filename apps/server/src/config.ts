@@ -58,6 +58,11 @@ export interface Config {
    * so the tests can serve one. Off by default, and refused in production.
    */
   imageFetchAllowLoopback: boolean;
+  /**
+   * False when `FRONTIER_SERVICE_WORKER=off`: `/sw.js` then answers the kill worker, which removes
+   * the app's service worker from every browser that has it.
+   */
+  serviceWorker: boolean;
 }
 
 type Env = Record<string, string | undefined>;
@@ -180,6 +185,7 @@ export function loadConfig(env: Env = process.env): Config {
       "",
     ),
     imageFetchAllowLoopback,
+    serviceWorker: optional("FRONTIER_SERVICE_WORKER")?.toLowerCase() !== "off",
     commitAuthor,
     commitBot,
     backup,

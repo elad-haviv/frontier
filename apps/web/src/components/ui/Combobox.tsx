@@ -47,7 +47,10 @@ export function Combobox({
    * passed here, and `options` are shown as they come, with no second filtering.
    */
   onSearch?: (typed: string) => void;
-  /** With `onOpenChange`, opens and closes the list from outside, such as from a menu. */
+  /**
+   * Whether the list is open, for a list opened from elsewhere, such as a menu's "Move to…" or
+   * the link tool. Without it the list opens and closes by itself.
+   */
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
   /** Shown on the button while nothing is chosen. */

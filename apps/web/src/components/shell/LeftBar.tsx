@@ -12,6 +12,7 @@ import {
   Plus,
   ScrollText,
   Search,
+  Waypoints,
 } from "lucide-react";
 import { type ReactNode, useState } from "react";
 import { Link, NavLink } from "react-router-dom";
@@ -31,6 +32,7 @@ import "./LeftBar.css";
 export const PLACES: { to: string; label: string; icon: LucideIcon }[] = [
   { to: "/maps", label: "Maps", icon: MapIcon },
   { to: "/chronicles", label: "Chronicles", icon: ScrollText },
+  { to: "/graph", label: "Graph", icon: Waypoints },
   { to: "/gallery", label: "Gallery", icon: Images },
   { to: "/ask", label: "Ask", icon: MessagesSquare },
 ];

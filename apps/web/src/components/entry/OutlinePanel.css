@@ -1,0 +1,52 @@
+/* The Outline tab: the headings as a quiet list, the one reached marked with the accent. */
+.outline-panel ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 1px;
+}
+
+.outline-link {
+  display: block;
+  width: 100%;
+  padding: var(--space-1) var(--space-2);
+  border: 0;
+  border-left: 2px solid transparent;
+  border-radius: 0 4px 4px 0;
+  background: none;
+  color: var(--ink-soft);
+  font: inherit;
+  font-size: 0.9rem;
+  line-height: 1.35;
+  text-align: left;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+.outline-link:hover {
+  color: var(--ink);
+  background: color-mix(in srgb, var(--accent-soft) 50%, transparent);
+}
+.outline-link[aria-current="location"] {
+  color: var(--ink);
+  font-weight: 600;
+  border-left-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.outline-level-1 .outline-link {
+  font-family: var(--serif);
+  font-size: 0.95rem;
+}
+.outline-level-2 .outline-link {
+  padding-left: calc(var(--space-2) + 0.9rem);
+}
+.outline-level-3 .outline-link {
+  padding-left: calc(var(--space-2) + 1.8rem);
+  font-size: 0.85rem;
+}
+
+.outline-empty {
+  margin: 0;
+  font-size: 0.9rem;
+}
