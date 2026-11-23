@@ -250,6 +250,42 @@ const keptCount = () => t.services.status.snapshot().attention.keptCopies;
 describe("saves that say what they started from", () => {
   const HARBOR = "01 Places/Harbor/Harbor.md";
 
+  it("a device's first save, begun offline after another saved a version, is kept beside it", async () => {
+    // The phone opens Harbor and loses its connection before its first save reaches the server.
+    const opened = await entryOf(HARBOR);
+    const phoneText = opened.text + "\nBegun offline on the phone.\n";
+    // At home, the laptop edits Harbor and saves a version.
+    const laptopText = opened.text + "Written at home.\n";
+    const laptop = await send(LAPTOP, {
+      id: "laptopdraft2",
+      path: HARBOR,
+      text: laptopText,
+      revision: 0,
+      baseBlob: opened.blob,
+      op: "laptopop0002",
+    });
+    expect(laptop.res.statusCode).toBe(200);
+    const p = await plan([laptop.body.id]);
+    expect((await confirm(p.planId, [], "Harbor, from home")).statusCode).toBe(200);
+    expect(mainText(HARBOR)).toBe(laptopText);
+
+    // The phone's first save still names the older text it started from, so it is kept, not built on.
+    const phone = await send(PHONE, {
+      id: "phonedraft02",
+      path: HARBOR,
+      text: phoneText,
+      revision: 0,
+      baseBlob: opened.blob,
+      op: "phoneop00003",
+    });
+    expect(phone.res.statusCode).toBe(409);
+    expect(phone.body.error).toMatchObject({ code: "stale_revision", id: "phonedraft02" });
+    const versions = await versionsOf("phonedraft02");
+    expect(versions.current.text).toBe(laptopText);
+    expect(versions.others.map((o) => o.text)).toEqual([phoneText]);
+    expect(keptCount()).toBe(1);
+  });
+
   it("CUJ 3: a phone's save after the laptop's draft was saved as a version is kept beside it", async () => {
     // The laptop hears of every new snapshot, as an open page does through the stream.
     const heard: StatusSnapshot[] = [];
@@ -531,7 +567,7 @@ describe("saves that say what they started from", () => {
       409,
     );
     expect((await versionsOf(id)).others.map((o) => o.device)).toEqual(["unknown"]);
-    // With a revision of 0 the draft builds on the library file, whatever it started from.
+    // A first save (revision 0) that started from other text than the library's is kept too.
     const fresh = await send(PHONE, {
       id: newId(),
       path: "02 People/Shade.md",
@@ -539,7 +575,15 @@ describe("saves that say what they started from", () => {
       revision: 0,
       baseBlob: "not-the-blob",
     });
-    expect(fresh.res.statusCode).toBe(200);
+    expect(fresh.res.statusCode).toBe(409);
+    // Without a blob (an older build), a first save builds on the library file, as before.
+    const older = await send(null, {
+      id: newId(),
+      path: "02 People/Twin.md",
+      text: "t\n",
+      revision: 0,
+    });
+    expect(older.res.statusCode).toBe(200);
   });
 
   it("refuses a device header that is not a device id, and cuts a long name", async () => {

@@ -337,13 +337,15 @@ export class DraftStore {
     if (existing && input.op !== undefined && existing.lastOp === input.op) return existing;
     const op = input.op !== undefined ? { lastOp: input.op } : {};
     if (!existing) {
-      if (input.revision !== 0) {
-        if (input.baseBlob === undefined) {
-          throw new ApiError("invalid", "This draft is not known to the server. Reload the page.");
-        }
-        if (input.baseBlob !== published.blob) {
-          // The draft this device knew of was saved as a version or discarded, and the file has
-          // moved on since. The draft starts from the library's text; the device's text is kept.
+      if (input.revision !== 0 && input.baseBlob === undefined) {
+        throw new ApiError("invalid", "This draft is not known to the server. Reload the page.");
+      }
+      {
+        if (input.baseBlob !== undefined && input.baseBlob !== published.blob) {
+          // The file has moved on since this device read it: another device saved a version of it,
+          // or the draft this device knew of was saved or discarded. This holds for a device's
+          // first save too (revision 0), as when it began editing offline. The draft starts from
+          // the library's text; the device's text is kept beside it.
           const record: DraftRecord = {
             id: input.id,
             revision: 1,

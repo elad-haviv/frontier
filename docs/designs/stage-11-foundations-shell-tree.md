@@ -292,7 +292,8 @@ sends `baseBlob` and `op`, and a device header (section 1, "Device").
 
 | Draft on the server | Sent revision | `baseBlob` | Result |
 | --- | --- | --- | --- |
-| none | 0 | any | a new draft, based on the current library file (today's behaviour) |
+| none | 0 | equals the library file's hash, or missing | a new draft, based on the current library file (today's behaviour) |
+| none | 0 | differs (the device began editing, perhaps offline, before another device saved a version) | as the "differs" row below: a draft of the library text, this text kept as the device's copy, `stale_revision` |
 | none | above 0 | equals the library file's hash | a new draft from this text (the old draft was discarded elsewhere) |
 | none | above 0 | differs, or the file was deleted or moved | a draft holding the current library text, with this text as the device's kept copy; answer `stale_revision` |
 | none | above 0 | missing (an older build) | `invalid`, as today |
