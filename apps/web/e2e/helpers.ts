@@ -141,12 +141,15 @@ export async function openMenu(page: Page, name: string): Promise<void> {
 /** On a phone, opens the side bar's drawer; on a desktop the side bar is always there. */
 export async function openSideBar(page: Page): Promise<void> {
   const menu = page.getByRole("button", { name: "Open the side bar", exact: true });
+  const unfold = page.getByRole("button", { name: "Unfold the side bar", exact: true });
+  const fold = page.getByRole("button", { name: "Fold the side bar", exact: true });
+  // Wait until the shell has drawn one of its three states; checking at once can run before it.
+  await expect(menu.or(unfold).or(fold).first()).toBeVisible();
   if (await menu.isVisible()) {
     await menu.click();
     await expect(page.getByRole("dialog", { name: "Side bar" })).toBeVisible();
   } else {
     // A folded side bar is unfolded, so the folders show.
-    const unfold = page.getByRole("button", { name: "Unfold the side bar", exact: true });
     if (await unfold.isVisible()) await unfold.click();
   }
 }
