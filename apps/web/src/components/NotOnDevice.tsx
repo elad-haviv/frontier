@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { Link } from "react-router-dom";
 import { api, entryUrl } from "../api.ts";
 import { useConnection } from "../sync/connection.ts";
+import { usePageTitle } from "./shell/panels.tsx";
 import { useAsync } from "../useAsync.ts";
 import "./OfflineCopy.css";
 
@@ -21,6 +22,7 @@ export function NotOnDevice({ path, onConnected }: { path: string; onConnected?:
   }, [state]);
 
   const name = nameOf(path);
+  usePageTitle(name);
   const folder = path.split("/").slice(0, -1).join(" › ");
   let out: string[] = [];
   let into: string[] = [];

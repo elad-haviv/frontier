@@ -107,6 +107,8 @@ export class MapRenderer {
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
       this.textures.set(id, texture);
       this.loading.delete(id);
+      // How many images are drawn, for the browser tests, which cannot read the canvas.
+      this.canvas.dataset["images"] = String(this.textures.size);
       this.onReady();
     };
     image.onerror = () => this.loading.delete(id);

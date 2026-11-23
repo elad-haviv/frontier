@@ -10,5 +10,7 @@ setup("log in", async ({ page }) => {
   await page.fill("#password", PASSWORD);
   await page.click("button[type=submit]");
   await expect(page.locator(".entry h1").first()).toBeVisible();
+  // The tests run as an iPhone in Safari: the card about the Home Screen, shown once, was seen.
+  await page.evaluate(() => localStorage.setItem("frontier.installNotice", "1"));
   await page.context().storageState({ path: AUTH_FILE });
 });

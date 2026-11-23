@@ -74,7 +74,11 @@ export function App() {
 
   // Signed in, signed in with the server out of reach, or the login page (`offline/start.ts`).
   const check = useCallback(() => {
-    void openApp({ session: api.session, store: queue, connection }).then(setLoggedIn);
+    void openApp({ session: api.session, store: queue, connection }).then((signedIn) => {
+      // Before any page reads: their reads are kept on this device from the first one.
+      if (signedIn) startDeviceCopy();
+      setLoggedIn(signedIn);
+    });
   }, []);
   useEffect(check, [check]);
 
@@ -86,8 +90,6 @@ export function App() {
     connection.start();
     void queue.start();
     void updates.register();
-    // Reads are kept on this device, and answered from it when the server cannot be reached.
-    startDeviceCopy();
     return () => connection.stop();
   }, [loggedIn]);
 
@@ -102,6 +104,8 @@ export function App() {
             <Login
               onLoggedIn={() => {
                 void noteSignedIn(queue);
+                // Reads are kept on this device, and answered from it when the server cannot be reached.
+                startDeviceCopy();
                 setLoggedIn(true);
               }}
             />

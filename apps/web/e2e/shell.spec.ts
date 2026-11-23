@@ -204,15 +204,17 @@ test("CUJ 6: with the server out of reach the mark says so, and the page does no
   await context.setOffline(true);
   await page.locator(".prose").getByRole("link", { name: "Old Quay" }).click();
 
-  // The mark says "Not connected", with Retry; the next page says why it is empty.
+  // The mark says "Not connected", with Retry; the next page, not on this device, says so.
   const mark = page.locator(".connection.is-offline").first();
   await expect(mark).toContainText("Not connected", { timeout: 15_000 });
-  await expect(page.locator(".ui-problem")).toContainText("Can't reach Frontier");
+  await expect(page.locator(".not-on-device")).toContainText(
+    "Old Quay is not on this device. It opens when you are connected.",
+  );
   await expect(page.locator(".content")).not.toBeEmpty();
 
+  // Once connected, it opens by itself.
   await context.setOffline(false);
-  await page.locator(".ui-problem").getByRole("button", { name: "Retry" }).click();
-  await expect(page.locator(".entry h1").first()).toHaveText("Old Quay");
+  await expect(page.locator(".entry h1").first()).toHaveText("Old Quay", { timeout: 15_000 });
   await expect(page.locator(".connection.is-offline")).toHaveCount(0, { timeout: 15_000 });
 });
 

@@ -1633,11 +1633,9 @@ button.big {
   vertical-align: -0.15em;
 }
 .device-notice {
-  position: fixed;
-  inset: auto 1rem 1rem;
-  z-index: var(--layer-toast);
-  max-width: 28rem;
-  margin: 0 auto;
+  max-width: 40rem;
+  margin: 0.5rem auto;
+  padding: 0 1rem;
 }
 .db-closed {
   position: fixed;
