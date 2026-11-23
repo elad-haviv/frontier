@@ -328,3 +328,48 @@ describe("applying a folder's type", () => {
     expect((await t.post("/api/folders/apply-type", { path: "03 Things" })).statusCode).toBe(400);
   });
 });
+
+describe("the other side of a folder line clash (stage 15c)", () => {
+  const keptCount = () => t.services.status.snapshot().attention.keptCopies;
+
+  it("keeps the replaced folder file, made from the library's copy when it has no draft", async () => {
+    // The file is in the library, with no draft.
+    expect(
+      (await save({ version: 1, folders: [{ path: "A", color: "ember" }] }, 0)).statusCode,
+    ).toBe(200);
+    expect((await publishAll()).res.statusCode).toBe(200);
+    const published = await load();
+    expect(published.revision).toBe(0);
+    const before = keptCount();
+    const res = await save({ version: 1, folders: [{ path: "A", color: "sea" }] }, 0, {
+      baseBlob: published.blob,
+      clashes: ["A"],
+    });
+    expect(res.statusCode, res.body).toBe(200);
+    const draft = t.services.drafts.byPath(FOLDER_FILE)!;
+    expect(res.json().kept).toBe(draft.id);
+    expect(keptCount()).toBe(before + 1);
+    const versions = (await t.get(`/api/drafts/${draft.id}/versions`)).json();
+    expect(versions).toMatchObject({ path: FOLDER_FILE });
+    expect(versions.others[0]).toMatchObject({ source: "server", clashes: ["A"] });
+    const kept = parseFolders(versions.others[0].text);
+    expect(kept.ok && kept.file.folders).toEqual([{ path: "A", color: "ember" }]);
+
+    // A second clash on another line keeps the first line's other side as it was.
+    const now = await load();
+    const res2 = await save(
+      { version: 1, folders: [{ path: "A", color: "moss" }, { path: "B" }] },
+      now.revision,
+      { clashes: ["B"] },
+    );
+    expect(res2.json().kept).toBe(draft.id);
+    const again = (await t.get(`/api/drafts/${draft.id}/versions`)).json();
+    expect(again.others[0].clashes).toEqual(["A", "B"]);
+    const both = parseFolders(again.others[0].text);
+    expect(both.ok && both.file.folders).toEqual([{ path: "A", color: "ember" }]);
+
+    // Dismissed, the count goes down.
+    expect((await t.del(`/api/drafts/${draft.id}/versions/server`)).statusCode).toBe(200);
+    expect(keptCount()).toBe(before);
+  });
+});

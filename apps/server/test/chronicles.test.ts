@@ -404,3 +404,52 @@ describe("linking a span to an entry", () => {
     expect(res.json().chronicle.spans[0].entry).toBeNull();
   });
 });
+
+describe("the other side of a span clash (stage 15c)", () => {
+  const keptCount = () => t.services.status.snapshot().attention.keptCopies;
+
+  it("keeps the replaced chronicle beside its draft, with or without a draft, and answers kept", async () => {
+    const id = await create();
+    const first = await load(id);
+    const lane = first.chronicle.lanes[0]!.id;
+    const withSpan = { ...first.chronicle, spans: [span("founding", lane)] };
+    expect((await save(id, withSpan, first.revision)).statusCode).toBe(200);
+    // The other device renamed the span; the phone's merge keeps its own name.
+    const theirs = await load(id);
+    const renamed = { ...withSpan, spans: [span("founding", lane, { name: "The founding" })] };
+    expect((await save(id, renamed, theirs.revision)).statusCode).toBe(200);
+    const before = keptCount();
+    const now = await load(id);
+    const res = await t.put(`/api/chronicles/${id}`, {
+      chronicle: { ...withSpan, spans: [span("founding", lane, { note: "Phone" })] },
+      revision: now.revision,
+      link: [],
+      clashes: ["founding"],
+    });
+    expect(res.statusCode, res.body).toBe(200);
+    const draft = t.services.drafts.byPath(file(id))!;
+    expect(res.json().kept).toBe(draft.id);
+    expect(keptCount()).toBe(before + 1);
+    const versions = (await t.get(`/api/drafts/${draft.id}/versions`)).json();
+    expect(versions.others[0]).toMatchObject({ source: "server", clashes: ["founding"] });
+    const kept = parseChronicle(versions.others[0].text);
+    expect(kept.ok && kept.chronicle.spans[0]!.name).toBe("The founding");
+
+    // Saved as a version, it has no draft: the library's copy is the other side.
+    expect((await saveVersion()).res.statusCode).toBe(200);
+    expect(keptCount()).toBe(before);
+    const published = await load(id);
+    const again = await t.put(`/api/chronicles/${id}`, {
+      chronicle: { ...published.chronicle, title: "Phone title" },
+      revision: 0,
+      link: [],
+      baseBlob: published.blob,
+      clashes: ["title"],
+    });
+    expect(again.statusCode, again.body).toBe(200);
+    const made = t.services.drafts.byPath(file(id))!;
+    expect(again.json().kept).toBe(made.id);
+    const copy = (await t.get(`/api/drafts/${made.id}/versions`)).json();
+    expect(copy.others[0].text).toBe(serialiseChronicle(published.chronicle));
+  });
+});

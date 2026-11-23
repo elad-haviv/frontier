@@ -387,6 +387,8 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
     },
     onPushed: (commit) => quarantine.notePushed(commit),
     onRenamed: async (from, to) => {
+      // A device still holding the old path is told where its changes go (stage 15c).
+      await drafts.noteRenamed(from, to);
       await proposals.renamed(from, to);
       await comments.renamed(from, to);
     },

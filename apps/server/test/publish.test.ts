@@ -169,12 +169,13 @@ describe("drafts", () => {
     expect(t.services.drafts.list()).toHaveLength(1);
   });
 
-  it("rejects a revision from the future and a draft that changes file", async () => {
+  it("rejects a revision from the future, and keeps a save for a draft now at another path there", async () => {
     const first = await save(MIRA, "one\n");
     expect((await save(MIRA, "x\n", { id: first.id, revision: 5 })).res.statusCode).toBe(400);
-    expect(
-      (await save("02 People/Shade.md", "x\n", { id: first.id, revision: 1 })).res.statusCode,
-    ).toBe(400);
+    // The draft is at Mira now, as after a move elsewhere: the text is kept beside it (15c).
+    const moved = await save("02 People/Shade.md", "x\n", { id: first.id, revision: 1 });
+    expect(moved.res.json().error).toMatchObject({ code: "stale_revision", id: first.id });
+    expect(t.services.drafts.byPath("02 People/Shade.md")).toBeUndefined();
     expect((await save("02 People/Shade.md", "x\n", { revision: 3 })).res.statusCode).toBe(400);
   });
 
@@ -417,10 +418,16 @@ describe("saves that say what they started from", () => {
       revision: 2,
       baseBlob: opened.blob,
     });
-    expect(res.body.error).toMatchObject({ code: "stale_revision", id });
-    // The library has nothing here: the draft is a new file, empty until merged.
-    expect(t.services.drafts.get(id)).toMatchObject({ kind: "create", baseBlob: "" });
-    expect((await versionsOf(id)).others[0]!.text).toBe("Mine, kept.\n");
+    // With no rename to follow, the text the phone started from comes back beside its own, at a
+    // path of its own (15c), and the old path is not brought back.
+    const recovered = "03 Things/Plain (from Safari on iPhone).md";
+    const kept = t.services.drafts.byPath(recovered)!;
+    expect(res.body.error).toMatchObject({ code: "stale_revision", id: kept.id });
+    expect(kept).toMatchObject({ kind: "create", baseBlob: "" });
+    expect(t.services.drafts.byPath(plain)).toBeUndefined();
+    const versions = await versionsOf(kept.id);
+    expect(versions.current.text).toBe(opened.text);
+    expect(versions.others[0]!.text).toBe("Mine, kept.\n");
 
     // A note this device made, saved as a version elsewhere and changed there since.
     const made = "01 Places/Saltmother.md";

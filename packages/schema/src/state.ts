@@ -67,8 +67,26 @@ export const KeptCopy = z.object({
   device: z.string(),
   deviceName: z.string(),
   savedAt: z.string().datetime(),
+  /**
+   * `server` for the other side of an item clash in a map, a chronicle or a library item file
+   * (stage 15c): the draft's text that a device's merged save replaced, kept in the slot
+   * `versions/server`. Absent for a device's text.
+   */
+  source: z.literal("server").optional(),
+  /** With `source`: the keys of the items that clashed, such as a feature's id or a folder's path. */
+  clashes: z.array(z.string()).optional(),
 });
 export type KeptCopy = z.infer<typeof KeptCopy>;
+
+/**
+ * `/data/state/drafts/renamed.json` (stage 15c): the renames and moves that reached the library,
+ * newest last, the last 500. A save from a device that still knows the old path is kept at the
+ * new one.
+ */
+export const RenamedLog = z.array(
+  z.object({ from: VaultPath, to: VaultPath, at: z.string().datetime() }),
+);
+export type RenamedLog = z.infer<typeof RenamedLog>;
 
 /** `/data/state/drafts/renames/<id>.json` */
 export const RenameIntent = z.object({

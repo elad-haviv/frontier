@@ -22,8 +22,8 @@ export function libraryFileRoutes(app: FastifyInstance, s: Services): void {
 
   app.put("/api/library-files/:name", async (request) => {
     const { name } = NameParam.parse(request.params);
-    const { file, revision, baseBlob, op } = SaveLibraryFileRequest.parse(request.body);
-    const result = await s.libraryFiles.save(name, file, revision, { baseBlob, op });
+    const { file, revision, baseBlob, op, clashes } = SaveLibraryFileRequest.parse(request.body);
+    const result = await s.libraryFiles.save(name, file, revision, { baseBlob, op, clashes });
     changed();
     return result;
   });

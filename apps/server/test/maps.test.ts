@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
+  DraftVersionsResponse,
   EntryResponse,
   type MapFile,
   parseMap,
@@ -422,5 +423,148 @@ describe("a map changed here and in the vault", () => {
       await t.del(`/api/maps/${id}`);
       await publishAll();
     }
+  });
+});
+
+describe("the other side of an item clash (stage 15c)", () => {
+  const keptCount = () => t.services.status.snapshot().attention.keptCopies;
+  const versionsOf = async (draftId: string) =>
+    DraftVersionsResponse.parse((await t.get(`/api/drafts/${draftId}/versions`)).json());
+  const draftOf = (id: string) => t.services.drafts.byPath(file(id))!;
+
+  async function withLighthouse() {
+    const id = await create();
+    const { map } = await load(id);
+    const layer = map.layers[0]!.id;
+    const res = await save(id, { ...map, features: [marker("lighthouse", layer)] }, 1);
+    expect(res.statusCode, res.body).toBe(200);
+    return { id, layer };
+  }
+
+  it("keeps the replaced side of a map with a draft, answers kept, and unions a second clash", async () => {
+    const { id, layer } = await withLighthouse();
+    // The laptop renames the marker and the map; its save is sent first.
+    const theirs = await load(id);
+    const laptop = {
+      ...theirs.map,
+      title: "Coast",
+      features: [{ ...marker("lighthouse", layer), label: "Old Light" }],
+    };
+    expect((await save(id, laptop, theirs.revision)).statusCode).toBe(200);
+    const before = keptCount();
+
+    // The phone moved it; its queue merged and keeps its own side of the marker.
+    const merged = await load(id);
+    const phone = { ...merged.map, features: [marker("lighthouse", layer, [40, 50])] };
+    const res = await t.put(`/api/maps/${id}`, {
+      map: phone,
+      revision: merged.revision,
+      link: [],
+      clashes: ["lighthouse"],
+    });
+    expect(res.statusCode, res.body).toBe(200);
+    const draft = draftOf(id);
+    expect(res.json().kept).toBe(draft.id);
+    expect(keptCount()).toBe(before + 1);
+    const versions = await versionsOf(draft.id);
+    expect(versions.path).toBe(file(id));
+    expect(versions.others).toHaveLength(1);
+    expect(versions.others[0]).toMatchObject({
+      device: "server",
+      source: "server",
+      clashes: ["lighthouse"],
+    });
+    const kept = parseMap(versions.others[0]!.text);
+    expect(kept.ok && kept.map.features[0]!.label).toBe("Old Light");
+    expect(parseMap(versions.current.text).ok).toBe(true);
+
+    // A later clash on the title: the earlier item's other side stays as it was kept.
+    const now = await load(id);
+    const laptop2 = {
+      ...now.map,
+      title: "Coast, again",
+      features: [{ ...marker("lighthouse", layer), label: "Newer label" }],
+    };
+    expect((await save(id, laptop2, now.revision)).statusCode).toBe(200);
+    const next = await load(id);
+    const second = await t.put(`/api/maps/${id}`, {
+      map: { ...next.map, title: "Phone title" },
+      revision: next.revision,
+      link: [],
+      clashes: ["title"],
+    });
+    expect(second.json().kept).toBe(draft.id);
+    const again = await versionsOf(draft.id);
+    expect(again.others[0]!.clashes).toEqual(["lighthouse", "title"]);
+    const both = parseMap(again.others[0]!.text);
+    expect(both.ok && both.map.features[0]!.label).toBe("Old Light");
+    expect(both.ok && both.map.title).toBe("Coast, again");
+    expect(keptCount()).toBe(before + 1);
+
+    // Saving the draft as a version is not held back by it, and clears it.
+    await publishAll();
+    expect(keptCount()).toBe(before);
+  });
+
+  it("makes the draft first from the library's copy for a map with no draft", async () => {
+    const { id, layer } = await withLighthouse();
+    await publishAll();
+    const published = await load(id);
+    expect(published.revision).toBe(0);
+    const res = await t.put(`/api/maps/${id}`, {
+      map: { ...published.map, features: [marker("lighthouse", layer, [1, 2])] },
+      revision: 0,
+      link: [],
+      baseBlob: published.blob,
+      clashes: ["lighthouse"],
+    });
+    expect(res.statusCode, res.body).toBe(200);
+    const draft = draftOf(id);
+    expect(res.json()).toMatchObject({ kept: draft.id, revision: 2 });
+    const versions = await versionsOf(draft.id);
+    expect(versions.others[0]!.text).toBe(t.repo.remoteFile(file(id)));
+  });
+
+  it("keeps nothing for a save without clashes, as from an older build, and repeats kept for a resend", async () => {
+    const { id, layer } = await withLighthouse();
+    const now = await load(id);
+    const plain = await save(id, { ...now.map, title: "Plain" }, now.revision);
+    expect(plain.json().kept).toBeUndefined();
+    expect(t.services.drafts.hasKeptCopies(draftOf(id).id)).toBe(false);
+
+    const body = {
+      map: { ...now.map, features: [marker("lighthouse", layer, [3, 4])] },
+      revision: now.revision + 1,
+      link: [],
+      clashes: ["lighthouse"],
+      op: "clashop00001",
+    };
+    const first = await t.put(`/api/maps/${id}`, body);
+    expect(first.statusCode, first.body).toBe(200);
+    const repeat = await t.put(`/api/maps/${id}`, body);
+    expect(repeat.json()).toMatchObject({
+      kept: first.json().kept,
+      revision: first.json().revision,
+    });
+  });
+
+  it("dismisses the kept copy, which lowers the attention count", async () => {
+    const { id, layer } = await withLighthouse();
+    const now = await load(id);
+    await t.put(`/api/maps/${id}`, {
+      map: { ...now.map, features: [marker("lighthouse", layer, [5, 6])] },
+      revision: now.revision,
+      link: [],
+      clashes: ["lighthouse"],
+    });
+    const draft = draftOf(id);
+    const before = keptCount();
+    const res = await t.del(`/api/drafts/${draft.id}/versions/server`);
+    expect(res.statusCode, res.body).toBe(200);
+    expect(keptCount()).toBe(before - 1);
+    expect((await t.get(`/api/drafts/${draft.id}/versions`)).statusCode).toBe(404);
+    expect((await t.del(`/api/drafts/zzzzzzzzzzzz/versions/server`)).statusCode).toBe(404);
+    // The draft itself stays.
+    expect(draftOf(id).id).toBe(draft.id);
   });
 });

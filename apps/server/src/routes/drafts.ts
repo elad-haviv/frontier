@@ -11,10 +11,11 @@ import {
   SaveDraftRequest,
   type UnpublishedResponse,
 } from "@frontier/schema";
-import { extension, isEditable, isExcluded, isNote } from "@frontier/vault";
+import { extension, isEditable, isExcluded, isNote, stem } from "@frontier/vault";
 import { z } from "zod";
 import { ApiError } from "../errors.js";
-import { type Device, UNKNOWN_DEVICE } from "../state/drafts.js";
+import { movedPath } from "../publish/publish.js";
+import { type Device, SERVER_SLOT, UNKNOWN_DEVICE } from "../state/drafts.js";
 import type { Services } from "../app.js";
 
 const IdParam = z.object({ id: Id });
@@ -96,20 +97,163 @@ export function draftRoutes(app: FastifyInstance, s: Services): void {
     }
   }
 
-  app.put("/api/drafts", async (request) => {
-    const input = SaveDraftRequest.parse(request.body);
-    const device = deviceOf(request);
+  /** Whether a path holds an entry now: published, or as a draft that is not a delete. */
+  const taken = (path: string) =>
+    s.index.note(path) !== undefined ||
+    (s.drafts.byPath(path) !== undefined && s.drafts.byPath(path)!.kind !== "delete");
+
+  /**
+   * Where a rename or move recorded on the server took `path`: a pending rename intent from it or
+   * from a folder above it, then the renames that reached the library, in the order they did.
+   * Null when none did.
+   */
+  function renamedTo(path: string): string | null {
+    let now = path;
+    for (const r of [...s.drafts.renamedLog(), ...s.drafts.listRenames()]) {
+      now = movedPath(now, r.from, r.to) ?? now;
+    }
+    return now === path ? null : now;
+  }
+
+  /** What a draft made at `path` starts from: the library's text, or a new entry's heading. */
+  async function startAt(path: string) {
+    const note = s.index.note(path);
+    if (note) {
+      return {
+        kind: "edit" as const,
+        text: note.text,
+        baseBlob: (await s.git.blobHash(path)) ?? "",
+        lineEnding: note.lineEnding === "crlf" ? ("crlf" as const) : ("lf" as const),
+      };
+    }
+    return {
+      kind: "create" as const,
+      text: `# ${stem(path)}\n\n`,
+      baseBlob: "",
+      lineEnding: "lf" as const,
+    };
+  }
+
+  /** Whether the server may write a kept copy's draft at `path`. */
+  const writable = (path: string) =>
+    extension(path) === "md" &&
+    !isExcluded(path) &&
+    isEditable(path) &&
+    s.index.note(path)?.lineEnding !== "mixed";
+
+  /**
+   * A path for an entry whose own path is gone with no rename to follow: `<folder>/<name> (from
+   * <device>).md`, with a number added while that is taken.
+   */
+  function recoveredPath(path: string, device: Device): string {
+    const folder = path.includes("/") ? path.slice(0, path.lastIndexOf("/") + 1) : "";
+    const from = device.name
+      .replace(/[\\/:*?"<>|#^[\]]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+    const base = `${stem(path)} (from ${from || "another device"})`;
+    const free = (p: string) => !taken(p) && caseTwin(p) === null;
+    let n = 1;
+    let out = `${folder}${base}.md`;
+    while (!free(out)) out = `${folder}${base} ${++n}.md`;
+    return out;
+  }
+
+  /** An entry, published or a draft, whose path is `path` when letter case is ignored. */
+  function caseTwin(path: string): string | null {
+    const lower = path.toLowerCase();
+    for (const note of s.index.allNotes()) {
+      if (note.path !== path && note.path.toLowerCase() === lower) return note.path;
+    }
+    for (const d of s.drafts.list()) {
+      if (d.binary || d.kind === "delete" || d.path === path) continue;
+      if (d.path.toLowerCase() === lower) return d.path;
+    }
+    return null;
+  }
+
+  /** Whether a folder holds anything now, in the library or as a draft. */
+  const folderHolds = (folder: string) =>
+    s.index.files.some((f) => f.startsWith(folder + "/")) ||
+    s.drafts.list().some((d) => d.path.startsWith(folder + "/"));
+
+  /**
+   * Saves an entry that another device may have changed under this one (stage 15c). A new entry
+   * whose path, or the same path in other letter case, was taken meanwhile, and an edit of an
+   * entry renamed or moved elsewhere, end as this device's kept copy beside the draft where the
+   * entry is now, never refused and never brought back at the old path.
+   */
+  async function saveEntry(input: SaveDraftRequest, device: Device) {
+    const text = input.kind === "delete" ? "" : input.text.replace(/\r\n/g, "\n");
+    const sent = { ...input, text };
+    const known = s.drafts.get(input.id);
+    // The draft this device knew is at another path now: moved with its folder, or renamed.
+    if (known && !known.binary && known.path !== input.path) {
+      if (input.kind === "delete") {
+        throw new ApiError(
+          "not_allowed",
+          `Moved to "${known.path}" on another device; delete it there.`,
+        );
+      }
+      return s.drafts.save(sent, await check(known.path, "edit", true), device);
+    }
+    if (!taken(input.path) && extension(input.path) === "md" && !isExcluded(input.path)) {
+      if (input.kind === "create") {
+        // The same name in other letter case: one library cannot hold both on every system.
+        const twin = caseTwin(input.path);
+        if (twin !== null && writable(twin)) {
+          return s.drafts.keepBeside(twin, await startAt(twin), text, device);
+        }
+        // A new entry in a folder renamed or moved elsewhere goes where the folder went.
+        const folder = input.path.slice(0, Math.max(0, input.path.lastIndexOf("/")));
+        const target = folder && !folderHolds(folder) ? renamedTo(input.path) : null;
+        if (target !== null && writable(target)) {
+          return s.drafts.keepBeside(target, await startAt(target), text, device);
+        }
+      } else if (input.baseBlob !== undefined && input.baseBlob !== "") {
+        // An entry this device read is gone from its path: renamed or moved, or deleted.
+        const target = renamedTo(input.path);
+        if (input.kind === "delete") {
+          if (target !== null) {
+            throw new ApiError(
+              "not_allowed",
+              `Moved to "${target}" on another device; delete it there.`,
+            );
+          }
+        } else if (target !== null && taken(target) && writable(target)) {
+          return s.drafts.keepBeside(target, await startAt(target), text, device);
+        } else {
+          // No rename to follow: the text the device started from comes back beside its own.
+          const started = await s.git.readBlob(input.baseBlob);
+          return s.drafts.keepBeside(
+            recoveredPath(input.path, device),
+            {
+              kind: "create",
+              text: started === null ? "" : started.toString("utf8").replace(/\r\n/g, "\n"),
+              baseBlob: "",
+              lineEnding: "lf",
+            },
+            text,
+            device,
+          );
+        }
+      }
+    }
+    // A save that says what it started from may be stale: a new entry made offline too, whose
+    // path may have been taken meanwhile. Its text is then kept beside the library's.
     const published = await check(
       input.path,
       input.kind,
-      input.revision > 0 && input.baseBlob !== undefined,
+      input.baseBlob !== undefined && (input.revision > 0 || input.kind === "create"),
     );
+    return s.drafts.save(sent, published, device);
+  }
+
+  app.put("/api/drafts", async (request) => {
+    const input = SaveDraftRequest.parse(request.body);
+    const device = deviceOf(request);
     try {
-      const record = await s.drafts.save(
-        { ...input, text: input.kind === "delete" ? "" : input.text.replace(/\r\n/g, "\n") },
-        published,
-        device,
-      );
+      const record = await saveEntry(input, device);
       return { id: record.id, revision: record.revision };
     } finally {
       // A kept copy raises the attention count, so every open page hears of it too.
@@ -127,6 +271,15 @@ export function draftRoutes(app: FastifyInstance, s: Services): void {
   app.get("/api/drafts/:id/versions", async (request) => {
     const { id } = IdParam.parse(request.params);
     return s.drafts.versions(id);
+  });
+
+  /** Dismisses the other side of an item clash once the author has looked at it (stage 15c). */
+  app.delete("/api/drafts/:id/versions/server", async (request) => {
+    const { id } = IdParam.parse(request.params);
+    if (!s.drafts.get(id)) throw new ApiError("not_found", "There is no such draft.");
+    await s.drafts.dropKept(id, SERVER_SLOT);
+    s.status.drafts(s.drafts.count(), 0);
+    return { ok: true as const };
   });
 
   app.post("/api/drafts/:id/merge-versions", async (request) => {

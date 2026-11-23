@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import { Id, MapFile, mapPath, VaultPath, versionMark } from "@frontier/schema";
+import { ClashKeys, Id, MapFile, mapPath, VaultPath, versionMark } from "@frontier/schema";
 import { stem } from "@frontier/vault";
 import { z } from "zod";
 import { ApiError } from "../errors.js";
@@ -18,6 +18,8 @@ const Save = z.object({
   /** The blob of the library file the device started from; absent from an older build. */
   baseBlob: z.string().optional(),
   op: Id.optional(),
+  /** The items a merge found changed on both sides (stage 15c): the other side is kept. */
+  clashes: ClashKeys.optional(),
 });
 const Resolve = z.object({ keep: z.enum(["mine", "theirs"]) });
 
@@ -68,8 +70,8 @@ export function mapRoutes(app: FastifyInstance, s: Services): void {
 
   app.put("/api/maps/:id", async (request) => {
     const { id } = IdParam.parse(request.params);
-    const { map, revision, link, baseBlob, op } = Save.parse(request.body);
-    const result = await s.maps.save(id, map, revision, link, { baseBlob, op });
+    const { map, revision, link, baseBlob, op, clashes } = Save.parse(request.body);
+    const result = await s.maps.save(id, map, revision, link, { baseBlob, op, clashes });
     changed();
     return result;
   });

@@ -155,7 +155,7 @@ export class Publisher {
       const bytes = draft.binary
         ? await this.d.drafts.bytes(draft.id)
         : Buffer.from(restoreLineEndings(await this.d.drafts.text(draft.id), draft.lineEnding));
-      if (bytes.equals(onMain) && !this.d.drafts.hasKeptCopies(draft.id)) {
+      if (bytes.equals(onMain) && !this.d.drafts.hasDeviceCopies(draft.id)) {
         await this.d.drafts.discard(draft.id);
       }
     }
@@ -441,7 +441,7 @@ export class Publisher {
       const draft = this.d.drafts.get(id);
       // A draft cleared by the fetch above is already on `main`; it simply drops out of the plan.
       if (!draft) continue;
-      if (this.d.drafts.hasKeptCopies(id)) {
+      if (this.d.drafts.hasDeviceCopies(id)) {
         throw new ApiError(
           "invalid",
           `"${draft.path}" has texts from other devices to compare. Merge them first.`,
