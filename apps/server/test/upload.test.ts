@@ -562,7 +562,9 @@ describe("fetching an image from a web address", () => {
 describe("POST /api/images/from-url", () => {
   let web: TestApp;
   beforeAll(async () => {
-    web = await makeTestApp({ IMAGE_FETCH_ALLOW_LOOPBACK: "1" });
+    // The image server runs on loopback; a PUBLIC_URL of localhost would make it "this server"
+    // wherever the resolver maps localhost to 127.0.0.1, as it does on the CI machines.
+    web = await makeTestApp({ IMAGE_FETCH_ALLOW_LOOPBACK: "1", PUBLIC_URL: "http://192.0.2.10" });
     await web.login();
   });
   afterAll(() => web.close());
