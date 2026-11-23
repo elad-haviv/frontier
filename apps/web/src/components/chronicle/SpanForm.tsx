@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { entryUrl } from "../../api.ts";
-import { EntryPicker } from "../MapPanels.tsx";
+import { EntryPicker } from "../EntryPicker.tsx";
 import type { ChronicleFile, ChronicleSpan, Rough } from "@frontier/schema";
 import {
   type Range,

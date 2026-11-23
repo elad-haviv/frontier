@@ -31,7 +31,7 @@ export interface OverlayInput {
   /** Corner handles are shown while editing. */
   editing: boolean;
   /** How strongly each feature is drawn, and whether with dashes, when the map is seen in time. */
-  styles?: ReadonlyMap<string, { opacity: number; dashed: boolean }>;
+  presence?: ReadonlyMap<string, { opacity: number; dashed: boolean }>;
 }
 
 const INK = "#2a2420";
@@ -114,7 +114,7 @@ export function drawOverlay(ctx: CanvasRenderingContext2D, input: OverlayInput):
 
   /** Sets the strength and the dashes for one feature; `plain` puts them back. */
   const look = (f: MapFeature): { opacity: number; dashed: boolean } => {
-    const style = input.styles?.get(f.id) ?? { opacity: 1, dashed: false };
+    const style = input.presence?.get(f.id) ?? { opacity: 1, dashed: false };
     ctx.globalAlpha = style.opacity;
     ctx.setLineDash(style.dashed ? [7, 5] : []);
     return style;
