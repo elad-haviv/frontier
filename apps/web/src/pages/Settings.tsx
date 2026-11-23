@@ -3,6 +3,8 @@ import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, ApiFailure, entryUrl } from "../api.ts";
 import { useRefresh } from "../components/Shell.tsx";
+import { Problem } from "../components/ui/Problem.tsx";
+import { Progress } from "../components/ui/Progress.tsx";
 import { useAsync } from "../useAsync.ts";
 import { useDialogs } from "../components/Dialogs.tsx";
 
@@ -487,10 +489,20 @@ function FolderRun({ on }: { on: boolean }) {
 
 function Spending() {
   const log = useAsync(() => api.aiLog(), "ai-log");
+  if (log.state === "failed") {
+    return (
+      <section className="settings-block">
+        <h2>AI calls this month</h2>
+        <Problem reason={log.error.message} onRetry={log.retry} />
+      </section>
+    );
+  }
   if (log.state !== "ready" || log.value.calls.length === 0) return null;
   return (
     <section className="settings-block">
       <h2>AI calls this month</h2>
+      {log.reloading && <Progress />}
+      {log.error && <Problem reason={log.error.message} onRetry={log.retry} />}
       <div className="table-scroll">
         <table className="calls">
           <thead>
@@ -519,10 +531,20 @@ function Spending() {
 
 function Schema() {
   const schema = useAsync(() => api.schema(), "schema");
+  if (schema.state === "failed") {
+    return (
+      <section className="settings-block">
+        <h2>Types and dates</h2>
+        <Problem reason={schema.error.message} onRetry={schema.retry} />
+      </section>
+    );
+  }
   if (schema.state !== "ready") return null;
   return (
     <section className="settings-block">
       <h2>Types and dates</h2>
+      {schema.reloading && <Progress />}
+      {schema.error && <Problem reason={schema.error.message} onRetry={schema.retry} />}
       <p className="muted">
         {schema.value.builtIn
           ? "Frontier's built-in list is in use. To change it, save this text in the vault as .frontier/schema.yaml and edit it there."
@@ -549,7 +571,21 @@ export function SettingsPage() {
   }, []);
   useEffect(() => void load(), [load]);
 
-  if (!settings) return <p className="center muted">{error ?? "Loading…"}</p>;
+  if (!settings) {
+    return error ? (
+      <div className="center">
+        <Problem
+          reason={error}
+          onRetry={() => {
+            setError(null);
+            void load();
+          }}
+        />
+      </div>
+    ) : (
+      <p className="center muted">Loading…</p>
+    );
+  }
   const on = settings.ai.keySet && settings.ai.models.extraction !== null;
   return (
     <article className="entry wide settings">

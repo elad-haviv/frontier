@@ -1,7 +1,10 @@
 import { startAuthentication, startRegistration } from "@simplewebauthn/browser";
+import { connection } from "./sync/connection.ts";
+import { randomId } from "./sync/db.ts";
 import type {
   AttentionResponse,
   DraftKind,
+  DraftVersionsResponse,
   EntryResponse,
   ErrorBody,
   FieldJobState,
@@ -31,12 +34,43 @@ export class ApiFailure extends Error {
   draftId?: string;
 }
 
+/** This device, as the save queue knows it; sent with every request once known. */
+let device: { id: string; name: string } | null = null;
+
+export function setDevice(known: { id: string; name: string } | null): void {
+  device = known;
+}
+
+/** Routes that answer without a session, whose answers say nothing about the connection's state. */
+const OPEN = /^\/api\/(session|login|passkeys\/login\/)/;
+
+/** Every request's headers: the device, and its name URI-encoded, since a header holds only ASCII. */
+function headers(init?: RequestInit): HeadersInit | undefined {
+  if (!device) return init?.headers;
+  return {
+    ...(init?.headers as Record<string, string> | undefined),
+    "frontier-device": device.id,
+    "frontier-device-name": encodeURIComponent(device.name),
+  };
+}
+
 async function call<T>(url: string, init?: RequestInit): Promise<T> {
   let res: Response;
+  const watched = !OPEN.test(url);
   try {
-    res = await fetch(url, { credentials: "same-origin", ...init });
+    const h = headers(init);
+    res = await fetch(url, { credentials: "same-origin", ...init, ...(h ? { headers: h } : {}) });
   } catch {
-    throw new ApiFailure(0, "offline", "The server could not be reached. Check your connection.");
+    if (watched) connection.unreachable();
+    throw new ApiFailure(
+      0,
+      "offline",
+      "Can't reach Frontier. Check your connection, then try again.",
+    );
+  }
+  if (watched) {
+    if (res.status === 401) connection.unauthorised();
+    else connection.reached();
   }
   if (res.ok) return (await res.json()) as T;
   let body: ErrorBody | null = null;
@@ -120,18 +154,18 @@ export const api = {
   rename: (from: string, to: string) =>
     post<{ id: string; affected: string[] }>("/api/renames", { from, to }),
 
+  /** Pages save through the queue (`sync/queue.ts`), which calls this. */
   saveDraft: (draft: {
     id: string;
     path: string;
     kind: DraftKind;
     text: string;
     revision: number;
+    baseBlob?: string;
+    op?: string;
   }) => send<{ id: string; revision: number }>("PUT", "/api/drafts", draft),
   discardDraft: (id: string) => send<{ ok: true }>("DELETE", `/api/drafts/${id}`),
-  versions: (id: string) =>
-    call<{ current: { text: string; revision: number }; other: { text: string } }>(
-      `/api/drafts/${id}/versions`,
-    ),
+  versions: (id: string) => call<DraftVersionsResponse>(`/api/drafts/${id}/versions`),
   mergeVersions: (id: string, text: string) =>
     post<{ id: string; revision: number }>(`/api/drafts/${id}/merge-versions`, { text }),
   resolve: (id: string, text: string) =>
@@ -152,16 +186,18 @@ export const api = {
   map: (id: string) => call<LoadedMap>(`/api/maps/${id}`),
   createMap: (title: string, kind: "sphere" | "flat", image: string) =>
     post<{ id: string }>("/api/maps", { title, kind, image }),
+  /** Pages save through the queue (`sync/queue.ts`), which calls this. */
   saveMap: (
     id: string,
     map: MapFile,
     revision: number,
     link: { feature: string; path: string }[],
+    sent: { baseBlob?: string; op?: string } = {},
   ) =>
     send<{ map: MapFile; revision: number; unlinked: { feature: string; reason: string }[] }>(
       "PUT",
       `/api/maps/${id}`,
-      { map, revision, link },
+      { map, revision, link, ...sent },
     ),
   resolveMap: (id: string, keep: "mine" | "theirs") =>
     post<{ ok: true }>(`/api/maps/${id}/resolve`, { keep }),
@@ -178,21 +214,24 @@ export const api = {
       chronicle: ChronicleFile;
       revision: number;
       state: string;
+      blob: string;
       entries: Record<string, { path: string; title: string }>;
     }>(`/api/chronicles/${id}`),
   createChronicle: (title: string) => post<{ id: string }>("/api/chronicles", { title }),
   copyChronicle: (copyOf: string) => post<{ id: string }>("/api/chronicles", { copyOf }),
+  /** Pages save through the queue (`sync/queue.ts`), which calls this. */
   saveChronicle: (
     id: string,
     chronicle: ChronicleFile,
     revision: number,
     link: { span: string; path: string }[] = [],
+    sent: { baseBlob?: string; op?: string } = {},
   ) =>
     send<{
       chronicle: ChronicleFile;
       revision: number;
       unlinked: { span: string; reason: string }[];
-    }>("PUT", `/api/chronicles/${id}`, { chronicle, revision, link }),
+    }>("PUT", `/api/chronicles/${id}`, { chronicle, revision, link, ...sent }),
   makeMainChronicle: (id: string) => post<{ ok: true }>(`/api/chronicles/${id}/main`, {}),
   resolveChronicle: (id: string, keep: "mine" | "theirs") =>
     post<{ ok: true }>(`/api/chronicles/${id}/resolve`, { keep }),
@@ -369,16 +408,7 @@ export const api = {
 };
 
 /** A new draft id: 12 lower-case letters and digits, made in the browser. */
-export function newDraftId(): string {
-  const alphabet = "abcdefghijklmnopqrstuvwxyz0123456789";
-  let out = "";
-  while (out.length < 12) {
-    for (const byte of crypto.getRandomValues(new Uint8Array(12))) {
-      if (byte < 252 && out.length < 12) out += alphabet[byte % 36];
-    }
-  }
-  return out;
-}
+export const newDraftId = randomId;
 
 export function editUrl(path: string): string {
   return "/edit/" + path.split("/").map(encodeURIComponent).join("/");
@@ -405,6 +435,8 @@ export interface LoadedMap {
   map: MapFile;
   revision: number;
   state: "published" | "unpublished" | "new";
+  /** The blob of the map's file in the library, or "" when it is not there yet. */
+  blob: string;
   entries: Record<string, { path: string; title: string }>;
   children: Record<string, string>;
 }
@@ -538,7 +570,11 @@ export async function downloadExport(kind: ExportKind, pick: ExportPick): Promis
       body: JSON.stringify(pick),
     });
   } catch {
-    throw new ApiFailure(0, "offline", "The server could not be reached. Check your connection.");
+    throw new ApiFailure(
+      0,
+      "offline",
+      "Can't reach Frontier. Check your connection, then try again.",
+    );
   }
   if (!res.ok) {
     const body = (await res.json().catch(() => null)) as ErrorBody | null;

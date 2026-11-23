@@ -2,7 +2,9 @@ import { type FormEvent, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { api, ApiFailure, chronicleUrl } from "../api.ts";
 import { useRefresh } from "../components/Shell.tsx";
-import { useAsync } from "../useAsync.ts";
+import { Problem } from "../components/ui/Problem.tsx";
+import { Progress } from "../components/ui/Progress.tsx";
+import { failureOf, useAsync } from "../useAsync.ts";
 
 const STATE: Record<string, string> = {
   new: "not saved as a version yet",
@@ -43,7 +45,8 @@ export function ChroniclesPage() {
       </header>
 
       {list.state === "loading" && <p className="muted">Loading…</p>}
-      {list.state === "failed" && <p className="error">{list.error.message}</p>}
+      {list.reloading && <Progress />}
+      {failureOf(list) && <Problem reason={failureOf(list)!.message} onRetry={list.retry} />}
       {list.state === "ready" && (
         <>
           {list.value.chronicles.length === 0 && (

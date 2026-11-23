@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
 import { Navigate, Route, Routes, useLocation, useParams } from "react-router-dom";
 import { api } from "./api.ts";
+import { LoginDialog } from "./components/LoginDialog.tsx";
 import { Shell } from "./components/Shell.tsx";
+import { connection } from "./sync/connection.ts";
+import { queue } from "./sync/queue.ts";
 import { ConflictPage } from "./pages/Conflict.tsx";
 import { EditPage } from "./pages/Edit.tsx";
 import { EntryPage } from "./pages/Entry.tsx";
@@ -43,6 +46,15 @@ export function App() {
   }, []);
   useEffect(check, [check]);
 
+  // Once in: the connection service listens to the server, and the save queue starts sending,
+  // after taking in what the browser buffer of an earlier build still holds.
+  useEffect(() => {
+    if (!loggedIn) return;
+    connection.start();
+    void queue.start();
+    return () => connection.stop();
+  }, [loggedIn]);
+
   if (loggedIn === null) return <p className="center muted">Opening Frontier…</p>;
 
   if (!loggedIn) {
@@ -61,7 +73,7 @@ export function App() {
     <Shell onLoggedOut={() => setLoggedIn(false)}>
       <Routes>
         <Route path="/" element={<Home />} />
-        <Route path="/e/*" element={<EntryPage onSessionLost={() => setLoggedIn(false)} />} />
+        <Route path="/e/*" element={<EntryPage />} />
         <Route path="/edit/*" element={<EditPage />} />
         <Route path="/rename/*" element={<RenamePage />} />
         <Route path="/unpublished" element={<UnpublishedPage />} />
@@ -88,6 +100,7 @@ export function App() {
           element={<p className="center muted">There is no page at this address.</p>}
         />
       </Routes>
+      <LoginDialog />
     </Shell>
   );
 }

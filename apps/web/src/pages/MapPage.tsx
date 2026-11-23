@@ -39,6 +39,8 @@ import {
   type Names,
 } from "../components/MapPanels.tsx";
 import { useRefresh } from "../components/Shell.tsx";
+import { SaveStatus, useSaveState } from "../components/ui/SaveStatus.tsx";
+import { clashNames, type Known, type LinkItem, type QueueKey, queue } from "../sync/queue.ts";
 import { TurnPanel } from "../components/MapTurn.tsx";
 import { type ChronicleChoice, FeatureTime, OrbitEditor, TimeBar } from "../components/MapTime.tsx";
 import { drawOverlay } from "../map/overlay.ts";
@@ -86,15 +88,6 @@ function withoutSchematic(space: MapFile["space"]): MapFile["space"] {
 }
 
 type Tool = "select" | "marker" | "path" | "zone" | "measure";
-type SaveState = "saved" | "saving" | "unsaved" | "offline" | "failed";
-
-const SAVE_LABEL: Record<SaveState, string> = {
-  saved: "Saved as a draft",
-  saving: "Saving…",
-  unsaved: "Unsaved",
-  offline: "Offline: will save when back",
-  failed: "Could not save",
-};
 const TOOLS: { tool: Tool; label: string; icon: LucideIcon }[] = [
   { tool: "select", label: "Select", icon: MousePointer2 },
   { tool: "marker", label: "Marker", icon: MapPin },
@@ -126,7 +119,8 @@ export function MapPage() {
   const [sketch, setSketch] = useState<Position[]>([]);
   const [activeLayer, setActiveLayer] = useState("");
   const [panel, setPanel] = useState(false);
-  const [saveState, setSaveState] = useState<SaveState>("saved");
+  const key: QueueKey = `map:${id}`;
+  const saving = useSaveState(key);
   const [sets, setSets] = useState<MarkerSets>([]);
   const [otherMaps, setOtherMaps] = useState<
     { id: string; title: string; space: MapFile["space"]; under: string | null }[]
@@ -184,12 +178,10 @@ export function MapPage() {
   const shapes = useRef<Shape[]>([]);
   const mapRef = useRef<MapFile | null>(null);
   const viewRef = useRef<ViewState | null>(null);
-  const confirmed = useRef<MapFile | null>(null);
-  const revision = useRef(0);
-  const links = useRef<{ feature: string; path: string; title: string }[]>([]);
-  const timer = useRef<number | undefined>(undefined);
-  const saving = useRef(false);
-  const again = useRef(false);
+  /** What the next record in the save queue starts from: the server's last confirmed map. */
+  const known = useRef<Known>({ draftId: "", revision: 0, baseBlob: "" });
+  /** The entries asked for by features whose link is on its way, by feature id. */
+  const linkTitles = useRef(new Map<string, { path: string; title: string }>());
   const icons = useRef(new Map<string, HTMLImageElement>());
   const pointers = useRef(new Map<number, { x: number; y: number }>());
   const gesture = useRef<{
@@ -212,11 +204,17 @@ export function MapPage() {
     setError(null);
     setSelected(null);
     setHistory({ past: [], future: [] });
-    api.map(id).then(
-      (loaded) => {
+    Promise.all([api.map(id), queue.get(key)]).then(
+      ([loaded, unsent]) => {
         if (!live) return;
-        confirmed.current = loaded.map;
-        revision.current = loaded.revision;
+        known.current = {
+          draftId: "",
+          revision: loaded.revision,
+          baseBlob: loaded.blob,
+          base: loaded.map,
+        };
+        // A change this device has not sent yet is newer than the server's copy.
+        if (unsent) loaded = { ...loaded, map: unsent.value as MapFile };
         setMap(loaded.map);
         setNames(loaded.entries);
         setChildren(loaded.children);
@@ -260,10 +258,61 @@ export function MapPage() {
     );
     return () => {
       live = false;
-      window.clearTimeout(timer.current);
     };
     // The address is read once, when the map opens.
   }, [id]);
+
+  // What the save queue hears from the server about this map.
+  useEffect(
+    () =>
+      queue.subscribe(key, (e) => {
+        if (e.type === "saved") {
+          known.current = e.known;
+          if (e.link.length > 0) {
+            // The server gave the linked features their entry ids; nothing else is taken from it.
+            const saved = e.value as MapFile;
+            const ids = new Map(saved.features.map((f) => [f.id, f.entry]));
+            const added: Names = {};
+            for (const l of e.link) {
+              const entry = ids.get(l.id);
+              const asked = linkTitles.current.get(l.id);
+              if (entry && asked?.path === l.path) added[entry] = asked;
+              if (asked?.path === l.path) linkTitles.current.delete(l.id);
+            }
+            setNames((n) => ({ ...n, ...added }));
+            setMap((now) =>
+              now
+                ? {
+                    ...now,
+                    features: now.features.map((f) =>
+                      e.link.some((l) => l.id === f.id) && !linkTitles.current.has(f.id)
+                        ? { ...f, entry: ids.get(f.id) ?? null }
+                        : f,
+                    ),
+                  }
+                : now,
+            );
+            if (e.unlinked.length > 0) setNotice(`Not linked: ${e.unlinked[0]!.reason}`);
+          }
+          refresh();
+        } else if (e.type === "merged") {
+          // Another device changed the map: its version was merged with this one, item by item.
+          known.current = e.known;
+          setMap(e.value as MapFile);
+          const names = clashNames(e.value, e.clashes);
+          setNotice(
+            names.length === 0
+              ? "Changes from another device were merged in."
+              : `Changes from another device were merged in. Changed in both places, yours were kept: ${names.join(", ")}.`,
+          );
+          void api.map(id).then(
+            (theirs) => setNames((n) => ({ ...theirs.entries, ...n })),
+            () => undefined,
+          );
+        }
+      }),
+    [key, id, refresh],
+  );
 
   // The canvas follows the size of its frame.
   useEffect(() => {
@@ -469,106 +518,27 @@ export function MapPage() {
 
   // ---- Changing and saving ---------------------------------------------------------------------
 
-  const save = useCallback(async () => {
-    const mine = mapRef.current;
-    if (!mine) return;
-    if (saving.current) {
-      again.current = true;
-      return;
-    }
-    saving.current = true;
-    setSaveState("saving");
-    const sent = links.current.splice(0);
-    try {
-      const res = await api.saveMap(
-        id,
-        mine,
-        revision.current,
-        sent.map(({ feature, path }) => ({ feature, path })),
-      );
-      revision.current = res.revision;
-      confirmed.current = res.map;
-      if (sent.length > 0) {
-        // The server gave the linked features their entry ids; nothing else is taken from it.
-        const ids = new Map(res.map.features.map((f) => [f.id, f.entry]));
-        const added: Names = {};
-        for (const l of sent) {
-          const entry = ids.get(l.feature);
-          if (entry) added[entry] = { path: l.path, title: l.title };
-        }
-        setNames((n) => ({ ...n, ...added }));
-        setMap((now) =>
-          now
-            ? {
-                ...now,
-                features: now.features.map((f) =>
-                  sent.some((l) => l.feature === f.id) ? { ...f, entry: ids.get(f.id) ?? null } : f,
-                ),
-              }
-            : now,
-        );
-        if (res.unlinked.length > 0) setNotice(`Not linked: ${res.unlinked[0]!.reason}`);
-      }
-      setSaveState(mapRef.current === mine ? "saved" : "unsaved");
-      refresh();
-    } catch (err) {
-      links.current.unshift(...sent);
-      const failure = err instanceof ApiFailure ? err : null;
-      if (failure?.code === "offline") {
-        setSaveState("offline");
-        timer.current = window.setTimeout(() => void save(), 5000);
-      } else if (failure?.code === "stale_revision" && confirmed.current) {
-        // Another device changed the map: merge its version with this one, item by item.
-        try {
-          const theirs = await api.map(id);
-          const merged = mergeMaps(confirmed.current, mine, theirs.map);
-          confirmed.current = theirs.map;
-          revision.current = theirs.revision;
-          setNames((n) => ({ ...theirs.entries, ...n }));
-          setMap(merged.map);
-          setNotice(
-            merged.clashes.length === 0
-              ? "Changes from another device were merged in."
-              : `Changes from another device were merged in. ${merged.clashes.length} thing${
-                  merged.clashes.length === 1 ? " was" : "s were"
-                } changed in both places; yours were kept.`,
-          );
-          again.current = true;
-        } catch {
-          setSaveState("failed");
-        }
-      } else {
-        setSaveState("failed");
-        setNotice(failure?.message ?? "Something went wrong while saving.");
-      }
-    } finally {
-      saving.current = false;
-      if (again.current) {
-        again.current = false;
-        window.setTimeout(() => void save(), 0);
-      }
-    }
-  }, [id, refresh]);
-
-  const schedule = useCallback(() => {
-    setSaveState((s) => (s === "saving" ? s : "unsaved"));
-    window.clearTimeout(timer.current);
-    timer.current = window.setTimeout(() => void save(), 1000);
-  }, [save]);
+  /** Puts the map into the save queue, which keeps it on this device until the server has it. */
+  const store = useCallback(
+    (next: MapFile, link?: LinkItem[]) =>
+      void queue.put(key, next, { ...known.current, ...(link ? { link } : {}) }),
+    [key],
+  );
 
   /** Applies a change. `remember` is false for the steps of one drag, which undo as a whole. */
   const change = useCallback(
-    (next: MapFile, remember = true) => {
+    (next: MapFile, remember = true, link?: LinkItem[]) => {
       const before = mapRef.current;
       if (!before) return;
       if (remember) {
         if (yearRef.current !== null) stamps.current.set(before, yearRef.current);
         setHistory((h) => ({ past: [...h.past.slice(-99), before], future: [] }));
       }
+      mapRef.current = next;
       setMap(next);
-      schedule();
+      store(next, link);
     },
-    [schedule],
+    [store],
   );
 
   const setFeature = useCallback(
@@ -596,7 +566,7 @@ export function MapPage() {
       }
       setPin(null);
       setMap(before);
-      schedule();
+      store(before);
       return { past: h.past.slice(0, -1), future: [now, ...h.future] };
     });
   }
@@ -612,7 +582,7 @@ export function MapPage() {
       }
       setPin(null);
       setMap(next);
-      schedule();
+      store(next);
       return { past: [...h.past, now], future: h.future.slice(1) };
     });
   }
@@ -974,11 +944,25 @@ export function MapPage() {
   async function reloadMap() {
     try {
       const loaded = await api.map(id);
-      confirmed.current = loaded.map;
-      revision.current = loaded.revision;
+      const base = (known.current.base as MapFile | undefined) ?? loaded.map;
+      known.current = {
+        draftId: "",
+        revision: loaded.revision,
+        baseBlob: loaded.blob,
+        base: loaded.map,
+      };
       setNames((n) => ({ ...n, ...loaded.entries }));
-      setMap(loaded.map);
       setHistory({ past: [], future: [] });
+      const unsent = await queue.get(key);
+      if (!unsent || !mapRef.current) {
+        setMap(loaded.map);
+        return;
+      }
+      // A change still unsent is merged with what the server holds now, and goes from there.
+      const merged = mergeMaps(base, mapRef.current, loaded.map).map;
+      await queue.drop(key);
+      setMap(merged);
+      store(merged);
     } catch {
       setNotice("The map could not be read again. Open it anew to see the new marker.");
     }
@@ -1056,7 +1040,7 @@ export function MapPage() {
       danger: true,
     });
     if (!ok) return;
-    window.clearTimeout(timer.current);
+    await queue.drop(key);
     await api.deleteMap(id).catch(() => undefined);
     refresh();
     navigate("/maps");
@@ -1076,15 +1060,7 @@ export function MapPage() {
         ) : (
           <h1 className="map-title">{map.title}</h1>
         )}
-        {editing && (
-          <span
-            className={`save-state save-${saveState}`}
-            role="status"
-            title={SAVE_LABEL[saveState]}
-          >
-            {SAVE_LABEL[saveState]}
-          </span>
-        )}
+        {editing && <SaveStatus state={saving.state} />}
         <span className="map-actions">
           {sphere && view && (
             <select
@@ -1212,7 +1188,7 @@ export function MapPage() {
             type="button"
             className={editing ? "primary" : "quiet"}
             onClick={() => {
-              if (editing && saveState !== "saved") void save();
+              if (editing) void queue.sendNow(key);
               setEditing(!editing);
               setTool("select");
               setSketch([]);
@@ -1528,17 +1504,26 @@ export function MapPage() {
             vertex={vertex}
             onChange={(next) => setFeature(next)}
             onLink={(path, title) => {
-              links.current = links.current.filter((l) => l.feature !== feature.id);
               setPendingNames((p) => {
                 const next = { ...p };
                 if (path) next[feature.id] = title;
                 else delete next[feature.id];
                 return next;
               });
-              if (path) links.current.push({ feature: feature.id, path, title });
-              setFeature({ ...feature, entry: null });
-              // Linking changes nothing in the map until the server answers, so ask it now.
-              schedule();
+              if (path) linkTitles.current.set(feature.id, { path, title });
+              else linkTitles.current.delete(feature.id);
+              // The link travels with the save; a link still waiting is taken back by an unlink.
+              const now = mapRef.current ?? map;
+              change(
+                {
+                  ...now,
+                  features: now.features.map((f) =>
+                    f.id === feature.id ? { ...feature, entry: null } : f,
+                  ),
+                },
+                true,
+                [{ id: feature.id, path: path || null }],
+              );
             }}
             onDelete={() => {
               change({ ...map, features: map.features.filter((f) => f.id !== feature.id) });

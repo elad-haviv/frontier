@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
+import { Problem } from "../components/ui/Problem.tsx";
+import { Progress } from "../components/ui/Progress.tsx";
 import {
   api,
   ApiFailure,
@@ -32,30 +34,44 @@ export function ExportPage() {
   } | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [foldersFailed, setFoldersFailed] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
+    setFoldersFailed(null);
     api.exportFolders().then(
       (r) => {
         setFolders(r.folders);
         if (!onePath) setFolder((f) => f || r.folders[0] || "");
       },
-      () => undefined,
+      (err: unknown) =>
+        setFoldersFailed(
+          err instanceof ApiFailure ? err.message : "The folders could not be read.",
+        ),
     );
     if (onePath) setTitle(onePath.split("/").pop()!.replace(/\.md$/i, ""));
-  }, [onePath]);
+  }, [onePath, attempt]);
 
   const pick: ExportPick = onePath ? { title, paths: [onePath] } : { title, folder };
 
+  const [looking, setLooking] = useState(false);
   useEffect(() => {
     if (!onePath && !folder) return;
+    // A preview belongs to one folder: another folder's is not kept while this one is found.
     setPreview(null);
+    setLooking(true);
     setError(null);
-    api
-      .exportPreview(pick)
-      .then(setPreview, (err: unknown) =>
-        setError(err instanceof ApiFailure ? err.message : "Nothing could be found there."),
-      );
-  }, [folder, onePath]);
+    api.exportPreview(pick).then(
+      (found) => {
+        setPreview(found);
+        setLooking(false);
+      },
+      (err: unknown) => {
+        setError(err instanceof ApiFailure ? err.message : "Nothing could be found there.");
+        setLooking(false);
+      },
+    );
+  }, [folder, onePath, attempt]);
 
   async function make(kind: ExportKind) {
     setBusy(kind);
@@ -71,6 +87,7 @@ export function ExportPage() {
 
   return (
     <article className="entry wide export">
+      {looking && <Progress />}
       <header className="entry-head">
         <h1>Export</h1>
         <p className="muted lede">
@@ -80,6 +97,12 @@ export function ExportPage() {
           <Link to="/status">Status</Link> page.
         </p>
       </header>
+      {foldersFailed && (
+        <Problem
+          reason={`The folders could not be listed. ${foldersFailed}`}
+          onRetry={() => setAttempt((n) => n + 1)}
+        />
+      )}
 
       <div className="settings">
         {onePath ? (

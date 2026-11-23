@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { api, entryUrl } from "../api.ts";
+import { api, ApiFailure, entryUrl } from "../api.ts";
+import { Problem } from "./ui/Problem.tsx";
 
 interface Row {
   path: string;
@@ -22,6 +23,9 @@ export function Switcher({ onClose }: { onClose: () => void }) {
   const [query, setQuery] = useState("");
   const [rows, setRows] = useState<Row[]>([]);
   const [at, setAt] = useState(0);
+  /** Set when the server could not be reached, so an empty list is not taken for "nothing found". */
+  const [unreachable, setUnreachable] = useState(false);
+  const [attempt, setAttempt] = useState(0);
   const input = useRef<HTMLInputElement>(null);
   const list = useRef<HTMLUListElement>(null);
 
@@ -31,13 +35,17 @@ export function Switcher({ onClose }: { onClose: () => void }) {
     let live = true;
     const wait = window.setTimeout(async () => {
       const q = query.trim();
+      let lost = false;
+      const none = (err: unknown) => {
+        if (err instanceof ApiFailure && err.status === 0) lost = true;
+        return { results: [] };
+      };
       const [names, text] = await Promise.all([
-        api.names(q).catch(() => ({ results: [] })),
-        q.length >= 2
-          ? api.search(q).catch(() => ({ results: [] }))
-          : Promise.resolve({ results: [] }),
+        api.names(q).catch(none),
+        q.length >= 2 ? api.search(q).catch(none) : Promise.resolve({ results: [] }),
       ]);
       if (!live) return;
+      setUnreachable(lost);
       const byName: Row[] = names.results.slice(0, 20).map((n) => ({
         path: n.path,
         name: n.alias ?? n.title,
@@ -56,7 +64,7 @@ export function Switcher({ onClose }: { onClose: () => void }) {
       live = false;
       window.clearTimeout(wait);
     };
-  }, [query]);
+  }, [query, attempt]);
 
   useEffect(() => {
     list.current?.querySelector(".is-current")?.scrollIntoView({ block: "nearest" });
@@ -118,7 +126,17 @@ export function Switcher({ onClose }: { onClose: () => void }) {
               </button>
             </li>
           ))}
-          {rows.length === 0 && <li className="muted switcher-empty">Nothing found.</li>}
+          {rows.length === 0 && !unreachable && (
+            <li className="muted switcher-empty">Nothing found.</li>
+          )}
+          {unreachable && (
+            <li className="switcher-empty">
+              <Problem
+                reason="Can't reach Frontier. Check the connection, then try again."
+                onRetry={() => setAttempt((n) => n + 1)}
+              />
+            </li>
+          )}
         </ul>
       </div>
     </div>

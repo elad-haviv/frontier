@@ -12,8 +12,10 @@ import { SpanForm } from "../components/chronicle/SpanForm.tsx";
 import { newSpan, spanName, withSpan, work } from "../components/chronicle/model.ts";
 import { useDialogs } from "../components/Dialogs.tsx";
 import { useRefresh } from "../components/Shell.tsx";
+import { SaveStatus, useSaveState } from "../components/ui/SaveStatus.tsx";
 import { useItemFile } from "../hooks/useItemFile.ts";
 import { useShortcut } from "../keys.ts";
+import type { QueueKey } from "../sync/queue.ts";
 
 type Tab = "order" | "scale" | "compare" | "flags" | "setup";
 
@@ -29,13 +31,6 @@ function useNarrow(): boolean {
   }, []);
   return narrow;
 }
-
-const SAVING: Record<string, string> = {
-  saved: "Saved as a draft",
-  waiting: "Saving…",
-  saving: "Saving…",
-  failed: "Not saved",
-};
 
 /** One chronicle: its views, its lists, and the form for the selected span. */
 export function ChroniclePage() {
@@ -56,47 +51,48 @@ function Chronicle({ id }: { id: string }) {
   const [folded, setFolded] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
 
-  // Entries by id, for the spans linked to one; and links asked for that the next save carries.
+  // Entries by id, for the spans linked to one; and links asked for that a save carries.
   const [entries, setEntries] = useState<Record<string, { path: string; title: string }>>({});
   const [linking, setLinking] = useState<Record<string, { path: string; title: string }>>({});
   const links = useRef(new Map<string, string>());
   const titles = useRef(new Map<string, { path: string; title: string }>());
   /** Spans unlinked since the last save: the server's answer must not link them again. */
   const dropped = useRef(new Set<string>());
+  const key: QueueKey = `chronicle:${id}`;
+  const saving = useSaveState(key);
 
   const file = useItemFile<ChronicleFile>({
+    key,
     load: async () => {
       const loaded = await api.chronicle(id);
       setEntries(loaded.entries);
-      return { value: loaded.chronicle, revision: loaded.revision };
+      return { value: loaded.chronicle, revision: loaded.revision, blob: loaded.blob };
     },
-    save: async (value, revision) => {
-      const link = [...links.current].map(([span, path]) => ({ span, path }));
-      const unlinked = new Set(dropped.current);
-      const saved = await api.saveChronicle(id, value, revision, link);
+    onSaved: ({ sent, value, link, unlinked }) => {
       if (link.length > 0) {
-        for (const l of link)
-          if (links.current.get(l.span) === l.path) links.current.delete(l.span);
+        for (const l of link) if (links.current.get(l.id) === l.path) links.current.delete(l.id);
         // The entry's name is known from the picker, so the link shows at once.
         const known: Record<string, { path: string; title: string }> = {};
         for (const l of link) {
-          const entry = saved.chronicle.spans.find((s) => s.id === l.span)?.entry;
-          const title = titles.current.get(l.span);
+          const entry = value.spans.find((s) => s.id === l.id)?.entry;
+          const title = titles.current.get(l.id);
           if (entry && title) known[entry] = title;
         }
         setEntries((now) => ({ ...now, ...known }));
         setLinking((now) =>
           Object.fromEntries(Object.entries(now).filter(([span]) => links.current.has(span))),
         );
-        if (saved.unlinked.length > 0) setNotice(saved.unlinked.map((u) => u.reason).join(" "));
+        if (unlinked.length > 0) setNotice(unlinked.map((u) => u.reason).join(" "));
         void api.chronicle(id).then(
           (r) => setEntries(r.entries),
           () => undefined,
         );
       }
       // An unlink that this save carried is now on the server; one made since still waits.
-      for (const span of unlinked) dropped.current.delete(span);
-      return { value: saved.chronicle, revision: saved.revision };
+      for (const span of [...dropped.current]) {
+        if (sent.spans.find((s) => s.id === span)?.entry === null) dropped.current.delete(span);
+      }
+      refresh();
     },
     merge: (base, mine, theirs) => {
       const merged = mergeChronicles(base, mine, theirs).chronicle;
@@ -119,7 +115,6 @@ function Chronicle({ id }: { id: string }) {
     // The server writes an entry's id into a span that was linked by path.
     changed: (sent, saved) =>
       sent.spans.some((s) => saved.spans.find((x) => x.id === s.id)?.entry !== s.entry),
-    onSaved: refresh,
   });
   const chronicle = file.value;
   const worked = useMemo(() => (chronicle ? work(chronicle) : null), [chronicle]);
@@ -235,12 +230,7 @@ function Chronicle({ id }: { id: string }) {
         </Link>
         <h1>{chronicle.title}</h1>
         {chronicle.main && <span className="chip">main</span>}
-        <span
-          className={"ch-saving" + (file.saving === "failed" ? " error" : " muted")}
-          role="status"
-        >
-          {SAVING[file.saving]}
-        </span>
+        <SaveStatus state={saving.state} variant="chronicle" />
       </header>
       {notice && (
         <p className="banner" role="alert">
@@ -250,7 +240,7 @@ function Chronicle({ id }: { id: string }) {
           </button>
         </p>
       )}
-      {file.saving === "failed" && file.error && (
+      {saving.state === "failed" && file.error && (
         <p className="banner" role="alert">
           {file.error}
         </p>
@@ -413,8 +403,14 @@ function Chronicle({ id }: { id: string }) {
                 setLinking((now) => ({ ...now, [span.id]: { path, title } }));
                 // The link travels with the next save. Nothing in the file changes until the
                 // server answers, so there is no step for undo to take back yet.
-                if (span.entry === null) file.touch();
-                else file.change((c) => withSpan(c, span.id, (s) => ({ ...s, entry: null })));
+                const link = [{ id: span.id, path }];
+                if (span.entry === null) file.touch(link);
+                else
+                  file.change(
+                    (c) => withSpan(c, span.id, (s) => ({ ...s, entry: null })),
+                    undefined,
+                    link,
+                  );
               }}
               onUnlink={() => {
                 links.current.delete(span.id);
@@ -422,7 +418,12 @@ function Chronicle({ id }: { id: string }) {
                 setLinking((now) =>
                   Object.fromEntries(Object.entries(now).filter(([k]) => k !== span.id)),
                 );
-                file.change((c) => withSpan(c, span.id, (s) => ({ ...s, entry: null })));
+                // A link still waiting to be sent is taken back with it.
+                file.change(
+                  (c) => withSpan(c, span.id, (s) => ({ ...s, entry: null })),
+                  undefined,
+                  [{ id: span.id, path: null }],
+                );
               }}
             />
           </aside>

@@ -6,6 +6,8 @@ import { api, ApiFailure, chronicleUrl, editUrl, entryUrl, imageUrl, mapUrl } fr
 import { Diff } from "../components/Diff.tsx";
 import { useRefresh, useWords } from "../components/Shell.tsx";
 import { useDialogs } from "../components/Dialogs.tsx";
+import { Problem } from "../components/ui/Problem.tsx";
+import { Progress } from "../components/ui/Progress.tsx";
 
 const KIND = { edit: "Edited", create: "New", delete: "Deleted" } as const;
 
@@ -33,8 +35,10 @@ export function UnpublishedPage() {
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<{ kind: "error" | "ok"; text: string } | null>(null);
+  const [loading, setLoading] = useState(false);
 
   const load = useCallback(async () => {
+    setLoading(true);
     try {
       const u = await api.unpublished();
       setData(u);
@@ -44,6 +48,8 @@ export function UnpublishedPage() {
         kind: "error",
         text: err instanceof ApiFailure ? err.message : "Could not load.",
       });
+    } finally {
+      setLoading(false);
     }
   }, []);
   useEffect(() => void load(), [load]);
@@ -138,7 +144,21 @@ export function UnpublishedPage() {
     refresh();
   }
 
-  if (!data) return <p className="center muted">{notice?.text ?? "Loading…"}</p>;
+  if (!data) {
+    return notice ? (
+      <div className="center">
+        <Problem
+          reason={notice.text}
+          onRetry={() => {
+            setNotice(null);
+            void load();
+          }}
+        />
+      </div>
+    ) : (
+      <p className="center muted">Loading…</p>
+    );
+  }
   const empty =
     data.drafts.length === 0 && data.renames.length === 0 && data.decisions.length === 0;
   const chosen = selected.size + data.decisions.length;
@@ -149,6 +169,7 @@ export function UnpublishedPage() {
 
   return (
     <article className="entry wide">
+      {loading && <Progress />}
       <header className="entry-head">
         <h1>{words.title}</h1>
         <p className="muted lede">

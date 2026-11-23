@@ -12,5 +12,9 @@ export default defineConfig({
       "@frontier/time": at("../../packages/time/src/index.ts"),
     },
   },
-  test: { include: ["src/**/*.test.ts", "src/**/*.test.tsx"] },
+  test: {
+    include: ["src/**/*.test.ts", "src/**/*.test.tsx"],
+    // The save queue and the connection service run on browser APIs.
+    environmentMatchGlobs: [["src/sync/**", "happy-dom"]],
+  },
 });

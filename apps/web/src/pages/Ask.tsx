@@ -1,7 +1,9 @@
 import { type FormEvent, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { api, ApiFailure, askUrl } from "../api.ts";
-import { useAsync } from "../useAsync.ts";
+import { Problem } from "../components/ui/Problem.tsx";
+import { Progress } from "../components/ui/Progress.tsx";
+import { failureOf, useAsync } from "../useAsync.ts";
 
 /** Ask the lore: the conversations so far, and a box to start one. */
 export function AskPage() {
@@ -82,7 +84,8 @@ export function AskPage() {
           </ul>
         </section>
       )}
-      {list.state === "failed" && <p className="error">{list.error.message}</p>}
+      {list.reloading && <Progress />}
+      {failureOf(list) && <Problem reason={failureOf(list)!.message} onRetry={list.retry} />}
     </article>
   );
 }

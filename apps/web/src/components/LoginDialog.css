@@ -1,0 +1,6 @@
+.login-dialog .dialog-actions {
+  flex-wrap: wrap;
+}
+.login-dialog .error {
+  margin: 0.4rem 0 0;
+}

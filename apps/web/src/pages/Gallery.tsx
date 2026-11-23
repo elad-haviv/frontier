@@ -2,7 +2,9 @@ import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, entryUrl, imageUrl } from "../api.ts";
 import { LightboxProvider, useLightbox } from "../components/Lightbox.tsx";
-import { useAsync } from "../useAsync.ts";
+import { Problem } from "../components/ui/Problem.tsx";
+import { Progress } from "../components/ui/Progress.tsx";
+import { failureOf, useAsync } from "../useAsync.ts";
 
 type Show = "used" | "unused" | "icons" | "all";
 
@@ -94,7 +96,10 @@ export function GalleryPage() {
       </header>
 
       {gallery.state === "loading" && <p className="muted">Loading…</p>}
-      {gallery.state === "failed" && <p className="error">{gallery.error.message}</p>}
+      {gallery.reloading && <Progress />}
+      {failureOf(gallery) && (
+        <Problem reason={failureOf(gallery)!.message} onRetry={gallery.retry} />
+      )}
       {gallery.state === "ready" && (
         <>
           <div className="gallery-tools">

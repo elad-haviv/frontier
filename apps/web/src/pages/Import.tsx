@@ -2,7 +2,8 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import { api, ApiFailure, entryUrl, type ImportResult } from "../api.ts";
 import { useRefresh, useWords } from "../components/Shell.tsx";
-import { useAsync } from "../useAsync.ts";
+import { Problem } from "../components/ui/Problem.tsx";
+import { failureOf, useAsync } from "../useAsync.ts";
 
 /** Every folder of the library, for choosing where imported notes go. */
 function foldersOf(tree: { folders: { path: string; folders: unknown[] }[] }): string[] {
@@ -118,6 +119,12 @@ export function ImportPage() {
               foldersOf(tree.value).map((f) => <option key={f} value={f} />)}
           </datalist>
         </label>
+        {failureOf(tree) && (
+          <Problem
+            reason={`The folders could not be listed. ${failureOf(tree)!.message}`}
+            onRetry={tree.retry}
+          />
+        )}
         <p className="change-actions">
           <button
             type="button"

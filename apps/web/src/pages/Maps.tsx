@@ -2,7 +2,10 @@ import { type FormEvent, useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { api, ApiFailure, mapUrl } from "../api.ts";
 import { useRefresh } from "../components/Shell.tsx";
-import { useAsync } from "../useAsync.ts";
+import { queue } from "../sync/queue.ts";
+import { Problem } from "../components/ui/Problem.tsx";
+import { Progress } from "../components/ui/Progress.tsx";
+import { failureOf, useAsync } from "../useAsync.ts";
 
 const STATE: Record<string, string> = {
   new: "not published yet",
@@ -42,12 +45,13 @@ export function MapsPage() {
         // A schematic map is a flat map with measuring off.
         const made = await api.map(id);
         if (made.map.space.kind === "flat") {
-          await api.saveMap(
-            id,
+          // Saved like any change, so it is kept on this device until the server has it.
+          await queue.put(
+            `map:${id}`,
             { ...made.map, space: { ...made.map.space, schematic: true } },
-            made.revision,
-            [],
+            { draftId: "", revision: made.revision, baseBlob: made.blob, base: made.map, delay: 0 },
           );
+          await queue.sendNow(`map:${id}`);
         }
       }
       refresh();
@@ -81,7 +85,8 @@ export function MapsPage() {
       </header>
 
       {maps.state === "loading" && <p className="muted">Loading…</p>}
-      {maps.state === "failed" && <p className="error">{maps.error.message}</p>}
+      {maps.reloading && <Progress />}
+      {failureOf(maps) && <Problem reason={failureOf(maps)!.message} onRetry={maps.retry} />}
       {maps.state === "ready" && (
         <>
           {maps.value.maps.length === 0 && (

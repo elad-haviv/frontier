@@ -3,7 +3,10 @@ import { Link, useLocation, useNavigate } from "react-router-dom";
 import { api, ApiFailure, entryUrl, historyUrl, newDraftId, type Version } from "../api.ts";
 import { Diff } from "../components/Diff.tsx";
 import { useRefresh } from "../components/Shell.tsx";
-import { useAsync } from "../useAsync.ts";
+import { queue } from "../sync/queue.ts";
+import { Problem } from "../components/ui/Problem.tsx";
+import { Progress } from "../components/ui/Progress.tsx";
+import { failureOf, useAsync } from "../useAsync.ts";
 
 const when = (at: string) =>
   new Date(at).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
@@ -42,17 +45,25 @@ function VersionRow({
     setError(null);
     try {
       const entry = await api.entry(current);
-      if (entry.draft) {
+      const key = `entry:${current}` as const;
+      if (entry.draft || (await queue.get(key))) {
         setError("This entry has unsaved changes. Save or discard them first.");
         return;
       }
-      await api.saveDraft({
-        id: newDraftId(),
-        path: current,
+      // The restored text is a change like any other: it goes through the save queue.
+      await queue.put(key, texts.text, {
         kind: "edit",
-        text: texts.text,
+        draftId: newDraftId(),
         revision: 0,
+        baseBlob: entry.blob,
+        delay: 0,
       });
+      await queue.sendNow(key);
+      const left = await queue.get(key);
+      if (left?.state === "attention") {
+        setError(left.error ?? "The version could not be restored.");
+        return;
+      }
       onRestored();
     } catch (err) {
       setError(err instanceof ApiFailure ? err.message : "The version could not be restored.");
@@ -108,7 +119,10 @@ export function HistoryPage() {
         </p>
       </header>
       {history.state === "loading" && <p className="muted">Loading…</p>}
-      {history.state === "failed" && <p className="error">{history.error.message}</p>}
+      {history.reloading && <Progress />}
+      {failureOf(history) && (
+        <Problem reason={failureOf(history)!.message} onRetry={history.retry} />
+      )}
       {history.state === "ready" && history.value.versions.length === 0 && (
         <p className="empty">This entry has no saved version yet.</p>
       )}
@@ -145,7 +159,10 @@ export function LibraryHistoryPage() {
         </p>
       </header>
       {history.state === "loading" && <p className="muted">Loading…</p>}
-      {history.state === "failed" && <p className="error">{history.error.message}</p>}
+      {history.reloading && <Progress />}
+      {failureOf(history) && (
+        <Problem reason={failureOf(history)!.message} onRetry={history.retry} />
+      )}
       {history.state === "ready" && (
         <ul className="changes versions">
           {history.value.versions.map((v) => (

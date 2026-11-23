@@ -1,0 +1,10 @@
+.ui-save-status {
+  white-space: nowrap;
+}
+.ui-save-status.save-offline::before,
+.ui-save-status.save-failed::before,
+.ui-save-status.save-stale::before {
+  /* A mark beside the words, so the state does not rest on colour alone. */
+  content: "! ";
+  font-weight: 600;
+}

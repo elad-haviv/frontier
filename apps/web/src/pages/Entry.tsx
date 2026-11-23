@@ -10,6 +10,8 @@ import { ProposeFields } from "../components/ProposeFields.tsx";
 import { Markdown } from "../render/Markdown.tsx";
 import { Menu, MenuLink } from "../components/ui/Menu.tsx";
 import { FileDown, FolderInput, History } from "lucide-react";
+import { Problem } from "../components/ui/Problem.tsx";
+import { Progress } from "../components/ui/Progress.tsx";
 import { useAsync } from "../useAsync.ts";
 
 function Crumbs({ path }: { path: string }) {
@@ -27,7 +29,7 @@ function Crumbs({ path }: { path: string }) {
   );
 }
 
-export function EntryPage({ onSessionLost }: { onSessionLost: () => void }) {
+export function EntryPage() {
   const words = useWords();
   const { pathname, hash, key } = useLocation();
   const path = currentEntryPath(pathname);
@@ -39,21 +41,19 @@ export function EntryPage({ onSessionLost }: { onSessionLost: () => void }) {
   const comments = useAsync(() => api.commentCount(path), `comments:${path}@${key}`);
   const openComments = comments.state === "ready" ? comments.value.open : 0;
 
-  useEffect(() => {
-    if (entry.state === "failed" && entry.error.status === 401) onSessionLost();
-  }, [entry, onSessionLost]);
-
   const view = useMemo(() => {
     if (entry.state !== "ready") return null;
     const { body } = splitFrontmatter(entry.value.text);
-    const name = (path.split("/").pop() ?? path).replace(/\.md$/i, "");
+    // From the entry shown, which while another loads is still the one before.
+    const shown = entry.value.path;
+    const name = (shown.split("/").pop() ?? shown).replace(/\.md$/i, "");
     // The page title is the note's name, as in Obsidian. A first heading that only repeats the
     // name is left out of the text; any other heading is a section and stays.
     const opening = /^\s*#[ \t]+([^\n]*)\n?/.exec(body);
     const repeats = opening !== null && opening[1]!.trim().toLowerCase() === name.toLowerCase();
     const text = repeats ? body.slice(opening[0].length) : body;
     return { text, title: name, aliases: aliasesOf(entry.value.text) };
-  }, [entry, path]);
+  }, [entry]);
 
   // Jump to the heading named in the address, once the text is on the page.
   useEffect(() => {
@@ -72,10 +72,16 @@ export function EntryPage({ onSessionLost }: { onSessionLost: () => void }) {
   }, [view, hash]);
 
   if (entry.state === "loading") return <p className="center muted">Opening…</p>;
-  if (entry.state === "failed") {
+  // A failure to open another entry is not shown over the one before it.
+  if (entry.state === "failed" || (entry.error && entry.value.path !== path)) {
+    const error = entry.error!;
+    // A missing entry will not appear by trying again; anything else might.
     return (
       <div className="center">
-        <p className="error">{entry.error.message}</p>
+        <Problem
+          reason={error.message}
+          {...(error.status === 404 ? {} : { onRetry: entry.retry })}
+        />
         <p>
           <Link to="/">Back to the start</Link>
         </p>
@@ -86,6 +92,8 @@ export function EntryPage({ onSessionLost }: { onSessionLost: () => void }) {
   const e = entry.value;
   return (
     <article className="entry">
+      {entry.reloading && <Progress label="Opening" />}
+      {entry.error && <Problem reason={entry.error.message} onRetry={entry.retry} />}
       <header className="entry-head">
         <Crumbs path={e.path} />
         <div className="title-row">

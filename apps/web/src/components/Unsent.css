@@ -1,0 +1,66 @@
+.unsent-count {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.2rem 0.45rem;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  background: none;
+  color: var(--ink-soft);
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+.unsent-count.needs-attention {
+  border-color: color-mix(in srgb, var(--warn) 50%, var(--rule));
+  color: var(--warn);
+}
+.unsent {
+  z-index: var(--layer-popover);
+  width: min(22rem, calc(100vw - 1rem));
+  max-height: min(24rem, 70vh);
+  overflow-y: auto;
+  padding: 0.7rem 0.8rem;
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  background: var(--paper-raised);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.18);
+  color: var(--ink);
+}
+.unsent-title {
+  margin: 0;
+  font-size: 1rem;
+}
+.unsent-note {
+  margin: 0.2rem 0 0.5rem;
+  font-size: 0.85rem;
+}
+.unsent ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.unsent-row {
+  padding: 0.45rem 0;
+  border-top: 1px solid var(--rule);
+}
+.unsent-name {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.2rem 0.5rem;
+  margin: 0;
+}
+.unsent-age {
+  margin-left: auto;
+  font-size: 0.8rem;
+}
+.unsent-error {
+  margin: 0.2rem 0 0;
+  color: var(--warn);
+  font-size: 0.85rem;
+}
+.unsent-actions {
+  display: flex;
+  gap: 0.4rem;
+  margin: 0.35rem 0 0;
+}

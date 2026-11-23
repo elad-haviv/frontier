@@ -1,15 +1,23 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { sameValue } from "@frontier/schema";
 import { ApiFailure } from "../api.ts";
+import { type Known, type LinkItem, type QueueKey, queue } from "../sync/queue.ts";
 
 export interface ItemFileOptions<T> {
-  load: () => Promise<{ value: T; revision: number }>;
-  save: (value: T, revision: number) => Promise<{ value: T; revision: number }>;
-  /** Brings together what this page changed and what another device saved meanwhile. */
+  /** The file's key in the save queue, such as `chronicle:<id>`. */
+  key: QueueKey;
+  load: () => Promise<{ value: T; revision: number; blob: string }>;
+  /** Brings together what this page changed and what the server answered or another device saved. */
   merge: (base: T, mine: T, theirs: T) => T;
   /** Says whether the server changed the value it was sent, so the page should take it in. */
   changed?: (sent: T, saved: T) => boolean;
-  /** Called after each save that reached the server. */
-  onSaved?: () => void;
+  /** Called with each answer of the server: what it stored, and the links it could not make. */
+  onSaved?: (answer: {
+    sent: T;
+    value: T;
+    link: { id: string; path: string }[];
+    unlinked: { id: string; reason: string }[];
+  }) => void;
 }
 
 export type SaveState = "saved" | "waiting" | "saving" | "failed";
@@ -18,14 +26,13 @@ export interface ItemFile<T> {
   state: "loading" | "ready" | "failed";
   value: T | null;
   error: string | null;
-  saving: SaveState;
   /**
    * Changes the value. Changes that follow each other with the same `tag`, such as the letters
-   * typed into one field, are one step for undo.
+   * typed into one field, are one step for undo. `link` travels with the save.
    */
-  change: (fn: (value: T) => T, tag?: string) => void;
-  /** Asks for a save without a change to the value, as when something is sent along with it. */
-  touch: () => void;
+  change: (fn: (value: T) => T, tag?: string, link?: LinkItem[]) => void;
+  /** Asks for a save without a change to the value, as when a link is sent along with it. */
+  touch: (link?: LinkItem[]) => void;
   /** Takes in what the server holds now, for after the server changed the file itself. */
   reload: () => Promise<void>;
   undo: () => void;
@@ -34,36 +41,29 @@ export interface ItemFile<T> {
   canRedo: boolean;
 }
 
-const PAUSE = 1000;
 const KEPT = 100;
 
 /**
- * The loop a page of items runs on: load, change, save about a second after the last change,
- * merge when another device saved first, undo and redo. One use is for one file: give the
+ * The loop a page of items runs on: load, change, undo and redo. Each change is put into the save
+ * queue, which sends it about a second after the last one, merges when another device saved
+ * first, and keeps it on the device until the server has it. One use is for one file: give the
  * component a React key so a different file gets a fresh loop.
  */
 export function useItemFile<T>(options: ItemFileOptions<T>): ItemFile<T> {
   const [state, setState] = useState<"loading" | "ready" | "failed">("loading");
   const [value, setValue] = useState<T | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [saving, setSaving] = useState<SaveState>("saved");
   const [stacks, setStacks] = useState({ undo: 0, redo: 0 });
 
   const opts = useRef(options);
   opts.current = options;
+  const key = options.key;
   const current = useRef<T | null>(null);
-  /** What the server last held, as far as this page knows. */
-  const base = useRef<T | null>(null);
-  const revision = useRef(0);
-  const dirty = useRef(false);
-  const busy = useRef(false);
-  /** Set when the server refused the value itself: sending it again would be refused again. */
-  const halted = useRef(false);
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** What the next record starts from: the server's last confirmed value, revision and blob. */
+  const known = useRef<Known>({ draftId: "", revision: 0, baseBlob: "" });
   const undoStack = useRef<T[]>([]);
   const redoStack = useRef<T[]>([]);
   const lastTag = useRef<string | null>(null);
-  const live = useRef(true);
 
   const show = (next: T) => {
     current.current = next;
@@ -71,143 +71,93 @@ export function useItemFile<T>(options: ItemFileOptions<T>): ItemFile<T> {
     setStacks({ undo: undoStack.current.length, redo: redoStack.current.length });
   };
 
-  /**
-   * Sends one value. When another device saved first, the two are merged and the result is
-   * sent; `merged` then says so, because earlier snapshots no longer hold the other's changes.
-   */
-  const send = async (sent: T): Promise<{ value: T; merged: boolean }> => {
-    let saved: { value: T; revision: number };
-    let merged = false;
-    try {
-      saved = await opts.current.save(sent, revision.current);
-    } catch (err) {
-      if (!(err instanceof ApiFailure) || err.code !== "stale_revision") throw err;
-      const theirs = await opts.current.load();
-      const both = opts.current.merge(base.current ?? theirs.value, sent, theirs.value);
-      saved = await opts.current.save(both, theirs.revision);
-      merged = true;
-    }
-    base.current = saved.value;
-    revision.current = saved.revision;
-    opts.current.onSaved?.();
-    return { value: saved.value, merged };
-  };
-
-  const flush = useCallback(async () => {
-    if (busy.current || !dirty.current || current.current === null) return;
-    busy.current = true;
-    dirty.current = false;
-    lastTag.current = null;
-    setSaving("saving");
-    const sent = current.current;
-    try {
-      const saved = await send(sent);
-      if (saved.merged || opts.current.changed?.(sent, saved.value)) {
-        if (saved.merged) {
-          // A snapshot from before the merge would take the other device's changes away again.
-          undoStack.current = [];
-          redoStack.current = [];
-        }
-        if (current.current !== sent && current.current !== null) {
-          // Changes typed while the save was on its way are laid over what the server answered.
-          // This happens even after the page was left, so what goes out last holds both.
-          dirty.current = true;
-          const both = opts.current.merge(sent, current.current, saved.value);
-          if (live.current) show(both);
-          else current.current = both;
-        } else if (live.current) show(saved.value);
-        else current.current = saved.value;
-      }
-      if (live.current) setSaving(dirty.current ? "waiting" : "saved");
-    } catch (err) {
-      dirty.current = true;
-      // The server answered and said no: the same value would be refused again.
-      halted.current = err instanceof ApiFailure && err.status >= 400 && err.status < 500;
-      if (live.current) {
-        setSaving("failed");
-        setError(err instanceof ApiFailure ? err.message : "The change could not be saved.");
-      }
-    } finally {
-      busy.current = false;
-      if (dirty.current && !halted.current) {
-        if (live.current) schedule();
-        // The page was left while a save was on its way: what was typed since goes now.
-        else if (current.current !== null) void send(current.current).catch(() => undefined);
-      }
-    }
-  }, []);
-
-  const schedule = useCallback(() => {
-    if (timer.current) clearTimeout(timer.current);
-    timer.current = setTimeout(() => {
-      timer.current = null;
-      void flush();
-    }, PAUSE);
-  }, [flush]);
-
-  useEffect(() => {
-    live.current = true;
-    opts.current.load().then(
-      (loaded) => {
-        if (!live.current) return;
-        base.current = loaded.value;
-        revision.current = loaded.revision;
-        show(loaded.value);
-        setState("ready");
-      },
-      (err: unknown) => {
-        if (!live.current) return;
-        setError(err instanceof ApiFailure ? err.message : "It could not be opened.");
-        setState("failed");
-      },
-    );
-    return () => {
-      live.current = false;
-      if (timer.current) clearTimeout(timer.current);
-      timer.current = null;
-      // A change still waiting is sent on the way out. One on its way is followed up by `flush`.
-      if (dirty.current && current.current !== null && !busy.current && !halted.current) {
-        dirty.current = false;
-        void send(current.current).catch(() => undefined);
-      }
-    };
-  }, []);
-
   const put = useCallback(
-    (next: T) => {
-      dirty.current = true;
-      halted.current = false;
-      setError(null);
-      setSaving("waiting");
+    (next: T, link?: LinkItem[]) => {
       show(next);
-      schedule();
+      void queue.put(key, next, { ...known.current, ...(link ? { link } : {}) });
     },
-    [schedule],
+    [key],
   );
 
+  useEffect(() => {
+    let live = true;
+    (async () => {
+      const loaded = await opts.current.load();
+      known.current = {
+        draftId: "",
+        revision: loaded.revision,
+        baseBlob: loaded.blob,
+        base: loaded.value,
+      };
+      // A change this device has not sent yet is newer than the server's copy.
+      const unsent = await queue.get(key);
+      if (!live) return;
+      show(unsent ? (unsent.value as T) : loaded.value);
+      setState("ready");
+    })().catch((err: unknown) => {
+      if (!live) return;
+      setError(err instanceof ApiFailure ? err.message : "It could not be opened.");
+      setState("failed");
+    });
+
+    const stop = queue.subscribe(key, (e) => {
+      if (e.type === "saved") {
+        known.current = e.known;
+        const sent = e.sent as T;
+        const saved = e.value as T;
+        if (opts.current.changed?.(sent, saved) && current.current !== null) {
+          // The server changed what it was sent, such as by writing an entry's id into a link.
+          // Changes made while the save was on its way are laid over what it answered.
+          show(
+            sameValue(current.current, sent)
+              ? saved
+              : opts.current.merge(sent, current.current, saved),
+          );
+        }
+        opts.current.onSaved?.({ sent, value: saved, link: e.link, unlinked: e.unlinked });
+      } else if (e.type === "merged") {
+        known.current = e.known;
+        // A snapshot from before the merge would take the other device's changes away again.
+        undoStack.current = [];
+        redoStack.current = [];
+        lastTag.current = null;
+        show(e.value as T);
+      } else if (e.type === "record" && e.record?.state === "attention") {
+        setError(e.record.error ?? "The change could not be saved.");
+      } else if (e.type === "record") {
+        setError(null);
+      }
+    });
+    return () => {
+      live = false;
+      stop();
+    };
+  }, [key]);
+
   const change = useCallback(
-    (fn: (value: T) => T, tag?: string) => {
+    (fn: (value: T) => T, tag?: string, link?: LinkItem[]) => {
       const before = current.current;
       if (before === null) return;
       const next = fn(before);
-      if (next === before) return;
-      if (tag === undefined || tag !== lastTag.current) {
-        undoStack.current = [...undoStack.current.slice(-KEPT + 1), before];
+      if (next === before && !link) return;
+      if (next !== before) {
+        if (tag === undefined || tag !== lastTag.current) {
+          undoStack.current = [...undoStack.current.slice(-KEPT + 1), before];
+        }
+        lastTag.current = tag ?? null;
+        redoStack.current = [];
       }
-      lastTag.current = tag ?? null;
-      redoStack.current = [];
-      put(next);
+      put(next, link);
     },
     [put],
   );
 
-  const touch = useCallback(() => {
-    if (current.current === null) return;
-    dirty.current = true;
-    halted.current = false;
-    setSaving("waiting");
-    schedule();
-  }, [schedule]);
+  const touch = useCallback(
+    (link?: LinkItem[]) => {
+      if (current.current !== null) put(current.current, link);
+    },
+    [put],
+  );
 
   const undo = useCallback(() => {
     const before = undoStack.current.at(-1);
@@ -229,24 +179,31 @@ export function useItemFile<T>(options: ItemFileOptions<T>): ItemFile<T> {
 
   const reload = useCallback(async () => {
     const theirs = await opts.current.load();
-    if (!live.current || current.current === null) return;
-    const mine = current.current;
-    const both = dirty.current
-      ? opts.current.merge(base.current ?? theirs.value, mine, theirs.value)
-      : theirs.value;
-    base.current = theirs.value;
-    revision.current = theirs.revision;
+    if (current.current === null) return;
+    const unsent = await queue.get(key);
+    const base = (known.current.base as T | undefined) ?? theirs.value;
+    known.current = {
+      draftId: "",
+      revision: theirs.revision,
+      baseBlob: theirs.blob,
+      base: theirs.value,
+    };
     undoStack.current = [];
     redoStack.current = [];
     lastTag.current = null;
-    show(both);
-  }, []);
+    if (!unsent) {
+      show(theirs.value);
+      return;
+    }
+    // A change still unsent is merged with what the server holds now, and goes from there.
+    await queue.drop(key);
+    put(opts.current.merge(base, current.current, theirs.value));
+  }, [key, put]);
 
   return {
     state,
     value,
     error,
-    saving,
     change,
     touch,
     reload,

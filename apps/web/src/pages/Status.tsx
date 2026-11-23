@@ -1,5 +1,7 @@
 import { Link } from "react-router-dom";
 import { api, entryUrl } from "../api.ts";
+import { Problem } from "../components/ui/Problem.tsx";
+import { Progress } from "../components/ui/Progress.tsx";
 import { useAsync } from "../useAsync.ts";
 
 function when(iso: string | null): string {
@@ -10,14 +12,22 @@ function when(iso: string | null): string {
 export function StatusPage() {
   const data = useAsync(() => Promise.all([api.status(), api.attention()]), "status");
   if (data.state === "loading") return <p className="center muted">Loading…</p>;
-  if (data.state === "failed") return <p className="center error">{data.error.message}</p>;
+  if (data.state === "failed") {
+    return (
+      <div className="center">
+        <Problem reason={data.error.message} onRetry={data.retry} />
+      </div>
+    );
+  }
   const [s, a] = data.value;
 
   return (
     <article className="entry">
+      {data.reloading && <Progress />}
       <header className="entry-head">
         <h1>Status</h1>
       </header>
+      {data.error && <Problem reason={data.error.message} onRetry={data.retry} />}
       <dl className="facts">
         <dt>Vault last fetched</dt>
         <dd>{when(s.lastFetchAt)}</dd>
@@ -50,6 +60,16 @@ export function StatusPage() {
         </p>
       ))}
       <h2>Needs your attention</h2>
+      <Section title="Texts from other devices to compare" empty="None.">
+        {a.versions.map((v) => (
+          <li key={v.draftId}>
+            <Link to={`/versions/${v.draftId}`}>{v.path}</Link>
+            <span className="muted">
+              : {v.count} {v.count === 1 ? "text" : "texts"} kept beside the draft
+            </span>
+          </li>
+        ))}
+      </Section>
       <Section title="Links that match more than one file" empty="None.">
         {a.ambiguousLinks.map((l, i) => (
           <li key={i}>

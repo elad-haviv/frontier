@@ -2,7 +2,13 @@ import { createContext, type ReactNode, useCallback, useContext, useEffect, useS
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import type { StatusSnapshot } from "@frontier/schema";
 import { api, editUrl } from "../api.ts";
+import { connection, useConnection } from "../sync/connection.ts";
+import { queue } from "../sync/queue.ts";
 import { useAsync } from "../useAsync.ts";
+import { ConnectionMark } from "./ConnectionMark.tsx";
+import { useDialogs } from "./Dialogs.tsx";
+import { Unsent } from "./Unsent.tsx";
+import { useToast } from "./ui/Toast.tsx";
 import { Switcher } from "./Switcher.tsx";
 import { Tree } from "./Tree.tsx";
 import { KeySheet } from "./KeySheet.tsx";
@@ -44,7 +50,7 @@ export function useWords() {
   };
 }
 
-/** The latest status the shell fetched, or null before the first answer. */
+/** The latest status the server sent, or null before the first. */
 export const useStatus = () => useContext(Status);
 
 /** Call after a draft or publish changed something, so the tree and the counts are read again. */
@@ -78,17 +84,38 @@ export function Shell({ children, onLoggedOut }: { children: ReactNode; onLogged
   const [switching, setSwitching] = useState(false);
   const [sheet, setSheet] = useState(false);
   const [making, setMaking] = useState(false);
-  const refresh = useCallback(() => setVersion((v) => v + 1), []);
+  const dialogs = useDialogs();
+  const toast = useToast();
+  const refresh = useCallback(() => {
+    setVersion((v) => v + 1);
+    // The status stream tells of most changes; this reads the counts at once all the same.
+    void connection.refreshStatus();
+  }, []);
   const tree = useAsync(() => api.tree(), `tree-${version}`);
-  const status = useAsync(() => api.status(), `status-${version}`);
+  // The status comes from the server's stream, through the connection service.
+  const { snapshot: status } = useConnection();
   const current = currentEntryPath(pathname);
-  const own = status.state === "ready" && status.value.library === "own";
+  const own = status?.library === "own";
   const words = { waiting: own ? "Unsaved" : "Unpublished" };
-  const waiting = status.state === "ready" ? status.value.unpublished : 0;
-  const proposals =
-    status.state === "ready"
-      ? status.value.inbox.branches + status.value.inbox.operations + status.value.inbox.quarantined
-      : 0;
+  const waiting = status?.unpublished ?? 0;
+  const proposals = status
+    ? status.inbox.branches + status.inbox.operations + status.inbox.quarantined
+    : 0;
+  const compare = status?.attention.keptCopies ?? 0;
+
+  // What the save queue has to say about a file whose page is not open here, such as two texts
+  // to compare, is said in a toast.
+  useEffect(
+    () =>
+      queue.onNotice((notice) => {
+        if (notice.watched) return;
+        toast({
+          message: notice.message,
+          ...(notice.href ? { action: { label: "Open", run: () => navigate(notice.href!) } } : {}),
+        });
+      }),
+    [toast, navigate],
+  );
 
   // One listener for every shortcut of the app. Ctrl+K (Cmd+K) opens the switcher from anywhere,
   // even from a field; "?" opens the list of shortcuts.
@@ -100,7 +127,19 @@ export function Shell({ children, onLoggedOut }: { children: ReactNode; onLogged
   useEffect(() => setOpen(false), [pathname]);
 
   async function logout() {
+    const unsent = queue.current().length;
+    if (unsent > 0) {
+      const ok = await dialogs.confirm({
+        title: unsent === 1 ? "1 change is not sent yet" : `${unsent} changes are not sent yet`,
+        body: "They are kept only on this device, and logging out removes them from it. Log out all the same?",
+        action: "Log out and lose them",
+        danger: true,
+      });
+      if (!ok) return;
+    }
     await api.logout().catch(() => undefined);
+    // A borrowed device keeps nothing: the queue and this device's id go.
+    await queue.clear();
     onLoggedOut();
   }
 
@@ -109,7 +148,7 @@ export function Shell({ children, onLoggedOut }: { children: ReactNode; onLogged
 
   return (
     <Refresh.Provider value={refresh}>
-      <Status.Provider value={status.state === "ready" ? status.value : null}>
+      <Status.Provider value={status}>
         <div className={`shell${open ? " drawer-open" : ""}`}>
           <header className="topbar">
             <IconButton
@@ -132,6 +171,17 @@ export function Shell({ children, onLoggedOut }: { children: ReactNode; onLogged
               onClick={() => setSwitching(true)}
             />
             <nav className="topnav">
+              <ConnectionMark />
+              <Unsent />
+              {compare > 0 && (
+                <Link
+                  to="/status"
+                  className="has-waiting"
+                  title="Texts from other devices, kept beside a draft for you to compare"
+                >
+                  Compare<span className="badge">{compare}</span>
+                </Link>
+              )}
               {proposals > 0 && (
                 <Link to="/inbox" className="has-waiting">
                   Inbox<span className="badge">{proposals}</span>

@@ -10,22 +10,13 @@ import { type Anchor, anchorAt, locate, MIN_QUOTE } from "../components/anchor.t
 import { setCommentMarks } from "../components/commentMarks.ts";
 import { Properties } from "../components/Properties.tsx";
 import { useRefresh } from "../components/Shell.tsx";
-import { clearBuffer, readBuffer, writeBuffer } from "../drafts.ts";
 import { useDialogs } from "../components/Dialogs.tsx";
 import { Menu, MenuItem, MenuSeparator } from "../components/ui/Menu.tsx";
+import { SaveStatus, useSaveState } from "../components/ui/SaveStatus.tsx";
 import { useScope, useShortcut } from "../keys.ts";
+import { type QueueKey, queue } from "../sync/queue.ts";
+import type { DraftKind } from "@frontier/schema";
 import { Trash2, Undo2 } from "lucide-react";
-
-type SaveState = "saved" | "saving" | "unsaved" | "offline" | "stale" | "failed";
-
-const LABEL: Record<SaveState, string> = {
-  saved: "Draft saved",
-  saving: "Saving…",
-  unsaved: "Unsaved",
-  offline: "Offline: kept on this device, will send when back",
-  stale: "Changed on another device",
-  failed: "Could not save",
-};
 
 function pathFrom(pathname: string): string {
   return pathname
@@ -45,18 +36,20 @@ export function EditPage() {
 
   const [initial, setInitial] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [state, setState] = useState<SaveState>("saved");
   const [message, setMessage] = useState<string | null>(null);
+  /** The draft the server kept this device's text beside, after it started from older text. */
+  const [stale, setStale] = useState<string | null>(null);
+  const key: QueueKey = `entry:${path}`;
+  const saving = useSaveState(key);
 
-  const draft = useRef({
+  /** The draft this device knows of, and the library file it started from. */
+  const draft = useRef<{ id: string; revision: number; kind: DraftKind; baseBlob: string }>({
     id: "",
     revision: 0,
-    kind: creating ? ("create" as const) : ("edit" as const),
+    kind: creating ? "create" : "edit",
+    baseBlob: "",
   });
   const latest = useRef("");
-  const timer = useRef<number | undefined>(undefined);
-  const saving = useRef(false);
-  const again = useRef(false);
   const view = useRef<EditorView | null>(null);
   // Writing help is offered once a model for it is chosen.
   const [writing, setWriting] = useState(false);
@@ -153,26 +146,20 @@ export function EditPage() {
   // Open the file: the server's draft or published text, or what this device still holds unsent.
   useEffect(() => {
     let live = true;
+    setStale(null);
     (async () => {
       let text = "";
-      let known = false;
       try {
         const entry = await api.entry(path);
-        known = true;
         if (entry.readOnly) {
           setError("This file is read-only.");
           return;
         }
         text = entry.text;
-        if (entry.draft && entry.draft.kind !== "delete") {
-          draft.current = {
-            id: entry.draft.id,
-            revision: entry.draft.revision,
-            kind: entry.draft.kind,
-          };
-        } else {
-          draft.current = { id: newDraftId(), revision: 0, kind: "edit" };
-        }
+        draft.current =
+          entry.draft && entry.draft.kind !== "delete"
+            ? { ...entry.draft, baseBlob: entry.blob }
+            : { id: newDraftId(), revision: 0, kind: "edit", baseBlob: entry.blob };
       } catch (err) {
         if (!(err instanceof ApiFailure) || err.status !== 404 || !creating) {
           if (live) setError(err instanceof ApiFailure ? err.message : "Could not open this file.");
@@ -180,92 +167,66 @@ export function EditPage() {
         }
         const name = (path.split("/").pop() ?? "").replace(/\.md$/i, "");
         text = `# ${name}\n\n`;
-        draft.current = { id: newDraftId(), revision: 0, kind: "create" };
+        draft.current = { id: newDraftId(), revision: 0, kind: "create", baseBlob: "" };
       }
-      const buffered = readBuffer(path);
-      if (buffered && buffered.text !== text && buffered.revision === draft.current.revision) {
-        if (known || creating) {
-          draft.current.id = draft.current.revision === 0 ? buffered.id : draft.current.id;
-          text = buffered.text;
-          setState("unsaved");
-        }
+      // Text this device has not sent yet is newer than the server's: it is what was typed last.
+      const unsent = await queue.get(key);
+      if (unsent && unsent.kind !== "delete") {
+        text = String(unsent.value);
+        draft.current = {
+          id: unsent.draftId || draft.current.id,
+          revision: unsent.revision,
+          kind: unsent.kind ?? draft.current.kind,
+          baseBlob: unsent.baseBlob ?? draft.current.baseBlob,
+        };
       }
       if (!live) return;
       latest.current = text;
       setInitial(text);
-      if (buffered && buffered.text === text && draft.current.revision > 0) clearBuffer(path);
     })();
     return () => {
       live = false;
     };
-  }, [path, creating]);
+  }, [path, creating, key]);
 
-  const save = useCallback(async () => {
-    if (saving.current) {
-      again.current = true;
-      return;
-    }
-    saving.current = true;
-    setState("saving");
-    const text = latest.current;
-    try {
-      const res = await api.saveDraft({ ...draft.current, path, text });
-      draft.current = { ...draft.current, id: res.id, revision: res.revision };
-      if (latest.current === text) {
-        clearBuffer(path);
-        setState("saved");
-      } else {
-        writeBuffer(path, { id: res.id, text: latest.current, revision: res.revision });
-      }
-      setMessage(null);
-      refresh();
-    } catch (err) {
-      const failure = err instanceof ApiFailure ? err : null;
-      if (failure?.code === "offline") {
-        setState("offline");
-        timer.current = window.setTimeout(() => void save(), 5000);
-      } else if (failure?.code === "stale_revision") {
-        setState("stale");
-        setMessage(failure.message);
-        clearBuffer(path);
-        if (failure.draftId) draft.current.id = failure.draftId;
-      } else {
-        setState("failed");
-        setMessage(failure?.message ?? "Something went wrong while saving.");
-      }
-    } finally {
-      saving.current = false;
-      if (again.current) {
-        again.current = false;
-        void save();
-      }
-    }
-  }, [path, refresh]);
+  // What the queue hears from the server about this file.
+  useEffect(
+    () =>
+      queue.subscribe(key, (e) => {
+        if (e.type === "saved") {
+          draft.current = {
+            ...draft.current,
+            id: e.known.draftId,
+            revision: e.known.revision,
+          };
+          setMessage(null);
+          refresh();
+        } else if (e.type === "stale") {
+          // Text typed from now on goes to the same kept copy: revision 0 is never built on.
+          draft.current = { ...draft.current, id: e.draftId, revision: 0 };
+          setStale(e.draftId);
+          refresh();
+        }
+      }),
+    [key, refresh],
+  );
 
   const onChange = useCallback(
     (text: string) => {
       latest.current = text;
       // Kept on this device at once; sent to the server after a second without typing.
-      writeBuffer(path, { id: draft.current.id, text, revision: draft.current.revision });
-      setState((s) => (s === "stale" ? s : "unsaved"));
-      window.clearTimeout(timer.current);
-      timer.current = window.setTimeout(() => void save(), 1000);
+      const { id, revision, kind, baseBlob } = draft.current;
+      void queue.put(key, text, { kind, draftId: id, revision, baseBlob });
       window.clearTimeout(marksTimer.current);
       marksTimer.current = window.setTimeout(() => {
         placeMarks(commentsNow.current);
         setTextTick((n) => n + 1);
       }, 500);
     },
-    [path, save, placeMarks],
+    [key, placeMarks],
   );
 
-  useEffect(
-    () => () => {
-      window.clearTimeout(timer.current);
-      window.clearTimeout(marksTimer.current);
-    },
-    [],
-  );
+  useEffect(() => () => window.clearTimeout(marksTimer.current), []);
 
   // Once the editor holds the text, its comments are found and highlighted.
   useEffect(() => {
@@ -296,19 +257,17 @@ export function EditPage() {
   // proposed field on another device, and nothing here is unsent, show the server's text.
   useEffect(() => {
     const check = async () => {
-      if (document.visibilityState !== "visible" || saving.current) return;
+      if (document.visibilityState !== "visible" || (await queue.get(key))) return;
       const entry = await api.entry(path).catch(() => null);
       const v = view.current;
       if (!entry?.draft || !v || entry.draft.id !== draft.current.id) return;
       if (entry.draft.revision <= draft.current.revision) return;
-      if (latest.current !== v.state.doc.toString() || readBuffer(path)) return;
+      if (latest.current !== v.state.doc.toString() || (await queue.get(key))) return;
       draft.current.revision = entry.draft.revision;
       latest.current = entry.text;
       v.dispatch({ changes: { from: 0, to: v.state.doc.length, insert: entry.text } });
       // The line above reports a change like typing does; this text is the server's already.
-      window.clearTimeout(timer.current);
-      clearBuffer(path);
-      setState("saved");
+      await queue.drop(key);
     };
     const onVisible = () => void check();
     document.addEventListener("visibilitychange", onVisible);
@@ -317,21 +276,18 @@ export function EditPage() {
       document.removeEventListener("visibilitychange", onVisible);
       window.removeEventListener("focus", onVisible);
     };
-  }, [path]);
+  }, [path, key]);
 
   async function done() {
-    window.clearTimeout(timer.current);
-    if (state === "unsaved" || state === "offline") await save();
+    // What waits is sent now; without a connection it stays on this device and goes later.
+    await queue.sendNow(key);
     navigate(entryUrl(path));
   }
 
   // The editor's keys: Ctrl+S sends the text now instead of after the pause, Ctrl+Enter is Done.
   useScope("editor");
   useScope("table");
-  useShortcut("editor.save", () => {
-    window.clearTimeout(timer.current);
-    void save();
-  });
+  useShortcut("editor.save", () => void queue.sendNow(key));
   useShortcut("editor.done", () => void done());
 
   // The folded frontmatter line in the text opens the Properties panel, at its first field.
@@ -352,8 +308,9 @@ export function EditPage() {
       danger: true,
     });
     if (!ok) return;
-    window.clearTimeout(timer.current);
-    clearBuffer(path);
+    // The unsent text goes first; a send already on its way is waited for, so the draft it
+    // makes is the one discarded.
+    await queue.drop(key);
     if (draft.current.revision > 0) await api.discardDraft(draft.current.id).catch(() => undefined);
     refresh();
     navigate(draft.current.kind === "create" ? "/" : entryUrl(path));
@@ -367,13 +324,20 @@ export function EditPage() {
       danger: true,
     });
     if (!ok) return;
-    window.clearTimeout(timer.current);
-    clearBuffer(path);
     try {
       if (draft.current.kind === "create") {
+        await queue.drop(key);
         if (draft.current.revision > 0) await api.discardDraft(draft.current.id);
       } else {
-        await api.saveDraft({ ...draft.current, kind: "delete", path, text: "" });
+        // The delete goes through the queue like any change, so it is kept until it is sent.
+        const { id, revision, baseBlob } = draft.current;
+        await queue.put(key, "", { kind: "delete", draftId: id, revision, baseBlob });
+        await queue.sendNow(key);
+        const refused = await queue.get(key);
+        if (refused?.state === "attention") {
+          setMessage(refused.error ?? "Could not delete.");
+          return;
+        }
       }
       refresh();
       navigate("/unpublished");
@@ -398,9 +362,7 @@ export function EditPage() {
         <span className="editor-path" title={path}>
           {path.split("/").pop()?.replace(/\.md$/i, "")}
         </span>
-        <span className={`save-state save-${state}`} role="status">
-          {LABEL[state]}
-        </span>
+        <SaveStatus state={stale ? "stale" : saving.state} />
         <span className="editor-actions">
           <button
             type="button"
@@ -436,12 +398,15 @@ export function EditPage() {
           </Menu>
         </span>
       </div>
-      {message && (
+      {stale && (
         <p className="banner" role="alert">
-          {message}{" "}
-          {state === "stale" && (
-            <Link to={`/versions/${draft.current.id}`}>Merge the two versions</Link>
-          )}
+          This entry was changed on another device after this text was started. Both texts are kept.{" "}
+          <Link to={`/versions/${stale}`}>Compare the two texts</Link>
+        </p>
+      )}
+      {(message ?? (saving.state === "failed" ? saving.error : null)) && (
+        <p className="banner" role="alert">
+          {message ?? saving.error}
         </p>
       )}
       <Properties view={view} ref={properties} />

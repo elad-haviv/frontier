@@ -1,0 +1,13 @@
+.versions-page .kept-copies {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin: 0.8rem 0;
+}
+.versions-page .kept-copies button[aria-pressed="true"] {
+  border-color: var(--accent);
+  color: var(--ink);
+}
+.versions-page .kept-copies .muted {
+  font-size: 0.85em;
+}

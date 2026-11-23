@@ -5,6 +5,8 @@ import { api, ApiFailure, branchImageUrl, editUrl, entryUrl } from "../api.ts";
 import { Diff } from "../components/Diff.tsx";
 import { useRefresh } from "../components/Shell.tsx";
 import { useDialogs } from "../components/Dialogs.tsx";
+import { Problem } from "../components/ui/Problem.tsx";
+import { Progress } from "../components/ui/Progress.tsx";
 
 const KIND: Record<BranchFile["kind"], string> = {
   added: "New",
@@ -163,7 +165,10 @@ export function InboxPage() {
   const refresh = useRefresh();
   const navigate = useNavigate();
 
+  const [loading, setLoading] = useState(false);
+
   const load = useCallback(async () => {
+    setLoading(true);
     try {
       const inbox = await api.inbox();
       setProposals(inbox.proposals);
@@ -174,6 +179,8 @@ export function InboxPage() {
         kind: "error",
         text: err instanceof ApiFailure ? err.message : "Could not load the inbox.",
       });
+    } finally {
+      setLoading(false);
     }
   }, []);
   useEffect(() => void load(), [load]);
@@ -208,10 +215,25 @@ export function InboxPage() {
     await load();
   }
 
-  if (!branches) return <p className="center muted">{notice?.text ?? "Loading…"}</p>;
+  if (!branches) {
+    return notice ? (
+      <div className="center">
+        <Problem
+          reason={notice.text}
+          onRetry={() => {
+            setNotice(null);
+            void load();
+          }}
+        />
+      </div>
+    ) : (
+      <p className="center muted">Loading…</p>
+    );
+  }
 
   return (
     <article className="entry wide inbox">
+      {loading && <Progress />}
       <header className="entry-head">
         <h1>Inbox</h1>
         <p className="muted lede">
