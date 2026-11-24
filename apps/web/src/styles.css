@@ -4382,3 +4382,28 @@ button[data-offline] {
 .label-look input[type="number"] {
   width: 100%;
 }
+
+/* ---- Ask by voice (stage 19) --------------------------------------------------------------- */
+
+.ask-actions {
+  margin: 0.6rem 0 0;
+  gap: 0.5rem;
+}
+.ask-go {
+  display: flex;
+  gap: 0.5rem;
+  margin-left: auto;
+}
+.ask-status {
+  font-size: 0.88rem;
+}
+/* On a phone the bar at the bottom says it is listening. */
+@media (max-width: 640px) {
+  .ask-status.is-listening {
+    display: none;
+  }
+}
+.ask-problem {
+  margin: 0.4rem 0 0;
+  font-size: 0.88rem;
+}

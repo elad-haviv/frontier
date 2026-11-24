@@ -103,6 +103,23 @@ function character(user) {
 }
 
 function lore(user) {
+  if (user.includes("\nWhat the author said:\n")) {
+    // Drafting an entry from speech: a title from his first words, a line that contradicts the
+    // first entry it was given (backed by that entry's own first line), and one question left open.
+    const { path, line } = firstLine(user);
+    const said = user.split("What the author said:\n")[1]?.trim() ?? "";
+    return {
+      title: said.split(/\s+/).slice(0, 2).join(" ") || "Untitled",
+      folder: path.split("/").slice(0, -1).join("/"),
+      paragraphs: ["A warden of the harbour lights.", "The lights are never lit."],
+      notSaid: ["How old is the warden?"],
+      conflicts: line && path ? [{ paragraph: 1, path, quote: line }] : [],
+    };
+  }
+  if (user.includes("=== Paragraph")) {
+    // Looking again at an edited paragraph: nothing contradicts it now.
+    return { conflicts: [] };
+  }
   if (user.includes("\nThe character: ")) {
     const { path, line } = firstLine(user);
     return {
