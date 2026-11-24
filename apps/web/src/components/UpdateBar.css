@@ -1,0 +1,25 @@
+/* A strip above the page: quiet, in the page's own colours, with the two answers at its end. */
+.update-bar {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.6rem;
+  padding: 0.45rem 1rem;
+  border-bottom: 1px solid var(--rule);
+  background: var(--accent-soft);
+  color: var(--ink);
+  font-size: 0.9rem;
+}
+.update-bar-words {
+  flex: 1;
+  min-width: 12rem;
+}
+.update-bar button.primary,
+.update-bar button.quiet {
+  padding: 0.3rem 0.75rem;
+  font-size: 0.85rem;
+}
+.update-bar button.quiet {
+  background: var(--paper-raised);
+}

@@ -1,0 +1,23 @@
+# Design documents
+
+| Design | Date | Author | Components | Description |
+| --- | --- | --- | --- | --- |
+| [Frontier](frontier.md) | 2026-11-20 | Elad Haviv | Whole app; file-level plan for stages 1 and 2 (foundation, reader and editor) | Master specification: product, architecture and data formats for all nine stages of the Avalymia worldbuilding app. |
+| [Frontier's own library](own-library.md) | 2026-11-21 | Elad Haviv | Where the knowledge base lives; versions; import; export | Changes the method: Frontier keeps its own library and is its only writer, instead of sharing a GitHub repository. Newer than the parent where they differ. |
+| [Stage 3: review inbox, AI basics, structured fields](stage-3-review-and-ai-basics.md) | 2026-11-21 | Elad Haviv | Inbox for agent branches; fields, schema and ids; AI provider, cost log and field proposals; quarantine; passkey | Formats and rules for stage 3, in five parts built in order. |
+| [Stage 4: maps](stage-4-maps.md) | 2026-11-21 | Elad Haviv | Map files, the WebGL viewer for flat maps and globes, markers, paths, zones, layers, measuring | Formats and rules for stage 4, in five parts built in order. |
+| [Stage 5: chronicles](stage-5-chronicles.md) | 2026-11-21 | Elad Haviv | Chronicle files; order, comparison and scale views; checks; real-world cases | A workbench for shaping history before it is written. Replaces the parent design's Time section. Comes from `concepts_brief.md`. |
+| [Stage 11: foundations, shell and folder tree](stage-11-foundations-shell-tree.md) | 2026-11-22 | Elad Haviv | Fixes and shared UI pieces; save queue, kept copies and connection signal; shell with two side bars; editable folder tree and `.frontier/folders.json` | First of five stages (11 to 15). Approved after a five-stage Goldfish review; four releases 11a-1, 11a-2, 11b, 11c. |
+| [Stage 12: reading and writing entries](stage-12-entries-editor.md) | 2026-11-23 | Elad Haviv | Sticky heading line and Outline tab; full width; rename and move in place; History and Export tabs; editor toolbar, styles, lists, underline, context menu; image dialog with safe web-address import | 12a reading, 12b writing. Approved after a Goldfish review. |
+| [Stage 13: maps](stage-13-maps.md) | 2026-11-23 | Elad Haviv | MapPage split and gesture state machine; hover, selection, context menu and keys; rubber band, curves, midpoint points, zone drag, pickers; library-wide path and zone styles | 13a-1, 13a-2, 13b, 13c, 13d. Approved after a Goldfish review. |
+| [Stage 14: the graph](stage-14-graph.md) | 2026-11-23 | Elad Haviv | `/api/graph`; the graph screen with find, folder filter and an Entries list; the local graph tab | 14a, 14b, optional 14c. Approved after a Goldfish review. |
+| [Stage 15: offline](stage-15-offline.md) | 2026-11-23 | Elad Haviv | Installable app and service worker; device copy of the index and the last 30 entries, 5 maps, 5 chronicles; offline reads and writes; item kept copies | 15a, 15b, 15c. Approved after a Goldfish review. |
+| [Stage 17: the chronicle as a timeline](stage-17-chronicles-timeline.md) | 2026-11-24 | Elad Haviv | One Gantt-like timeline per chronicle; typed dates; ties; details panel; List view; the map year line | Replaces stage 5's Order, Scale, Does not fit and Lanes tabs. Approved with all the designer's recommendations. |
+
+Status: Approved on 2026-11-20 after a five-stage review. The review reports are in this repository's Git
+history (removed from the working tree in the commit that approved the design).
+
+The stage 3 and stage 4 designs are drafts, each revised after one implementation-readiness review.
+The author has not yet read them. Stage 3 is built; stage 4 is being built.
+
+Later stages (6 to 9) each get their own design document, registered here before they are built.

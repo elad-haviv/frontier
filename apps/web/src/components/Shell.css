@@ -1,0 +1,117 @@
+/* The shell: the left side bar, the page, and the right side bar of panels, filling the screen.
+   The page scrolls inside its own area, so the side bars stay where they are. */
+.shell {
+  display: flex;
+  height: 100dvh;
+  overflow: hidden;
+}
+.shell.is-phone {
+  flex-direction: column;
+  --top: var(--bar);
+}
+
+.side {
+  flex: none;
+  width: var(--side);
+  height: 100%;
+  border-right: 1px solid var(--rule);
+  background: var(--paper-raised);
+  z-index: var(--layer-side);
+}
+.side.is-rail {
+  width: var(--rail);
+}
+
+.shell-group {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+.shell-main,
+.shell-right {
+  height: 100%;
+}
+/* The page, with the update bar above it when a new version waits. */
+.shell-main {
+  display: flex;
+  flex-direction: column;
+}
+
+.content {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scroll-padding-top: 4rem;
+}
+
+/* The splitters beside the page: a hairline, with a wider grip to hold. Each is reached with Tab
+   and moved with the arrow keys. */
+.splitter {
+  position: relative;
+  z-index: var(--layer-side);
+  flex: none;
+  width: 1px;
+  background: var(--rule);
+  outline: none;
+}
+.splitter::after {
+  content: "";
+  position: absolute;
+  inset: 0 -3px;
+}
+.splitter:hover,
+.splitter[data-separator="active"],
+.splitter:focus-visible {
+  background: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+/* The left side bar inside its panel: the panel gives the width, the splitter its edge. */
+.shell-left {
+  height: 100%;
+}
+.shell-left > .side {
+  width: 100%;
+  border-right: 0;
+}
+
+/* The phone: the top line, then the page. */
+.phone-top {
+  flex: none;
+  z-index: var(--layer-sticky);
+}
+
+/* The drawer slides in from the left over a dimmed page. */
+.scrim {
+  position: fixed;
+  inset: 0;
+  z-index: calc(var(--layer-side) - 1);
+  background: rgba(20, 16, 10, 0.45);
+}
+.drawer {
+  position: fixed;
+  z-index: var(--layer-side);
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: min(var(--side), 86vw);
+  padding-top: env(safe-area-inset-top);
+  padding-left: env(safe-area-inset-left);
+  background: var(--paper-raised);
+  border-right: 1px solid var(--rule);
+  box-shadow: var(--shadow);
+  outline: none;
+  animation: drawer-in 180ms ease;
+}
+@keyframes drawer-in {
+  from {
+    transform: translateX(-100%);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .drawer {
+    animation: none;
+  }
+}

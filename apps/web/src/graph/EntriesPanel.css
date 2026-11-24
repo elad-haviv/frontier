@@ -1,0 +1,44 @@
+.graph-entries-count {
+  margin: 0 0 var(--space-2);
+  font-size: 0.85rem;
+}
+.graph-entries-none {
+  margin: 0;
+}
+
+.graph-entries-list {
+  margin: 0;
+  padding: var(--space-1) 0;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  list-style: none;
+}
+.graph-entries-list:focus-visible {
+  outline-offset: 0;
+}
+
+.graph-entry {
+  display: flex;
+  flex-direction: column;
+  padding: 0.35rem var(--space-3);
+  border-left: 3px solid transparent;
+  cursor: pointer;
+}
+.graph-entry:hover {
+  background: color-mix(in srgb, var(--ink) 5%, transparent);
+}
+/* Where the keys are, while the list has the focus. */
+.graph-entries-list:focus-visible .graph-entry.is-active {
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+.graph-entry[aria-selected="true"] {
+  border-left-color: var(--accent);
+  background: var(--accent-soft);
+}
+.graph-entry-name {
+  font-weight: 600;
+}
+.graph-entry-folder {
+  color: var(--ink-faint);
+  font-size: 0.8rem;
+}

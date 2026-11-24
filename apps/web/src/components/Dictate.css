@@ -1,0 +1,90 @@
+/* The microphone and the bar that shows while it listens. */
+.dictate {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 2.75rem;
+  height: 2.75rem;
+  border: 1px solid var(--rule);
+  border-radius: 50%;
+  background: var(--paper-raised);
+  color: var(--ink);
+}
+.dictate.is-small {
+  width: 2.5rem;
+  height: 2.5rem;
+}
+.dictate:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.dictate.is-on {
+  border-color: var(--warn);
+  background: var(--warn);
+  color: var(--paper-raised);
+  animation: dictate-ring 1.5s infinite;
+}
+@keyframes dictate-ring {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--warn) 45%, transparent);
+  }
+  70% {
+    box-shadow: 0 0 0 10px transparent;
+  }
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+  }
+}
+
+.listening-bar {
+  display: none;
+}
+@media (max-width: 640px) {
+  .listening-bar {
+    position: fixed;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    z-index: var(--layer-sticky);
+    display: flex;
+    align-items: center;
+    gap: 0.7rem;
+    padding: 0.7rem max(1rem, env(safe-area-inset-right)) calc(0.7rem + env(safe-area-inset-bottom))
+      max(1rem, env(safe-area-inset-left));
+    border-top: 2px solid var(--warn);
+    background: var(--paper-raised);
+    box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.18);
+    color: var(--warn);
+    font-weight: 600;
+  }
+}
+.listening-wave {
+  display: flex;
+  flex: 1;
+  gap: 3px;
+  align-items: center;
+  height: 1.6rem;
+}
+.listening-wave i {
+  flex: 1;
+  max-width: 5px;
+  height: 20%;
+  border-radius: 2px;
+  background: var(--warn);
+  animation: listening-wave 1s ease-in-out infinite;
+}
+@keyframes listening-wave {
+  0%,
+  100% {
+    height: 20%;
+  }
+  50% {
+    height: 100%;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .dictate.is-on,
+  .listening-wave i {
+    animation: none;
+  }
+}

@@ -1,0 +1,312 @@
+import { existsSync, readFileSync, statSync } from "node:fs";
+import { join } from "node:path";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { GitError, GitGateway } from "../src/git/gateway.js";
+import { makeTestRepo, type TestRepo } from "./helpers/repo.js";
+
+const AUTHOR = { name: "The Author", email: "author@example.com" };
+const BOT = { name: "frontier[bot]", email: "bot@example.com" };
+
+let repo: TestRepo;
+let commands: string[][];
+let git: GitGateway;
+
+function gateway(overrides: Partial<ConstructorParameters<typeof GitGateway>[0]> = {}): GitGateway {
+  return new GitGateway({
+    dir: repo.workdir,
+    remoteUrl: repo.remote,
+    author: AUTHOR,
+    committer: BOT,
+    onCommand: (args) => commands.push([...args]),
+    ...overrides,
+  });
+}
+
+beforeEach(async () => {
+  repo = makeTestRepo();
+  commands = [];
+  git = gateway();
+  await git.ensureClone();
+});
+
+afterEach(() => repo.cleanup());
+
+const code = (p: Promise<unknown>) =>
+  p.then(
+    () => "no error",
+    (e: unknown) => (e instanceof GitError ? e.code : `other: ${String(e)}`),
+  );
+
+describe("clone and fetch", () => {
+  it("clones once and leaves an existing working copy alone", async () => {
+    expect(existsSync(join(repo.workdir, "README.md"))).toBe(true);
+    const before = commands.length;
+    await git.ensureClone();
+    expect(commands.length).toBe(before);
+    expect(await git.head()).toBe(repo.remoteHead());
+  });
+
+  it("reports nothing changed when the remote has not moved", async () => {
+    const r = await git.fetch();
+    expect(r.previous).toBe(r.current);
+    expect(r.changed).toEqual([]);
+  });
+
+  it("moves the working copy to the new main and lists what changed", async () => {
+    const pushed = repo.pushFromOutside({
+      "02 People/Mira.md": "# Mira\n\nChanged outside.\n",
+      "02 People/New Person.md": "# New\n",
+      "03 Things/Plain.md": null,
+    });
+    const r = await git.fetch();
+    expect(r.current).toBe(pushed);
+    expect(r.changed).toEqual([
+      { status: "modified", path: "02 People/Mira.md" },
+      { status: "added", path: "02 People/New Person.md" },
+      { status: "deleted", path: "03 Things/Plain.md" },
+    ]);
+    expect(readFileSync(join(repo.workdir, "02 People/Mira.md"), "utf8")).toContain(
+      "Changed outside",
+    );
+    expect(existsSync(join(repo.workdir, "03 Things/Plain.md"))).toBe(false);
+  });
+
+  it("throws away stray files and edits in the working copy", async () => {
+    const { writeFileSync } = await import("node:fs");
+    writeFileSync(join(repo.workdir, "stray.txt"), "x");
+    writeFileSync(join(repo.workdir, "README.md"), "overwritten");
+    await git.fetch();
+    expect(existsSync(join(repo.workdir, "stray.txt"))).toBe(false);
+    expect(readFileSync(join(repo.workdir, "README.md"), "utf8")).toContain("Fixture vault");
+  });
+});
+
+describe("reading", () => {
+  it("lists files, including names with spaces", async () => {
+    const files = await git.listFiles();
+    expect(files).toContain("01 Places/Harbor/Old Quay.md");
+    expect(files).toContain("99 Appendices/Images/map one.png");
+    expect(files).toEqual(repo.remoteFiles());
+  });
+
+  it("reads a file's bytes and blob hash, and null for a missing file", async () => {
+    const bytes = await git.readFile("03 Things/Rope.md");
+    expect(bytes?.toString("utf8")).toBe(
+      "# Rope\r\n\r\nTied at the [[Old Quay]].\r\nSecond line.\r\n",
+    );
+    expect(await git.readFile("nope.md")).toBeNull();
+    const hash = await git.blobHash("03 Things/Rope.md");
+    expect(hash).toMatch(/^[0-9a-f]{40}$/);
+    expect(await git.hashOf(bytes!)).toBe(hash);
+    expect(await git.blobHash("nope.md")).toBeNull();
+  });
+});
+
+describe("commit and push", () => {
+  it("builds a commit without touching the working copy, then pushes it", async () => {
+    const before = statSync(join(repo.workdir, "02 People/Mira.md")).mtimeMs;
+    const commit = await git.commit(
+      {
+        writes: [{ path: "02 People/Mira.md", content: Buffer.from("# Mira\n\nEdited.\n") }],
+        deletes: [],
+      },
+      "Edit Mira",
+    );
+    expect(readFileSync(join(repo.workdir, "02 People/Mira.md"), "utf8")).not.toContain("Edited");
+    expect(statSync(join(repo.workdir, "02 People/Mira.md")).mtimeMs).toBe(before);
+    expect(await git.head()).not.toBe(commit);
+
+    const parent = repo.remoteHead();
+    await git.push(commit);
+    expect(repo.remoteHead()).toBe(commit);
+    expect(repo.remoteFile("02 People/Mira.md")).toBe("# Mira\n\nEdited.\n");
+    expect(repo.remoteCommit(commit)).toEqual({
+      message: "Edit Mira",
+      author: "The Author <author@example.com>",
+      committer: "frontier[bot] <bot@example.com>",
+      parents: [parent],
+    });
+  });
+
+  it("removes a deleted file and a rename's old path from the commit", async () => {
+    const old = (await git.readFile("02 People/Mira.md"))!;
+    const commit = await git.commit(
+      {
+        writes: [{ path: "02 People/Mira Vale.md", content: old }],
+        deletes: ["02 People/Mira.md", "03 Things/Plain.md"],
+      },
+      "Rename Mira, delete Plain",
+    );
+    await git.push(commit);
+    const files = repo.remoteFiles();
+    expect(files).toContain("02 People/Mira Vale.md");
+    expect(files).not.toContain("02 People/Mira.md");
+    expect(files).not.toContain("03 Things/Plain.md");
+    // The files are still in the working copy until the next fetch.
+    expect(existsSync(join(repo.workdir, "02 People/Mira.md"))).toBe(true);
+    await git.fetch();
+    expect(existsSync(join(repo.workdir, "02 People/Mira.md"))).toBe(false);
+  });
+
+  it("keeps the bytes it is given, including Windows line endings and images", async () => {
+    const text = Buffer.from("# Rope\r\n\r\nOne line.\r\n");
+    const image = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0, 1, 2, 3, 255]);
+    const commit = await git.commit(
+      {
+        writes: [
+          { path: "03 Things/Rope.md", content: text },
+          { path: "99 Appendices/Images/new.png", content: image },
+        ],
+        deletes: [],
+      },
+      "Bytes",
+    );
+    await git.push(commit);
+    await git.fetch();
+    expect(readFileSync(join(repo.workdir, "03 Things/Rope.md")).equals(text)).toBe(true);
+    expect(readFileSync(join(repo.workdir, "99 Appendices/Images/new.png")).equals(image)).toBe(
+      true,
+    );
+  });
+
+  it("refuses an empty commit", async () => {
+    expect(await code(git.commit({ writes: [], deletes: [] }, "Nothing"))).toBe("git_failed");
+  });
+
+  it("reports main_moved when the remote changed first, and leaves the remote alone", async () => {
+    const commit = await git.commit(
+      { writes: [{ path: "02 People/Mira.md", content: Buffer.from("mine\n") }], deletes: [] },
+      "Mine",
+    );
+    const theirs = repo.pushFromOutside({ "02 People/Shade.md": "# Shade\n\nTheirs.\n" });
+    expect(await code(git.push(commit))).toBe("main_moved");
+    expect(repo.remoteHead()).toBe(theirs);
+  });
+
+  it("reports push_failed when the remote cannot be reached", async () => {
+    const commit = await git.commit(
+      { writes: [{ path: "x.md", content: Buffer.from("x\n") }], deletes: [] },
+      "X",
+    );
+    const { renameSync } = await import("node:fs");
+    renameSync(repo.remote, repo.remote + ".gone");
+    expect(await code(git.push(commit))).toBe("push_failed");
+    renameSync(repo.remote + ".gone", repo.remote);
+  });
+
+  it("never asks Git to force a push", async () => {
+    const commit = await git.commit(
+      { writes: [{ path: "x.md", content: Buffer.from("x\n") }], deletes: [] },
+      "X",
+    );
+    await git.push(commit);
+    repo.pushFromOutside({ "y.md": "y\n" });
+    await git.fetch();
+    const pushes = commands.filter((c) => c[0] === "push");
+    expect(pushes.length).toBeGreaterThan(0);
+    for (const args of commands) {
+      for (const arg of args) {
+        expect(arg).not.toMatch(/^--force/);
+        expect(arg).not.toMatch(/^-f$/);
+        // A "+" is allowed only when fetching, where it lets the local copy of a proposal branch
+        // follow the remote. It never appears in a push.
+        if (args[0] !== "fetch") expect(arg.startsWith("+")).toBe(false);
+      }
+    }
+    // "clean -fd" is the one command that takes an "f", and it is not a push.
+    expect(commands.filter((c) => c.includes("-fd")).every((c) => c[0] === "clean")).toBe(true);
+  });
+});
+
+describe("three-way merge", () => {
+  const base = "one\ntwo\nthree\nfour\nfive\n";
+
+  it("merges changes in different places", async () => {
+    const r = await git.mergeFile(
+      "ONE\ntwo\nthree\nfour\nfive\n",
+      base,
+      "one\ntwo\nthree\nfour\nFIVE\n",
+    );
+    expect(r).toEqual({ clean: true, text: "ONE\ntwo\nthree\nfour\nFIVE\n" });
+  });
+
+  it("reports an overlap and returns both sides marked", async () => {
+    const r = await git.mergeFile(
+      "one\nMINE\nthree\nfour\nfive\n",
+      base,
+      "one\nTHEIRS\nthree\nfour\nfive\n",
+    );
+    expect(r.clean).toBe(false);
+    expect(r.text).toContain("<<<<<<< yours");
+    expect(r.text).toContain("MINE");
+    expect(r.text).toContain("THEIRS");
+  });
+
+  it("is clean when both sides made the same change", async () => {
+    const same = "one\nSAME\nthree\nfour\nfive\n";
+    expect(await git.mergeFile(same, base, same)).toEqual({ clean: true, text: same });
+  });
+});
+
+describe("errors and the lock", () => {
+  it("reports a Git failure with Git's own message", async () => {
+    const broken = gateway({ dir: join(repo.root, "not-a-repo") });
+    await expect(broken.head()).rejects.toThrow(/git rev-parse failed/);
+    expect(await code(broken.head())).toBe("git_failed");
+  });
+
+  it("fails a clone from a missing remote", async () => {
+    const g = gateway({
+      dir: join(repo.root, "second"),
+      remoteUrl: join(repo.root, "missing.git"),
+    });
+    expect(await code(g.ensureClone())).toBe("git_failed");
+  });
+
+  it("runs operations one at a time, in the order asked", async () => {
+    const order: string[] = [];
+    const g = gateway({ onCommand: (args) => order.push(args[0]!) });
+    await Promise.all([g.fetch(), g.listFiles(), g.head()]);
+    const firstList = order.indexOf("ls-tree");
+    const lastFetchStep = order.lastIndexOf("clean");
+    expect(lastFetchStep).toBeLessThan(firstList);
+    expect(order.lastIndexOf("rev-parse")).toBeGreaterThan(firstList);
+  });
+
+  it("gives up with git_busy when the lock is held too long, and recovers afterwards", async () => {
+    const g = gateway({ lockTimeoutMs: 1 });
+    const results = await Promise.all([code(g.fetch()), code(g.head()), code(g.head())]);
+    expect(results[0]).toBe("no error");
+    expect(results.slice(1)).toContain("git_busy");
+    await new Promise((r) => setTimeout(r, 50));
+    expect(
+      await new GitGateway({
+        dir: repo.workdir,
+        remoteUrl: repo.remote,
+        author: AUTHOR,
+        committer: BOT,
+      }).head(),
+    ).toBe(repo.remoteHead());
+  });
+
+  it("passes a token through the environment, never on the command line", async () => {
+    let asked = 0;
+    const g = gateway({
+      token: async () => {
+        asked++;
+        return "secret-token-value";
+      },
+    });
+    await g.fetch();
+    expect(asked).toBeGreaterThan(0);
+    expect(JSON.stringify(commands)).not.toContain("secret-token-value");
+    expect(JSON.stringify(commands)).not.toContain(
+      Buffer.from("x-access-token:secret-token-value").toString("base64"),
+    );
+  });
+
+  it("uses no token when the source returns none", async () => {
+    const g = gateway({ token: async () => null });
+    expect((await g.fetch()).changed).toEqual([]);
+  });
+});

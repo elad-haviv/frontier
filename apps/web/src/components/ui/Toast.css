@@ -1,0 +1,32 @@
+.ui-toasts {
+  position: fixed;
+  left: 50%;
+  bottom: max(1rem, env(safe-area-inset-bottom));
+  z-index: var(--layer-toast);
+  transform: translateX(-50%);
+  width: max-content;
+  max-width: calc(100vw - 2rem);
+  pointer-events: none;
+}
+.ui-toast {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.35rem 0.35rem 0.35rem 0.9rem;
+  border-radius: 8px;
+  background: var(--ink);
+  color: var(--paper);
+  font-size: 0.92rem;
+  box-shadow: var(--shadow);
+  pointer-events: auto;
+}
+.ui-toast-message {
+  flex: 1;
+}
+.ui-toast-action {
+  color: var(--accent-soft);
+  font-weight: 600;
+}
+.ui-toast .ui-toast-close {
+  color: var(--paper);
+}

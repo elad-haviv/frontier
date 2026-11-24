@@ -1,0 +1,96 @@
+/* The library's images: folders down the side where there is room, a row of folders above the
+   grid where there is not. The tiles are the Gallery's (styles.css, .gallery-*). */
+.library {
+  container: library / inline-size;
+  min-width: 0;
+}
+.library-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.75rem;
+}
+.library-folders {
+  display: flex;
+  gap: 0.25rem;
+  overflow-x: auto;
+  padding-bottom: 0.2rem;
+  scrollbar-width: thin;
+}
+.library-folders button {
+  flex: none;
+  min-height: 2.25rem;
+  padding: 0.3rem 0.65rem;
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  background: var(--paper-raised);
+  color: var(--ink-soft);
+  font-size: 0.85rem;
+  text-align: left;
+  white-space: nowrap;
+}
+.library-folders button[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--ink);
+}
+@container library (min-width: 36rem) {
+  .library-body {
+    grid-template-columns: 11rem minmax(0, 1fr);
+    align-items: start;
+  }
+  .library-folders {
+    flex-direction: column;
+    overflow: visible;
+    position: sticky;
+    top: 0;
+  }
+  .library-folders button {
+    border: 0;
+    border-radius: 5px;
+    background: none;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .library-folders button[aria-pressed="true"] {
+    background: var(--accent-soft);
+  }
+}
+.library-grid-area {
+  min-width: 0;
+}
+.library-grid-area .empty {
+  margin: 0.5rem 0;
+}
+
+/* Choosing in the image dialog: a chosen image is outlined and ticked. */
+.library-pick .gallery-tile button {
+  position: relative;
+}
+.library-pick .gallery-tile.is-chosen button {
+  outline: 3px solid var(--accent);
+  outline-offset: 1px;
+}
+.library-check {
+  position: absolute;
+  top: 0.3rem;
+  right: 0.3rem;
+  display: grid;
+  place-items: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--paper-raised);
+}
+.library-check .ui-icon {
+  color: inherit;
+}
+.library-mark {
+  display: inline-block;
+  margin: 0.2rem 0 0;
+  padding: 0 0.35rem;
+  border: 1px dashed var(--ink-faint);
+  border-radius: 3px;
+  color: var(--ink-soft);
+  font-size: 0.72rem;
+}

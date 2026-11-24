@@ -1,0 +1,47 @@
+.versions-page .kept-copies {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin: 0.8rem 0;
+}
+.versions-page .kept-copies button[aria-pressed="true"] {
+  border-color: var(--accent);
+  color: var(--ink);
+}
+.versions-page .kept-copies .muted {
+  font-size: 0.85em;
+}
+
+/* The other side of an item clash, item by item (stage 15c). */
+.versions-page .item-clash {
+  margin: 1.2rem 0;
+}
+.versions-page .item-clash h3 {
+  margin: 0 0 0.4rem;
+}
+.versions-page .item-clash-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  font-size: 0.92rem;
+}
+.versions-page .item-clash-table th,
+.versions-page .item-clash-table td {
+  padding: 0.45rem 0.6rem;
+  border-bottom: 1px solid var(--rule);
+  text-align: left;
+  vertical-align: top;
+  overflow-wrap: anywhere;
+}
+.versions-page .item-clash-table thead th {
+  font-size: 0.74rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  border-bottom-color: var(--ink-faint);
+}
+.versions-page .item-clash-table tbody th {
+  width: 28%;
+  font-weight: 500;
+  color: var(--ink-soft);
+}

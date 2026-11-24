@@ -1,0 +1,6 @@
+# Stage 14 — design + readiness + codebase (raw)
+
+B1 re-resolution wrong: adds make links ambiguous, deletes re-route (Ledger [[Shade]] -> appendix). Re-resolve all or don't overlay.
+M1 multiple rename intents reduce; resolution file list; colours under folder rename (renameInFolders).
+M2 warm-start tick maths (165 not 60). M3 CI wall-clock budgets flaky; throttling in workers; draw-ms not fps; coverage inflates server timing. M4 14a needs 11c (FolderColor, store). M5 Combobox unfit for find (unique labels, no keywords, no controlled focus). M6 keys focus scoping not implementable; "/" focus. M7 gestures copy vs stage 13 gesture.ts. M8 refetch triggers: status snapshot unchanged on save; queue race. M9 worker fallback hides breakage. M10 coverage threshold config. M11 e2e shared server state, project skips.
+Nits: cache key/Vary; aliases from draft; derived top-level; empty state for own library (only Welcome.md at root) — hide README/AGENTS by name; folder order; CUJ1 colours; fixture names lamp.png, counts; tick pacing; stored positions merge; touch-action none, dblclick on touch, focus vs stored view, quadtree radius; happy-dom per-file comment; bundle wording; missing tests; depend on 13b not conditional; scalability ceiling; overlay alternative; __frontierGraph in prod.

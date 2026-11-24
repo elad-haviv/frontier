@@ -1,0 +1,29 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      # pandoc makes the Word, PDF and slide exports, which the export tests make for real.
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends pandoc
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run format
+      - run: npm run typecheck
+      # Unit tests, with the coverage thresholds set in each workspace's vitest.config.ts.
+      # The checks against the real vault run by hand, because the vault is a separate private repository:
+      #   VAULT_PATH=<checkout> npm test -w packages/vault
+      - run: npm test
+      - run: npm run build
+      # Browser tests, on the built server and the sample vault, at phone and desktop size.
+      - run: npx playwright install --with-deps chromium
+      - run: npm run e2e

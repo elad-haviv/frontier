@@ -1,0 +1,2 @@
+# The fixture vault tests byte-exact handling of line endings; Git must not convert them.
+packages/vault/test/fixture-vault/** -text

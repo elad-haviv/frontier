@@ -1,0 +1,210 @@
+/**
+ * Reads and checks the environment variables. A missing or malformed variable stops the server at
+ * start with a message that names it.
+ */
+
+export class ConfigError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ConfigError";
+  }
+}
+
+export interface GithubAppConfig {
+  appId: string;
+  privateKey: string;
+  installationId: string;
+}
+
+export interface S3Config {
+  endpoint: string;
+  region: string;
+  bucket: string;
+  accessKey: string;
+  secretKey: string;
+  pathStyle: boolean;
+}
+
+export interface Config {
+  publicUrl: string;
+  dataDir: string;
+  /** The Git address the working copy is cloned from and pushed to. */
+  remoteUrl: string;
+  /** Present when Frontier pushes as its own GitHub App. */
+  githubApp: GithubAppConfig | null;
+  /** Present when Frontier pushes with a personal access token instead of an App. */
+  githubToken: string | null;
+  webhookSecret: string | null;
+  sessionKey: Buffer;
+  commitAuthor: { name: string; email: string };
+  commitBot: { name: string; email: string };
+  backup: { kind: "local"; dir: string } | { kind: "s3"; s3: S3Config };
+  /**
+   * Where the knowledge base lives: in a repository of Frontier's own, in one on GitHub that
+   * others write to as well, or in the made-up sample.
+   */
+  library: "own" | "github" | "sample";
+  /** The vault folder new images are put in. */
+  uploadFolder: string;
+  /** The vault folder whose subfolders are marker sets. */
+  iconFolder: string;
+  /** Encrypts the secrets kept in settings. Without it no secret can be stored there. */
+  secretsKey: Buffer | null;
+  /** The AI provider key from the environment, used when none is stored in settings. */
+  openrouterKey: string | null;
+  openrouterUrl: string;
+  /**
+   * Keys and addresses of the other providers given in the environment (ANTHROPIC_API_KEY,
+   * OPENAI_API_KEY, GEMINI_API_KEY, XAI_API_KEY and their *_BASE_URL). A key stored in settings
+   * comes first.
+   */
+  providerEnv: Partial<
+    Record<"anthropic" | "openai" | "google" | "xai", { key: string | null; url: string | null }>
+  >;
+  /**
+   * Lets an image be taken from a web address on this machine's loopback addresses, on any port,
+   * so the tests can serve one. Off by default, and refused in production.
+   */
+  imageFetchAllowLoopback: boolean;
+  /**
+   * False when `FRONTIER_SERVICE_WORKER=off`: `/sw.js` then answers the kill worker, which removes
+   * the app's service worker from every browser that has it.
+   */
+  serviceWorker: boolean;
+}
+
+type Env = Record<string, string | undefined>;
+
+export function loadConfig(env: Env = process.env): Config {
+  const missing: string[] = [];
+  const get = (name: string): string => {
+    const v = env[name]?.trim();
+    if (!v) {
+      missing.push(name);
+      return "";
+    }
+    return v;
+  };
+  const optional = (name: string): string | null => env[name]?.trim() || null;
+
+  const publicUrl = get("PUBLIC_URL");
+  const dataDir = optional("DATA_DIR") ?? "/data";
+
+  const override = optional("VAULT_REMOTE_URL");
+  let remoteUrl: string;
+  let githubApp: GithubAppConfig | null = null;
+  let githubToken: string | null = null;
+  const webhookSecret: string | null = optional("WEBHOOK_SECRET");
+  if (override) {
+    remoteUrl = override;
+  } else {
+    const repo = get("VAULT_REPO");
+    remoteUrl = `https://github.com/${repo}.git`;
+    // A fine-grained personal access token is the simple way in; a GitHub App gives Frontier an
+    // identity of its own. One of the two is needed. The webhook is optional: without it the vault
+    // is fetched on a timer.
+    githubToken = optional("GITHUB_TOKEN");
+    if (!githubToken) {
+      githubApp = {
+        appId: get("GITHUB_APP_ID"),
+        privateKey: get("GITHUB_APP_PRIVATE_KEY").replace(/\\n/g, "\n"),
+        installationId: get("GITHUB_APP_INSTALLATION_ID"),
+      };
+    }
+  }
+
+  const sessionKeyText = get("SESSION_KEY");
+  const sessionKey = Buffer.from(sessionKeyText, "base64");
+
+  const commitAuthor = { name: get("COMMIT_AUTHOR_NAME"), email: get("COMMIT_AUTHOR_EMAIL") };
+  const commitBot = { name: get("COMMIT_BOT_NAME"), email: get("COMMIT_BOT_EMAIL") };
+
+  const localBackup = optional("BACKUP_LOCAL_DIR");
+  const backup: Config["backup"] = localBackup
+    ? { kind: "local", dir: localBackup }
+    : {
+        kind: "s3",
+        s3: {
+          endpoint: get("BACKUP_S3_ENDPOINT"),
+          region: get("BACKUP_S3_REGION"),
+          bucket: get("BACKUP_S3_BUCKET"),
+          accessKey: get("BACKUP_S3_ACCESS_KEY"),
+          secretKey: get("BACKUP_S3_SECRET_KEY"),
+          pathStyle: (optional("BACKUP_S3_PATH_STYLE") ?? "true") !== "false",
+        },
+      };
+
+  if (missing.length > 0) {
+    throw new ConfigError(
+      `Missing environment variable${missing.length > 1 ? "s" : ""}: ${missing.join(", ")}`,
+    );
+  }
+  const secretsKeyText = optional("SECRETS_KEY");
+  const secretsKey = secretsKeyText ? Buffer.from(secretsKeyText, "base64") : null;
+  if (secretsKey && secretsKey.length !== 32) {
+    throw new ConfigError(
+      "SECRETS_KEY must be 32 bytes in base64. Generate one with: openssl rand -base64 32",
+    );
+  }
+  const imageFetchAllowLoopback = ["1", "true"].includes(
+    optional("IMAGE_FETCH_ALLOW_LOOPBACK")?.toLowerCase() ?? "",
+  );
+  if (imageFetchAllowLoopback && optional("NODE_ENV") === "production") {
+    throw new ConfigError(
+      "IMAGE_FETCH_ALLOW_LOOPBACK is for tests and cannot be set in production.",
+    );
+  }
+  if (sessionKey.length !== 32) {
+    throw new ConfigError(
+      "SESSION_KEY must be 32 bytes in base64. Generate one with: openssl rand -base64 32",
+    );
+  }
+  try {
+    new URL(publicUrl);
+  } catch {
+    throw new ConfigError(
+      "PUBLIC_URL must be a full address, such as https://frontier.example.com",
+    );
+  }
+
+  return {
+    publicUrl,
+    dataDir,
+    remoteUrl,
+    githubApp,
+    githubToken,
+    uploadFolder: (optional("UPLOAD_FOLDER") ?? "99 Appendices/01 Images").replace(
+      /^\/+|\/+$/g,
+      "",
+    ),
+    webhookSecret,
+    sessionKey,
+    library:
+      optional("FRONTIER_LIBRARY") === "sample"
+        ? "sample"
+        : optional("FRONTIER_LIBRARY") === "own" || !optional("VAULT_REPO")
+          ? "own"
+          : "github",
+    iconFolder: (optional("ICON_FOLDER") ?? "99 Appendices/07 Icons").replace(/^\/+|\/+$/g, ""),
+    secretsKey,
+    openrouterKey: optional("OPENROUTER_API_KEY"),
+    openrouterUrl: (optional("OPENROUTER_BASE_URL") ?? "https://openrouter.ai/api/v1").replace(
+      /\/+$/,
+      "",
+    ),
+    providerEnv: {
+      anthropic: { key: optional("ANTHROPIC_API_KEY"), url: optional("ANTHROPIC_BASE_URL") },
+      openai: { key: optional("OPENAI_API_KEY"), url: optional("OPENAI_BASE_URL") },
+      google: {
+        key: optional("GEMINI_API_KEY") ?? optional("GOOGLE_API_KEY"),
+        url: optional("GEMINI_BASE_URL"),
+      },
+      xai: { key: optional("XAI_API_KEY"), url: optional("XAI_BASE_URL") },
+    },
+    imageFetchAllowLoopback,
+    serviceWorker: optional("FRONTIER_SERVICE_WORKER")?.toLowerCase() !== "off",
+    commitAuthor,
+    commitBot,
+    backup,
+  };
+}

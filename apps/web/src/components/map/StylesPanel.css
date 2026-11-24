@@ -1,0 +1,146 @@
+/* The Styles tab of a map (13d), and the samples it shares with the legend. */
+.styles-panel h3,
+.map-legend h3 {
+  margin: 0 0 0.3rem;
+  font-size: 0.8rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+.styles-panel section {
+  margin-bottom: 1rem;
+}
+.styles-panel ul,
+.map-legend ul {
+  margin: 0 0 0.5rem;
+  padding: 0;
+  list-style: none;
+}
+.styles-panel li {
+  padding: 0.2rem 0;
+}
+.styles-panel li.is-open {
+  padding-bottom: 0.6rem;
+  border-bottom: 1px solid var(--rule);
+}
+.style-row,
+.map-legend li {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 2.2rem;
+}
+.style-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.style-row em,
+.map-legend em {
+  font-size: 0.8rem;
+}
+.style-sample {
+  flex: none;
+  display: block;
+  border-radius: 4px;
+  background: #fbf7f0;
+  box-shadow: inset 0 0 0 1px var(--rule);
+}
+.styles-intro {
+  margin: 0 0 0.8rem;
+  font-size: 0.85rem;
+}
+.style-form {
+  display: grid;
+  gap: 0.6rem;
+  margin: 0.4rem 0 0;
+  padding: 0.7rem;
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  background: var(--paper-raised);
+}
+.style-form .field {
+  display: grid;
+  gap: 0.25rem;
+}
+.style-form input[type="text"] {
+  padding: 0.4rem 0.5rem;
+  border: 1px solid var(--rule);
+  border-radius: 5px;
+  background: var(--paper);
+  color: var(--ink);
+  font: inherit;
+}
+.style-form input[type="range"] {
+  width: 100%;
+}
+.style-form .error,
+.styles-panel .error {
+  margin: 0;
+}
+.style-swatches,
+.style-dashes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+.style-swatch {
+  position: relative;
+  width: 1.9rem;
+  height: 1.9rem;
+  padding: 0;
+  border: 1px solid var(--rule);
+  border-radius: 50%;
+  cursor: pointer;
+}
+.style-swatch[aria-checked="true"],
+.style-swatch.is-chosen {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+/* The layer's colour: no colour of its own, shown as a split disc. */
+.style-swatch.is-layer {
+  background: linear-gradient(
+    135deg,
+    var(--paper) 0 47%,
+    var(--ink-faint) 47% 53%,
+    var(--paper) 53%
+  );
+}
+.style-swatch.is-custom {
+  display: inline-flex;
+  overflow: hidden;
+  background: conic-gradient(#9a3b1c, #9a7410, #3f6b2a, #1d6b63, #2f6f9f, #6b3a7a, #9a3b1c);
+}
+.style-swatch.is-custom input {
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+.style-dash {
+  display: inline-flex;
+  padding: 0.2rem;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  background: var(--paper);
+  cursor: pointer;
+}
+.style-dash[aria-checked="true"] {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+.style-dash .style-sample {
+  box-shadow: none;
+}
+.map-legend {
+  margin-bottom: 0.9rem;
+}
+@media (pointer: coarse) {
+  .style-swatch {
+    width: 2.4rem;
+    height: 2.4rem;
+  }
+}

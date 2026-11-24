@@ -1,0 +1,26 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "jsx": "react-jsx",
+    "noEmit": true,
+    "allowImportingTsExtensions": true,
+    "types": ["vite/client"],
+    "paths": {
+      "@frontier/vault": ["../../packages/vault/src/index.ts"],
+      "@frontier/geo": ["../../packages/geo/src/index.ts"],
+      "@frontier/schema": ["../../packages/schema/src/index.ts"],
+      "@frontier/time": ["../../packages/time/src/index.ts"]
+    }
+  },
+  "include": [
+    "src",
+    "vite.config.ts",
+    "vitest.config.ts",
+    "../../packages/geo/src/d3-geo-projection.d.ts"
+  ],
+  // The service worker runs in another global scope; it has its own `src/sw/tsconfig.json`.
+  "exclude": ["src/sw"]
+}

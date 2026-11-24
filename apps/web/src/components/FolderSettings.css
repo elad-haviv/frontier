@@ -1,0 +1,154 @@
+/* A folder's icon, colour and type: raised paper beside its row. */
+.folder-settings {
+  z-index: var(--layer-popover);
+  width: min(20rem, calc(100vw - 1rem));
+  max-height: min(32rem, var(--radix-popover-content-available-height, 32rem));
+  overflow-y: auto;
+  padding: var(--space-3);
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  background: var(--paper-raised);
+  box-shadow: var(--shadow);
+  font-family: var(--sans);
+  font-size: 0.9rem;
+}
+.folder-settings-title {
+  margin: 0 0 var(--space-2);
+  font-size: 1rem;
+  overflow-wrap: anywhere;
+}
+.folder-settings-group {
+  margin: 0 0 var(--space-3);
+  padding: 0;
+  border: 0;
+}
+.folder-settings-group legend,
+.folder-settings-label {
+  display: block;
+  margin-bottom: var(--space-1);
+  color: var(--ink-soft);
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.folder-icons {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(2rem, 1fr));
+  gap: 2px;
+}
+.folder-icon-choice {
+  display: grid;
+  place-items: center;
+  height: 2rem;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: none;
+  color: var(--ink-soft);
+}
+.folder-icon-choice:hover {
+  background: var(--accent-soft);
+}
+.folder-icon-choice[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.folder-colors {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.folder-color {
+  display: grid;
+  place-items: center;
+  width: 1.9rem;
+  height: 1.9rem;
+  padding: 0;
+  border: 2px solid var(--paper-raised);
+  border-radius: 50%;
+  outline: 1px solid var(--rule);
+  background: var(--folder-tint, transparent);
+  color: var(--paper-raised);
+}
+.folder-color.is-none {
+  color: var(--ink-soft);
+  background: repeating-linear-gradient(
+    135deg,
+    var(--paper),
+    var(--paper) 4px,
+    var(--rule) 4px,
+    var(--rule) 5px
+  );
+}
+.folder-color[aria-pressed="true"] {
+  outline: 2px solid var(--ink);
+}
+.folder-settings select {
+  width: 100%;
+  min-height: 2.4rem;
+  padding: 0.35rem 0.5rem;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  background: var(--paper);
+  color: var(--ink);
+  font: inherit;
+}
+.folder-settings-note {
+  margin: var(--space-1) 0 0;
+  color: var(--ink-faint);
+  font-size: 0.8rem;
+}
+
+/* The eight folder colours, each at least 5.4:1 on the light and the dark page. */
+.folder-tint-ember {
+  --folder-tint: #9a3b1c;
+}
+.folder-tint-sea {
+  --folder-tint: #1f5f8b;
+}
+.folder-tint-moss {
+  --folder-tint: #3f6b2a;
+}
+.folder-tint-gold {
+  --folder-tint: #7a5a00;
+}
+.folder-tint-plum {
+  --folder-tint: #6b3a7a;
+}
+.folder-tint-slate {
+  --folder-tint: #4a5560;
+}
+.folder-tint-rose {
+  --folder-tint: #9b2f55;
+}
+.folder-tint-teal {
+  --folder-tint: #1d6b63;
+}
+@media (prefers-color-scheme: dark) {
+  .folder-tint-ember {
+    --folder-tint: #e08a5f;
+  }
+  .folder-tint-sea {
+    --folder-tint: #7fb6dd;
+  }
+  .folder-tint-moss {
+    --folder-tint: #9cc47f;
+  }
+  .folder-tint-gold {
+    --folder-tint: #d9b24c;
+  }
+  .folder-tint-plum {
+    --folder-tint: #c79bd6;
+  }
+  .folder-tint-slate {
+    --folder-tint: #a7b2bd;
+  }
+  .folder-tint-rose {
+    --folder-tint: #e88aa8;
+  }
+  .folder-tint-teal {
+    --folder-tint: #74c4b9;
+  }
+}

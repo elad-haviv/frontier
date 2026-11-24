@@ -1,0 +1,4 @@
+/* A context menu opens where the pointer is, so it is sized by the room left there. */
+.ui-context-menu {
+  max-height: var(--radix-context-menu-content-available-height, 70vh);
+}

@@ -1,0 +1,60 @@
+/* Wider than a question, and scrolling inside itself on a small screen. */
+.dialog.key-sheet {
+  width: min(36rem, 100%);
+  max-height: calc(100dvh - 2rem);
+  display: flex;
+  flex-direction: column;
+}
+.key-sheet-groups {
+  min-height: 0;
+  overflow-y: auto;
+  margin: 0 -0.3rem;
+  padding: 0 0.3rem;
+}
+.key-sheet-group h3 {
+  margin: 1rem 0 0.3rem;
+  color: var(--ink-soft);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.key-sheet-group dl {
+  margin: 0;
+}
+.key-sheet-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 1rem;
+  padding: 0.3rem 0;
+  border-bottom: 1px solid var(--rule);
+  font-size: 0.92rem;
+}
+.key-sheet-row dt {
+  min-width: 0;
+}
+.key-sheet-row dd {
+  flex: none;
+  margin: 0;
+  text-align: right;
+}
+.key-sheet-row kbd {
+  display: inline-block;
+  padding: 0.05rem 0.4rem;
+  border: 1px solid var(--rule);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  background: var(--paper-raised);
+  font-family: var(--sans);
+  font-size: 0.8rem;
+}
+.key-sheet-or {
+  color: var(--ink-faint);
+  font-size: 0.8rem;
+}
+/* A key that acts only while viewing, or only while editing, says so after its name. */
+.key-sheet-when {
+  color: var(--ink-faint);
+  font-size: 0.82rem;
+}

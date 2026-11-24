@@ -1,0 +1,122 @@
+/* The right side bar: tabs on top, the open panel below, scrolling on its own. */
+.right-bar {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-width: 0;
+  background: var(--paper-raised);
+}
+
+.right-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-height: 3rem;
+  padding: 0 var(--space-1) 0 var(--space-2);
+  border-bottom: 1px solid var(--rule);
+}
+
+.right-tabs {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  gap: 2px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.right-tab {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  height: 2.5rem;
+  padding: 0 var(--space-2);
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: var(--ink-soft);
+  font-size: 0.88rem;
+  white-space: nowrap;
+}
+.right-tab:hover {
+  color: var(--ink);
+}
+.right-tab[aria-selected="true"] {
+  color: var(--ink);
+  border-bottom-color: var(--accent);
+  font-weight: 600;
+}
+.right-tab .badge {
+  margin-left: 0;
+}
+
+.right-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: var(--space-3) var(--space-4) var(--space-6);
+}
+
+/* The panels drawn in the bar lose the frames they had when they floated over the page. */
+.right-body > .writing-panel,
+.right-body > .feature-card,
+.right-body > .layer-panel {
+  position: static;
+  width: auto;
+  max-height: none;
+  margin: 0;
+  padding: 0;
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+}
+
+/* The phone's bottom sheet: the same panels, from the foot of the screen up to a little over
+   half its height, above the page's own bottom bar. */
+.bottom-sheet {
+  position: fixed;
+  z-index: var(--layer-side);
+  left: 0;
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  /* A little under half the room above the page's bottom bar, so most of a map stays in view. */
+  max-height: min(28rem, calc((100dvh - var(--floor, 0px)) * 0.42));
+  border-top: 1px solid var(--rule);
+  border-radius: 12px 12px 0 0;
+  background: var(--paper-raised);
+  box-shadow: 0 -2px 12px rgb(0 0 0 / 0.12);
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
+  animation: sheet-in 160ms ease;
+}
+.bottom-sheet .right-body {
+  padding-bottom: max(var(--space-4), env(safe-area-inset-bottom));
+}
+@keyframes sheet-in {
+  from {
+    transform: translateY(100%);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .bottom-sheet {
+    animation: none;
+  }
+}
+
+/* The tab names the panel, so a panel's own heading is only read out; its Close stays. */
+.right-body > .writing-panel > header {
+  justify-content: flex-end;
+}
+.right-body > .writing-panel > header h2 {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}

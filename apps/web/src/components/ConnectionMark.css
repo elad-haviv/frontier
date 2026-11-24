@@ -1,0 +1,25 @@
+.connection {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+.connection.is-online {
+  color: var(--ink-faint);
+}
+.connection.is-offline,
+.connection.is-signed-out {
+  color: var(--warn);
+}
+/* On a phone the words give way to the mark; they are still read out and named on hover. */
+@media (max-width: 34rem) {
+  .connection-words {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}
