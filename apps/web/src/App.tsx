@@ -14,7 +14,9 @@ import { Home } from "./pages/Home.tsx";
 import { ChroniclesPage } from "./pages/Chronicles.tsx";
 import { MapsPage } from "./pages/Maps.tsx";
 import { Login } from "./pages/Login.tsx";
-import { SettingsPage } from "./pages/Settings.tsx";
+const SettingsPage = lazy(() =>
+  import("./pages/settings/SettingsPage.tsx").then((m) => ({ default: m.SettingsPage })),
+);
 import { StatusPage } from "./pages/Status.tsx";
 import { Progress } from "./components/ui/Progress.tsx";
 
@@ -162,7 +164,7 @@ export function App() {
               </Suspense>
             }
           />
-          <Route path="/settings" element={<SettingsPage />} />
+          <Route path="/settings/*" element={<SettingsPage />} />
           <Route path="/conflict/:id" element={<ConflictPage />} />
           <Route path="/versions/:id" element={<VersionsPage />} />
           <Route path="/status" element={<StatusPage />} />

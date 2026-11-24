@@ -46,6 +46,10 @@ import "./Shell.css";
 
 const Refresh = createContext<() => void>(() => undefined);
 const Status = createContext<StatusSnapshot | null>(null);
+const Logout = createContext<() => void>(() => undefined);
+
+/** Logs out as the app menu does, warning first about changes not sent yet. */
+export const useLogout = () => useContext(Logout);
 
 /**
  * The words for keeping changes. In a library of Frontier's own a change is saved as a version;
@@ -296,110 +300,112 @@ export function Shell({ children }: { children: ReactNode }) {
     <ShellStoreProvider value={store}>
       <Refresh.Provider value={refresh}>
         <Status.Provider value={status}>
-          <div className={`shell ${phone ? "is-phone" : "is-desktop"}`}>
-            {phone ? (
-              <div className="phone-top" inert={drawer}>
-                <PhoneBar
-                  title={pageName(
-                    pathname,
-                    current,
-                    own ? "Unsaved changes" : "Unpublished changes",
+          <Logout.Provider value={actions.onLogout}>
+            <div className={`shell ${phone ? "is-phone" : "is-desktop"}`}>
+              {phone ? (
+                <div className="phone-top" inert={drawer}>
+                  <PhoneBar
+                    title={pageName(
+                      pathname,
+                      current,
+                      own ? "Unsaved changes" : "Unpublished changes",
+                    )}
+                    open={drawer}
+                    onMenu={() => setDrawer(true)}
+                    onSearch={actions.onSearch}
+                    menuRef={menuButton}
+                  />
+                </div>
+              ) : null}
+              {!phone ? (
+                <aside className={`side${rail ? " is-rail" : ""}`} aria-label="Side bar">
+                  {rail ? (
+                    <Rail onExpand={() => fold(false)} {...actions} />
+                  ) : (
+                    <LeftBar
+                      tree={tree}
+                      current={current}
+                      onRetryTree={refresh}
+                      onCollapse={() => fold(true)}
+                      {...actions}
+                    />
                   )}
-                  open={drawer}
-                  onMenu={() => setDrawer(true)}
-                  onSearch={actions.onSearch}
-                  menuRef={menuButton}
-                />
-              </div>
-            ) : null}
-            {!phone ? (
-              <aside className={`side${rail ? " is-rail" : ""}`} aria-label="Side bar">
-                {rail ? (
-                  <Rail onExpand={() => fold(false)} {...actions} />
-                ) : (
+                </aside>
+              ) : null}
+              <Group
+                className="shell-group"
+                orientation="horizontal"
+                id="shell"
+                inert={drawer}
+                onLayoutChanged={(_, meta) => {
+                  if (meta.isUserInteraction && rightSize.current) {
+                    writePrefs(kind, { width: Math.round(rightSize.current) });
+                  }
+                }}
+              >
+                <Panel id="main" minSize="30%" className="shell-main">
+                  <UpdateBar />
+                  <DeviceNotices />
+                  <main className="content">{children}</main>
+                </Panel>
+                {rightOpen && (
+                  <>
+                    <Separator className="right-splitter" id="right-splitter" />
+                    <Panel
+                      key={kind}
+                      id="right"
+                      className="shell-right"
+                      defaultSize={`${width}px`}
+                      minSize={240}
+                      maxSize="60%"
+                      groupResizeBehavior="preserve-pixel-size"
+                      onResize={(size) => {
+                        rightSize.current = size.inPixels;
+                      }}
+                    >
+                      <RightBar />
+                    </Panel>
+                  </>
+                )}
+              </Group>
+              {phone && drawer && (
+                <Drawer onClose={() => setDrawer(false)}>
                   <LeftBar
                     tree={tree}
                     current={current}
                     onRetryTree={refresh}
-                    onCollapse={() => fold(true)}
+                    drawer
+                    top={
+                      <IconButton
+                        label="Close the side bar"
+                        icon={X}
+                        className="drawer-close"
+                        onClick={() => setDrawer(false)}
+                      />
+                    }
                     {...actions}
                   />
-                )}
-              </aside>
-            ) : null}
-            <Group
-              className="shell-group"
-              orientation="horizontal"
-              id="shell"
-              inert={drawer}
-              onLayoutChanged={(_, meta) => {
-                if (meta.isUserInteraction && rightSize.current) {
-                  writePrefs(kind, { width: Math.round(rightSize.current) });
-                }
-              }}
-            >
-              <Panel id="main" minSize="30%" className="shell-main">
-                <UpdateBar />
-                <DeviceNotices />
-                <main className="content">{children}</main>
-              </Panel>
-              {rightOpen && (
-                <>
-                  <Separator className="right-splitter" id="right-splitter" />
-                  <Panel
-                    key={kind}
-                    id="right"
-                    className="shell-right"
-                    defaultSize={`${width}px`}
-                    minSize={240}
-                    maxSize="60%"
-                    groupResizeBehavior="preserve-pixel-size"
-                    onResize={(size) => {
-                      rightSize.current = size.inPixels;
-                    }}
-                  >
-                    <RightBar />
-                  </Panel>
-                </>
+                </Drawer>
               )}
-            </Group>
-            {phone && drawer && (
-              <Drawer onClose={() => setDrawer(false)}>
-                <LeftBar
+              {phone && <BottomSheet />}
+              {switching && <Switcher onClose={() => setSwitching(false)} />}
+              {sheet && <KeySheet onClose={() => setSheet(false)} />}
+              {making !== null && (
+                <NewEntry
                   tree={tree}
-                  current={current}
-                  onRetryTree={refresh}
-                  drawer
-                  top={
-                    <IconButton
-                      label="Close the side bar"
-                      icon={X}
-                      className="drawer-close"
-                      onClick={() => setDrawer(false)}
-                    />
-                  }
-                  {...actions}
+                  folder={making}
+                  onRetry={refresh}
+                  onMake={(path, type) => {
+                    setMaking(null);
+                    navigate(
+                      `${editUrl(path)}?new=1${type ? `&type=${encodeURIComponent(type)}` : ""}`,
+                    );
+                  }}
+                  onClose={() => setMaking(null)}
                 />
-              </Drawer>
-            )}
-            {phone && <BottomSheet />}
-            {switching && <Switcher onClose={() => setSwitching(false)} />}
-            {sheet && <KeySheet onClose={() => setSheet(false)} />}
-            {making !== null && (
-              <NewEntry
-                tree={tree}
-                folder={making}
-                onRetry={refresh}
-                onMake={(path, type) => {
-                  setMaking(null);
-                  navigate(
-                    `${editUrl(path)}?new=1${type ? `&type=${encodeURIComponent(type)}` : ""}`,
-                  );
-                }}
-                onClose={() => setMaking(null)}
-              />
-            )}
-          </div>
+              )}
+            </div>
+          </Logout.Provider>
         </Status.Provider>
       </Refresh.Provider>
     </ShellStoreProvider>

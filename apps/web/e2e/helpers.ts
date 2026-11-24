@@ -287,3 +287,17 @@ export async function answerDialog(page: Page, button: string, value?: string): 
   await dialog.getByRole("button", { name: button, exact: true }).click();
   await expect(dialog).toHaveCount(0);
 }
+
+/**
+ * Connects the OpenRouter stand-in and chooses models, through the same request the settings
+ * page sends. Bare ids are OpenRouter's.
+ */
+export async function setUpAi(
+  page: Page,
+  models: { extraction?: string; conversation?: string; art?: string },
+): Promise<void> {
+  const res = await page.request.put("/api/settings/ai", {
+    data: { key: "sk-or-browser-test-key", models },
+  });
+  expect(res.ok(), await res.text()).toBe(true);
+}

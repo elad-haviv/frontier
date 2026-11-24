@@ -11,6 +11,7 @@ import {
   pressTool,
   newMapInForm,
   pickEntry,
+  setUpAi,
 } from "./helpers.ts";
 
 // One test at a time changes the AI settings, which are shared by the whole server.
@@ -28,17 +29,33 @@ test("CUJ 5: sets up the AI, asks for fields, corrects one and accepts it into a
   await expect(page.locator("h1")).toHaveText("Shade");
   await expect(page.getByRole("button", { name: "Propose fields" })).toHaveCount(0);
 
-  await page.goto("/settings");
-  await page.getByLabel(/Provider key/).fill("sk-or-browser-test-key");
-  await page.getByLabel("Model for proposing fields").fill("sample/reader");
-  await page.getByLabel("Monthly cap in US dollars").fill("5");
-  await page.getByRole("button", { name: "Save" }).click();
-  await expect(page.locator(".banner-ok")).toHaveText("Saved.");
-  await expect(page.locator(".settings")).toContainText("set, ends in -key");
+  // Settings › Providers: the key is checked with the provider, then stored.
+  await page.goto("/settings/ai/providers");
+  await page.getByRole("button", { name: /^OpenRouter/ }).click();
+  await page.getByLabel("Key for OpenRouter").fill("sk-or-browser-test-key");
+  await page.getByRole("button", { name: "Check and save" }).click();
+  const row = page.locator(".provider-row", { hasText: "OpenRouter" });
+  await expect(row).toContainText("Connected");
+  await expect(row).toContainText("sk-…-key");
   // The key itself never comes back to the browser.
   expect(await page.content()).not.toContain("sk-or-browser-test-key");
-  await page.getByRole("button", { name: "Test" }).click();
-  await expect(page.locator(".banner-ok")).toContainText('The model answered "ok"');
+
+  // Settings › Models: the picker, as a sheet on the phone.
+  await page.goto("/settings/ai/models/extraction");
+  const sheet = page.getByRole("dialog", { name: "Model for Proposing fields" });
+  await sheet.getByRole("combobox", { name: /Find a model/ }).fill("reader");
+  await sheet.getByRole("option", { name: /Sample reader/ }).click();
+  await expect(sheet).toHaveCount(0);
+  const task = page.locator("#task-extraction");
+  await expect(task.locator(".model-chip")).toContainText("Sample reader");
+  await task.getByRole("button", { name: "Try it" }).click();
+  await expect(task.locator(".field-ok")).toContainText('The model answered "ok"');
+
+  // Settings › Spending: the cap saves on Enter.
+  await page.goto("/settings/ai/spending");
+  await page.getByLabel("Monthly cap in US dollars").fill("5");
+  await page.getByLabel("Monthly cap in US dollars").press("Enter");
+  await expect(page.locator(".saved-mark").first()).toContainText("Saved");
 
   await page.goto(entry(note));
   await page.getByRole("button", { name: "Propose fields" }).click();
@@ -62,10 +79,9 @@ test("CUJ 5: sets up the AI, asks for fields, corrects one and accepts it into a
   expect(onMain(note)).toContain('when: "in the year of the long tide"');
   expect(lastBody()).toContain("Frontier-Model: openrouter:sample/reader");
 
-  await page.goto("/settings");
-  await expect(page.locator(".calls")).toContainText(
-    "Sample reader".toLowerCase().replace(" ", "/"),
-  );
+  await page.goto("/settings/ai/spending");
+  await expect(page.locator(".call-log")).toContainText("sample/reader");
+  await expect(page.locator(".call-log")).toContainText("Proposed fields");
 });
 
 test("a rejected proposal is not made again", async ({ page }, info) => {
@@ -94,11 +110,7 @@ test("CUJ 11: asks the lore, reads cited answers, and keeps a drafted addition a
 }, info) => {
   test.skip(info.project.name !== "phone", "The AI settings are one per server.");
   await page.setViewportSize({ width: 375, height: 740 });
-  await page.goto("/settings");
-  await page.getByLabel(/Provider key/).fill("sk-or-browser-test-key");
-  await page.getByLabel("Model for lore conversations").fill("sample/reader");
-  await page.getByRole("button", { name: "Save" }).click();
-  await expect(page.locator(".banner-ok")).toHaveText("Saved.");
+  await setUpAi(page, { conversation: "sample/reader" });
 
   await page.goto("/ask");
   await page.getByLabel("A question").fill("Who is Shade?");
@@ -159,11 +171,7 @@ test("writing help rewrites a passage in the editor, shown as a difference first
 }, info) => {
   test.skip(info.project.name !== "phone", "The AI settings are one per server.");
   await page.setViewportSize({ width: 375, height: 740 });
-  await page.goto("/settings");
-  await page.getByLabel(/Provider key/).fill("sk-or-browser-test-key");
-  await page.getByLabel("Model for lore conversations").fill("sample/reader");
-  await page.getByRole("button", { name: "Save" }).click();
-  await expect(page.locator(".banner-ok")).toHaveText("Saved.");
+  await setUpAi(page, { conversation: "sample/reader" });
 
   await openEditor(page, "02 People/Shade.md");
   // The cursor in the paragraph is enough: the whole paragraph is the passage.
@@ -192,11 +200,7 @@ test("writing help rewrites a passage in the editor, shown as a difference first
 test("comments on a passage: one for the author, one the AI works on", async ({ page }, info) => {
   test.skip(info.project.name !== "phone", "The AI settings are one per server.");
   await page.setViewportSize({ width: 375, height: 740 });
-  await page.goto("/settings");
-  await page.getByLabel(/Provider key/).fill("sk-or-browser-test-key");
-  await page.getByLabel("Model for lore conversations").fill("sample/reader");
-  await page.getByRole("button", { name: "Save" }).click();
-  await expect(page.locator(".banner-ok")).toHaveText("Saved.");
+  await setUpAi(page, { conversation: "sample/reader" });
 
   await openEditor(page, "02 People/Shade.md");
   await page.locator(".cm-content").getByText("A quiet figure.").click();
@@ -241,11 +245,7 @@ test("CUJ 12: drafts a character's profile, approves it, talks, and adds a line 
 }, info) => {
   test.skip(info.project.name !== "phone", "The AI settings are one per server.");
   await page.setViewportSize({ width: 375, height: 740 });
-  await page.goto("/settings");
-  await page.getByLabel(/Provider key/).fill("sk-or-browser-test-key");
-  await page.getByLabel("Model for lore conversations").fill("sample/reader");
-  await page.getByRole("button", { name: "Save" }).click();
-  await expect(page.locator(".banner-ok")).toHaveText("Saved.");
+  await setUpAi(page, { conversation: "sample/reader" });
 
   await page.goto("/talk/02%20People/Shade.md");
   await expect(page.locator("h1")).toHaveText("Talk with Shade");
@@ -295,13 +295,7 @@ test("CUJ 13: explores a map, makes concept art when asked, and keeps a discover
 }, info) => {
   test.skip(info.project.name !== "phone", "The AI settings are one per server.");
   await page.setViewportSize({ width: 375, height: 740 });
-  await page.goto("/settings");
-  await page.getByLabel(/Provider key/).fill("sk-or-browser-test-key");
-  await page.getByLabel("Model for lore conversations").fill("sample/reader");
-  await page.getByLabel("Model for concept art").fill("sample/painter");
-  await expect(page.getByLabel("Style of concept art")).toHaveValue(/Pencil and ink/);
-  await page.getByRole("button", { name: "Save" }).click();
-  await expect(page.locator(".banner-ok")).toHaveText("Saved.");
+  await setUpAi(page, { conversation: "sample/reader", art: "sample/painter" });
 
   // A map with a marker for Mira near the middle.
   await newMapInForm(page, "Explored coast", "flat");

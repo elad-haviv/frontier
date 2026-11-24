@@ -552,19 +552,30 @@ class Fingers {
   }
 }
 
-test("On this device shows in Settings with no connection", async ({ page }) => {
+test("Offline copy shows in Settings with no connection, and the rest say they need one", async ({
+  page,
+}) => {
   await install(page);
   await read(page, HARBOR);
   await reloadOffline(page);
   await page.goto("/settings");
+  // Every section is listed; those that need the server say so.
+  const list = page.getByRole("navigation", { name: "Settings" });
+  await expect(list.getByRole("link", { name: /Providers/ })).toContainText("Needs a connection");
+  await expect(list.getByRole("link", { name: /Offline copy/ })).not.toContainText(
+    "Needs a connection",
+  );
+  await expect(page.locator(".settings-offline-banner")).toBeVisible();
+  // Opening one says why it is empty.
+  await list.getByRole("link", { name: /Models/ }).click();
+  await expect(page.locator(".settings-offline-card")).toContainText("Needs a connection");
+  await page.locator(".settings-offline-card").getByRole("link", { name: "Offline copy" }).click();
   const block = page.locator(".on-this-device");
   await expect(block).toContainText("On this device");
   await expect(block).toContainText(/Space used: \d+(\.\d)? (KB|MB)/);
   await expect(
     block.getByRole("button", { name: "Remove everything on this device" }),
   ).toBeVisible();
-  // The blocks that need the server say so below it.
-  await expect(page.locator(".ui-problem").first()).toContainText("Can't reach Frontier");
   await page.context().setOffline(false);
 });
 

@@ -20,7 +20,7 @@ test("adds a passkey, logs in with it, and switches the password off and on agai
     },
   });
 
-  await page.goto("/settings");
+  await page.goto("/settings/account");
   await page.getByLabel("Add a passkey on this device").fill("Test phone");
   await page.getByRole("button", { name: "Add a passkey" }).click();
   await expect(page.locator(".banner-ok")).toContainText("The passkey was added");
@@ -35,7 +35,7 @@ test("adds a passkey, logs in with it, and switches the password off and on agai
   await page.getByRole("button", { name: "Use a passkey" }).click();
   // In: the shell's search is there, in the side bar or on the phone's top line.
   await expect(page.getByRole("button", { name: "Search", exact: true })).toBeVisible();
-  await page.goto("/settings");
+  await page.goto("/settings/account");
   await expect(page.locator(".passkeys")).toContainText("Test phone");
 
   await page.getByLabel(/Switch the password off/).click();

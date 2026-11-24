@@ -12,6 +12,12 @@ import type {
   FieldJobState,
   GraphResponse,
   ModelsResponse,
+  AiLogResponse,
+  AiProviderKind,
+  AiProviderView,
+  AiTaskName,
+  ProviderCheckResponse,
+  ProvidersResponse,
   SettingsResponse,
   InboxResponse,
   LibraryFileName,
@@ -46,6 +52,8 @@ export class ApiFailure extends Error {
 
   /** With `stale_revision`: the id of the draft the server holds for the file. */
   draftId?: string;
+  /** Where in the app the problem is put right, such as "/settings/ai/providers". */
+  href?: string;
 }
 
 /** This device, as the save queue knows it; sent with every request once known. */
@@ -152,6 +160,7 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
     body?.error.message ?? `The server answered with status ${res.status}.`,
   );
   if (body?.error.id) failure.draftId = body.error.id;
+  if (body?.error.href) failure.href = body.error.href;
   throw failure;
 }
 
@@ -446,23 +455,55 @@ export const api = {
     monthlyCapUsd?: number;
     proposeOnPublish?: boolean;
   }) => send<{ ok: true }>("PUT", "/api/settings/ai", body),
-  testAi: () => post<{ ok: boolean; costUsd: number; message: string }>("/api/settings/ai/test"),
-  models: () => call<ModelsResponse>("/api/ai/models"),
-  aiLog: () =>
-    call<{
-      month: string;
-      totalUsd: number;
-      capUsd: number;
-      calls: {
-        at: string;
-        task: string;
-        model: string;
-        costUsd: number;
-        entry: string | null;
-        ok: boolean;
-        error?: string;
-      }[];
-    }>("/api/ai/log"),
+  testAi: (body: { task?: AiTaskName; model?: string } = {}) =>
+    post<{ ok: boolean; costUsd: number; message: string; image?: string }>(
+      "/api/settings/ai/test",
+      body,
+    ),
+  /** Every connected provider's models; `refresh` fetches the lists again. */
+  models: (query: { task?: AiTaskName; q?: string; refresh?: boolean } = {}) => {
+    const params = new URLSearchParams();
+    if (query.task) params.set("task", query.task);
+    if (query.q) params.set("q", query.q);
+    if (query.refresh) params.set("refresh", "1");
+    const qs = params.toString();
+    return call<ModelsResponse>(`/api/ai/models${qs ? `?${qs}` : ""}`);
+  },
+  aiLog: (month?: string) =>
+    call<AiLogResponse>(`/api/ai/log${month ? `?month=${encodeURIComponent(month)}` : ""}`),
+  providers: () => call<ProvidersResponse>("/api/ai/providers"),
+  /** Adds a provider; the server checks the key with it before storing anything. */
+  addProvider: (body: {
+    kind: AiProviderKind;
+    key?: string;
+    baseUrl?: string;
+    name?: string;
+    saveAnyway?: boolean;
+  }) => post<ProviderCheckResponse>("/api/ai/providers", body),
+  checkProvider: (id: string) =>
+    post<ProviderCheckResponse>(`/api/ai/providers/${encodeURIComponent(id)}/check`),
+  providerKey: (id: string, key: string | null, saveAnyway = false) =>
+    send<ProviderCheckResponse>("PUT", `/api/ai/providers/${encodeURIComponent(id)}/key`, {
+      key,
+      ...(saveAnyway ? { saveAnyway } : {}),
+    }),
+  updateProvider: (
+    id: string,
+    body: { name?: string | null; enabled?: boolean; baseUrl?: string | null },
+  ) =>
+    send<{ provider: AiProviderView | null }>(
+      "PATCH",
+      `/api/ai/providers/${encodeURIComponent(id)}`,
+      body,
+    ),
+  removeProvider: (id: string, force = false) =>
+    send<{ ok: true; turnedOff: AiTaskName[] }>(
+      "DELETE",
+      `/api/ai/providers/${encodeURIComponent(id)}${force ? "?force=1" : ""}`,
+    ),
+  /** The author's prices per million tokens; null removes one. */
+  savePrices: (prices: Record<string, { promptPrice: number; completionPrice: number } | null>) =>
+    send<{ ok: true }>("PUT", "/api/settings/ai/prices", { prices }),
   fieldJob: () => call<FieldJobState>("/api/proposals/job"),
   estimateJob: (folder: string) =>
     post<{ entries: number; estimateUsd: number | null }>("/api/proposals/job", { folder }),

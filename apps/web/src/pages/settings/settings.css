@@ -1,0 +1,527 @@
+/* Settings (stage 18): a rail on wide screens, a list of rows on a phone. */
+.settings-page {
+  padding-bottom: 6rem;
+}
+.settings-page button.plain {
+  color: var(--accent);
+  font: inherit;
+}
+.settings-page button.plain.danger {
+  color: var(--warn);
+}
+.settings-page h1 {
+  font-family: var(--serif);
+  font-size: 1.6rem;
+  margin: 0 0 0.75rem;
+}
+.settings-page h2 {
+  font-family: var(--serif);
+  font-size: 1.15rem;
+  margin: 1.75rem 0 0.5rem;
+}
+.settings-offline-banner {
+  margin: 0;
+  padding: 0.5rem 1rem;
+  border-bottom: 1px solid var(--rule);
+  background: var(--accent-soft);
+  font-size: 0.85rem;
+}
+.settings-columns {
+  display: grid;
+  grid-template-columns: 13.75rem minmax(0, 1fr);
+  min-height: 100%;
+}
+.settings-rail {
+  border-right: 1px solid var(--rule);
+  padding: 1.75rem 0.75rem;
+}
+.settings-rail h1 {
+  margin: 0 0.5rem 1rem;
+}
+.settings-group-name {
+  font: 600 0.7rem/1 var(--sans);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  margin: 1rem 0.5rem 0.4rem;
+}
+.settings-page .settings-group-name {
+  font-family: var(--sans);
+  font-size: 0.7rem;
+  margin: 1rem 0.5rem 0.4rem;
+}
+.settings-group ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.settings-rail a {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.4rem 0.5rem;
+  border-radius: 6px;
+  color: var(--ink-soft);
+  text-decoration: none;
+  font-size: 0.93rem;
+}
+.settings-rail a:hover {
+  background: color-mix(in srgb, var(--accent-soft) 50%, transparent);
+}
+.settings-rail a.on {
+  background: var(--accent-soft);
+  color: var(--ink);
+  font-weight: 600;
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+.settings-link-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.settings-link-text small {
+  font-weight: 400;
+  font-size: 0.78rem;
+  color: var(--ink-faint);
+}
+.settings-link-text small.problem,
+.problem {
+  color: var(--warn);
+}
+.settings-section {
+  max-width: 52rem;
+  padding: 1.75rem 2.5rem;
+  min-width: 0;
+}
+.is-narrow .settings-section,
+.settings-home {
+  padding: 1rem max(1rem, env(safe-area-inset-left)) 2rem;
+}
+.settings-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  margin: 0 0 0.5rem;
+  text-decoration: none;
+}
+/* The phone's list of sections, iOS style. */
+.settings-list .settings-group ul {
+  border: 1px solid var(--rule);
+  border-radius: 10px;
+  background: var(--paper-raised);
+}
+.settings-list li + li {
+  border-top: 1px solid var(--rule);
+}
+.settings-list a {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-height: 3.25rem;
+  padding: 0.6rem 0.9rem;
+  color: var(--ink);
+  text-decoration: none;
+}
+.settings-list .settings-link-text {
+  flex: 1;
+}
+.settings-chevron {
+  color: var(--ink-faint);
+}
+.settings-offline-card {
+  padding: 0.8rem 1rem;
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  background: var(--paper-raised);
+}
+.settings-offline-card p {
+  margin: 0;
+}
+.settings-links {
+  padding-left: 1.2rem;
+}
+.settings-note {
+  padding: 0.5rem 0.75rem;
+  border-left: 3px solid var(--accent);
+  background: var(--accent-soft);
+}
+
+/* Inline messages under the control they are about. */
+.field-error,
+.field-warn,
+.field-ok,
+.field-hint {
+  font-size: 0.85rem;
+  margin: 0.35rem 0;
+}
+.field-error {
+  color: var(--warn);
+}
+div.field-error,
+div.field-ok {
+  padding: 0.5rem 0.7rem;
+  border: 1px solid currentColor;
+  border-radius: 6px;
+}
+div.field-error p,
+div.field-ok p {
+  margin: 0.2rem 0;
+}
+.field-warn {
+  color: var(--amber, #8a5a12);
+}
+.field-ok {
+  color: var(--ok, #3d6b35);
+}
+.field-hint {
+  color: var(--ink-faint);
+}
+.saved-mark {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  min-width: 4.5rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--ok, #3d6b35);
+}
+.settings textarea {
+  width: 100%;
+  padding: 0.45rem 0.55rem;
+  border: 1px solid var(--rule);
+  border-radius: 5px;
+  background: var(--paper-raised);
+  color: var(--ink);
+  font: inherit;
+  resize: vertical;
+}
+.settings .field > em.field-error {
+  font-size: 0.85rem;
+}
+
+/* Providers */
+.provider-mark {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 8px;
+  font: 700 0.8rem var(--sans);
+  color: #fff;
+  background: #8a8170;
+}
+.provider-mark-sm {
+  width: 1.25rem;
+  height: 1.25rem;
+  border-radius: 4px;
+  font-size: 0.6rem;
+}
+.provider-openrouter {
+  background: #5b5bd6;
+}
+.provider-anthropic {
+  background: #b5643c;
+}
+.provider-google {
+  background: #3a7bd5;
+}
+.provider-openai {
+  background: #222;
+}
+.provider-xai {
+  background: #555;
+}
+.provider-mistral {
+  background: #c25a1c;
+}
+.provider-deepseek {
+  background: #3d5be0;
+}
+.provider-groq {
+  background: #b23d27;
+}
+.provider-list,
+.provider-offers,
+.task-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  background: var(--paper-raised);
+}
+.provider-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0.4rem 0.9rem;
+  padding: 0.9rem 1rem;
+}
+.provider-row + .provider-row,
+.provider-offers li + li,
+.task-row + .task-row {
+  border-top: 1px solid var(--rule);
+}
+.provider-name {
+  font-weight: 600;
+}
+.provider-status {
+  font-size: 0.85rem;
+}
+.status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-weight: 600;
+}
+.status.ok {
+  color: var(--ok, #3d6b35);
+}
+.status.bad {
+  color: var(--warn);
+}
+.status.off {
+  color: var(--ink-faint);
+}
+.dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  display: inline-block;
+  flex: none;
+}
+.dot.ok {
+  background: var(--ok, #3d6b35);
+}
+.dot.bad {
+  background: var(--warn);
+}
+.dot.off {
+  border: 1.5px solid var(--ink-faint);
+}
+.provider-used {
+  margin: 0.3rem 0 0;
+  font-size: 0.85rem;
+}
+.provider-actions {
+  grid-column: 2;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-start;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: 0.9rem;
+}
+.provider-offer {
+  display: flex;
+  gap: 0.8rem;
+  align-items: center;
+  width: 100%;
+  padding: 0.75rem 1rem;
+  border: 0;
+  background: none;
+  color: inherit;
+  text-align: left;
+  font: inherit;
+}
+.provider-offer span {
+  display: flex;
+  flex-direction: column;
+}
+.provider-offer small {
+  color: var(--ink-faint);
+}
+.provider-offers li.open {
+  background: var(--paper);
+}
+.provider-offers .key-field {
+  padding: 0 1rem 0.9rem 4.05rem;
+}
+.key-field .field {
+  margin: 0.5rem 0 0.25rem;
+}
+.key-row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+.key-row input {
+  flex: 1;
+  min-width: 0;
+  padding: 0.45rem 0.55rem;
+  border: 1px solid var(--rule);
+  border-radius: 5px;
+  background: var(--paper-raised);
+  color: var(--ink);
+  font: inherit;
+}
+.mono {
+  font-family: var(--mono);
+  font-size: 0.85em;
+}
+
+/* Models */
+.task-row {
+  display: grid;
+  grid-template-columns: 11rem minmax(0, 1fr);
+  gap: 1rem;
+  padding: 0.9rem 1rem;
+}
+.task-label small {
+  display: block;
+  color: var(--ink-faint);
+  font-size: 0.8rem;
+  line-height: 1.35;
+  margin-top: 0.15rem;
+}
+.task-row.is-gone .model-chip {
+  border-color: var(--amber, #8a5a12);
+}
+.model-chip-button {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+}
+.model-chip {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding: 0.5rem 0.65rem;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  background: var(--paper);
+}
+.model-chip-name {
+  font-weight: 600;
+}
+.model-chip-right {
+  margin-left: auto;
+  font-size: 0.8rem;
+  color: var(--ink-soft);
+}
+.task-off {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+}
+.task-off > span {
+  font-weight: 600;
+  color: var(--ink-faint);
+}
+.task-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  margin: 0.4rem 0 0;
+}
+.task-picker {
+  grid-column: 1 / -1;
+}
+.task-test-picture {
+  max-width: 12rem;
+  border-radius: 6px;
+}
+
+/* Spending */
+.spend-line {
+  font-size: 1.05rem;
+  margin: 0;
+}
+.cap-field input {
+  width: 4.5rem;
+  margin-left: 0.15rem;
+  padding: 0.2rem 0.35rem;
+  border: 1px solid var(--rule);
+  border-radius: 5px;
+  background: var(--paper-raised);
+  color: var(--ink);
+  font: inherit;
+}
+.meter {
+  height: 0.6rem;
+  border-radius: 0.3rem;
+  background: var(--rule);
+  overflow: hidden;
+  margin: 0.5rem 0 0.25rem;
+}
+.meter i {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+}
+.calls .num {
+  text-align: right;
+}
+.log-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+}
+.log-head .check {
+  margin-left: auto;
+}
+
+@media (max-width: 47.99rem) {
+  .provider-actions {
+    grid-column: 1 / -1;
+  }
+  .provider-offers .key-field {
+    padding-left: 1rem;
+  }
+  .task-row {
+    grid-template-columns: 1fr;
+    gap: 0.5rem;
+  }
+  /* The call log as two-line cards. */
+  .call-log thead {
+    display: none;
+  }
+  .call-log tr {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    padding: 0.5rem 0;
+    border-bottom: 1px solid var(--rule);
+  }
+  .call-log td {
+    border: 0;
+    padding: 0;
+  }
+  .call-log .call-what {
+    grid-row: 1;
+    grid-column: 1;
+    font-weight: 600;
+  }
+  .call-log .call-cost {
+    grid-row: 1;
+    grid-column: 2;
+  }
+  .call-log .call-when,
+  .call-log .call-model {
+    font-size: 0.8rem;
+    color: var(--ink-faint);
+  }
+  .call-log .call-when {
+    grid-row: 2;
+    grid-column: 1;
+  }
+  .call-log .call-model {
+    grid-row: 3;
+    grid-column: 1;
+  }
+  .call-log .call-tokens {
+    grid-row: 2;
+    grid-column: 2;
+    font-size: 0.8rem;
+    color: var(--ink-faint);
+  }
+}
