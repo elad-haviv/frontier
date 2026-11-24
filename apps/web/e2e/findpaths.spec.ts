@@ -314,14 +314,14 @@ test("runs a river down the height map to the sea, and ends a tributary exactly 
   expect(Math.abs(mouth[1] - 200)).toBeLessThan(15);
   expect(main!.style).toBe("strriver");
 
-  // A second river from the north slope reaches the first and ends exactly on it.
-  await click(page, [300, 80]);
+  // A second river from the south slope reaches the first and ends exactly on it.
+  await click(page, [300, 300]);
   await expect(status(page)).toContainText("joins");
   await ready(page);
   await bar(page).getByRole("button", { name: "Make path" }).click();
   await expect.poll(async () => (await paths(page)).length).toBe(2);
   const tributary = (await paths(page))[1]!;
-  near(tributary.points![0], [300, 80]);
+  near(tributary.points![0], [300, 300]);
   expect(distanceTo(tributary.points![tributary.points!.length - 1]!, main!.points!)).toBeLessThan(
     0.01,
   );
