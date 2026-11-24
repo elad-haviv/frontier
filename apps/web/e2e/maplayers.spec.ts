@@ -1,5 +1,5 @@
 import { expect, type Locator, type Page, test } from "@playwright/test";
-import { rightPanel } from "./helpers.ts";
+import { drawn, rightPanel } from "./helpers.ts";
 
 /**
  * The Layers tab as a tree (stage 16c): adding layers and sublayers, dragging one into another,
@@ -82,15 +82,21 @@ async function openMap(page: Page, title: string, sublayer = false) {
 
 const row = (panel: Locator, name: string) => panel.getByRole("treeitem", { name, exact: true });
 
-/** Drags a row by its handle onto the middle of another row. */
+/**
+ * Drags a row by its handle onto the middle of another row. Near the top or bottom of the list
+ * (in the short sheet of a phone, most of it) the list scrolls as the pointer moves, so the row
+ * can slide away from under it: the pointer follows the row until the row shows the drop.
+ */
 async function dragOnto(page: Page, from: Locator, to: Locator) {
   const grip = (await from.locator(".lt-grip").boundingBox())!;
-  const target = (await to.boundingBox())!;
   await page.mouse.move(grip.x + grip.width / 2, grip.y + grip.height / 2);
   await page.mouse.down();
   await page.mouse.move(grip.x + grip.width / 2, grip.y + grip.height / 2 + 8, { steps: 2 });
-  await page.mouse.move(target.x + target.width / 2, target.y + target.height / 2, { steps: 8 });
-  await expect(to).toHaveClass(/drop-into/);
+  await expect(async () => {
+    const target = (await to.boundingBox())!;
+    await page.mouse.move(target.x + target.width / 2, target.y + target.height / 2, { steps: 8 });
+    await expect(to).toHaveClass(/drop-into/, { timeout: 500 });
+  }).toPass();
   await page.mouse.up();
 }
 
@@ -241,12 +247,15 @@ test("hiding a layer hides its sublayers and their features", async ({ page }, i
   await expect(page).toHaveURL(new RegExp(`hide=${first.id}(&|$)`));
   await expect(row(panel, "Roads")).toHaveClass(/is-off/);
   await expect(row(panel, "Beacon")).toHaveClass(/is-off/);
+  await drawn(page);
   await page.mouse.click(centre.x, centre.y);
   await page.waitForTimeout(300);
   await expect(featureTab(page)).toHaveCount(0);
 
   await panel.getByRole("button", { name: `Show ${first.name}` }).click();
   await expect(row(panel, "Roads")).not.toHaveClass(/is-off/);
+  // Taps are tested against the map as last drawn, on the frame after the layer is shown.
+  await drawn(page);
   await page.mouse.click(centre.x, centre.y);
   await expect(featureTab(page)).toHaveCount(1);
   await cleanUp(page, id);

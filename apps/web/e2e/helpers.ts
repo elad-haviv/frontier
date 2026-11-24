@@ -164,6 +164,28 @@ export async function goTo(page: Page, place: string): Promise<void> {
     .click();
 }
 
+/**
+ * Waits until the map is drawn as it is now. A tap is tested against where the features were at
+ * the last draw, which comes on the frame after a change, and after the canvas has taken its
+ * frame's new size when a panel beside the map opens or closes (the drawing sets the canvas's
+ * size, so a canvas the size it is laid out at has been drawn at that size).
+ */
+export async function drawn(page: Page): Promise<void> {
+  await expect
+    .poll(() =>
+      page
+        .locator(".map-top")
+        .evaluate(
+          (c: HTMLCanvasElement) =>
+            c.width === Math.round(c.clientWidth * (window.devicePixelRatio || 1)),
+        ),
+    )
+    .toBe(true);
+  await page.evaluate(
+    () => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))),
+  );
+}
+
 /** Opens a panel of the right side bar (the bottom sheet on a phone) by its tab, and gives it. */
 export async function rightPanel(page: Page, name: string) {
   const tab = page.getByRole("tab", { name: new RegExp(`^${name}\\b`) });

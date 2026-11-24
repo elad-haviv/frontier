@@ -1,5 +1,6 @@
 import { expect, type Page, test } from "@playwright/test";
 import type { Position } from "@frontier/geo";
+import { drawn } from "./helpers.ts";
 
 /**
  * The map tools of stage 16d: labels, snapping, making a feature's entry from its entry list,
@@ -125,6 +126,8 @@ test("writes a label on the map, sets its look, and selects it by its words", as
   await page.getByRole("button", { name: "Select", exact: true }).click();
   await editor.getByRole("button", { name: "Close" }).click();
   await expect(editor).toHaveCount(0);
+  // Closing the editor widens the map again; the tap waits for the label drawn at the new width.
+  await drawn(page);
   await page.mouse.click(c.x + 25, c.y + 4);
   await expect(page.locator(".feature-editor").getByLabel("Words")).toHaveValue("The Grey Sea");
   await cleanUp(page, [id]);
