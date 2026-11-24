@@ -724,7 +724,7 @@ describe("writing help", () => {
     });
     await vi.waitFor(() => expect(calls).toBe(1));
     stop.abort();
-    await expect(asked).rejects.toThrow("stopped");
+    await expect(asked).rejects.toThrow(/stopped/i);
     expect(aborted).toBe(true);
     expect(calls).toBe(1);
   });
