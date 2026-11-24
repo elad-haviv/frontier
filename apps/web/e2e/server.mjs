@@ -4,6 +4,7 @@ import { rmSync } from "node:fs";
 import { createServer } from "node:http";
 import { dirname, join } from "node:path";
 import process from "node:process";
+import { setTimeout } from "node:timers";
 import { fileURLToPath } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -108,6 +109,15 @@ function lore(user) {
     return { path, text: "A line the test drafted to fill the gap." };
   }
   const question = /Question: (.*)$/.exec(user)?.[1] ?? "";
+  // "Look further" makes the model ask for more once before it answers.
+  if (question.includes("Look further") && !user.includes("You asked for:")) {
+    return {
+      paragraphs: [],
+      related: [],
+      missing: "",
+      more: { searches: ["Mira"], entries: [] },
+    };
+  }
   if (question.includes("unknown")) {
     return {
       paragraphs: [{ text: "Nothing is said of this.", sources: [], quotes: [] }],
@@ -131,6 +141,46 @@ function lore(user) {
     related: [],
     missing: "",
   };
+}
+
+const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * Sends an answer as OpenRouter streams one: a keep-alive comment, the model's reasoning in pieces,
+ * then the answer in pieces and the usage. A question with "slowly" in it reasons for a long while,
+ * so a test can watch it work and stop it; one with "fall over" fails partway, as a provider can.
+ */
+async function streamAnswer(req, res, content, user) {
+  const question = /Question: (.*)$/.exec(user)?.[1] ?? "";
+  let open = true;
+  res.on("close", () => (open = false));
+  const send = (data) => open && res.write(`data: ${JSON.stringify(data)}\n\n`);
+  res.writeHead(200, { "content-type": "text/event-stream" });
+  res.write(": OPENROUTER PROCESSING\n\n");
+  const thoughts = (
+    "Looking at the entries I was given. The first one answers the question; " +
+    "I will quote its opening line."
+  ).split(/(?<= )/);
+  const wait = question.includes("slowly") ? 1500 : question.includes("Look further") ? 200 : 60;
+  for (const piece of thoughts) {
+    if (!open) return;
+    send({ choices: [{ delta: { reasoning: piece } }] });
+    await pause(wait);
+  }
+  if (question.includes("fall over")) {
+    send({ error: { code: 502, message: "The test provider fell over" }, choices: [] });
+    res.end();
+    return;
+  }
+  for (let at = 0; at < content.length && open; at += 30) {
+    send({ choices: [{ delta: { content: content.slice(at, at + 30) } }] });
+    await pause(15);
+  }
+  send({
+    choices: [{ delta: {} }],
+    usage: { prompt_tokens: 100, completion_tokens: 20, cost: 0.001 },
+  });
+  if (open) res.end("data: [DONE]\n\n");
 }
 
 // A stand-in for the AI provider. For any entry it "finds" one dated fact and quotes the entry's
@@ -170,7 +220,8 @@ const ai = createServer((req, res) => {
       );
       return;
     }
-    const user = JSON.parse(raw).messages[1].content;
+    const asked = JSON.parse(raw);
+    const user = asked.messages[1].content;
     const lines = user.split("\n").slice(1);
     const quote = lines.find((l) => l.trim() !== "" && !l.startsWith("#")) ?? "";
     const answer = user.startsWith("Entry:")
@@ -182,6 +233,10 @@ const ai = createServer((req, res) => {
           : user.startsWith("Entries:")
             ? lore(user)
             : { reply: "ok" };
+    if (asked.stream) {
+      void streamAnswer(req, res, JSON.stringify(answer), user);
+      return;
+    }
     res.end(
       JSON.stringify({
         choices: [{ message: { content: JSON.stringify(answer) } }],

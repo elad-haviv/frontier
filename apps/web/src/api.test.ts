@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { CLIENT_API } from "@frontier/schema";
-import { api, ApiFailure, setDevice } from "./api.ts";
+import { api, ApiFailure, eventsIn, setDevice } from "./api.ts";
 import { connection } from "./sync/connection.ts";
 
 /** Answers every request with `res`, and keeps what was asked. */
@@ -114,5 +114,45 @@ describe("api", () => {
     // The session is asked without a session: its failure says nothing about the connection.
     expect((await failureOf(api.session())).status).toBe(0);
     expect(unreachable).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("asking with the work shown", () => {
+  it("splits server-sent events, skipping keep-alives and keeping an unfinished one", () => {
+    const { events, rest } = eventsIn(
+      ': padding\n\nevent: step\ndata: {"n":0}\n\n: keep-alive\r\n\r\nevent: reasoning\ndata: {"te',
+    );
+    expect(events).toEqual([{ event: "step", data: '{"n":0}' }]);
+    expect(rest).toBe('event: reasoning\ndata: {"te');
+  });
+
+  it("passes each event on, returns the answer, and throws an error event in its own words", async () => {
+    const body = (text: string) => () =>
+      new Response(text, { headers: { "content-type": "text/event-stream" } });
+    answer(
+      body(
+        'event: run\ndata: {"run":"r1","conversation":"c"}\n\n' +
+          'event: reasoning\ndata: {"text":"Hm."}\n\n' +
+          'event: done\ndata: {"conversation":{"id":"c"},"gone":[]}\n\n',
+      ),
+    );
+    const seen: unknown[] = [];
+    const done = await api.askStreamed("Q?", undefined, (e) => seen.push(e));
+    expect(seen).toEqual([
+      { type: "run", run: "r1", conversation: "c" },
+      { type: "reasoning", text: "Hm." },
+    ]);
+    expect(done.conversation.id).toBe("c");
+
+    answer(
+      body('event: error\ndata: {"code":"ai_failed","message":"The provider fell over."}\n\n'),
+    );
+    const failure = await failureOf(api.askStreamed("Q?", undefined, () => undefined));
+    expect(failure.code).toBe("ai_failed");
+    expect(failure.message).toBe("The provider fell over.");
+
+    answer(body('event: run\ndata: {"run":"r1","conversation":"c"}\n\n'));
+    const lost = await failureOf(api.askStreamed("Q?", undefined, () => undefined));
+    expect(lost.message).toContain("connection was lost");
   });
 });

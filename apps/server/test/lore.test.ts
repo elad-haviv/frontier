@@ -198,6 +198,299 @@ describe("asking the lore", () => {
   });
 });
 
+/** One server-sent event of the provider's stream. */
+const sse = (data: unknown) => `data: ${JSON.stringify(data)}\n\n`;
+
+/**
+ * Stands in for OpenRouter when it streams: a keep-alive comment, the reasoning in pieces, then
+ * the answer in small pieces and the usage. `replies` are used in turn, the last one for later calls.
+ */
+type StreamReply = { answer?: object; reasoning?: string; fail?: string };
+function streamingProvider(replies: StreamReply[] | ((n: number) => StreamReply)) {
+  const calls: { model: string; stream?: boolean; reasoning?: unknown; user: string }[] = [];
+  const fake: typeof fetch = async (input, init) => {
+    if (String(input).endsWith("/models")) return Response.json({ data: [] });
+    const body = JSON.parse(String(init?.body));
+    calls.push({
+      model: body.model,
+      stream: body.stream,
+      reasoning: body.reasoning,
+      user: body.messages[1].content,
+    });
+    const reply =
+      typeof replies === "function"
+        ? replies(calls.length - 1)
+        : replies[Math.min(calls.length - 1, replies.length - 1)]!;
+    if (!body.stream) {
+      return Response.json({
+        choices: [{ message: { content: JSON.stringify(reply.answer) } }],
+        usage: { prompt_tokens: 900, completion_tokens: 200, cost: 0.004 },
+      });
+    }
+    const text = JSON.stringify(reply.answer ?? {});
+    const parts: string[] = [": OPENROUTER PROCESSING\n\n"];
+    for (const word of (reply.reasoning ?? "").split(/(?<= )/).filter(Boolean)) {
+      parts.push(sse({ choices: [{ delta: { reasoning: word } }] }));
+    }
+    if (reply.fail) {
+      parts.push(sse({ error: { code: 502, message: reply.fail }, choices: [] }));
+    } else {
+      for (let at = 0; at < text.length; at += 40) {
+        parts.push(sse({ choices: [{ delta: { content: text.slice(at, at + 40) } }] }));
+      }
+      parts.push(
+        sse({
+          choices: [{ delta: {} }],
+          usage: { prompt_tokens: 900, completion_tokens: 200, cost: 0.004 },
+        }),
+      );
+      parts.push("data: [DONE]\n\n");
+    }
+    const bytes = new TextEncoder();
+    return new Response(
+      new ReadableStream({
+        start(c) {
+          // Split across chunk boundaries on purpose, as a network does.
+          for (const part of parts) {
+            const mid = Math.floor(part.length / 2);
+            c.enqueue(bytes.encode(part.slice(0, mid)));
+            c.enqueue(bytes.encode(part.slice(mid)));
+          }
+          c.close();
+        },
+      }),
+      { headers: { "content-type": "text/event-stream" } },
+    );
+  };
+  return { fake, calls };
+}
+
+async function startStreaming(replies: Parameters<typeof streamingProvider>[0]) {
+  const p = streamingProvider(replies);
+  t = await makeTestApp(SECRETS, { fetch: p.fake, settleMs: 0 });
+  await t.login();
+  t.repo.pushFromOutside(NOTES);
+  await t.services.sync();
+  const res = await t.put("/api/settings/ai", {
+    key: "sk-or-test-key-1234",
+    models: { conversation: MODEL },
+  });
+  expect(res.statusCode, res.body).toBe(200);
+  return p;
+}
+
+/** The events of a stream from Frontier, in order. Their data is read as loosely as JSON is. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function eventsOf(payload: string): { event: string; data: any }[] {
+  return payload
+    .split("\n\n")
+    .filter((block) => block.startsWith("event: "))
+    .map((block) => {
+      const [first, second] = block.split("\n");
+      return { event: first!.slice(7), data: JSON.parse(second!.slice(6)) };
+    });
+}
+
+const askStreaming = (question: string, conversation?: string) =>
+  t.post("/api/lore/stream", { question, ...(conversation ? { conversation } : {}) });
+
+describe("asking the lore, step by step", () => {
+  it("streams each step, the model's reasoning and the checked answer, and keeps them", async () => {
+    const p = await startStreaming([
+      { answer: GROUNDED, reasoning: "The question names the Nirani. Their entry says how. " },
+    ]);
+    const res = await askStreaming("How do the Nirani keep time?");
+    expect(res.statusCode).toBe(200);
+    expect(res.headers["content-type"]).toContain("text/event-stream");
+    expect(res.headers["cache-control"]).toContain("no-transform");
+    // Comments first, so proxies pass the events on at once.
+    expect(res.payload.startsWith(": ")).toBe(true);
+
+    const events = eventsOf(res.payload);
+    expect(events[0]!.event).toBe("run");
+    expect(events[0]!.data.run).toMatch(/^[a-f0-9]{32}$/);
+    const steps = events.filter((e) => e.event === "step").map((e) => e.data);
+    const texts = steps.map((s) => s.step.text);
+    expect(texts).toContain("Looked for entries the question names");
+    expect(steps.find((s) => s.step.text.startsWith("Looked for"))!.step.entries).toContain(NIRANI);
+    expect(texts.some((x) => x.startsWith("Searched the library for “"))).toBe(true);
+    expect(texts.some((x) => /^Reading \d+ entries$/.test(x))).toBe(true);
+    // The model's step is begun, then told again as done under the same number.
+    const asking = steps.filter((s) => s.step.text === "Asking the model");
+    expect(asking).toHaveLength(1);
+    expect(asking[0]!.active).toBe(true);
+    const answered = steps.find((s) => s.step.text === "The model answered")!;
+    expect(answered.n).toBe(asking[0]!.n);
+    expect(answered.active).toBe(false);
+    expect(steps.at(-1)!.step).toMatchObject({
+      text: "Checked the quotes against the entries",
+      detail: "2 of 3 found word for word · 1 left out",
+    });
+
+    const reasoning = events.filter((e) => e.event === "reasoning").map((e) => e.data.text);
+    expect(reasoning.length).toBeGreaterThan(3);
+    expect(reasoning.join("")).toBe("The question names the Nirani. Their entry says how. ");
+    const writing = events.filter((e) => e.event === "writing").map((e) => e.data.chars);
+    expect(writing.length).toBeGreaterThan(3);
+    expect(writing.at(-1)).toBe(JSON.stringify(GROUNDED).length);
+
+    const done = events.at(-1)!;
+    expect(done.event).toBe("done");
+    const turn = done.data.conversation.turns[0];
+    expect(turn.answer.paragraphs[0]).toMatchObject({ grounded: true });
+    expect(turn.answer.droppedQuotes).toBe(1);
+    expect(turn.costUsd).toBeCloseTo(0.004);
+    expect(turn.trace.reasoning).toBe("The question names the Nirani. Their entry says how.");
+    expect(turn.trace.steps.map((s: { text: string }) => s.text)).toEqual(
+      texts.filter((x) => x !== "Asking the model"),
+    );
+
+    // Streamed, with the reasoning asked for; saved like any other turn.
+    expect(p.calls[0]).toMatchObject({ stream: true, reasoning: { exclude: false } });
+    const saved = (await t.get(`/api/lore/${done.data.conversation.id}`)).json();
+    expect(saved.conversation.turns[0].trace.steps.length).toBe(turn.trace.steps.length);
+  });
+
+  it("searches and reads what the model asks for, a bounded number of times", async () => {
+    const asking = {
+      paragraphs: [],
+      related: [],
+      missing: "",
+      more: {
+        searches: ["deep currents"],
+        entries: ["Vaakh", "Not There", "99 Appendices/Old talk.md"],
+      },
+    };
+    const p = await startStreaming([{ answer: asking }]);
+    const res = await askStreaming("What is the toll on the Long Road?");
+    const events = eventsOf(res.payload);
+    const texts = events.filter((e) => e.event === "step").map((e) => e.data.step.text);
+    expect(texts).toContain("Searched the library for “deep currents”");
+    expect(texts).toContain(`Reading ${VAAKH}`);
+    expect(texts).toContain("Could not read “Not There”");
+    expect(texts).toContain("Could not read “99 Appendices/Old talk.md”");
+    expect(texts.filter((x) => x === "The model asked for more entries")).toHaveLength(2);
+
+    // The first call is told it may ask; asking again found nothing new, so the next must answer.
+    expect(p.calls).toHaveLength(3);
+    expect(p.calls[0]!.user).not.toContain(`=== Entry: ${VAAKH}`);
+    expect(p.calls[0]!.user).toContain("You may ask for more entries 2 more times.");
+    expect(p.calls[1]!.user).toContain(`=== Entry: ${VAAKH}`);
+    expect(p.calls[1]!.user).toContain('You asked for: a search for "deep currents"');
+    expect(p.calls[1]!.user).toContain("You may ask for more entries 1 more time.");
+    expect(p.calls[2]!.user).toContain("You cannot ask for more entries now");
+    expect(p.calls[2]!.user).not.toContain("sun clocks");
+    const turn = events.at(-1)!.data.conversation.turns[0];
+    expect(turn.given).toContain(VAAKH);
+    expect(turn.costUsd).toBeCloseTo(0.012);
+  });
+
+  it("never asks the model more than the rounds allow", async () => {
+    // Every call asks for an entry it has not read yet, so every round finds something new.
+    const wants = [WATER, "01 Universe/Rain.md", "01 Universe/Rivers.md", "01 Universe/Wells.md"];
+    const p = await startStreaming((n) => ({
+      answer: {
+        paragraphs: [],
+        related: [],
+        missing: "Not found.",
+        more: { searches: [], entries: [wants[n]!] },
+      },
+    }));
+    const res = await askStreaming("How do the Nirani keep time?");
+    const events = eventsOf(res.payload);
+    expect(events.at(-1)!.event).toBe("done");
+    expect(p.calls).toHaveLength(3);
+    const texts = events.filter((e) => e.event === "step").map((e) => e.data.step.text);
+    expect(texts.filter((x) => x === "The model asked for more entries")).toHaveLength(2);
+    expect(texts).toContain("The model answered");
+    expect(texts).not.toContain(`Reading ${wants[2]}`);
+  });
+
+  it("stops when the author stops it, and keeps nothing", async () => {
+    let calls = 0;
+    const fake: typeof fetch = async (input, init) => {
+      if (String(input).endsWith("/models")) return Response.json({ data: [] });
+      calls += 1;
+      const signal = init?.signal;
+      const bytes = new TextEncoder();
+      // Reasons once, then waits until the call is stopped.
+      return new Response(
+        new ReadableStream({
+          start(c) {
+            c.enqueue(bytes.encode(sse({ choices: [{ delta: { reasoning: "Hmm. " } }] })));
+            signal?.addEventListener("abort", () => c.error(signal.reason));
+          },
+        }),
+        { headers: { "content-type": "text/event-stream" } },
+      );
+    };
+    t = await makeTestApp(SECRETS, { fetch: fake, settleMs: 0 });
+    await t.login();
+    t.repo.pushFromOutside(NOTES);
+    await t.services.sync();
+    await t.put("/api/settings/ai", {
+      key: "sk-or-test-key-1234",
+      models: { conversation: MODEL },
+    });
+    const address = await t.app.listen({ port: 0, host: "127.0.0.1" });
+    const res = await fetch(`${address}/api/lore/stream`, {
+      method: "POST",
+      headers: { cookie: t.cookie, "content-type": "application/json" },
+      body: JSON.stringify({ question: "How do the Nirani keep time?" }),
+    });
+    const reader = res.body!.getReader();
+    const decoder = new TextDecoder();
+    let text = "";
+    let stopped = false;
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      text += decoder.decode(value, { stream: true });
+      if (!stopped && text.includes("event: reasoning")) {
+        stopped = true;
+        const run = eventsOf(text).find((e) => e.event === "run")!.data.run;
+        const stop = await fetch(`${address}/api/lore/runs/${run}/stop`, {
+          method: "POST",
+          headers: { cookie: t.cookie },
+        });
+        expect(stop.status).toBe(200);
+      }
+    }
+    const last = eventsOf(text).at(-1)!;
+    expect(last).toMatchObject({ event: "error", data: { code: "ai_stopped" } });
+    expect(calls).toBe(1);
+    expect((await t.get("/api/lore")).json().conversations).toEqual([]);
+    const log = await t.services.aiLog.calls(new Date().toISOString().slice(0, 7));
+    expect(log.at(-1)).toMatchObject({ ok: false, error: "Stopped by the author." });
+  });
+
+  it("tells a failure in plain words, with the provider's message, and logs it", async () => {
+    await startStreaming([{ reasoning: "Thinking. ", fail: "Provider disconnected mid-stream" }]);
+    const warned: { details: object; message: string }[] = [];
+    t.services.ai.logFailuresTo({ warn: (details, message) => warned.push({ details, message }) });
+    const res = await askStreaming("How do the Nirani keep time?");
+    const events = eventsOf(res.payload);
+    const last = events.at(-1)!;
+    expect(last.event).toBe("error");
+    expect(last.data.code).toBe("ai_failed");
+    expect(last.data.message).toContain("Provider disconnected mid-stream");
+    expect(warned[0]).toMatchObject({
+      message: "AI call failed",
+      details: { task: "conversation", model: MODEL, entry: expect.stringMatching(/^lore:/) },
+    });
+    expect(JSON.stringify(warned[0]!.details)).toContain("Provider disconnected mid-stream");
+    // Nothing was kept.
+    expect((await t.get("/api/lore")).json().conversations).toEqual([]);
+  });
+
+  it("refuses before the stream when no model is chosen", async () => {
+    await start([GROUNDED], { extraction: MODEL });
+    const res = await askStreaming("Anything?");
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error.code).toBe("ai_off");
+  });
+});
+
 describe("drafting an addition", () => {
   const MISSING = {
     paragraphs: [

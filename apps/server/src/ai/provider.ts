@@ -33,6 +33,18 @@ export interface CompleteInput<T> {
   timeoutMs?: number;
   /** Whether a call that timed out is sent again. A timed-out call may still have been billed. */
   retryOnTimeout?: boolean;
+  /**
+   * When given, the answer is streamed: each piece of the model's reasoning, and of the answer as
+   * it is written, is passed here as it arrives. The reasoning of models that reason is asked for.
+   */
+  onStream?: (piece: { reasoning?: string; content?: string }) => void;
+  /** Stops the call, as the author's Stop button does. */
+  signal?: AbortSignal;
+}
+
+/** Where failed calls are written, so the server's own log says why an AI call failed. */
+export interface AiWarnLog {
+  warn(details: object, message: string): void;
 }
 
 export interface AiProviderDeps {
@@ -48,6 +60,8 @@ interface Attempt {
   ok: boolean;
   retry: boolean;
   timedOut?: boolean;
+  /** Stopped by the author: not a failure of the provider, and never sent again. */
+  stopped?: boolean;
   content?: string;
   promptTokens: number;
   completionTokens: number;
@@ -62,10 +76,20 @@ export class AiProvider {
   private readonly now: () => Date;
   /** The message of the last failed call, cleared by the next one that works. */
   lastError: string | null = null;
+  private warnLog: AiWarnLog | null = null;
 
   constructor(private readonly d: AiProviderDeps) {
     this.fetch = d.fetch ?? fetch;
     this.now = d.now ?? (() => new Date());
+  }
+
+  /** Failed calls are written to this log as well as to the cost log. */
+  logFailuresTo(log: AiWarnLog): void {
+    this.warnLog = log;
+  }
+
+  private warn(task: AiTask, model: string, error: string, entry?: string): void {
+    this.warnLog?.warn({ task, model, entry: entry ?? null, error }, "AI call failed");
   }
 
   /** The provider key: the stored one, or else the one from the environment. */
@@ -114,6 +138,7 @@ export class AiProvider {
     let attempt = await this.attempt(key.key, model, input);
     const again = attempt.retry && !(attempt.timedOut && input.retryOnTimeout === false);
     if (!attempt.ok && again) attempt = await this.attempt(key.key, model, input);
+    if (attempt.stopped) throw new ApiError("ai_stopped", "Stopped.");
     if (!attempt.ok) {
       this.lastError = attempt.error ?? "The AI provider did not answer.";
       throw new ApiError("ai_failed", this.lastError);
@@ -128,6 +153,7 @@ export class AiProvider {
     const checked = input.schema.check.safeParse(parsed);
     if (!checked.success) {
       this.lastError = "The model's answer did not have the form that was asked for.";
+      this.warn(input.task, model, this.lastError, input.entry);
       throw new ApiError("ai_bad_answer", this.lastError);
     }
     this.lastError = null;
@@ -202,6 +228,7 @@ export class AiProvider {
     });
     if (!ok || !bytes) {
       this.lastError = error ?? "No picture came back.";
+      this.warn("art", model, this.lastError, entry);
       throw new ApiError("ai_failed", this.lastError);
     }
     this.lastError = null;
@@ -222,11 +249,32 @@ export class AiProvider {
       ok: result.ok,
       ...(result.error ? { error: result.error } : {}),
     });
+    if (!result.ok && !result.stopped) {
+      this.warn(input.task, model, result.error ?? "No answer.", input.entry);
+    }
     return result;
   }
 
   private async request<T>(key: string, model: string, input: CompleteInput<T>): Promise<Attempt> {
     const none = { promptTokens: 0, completionTokens: 0, costUsd: 0 };
+    const stream = input.onStream !== undefined;
+    const timeout = AbortSignal.timeout(input.timeoutMs ?? this.d.timeoutMs ?? 60_000);
+    const signal = input.signal ? AbortSignal.any([timeout, input.signal]) : timeout;
+    const failed = (err: unknown): Attempt => {
+      const timedOut = timeout.aborted || (err instanceof Error && err.name === "TimeoutError");
+      if (input.signal?.aborted && !timedOut) {
+        return { ...none, ok: false, retry: false, stopped: true, error: "Stopped by the author." };
+      }
+      return {
+        ...none,
+        ok: false,
+        retry: true,
+        timedOut,
+        error: timedOut
+          ? "The AI provider did not answer in time."
+          : "The AI provider could not be reached.",
+      };
+    };
     let res: Response;
     try {
       res = await this.fetch(`${this.d.config.openrouterUrl}/chat/completions`, {
@@ -242,22 +290,24 @@ export class AiProvider {
             type: "json_schema",
             json_schema: { name: input.schema.name, strict: true, schema: input.schema.json },
           },
-          stream: false,
+          stream,
+          // Asks for the reasoning of a model that reasons, without making one reason that would
+          // not: the page shows it as the model's thinking.
+          ...(stream ? { reasoning: { exclude: false } } : {}),
           ...(input.maxTokens ? { max_tokens: input.maxTokens } : {}),
         }),
-        signal: AbortSignal.timeout(input.timeoutMs ?? this.d.timeoutMs ?? 60_000),
+        signal,
       });
     } catch (err) {
-      const timedOut = err instanceof Error && err.name === "TimeoutError";
-      return {
-        ...none,
-        ok: false,
-        retry: true,
-        timedOut,
-        error: timedOut
-          ? "The AI provider did not answer in time."
-          : "The AI provider could not be reached.",
-      };
+      return failed(err);
+    }
+    // A failure before the stream starts comes back as plain JSON, as without a stream.
+    if (stream && res.ok && (res.headers.get("content-type") ?? "").includes("text/event-stream")) {
+      try {
+        return await readStream(res, input.onStream!);
+      } catch (err) {
+        return failed(err);
+      }
     }
 
     let body: unknown;
@@ -293,4 +343,97 @@ export class AiProvider {
     }
     return { ...usage, ok: true, retry: false, content };
   }
+}
+
+/**
+ * Reads a streamed answer: the reasoning and the answer's text as they come, the usage from the
+ * last piece. A failure inside the stream (the provider can report one after it has started)
+ * fails the call.
+ */
+async function readStream(
+  res: Response,
+  onStream: NonNullable<CompleteInput<unknown>["onStream"]>,
+): Promise<Attempt> {
+  const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : 0);
+  let content = "";
+  let usage = { promptTokens: 0, completionTokens: 0, costUsd: 0 };
+  let error: string | null = null;
+  const take = (data: string) => {
+    if (data === "[DONE]") return;
+    let piece: {
+      error?: { message?: unknown };
+      choices?: {
+        delta?: {
+          content?: unknown;
+          reasoning?: unknown;
+          reasoning_details?: { text?: unknown; summary?: unknown }[];
+        };
+      }[];
+      usage?: { prompt_tokens?: unknown; completion_tokens?: unknown; cost?: unknown };
+    };
+    try {
+      piece = JSON.parse(data) as typeof piece;
+    } catch {
+      return;
+    }
+    if (piece.usage) {
+      usage = {
+        promptTokens: num(piece.usage.prompt_tokens),
+        completionTokens: num(piece.usage.completion_tokens),
+        costUsd: num(piece.usage.cost),
+      };
+    }
+    if (piece.error) {
+      const said = typeof piece.error.message === "string" ? piece.error.message : null;
+      error = `The AI provider failed while answering${said ? `: ${said}` : "."}`;
+      return;
+    }
+    const delta = piece.choices?.[0]?.delta;
+    if (!delta) return;
+    // OpenRouter sends the reasoning both as text and as details; the text is enough when given.
+    const reasoning =
+      typeof delta.reasoning === "string"
+        ? delta.reasoning
+        : (delta.reasoning_details ?? [])
+            .map((d) =>
+              typeof d.text === "string" ? d.text : typeof d.summary === "string" ? d.summary : "",
+            )
+            .join("");
+    const text = typeof delta.content === "string" ? delta.content : "";
+    content += text;
+    if (reasoning || text) {
+      onStream({ ...(reasoning ? { reasoning } : {}), ...(text ? { content: text } : {}) });
+    }
+  };
+
+  // Server-sent events: "data:" lines up to a blank line make one event. Comments, such as
+  // ": OPENROUTER PROCESSING", and other fields are left aside.
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let data: string[] = [];
+  const line = (raw: string) => {
+    const l = raw.endsWith("\r") ? raw.slice(0, -1) : raw;
+    if (l === "") {
+      if (data.length) take(data.join("\n"));
+      data = [];
+    } else if (l.startsWith("data:")) {
+      data.push(l.slice(5).replace(/^ /, ""));
+    }
+  };
+  for await (const chunk of res.body as unknown as AsyncIterable<Uint8Array>) {
+    buffer += decoder.decode(chunk, { stream: true });
+    let at: number;
+    while ((at = buffer.indexOf("\n")) >= 0) {
+      line(buffer.slice(0, at));
+      buffer = buffer.slice(at + 1);
+    }
+  }
+  if (buffer) line(buffer);
+  line("");
+
+  if (error) return { ...usage, ok: false, retry: false, error };
+  if (content === "") {
+    return { ...usage, ok: false, retry: false, error: "The AI provider sent an empty answer." };
+  }
+  return { ...usage, ok: true, retry: false, content };
 }
