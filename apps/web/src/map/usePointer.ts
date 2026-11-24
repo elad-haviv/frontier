@@ -7,6 +7,7 @@
 import {
   focusOn,
   makeView,
+  moveBy,
   outline,
   panBy,
   type Position,
@@ -33,7 +34,7 @@ import {
 } from "./gesture.ts";
 import { drawLive, type LiveInput } from "./live.ts";
 import { screenLines } from "./overlay.ts";
-import type { MapTime, Resolved } from "./time.ts";
+import { type MapTime, type Resolved, writeShape } from "./time.ts";
 import {
   addSketchPoint,
   dragShape,
@@ -86,9 +87,28 @@ export function usePointer(p: {
   onPressKind: (kind: PointerKind) => void;
   /** Points of paths and zones snap to other paths and zones near them. */
   snap: boolean;
+  /** Changes the whole map: a group moved by a drag, as one step with `beginStep`. */
+  change: (next: MapFile, remember?: boolean) => void;
+  /** The selected group, when one is selected and can be changed on the map. */
+  group: { id: string; members: ReadonlySet<string> } | null;
+  /**
+   * What a tap on a feature (or a group's name), or on nothing, selects: the page decides, by the
+   * groups and by whether Shift or Ctrl/⌘ was held to pick several.
+   */
+  pickTap: (hit: string | null, how: { add: boolean; kind: PointerKind }) => void;
+  /** The features lit with a hovered one: its group's, unless the selection is inside it. */
+  haloIds: (feature: string) => ReadonlySet<string>;
 }) {
   /** Alt held with the last pointer event: points go exactly where they are put. */
   const altHeld = useRef(false);
+  /** Shift, Ctrl or ⌘ held as the map was pressed: a tap adds to what is picked. */
+  const addHeld = useRef(false);
+  /** Where each piece of a dragged group was when the drag began. */
+  const groupStart = useRef<{
+    group: string;
+    pieces: { resolved: Resolved; points: Position[] }[];
+    at: Position | null;
+  } | null>(null);
   /** Where the point being placed or dragged snaps to now, marked on the live canvas. */
   const snapMark = useRef<Snapped | null>(null);
   const { size, editing, tool, selected, focusing } = p;
@@ -193,7 +213,7 @@ export function usePointer(p: {
       height: size.height,
       shapes:
         target && target.kind !== "corner" && target.kind !== "insert"
-          ? p.shapes.current.filter((s) => s.id === target.feature)
+          ? p.shapes.current.filter((s) => p.haloIds(target.feature).has(s.id))
           : [],
       corner,
       band: bandFor(bandAt.current),
@@ -311,7 +331,11 @@ export function usePointer(p: {
       return;
     }
 
-    p.apply(tapSelect(v, editing, chosen(), p.shapes.current, [x, y]));
+    const step = tapSelect(v, editing, chosen(), p.shapes.current, [x, y]);
+    // A corner of the selected shape is picked here; what a tap selects, the page decides.
+    if (step.selected === undefined) return p.apply(step);
+    p.apply({ vertex: null });
+    p.pickTap(step.selected, { add: editing && addHeld.current, kind });
   }
 
   function carryOut(effect: Effect, e: GestureEvent) {
@@ -334,6 +358,7 @@ export function usePointer(p: {
         return;
       case "beginStep":
         dragStart.current = null;
+        groupStart.current = null;
         p.beginStep();
         return;
       case "box":
@@ -370,7 +395,27 @@ export function usePointer(p: {
         const now = p.mapRef.current;
         const drawn = p.resolvedRef.current.find((r) => r.feature.id === effect.target.feature);
         // When the pointer leaves the globe, what is dragged stays where it last was.
-        if (!view || !position || !now || !drawn) return;
+        if (!view || !position || !now) return;
+        if (!drawn && target.kind !== "group" && target.kind !== "groupName") return;
+        if (target.kind === "groupName") {
+          // Placed by hand: it stays where it is put, relative to the map.
+          const group = now.groups?.find((g) => g.id === target.feature);
+          if (!group) return;
+          p.change(
+            {
+              ...now,
+              groups: now.groups!.map((g) => (g.id === group.id ? { ...g, at: position } : g)),
+            },
+            false,
+          );
+          return;
+        }
+        if (target.kind === "group") {
+          const from = view.unproject(effect.from.x, effect.from.y);
+          if (from) moveGroup(now, target.feature, from, position);
+          return;
+        }
+        if (!drawn) return;
         if (target.kind === "insert" || target.kind === "zone") {
           // Both start from the shape as it was at the press, so neither drifts.
           if (dragStart.current?.feature !== target.feature && isLined(drawn.feature)) {
@@ -409,6 +454,47 @@ export function usePointer(p: {
     }
   }
 
+  /**
+   * Moves every piece of a group, and its name placed by hand, as the pointer went from `from` to
+   * `to`: each from where it was when the drag began, so nothing drifts. One change of the map.
+   */
+  function moveGroup(now: MapFile, id: string, from: Position, to: Position) {
+    const s = space();
+    if (!s) return;
+    if (groupStart.current?.group !== id) {
+      groupStart.current = {
+        group: id,
+        pieces: p.resolvedRef.current
+          .filter((r) => r.feature.group === id)
+          .map((r) => ({
+            resolved: r,
+            points: isLined(r.feature) ? r.feature.points : [r.feature.at],
+          })),
+        at: now.groups?.find((g) => g.id === id)?.at ?? null,
+      };
+    }
+    const start = groupStart.current;
+    const moved = new Map<string, MapFeature>();
+    for (const { resolved, points } of start.pieces) {
+      const feature = now.features.find((f) => f.id === resolved.feature.id);
+      if (!feature) continue;
+      const to2 = moveBy(s, points, from, to);
+      const shape = isLined(resolved.feature) ? { points: to2 } : { at: to2[0]! };
+      moved.set(feature.id, writeShape(feature, resolved.shape, shape));
+    }
+    const at = start.at ? moveBy(s, [start.at], from, to)[0]! : null;
+    p.change(
+      {
+        ...now,
+        features: now.features.map((f) => moved.get(f.id) ?? f),
+        ...(at && now.groups
+          ? { groups: now.groups.map((g) => (g.id === id ? { ...g, at } : g)) }
+          : {}),
+      },
+      false,
+    );
+  }
+
   const context = (): GestureContext => ({
     focusing,
     spaceHeld: spaceHeld.current,
@@ -418,7 +504,15 @@ export function usePointer(p: {
       const s = space();
       if (!view || !s) return null;
       return pick(
-        { space: s, view, editing, tool, chosen: chosen(), shapes: p.shapes.current },
+        {
+          space: s,
+          view,
+          editing,
+          tool,
+          chosen: chosen(),
+          shapes: p.shapes.current,
+          group: p.group,
+        },
         at,
         kind,
       );
@@ -436,6 +530,7 @@ export function usePointer(p: {
 
   function handle(e: React.PointerEvent, type: GestureEvent["type"]) {
     altHeld.current = e.altKey;
+    if (type === "down") addHeld.current = e.shiftKey || e.ctrlKey || e.metaKey;
     const event: GestureEvent = {
       type,
       id: e.pointerId,

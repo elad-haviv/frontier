@@ -69,6 +69,7 @@ export function FeatureEditor({
   styles = [],
   onStyle,
   onEditStyles,
+  top,
 }: {
   /** The library's path and zone styles. */
   styles?: MapStyle[];
@@ -76,6 +77,8 @@ export function FeatureEditor({
   onStyle?: (style: string | null) => void;
   /** Opens the Styles tab. */
   onEditStyles?: () => void;
+  /** The first part of the form: for a member of a group, its crumb and Group field. */
+  top?: ReactNode;
   /** More parts of the editor, such as how a world revolves. */
   extra?: ReactNode;
   /** How many points the shape on screen has, when it is not the feature's first shape. */
@@ -130,6 +133,7 @@ export function FeatureEditor({
       <button type="button" className="plain card-close" aria-label="Close" onClick={onClose}>
         ✕
       </button>
+      {top}
       <div className="field">
         <span id={`${ids}-entry`}>Entry</span>
         <EntryCombobox

@@ -1,5 +1,6 @@
 import {
   type LucideIcon,
+  LayoutGrid,
   Magnet,
   MapPin,
   MousePointer2,
@@ -39,6 +40,8 @@ export function MapTools({
   canRedo,
   onUndo,
   onRedo,
+  picking = false,
+  onPicking,
 }: {
   tool: Tool;
   schematic: boolean;
@@ -51,6 +54,9 @@ export function MapTools({
   canRedo: boolean;
   onUndo: () => void;
   onRedo: () => void;
+  /** "Select several": each tap on the map picks, to group or delete them (on a phone). */
+  picking?: boolean;
+  onPicking?: (on: boolean) => void;
 }) {
   return (
     <div className="map-tools" role="toolbar" aria-label="Map tools">
@@ -75,6 +81,15 @@ export function MapTools({
         aria-pressed={snap}
         onClick={() => onSnap(!snap)}
       />
+      {onPicking && (
+        <IconButton
+          label="Select several"
+          icon={LayoutGrid}
+          className="pick-several"
+          aria-pressed={picking}
+          onClick={() => onPicking(!picking)}
+        />
+      )}
       <IconButton
         label="Undo"
         icon={Undo2}

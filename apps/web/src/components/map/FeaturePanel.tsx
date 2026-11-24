@@ -6,6 +6,8 @@ import {
   orderFeature,
   reorderFeature,
 } from "@frontier/schema";
+import type { ReactNode } from "react";
+import { takeOut, withFeature } from "../../map/groups.ts";
 import { withStyle } from "../../map/mapStyles.ts";
 import { addShape, reasonFor, removeShape, type Resolved, shapeOf, tie } from "../../map/time.ts";
 import { deleteFeature, removePoint, setCurve, type Tool } from "../../map/tools.ts";
@@ -40,6 +42,7 @@ export function FeaturePanel({
   onEditStyles,
   generate,
   onMakeEntry,
+  memberTop,
 }: {
   /** The library's path and zone styles. */
   styles: MapStyle[];
@@ -52,6 +55,8 @@ export function FeaturePanel({
     moment: { chronicle: string | null; year: number | null };
     onUse: (proposal: GeneratedFeature) => void;
   } | null;
+  /** For a member of a group: the crumb back to its group, and its Group field. */
+  memberTop?: ReactNode;
   /** Opens New entry for the feature, to make its entry and link it. */
   onMakeEntry: (name: string, body: string) => void;
   feature: MapFeature;
@@ -105,7 +110,8 @@ export function FeaturePanel({
       sets={file.sets}
       otherMaps={file.otherMaps}
       vertex={vertex}
-      onChange={(next) => setFeature(next)}
+      onChange={(next) => change(withFeature(file.mapRef.current ?? map, next))}
+      {...(memberTop ? { top: memberTop } : {})}
       onLink={(path, title) => file.link(feature, path, title)}
       onCreateEntry={(typed) => onMakeEntry(typed, "")}
       generate={
@@ -125,7 +131,7 @@ export function FeaturePanel({
         )
       }
       onDelete={() => {
-        change(deleteFeature(map, feature.id));
+        change(takeOut(deleteFeature(map, feature.id), []));
         onSelect(null);
       }}
       onRemoveVertex={() => {

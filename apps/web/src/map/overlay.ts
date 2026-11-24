@@ -26,6 +26,7 @@ import {
 } from "@frontier/schema";
 import { geoContains, geoOrthographic, geoPath } from "d3-geo";
 import type { PointerKind } from "./gesture.ts";
+import { autoAnchor, boxOf, clearOfMarkers, nameFits } from "./groupLabel.ts";
 import { outlineOf, PLUS_SIZE, plusHandles } from "./handles.ts";
 import {
   casingOf,
@@ -64,6 +65,30 @@ export interface OverlayInput {
   presence?: ReadonlyMap<string, { opacity: number; dashed: boolean }>;
   /** The library's path and zone styles; a feature without one is drawn in its layer's look. */
   styles?: readonly MapStyle[];
+  /** Features drawn as picked besides the selected one: a selected group's, or several picked. */
+  picked?: ReadonlySet<string>;
+  /** The dashed box around the selected group and its tag; faint while inside it. */
+  groupBox?: { members: ReadonlySet<string>; tag: string; faint: boolean } | null;
+  /** The names of groups written on the map, once for each group. */
+  groupNames?: readonly GroupName[];
+  /** Features and group names that cannot be picked on the map: those of locked groups. */
+  unpickable?: ReadonlySet<string>;
+}
+
+/** A group's name as the overlay writes it. */
+export interface GroupName {
+  id: string;
+  words: string;
+  size: number;
+  colour: string;
+  rotate: number;
+  spacing: number;
+  /** Where it was put by hand, or null to place it by itself. */
+  at: Position | null;
+  members: ReadonlySet<string>;
+  opacity: number;
+  /** Selected: its box is drawn, as a selected label's, and it can be dragged. */
+  ring: boolean;
 }
 
 /**
@@ -337,7 +362,9 @@ export function drawLabel(
 
 export function drawOverlay(ctx: CanvasRenderingContext2D, input: OverlayInput): DrawnShape[] {
   const { map, view } = input;
-  const accent = input.selected ? selectColour() : "";
+  const isPicked = (id: string) => id === input.selected || input.picked?.has(id) === true;
+  const accent =
+    input.selected || (input.picked?.size ?? 0) > 0 || input.groupBox ? selectColour() : "";
   const ratio = window.devicePixelRatio || 1;
   ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
   ctx.clearRect(0, 0, view.width, view.height);
@@ -386,7 +413,7 @@ export function drawOverlay(ctx: CanvasRenderingContext2D, input: OverlayInput):
     const undated = look(f).dashed;
     const paint = paintOf(f, colours.get(f.layer), styles);
     const colour = paint.colour;
-    const picked = f.id === input.selected;
+    const picked = isPicked(f.id);
     ctx.fillStyle = colour + fillAlpha(paint.fill, picked);
     // The closed outline: what is drawn, filled and tapped.
     const ring = outlineOf(map.space, f).line;
@@ -454,7 +481,7 @@ export function drawOverlay(ctx: CanvasRenderingContext2D, input: OverlayInput):
     for (const line of screenLines(view, outlineOf(map.space, f).line)) {
       ctx.beginPath();
       trace(ctx, line);
-      if (f.id === input.selected) {
+      if (isPicked(f.id)) {
         // The selection: an accent casing under the paper casing and the line.
         ctx.strokeStyle = accent;
         ctx.lineWidth = selectionOf("path", paint.width);
@@ -480,7 +507,7 @@ export function drawOverlay(ctx: CanvasRenderingContext2D, input: OverlayInput):
     const colour = colours.get(f.layer) ?? INK;
     for (const [x, y] of spotsOf(view, f.at)) {
       if (x < -40 || x > view.width + 40 || y < -40 || y > view.height + 40) continue;
-      const picked = f.id === input.selected;
+      const picked = isPicked(f.id);
       const icon = input.iconFor(f);
       const radius = markerRadius(icon !== null);
       let below = 9;
@@ -550,8 +577,86 @@ export function drawOverlay(ctx: CanvasRenderingContext2D, input: OverlayInput):
     look(f);
     for (const at of spotsOf(view, f.at)) {
       // Tapped and hovered by the box around its words, as a zone is by its outline.
-      const box = drawLabel(ctx, f, at, f.id === input.selected ? accent : null);
+      const box = drawLabel(ctx, f, at, isPicked(f.id) ? accent : null);
       shapes.push({ id: f.id, kind: "zone", points: box, width: 1 });
+    }
+  }
+
+  plain();
+
+  // Each group's name, once for the group, over its pieces as they are drawn now.
+  const kindOf = new Map(features.map((f) => [f.id, f.kind]));
+  const markerSpots = shapes.flatMap((s) => (s.kind === "marker" ? [s.at] : []));
+  for (const g of input.groupNames ?? []) {
+    const mine = shapes.filter((s) => g.members.has(s.id));
+    const points = mine.flatMap((s) => (s.kind === "marker" ? [s.at] : s.points));
+    const box = boxOf(points);
+    if (!box) continue;
+    const look = { size: g.size, spacing: g.spacing };
+    const width = labelWidth(ctx, g.words, look);
+    // Zoomed far out, a small group drops its name rather than cover the map in words.
+    if (!nameFits(box[2] - box[0], width)) continue;
+    const half = { w: width / 2 + 4, h: g.size * 0.65 };
+    let at: Point | null = g.at ? (spotsOf(view, g.at)[0] ?? null) : null;
+    if (!at) {
+      const auto = autoAnchor(
+        mine.flatMap((s) => (s.kind === "zone" && kindOf.get(s.id) === "zone" ? [s.points] : [])),
+        mine.flatMap((s): Point[] =>
+          s.kind === "marker" ? [s.at] : kindOf.get(s.id) === "zone" ? [] : s.points,
+        ),
+      );
+      if (!auto) continue;
+      const above: Point = auto.above ? [auto.at[0], box[1] - half.h - 6] : auto.at;
+      at = clearOfMarkers(above, half, markerSpots);
+    }
+    ctx.globalAlpha = g.opacity;
+    const corners = drawLabel(
+      ctx,
+      {
+        id: g.id,
+        kind: "label",
+        layer: "",
+        at: [0, 0],
+        entry: null,
+        child: null,
+        label: g.words,
+        size: g.size,
+        color: g.colour,
+        rotate: g.rotate,
+        spacing: g.spacing,
+      },
+      at,
+      g.ring ? accent : null,
+    );
+    shapes.push({ id: g.id, kind: "zone", points: corners, width: 1 });
+  }
+
+  plain();
+
+  // The selected group: a dashed box around all its pieces, with a tag that names it.
+  if (input.groupBox) {
+    const { members, tag, faint } = input.groupBox;
+    const box = boxOf(
+      shapes
+        .filter((s) => members.has(s.id))
+        .flatMap((s) => (s.kind === "marker" ? [s.at] : s.points)),
+    );
+    if (box) {
+      const [x0, y0, x1, y1] = [box[0] - 10, box[1] - 10, box[2] + 10, box[3] + 10];
+      ctx.globalAlpha = faint ? 0.45 : 1;
+      ctx.strokeStyle = accent;
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([6, 4]);
+      ctx.strokeRect(x0, y0, x1 - x0, y1 - y0);
+      ctx.setLineDash([]);
+      ctx.font = "600 11px system-ui, sans-serif";
+      ctx.textAlign = "left";
+      ctx.textBaseline = "middle";
+      const w = ctx.measureText(tag).width + 12;
+      ctx.fillStyle = accent;
+      ctx.fillRect(x0, y0 - 18, w, 17);
+      ctx.fillStyle = "#ffffff";
+      ctx.fillText(tag, x0 + 6, y0 - 9.5);
     }
   }
 
@@ -606,8 +711,25 @@ export function drawOverlay(ctx: CanvasRenderingContext2D, input: OverlayInput):
       ctx.fill();
     }
   }
-  // A feature in a locked layer is drawn but cannot be found by a tap: what lies under it can.
-  if (locked.size === 0) return shapes;
+  // A feature in a locked layer or group is drawn but cannot be found by a tap: what lies under
+  // it can.
+  const unpickable = input.unpickable;
+  if (locked.size === 0 && !unpickable?.size) return shapes;
   const layerOf = new Map(features.map((f) => [f.id, f.layer]));
-  return shapes.filter((s) => !locked.has(layerOf.get(s.id) ?? ""));
+  return shapes.filter((s) => !locked.has(layerOf.get(s.id) ?? "") && !unpickable?.has(s.id));
+}
+
+/** How wide words are written in a label's font, size and spacing. */
+export function labelWidth(
+  ctx: CanvasRenderingContext2D,
+  words: string,
+  look: { size: number; spacing: number },
+): number {
+  ctx.font = labelFont(look.size);
+  const letters = [...words];
+  const gap = look.spacing * look.size;
+  return (
+    letters.reduce((sum, l) => sum + ctx.measureText(l).width, 0) +
+    gap * Math.max(0, letters.length - 1)
+  );
 }

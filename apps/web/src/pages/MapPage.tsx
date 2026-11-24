@@ -7,15 +7,23 @@ import {
   type Position,
   turnTo,
 } from "@frontier/geo";
-import { MapPin, Layers as LayersIcon, Palette, Sparkles } from "lucide-react";
+import {
+  Boxes,
+  Group as GroupIcon,
+  MapPin,
+  Layers as LayersIcon,
+  Palette,
+  Sparkles,
+} from "lucide-react";
 import {
   hiddenWithin,
   isLined,
+  type MapGroup,
   lockedWithin,
   orderFeature,
   reorderFeature,
 } from "@frontier/schema";
-import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { entryUrl, mapUrl } from "../api.ts";
 import { useDialogs } from "../components/Dialogs.tsx";
@@ -69,6 +77,26 @@ import { useMapStyles } from "../map/useMapStyles.ts";
 import { useMapTime, useShownAt } from "../map/useMapTime.ts";
 import { openingShown, pointOn, useMapView, useWheelZoom } from "../map/useMapView.ts";
 import { usePointer } from "../map/usePointer.ts";
+import { shapeAt } from "@frontier/geo";
+import {
+  addToGroup,
+  groupById,
+  hiddenMembers,
+  membersOf,
+  moveGroupTo,
+  setGroup,
+  takeOut,
+  withFeature,
+} from "../map/groups.ts";
+import { useGroupSelection } from "../map/useGroupSelection.ts";
+import { presenceOf } from "../map/time.ts";
+import {
+  GroupCard,
+  GroupEditor,
+  MemberFields,
+  PickStrip,
+  SeveralPanel,
+} from "../components/map/GroupPanel.tsx";
 import { queue } from "../sync/queue.ts";
 
 export function MapPage() {
@@ -141,10 +169,11 @@ export function MapPage() {
   const { map, change } = file;
   // What is not drawn: the hidden layers with all that is inside them, and hidden features.
   const layers = map?.layers;
-  const hiddenNow = useMemo(
-    () => (layers ? hiddenWithin(layers, hidden) : hidden),
-    [layers, hidden],
-  );
+  const hiddenNow = useMemo(() => {
+    if (!layers || !map) return hidden;
+    // A hidden group hides its members.
+    return new Set([...hiddenWithin(layers, hidden), ...hiddenMembers(map, hidden)]);
+  }, [layers, hidden, map]);
   const locked = useMemo(() => (layers ? lockedWithin(layers) : new Set<string>()), [layers]);
   /** The selected feature is in a locked layer: it is shown, but cannot be changed on the map. */
   const selectedLocked = !!map?.features.some((f) => f.id === selected && locked.has(f.layer));
@@ -152,6 +181,28 @@ export function MapPage() {
   const { onScreen } = shown;
   // The library's path and zone styles, shared by every open map.
   const { styles } = useMapStyles();
+  // A group perhaps there at the year shown has a faint name, as its members are faint.
+  const { seen: seenTime, year: seenYear } = time;
+  const groupOpacity = useCallback(
+    (g: MapGroup) => (seenTime && presenceOf(g, seenTime, seenYear ?? 0) === "perhaps" ? 0.45 : 1),
+    [seenTime, seenYear],
+  );
+  const groups = useGroupSelection({
+    map,
+    mapRef: file.mapRef,
+    change,
+    editing,
+    selected,
+    setSelected,
+    hiddenNow,
+    lockedLayers: locked,
+    names: file.names,
+    styles,
+    say,
+    toast,
+    undo: file.undo,
+    opacityOf: groupOpacity,
+  });
   // A picked corner lasts while its shape stays on screen.
   useEffect(() => setVertex(null), [onScreen?.shape]);
   const { view, setView, viewRef, size, frame, goLayer, zoom, placeLink, viewLink } = useMapView(
@@ -188,6 +239,7 @@ export function MapPage() {
     curve,
     pressKind,
     styles,
+    groups: groups.draw,
   });
   const { titleOf } = draw;
   const discovery = useDiscovery(id, { ...time, setNotice });
@@ -231,6 +283,9 @@ export function MapPage() {
     curve,
     onPressKind: setPressKind,
     snap,
+    group: groups.dragGroup,
+    pickTap: groups.pickTap,
+    haloIds: groups.haloIds,
   });
   const { box, setBox } = pointer;
   useWheelZoom(draw.topCanvas, viewRef, setView, [map === null, draw.glError]);
@@ -255,11 +310,15 @@ export function MapPage() {
     setTool("select");
     setSketch([]);
     setSelected(null);
+    groups.clearPicks();
   };
   const chooseTool = (next: Tool) => {
     setTool(next);
     setSketch([]);
-    if (next !== "select") setSelected(null);
+    if (next !== "select") {
+      setSelected(null);
+      groups.clearPicks();
+    }
     // Proposals not placed are only previews: they go with the tool.
     if (next !== "place") {
       place.setGhosts([]);
@@ -269,8 +328,11 @@ export function MapPage() {
   /** Deletes the picked point if there is one, else the selected feature: one step to undo. */
   const deleteSelection = () => {
     const now = file.mapRef.current;
+    if (now && groups.several.length > 0) return groups.deletePicked();
     if (!now || !selected) return;
     if (selectedLocked) return say("It is in a locked layer.");
+    // A group goes with its members, one step to undo.
+    if (groupById(now, selected)) return groups.deletePicked([selected]);
     if (vertex !== null && shown.onScreen) {
       const done = removePoint(now, shown.onScreen, vertex);
       if (done && "reason" in done) say(done.reason);
@@ -280,7 +342,8 @@ export function MapPage() {
       }
       return;
     }
-    change(deleteFeature(now, selected));
+    // A group left with one member is dissolved.
+    change(takeOut(deleteFeature(now, selected), []));
     setSelected(null);
   };
   const whole = () => map && setView(initialView(map.space, size.width, size.height));
@@ -345,6 +408,13 @@ export function MapPage() {
       time.setTimeOn(!time.timeOn);
       time.setPin(null);
     },
+    inside: groups.insideGroup !== null,
+    backOut: () => groups.insideGroup && setSelected(groups.insideGroup.id),
+    picking: groups.several.length > 0 || groups.picking,
+    clearPicks: groups.clearPicks,
+    group: () => groups.group(),
+    ungroup: () => groups.ungroup(),
+    enter: () => (tool === "select" ? groups.enter() : false),
   });
 
   // ---- The page --------------------------------------------------------------------------------
@@ -393,23 +463,55 @@ export function MapPage() {
         }
       : null,
   );
+  // A selected group has its own tab, as several picked do (not while the phone's "Select
+  // several" is on: the sheet stays closed so the map is free to tap).
+  let groupPanel: ReactNode = null;
+  const showsGroup = groups.selectedGroup !== null && tool === "select";
+  usePanel(
+    showsGroup
+      ? {
+          id: "group",
+          title: editing ? "Edit group" : "Selected",
+          icon: GroupIcon,
+          render: () => groupPanel,
+        }
+      : null,
+  );
+  let severalPanel: ReactNode = null;
+  const showsSeveral = editing && groups.several.length > 1 && !groups.picking;
+  usePanel(
+    showsSeveral
+      ? {
+          id: "several",
+          title: `${groups.several.length} selected`,
+          icon: Boxes,
+          render: () => severalPanel,
+        }
+      : null,
+  );
   // A feature chosen on the map opens its panel; one chosen in the Layers tab leaves that open.
   const showPanel = bar.show;
   const fromLayers = useRef(false);
   useEffect(() => {
     if (showsFeature && !fromLayers.current) showPanel("feature");
+    if (showsGroup && !fromLayers.current) showPanel("group");
     fromLayers.current = false;
-  }, [selected, showsFeature, showPanel]);
-  /** Selects a feature from the Layers tab, and centres the map on it. */
+  }, [selected, showsFeature, showsGroup, showPanel]);
+  useEffect(() => {
+    if (showsSeveral) showPanel("several");
+  }, [showsSeveral, showPanel]);
+  /** Selects a feature or a group from the Layers tab, and centres the map on it. */
   const selectFromLayers = (id: string) => {
-    const f = map?.features.find((x) => x.id === id);
+    const g = map ? groupById(map, id) : null;
+    const f = map?.features.find((x) => x.id === (g ? membersOf(map!, g.id)[0]?.id : id));
     if (!f) return;
     fromLayers.current = true;
     if (tool !== "select" && editing) chooseTool("select");
+    groups.clearPicks();
     setSelected(id);
     setVertex(null);
     // Where it is at the year shown; a kind of feature this page does not know may have either.
-    const drawn = (shown.resolved.find((r) => r.feature.id === id)?.feature ?? f) as {
+    const drawn = (shown.resolved.find((r) => r.feature.id === f.id)?.feature ?? f) as {
       at?: Position;
       points?: Position[];
     };
@@ -455,7 +557,13 @@ export function MapPage() {
               ? pointer.hovered.target.kind
               : "feature",
           feature: hoveredFeature,
-          title: titleOf(hoveredFeature),
+          // A member is named with its group: "Aldmere · Skerra".
+          title: (() => {
+            const g = groupById(map, hoveredFeature.group);
+            const own = titleOf(hoveredFeature);
+            if (!g) return own;
+            return own ? `${groups.titleOfGroup(g)} · ${own}` : groups.titleOfGroup(g);
+          })(),
           at: pointer.hovered.at,
           entryPath: hoveredFeature.entry ? (file.names[hoveredFeature.entry]?.path ?? null) : null,
           childTitle: hoveredFeature.child ? (file.children[hoveredFeature.child] ?? null) : null,
@@ -495,10 +603,10 @@ export function MapPage() {
           setSelected(f.id);
           bar.show("feature");
         },
-        moveToLayer: (f, layer) => file.setFeature(orderFeature({ ...f, layer })),
+        moveToLayer: (f, layer) => change(withFeature(map, orderFeature({ ...f, layer }))),
         reorder: (f, by) => change({ ...map, features: reorderFeature(map.features, f.id, by) }),
         remove: (f) => {
-          change(deleteFeature(map, f.id));
+          change(takeOut(deleteFeature(map, f.id), []));
           if (selected === f.id) setSelected(null);
         },
         insertPoint: (f, segment, at) => {
@@ -556,8 +664,127 @@ export function MapPage() {
       selected={selected}
       onSelect={selectFromLayers}
       titleOf={titleOf}
+      groupTitle={groups.titleOfGroup}
+      onPickSeveral={(ids) => {
+        setSelected(null);
+        groups.setPicks(ids);
+      }}
+      onGroup={(ids) => groups.group(ids)}
+      onUngroup={(gid) => groups.ungroup(gid)}
+      onDeleteGroup={(gid) => groups.deletePicked([gid])}
     />
   );
+  const memberTop =
+    feature && editing ? (
+      <MemberFields
+        map={map}
+        feature={feature}
+        names={file.names}
+        onBack={setSelected}
+        onGroup={(gid) => {
+          const now = file.mapRef.current ?? map;
+          change(gid ? addToGroup(now, [feature.id], gid) : takeOut(now, [feature.id]));
+          if (gid === null && feature.group) {
+            toast({
+              message: "Taken out of the group.",
+              action: { label: "Undo", run: file.undo },
+            });
+          }
+        }}
+        onNewGroup={() => {
+          setSelected(null);
+          groups.setPicks([feature.id]);
+          groups.setPicking(true);
+          say("Tap what to group it with, then Group.");
+        }}
+      />
+    ) : null;
+  const selectedGroup = groups.selectedGroup;
+  if (selectedGroup && editing) {
+    const gid = selectedGroup.id;
+    // A key set to undefined goes back to its default: the file leaves undefined keys out.
+    const set = (next: object) =>
+      change(setGroup(file.mapRef.current ?? map, gid, next as Parameters<typeof setGroup>[2]));
+    groupPanel = (
+      <GroupEditor
+        key={gid}
+        group={selectedGroup}
+        map={map}
+        names={file.names}
+        pendingEntry={file.pendingNames[gid] ?? null}
+        pendingPath={file.pendingPathOf(gid)}
+        titleOf={titleOf}
+        styles={styles}
+        otherMaps={file.otherMaps}
+        shownNow={draw.shapes.current.some((s) => s.id === gid)}
+        spans={
+          time.seen
+            ? time.seen.chronicle.spans.map((s) => ({ id: s.id, name: time.spanName(s) }))
+            : null
+        }
+        focusName={groups.justMade === gid}
+        act={{
+          set,
+          link: (path, title) => file.link(selectedGroup, path, title),
+          styleZones: (style) => {
+            const now = file.mapRef.current ?? map;
+            change({
+              ...now,
+              features: now.features.map((f) =>
+                f.group === gid && f.kind === "zone" ? withStyle(f, style) : f,
+              ),
+            });
+          },
+          moveTo: (layer) => change(moveGroupTo(file.mapRef.current ?? map, gid, layer)),
+          open: (member) => setSelected(member),
+          takeOut: (member) => {
+            const now = file.mapRef.current ?? map;
+            const next = takeOut(now, [member]);
+            change(next);
+            if (!groupById(next, gid))
+              setSelected(membersOf(now, gid).find((f) => f.id !== member)?.id ?? null);
+          },
+          ungroup: () => groups.ungroup(gid),
+          remove: () => groups.deletePicked([gid]),
+          close: () => setSelected(null),
+        }}
+      />
+    );
+  } else if (selectedGroup) {
+    groupPanel = (
+      <GroupCard
+        group={selectedGroup}
+        map={map}
+        names={file.names}
+        children={file.children}
+        titleOf={titleOf}
+        onOpenEntry={(path) => navigate(entryUrl(path))}
+        onOpenChild={(child) => navigate(mapUrl(child) + (time.carry ? `?${time.carry}` : ""))}
+        onEdit={() => startEditing(selectedGroup.id)}
+        onClose={() => setSelected(null)}
+      />
+    );
+  }
+  if (groups.several.length > 1) {
+    severalPanel = (
+      <SeveralPanel
+        items={groups.several}
+        map={map}
+        label={(pid) => {
+          const g = groupById(map, pid);
+          if (g) return groups.titleOfGroup(g);
+          const f = map.features.find((x) => x.id === pid);
+          return f ? titleOf(f) || f.kind : pid;
+        }}
+        groupReason={groups.reason}
+        addTo={groups.addTo}
+        moveNote={groups.moveNote}
+        onGroup={() => groups.group()}
+        onDelete={() => groups.deletePicked()}
+        onClear={groups.clearPicks}
+      />
+    );
+  }
   if (feature) {
     featurePanel = (
       <FeaturePanel
@@ -590,6 +817,7 @@ export function MapPage() {
             : null
         }
         onMakeEntry={(name, body) => setMakingEntry({ feature: feature.id, name, body })}
+        memberTop={memberTop}
       />
     );
   }
@@ -675,6 +903,14 @@ export function MapPage() {
           canRedo={file.history.future.length > 0}
           onUndo={file.undo}
           onRedo={file.redo}
+          picking={groups.picking}
+          onPicking={(on) => {
+            if (!on) return groups.clearPicks();
+            chooseTool("select");
+            groups.setPicks(selected ? [selected] : []);
+            setSelected(null);
+            groups.setPicking(true);
+          }}
         />
       )}
 
@@ -717,10 +953,25 @@ export function MapPage() {
               const at = pointOn(e.currentTarget, e);
               const v = viewRef.current && makeView(viewRef.current, size.width, size.height);
               pointer.endHover();
+              const picked = pointer.pickAt(at);
+              // On a selected group, the menu is the piece's under the pointer.
+              const piece =
+                picked?.kind === "group" ? shapeAt(draw.shapes.current, [at.x, at.y]) : null;
               setMenuAt({
-                target: menuTargetOf(pointer.pickAt(at)),
+                target:
+                  picked?.kind === "groupName"
+                    ? { kind: "nothing" }
+                    : piece
+                      ? { kind: "feature", feature: piece }
+                      : menuTargetOf(picked),
                 at: v ? v.unproject(at.x, at.y) : null,
               });
+            }}
+            onDoubleClick={(e) => {
+              // A double-click on a piece of a group goes inside, to that piece.
+              if (!editing || tool !== "select") return;
+              const at = pointOn(e.currentTarget, e);
+              groups.goInside(shapeAt(draw.shapes.current, [at.x, at.y]));
             }}
           />
         </MapContextMenu>
@@ -788,6 +1039,15 @@ export function MapPage() {
           />
         )}
         <MapZoom onZoom={zoom} onWhole={whole} />
+        {editing && (groups.picking || groups.several.length > 1) && (
+          <PickStrip
+            count={groups.several.length}
+            canGroup={groups.reason === null}
+            addTo={groups.addTo}
+            onCancel={groups.clearPicks}
+            onGroup={() => groups.group()}
+          />
+        )}
         {said && (
           <p className="map-hint map-said" role="status">
             {said}

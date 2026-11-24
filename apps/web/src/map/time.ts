@@ -66,8 +66,11 @@ export type SpanFor =
   | { how: "tied" | "entry"; span: ChronicleSpan }
   | { how: "tie_missing" | "no_span" | "timeless"; span: null };
 
-/** Which span of the chosen chronicle says when a feature exists, and by what rule. */
-export function spanFor(feature: MapFeature, time: MapTime): SpanFor {
+/** What says when something on a map exists: a feature's or a group's span and entry. */
+type Dated = Pick<MapFeature, "span" | "entry">;
+
+/** Which span of the chosen chronicle says when a feature (or a group) exists, and by what rule. */
+export function spanFor(feature: Dated, time: MapTime): SpanFor {
   if (feature.span != null) {
     const span = time.spans.get(feature.span);
     return span ? { how: "tied", span } : { how: "tie_missing", span: null };
@@ -169,7 +172,7 @@ export interface ResolveOptions {
   showAll: boolean;
 }
 
-export function presenceOf(feature: MapFeature, time: MapTime, year: number): Resolved["presence"] {
+export function presenceOf(feature: Dated, time: MapTime, year: number): Resolved["presence"] {
   const found = spanFor(feature, time);
   if (found.how === "tie_missing") return "undated";
   if (!found.span) return found.how === "no_span" ? "no_span" : "timeless";
@@ -204,8 +207,11 @@ export function resolve(
     }));
   }
   const out: Resolved[] = [];
+  // A member is there only while both it and its group are (stage 19).
+  const groups = new Map((map.groups ?? []).map((g) => [g.id, presenceOf(g, time, year)]));
   for (const feature of map.features) {
-    const presence = presenceOf(feature, time, year);
+    const own = presenceOf(feature, time, year);
+    const presence = feature.group != null ? withGroup(own, groups.get(feature.group)) : own;
     const away = presence === "not_yet" || presence === "gone";
     const kept = options.showAll || feature.id === options.selected;
     if (away && !(options.editing && kept)) continue;
@@ -227,6 +233,22 @@ export function resolve(
     });
   }
   return out;
+}
+
+/**
+ * A member's presence with its group's: away when either is away, perhaps when either is perhaps,
+ * else the member's own.
+ */
+export function withGroup(
+  own: Resolved["presence"],
+  group: Resolved["presence"] | undefined,
+): Resolved["presence"] {
+  if (!group) return own;
+  const away = (p: Resolved["presence"]) => p === "not_yet" || p === "gone";
+  if (away(own)) return own;
+  if (away(group)) return group;
+  if (own === "perhaps" || group === "perhaps") return "perhaps";
+  return own;
 }
 
 /** Writes a shape into a feature: into the later shape with this id, or the first shape. */
@@ -278,7 +300,8 @@ export function changeYears(map: MapFile, time: MapTime): number[] {
     if (year === undefined || !Number.isFinite(year)) return;
     years.add(clampYear(time, year));
   };
-  for (const feature of map.features) {
+  // A group's span starts and ends its members too.
+  for (const feature of [...map.features, ...(map.groups ?? [])]) {
     const { span } = spanFor(feature, time);
     const points = span && time.points.get(span.id);
     if (points) {
@@ -291,8 +314,10 @@ export function changeYears(map: MapFile, time: MapTime): number[] {
         if (points.end && Number.isFinite(points.end.hi)) add(Math.floor(points.end.hi) + 1);
       }
     }
-    for (const shape of feature.shapes ?? []) {
-      const at = shapeStart(feature, shape, time);
+    if (!("kind" in feature)) continue;
+    const lined = feature as MapFeature;
+    for (const shape of lined.shapes ?? []) {
+      const at = shapeStart(lined, shape, time);
       if (typeof at === "number") add(Math.ceil(at));
     }
   }

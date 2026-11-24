@@ -8,21 +8,26 @@ import {
   layersWithin,
   type MapFeature,
   type MapFile,
+  type MapGroup,
   type MapLayer,
   moveLayer,
   orderFeature,
   orderLayer,
 } from "@frontier/schema";
+import { moveGroupTo, tidyGroups } from "./groups.ts";
 
 /** How many features of one layer are listed before "Show all". */
 export const FEATURE_LIMIT = 200;
 
 export type Row =
   | { type: "layer"; key: string; node: LayerNode; depth: number; count: number; open: boolean }
+  /** A group: a folder of features inside its layer, at the place of its first member. */
+  | { type: "group"; key: string; group: MapGroup; depth: number; count: number; open: boolean }
   | { type: "feature"; key: string; feature: MapFeature; depth: number }
   | { type: "more"; key: string; layer: string; depth: number; rest: number };
 
 export const layerKey = (id: string) => `l:${id}`;
+export const groupKey = (id: string) => `g:${id}`;
 export const featureKey = (id: string) => `f:${id}`;
 
 /** Each layer's features, in the order of the map. */
@@ -55,8 +60,38 @@ export function layerRows(
       continue;
     }
     const listed = showAll.has(node.layer.id) ? own : own.slice(0, FEATURE_LIMIT);
+    const groups = new Map(
+      (map.groups ?? []).filter((g) => g.layer === node.layer.id).map((g) => [g.id, g]),
+    );
+    const done = new Set<string>();
     for (const feature of listed) {
-      rows.push({ type: "feature", key: featureKey(feature.id), feature, depth: node.depth + 1 });
+      const group = feature.group != null ? groups.get(feature.group) : undefined;
+      if (!group) {
+        rows.push({ type: "feature", key: featureKey(feature.id), feature, depth: node.depth + 1 });
+        continue;
+      }
+      if (done.has(group.id)) continue;
+      done.add(group.id);
+      // The group's row, at its first member, with all its members under it.
+      const members = own.filter((f) => f.group === group.id);
+      const groupOpen = !collapsed.has(group.id);
+      rows.push({
+        type: "group",
+        key: groupKey(group.id),
+        group,
+        depth: node.depth + 1,
+        count: members.length,
+        open: groupOpen,
+      });
+      if (!groupOpen) continue;
+      for (const member of members) {
+        rows.push({
+          type: "feature",
+          key: featureKey(member.id),
+          feature: member,
+          depth: node.depth + 2,
+        });
+      }
     }
     if (listed.length < own.length) {
       const rest = own.length - listed.length;
@@ -135,7 +170,10 @@ export function removeLayer(map: MapFile, id: string, to: string | null): MapFil
     to === null
       ? map.features.filter((f) => f.layer !== id)
       : map.features.map((f) => (f.layer === id ? orderFeature({ ...f, layer: to }) : f));
-  return { ...map, layers, features };
+  // Its groups go with their members, or are deleted with them.
+  if (!map.groups?.some((g) => g.layer === id)) return { ...map, layers, features };
+  const groups = map.groups.map((g) => (g.layer === id && to !== null ? { ...g, layer: to } : g));
+  return tidyGroups({ ...map, layers, features, groups });
 }
 
 /** The layer a deleted layer's features go to unless the author chooses another. */
@@ -183,7 +221,10 @@ export function moveFeatures(
 }
 
 /** What is dragged in the Layers tab: a layer with what is inside it, or features. */
-export type Dragged = { kind: "layer"; id: string } | { kind: "features"; ids: string[] };
+export type Dragged =
+  | { kind: "layer"; id: string }
+  | { kind: "features"; ids: string[] }
+  | { kind: "group"; id: string };
 
 /** Where over a row the pointer is: its top, middle or bottom. */
 export type Zone = "before" | "into" | "after";
@@ -196,8 +237,12 @@ export type Drop =
       ids: string[];
       layer: string;
       beside?: { id: string; after: boolean };
+      /** The group they go into, or null to take them out of one. */
+      group: string | null;
       show: Zone;
-    };
+    }
+  /** A group with all its members, into another layer. */
+  | { kind: "group"; id: string; layer: string; show: Zone };
 
 /**
  * The drop that the dragged thing would make over this row. A layer dropped on the middle of a
@@ -213,8 +258,26 @@ export function dropFor(map: MapFile, dragged: Dragged, row: Row, y: number): Dr
       ? row.node.layer.id
       : row.type === "feature"
         ? row.feature.layer
-        : row.layer;
+        : row.type === "group"
+          ? row.group.layer
+          : row.layer;
+  if (dragged.kind === "group") {
+    // A group moves to another layer with its members; it never goes inside another group.
+    const now = map.groups?.find((g) => g.id === dragged.id);
+    if (!now || now.layer === layerOfRow) return null;
+    return { kind: "group", id: dragged.id, layer: layerOfRow, show: "into" };
+  }
   if (dragged.kind === "features") {
+    if (row.type === "group") {
+      // Onto a group's row: into the group, and into its layer.
+      return {
+        kind: "features",
+        ids: dragged.ids,
+        layer: layerOfRow,
+        group: row.group.id,
+        show: "into",
+      };
+    }
     if (row.type === "feature") {
       if (dragged.ids.includes(row.feature.id)) return null;
       const after = zone === "after" || (zone === "into" && y >= 0.5);
@@ -223,10 +286,13 @@ export function dropFor(map: MapFile, dragged: Dragged, row: Row, y: number): Dr
         ids: dragged.ids,
         layer: layerOfRow,
         beside: { id: row.feature.id, after },
+        // Beside a member is in its group; beside a feature in none, out of any.
+        group: row.feature.group ?? null,
         show: after ? "after" : "before",
       };
     }
-    return { kind: "features", ids: dragged.ids, layer: layerOfRow, show: "into" };
+    // Onto a layer's row: into the layer, out of any group.
+    return { kind: "features", ids: dragged.ids, layer: layerOfRow, group: null, show: "into" };
   }
   const id = dragged.id;
   const into = (parent: string): Drop | null =>
@@ -258,7 +324,19 @@ export function applyDrop(map: MapFile, drop: Drop): MapFile {
     const layers = moveLayer(map.layers, drop.id, drop.parent, drop.before);
     return layers === map.layers ? map : { ...map, layers };
   }
-  return moveFeatures(map, drop.ids, drop.layer, drop.beside);
+  if (drop.kind === "group") return moveGroupTo(map, drop.id, drop.layer);
+  const moved = moveFeatures(map, drop.ids, drop.layer, drop.beside);
+  // Then their group: the one dropped into, or none; a group left with one member dissolves.
+  const ids = new Set(drop.ids);
+  if (moved.features.every((f) => !ids.has(f.id) || (f.group ?? null) === drop.group)) {
+    return moved;
+  }
+  return tidyGroups({
+    ...moved,
+    features: moved.features.map((f) =>
+      ids.has(f.id) ? orderFeature({ ...f, group: drop.group }) : f,
+    ),
+  });
 }
 
 /** The words for a kind of feature, for one the map page does not know too. */

@@ -8,7 +8,7 @@ import { useDialogs } from "../Dialogs.tsx";
 import { Icon } from "../ui/Icon.tsx";
 import { IconButton } from "../ui/IconButton.tsx";
 import { Menu, MenuItem } from "../ui/Menu.tsx";
-import { LayerTree } from "./LayerTree.tsx";
+import { type GroupTreeProps, LayerTree } from "./LayerTree.tsx";
 
 const EXTENT_LABELS = {
   sphere: ["West", "South", "East", "North"],
@@ -88,6 +88,7 @@ export function LayerPanel({
   selected,
   onSelect,
   titleOf,
+  ...groupProps
 }: {
   /** The feature selected on the map, shown picked in the layers. */
   selected: string | null;
@@ -110,7 +111,7 @@ export function LayerPanel({
   onShownImages: Dispatch<SetStateAction<Set<string>>>;
   onActive: (id: string) => void;
   onChange: (next: MapFile) => void;
-}) {
+} & GroupTreeProps) {
   const toggle = (set: Set<string>, item: string) => {
     const next = new Set(set);
     if (!next.delete(item)) next.add(item);
@@ -270,6 +271,7 @@ export function LayerPanel({
         selected={selected}
         onSelect={onSelect}
         titleOf={titleOf}
+        {...groupProps}
       />
       {editing && (
         <p className="change-actions">

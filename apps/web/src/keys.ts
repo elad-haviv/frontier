@@ -441,7 +441,7 @@ keys.register(
     keys: ["Escape"],
     scope: "map",
     label:
-      "Stop, one step at a time: the focus box, the drawing, the tool, the point, the selection",
+      "Stop, one step at a time: the focus box, the drawing, the tool, the point, the picks, back out of a group, the selection",
   },
   { id: "map.zoomIn", keys: ["=", "+"], scope: "map", label: "Zoom in" },
   { id: "map.zoomOut", keys: ["-"], scope: "map", label: "Zoom out" },
@@ -465,6 +465,21 @@ keys.register(
     keys: ["Enter"],
     scope: "map",
     label: "Finish the path or zone",
+    when: "editing",
+  },
+  {
+    id: "map.group",
+    keys: ["Mod-g"],
+    scope: "map",
+    label: "Group the picked features, or add them to the picked group",
+    when: "editing",
+  },
+  { id: "map.ungroup", keys: ["Shift-Mod-g"], scope: "map", label: "Ungroup", when: "editing" },
+  {
+    id: "map.enter",
+    keys: ["Enter"],
+    scope: "map",
+    label: "Go inside the selected group (Esc comes back out)",
     when: "editing",
   },
   {

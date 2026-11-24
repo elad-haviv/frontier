@@ -7,13 +7,7 @@
 import { randomBytes } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import {
-  isLined,
-  type MapFeature,
-  type MapFile,
-  type MapGroup,
-  makeId,
-} from "@frontier/schema";
+import { isLined, type MapFeature, type MapFile, type MapGroup, makeId } from "@frontier/schema";
 import {
   isExcluded,
   isInAppendix,

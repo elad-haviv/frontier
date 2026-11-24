@@ -315,8 +315,7 @@ function inOrder<T extends object>(item: T, keys: string[]): T {
  * feature then gives the same bytes, and compares as equal, however it was put together.
  */
 export function orderFeature(feature: MapFeature): MapFeature {
-  const { span, shapes, orbit, group, ...rest } = feature as MapFeature &
-    Record<string, unknown>;
+  const { span, shapes, orbit, group, ...rest } = feature as MapFeature & Record<string, unknown>;
   return inOrder(
     {
       ...rest,
