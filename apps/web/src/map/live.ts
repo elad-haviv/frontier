@@ -19,6 +19,30 @@ export interface LiveInput {
    * the side that would close it back to the first point.
    */
   band?: { line: Point[][]; closing: Point[][] } | null;
+  /** Where the point being placed snaps to: a corner (a diamond) or an edge (a ring). */
+  snap?: { screen: Point; kind: "corner" | "edge" } | null;
+}
+
+/** The mark of a snap, in the selection's colour so it reads over any picture. */
+function drawSnap(ctx: CanvasRenderingContext2D, snap: NonNullable<LiveInput["snap"]>): void {
+  const [x, y] = snap.screen;
+  const r = 7;
+  ctx.beginPath();
+  if (snap.kind === "corner") {
+    ctx.moveTo(x, y - r);
+    ctx.lineTo(x + r, y);
+    ctx.lineTo(x, y + r);
+    ctx.lineTo(x - r, y);
+    ctx.closePath();
+  } else {
+    ctx.arc(x, y, r - 1, 0, Math.PI * 2);
+  }
+  ctx.strokeStyle = PAPER;
+  ctx.lineWidth = 5;
+  ctx.stroke();
+  ctx.strokeStyle = selectColour();
+  ctx.lineWidth = 2.5;
+  ctx.stroke();
 }
 
 const INK = "#2a2420";
@@ -59,6 +83,7 @@ export function drawLive(ctx: CanvasRenderingContext2D, input: LiveInput): void 
     drawBand(ctx, input.band.closing, 0.4);
     drawBand(ctx, input.band.line, 0.85);
   }
+  if (input.snap) drawSnap(ctx, input.snap);
   if (input.shapes.length === 0 && !input.corner) return;
   const colour = selectColour();
   ctx.globalAlpha = 0.5;
