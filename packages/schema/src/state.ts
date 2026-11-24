@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { AiProviderEntry, ModelPrice, qualifyModelId } from "./ai.js";
 
 /** Ids are 12 characters from lower-case letters and digits. Draft ids are made by the browser. */
 export const Id = z.string().regex(/^[a-z0-9]{12}$/);
@@ -100,28 +101,62 @@ export type RenameIntent = z.infer<typeof RenameIntent>;
 export const Encrypted = z.object({ iv: z.string(), data: z.string(), tag: z.string() });
 export type Encrypted = z.infer<typeof Encrypted>;
 
-export const AiSettings = z.object({
-  /** The provider key, encrypted with the key from the SECRETS_KEY variable. */
-  key: Encrypted.nullable().default(null),
-  /** One model name per task. Null until the author picks one; the task is off until then. */
-  models: z
-    .object({
-      extraction: z.string().nullable().default(null),
-      conversation: z.string().nullable().default(null),
-      art: z.string().nullable().default(null),
-    })
-    .default({}),
-  /** The look given to concept art, added to every picture's description. */
-  artStyle: z
-    .string()
-    .default(
-      "Pencil and ink sketch on aged paper: hand-drawn, fine linework, light sepia washes, like a page of an explorer's field notebook.",
-    ),
-  /** Frontier stops calling the provider when this month's spending reaches it. */
-  monthlyCapUsd: z.number().min(0).default(10),
-  /** Propose fields for the notes of each Publish. */
-  proposeOnPublish: z.boolean().default(false),
-});
+const ModelChoice = z
+  .string()
+  .nullable()
+  .default(null)
+  // Ids written before there was more than one provider are OpenRouter's.
+  .transform((id) => (id === null || id.trim() === "" ? null : qualifyModelId(id)));
+
+export const AiSettings = z
+  .object({
+    /**
+     * The OpenRouter key of settings written before stage 18, encrypted with the key from the
+     * SECRETS_KEY variable. Read into `providers` and never written again.
+     */
+    key: Encrypted.nullable().default(null),
+    /** The providers the author connected, each with its key encrypted like the old one. */
+    providers: z.array(AiProviderEntry).default([]),
+    /**
+     * One provider-qualified model id per task ("anthropic:claude-…"). Null until the author picks
+     * one; the task is off until then.
+     */
+    models: z
+      .object({
+        extraction: ModelChoice,
+        conversation: ModelChoice,
+        art: ModelChoice,
+      })
+      .default({}),
+    /** Prices the author entered for models whose provider does not publish them, by model id. */
+    modelPrices: z.record(z.string(), ModelPrice).default({}),
+    /** The look given to concept art, added to every picture's description. */
+    artStyle: z
+      .string()
+      .default(
+        "Pencil and ink sketch on aged paper: hand-drawn, fine linework, light sepia washes, like a page of an explorer's field notebook.",
+      ),
+    /** Frontier stops calling the providers when this month's spending reaches it. */
+    monthlyCapUsd: z.number().min(0).default(10),
+    /** Propose fields for the notes of each Publish. */
+    proposeOnPublish: z.boolean().default(false),
+  })
+  .transform((ai) => {
+    if (!ai.key) return ai;
+    // The old single key becomes the OpenRouter connection, unless one is stored already.
+    const has = ai.providers.some((p) => p.id === "openrouter");
+    const openrouter: AiProviderEntry = {
+      id: "openrouter",
+      kind: "openrouter",
+      name: null,
+      key: ai.key,
+      baseUrl: null,
+      enabled: true,
+      addedAt: null,
+      check: null,
+    };
+    return { ...ai, key: null, providers: has ? ai.providers : [openrouter, ...ai.providers] };
+  });
 export type AiSettings = z.infer<typeof AiSettings>;
 
 /**

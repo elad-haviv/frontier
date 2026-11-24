@@ -12,3 +12,4 @@ export * from "./libraryKinds.js";
 export * from "./client.js";
 export * from "./graph.js";
 export * from "./keptItems.js";
+export * from "./ai.js";

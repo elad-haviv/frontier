@@ -117,7 +117,7 @@ export class FieldProposer {
   async estimate(paths: string[]): Promise<number | null> {
     const model = (await this.d.settings.read())?.ai.models.extraction;
     const info = model ? await this.d.models.find(model) : undefined;
-    if (!info) return null;
+    if (!info || info.promptPrice === null) return null;
     let chars = 0;
     for (const p of paths) chars += splitFrontmatter(this.d.index.note(p)!.text).body.length;
     // About four characters to a token; the answer is taken as a fifth of what is sent.
@@ -148,7 +148,15 @@ export class FieldProposer {
     const what = Object.keys(schema.what);
 
     const hash = createHash("sha256")
-      .update(JSON.stringify([model, PROMPT_VERSION, this.d.index.schemaText, body]))
+      // OpenRouter ids were bare before stage 18; hashing them the same keeps earlier answers.
+      .update(
+        JSON.stringify([
+          model.replace(/^openrouter:/, ""),
+          PROMPT_VERSION,
+          this.d.index.schemaText,
+          body,
+        ]),
+      )
       .digest("hex");
     const cacheFile = join(this.d.stateDir, "ai-cache", `${hash}.json`);
     let answer = await this.d.files.readJson(cacheFile, Answer);

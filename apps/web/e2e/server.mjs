@@ -140,7 +140,13 @@ const ai = createServer((req, res) => {
   req.on("data", (chunk) => (raw += chunk));
   req.on("end", () => {
     res.setHeader("content-type", "application/json");
-    if (req.url.endsWith("/images")) {
+    const path = req.url.split("?")[0];
+    // OpenRouter's key check.
+    if (path.endsWith("/key")) {
+      res.end(JSON.stringify({ data: { label: "e2e" } }));
+      return;
+    }
+    if (path.endsWith("/images")) {
       // A one-pixel picture, for concept art.
       res.end(
         JSON.stringify({
@@ -155,15 +161,43 @@ const ai = createServer((req, res) => {
       );
       return;
     }
-    if (req.url.endsWith("/models")) {
+    if (path.endsWith("/models")) {
       res.end(
         JSON.stringify({
           data: [
             {
               id: "sample/reader",
               name: "Sample reader",
+              description: "A small model that reads entries.",
+              context_length: 128000,
               pricing: { prompt: "0.000001", completion: "0.000002" },
               supported_parameters: ["structured_outputs"],
+              architecture: { input_modalities: ["text"], output_modalities: ["text"] },
+            },
+            {
+              id: "sample/writer",
+              name: "Sample writer",
+              description: "A larger model for lore conversations.",
+              context_length: 1000000,
+              pricing: { prompt: "0.000003", completion: "0.000015" },
+              supported_parameters: ["structured_outputs", "reasoning"],
+              architecture: { input_modalities: ["text", "image"], output_modalities: ["text"] },
+            },
+            {
+              id: "sample/painter",
+              name: "Sample painter",
+              pricing: { prompt: "0", completion: "0" },
+              supported_parameters: [],
+              architecture: { input_modalities: ["text"], output_modalities: ["image"] },
+            },
+            // OpenRouter's name for the Anthropic stand-in's model, which gives it its price.
+            {
+              id: "anthropic/claude-sample-1",
+              name: "Anthropic: Claude Sample 1",
+              context_length: 200000,
+              pricing: { prompt: "0.000003", completion: "0.000015" },
+              supported_parameters: ["structured_outputs"],
+              architecture: { input_modalities: ["text"], output_modalities: ["text"] },
             },
           ],
         }),
@@ -192,6 +226,47 @@ const ai = createServer((req, res) => {
 });
 await new Promise((resolve) => ai.listen(0, "127.0.0.1", resolve));
 process.env.OPENROUTER_BASE_URL = `http://127.0.0.1:${ai.address().port}`;
+
+// A stand-in for Anthropic: "sk-ant-good" keys work, any other is refused, as Anthropic does.
+const anthropic = createServer((req, res) => {
+  let raw = "";
+  req.on("data", (chunk) => (raw += chunk));
+  req.on("end", () => {
+    res.setHeader("content-type", "application/json");
+    const key = String(req.headers["x-api-key"] ?? "");
+    if (!key.startsWith("sk-ant-good")) {
+      res.statusCode = 401;
+      res.end(
+        JSON.stringify({
+          type: "error",
+          error: { type: "authentication_error", message: "invalid x-api-key" },
+        }),
+      );
+      return;
+    }
+    if (req.url.split("?")[0].endsWith("/models")) {
+      res.end(
+        JSON.stringify({
+          data: [
+            { id: "claude-sample-1", display_name: "Claude Sample 1", max_input_tokens: 200000 },
+          ],
+          has_more: false,
+        }),
+      );
+      return;
+    }
+    res.end(
+      JSON.stringify({
+        type: "message",
+        content: [{ type: "text", text: JSON.stringify({ reply: "ok" }) }],
+        stop_reason: "end_turn",
+        usage: { input_tokens: 100, output_tokens: 20 },
+      }),
+    );
+  });
+});
+await new Promise((resolve) => anthropic.listen(0, "127.0.0.1", resolve));
+process.env.ANTHROPIC_BASE_URL = `http://127.0.0.1:${anthropic.address().port}/v1`;
 process.env.SECRETS_KEY = Buffer.alloc(32, 5).toString("base64");
 
 await import("../../server/dist/main.js");

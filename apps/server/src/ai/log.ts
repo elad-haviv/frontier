@@ -4,15 +4,24 @@
  */
 import { appendFile, mkdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
+import { CostKind } from "@frontier/schema";
 import { z } from "zod";
 
 export const AiCall = z.object({
   at: z.string(),
   task: z.string(),
+  /** Provider-qualified since stage 18; a bare id in an older line is OpenRouter's. */
   model: z.string(),
+  /** The provider id; absent in lines written before stage 18, which were all OpenRouter's. */
+  provider: z.string().optional(),
   promptTokens: z.number(),
   completionTokens: z.number(),
   costUsd: z.number(),
+  /**
+   * How the cost is known: told by the provider, estimated from prices and tokens, or unknown
+   * (then `costUsd` is 0). Absent in older lines, whose cost OpenRouter reported.
+   */
+  costKind: CostKind.optional(),
   /** The entry the call was about, when there is one. */
   entry: z.string().nullable(),
   ok: z.boolean(),

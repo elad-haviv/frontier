@@ -1,13 +1,29 @@
 /**
- * The one place that calls the AI provider. Every call is checked against the monthly cap first
- * and written to the cost log afterwards, whether it worked or not.
+ * The one place that calls the AI providers. Every call is checked against the monthly cap first
+ * and written to the cost log afterwards, whether it worked or not. Which provider answers is
+ * read from the model id ("anthropic:claude-…"); the wire formats are in `providers/`.
  */
+import { splitModelId, type ModelPrice } from "@frontier/schema";
 import type { ZodType, ZodTypeDef } from "zod";
-import type { Config } from "../config.js";
 import { ApiError } from "../errors.js";
-import { decrypt } from "../state/secrets.js";
 import type { SettingsStore } from "../state/settings.js";
+import { Connections, type ConnectionsConfig, type ResolvedProvider } from "./connections.js";
+import { costOf } from "./cost.js";
 import { type AiLog, monthOf } from "./log.js";
+import type { ModelCatalogue } from "./models.js";
+import {
+  type ChatMessage,
+  type ChatRequest,
+  type ChatResult,
+  type ProviderAdapter,
+  ProviderError,
+  type Reasoning,
+  type StreamEvent,
+  type ToolSpec,
+  type Usage,
+} from "./providers/index.js";
+
+export type { Reasoning, StreamEvent, ToolSpec, ChatMessage } from "./providers/index.js";
 
 export type AiTask = "extraction" | "conversation" | "art";
 
@@ -26,58 +42,88 @@ export interface CompleteInput<T> {
   schema: AnswerSchema<T>;
   /** The entry the call is about, for the log. */
   entry?: string;
-  /** Overrides the model set for the task. */
+  /** Overrides the model set for the task. A bare id is OpenRouter's. */
   model?: string;
   maxTokens?: number;
   /** How long to wait for the provider; one minute when not given. */
   timeoutMs?: number;
   /** Whether a call that timed out is sent again. A timed-out call may still have been billed. */
   retryOnTimeout?: boolean;
+  /** Stops the call, for instance when the author leaves the page. A stopped call is not retried. */
+  signal?: AbortSignal;
+  /** How much the model thinks first, where it can. The provider's default when not given. */
+  reasoning?: Reasoning;
+}
+
+/** A streamed call. The text comes as it is written; with a schema it is the answer's JSON. */
+export interface StreamInput {
+  task: AiTask;
+  system: string;
+  /** The question; or give the whole conversation in `messages`. */
+  user?: string;
+  messages?: ChatMessage[];
+  schema?: { name: string; json: Record<string, unknown> };
+  tools?: ToolSpec[];
+  entry?: string;
+  model?: string;
+  maxTokens?: number;
+  /** For the whole stream; five minutes when not given. */
+  timeoutMs?: number;
+  signal?: AbortSignal;
+  reasoning?: Reasoning;
 }
 
 export interface AiProviderDeps {
-  config: Pick<Config, "secretsKey" | "openrouterKey" | "openrouterUrl">;
+  config: ConnectionsConfig;
   settings: SettingsStore;
   log: AiLog;
   fetch?: typeof fetch;
   now?: () => Date;
   timeoutMs?: number;
-}
-
-interface Attempt {
-  ok: boolean;
-  retry: boolean;
-  timedOut?: boolean;
-  content?: string;
-  promptTokens: number;
-  completionTokens: number;
-  costUsd: number;
-  error?: string;
+  /** Shared with the settings routes; made here when not given. */
+  connections?: Connections;
+  /** For the prices that turn tokens into an estimated cost. */
+  catalog?: ModelCatalogue;
 }
 
 const money = (n: number) => `$${n.toFixed(2)}`;
 
+interface Target {
+  /** Provider-qualified. */
+  id: string;
+  provider: ResolvedProvider;
+  model: string;
+  adapter: ProviderAdapter;
+}
+
 export class AiProvider {
-  private readonly fetch: typeof fetch;
+  readonly connections: Connections;
   private readonly now: () => Date;
   /** The message of the last failed call, cleared by the next one that works. */
   lastError: string | null = null;
+  private catalog: ModelCatalogue | null;
 
   constructor(private readonly d: AiProviderDeps) {
-    this.fetch = d.fetch ?? fetch;
     this.now = d.now ?? (() => new Date());
+    this.connections =
+      d.connections ??
+      new Connections({
+        config: d.config,
+        settings: d.settings,
+        ...(d.fetch ? { fetch: d.fetch } : {}),
+      });
+    this.catalog = d.catalog ?? null;
   }
 
-  /** The provider key: the stored one, or else the one from the environment. */
+  /** Lets the catalogue, made after the provider, lend its prices. */
+  useCatalog(catalog: ModelCatalogue): void {
+    this.catalog = catalog;
+  }
+
+  /** The OpenRouter key: the stored one, or else the one from the environment. */
   async key(): Promise<{ key: string; from: "settings" | "environment" } | null> {
-    const stored = (await this.d.settings.read())?.ai.key;
-    if (stored && this.d.config.secretsKey) {
-      const key = decrypt(this.d.config.secretsKey, stored);
-      if (key) return { key, from: "settings" };
-    }
-    return this.d.config.openrouterKey
-      ? { key: this.d.config.openrouterKey, from: "environment" }
-      : null;
+    const p = await this.connections.get("openrouter");
+    return p?.key && p.keyFrom !== "none" ? { key: p.key, from: p.keyFrom } : null;
   }
 
   async spending(): Promise<{ spentUsd: number; capUsd: number }> {
@@ -85,43 +131,148 @@ export class AiProvider {
     return { spentUsd: await this.d.log.spent(monthOf(this.now())), capUsd };
   }
 
-  /** Whether a task can run: a key and a model are set. */
+  /** Whether a task can run: a model is chosen and its provider is connected. */
   async ready(task: AiTask): Promise<boolean> {
-    return (await this.key()) !== null && Boolean((await this.d.settings.read())?.ai.models[task]);
+    const id = (await this.d.settings.read())?.ai.models[task];
+    if (!id) return false;
+    const p = await this.connections.get(splitModelId(id).provider);
+    return p !== null && this.connections.usable(p);
   }
 
-  async complete<T>(input: CompleteInput<T>): Promise<T> {
+  /** The provider and model a call goes to, or the reason it cannot be made. */
+  private async target(task: AiTask, override: string | undefined, what: string): Promise<Target> {
     const settings = await this.d.settings.read();
-    const key = await this.key();
-    const model = input.model ?? settings?.ai.models[input.task] ?? null;
-    if (!key || !model) {
+    const chosen = override ?? settings?.ai.models[task] ?? null;
+    const anyKey = (await this.connections.list()).some((p) => this.connections.usable(p));
+    if (!chosen) {
       throw new ApiError(
         "ai_off",
-        !key
-          ? "No AI provider key is set. Add one on the settings page."
-          : "No model is chosen for this task. Choose one on the settings page.",
+        anyKey
+          ? `No model is chosen for ${what}. Choose one on the settings page.`
+          : "No AI provider key is set. Add one on the settings page.",
+        { href: anyKey ? `/settings/ai/models/${task}` : "/settings/ai/providers" },
       );
     }
+    const { provider: id, model } = splitModelId(chosen);
+    const provider = await this.connections.get(id);
+    if (!provider || !this.connections.usable(provider)) {
+      throw new ApiError(
+        "ai_off",
+        id === "openrouter" && !provider?.key
+          ? "No AI provider key is set. Add one on the settings page."
+          : !provider
+            ? `The model chosen for ${what} is from ${id}, which is not connected. Connect it or choose another model on the settings page.`
+            : !provider.enabled
+              ? `${provider.name} is switched off. Switch it on or choose another model on the settings page.`
+              : `${provider.name} has no key. Add one on the settings page.`,
+        { href: "/settings/ai/providers" },
+      );
+    }
+    return { id: `${id}:${model}`, provider, model, adapter: this.connections.adapter(provider) };
+  }
+
+  private async checkCap(): Promise<void> {
     const { spentUsd, capUsd } = await this.spending();
     if (spentUsd >= capUsd) {
       throw new ApiError(
         "ai_cap_reached",
         `This month's AI spending is ${money(spentUsd)} and your cap is ${money(capUsd)}. ` +
           "Raise the cap on the settings page to go on.",
+        { href: "/settings/ai/spending" },
       );
     }
+  }
 
-    let attempt = await this.attempt(key.key, model, input);
-    const again = attempt.retry && !(attempt.timedOut && input.retryOnTimeout === false);
-    if (!attempt.ok && again) attempt = await this.attempt(key.key, model, input);
-    if (!attempt.ok) {
-      this.lastError = attempt.error ?? "The AI provider did not answer.";
+  /** Prices to estimate a cost with: the author's, else the provider's list. */
+  private async priceOf(id: string): Promise<ModelPrice | null> {
+    const own = (await this.d.settings.read())?.ai.modelPrices[id];
+    if (own) return own;
+    const listed = await this.catalog?.find(id);
+    return listed && listed.promptPrice !== null && listed.completionPrice !== null
+      ? { promptPrice: listed.promptPrice, completionPrice: listed.completionPrice }
+      : null;
+  }
+
+  private async record(
+    task: AiTask,
+    t: Target,
+    usage: Usage | undefined,
+    entry: string | undefined,
+    error: string | undefined,
+  ): Promise<number> {
+    const u = usage ?? { promptTokens: 0, completionTokens: 0, costUsd: null };
+    // A call that never reached the provider used nothing.
+    const reached = usage !== undefined;
+    const { costUsd, costKind } = reached
+      ? costOf(u, u.costUsd === null ? await this.priceOf(t.id) : null)
+      : { costUsd: 0, costKind: "reported" as const };
+    await this.d.log.append({
+      at: this.now().toISOString(),
+      task,
+      model: t.id,
+      provider: t.provider.id,
+      promptTokens: u.promptTokens,
+      completionTokens: u.completionTokens,
+      costUsd,
+      costKind,
+      entry: entry ?? null,
+      ok: error === undefined,
+      ...(error ? { error } : {}),
+    });
+    return costUsd;
+  }
+
+  private signal(timeoutMs: number, signal: AbortSignal | undefined): AbortSignal {
+    const timeout = AbortSignal.timeout(timeoutMs);
+    return signal ? AbortSignal.any([timeout, signal]) : timeout;
+  }
+
+  async complete<T>(input: CompleteInput<T>): Promise<T> {
+    const t = await this.target(input.task, input.model, "this task");
+    await this.checkCap();
+
+    const attempt = async (): Promise<ChatResult | ProviderError> => {
+      const req: ChatRequest = {
+        model: t.model,
+        system: input.system,
+        messages: [{ role: "user", content: input.user }],
+        schema: { name: input.schema.name, json: input.schema.json },
+        ...(input.maxTokens ? { maxTokens: input.maxTokens } : {}),
+        ...(input.reasoning ? { reasoning: input.reasoning } : {}),
+        signal: this.signal(input.timeoutMs ?? this.d.timeoutMs ?? 60_000, input.signal),
+      };
+      try {
+        const result = await t.adapter.complete(req);
+        await this.record(input.task, t, result.usage, input.entry, undefined);
+        return result;
+      } catch (err) {
+        const e =
+          err instanceof ProviderError
+            ? err
+            : new ProviderError("The AI provider did not answer.", false);
+        await this.record(input.task, t, e.opts.usage, input.entry, e.message);
+        return e;
+      }
+    };
+
+    let result = await attempt();
+    if (
+      result instanceof ProviderError &&
+      result.retry &&
+      !result.aborted &&
+      !(result.timedOut && input.retryOnTimeout === false) &&
+      !input.signal?.aborted
+    ) {
+      result = await attempt();
+    }
+    if (result instanceof ProviderError) {
+      this.lastError = result.message;
       throw new ApiError("ai_failed", this.lastError);
     }
 
     let parsed: unknown;
     try {
-      parsed = JSON.parse(attempt.content ?? "");
+      parsed = JSON.parse(result.text);
     } catch {
       parsed = undefined;
     }
@@ -135,162 +286,86 @@ export class AiProvider {
   }
 
   /**
+   * A call whose answer comes as it is written: text, thinking and tool calls, then `done`. The
+   * cap is checked before and the call logged after, when the stream ends, fails or is left.
+   * Not sent twice. Throws ApiError ("ai_off", "ai_cap_reached", "ai_failed") before or while
+   * streaming. Providers that cannot stream answer in one piece, given as one text event.
+   */
+  async *stream(input: StreamInput): AsyncGenerator<StreamEvent> {
+    const t = await this.target(input.task, input.model, "this task");
+    await this.checkCap();
+    const req: ChatRequest = {
+      model: t.model,
+      system: input.system,
+      messages: input.messages ?? [{ role: "user", content: input.user ?? "" }],
+      ...(input.schema ? { schema: input.schema } : {}),
+      ...(input.tools ? { tools: input.tools } : {}),
+      ...(input.maxTokens ? { maxTokens: input.maxTokens } : {}),
+      ...(input.reasoning ? { reasoning: input.reasoning } : {}),
+      signal: this.signal(input.timeoutMs ?? 300_000, input.signal),
+    };
+    let usage: Usage | undefined;
+    let error: string | undefined = "The stream was left before it ended.";
+    try {
+      if (t.adapter.stream) {
+        for await (const event of t.adapter.stream(req)) {
+          if (event.type === "done") usage = event.usage;
+          yield event;
+        }
+      } else {
+        const r = await t.adapter.complete(req);
+        usage = r.usage;
+        if (r.reasoning) yield { type: "reasoning", text: r.reasoning };
+        if (r.text) yield { type: "text", text: r.text };
+        for (const call of r.toolCalls) yield { type: "tool_call", call };
+        yield { type: "done", usage: r.usage, finishReason: r.finishReason };
+      }
+      error = undefined;
+      this.lastError = null;
+    } catch (err) {
+      const e =
+        err instanceof ProviderError
+          ? err
+          : new ProviderError("The AI provider did not answer.", false);
+      usage = e.opts.usage ?? usage;
+      error = e.message;
+      if (!e.aborted) this.lastError = e.message;
+      throw new ApiError("ai_failed", e.message);
+    } finally {
+      await this.record(input.task, t, usage, input.entry, error);
+    }
+  }
+
+  /**
    * One picture made from a description, as PNG or JPEG bytes. Checked against the cap first and
    * logged like every call. Not sent twice: a picture that timed out may still be billed.
    */
   async image(prompt: string, entry?: string): Promise<{ bytes: Buffer; costUsd: number }> {
-    const settings = await this.d.settings.read();
-    const key = await this.key();
-    const model = settings?.ai.models.art ?? null;
-    if (!key || !model) {
-      throw new ApiError(
-        "ai_off",
-        !key
-          ? "No AI provider key is set. Add one on the settings page."
-          : "No model is chosen for concept art. Choose one on the settings page.",
-      );
-    }
-    const { spentUsd, capUsd } = await this.spending();
-    if (spentUsd >= capUsd) {
-      throw new ApiError(
-        "ai_cap_reached",
-        `This month's AI spending is ${money(spentUsd)} and your cap is ${money(capUsd)}. ` +
-          "Raise the cap on the settings page to go on.",
-      );
-    }
-    let ok = false;
-    let costUsd = 0;
-    let error: string | undefined;
-    let bytes: Buffer | null = null;
-    try {
-      const res = await this.fetch(`${this.d.config.openrouterUrl}/images`, {
-        method: "POST",
-        headers: { authorization: `Bearer ${key.key}`, "content-type": "application/json" },
-        body: JSON.stringify({ model, prompt }),
-        signal: AbortSignal.timeout(180_000),
-      });
-      const body = (await res.json().catch(() => null)) as {
-        data?: { b64_json?: unknown }[];
-        usage?: { cost?: unknown };
-        error?: { message?: unknown };
-      } | null;
-      costUsd = typeof body?.usage?.cost === "number" ? body.usage.cost : 0;
-      const b64 = body?.data?.[0]?.b64_json;
-      if (res.ok && typeof b64 === "string") {
-        bytes = Buffer.from(b64, "base64");
-        ok = true;
-      } else {
-        const said = typeof body?.error?.message === "string" ? body.error.message : null;
-        error = `The image model refused the call (${res.status})${said ? `: ${said}` : "."}`;
-      }
-    } catch (err) {
-      error =
-        err instanceof Error && err.name === "TimeoutError"
-          ? "The image model did not answer in time."
-          : "The AI provider could not be reached.";
-    }
-    await this.d.log.append({
-      at: this.now().toISOString(),
-      task: "art",
-      model,
-      promptTokens: 0,
-      completionTokens: 0,
-      costUsd,
-      entry: entry ?? null,
-      ok,
-      ...(error ? { error } : {}),
-    });
-    if (!ok || !bytes) {
-      this.lastError = error ?? "No picture came back.";
+    const t = await this.target("art", undefined, "concept art");
+    await this.checkCap();
+    if (!t.adapter.image) {
+      this.lastError = `${t.provider.name} makes no pictures. Choose an image model for concept art.`;
       throw new ApiError("ai_failed", this.lastError);
     }
-    this.lastError = null;
-    return { bytes, costUsd };
-  }
-
-  /** One request to the provider, and its line in the log. */
-  private async attempt<T>(key: string, model: string, input: CompleteInput<T>): Promise<Attempt> {
-    const result = await this.request(key, model, input);
-    await this.d.log.append({
-      at: this.now().toISOString(),
-      task: input.task,
-      model,
-      promptTokens: result.promptTokens,
-      completionTokens: result.completionTokens,
-      costUsd: result.costUsd,
-      entry: input.entry ?? null,
-      ok: result.ok,
-      ...(result.error ? { error: result.error } : {}),
-    });
-    return result;
-  }
-
-  private async request<T>(key: string, model: string, input: CompleteInput<T>): Promise<Attempt> {
-    const none = { promptTokens: 0, completionTokens: 0, costUsd: 0 };
-    let res: Response;
     try {
-      res = await this.fetch(`${this.d.config.openrouterUrl}/chat/completions`, {
-        method: "POST",
-        headers: { authorization: `Bearer ${key}`, "content-type": "application/json" },
-        body: JSON.stringify({
-          model,
-          messages: [
-            { role: "system", content: input.system },
-            { role: "user", content: input.user },
-          ],
-          response_format: {
-            type: "json_schema",
-            json_schema: { name: input.schema.name, strict: true, schema: input.schema.json },
-          },
-          stream: false,
-          ...(input.maxTokens ? { max_tokens: input.maxTokens } : {}),
-        }),
-        signal: AbortSignal.timeout(input.timeoutMs ?? this.d.timeoutMs ?? 60_000),
+      const r = await t.adapter.image({
+        model: t.model,
+        prompt,
+        signal: AbortSignal.timeout(180_000),
       });
+      const costUsd = await this.record("art", t, r.usage, entry, undefined);
+      this.lastError = null;
+      return { bytes: r.bytes, costUsd };
     } catch (err) {
-      const timedOut = err instanceof Error && err.name === "TimeoutError";
-      return {
-        ...none,
-        ok: false,
-        retry: true,
-        timedOut,
-        error: timedOut
-          ? "The AI provider did not answer in time."
-          : "The AI provider could not be reached.",
-      };
+      const e =
+        err instanceof ProviderError
+          ? err.timedOut
+            ? new ProviderError("The image model did not answer in time.", false, err.opts)
+            : err
+          : new ProviderError("No picture came back.", false);
+      await this.record("art", t, e.opts.usage, entry, e.message);
+      this.lastError = e.message;
+      throw new ApiError("ai_failed", this.lastError);
     }
-
-    let body: unknown;
-    try {
-      body = await res.json();
-    } catch {
-      body = null;
-    }
-    const b = (body ?? {}) as {
-      error?: { message?: unknown };
-      choices?: { message?: { content?: unknown } }[];
-      usage?: { prompt_tokens?: unknown; completion_tokens?: unknown; cost?: unknown };
-    };
-    const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : 0);
-    const usage = {
-      promptTokens: num(b.usage?.prompt_tokens),
-      completionTokens: num(b.usage?.completion_tokens),
-      costUsd: num(b.usage?.cost),
-    };
-    // The provider can report a failure inside a 200 answer.
-    if (!res.ok || b.error) {
-      const said = typeof b.error?.message === "string" ? b.error.message : null;
-      return {
-        ...usage,
-        ok: false,
-        retry: res.status >= 500,
-        error: `The AI provider refused the call (${res.status})${said ? `: ${said}` : "."}`,
-      };
-    }
-    const content = b.choices?.[0]?.message?.content;
-    if (typeof content !== "string") {
-      return { ...usage, ok: false, retry: false, error: "The AI provider sent an empty answer." };
-    }
-    return { ...usage, ok: true, retry: false, content };
   }
 }

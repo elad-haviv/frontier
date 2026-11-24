@@ -54,6 +54,14 @@ export interface Config {
   openrouterKey: string | null;
   openrouterUrl: string;
   /**
+   * Keys and addresses of the other providers given in the environment (ANTHROPIC_API_KEY,
+   * OPENAI_API_KEY, GEMINI_API_KEY, XAI_API_KEY and their *_BASE_URL). A key stored in settings
+   * comes first.
+   */
+  providerEnv: Partial<
+    Record<"anthropic" | "openai" | "google" | "xai", { key: string | null; url: string | null }>
+  >;
+  /**
    * Lets an image be taken from a web address on this machine's loopback addresses, on any port,
    * so the tests can serve one. Off by default, and refused in production.
    */
@@ -184,6 +192,15 @@ export function loadConfig(env: Env = process.env): Config {
       /\/+$/,
       "",
     ),
+    providerEnv: {
+      anthropic: { key: optional("ANTHROPIC_API_KEY"), url: optional("ANTHROPIC_BASE_URL") },
+      openai: { key: optional("OPENAI_API_KEY"), url: optional("OPENAI_BASE_URL") },
+      google: {
+        key: optional("GEMINI_API_KEY") ?? optional("GOOGLE_API_KEY"),
+        url: optional("GEMINI_BASE_URL"),
+      },
+      xai: { key: optional("XAI_API_KEY"), url: optional("XAI_BASE_URL") },
+    },
     imageFetchAllowLoopback,
     serviceWorker: optional("FRONTIER_SERVICE_WORKER")?.toLowerCase() !== "off",
     commitAuthor,

@@ -40,6 +40,8 @@ export const ErrorBody = z.object({
     message: z.string(),
     /** Present with `stale_revision`: the id of the draft the server holds for that path. */
     id: z.string().optional(),
+    /** Where in the app the problem is put right, such as "/settings/ai/providers". */
+    href: z.string().optional(),
   }),
 });
 export type ErrorBody = z.infer<typeof ErrorBody>;

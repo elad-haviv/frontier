@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { DraftKind, Id, Origin, ProposalOperation, VaultPath } from "./state.js";
+import { AiProviderView, ModelPrice } from "./ai.js";
 
 const Ok = z.object({ ok: z.literal(true) });
 
@@ -572,10 +573,15 @@ export const OperationDecision = z.object({
 /** `GET /api/settings`. No secret is ever part of it. */
 export const SettingsResponse = z.object({
   ai: z.object({
+    /** `keySet`, `keyFrom` and `keyLast4` are about the OpenRouter key, as before stage 18. */
     keySet: z.boolean(),
     /** Where the key in use comes from. */
     keyFrom: z.enum(["settings", "environment", "none"]),
     keyLast4: z.string().nullable(),
+    /** Every connected provider, stored or given in the server's environment. */
+    providers: z.array(AiProviderView),
+    /** Prices the author entered, by provider-qualified model id. */
+    modelPrices: z.record(z.string(), ModelPrice),
     /** False when SECRETS_KEY is not set, so a key cannot be stored here. */
     canStoreKey: z.boolean(),
     models: z.object({
@@ -611,19 +617,6 @@ export const AiSettingsRequest = z.object({
   monthlyCapUsd: z.number().min(0).max(10_000).optional(),
   proposeOnPublish: z.boolean().optional(),
 });
-
-export const ModelsResponse = z.object({
-  models: z.array(
-    z.object({
-      id: z.string(),
-      name: z.string(),
-      /** US dollars per million tokens. */
-      promptPrice: z.number(),
-      completionPrice: z.number(),
-    }),
-  ),
-});
-export type ModelsResponse = z.infer<typeof ModelsResponse>;
 
 /** `GET /api/proposals/job` */
 export const FieldJobState = z.object({

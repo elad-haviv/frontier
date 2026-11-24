@@ -15,6 +15,8 @@ afterEach(() => t.close());
 
 const SECRETS = { SECRETS_KEY: Buffer.alloc(32, 3).toString("base64") };
 const MODEL = "test/model";
+/** The model as stored since stage 18: OpenRouter's, qualified. */
+const QMODEL = `openrouter:${MODEL}`;
 const VEL = "01 Places/Vel Aran.md";
 const BODY =
   "# Vel Aran\n\nVel Aran was founded around 340 EM by [[Mira]].\nIt fell   a generation\nafter the Exodus.\n";
@@ -30,7 +32,9 @@ function provider(answers: (object | "network" | number)[], cost = 0.002) {
   const calls: Call[] = [];
   const fake: typeof fetch = async (input, init) => {
     const url = String(input);
-    if (url.endsWith("/models")) {
+    const path = new URL(url).pathname;
+    if (path.endsWith("/key")) return Response.json({ data: { label: "test" } });
+    if (path.endsWith("/models")) {
       return Response.json({
         data: [
           {
@@ -134,7 +138,7 @@ describe("settings and the provider key", () => {
 
     await t.put("/api/settings/ai", { key: null, monthlyCapUsd: 3 });
     expect(await settings()).toMatchObject({ keySet: false, monthlyCapUsd: 3 });
-    expect((await settings()).models.extraction).toBe(MODEL);
+    expect((await settings()).models.extraction).toBe(QMODEL);
   });
 
   it("refuses to store a key without SECRETS_KEY and uses the one from the environment", async () => {
@@ -158,11 +162,35 @@ describe("settings and the provider key", () => {
     expect(p.calls[0]!.auth).toBe("Bearer sk-or-from-env-9876");
   });
 
-  it("lists the models that can answer in a fixed form, with prices per million tokens", async () => {
+  it("lists the models with prices per million tokens and what each task can use", async () => {
     await start([{ reply: "ok" }]);
-    expect((await t.get("/api/ai/models")).json()).toEqual({
-      models: [{ id: MODEL, name: "Test model", promptPrice: 1, completionPrice: 2 }],
-    });
+    const listed = (await t.get("/api/ai/models")).json();
+    expect(listed.models).toEqual([
+      expect.objectContaining({
+        id: "openrouter:other/plain",
+        name: "No structure",
+        promptPrice: null,
+        // The stand-in list says nothing of pictures.
+        suits: { extraction: "no", conversation: "no", art: "unknown" },
+      }),
+      expect.objectContaining({
+        id: QMODEL,
+        model: MODEL,
+        name: "Test model",
+        provider: "openrouter",
+        promptPrice: 1,
+        completionPrice: 2,
+        priceFrom: "provider",
+        costReported: true,
+        suits: { extraction: "yes", conversation: "yes", art: "unknown" },
+      }),
+    ]);
+    expect(listed.providers).toEqual([
+      { id: "openrouter", kind: "openrouter", name: "OpenRouter", ok: true, error: null, count: 2 },
+    ]);
+    // Searched and cut to a task on the server.
+    const found = (await t.get("/api/ai/models?q=test&task=extraction")).json();
+    expect(found.models.map((m: { id: string }) => m.id)).toEqual([QMODEL]);
   });
 });
 
@@ -187,7 +215,9 @@ describe("calling the provider", () => {
     expect(logLines()).toEqual([
       expect.objectContaining({
         task: "extraction",
-        model: MODEL,
+        model: QMODEL,
+        provider: "openrouter",
+        costKind: "reported",
         promptTokens: 120,
         completionTokens: 30,
         costUsd: 0.002,
@@ -255,7 +285,7 @@ describe("field proposals", () => {
         op: "add_time",
         what: "founded",
         when: "around 340 EM",
-        model: MODEL,
+        model: QMODEL,
       }),
       expect.objectContaining({
         op: "add_time",
@@ -313,7 +343,7 @@ describe("field proposals", () => {
 
     const un = UnpublishedResponse.parse((await t.get("/api/unpublished")).json());
     expect(un.drafts).toHaveLength(1);
-    expect(un.drafts[0]!.origins).toEqual([{ kind: "fields", ref: p!.id, model: MODEL }]);
+    expect(un.drafts[0]!.origins).toEqual([{ kind: "fields", ref: p!.id, model: QMODEL }]);
     expect(un.drafts[0]!.text).toBe(
       '---\ntime:\n  - what: founded\n    when: "around 340 EM"\n  - what: destroyed\n' +
         '    when: "a generation after [[The Exodus]]"\ntype: place\n---\n' +
@@ -330,7 +360,7 @@ describe("field proposals", () => {
     });
     expect(done.statusCode, done.body).toBe(200);
     expect(t.repo.remoteCommit(t.repo.remoteHead()).message).toBe(
-      `Date Vel Aran\n\nFrontier-Proposal: ${p!.id}\nFrontier-Model: ${MODEL}`,
+      `Date Vel Aran\n\nFrontier-Proposal: ${p!.id}\nFrontier-Model: ${QMODEL}`,
     );
   });
 

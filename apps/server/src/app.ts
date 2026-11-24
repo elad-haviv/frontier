@@ -44,7 +44,7 @@ import { quarantineRoutes } from "./routes/quarantine.js";
 import { settingsRoutes } from "./routes/settings.js";
 import { FolderTarget, S3Target } from "./backup/targets.js";
 import type { Config } from "./config.js";
-import { ApiError } from "./errors.js";
+import { ApiError, settingsLink } from "./errors.js";
 import { appTokenSource } from "./git/appAuth.js";
 import { GitError, GitGateway } from "./git/gateway.js";
 import { ImageServer } from "./images/serve.js";
@@ -230,7 +230,12 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
     log: aiLog,
     ...(options.fetch ? { fetch: options.fetch } : {}),
   });
-  const models = new ModelCatalogue(config, options.fetch);
+  const models = new ModelCatalogue({
+    connections: ai.connections,
+    settings,
+    openrouterUrl: config.openrouterUrl,
+  });
+  ai.useCatalog(models);
   const changer = new EntryChanger({ git, index, drafts, status });
   const proposals = new ProposalStore({ stateDir, files, index, changer, status });
   await proposals.load();
@@ -408,7 +413,13 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
   await reportAi();
 
   // Coolify's proxy sits in front, so the client address and protocol come from its headers.
-  const app = Fastify({ trustProxy: true, logger: options.logger ?? false });
+  // Keys are sent in request bodies to the provider routes; keep them out of any log line.
+  const app = Fastify({
+    trustProxy: true,
+    logger: options.logger
+      ? { redact: ["req.headers.authorization", "req.headers.cookie", "req.body.key"] }
+      : false,
+  });
 
   // Keep the unparsed body: the webhook signature is computed over the exact bytes sent.
   app.addContentTypeParser("application/json", { parseAs: "buffer" }, (request, body, done) => {
@@ -471,7 +482,10 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
       extra: Record<string, string> = {},
     ) => reply.status(status).send({ error: { code, message, ...extra } });
     if (error instanceof ApiError)
-      return send(error.status, error.code, error.message, error.extra);
+      return send(error.status, error.code, error.message, {
+        ...settingsLink(error),
+        ...error.extra,
+      });
     if (error instanceof ZodError) {
       const first = error.issues[0];
       return send(

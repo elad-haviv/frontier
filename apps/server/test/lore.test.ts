@@ -45,7 +45,7 @@ interface Call {
 function provider(answers: object[]) {
   const calls: Call[] = [];
   const fake: typeof fetch = async (input, init) => {
-    if (String(input).endsWith("/models")) return Response.json({ data: [] });
+    if (new URL(String(input)).pathname.endsWith("/models")) return Response.json({ data: [] });
     if (String(input).endsWith("/images")) {
       calls.push({ body: JSON.parse(String(init?.body)) });
       return Response.json({
@@ -250,7 +250,9 @@ describe("drafting an addition", () => {
     const un = UnpublishedResponse.parse((await t.get("/api/unpublished")).json());
     const draft = un.drafts.find((d) => d.path === NIRANI)!;
     expect(draft.text).toBe(preview.after);
-    expect(draft.origins).toEqual([{ kind: "lore", ref: `${c.id}/0`, model: MODEL }]);
+    expect(draft.origins).toEqual([
+      { kind: "lore", ref: `${c.id}/0`, model: `openrouter:${MODEL}` },
+    ]);
   });
 
   it("refuses to keep it when the entry changed after the difference was shown", async () => {

@@ -60,7 +60,7 @@ test("CUJ 5: sets up the AI, asks for fields, corrects one and accepts it into a
   await review(page);
   await publish(page, "Date Shade");
   expect(onMain(note)).toContain('when: "in the year of the long tide"');
-  expect(lastBody()).toContain("Frontier-Model: sample/reader");
+  expect(lastBody()).toContain("Frontier-Model: openrouter:sample/reader");
 
   await page.goto("/settings");
   await expect(page.locator(".calls")).toContainText(

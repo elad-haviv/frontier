@@ -64,7 +64,9 @@ describe("state files", () => {
       passwordHash: "$argon2id$x",
       ai: {
         key: null,
+        providers: [],
         models: { extraction: null, conversation: null, art: null },
+        modelPrices: {},
         artStyle: expect.stringContaining("Pencil and ink"),
         monthlyCapUsd: 10,
         proposeOnPublish: false,
