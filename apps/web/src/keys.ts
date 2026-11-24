@@ -420,6 +420,28 @@ keys.register(
   { id: "map.measure", keys: ["r"], scope: "map", label: "Measure tool", when: "editing" },
   { id: "map.label", keys: ["w"], scope: "map", label: "Label tool", when: "editing" },
   { id: "map.place", keys: ["g"], scope: "map", label: "Place with AI", when: "editing" },
+  { id: "map.find", keys: ["f"], scope: "map", label: "Find areas tool", when: "editing" },
+  {
+    id: "map.findMode",
+    keys: ["x"],
+    scope: "map",
+    label: "Find areas: clicks add or remove (Alt-click removes, Shift-click adds)",
+    when: "editing",
+  },
+  {
+    id: "map.findMake",
+    keys: ["Enter"],
+    scope: "map",
+    label: "Find areas: make a zone of the chosen areas",
+    when: "editing",
+  },
+  {
+    id: "map.findClear",
+    keys: ["Escape"],
+    scope: "map",
+    label: "Find areas: clear the chosen areas, then the selection",
+    when: "editing",
+  },
   {
     id: "map.snap",
     keys: ["s"],

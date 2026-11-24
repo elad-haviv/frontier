@@ -23,12 +23,22 @@ import {
   orderFeature,
   reorderFeature,
 } from "@frontier/schema";
-import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  lazy,
+  type ReactNode,
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { entryUrl, mapUrl } from "../api.ts";
 import { useDialogs } from "../components/Dialogs.tsx";
 import { OfflineCopy } from "../components/OfflineCopy.tsx";
 import { DiscoveryPins, OpenDiscovery } from "../components/map/DiscoveryPins.tsx";
+import type { FindHandle } from "../components/map/FindAreas.tsx";
 import { FeatureEntryDialog } from "../components/map/FeatureEntryDialog.tsx";
 import { FeaturePanel } from "../components/map/FeaturePanel.tsx";
 import { GhostPins, PlacePanel, usePlace } from "../components/map/PlacePanel.tsx";
@@ -99,6 +109,9 @@ import {
 } from "../components/map/GroupPanel.tsx";
 import { queue } from "../sync/queue.ts";
 
+/** Find areas, with the worker that looks at the picture, loads when the tool is first chosen. */
+const FindAreas = lazy(() => import("../components/map/FindAreas.tsx"));
+
 export function MapPage() {
   const dialogs = useDialogs();
   const { id = "" } = useParams();
@@ -150,6 +163,9 @@ export function MapPage() {
   // Place with AI: the proposals on the map, and the one picked in its tab.
   const place = usePlace(id);
   const [pickedGhost, setPickedGhost] = useState<string | null>(null);
+  /** Find areas while it is on: it takes the taps, and its clicks are undone before the map's. */
+  const findRef = useRef<FindHandle | null>(null);
+  const [findSteps, setFindSteps] = useState({ undo: false, redo: false });
   const [pressKind, setPressKind] = useState<PointerKind>(() =>
     window.matchMedia("(pointer: coarse)").matches ? "touch" : "mouse",
   );
@@ -286,6 +302,7 @@ export function MapPage() {
     group: groups.dragGroup,
     pickTap: groups.pickTap,
     haloIds: groups.haloIds,
+    find: findRef,
   });
   const { box, setBox } = pointer;
   useWheelZoom(draw.topCanvas, viewRef, setView, [map === null, draw.glError]);
@@ -315,10 +332,9 @@ export function MapPage() {
   const chooseTool = (next: Tool) => {
     setTool(next);
     setSketch([]);
-    if (next !== "select") {
-      setSelected(null);
-      groups.clearPicks();
-    }
+    // Find areas keeps the selection: the chosen areas can be added to the selected zone.
+    if (next !== "select" && next !== "find") setSelected(null);
+    if (next !== "select") groups.clearPicks();
     // Proposals not placed are only previews: they go with the tool.
     if (next !== "place") {
       place.setGhosts([]);
@@ -363,6 +379,12 @@ export function MapPage() {
     file.setFeature(setCurve(chosen, (chosen as { curve?: string }).curve !== "smooth"));
   };
   const schematicMap = map?.space.kind === "flat" && map.space.schematic === true;
+  /** Find areas looks at the map's picture: it needs one shown. */
+  const hasPicture = !!map?.images.some((i) => shownImages.has(i.id));
+  const canUndo = findSteps.undo || file.history.past.length > 0;
+  const canRedo = findSteps.redo || file.history.future.length > 0;
+  const undo = () => findRef.current?.undo() || file.undo();
+  const redo = () => findRef.current?.redo() || file.redo();
   useMapKeys({
     editing,
     frame,
@@ -385,6 +407,7 @@ export function MapPage() {
       "label",
       ...(schematicMap ? [] : ["measure" as const]),
       ...(found.ready ? ["place" as const] : []),
+      ...(hasPicture ? ["find" as const] : []),
     ],
     toggleSnap: () => setSnap(!snap),
     setTool: chooseTool,
@@ -394,10 +417,10 @@ export function MapPage() {
     clearSelection: () => setSelected(null),
     edit: () => startEditing(selected),
     done: stopEditing,
-    canUndo: file.history.past.length > 0,
-    canRedo: file.history.future.length > 0,
-    undo: file.undo,
-    redo: file.redo,
+    canUndo,
+    canRedo,
+    undo,
+    redo,
     remove: deleteSelection,
     zoom,
     fit: whole,
@@ -442,7 +465,8 @@ export function MapPage() {
   );
   // The Marker and Label tools stay on: what was just placed opens its tab, to be named at once.
   const showsFeature =
-    feature !== null && (!editing || tool === "select" || tool === "marker" || tool === "label");
+    feature !== null &&
+    (!editing || tool === "select" || tool === "marker" || tool === "label" || tool === "find");
   // Place with AI has its own tab while the tool is on.
   let placePanel: ReactNode = null;
   usePanel(
@@ -506,7 +530,8 @@ export function MapPage() {
     const f = map?.features.find((x) => x.id === (g ? membersOf(map!, g.id)[0]?.id : id));
     if (!f) return;
     fromLayers.current = true;
-    if (tool !== "select" && editing) chooseTool("select");
+    // Find areas stays on: a zone chosen in Layers is one to add the chosen areas to.
+    if (tool !== "select" && tool !== "find" && editing) chooseTool("select");
     groups.clearPicks();
     setSelected(id);
     setVertex(null);
@@ -896,13 +921,14 @@ export function MapPage() {
           tool={tool}
           schematic={schematic}
           canPlace={found.ready}
+          findReason={hasPicture ? null : "Find areas needs a map image"}
           onTool={chooseTool}
           snap={snap}
           onSnap={setSnap}
-          canUndo={file.history.past.length > 0}
-          canRedo={file.history.future.length > 0}
-          onUndo={file.undo}
-          onRedo={file.redo}
+          canUndo={canUndo}
+          canRedo={canRedo}
+          onUndo={undo}
+          onRedo={redo}
           picking={groups.picking}
           onPicking={(on) => {
             if (!on) return groups.clearPicks();
@@ -1052,6 +1078,37 @@ export function MapPage() {
           <p className="map-hint map-said" role="status">
             {said}
           </p>
+        )}
+
+        {editing && tool === "find" && hasPicture && (
+          <Suspense fallback={null}>
+            <FindAreas
+              map={map}
+              mapRef={file.mapRef}
+              change={change}
+              view={view}
+              size={size}
+              frame={frame}
+              shownImages={shownImages}
+              resolved={shown.resolved}
+              hidden={hiddenNow}
+              locked={locked}
+              activeLayer={activeLayer}
+              onActiveLayer={setActiveLayer}
+              selected={selected}
+              onSelect={setSelected}
+              onSelectSeveral={(ids) => {
+                setSelected(null);
+                groups.setPicks(ids);
+              }}
+              snap={snap}
+              styles={styles}
+              titleOf={titleOf}
+              handle={findRef}
+              onSteps={setFindSteps}
+              say={say}
+            />
+          </Suspense>
         )}
 
         {editing && (

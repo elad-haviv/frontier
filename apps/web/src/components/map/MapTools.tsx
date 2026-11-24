@@ -11,6 +11,7 @@ import {
   Spline,
   Type,
   Undo2,
+  WandSparkles,
 } from "lucide-react";
 import type { Tool } from "../../map/tools.ts";
 import { IconButton } from "../ui/IconButton.tsx";
@@ -20,6 +21,7 @@ const TOOLS: { tool: Tool; label: string; icon: LucideIcon; shortcut: string }[]
   { tool: "marker", label: "Marker", icon: MapPin, shortcut: "map.marker" },
   { tool: "path", label: "Path", icon: Spline, shortcut: "map.path" },
   { tool: "zone", label: "Zone", icon: Pentagon, shortcut: "map.zone" },
+  { tool: "find", label: "Find areas", icon: WandSparkles, shortcut: "map.find" },
   { tool: "label", label: "Label", icon: Type, shortcut: "map.label" },
   { tool: "measure", label: "Measure", icon: Ruler, shortcut: "map.measure" },
   { tool: "place", label: "Place with AI", icon: Sparkles, shortcut: "map.place" },
@@ -27,12 +29,13 @@ const TOOLS: { tool: Tool; label: string; icon: LucideIcon; shortcut: string }[]
 
 /**
  * The tools while editing, with snapping, undo and redo. A schematic map has no measuring; Place
- * with AI is there once a model is chosen.
+ * with AI is there once a model is chosen; Find areas needs a picture to look at.
  */
 export function MapTools({
   tool,
   schematic,
   canPlace,
+  findReason,
   onTool,
   snap,
   onSnap,
@@ -46,6 +49,8 @@ export function MapTools({
   tool: Tool;
   schematic: boolean;
   canPlace: boolean;
+  /** Why Find areas cannot be used, or null when it can. */
+  findReason: string | null;
   onTool: (tool: Tool) => void;
   /** Points of paths and zones snap to others near them. */
   snap: boolean;
@@ -70,6 +75,9 @@ export function MapTools({
           shortcut={t.shortcut}
           showLabel
           aria-pressed={tool === t.tool}
+          {...(t.tool === "find" && findReason
+            ? { disabled: true, disabledReason: findReason }
+            : {})}
           onClick={() => onTool(t.tool)}
         />
       ))}
