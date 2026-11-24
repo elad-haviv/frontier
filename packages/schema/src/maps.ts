@@ -92,6 +92,8 @@ const featureBase = {
   shapes: z.array(LaterShape).optional(),
   /** On a flat map: turns about another marker, once every `period` years, as time moves. */
   orbit: z.object({ around: ItemId, period: z.number().positive() }).passthrough().nullish(),
+  /** The group it is one piece of, in its own layer; none (left out of the file) when in none. */
+  group: ItemId.nullish(),
 };
 
 /**
@@ -156,6 +158,42 @@ export const isLined = (f: MapFeature): f is LinedFeature => f.kind === "path" |
 export const LABEL_LOOK = { size: 16, color: "#2a2420", rotate: 0, spacing: 0 } as const;
 export type MapFeature = z.infer<typeof MapFeature>;
 
+/**
+ * A named set of features of one layer that stand for one place, such as the islands of a realm.
+ * Which features are in it is written on each feature (`group`), so that two devices adding
+ * different pieces merge without a clash. Its name is written on the map once for all of them.
+ */
+export const MapGroup = z
+  .object({
+    id: ItemId,
+    /** The layer it is in; its members are features of this layer. */
+    layer: ItemId,
+    /** The name; shown instead of the entry's title. */
+    label: z.string().nullable(),
+    entry: z.string().nullable(),
+    /** The id of a more detailed map of this place. */
+    child: z.string().nullable().optional(),
+    span: ItemId.nullish(),
+    /** The name on the map: left out, written; false, not written. */
+    write: z.literal(false).optional(),
+    /** Where the name is written; left out, placed by itself. */
+    at: Pair.optional(),
+    // The name's look, as a label's; left out, the defaults. Colour left out: from the zones.
+    size: z.number().min(6).max(160).optional(),
+    color: z
+      .string()
+      .regex(/^#[0-9a-fA-F]{6}$/)
+      .optional(),
+    rotate: z.number().min(-360).max(360).optional(),
+    spacing: z.number().min(-0.2).max(2).optional(),
+    /** Its members cannot be picked on the map; left out: no. */
+    locked: z.boolean().optional(),
+  })
+  .passthrough();
+export type MapGroup = z.infer<typeof MapGroup>;
+/** The look a group's name has when nothing else is set: written larger, and spaced. */
+export const GROUP_LOOK = { size: 18, rotate: 0, spacing: 0.25 } as const;
+
 const unique = (items: { id: string }[]) => new Set(items.map((i) => i.id)).size === items.length;
 
 export const MapFile = z
@@ -173,11 +211,17 @@ export const MapFile = z
     markerSets: z.array(z.string()),
     layers: z.array(MapLayer).min(1),
     features: z.array(MapFeature),
+    /** Features drawn as one place; left out when there are none. */
+    groups: z.array(MapGroup).optional(),
   })
   .passthrough()
   .superRefine((map, ctx) => {
     for (const key of ["images", "layers", "features"] as const) {
       if (!unique(map[key])) ctx.addIssue({ code: "custom", message: `Two ${key} share an id.` });
+    }
+    // A group's members and layer are put right on reading (`repairGroups`), not refused.
+    if (map.groups && !unique(map.groups)) {
+      ctx.addIssue({ code: "custom", message: "Two groups share an id." });
     }
     const layers = new Set(map.layers.map((l) => l.id));
     const problem = layerProblem(map.layers);
@@ -210,6 +254,7 @@ const TOP = [
   "markerSets",
   "layers",
   "features",
+  "groups",
 ];
 const ITEM_KEYS: Record<string, string[]> = {
   images: ["id", "name", "path", "extent", "visible"],
@@ -234,6 +279,22 @@ const ITEM_KEYS: Record<string, string[]> = {
     "span",
     "shapes",
     "orbit",
+    "group",
+  ],
+  groups: [
+    "id",
+    "layer",
+    "label",
+    "entry",
+    "child",
+    "span",
+    "write",
+    "at",
+    "size",
+    "color",
+    "rotate",
+    "spacing",
+    "locked",
   ],
 };
 
@@ -254,12 +315,14 @@ function inOrder<T extends object>(item: T, keys: string[]): T {
  * feature then gives the same bytes, and compares as equal, however it was put together.
  */
 export function orderFeature(feature: MapFeature): MapFeature {
-  const { span, shapes, orbit, ...rest } = feature as MapFeature & Record<string, unknown>;
+  const { span, shapes, orbit, group, ...rest } = feature as MapFeature &
+    Record<string, unknown>;
   return inOrder(
     {
       ...rest,
       ...(span != null ? { span } : {}),
       ...(orbit != null ? { orbit } : {}),
+      ...(group != null ? { group } : {}),
       ...(Array.isArray(shapes) && shapes.length > 0
         ? { shapes: shapes.map((h) => inOrder(h as LaterShape, SHAPE_KEYS)) }
         : {}),
@@ -285,14 +348,33 @@ export function orderLayer<T extends MapLayer>(layer: T): T {
   );
 }
 
+/**
+ * A group with its keys in the order the file is written in. What is "none" or the default (no
+ * map of the place, no span, the name written, not locked) is written by leaving the key out.
+ */
+export function orderGroup<T extends MapGroup>(group: T): T {
+  const { child, span, write, locked, ...rest } = group;
+  return inOrder(
+    {
+      ...rest,
+      ...(child != null ? { child } : {}),
+      ...(span != null ? { span } : {}),
+      ...(write === false ? { write } : {}),
+      ...(locked === true ? { locked } : {}),
+    } as T,
+    ITEM_KEYS.groups!,
+  );
+}
+
 const ordered = (map: MapFile): MapFile => {
-  // "Lies under nothing" is written by leaving the key out.
-  const { under, ...rest } = map;
+  // "Lies under nothing" and "no groups" are written by leaving the key out.
+  const { under, groups, ...rest } = map;
   return {
     ...rest,
     ...(under != null ? { under } : {}),
     layers: map.layers.map(orderLayer),
     features: map.features.map(orderFeature),
+    ...(groups && groups.length > 0 ? { groups: groups.map(orderGroup) } : {}),
   } as MapFile;
 };
 
@@ -327,7 +409,7 @@ export function parseMap(text: string): ParsedMap {
       message: `${issue?.message ?? "It does not have the form of a map."}${where}`,
     };
   }
-  return { ok: true, map: parsed.data };
+  return { ok: true, map: repairGroups(parsed.data) };
 }
 
 // ---- Merging ---------------------------------------------------------------------------------
@@ -360,7 +442,8 @@ export function mergeMaps(base0: MapFile, mine0: MapFile, theirs0: MapFile): Map
   // made by each side putting a layer inside the other is broken.
   layers.items = repairLayers(keepReorder(base.layers, mine.layers, theirs.layers, layers.items));
   const features = mergeItemLists(base.features, mine.features, theirs.features);
-  clashes.push(...images.clashes, ...layers.clashes, ...features.clashes);
+  const groups = mergeItemLists(base.groups ?? [], mine.groups ?? [], theirs.groups ?? []);
+  clashes.push(...images.clashes, ...layers.clashes, ...features.clashes, ...groups.clashes);
 
   // A feature must not be left in a layer that the other side removed.
   const layerIds = new Set(layers.items.map((l) => l.id));
@@ -378,8 +461,47 @@ export function mergeMaps(base0: MapFile, mine0: MapFile, theirs0: MapFile): Map
     images: images.items,
     layers: kept,
     features: features.items.map((f) => (layerIds.has(f.layer) ? f : { ...f, layer: fallback })),
+    groups: groups.items.map((g) => (layerIds.has(g.layer) ? g : { ...g, layer: fallback })),
   };
-  return { map, clashes };
+  // A member whose group the other side removed, or moved to another layer, is no longer in it.
+  return { map: ordered(repairGroups(map)), clashes };
+}
+
+// ---- Groups ------------------------------------------------------------------------------------
+
+/**
+ * The map with its groups made sound, without refusing anything: a group in a layer that is not
+ * there goes to the first layer; a feature's group that is not there, or is in another layer, is
+ * cleared; a group with no members left is dropped. The same map comes back when nothing was wrong.
+ */
+export function repairGroups(map: MapFile): MapFile {
+  const before = map.groups ?? [];
+  const layerIds = new Set(map.layers.map((l) => l.id));
+  const fallback = map.layers[0]?.id;
+  let groups = before.map((g) =>
+    layerIds.has(g.layer) || !fallback ? g : orderGroup({ ...g, layer: fallback }),
+  );
+  const layerOf = new Map(groups.map((g) => [g.id, g.layer]));
+  let changed = groups.some((g, i) => g !== before[i]);
+  const features = map.features.map((f) => {
+    if (f.group == null || layerOf.get(f.group) === f.layer) return f;
+    changed = true;
+    return orderFeature({ ...f, group: null });
+  });
+  const used = new Set(features.map((f) => f.group).filter((g) => g != null));
+  if (groups.some((g) => !used.has(g.id))) {
+    changed = true;
+    groups = groups.filter((g) => used.has(g.id));
+  }
+  if (!changed) return map;
+  return withGroups({ ...map, features }, groups);
+}
+
+/** The map with this list of groups; the key is left out when there are none. */
+export function withGroups(map: MapFile, groups: MapGroup[]): MapFile {
+  const next: MapFile = { ...map };
+  delete next.groups;
+  return groups.length > 0 ? { ...next, groups } : next;
 }
 
 /** The ids of `list` that are also in `among`, in the order of `list`. */

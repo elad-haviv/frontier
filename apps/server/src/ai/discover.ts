@@ -7,7 +7,13 @@
 import { randomBytes } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { isLined, type MapFeature, type MapFile, makeId } from "@frontier/schema";
+import {
+  isLined,
+  type MapFeature,
+  type MapFile,
+  type MapGroup,
+  makeId,
+} from "@frontier/schema";
 import {
   isExcluded,
   isInAppendix,
@@ -282,6 +288,23 @@ function nearestPoint(map: MapFile, at: readonly number[], f: MapFeature): numbe
 }
 
 /** What is near a place: entries that may be quoted, and names on the map that may not. */
+/**
+ * The groups a place lies in: those with a member zone, among the features given, that holds it.
+ * A realm of three islands holds a point on any of them.
+ */
+export function groupsAt(
+  map: MapFile,
+  at: [number, number],
+  features: readonly MapFeature[],
+): MapGroup[] {
+  const holding = new Set(
+    features
+      .filter((f) => f.group != null && f.kind === "zone" && pointInPolygon(at, f.points))
+      .map((f) => f.group!),
+  );
+  return (map.groups ?? []).filter((g) => holding.has(g.id));
+}
+
 export interface Around {
   given: Given[];
   names: string[];
@@ -346,9 +369,18 @@ export class Discoverer {
     exclude: string | null = null,
   ): Promise<Around> {
     // What is not there yet at the moment shown is not drawn on.
-    const present = map.features.filter(
-      (f) => f.id !== exclude && !(f.span && later.spans.has(f.span)),
+    // A group not there yet takes its members with it.
+    const laterGroups = new Set(
+      (map.groups ?? []).filter((g) => g.span && later.spans.has(g.span)).map((g) => g.id),
     );
+    const present = map.features.filter(
+      (f) =>
+        f.id !== exclude &&
+        !(f.span && later.spans.has(f.span)) &&
+        !(f.group != null && laterGroups.has(f.group)),
+    );
+    // The zones and groups it lies in: a point on any piece of a group is in the group.
+    const groups = groupsAt(map, at, present);
     const isInside = (f: MapFeature) => f.kind === "zone" && pointInPolygon(at, f.points);
     const byDistance = (list: MapFeature[]) =>
       list
@@ -359,7 +391,10 @@ export class Discoverer {
     const nearest = byDistance(withEntry)
       .slice(0, 6)
       .map((x) => x.f);
-    const given = await this.entriesOf([...inside, ...nearest], later.paths);
+    const given = await this.entriesOf(
+      [...groups.filter((g) => g.entry), ...inside, ...nearest],
+      later.paths,
+    );
 
     // Names on the map: of features with no entry, the labels written on it among them.
     const nameOf = (f: MapFeature) =>
@@ -367,7 +402,11 @@ export class Discoverer {
         .replace(/\s+/g, " ")
         .slice(0, 120);
     const named = present.filter((f) => !f.entry && nameOf(f) !== "");
+    const groupName = (g: MapGroup) => (g.label?.trim() ?? "").replace(/\s+/g, " ").slice(0, 120);
     const names = [
+      ...groups
+        .filter((g) => !g.entry && groupName(g) !== "")
+        .map((g) => `- "${groupName(g)}": a place of several pieces the place lies inside`),
       ...named.filter(isInside).map((f) => `- "${nameOf(f)}": a zone the place lies inside`),
       ...byDistance(named.filter((f) => !isInside(f)))
         .slice(0, 10)
@@ -383,7 +422,10 @@ export class Discoverer {
   }
 
   /** The entries of features, and the entries those link to, as the model is given them. */
-  private async entriesOf(features: MapFeature[], later: ReadonlySet<string>): Promise<Given[]> {
+  private async entriesOf(
+    features: { entry: string | null }[],
+    later: ReadonlySet<string>,
+  ): Promise<Given[]> {
     const given: Given[] = [];
     const add = (path: string | null, why: Given["why"]) => {
       if (!path || given.length >= 12 || given.some((g) => g.path === path)) return;

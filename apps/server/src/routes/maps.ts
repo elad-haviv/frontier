@@ -49,7 +49,8 @@ export function mapRoutes(app: FastifyInstance, s: Services): void {
     if (!loaded) throw new ApiError("not_found", "There is no such map.");
     const entries: Record<string, { path: string; title: string }> = {};
     const children: Record<string, string> = {};
-    for (const f of loaded.map.features) {
+    // Groups name their entries and maps of their place as features do.
+    for (const f of [...loaded.map.features, ...(loaded.map.groups ?? [])]) {
       if (f.entry && !(f.entry in entries)) {
         const path = await s.maps.entryPath(f.entry);
         if (path) entries[f.entry] = { path, title: stem(path) };
