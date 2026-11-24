@@ -6,6 +6,7 @@ import {
   MousePointer2,
   Pentagon,
   Redo2,
+  Route,
   Ruler,
   Sparkles,
   Spline,
@@ -22,6 +23,7 @@ const TOOLS: { tool: Tool; label: string; icon: LucideIcon; shortcut: string }[]
   { tool: "path", label: "Path", icon: Spline, shortcut: "map.path" },
   { tool: "zone", label: "Zone", icon: Pentagon, shortcut: "map.zone" },
   { tool: "find", label: "Find areas", icon: WandSparkles, shortcut: "map.find" },
+  { tool: "paths", label: "Find paths", icon: Route, shortcut: "map.paths" },
   { tool: "label", label: "Label", icon: Type, shortcut: "map.label" },
   { tool: "measure", label: "Measure", icon: Ruler, shortcut: "map.measure" },
   { tool: "place", label: "Place with AI", icon: Sparkles, shortcut: "map.place" },
@@ -36,6 +38,7 @@ export function MapTools({
   schematic,
   canPlace,
   findReason,
+  pathsReason,
   onTool,
   snap,
   onSnap,
@@ -51,6 +54,8 @@ export function MapTools({
   canPlace: boolean;
   /** Why Find areas cannot be used, or null when it can. */
   findReason: string | null;
+  /** Why Find paths cannot be used, or null when it can. */
+  pathsReason: string | null;
   onTool: (tool: Tool) => void;
   /** Points of paths and zones snap to others near them. */
   snap: boolean;
@@ -77,6 +82,9 @@ export function MapTools({
           aria-pressed={tool === t.tool}
           {...(t.tool === "find" && findReason
             ? { disabled: true, disabledReason: findReason }
+            : {})}
+          {...(t.tool === "paths" && pathsReason
+            ? { disabled: true, disabledReason: pathsReason }
             : {})}
           onClick={() => onTool(t.tool)}
         />

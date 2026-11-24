@@ -16,15 +16,19 @@ export interface TerrainFeature {
   line: Px[];
 }
 
-/** The map's height picture, for the worker to read. */
+/** The map's height picture, for the worker to read, with the terrain's settings. */
 export interface HeightSource {
   url: string;
   /** Where it lies on the map: as an image's extent. */
   extent: [number, number, number, number];
-  /** Left out: matched to the picture's coast. */
+  /** Black is high. */
+  invert: boolean;
+  /** 0 to 4. */
+  smoothing: number;
+  /** Null: matched to the picture's coast. */
   seaLevel: number | null;
-  /** The height of white in metres, or null. */
-  top: number | null;
+  /** The metres between the lowest grey and the highest, or null when heights are relative. */
+  metres: number | null;
 }
 
 export interface OpenPaths {

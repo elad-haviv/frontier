@@ -17,9 +17,19 @@ import { newItemId } from "./viewUrl.ts";
 
 /**
  * `label` writes words on the map; `place` marks a spot or an area to place features with AI;
- * `find` makes zones from areas found in the map's picture.
+ * `find` makes zones from areas found in the map's picture; `paths` makes paths (rivers, routes,
+ * traced lines) from the picture and the map's heights.
  */
-export type Tool = "select" | "marker" | "path" | "zone" | "measure" | "label" | "place" | "find";
+export type Tool =
+  | "select"
+  | "marker"
+  | "path"
+  | "zone"
+  | "measure"
+  | "label"
+  | "place"
+  | "find"
+  | "paths";
 
 /** What a tap changes: each part that is given is set on the page. */
 export interface Step {

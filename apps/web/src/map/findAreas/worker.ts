@@ -12,9 +12,12 @@ import type { FullPicture } from "./refine.ts";
 import { type AreaOptions, type Areas, findAreas } from "./segment.ts";
 import { goesRound, shiftNear } from "./frame.ts";
 import { zonePx } from "./outline.ts";
+import type { Engine } from "../findPaths/engine.ts";
+import type { PathsRequest } from "../findPaths/protocol.ts";
+import { answerPaths } from "../findPaths/workerSide.ts";
 
 interface Scope {
-  onmessage: ((e: MessageEvent<{ id: number } & Request>) => void) | null;
+  onmessage: ((e: MessageEvent<{ id: number } & (Request | PathsRequest)>) => void) | null;
   postMessage(message: Reply, transfer?: Transferable[]): void;
 }
 const scope = self as unknown as Scope;
@@ -34,6 +37,8 @@ interface Looked {
   bitmap: ImageBitmap | null;
   areas: Areas | null;
   optionsKey: string;
+  /** Find paths' engine for this picture, made when that tool first asks. */
+  paths?: Engine;
 }
 
 const pictures = new Map<string, Promise<Looked>>();
@@ -198,7 +203,13 @@ async function answer(req: Request): Promise<{ value: unknown; transfer?: Transf
 
 scope.onmessage = (e) => {
   const { id, ...req } = e.data;
-  answer(req as Request).then(
+  const answered = req.type.startsWith("paths.")
+    ? answerPaths(req as PathsRequest, {
+        opened: (url) => opened(url, false),
+        full: (shared) => fullPicture(shared as Looked),
+      })
+    : answer(req as Request);
+  answered.then(
     ({ value, transfer }) => scope.postMessage({ id, ok: true, value }, transfer ?? []),
     (err: unknown) =>
       scope.postMessage({

@@ -4155,6 +4155,8 @@ button[data-offline] {
 }
 /* A word over the map that goes by itself, at the foot of the map. */
 .map-hint.map-said {
+  /* Words that pass by themselves are not in the way of the next click on the map. */
+  pointer-events: none;
   top: auto;
   bottom: 0.9rem;
   z-index: 3;

@@ -51,11 +51,15 @@ import { focusIsFree } from "../keys.ts";
 import { type Snapped, snapAt } from "./snap.ts";
 import { pointOn } from "./useMapView.ts";
 
-/** What the Find areas tool hears from the pointer: taps, and where a mouse is. */
+/** What Find areas and Find paths hear from the pointer: taps, and where a mouse is. */
 export interface FindPointer {
   tap(at: Point, how: { alt: boolean; shift: boolean; kind: PointerKind }): void;
   /** Where a mouse is over the map, or null when it left or the hover ended. */
   hover(at: Point | null): void;
+  /** Find paths: the stop of the proposed route under a press, which a drag then moves. */
+  grab?(at: Point, kind: PointerKind): number | null;
+  dragStop?(index: number, at: Point): void;
+  dropStop?(): void;
 }
 
 export function usePointer(p: {
@@ -312,7 +316,7 @@ export function usePointer(p: {
       return;
     }
 
-    if (editing && tool === "find") {
+    if (editing && (tool === "find" || tool === "paths")) {
       const how = { alt: altHeld.current, shift: shiftHeld.current, kind };
       p.find?.current?.tap({ x, y }, how);
       return;
@@ -375,7 +379,7 @@ export function usePointer(p: {
           paintLive();
         }
         hover(effect.target, effect.at);
-        if (editing && tool === "find") p.find?.current?.hover(effect.at);
+        if (editing && (tool === "find" || tool === "paths")) p.find?.current?.hover(effect.at);
         return;
       case "cursor":
         // Set on the canvas directly: the cursor follows every move without drawing the page.
@@ -410,6 +414,10 @@ export function usePointer(p: {
       case "dragTo": {
         const view = viewNow();
         const { target } = effect;
+        if (target.kind === "stop") {
+          p.find?.current?.dragStop?.(target.index, effect.at);
+          return;
+        }
         // A corner, or a point pulled out of a "+", snaps to the paths and zones beside it.
         const snapped =
           target.kind === "corner" || target.kind === "insert"
@@ -531,6 +539,10 @@ export function usePointer(p: {
       const view = viewNow();
       const s = space();
       if (!view || !s) return null;
+      if (editing && tool === "paths") {
+        const stop = p.find?.current?.grab?.(at, kind) ?? null;
+        return stop === null ? null : { kind: "stop", feature: String(stop), index: stop };
+      }
       return pick(
         {
           space: s,
@@ -594,6 +606,9 @@ export function usePointer(p: {
       p.frame.current?.focus({ preventScroll: true, focusVisible: false } as FocusOptions);
     }
     const { before, state } = run(event);
+    if (before.name === "drag" && state.name !== "drag" && before.target.kind === "stop") {
+      p.find?.current?.dropStop?.();
+    }
     // Whatever was pressed keeps the pointer until it is lifted, even off the canvas.
     if (type === "down" && state !== before) {
       (e.target as Element).setPointerCapture(e.pointerId);

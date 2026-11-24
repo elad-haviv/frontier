@@ -231,12 +231,24 @@ export class Engine {
 
     const top = useHeights ? this.heightInfo.top : null;
     const kmPerCell = req.kmPerPx === null ? null : req.kmPerPx * grid.cell;
-    // With a scale and a top height, a slope is a true one; without, the whole range of heights
-    // is taken to rise over a fiftieth of the map's width, which orders routes well enough.
-    const rise =
-      top !== null && kmPerCell !== null
-        ? top / (kmPerCell * 1000)
-        : (0.02 * Math.max(grid.w, grid.h)) / range;
+    // With a scale and real heights, a slope is a true one. With heights that are only relative,
+    // the steepest ground on the map is taken to be a mountain pass (about a 30% slope) and the
+    // rest is scaled from it. A guess is gentler still: its whole range rises over a tenth of the
+    // map's width, so the plain it guesses between the sea and the hills is all but level.
+    let rise: number;
+    if (top !== null && kmPerCell !== null) rise = top / (kmPerCell * 1000);
+    else if (!useHeights) rise = 0.03 * Math.max(grid.w, grid.h);
+    else {
+      const steep: number[] = [];
+      const stride = Math.max(1, Math.floor(n / 40_000));
+      for (let i = grid.w + 1; i < n - grid.w - 1; i += stride) {
+        if (sea[i] || sea[i + 1] || sea[i + grid.w]) continue;
+        steep.push(Math.hypot(heights[i + 1]! - heights[i]!, heights[i + grid.w]! - heights[i]!));
+      }
+      steep.sort((x, y) => x - y);
+      const pass = steep[Math.floor(steep.length * 0.99)] ?? 0;
+      rise = pass > 0 ? 0.3 / pass : 0;
+    }
     let anySea = false;
     for (let i = 0; i < n && !anySea; i++) anySea = sea[i] === 1;
     this.t = {
