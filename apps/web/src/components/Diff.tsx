@@ -1,4 +1,4 @@
-import { diffLines } from "diff";
+import { diffLines, diffWordsWithSpace } from "diff";
 import { useMemo } from "react";
 
 /** Shows what changed between two texts, line by line, with unchanged stretches folded. */
@@ -32,5 +32,46 @@ export function Diff({ before, after }: { before: string; after: string }) {
         </span>
       ))}
     </pre>
+  );
+}
+
+export interface WordPart {
+  kind: "add" | "del" | "same";
+  text: string;
+}
+
+/**
+ * What changed between two passages, word by word, and the share of their words that changed
+ * (0 to 1), which decides whether a suggestion opens showing its changes or its clean text.
+ */
+export function wordChanges(before: string, after: string): { parts: WordPart[]; share: number } {
+  const parts: WordPart[] = diffWordsWithSpace(before, after).map((p) => ({
+    kind: p.added ? "add" : p.removed ? "del" : "same",
+    text: p.value,
+  }));
+  const words = (s: string) => s.split(/\s+/).filter(Boolean).length;
+  let changed = 0;
+  let same = 0;
+  for (const p of parts) {
+    if (p.kind === "same") same += words(p.text);
+    else changed += words(p.text);
+  }
+  return { parts, share: changed + same === 0 ? 0 : changed / (changed + same) };
+}
+
+/** A passage's changes word by word, set as prose: removed words struck, new ones marked. */
+export function WordDiff({ parts }: { parts: WordPart[] }) {
+  return (
+    <>
+      {parts.map((p, i) =>
+        p.kind === "add" ? (
+          <ins key={i}>{p.text}</ins>
+        ) : p.kind === "del" ? (
+          <del key={i}>{p.text}</del>
+        ) : (
+          <span key={i}>{p.text}</span>
+        ),
+      )}
+    </>
   );
 }

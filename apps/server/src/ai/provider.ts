@@ -136,7 +136,10 @@ export class AiProvider {
     }
 
     let attempt = await this.attempt(key.key, model, input);
-    const again = attempt.retry && !(attempt.timedOut && input.retryOnTimeout === false);
+    const again =
+      attempt.retry &&
+      !input.signal?.aborted &&
+      !(attempt.timedOut && input.retryOnTimeout === false);
     if (!attempt.ok && again) attempt = await this.attempt(key.key, model, input);
     if (attempt.stopped) throw new ApiError("ai_stopped", "Stopped.");
     if (!attempt.ok) {

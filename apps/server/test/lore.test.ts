@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { PublishPlan, serialiseMap, type MapFile, UnpublishedResponse } from "@frontier/schema";
 import { lookUp, plainForQuotes } from "../src/ai/lore.js";
 import { makeTestApp, type TestApp } from "./helpers/app.js";
@@ -650,6 +650,81 @@ describe("writing help", () => {
     expect(p.calls[0]!.body.messages[1]!.content).toContain(
       "Request: Write it as a legend told by an elder.",
     );
+  });
+
+  it("fixes spelling and grammar only, when asked with the ready-made request", async () => {
+    const p = await start([{ text: "Fixed." }]);
+    await t.post("/api/write/rewrite", { path: NIRANI, passage: "Som wrds.", how: "fix" });
+    expect(p.calls[0]!.body.messages[1]!.content).toContain(
+      "Request: Correct spelling, grammar and punctuation only",
+    );
+  });
+
+  it("asks for a different suggestion when given the earlier ones", async () => {
+    const p = await start([{ text: "A third way." }]);
+    const res = await t.post("/api/write/rewrite", {
+      path: NIRANI,
+      passage: "Some words.",
+      how: "shorter",
+      previous: ["One way.", "Another way."],
+    });
+    expect(res.statusCode, res.body).toBe(200);
+    const sent = p.calls[0]!.body.messages[1]!.content;
+    expect(sent).toContain("Write a\ndifferent one");
+    expect(sent).toContain("--- Suggestion 1\nOne way.");
+    expect(sent).toContain("--- Suggestion 2\nAnother way.");
+  });
+
+  it("changes a suggestion further, with the passage as it is given as context", async () => {
+    const p = await start([{ text: "Refined." }]);
+    const res = await t.post("/api/write/rewrite", {
+      path: NIRANI,
+      passage: "The original words.",
+      how: "shorter",
+      refine: { suggestion: "The short words.", how: "Keep the first word." },
+    });
+    expect(res.statusCode, res.body).toBe(200);
+    const sent = p.calls[0]!.body.messages[1]!.content;
+    expect(sent).toContain("The passage as it is in the entry:\nThe original words.");
+    expect(sent).toContain("=== Passage\nThe short words.\n=== End of passage");
+    expect(sent).toContain("Request: Keep the first word.");
+  });
+
+  it("stops the provider call when asked to, and does not send it again", async () => {
+    let calls = 0;
+    let aborted = false;
+    const fake: typeof fetch = async (input, init) => {
+      if (String(input).endsWith("/models")) return Response.json({ data: [] });
+      calls++;
+      return new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () => {
+          aborted = true;
+          reject(init.signal!.reason);
+        });
+      });
+    };
+    t = await makeTestApp(SECRETS, { fetch: fake, settleMs: 0 });
+    await t.login();
+    t.repo.pushFromOutside(NOTES);
+    await t.services.sync();
+    await t.put("/api/settings/ai", {
+      key: "sk-or-test-key-1234",
+      models: { conversation: MODEL },
+    });
+    const stop = new AbortController();
+    const asked = t.services.writing.rewrite({
+      path: NIRANI,
+      passage: "Some words.",
+      before: "",
+      after: "",
+      how: "shorter",
+      signal: stop.signal,
+    });
+    await vi.waitFor(() => expect(calls).toBe(1));
+    stop.abort();
+    await expect(asked).rejects.toThrow("stopped");
+    expect(aborted).toBe(true);
+    expect(calls).toBe(1);
   });
 
   it("is off without a model, and refuses what is not an entry", async () => {

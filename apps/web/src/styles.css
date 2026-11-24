@@ -3404,33 +3404,230 @@ input.map-title {
   font-size: 0.85rem;
   overflow-wrap: anywhere;
 }
-.writing-hows,
-.writing-own {
+/* Writing help's card, under the passage it works on (stage 17) */
+.cm-help-widget {
+  padding: 0.25rem 1rem 0.75rem;
+}
+.help-card {
+  max-width: 42rem;
+  padding: 0.7rem 0.9rem 0.8rem;
+  border: 1px solid var(--rule);
+  border-left: 3px solid var(--accent);
+  border-radius: 6px;
+  background: var(--paper-raised);
+  box-shadow: 0 4px 16px rgba(35, 32, 27, 0.08);
+  color: var(--ink);
+  font: 0.95rem/1.5 var(--sans);
+  white-space: normal;
+  cursor: auto;
+}
+.help-card-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+  color: var(--ink-soft);
+  font-size: 0.85rem;
+}
+.help-card-head b {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  color: var(--accent);
+  font-weight: 600;
+}
+.help-card-space {
+  flex: 1;
+}
+.help-card-comment {
+  overflow-wrap: anywhere;
+}
+.help-card-count {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+}
+.help-card-count button {
+  min-width: 1.75rem;
+  min-height: 1.75rem;
+  padding: 0;
+  font-size: 1.1rem;
+}
+.help-card-toggle {
+  display: inline-flex;
+  overflow: hidden;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+}
+.help-card-toggle button {
+  padding: 0.2rem 0.6rem;
+  border: 0;
+  background: none;
+  color: var(--ink-soft);
+  font-size: 0.8rem;
+}
+.help-card-toggle button[aria-pressed="true"] {
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
+}
+.help-card-ask {
+  display: flex;
+  gap: 0.5rem;
+}
+.help-card-ask input {
+  flex: 1;
+  min-width: 0;
+  min-height: 2.5rem;
+  padding: 0 0.7rem;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  background: var(--paper);
+  color: var(--ink);
+  font: inherit;
+  font-size: 1rem;
+}
+.help-card-ask input:focus {
+  border-color: var(--accent);
+  outline: none;
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.help-card-chips {
   display: flex;
   flex-wrap: wrap;
   gap: 0.4rem;
-  margin: 0.5rem 0;
+  margin-top: 0.6rem;
 }
-.writing-hows button,
-.writing-own button {
-  min-height: 2.5rem;
-}
-.writing-own input {
-  flex: 1 1 10rem;
-  min-width: 0;
-  min-height: 2.5rem;
-  padding: 0 0.6rem;
+.help-card-chip {
+  min-height: 2.25rem;
+  padding: 0 0.8rem;
   border: 1px solid var(--rule);
-  border-radius: 4px;
+  border-radius: 999px;
   background: var(--paper);
-  font-size: 1rem;
-}
-.writing-answer p {
-  margin: 0.3rem 0;
-  white-space: pre-wrap;
-}
-.writing-answer .guess-text {
   color: var(--ink-soft);
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+.help-card-chip:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.help-card-suggestion {
+  padding: 0.6rem 0.8rem;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  background: var(--paper);
+  font: 1.05rem/1.65 var(--serif);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.help-card-suggestion ins {
+  border-radius: 2px;
+  background: color-mix(in srgb, #3a8a4d 20%, transparent);
+  color: color-mix(in srgb, #2f6b3a 85%, var(--ink));
+  text-decoration: none;
+}
+.help-card-suggestion del {
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--warn) 16%, transparent);
+  color: color-mix(in srgb, var(--warn) 80%, var(--ink));
+  text-decoration-thickness: 1px;
+}
+.help-card-result-actions,
+.help-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0.6rem 0 0;
+}
+.help-card-result-actions button,
+.help-card-actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  min-height: 2.5rem;
+}
+.help-card-more {
+  margin-left: auto;
+}
+.help-card-rule {
+  margin: 0.4rem 0 0.6rem;
+  font-size: 0.8rem;
+}
+.help-card-note {
+  margin: 0;
+}
+.help-card-settings {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.5rem;
+  padding: 0 0.9rem;
+  border-radius: 4px;
+  background: var(--accent);
+  color: var(--paper-raised);
+  font-size: 0.9rem;
+  font-weight: 600;
+  text-decoration: none;
+}
+.help-card-wait {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  color: var(--ink-soft);
+}
+.help-card-wait button {
+  margin-left: auto;
+  min-height: 2.5rem;
+}
+.help-card-dots {
+  display: inline-flex;
+  gap: 0.25rem;
+}
+.help-card-dots i {
+  width: 0.4rem;
+  height: 0.4rem;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: help-card-dot 1.2s infinite ease-in-out;
+}
+.help-card-dots i:nth-child(2) {
+  animation-delay: 0.2s;
+}
+.help-card-dots i:nth-child(3) {
+  animation-delay: 0.4s;
+}
+@keyframes help-card-dot {
+  0%,
+  100% {
+    opacity: 0.3;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .help-card-dots i {
+    animation: none;
+    opacity: 0.6;
+  }
+}
+/* On a phone the choices are a row of big buttons, Keep the widest. */
+@media (max-width: 47.99rem) {
+  .cm-help-widget {
+    padding: 0.25rem 0.5rem 0.75rem;
+  }
+  .help-card-result-actions button {
+    min-height: 2.75rem;
+  }
+  .help-card-keep {
+    flex: 2;
+    justify-content: center;
+  }
+  .help-card-rule {
+    order: 1;
+  }
 }
 
 /* Comments on a passage */

@@ -4,7 +4,6 @@ import { EditorSelection } from "@codemirror/state";
 import { type FormEvent, useState } from "react";
 import { api, ApiFailure, type PassageComment } from "../api.ts";
 import { type Anchor, locate } from "./anchor.ts";
-import { Diff } from "./Diff.tsx";
 
 const failed = (err: unknown, fallback: string) =>
   err instanceof ApiFailure ? err.message : fallback;
@@ -13,7 +12,8 @@ const short = (s: string, n: number) => (s.length > n ? `${s.slice(0, n)} …` :
 
 /**
  * The comments on an entry: adding one on a passage, going to a passage, marking a comment done,
- * and, for a comment for the AI, its rewrite of the passage, shown as a difference first.
+ * and, for a comment for the AI, a suggested change, shown in the writing help card under its
+ * passage.
  */
 export function CommentsPanel(p: {
   view: EditorView;
@@ -23,13 +23,14 @@ export function CommentsPanel(p: {
   adding: (Anchor & { from: number; to: number }) | null;
   /** Whether a model is chosen, so a comment can be for the AI. */
   canAi: boolean;
+  /** Opens the writing help card on a comment's passage, with the change the comment asks for. */
+  onSuggest: (c: PassageComment, at: { from: number; to: number }) => void;
   onChanged: () => void;
   onClose: () => void;
 }) {
   const [text, setText] = useState("");
   const [forWhom, setForWhom] = useState<"me" | "ai">("me");
   const [adding, setAdding] = useState(p.adding);
-  const [work, setWork] = useState<{ id: string; text: string } | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -81,7 +82,6 @@ export function CommentsPanel(p: {
     setError(null);
     try {
       await api.removeComment(id);
-      if (work?.id === id) setWork(null);
       p.onChanged();
     } catch (err) {
       setError(failed(err, "The comment could not be marked done."));
@@ -103,34 +103,10 @@ export function CommentsPanel(p: {
     }
   }
 
-  async function workOn(c: PassageComment) {
+  function suggest(c: PassageComment) {
     setError(null);
-    setWork(null);
     const at = find(c);
-    if (!at) return;
-    setBusy(c.id);
-    const text = doc();
-    try {
-      const res = await api.workOnComment(c.id, {
-        before: text.slice(Math.max(0, at.from - 1200), at.from),
-        after: text.slice(at.to, at.to + 1200),
-      });
-      setWork({ id: c.id, text: res.text });
-    } catch (err) {
-      setError(failed(err, "Nothing came back."));
-    } finally {
-      setBusy(null);
-    }
-  }
-
-  /** Puts the AI's work in place of the passage, if the passage is still there, and closes it. */
-  async function replace(c: PassageComment) {
-    if (!work || work.id !== c.id) return;
-    const at = find(c);
-    if (!at) return;
-    p.view.dispatch({ changes: { from: at.from, to: at.to, insert: work.text } });
-    setWork(null);
-    await done(c.id);
+    if (at) p.onSuggest(c, at);
   }
 
   const text_ = doc();
@@ -221,9 +197,9 @@ export function CommentsPanel(p: {
                     type="button"
                     className="quiet"
                     disabled={busy !== null}
-                    onClick={() => void workOn(c)}
+                    onClick={() => suggest(c)}
                   >
-                    {busy === c.id ? "Working…" : "Work on it"}
+                    Suggest a change
                   </ActionButton>
                 )}
                 {(c.for === "ai" || p.canAi) && (
@@ -245,19 +221,6 @@ export function CommentsPanel(p: {
                   Done
                 </ActionButton>
               </p>
-              {work?.id === c.id && (
-                <div className="comment-work">
-                  <Diff before={c.quote} after={work.text} />
-                  <p className="change-actions">
-                    <button type="button" className="primary" onClick={() => void replace(c)}>
-                      Replace
-                    </button>
-                    <button type="button" className="plain" onClick={() => setWork(null)}>
-                      Discard
-                    </button>
-                  </p>
-                </div>
-              )}
             </li>
           );
         })}

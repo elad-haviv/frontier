@@ -236,11 +236,17 @@ test("writes that go straight to the server wait for a connection, and say so", 
     await expect(page.getByRole("tooltip")).toContainText("Needs a connection");
     await expect(page.getByRole("button", { name: "Add an image" })).toBeDisabled();
   } else {
+    // Where the bar has room for the things to insert but not for Comment (a desktop beside the
+    // side bar, now that Help keeps its name on the bar), the image button is on the bar.
+    const image = page.locator(".edit-toolbar").getByRole("button", { name: "Add an image" });
+    const imageOnBar = await image.isVisible();
+    if (imageOnBar) await expect(image).toBeDisabled();
     await page.getByRole("button", { name: "More tools" }).click();
     const item = page.getByRole("menuitem", { name: /^Comment/ });
     await expect(item).toBeDisabled();
     await expect(item).toContainText("Needs a connection");
-    await expect(page.getByRole("menuitem", { name: /^Add an image/ })).toBeDisabled();
+    if (!imageOnBar)
+      await expect(page.getByRole("menuitem", { name: /^Add an image/ })).toBeDisabled();
     await page.keyboard.press("Escape");
   }
 

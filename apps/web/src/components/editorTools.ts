@@ -19,15 +19,16 @@ import {
   ListTodo,
   type LucideIcon,
   MessageSquarePlus,
+  MessagesSquare,
   Minus,
   Pilcrow,
   Redo2,
+  Sparkles,
   SquareCode,
   Strikethrough,
   TextQuote,
   Underline,
   Undo2,
-  WandSparkles,
 } from "lucide-react";
 import {
   type BlockStyle,
@@ -44,8 +45,10 @@ export interface ToolHandlers {
   onLink: () => void;
   onImage: () => void;
   onComment?: (() => void) | undefined;
-  /** Absent while no model is chosen. */
-  onWrite?: (() => void) | undefined;
+  /** Writing help on the selection or the cursor's paragraph; shown even with no model chosen. */
+  onHelp?: (() => void) | undefined;
+  /** Asks the lore about the selection or the cursor's paragraph, on the Ask page. */
+  onAsk?: (() => void) | undefined;
 }
 
 export type ToolGroup = "inline" | "lists" | "insert" | "assist" | "history";
@@ -61,6 +64,12 @@ export interface Tool {
   online?: boolean;
   /** Why it is disabled with no connection, when it is said more plainly than "Needs a connection". */
   offlineReason?: string;
+  /** Its name in a menu, when that differs from the button's. */
+  menuLabel?: string;
+  /** Offered in the menus only, not as a button in the toolbar. */
+  menuOnly?: boolean;
+  /** Always on the toolbar with its name, never folded into "⋯". */
+  pinned?: boolean;
   act: (view: EditorView) => void;
 }
 
@@ -197,15 +206,28 @@ export function tools(h: ToolHandlers): Tool[] {
       act: open,
     });
   }
-  if (h.onWrite) {
-    const open = h.onWrite;
+  if (h.onHelp) {
+    // Not marked online: with no connection it still opens, to say so.
     list.push({
-      id: "writing",
-      label: "Writing help",
-      icon: WandSparkles,
+      id: "help",
+      label: "Help",
+      menuLabel: "Help with this…",
+      icon: Sparkles,
+      shortcut: "editor.help",
+      group: "assist",
+      pinned: true,
+      act: h.onHelp,
+    });
+  }
+  if (h.onAsk) {
+    list.push({
+      id: "ask",
+      label: "Ask the lore about this…",
+      icon: MessagesSquare,
       group: "assist",
       online: true,
-      act: open,
+      menuOnly: true,
+      act: h.onAsk,
     });
   }
   list.push(
