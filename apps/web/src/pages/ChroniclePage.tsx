@@ -1,7 +1,7 @@
 import { OfflineCopy, useReadAgain } from "../components/OfflineCopy.tsx";
 import { markOpened, servedFromDevice } from "../offline/copy.ts";
 import { useNeedsConnection } from "../sync/connection.ts";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { type ChronicleFile, mergeChronicles } from "@frontier/schema";
 import { api, ApiFailure, chronicleUrl } from "../api.ts";
@@ -12,7 +12,16 @@ import { OrderView } from "../components/chronicle/OrderView.tsx";
 import { ScaleView } from "../components/chronicle/ScaleView.tsx";
 import { ShiftForm } from "../components/chronicle/ShiftForm.tsx";
 import { SpanForm } from "../components/chronicle/SpanForm.tsx";
-import { newSpan, spanName, withSpan, work } from "../components/chronicle/model.ts";
+import {
+  type Change,
+  newSpan,
+  placeFromStatements,
+  spanName,
+  withSpan,
+  withTies,
+  work,
+} from "../components/chronicle/model.ts";
+import { placeable } from "@frontier/time";
 import { useDialogs } from "../components/Dialogs.tsx";
 import { useRefresh } from "../components/Shell.tsx";
 import { SaveStatus, useSaveState } from "../components/ui/SaveStatus.tsx";
@@ -33,6 +42,27 @@ function useNarrow(): boolean {
     return () => query.removeEventListener("change", on);
   }, []);
   return narrow;
+}
+
+const OFFER_KEY = (id: string) => `frontier.chronicle.placeOffer.${id}`;
+
+/** Whether the offer to place events from statements was answered on this device. */
+function seenOffer(id: string): boolean {
+  try {
+    return localStorage.getItem(OFFER_KEY(id)) !== null;
+  } catch {
+    return false;
+  }
+}
+
+/** Remembers that the offer was answered, so it is made once. */
+function markOffer(id: string): true {
+  try {
+    localStorage.setItem(OFFER_KEY(id), "1");
+  } catch {
+    // Without storage the offer is made again next time, which does no harm.
+  }
+  return true;
 }
 
 /** One chronicle: its views, its lists, and the form for the selected span. */
@@ -127,6 +157,19 @@ function Chronicle({ id }: { id: string }) {
   });
   const chronicle = file.value;
   const worked = useMemo(() => (chronicle ? work(chronicle) : null), [chronicle]);
+  // Every change runs through the ties, so what is tied follows what it is tied to.
+  const fileChange = file.change;
+  const change = useCallback<Change>(
+    (fn, tag) => fileChange((c) => withTies(fn(c)), tag),
+    [fileChange],
+  );
+  // A merge with another device's copy, or a copy that predates a move, can leave a tied number
+  // behind: it is worked out again and saved.
+  useEffect(() => {
+    if (chronicle && withTies(chronicle) !== chronicle) fileChange(withTies, "ties");
+  }, [chronicle, fileChange]);
+  const offers = useMemo(() => (chronicle ? placeable(chronicle) : []), [chronicle]);
+  const [offerSeen, setOfferSeen] = useState(() => seenOffer(id));
   // Opened from the device's copy: the server's copy is taken in once it answers, unless a change
   // waits here, which the queue's merge brings together with it.
   useReadAgain(offlineAt, `/api/chronicles/${id}`, () => {
@@ -255,6 +298,26 @@ function Chronicle({ id }: { id: string }) {
           </button>
         </p>
       )}
+      {offers.length > 0 && !offerSeen && (
+        <p className="banner ch-offer-banner" role="status">
+          {offers.length === 1
+            ? "1 event can be placed from what you said."
+            : `${offers.length} events can be placed from what you said.`}{" "}
+          <button
+            type="button"
+            className="quiet"
+            onClick={() => {
+              change(placeFromStatements);
+              setOfferSeen(markOffer(id));
+            }}
+          >
+            Place them
+          </button>{" "}
+          <button type="button" className="plain" onClick={() => setOfferSeen(markOffer(id))}>
+            Not now
+          </button>
+        </p>
+      )}
       {saving.state === "failed" && file.error && (
         <p className="banner" role="alert">
           {file.error}
@@ -367,24 +430,19 @@ function Chronicle({ id }: { id: string }) {
                 openLane={openLane}
                 onOpenLane={setLane}
               />
-              <ShiftForm chronicle={chronicle} change={file.change} />
+              <ShiftForm chronicle={chronicle} change={change} />
             </>
           )}
           {tab === "compare" && (
-            <CompareView
-              chronicle={chronicle}
-              worked={worked}
-              change={file.change}
-              onSelect={select}
-            />
+            <CompareView chronicle={chronicle} worked={worked} change={change} onSelect={select} />
           )}
           {tab === "flags" && (
-            <Flags chronicle={chronicle} worked={worked} change={file.change} onSelect={select} />
+            <Flags chronicle={chronicle} worked={worked} change={change} onSelect={select} />
           )}
           {tab === "setup" && (
             <>
-              <LaneList chronicle={chronicle} change={file.change} />
-              <UnitList chronicle={chronicle} change={file.change} />
+              <LaneList chronicle={chronicle} change={change} />
+              <UnitList chronicle={chronicle} change={change} />
             </>
           )}
           <p className="ch-note muted">
@@ -415,7 +473,7 @@ function Chronicle({ id }: { id: string }) {
               chronicle={chronicle}
               worked={worked}
               span={span}
-              change={file.change}
+              change={change}
               onSelect={select}
               entry={
                 linking[span.id]

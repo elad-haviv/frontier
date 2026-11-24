@@ -63,6 +63,23 @@ describe("the chronicle file", () => {
     expect(serialiseChronicle(shuffled)).toBe(text);
   });
 
+  it("stores ties after a span's own keys, and leaves files without ties as they were", () => {
+    const before = serialiseChronicle(base);
+    expect(before).not.toContain("startFrom");
+    const tied = edit((c) => {
+      c.spans[1]!.start = { words: "with First Landing", low: 0, high: 0 };
+      c.spans[1]!.startFrom = { span: "s1", edge: "start", plus: { low: 0, high: 0 } };
+    });
+    const text = serialiseChronicle(tied);
+    expect(text).toContain(
+      '"note":"","startFrom":{"span":"s1","edge":"start","plus":{"low":0,"high":0}}}',
+    );
+    const back = parseChronicle(text);
+    expect(back.ok && back.chronicle.spans[1]!.startFrom).toEqual(tied.spans[1]!.startFrom);
+    const backwards = text.replace('"low":0,"high":0}}', '"low":5,"high":0}}');
+    expect(parseChronicle(backwards).ok).toBe(false);
+  });
+
   it("keeps keys and relation kinds it does not know", () => {
     const text = serialiseChronicle(base)
       .replace('"kind":"starts_with","b":"s1"}', '"kind":"mirrors","b":"s1","strength":2}')

@@ -42,6 +42,18 @@ export const ChronicleUnit = z
   .passthrough();
 export type ChronicleUnit = z.infer<typeof ChronicleUnit>;
 
+/** A tie: another span's start or end, plus a lowest and a highest number of years. */
+export const SpanTie = z
+  .object({
+    span: ItemId,
+    edge: z.enum(["start", "end"]),
+    plus: z
+      .object({ low: z.number(), high: z.number() })
+      .refine((p) => p.low <= p.high, "The lowest value is above the highest."),
+  })
+  .passthrough();
+export type SpanTie = z.infer<typeof SpanTie>;
+
 export const ChronicleSpan = z
   .object({
     id: ItemId,
@@ -55,6 +67,13 @@ export const ChronicleSpan = z
     /** The id of the entry this span stands for, or null. */
     entry: z.string().nullable(),
     note: z.string(),
+    /**
+     * Ties (stage 17): the start or end follows a point of another span. `start` and `end` still
+     * hold the worked-out numbers, so whatever does not know ties reads the same. Optional, so
+     * older files are unchanged.
+     */
+    startFrom: SpanTie.nullish(),
+    endFrom: SpanTie.nullish(),
   })
   .passthrough();
 export type ChronicleSpan = z.infer<typeof ChronicleSpan>;
@@ -151,7 +170,19 @@ const TOP = [
 const ITEM_KEYS: Record<string, string[]> = {
   lanes: ["id", "name", "color", "clock"],
   units: ["id", "name", "low", "high"],
-  spans: ["id", "lane", "name", "point", "start", "end", "length", "entry", "note"],
+  spans: [
+    "id",
+    "lane",
+    "name",
+    "point",
+    "start",
+    "end",
+    "length",
+    "entry",
+    "note",
+    "startFrom",
+    "endFrom",
+  ],
   relations: ["id", "a", "kind", "b"],
 };
 
