@@ -1,4 +1,4 @@
-import { extentProblem, type MapFile, wholeExtent } from "@frontier/schema";
+import { extentProblem, type MapFeature, type MapFile, wholeExtent } from "@frontier/schema";
 import { type Dispatch, type ReactNode, type SetStateAction, useEffect, useState } from "react";
 import { ArrowDown, ArrowUp, ImagePlus, LocateFixed, Trash2 } from "lucide-react";
 import { newItemId } from "../../map/viewUrl.ts";
@@ -8,6 +8,7 @@ import { useDialogs } from "../Dialogs.tsx";
 import { Icon } from "../ui/Icon.tsx";
 import { IconButton } from "../ui/IconButton.tsx";
 import { Menu, MenuItem } from "../ui/Menu.tsx";
+import { LayerTree } from "./LayerTree.tsx";
 
 const EXTENT_LABELS = {
   sphere: ["West", "South", "East", "North"],
@@ -84,7 +85,15 @@ export function LayerPanel({
   timeLine,
   setup,
   legend,
+  selected,
+  onSelect,
+  titleOf,
 }: {
+  /** The feature selected on the map, shown picked in the layers. */
+  selected: string | null;
+  /** Selects a feature from the layers, and centres the map on it. */
+  onSelect: (id: string) => void;
+  titleOf: (feature: MapFeature) => string;
   /** The legend of the styles drawn now, at the top. */
   legend?: ReactNode;
   /** The map's own settings while editing: what it lies under, and whether it is schematic. */
@@ -96,7 +105,7 @@ export function LayerPanel({
   shownImages: Set<string>;
   editing: boolean;
   activeLayer: string;
-  /** Changes which layers are hidden and which images are shown. */
+  /** Changes which layers and features are hidden, and which images are shown. */
   onHidden: Dispatch<SetStateAction<Set<string>>>;
   onShownImages: Dispatch<SetStateAction<Set<string>>>;
   onActive: (id: string) => void;
@@ -107,7 +116,6 @@ export function LayerPanel({
     if (!next.delete(item)) next.add(item);
     return next;
   };
-  const onToggleLayer = (layer: string) => onHidden((h) => toggle(h, layer));
   const onToggleImage = (image: string) => onShownImages((s) => toggle(s, image));
   /** Adds the vault's image at this path to the map, and shows it. */
   const onAddImage = (path: string) => {
@@ -126,6 +134,7 @@ export function LayerPanel({
     onChange({
       ...map,
       layers: map.layers.map((l) => ({ ...l, visible: !hidden.has(l.id) })),
+
       images: map.images.map((i) => ({ ...i, visible: shownImages.has(i.id) })),
     });
   const dialogs = useDialogs();
@@ -155,40 +164,6 @@ export function LayerPanel({
     [images[at], images[to]] = [images[to]!, images[at]!];
     onChange({ ...map, images });
   }
-  const setLayer = (id: string, change: Partial<MapFile["layers"][number]>) =>
-    onChange({ ...map, layers: map.layers.map((l) => (l.id === id ? { ...l, ...change } : l)) });
-
-  async function removeLayer(id: string) {
-    const at = map.layers.findIndex((l) => l.id === id);
-    const target = map.layers[at === 0 ? 1 : at - 1];
-    if (!target) return;
-    const count = map.features.filter((f) => f.layer === id).length;
-    if (count > 0) {
-      const ok = await dialogs.confirm({
-        title: "Delete this layer?",
-        body: `Its ${count} features move to "${target.name}".`,
-        action: "Delete the layer",
-        danger: true,
-      });
-      if (!ok) return;
-    }
-    onChange({
-      ...map,
-      layers: map.layers.filter((l) => l.id !== id),
-      features: map.features.map((f) => (f.layer === id ? { ...f, layer: target.id } : f)),
-    });
-    if (activeLayer === id) onActive(target.id);
-  }
-
-  function move(id: string, by: number) {
-    const at = map.layers.findIndex((l) => l.id === id);
-    const to = at + by;
-    if (to < 0 || to >= map.layers.length) return;
-    const layers = [...map.layers];
-    [layers[at], layers[to]] = [layers[to]!, layers[at]!];
-    onChange({ ...map, layers });
-  }
-
   return (
     <aside className="layer-panel" aria-label="Images and layers">
       {legend}
@@ -284,91 +259,20 @@ export function LayerPanel({
           )}
         </>
       )}
-      <h3>Layers</h3>
-      <ul>
-        {map.layers.map((layer, i) => (
-          <li key={layer.id} className={editing && layer.id === activeLayer ? "is-active" : ""}>
-            {editing && layer.id === activeLayer && (
-              <span className="drawing-into">Drawing into</span>
-            )}
-            <label>
-              <input
-                type="checkbox"
-                aria-label={`Show ${layer.name}`}
-                checked={!hidden.has(layer.id)}
-                onChange={() => onToggleLayer(layer.id)}
-              />
-              {!editing && (
-                <>
-                  <span className="swatch" style={{ background: layer.color }} /> {layer.name}
-                </>
-              )}
-            </label>
-            {editing && (
-              <>
-                <input
-                  type="color"
-                  aria-label={`Colour of ${layer.name}`}
-                  value={layer.color}
-                  onChange={(e) => setLayer(layer.id, { color: e.target.value })}
-                />
-                <input
-                  type="text"
-                  aria-label="Layer name"
-                  value={layer.name}
-                  onFocus={() => onActive(layer.id)}
-                  onChange={(e) => setLayer(layer.id, { name: e.target.value })}
-                />
-                <IconButton
-                  label="Move up"
-                  icon={ArrowUp}
-                  size="sm"
-                  className="plain"
-                  disabled={i === 0}
-                  disabledReason="It is the first layer"
-                  onClick={() => move(layer.id, -1)}
-                />
-                <IconButton
-                  label="Move down"
-                  icon={ArrowDown}
-                  size="sm"
-                  className="plain"
-                  disabled={i === map.layers.length - 1}
-                  disabledReason="It is the last layer"
-                  onClick={() => move(layer.id, 1)}
-                />
-                <Menu label={`More for ${layer.name}`} className="plain row-more">
-                  <MenuItem
-                    icon={Trash2}
-                    danger
-                    disabled={map.layers.length === 1}
-                    disabledReason="A map keeps at least one layer"
-                    onSelect={() => void removeLayer(layer.id)}
-                  >
-                    {`Delete ${layer.name}`}
-                  </MenuItem>
-                </Menu>
-              </>
-            )}
-          </li>
-        ))}
-      </ul>
+      <LayerTree
+        map={map}
+        editing={editing}
+        hidden={hidden}
+        onHidden={onHidden}
+        activeLayer={activeLayer}
+        onActive={onActive}
+        onChange={onChange}
+        selected={selected}
+        onSelect={onSelect}
+        titleOf={titleOf}
+      />
       {editing && (
         <p className="change-actions">
-          <button
-            type="button"
-            className="quiet"
-            onClick={() => {
-              const id = newItemId();
-              onChange({
-                ...map,
-                layers: [...map.layers, { id, name: "New layer", visible: true, color: "#2f5d8a" }],
-              });
-              onActive(id);
-            }}
-          >
-            + Add a layer
-          </button>
           <button type="button" className="quiet" onClick={onKeepAsOpening}>
             Open the map like this
           </button>

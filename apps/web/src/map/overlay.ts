@@ -14,7 +14,13 @@ import {
   zoneOnPlate,
   zonePolygon,
 } from "@frontier/geo";
-import type { MapFeature, MapFile, MapStyle } from "@frontier/schema";
+import {
+  layerTree,
+  lockedWithin,
+  type MapFeature,
+  type MapFile,
+  type MapStyle,
+} from "@frontier/schema";
 import { geoContains, geoOrthographic, geoPath } from "d3-geo";
 import type { PointerKind } from "./gesture.ts";
 import { outlineOf, PLUS_SIZE, plusHandles } from "./handles.ts";
@@ -31,8 +37,11 @@ import {
 export interface OverlayInput {
   map: MapFile;
   view: View;
-  /** Ids of layers that are not shown. */
-  hidden: Set<string>;
+  /**
+   * Ids of what is not shown: layers (a hidden layer's sublayers must be in it too, as
+   * `hiddenWithin` gives) and single features.
+   */
+  hidden: ReadonlySet<string>;
   selected: string | null;
   /** The corner of the selected path or zone that is picked, if any. */
   selectedVertex: number | null;
@@ -283,9 +292,10 @@ export function drawOverlay(ctx: CanvasRenderingContext2D, input: OverlayInput):
 
   const shapes: DrawnShape[] = [];
   const colours = new Map(map.layers.map((l) => [l.id, l.color]));
-  const order = new Map(map.layers.map((l, i) => [l.id, i]));
+  // Layers are drawn in the order of their tree: a layer, then its sublayers over it.
+  const order = new Map(layerTree(map.layers).map((n, i) => [n.layer.id, i]));
   const features = map.features
-    .filter((f) => !input.hidden.has(f.layer))
+    .filter((f) => !input.hidden.has(f.layer) && !input.hidden.has(f.id))
     .sort((a, b) => (order.get(a.layer) ?? 0) - (order.get(b.layer) ?? 0));
 
   /** Sets the strength for one feature, and says whether it is undated; `plain` puts it back. */
@@ -470,8 +480,10 @@ export function drawOverlay(ctx: CanvasRenderingContext2D, input: OverlayInput):
 
   plain();
 
-  // Corner handles of the selected path or zone, and its "+" handles between them.
-  const chosen = features.find((f) => f.id === input.selected);
+  // Corner handles of the selected path or zone, and its "+" handles between them; none for a
+  // feature in a locked layer, which cannot be changed on the map.
+  const locked = lockedWithin(map.layers);
+  const chosen = features.find((f) => f.id === input.selected && !locked.has(f.layer));
   if (input.editing && chosen && chosen.kind !== "marker" && input.pluses) {
     for (const h of plusHandles(map.space, view, chosen, input.pluses)) {
       for (const shift of view.repeats()) plus(ctx, [h.screen[0] + shift, h.screen[1]]);
@@ -517,5 +529,8 @@ export function drawOverlay(ctx: CanvasRenderingContext2D, input: OverlayInput):
       ctx.fill();
     }
   }
-  return shapes;
+  // A feature in a locked layer is drawn but cannot be found by a tap: what lies under it can.
+  if (locked.size === 0) return shapes;
+  const layerOf = new Map(features.map((f) => [f.id, f.layer]));
+  return shapes.filter((s) => !locked.has(layerOf.get(s.id) ?? ""));
 }

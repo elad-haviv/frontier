@@ -1,0 +1,263 @@
+/* The Layers tab's tree (16c): layers, their features and sublayers, as a drawing program shows them. */
+.layer-tree {
+  margin: 0 0 0.7rem;
+}
+.lt-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin: 0 0 0.2rem;
+}
+.lt-head h3 {
+  margin: 0;
+}
+.lt-rows {
+  display: grid;
+  /* One column no wider than the tab: long names are cut short, not scrolled sideways. */
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1px;
+}
+.lt-row {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  min-height: 2.1rem;
+  padding: 0 0.15rem 0 calc(0.2rem + var(--depth, 0) * 1.05rem);
+  border-radius: 5px;
+  border: 1px solid transparent;
+  color: var(--ink);
+  cursor: default;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+.lt-row:hover {
+  background: var(--paper-raised);
+}
+.lt-row:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.lt-layer {
+  font-weight: 600;
+}
+.lt-feature {
+  font-size: 0.9rem;
+  color: var(--ink-soft);
+}
+/* The layer new features go into: only a highlight, no words. */
+.lt-row.is-current {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+.lt-row.is-picked {
+  background: var(--accent-soft);
+  color: var(--ink);
+}
+.lt-row.is-off .lt-name,
+.lt-row.is-off .lt-kind,
+.lt-row.is-off .lt-swatch {
+  opacity: 0.45;
+}
+.lt-feature.is-locked .lt-name {
+  font-style: italic;
+}
+
+.lt-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.layer-tree .lt-rename {
+  flex: 1;
+  min-width: 0;
+  padding: 0.2rem 0.35rem !important;
+  font-weight: 400;
+}
+.lt-count {
+  flex: none;
+  min-width: 1.4rem;
+  padding: 0 0.3rem;
+  border-radius: 999px;
+  background: var(--paper-raised);
+  color: var(--ink-faint);
+  font-size: 0.72rem;
+  font-weight: 500;
+  text-align: center;
+}
+.lt-kind {
+  flex: none;
+  color: var(--ink-faint);
+}
+.lt-swatch {
+  flex: none;
+  display: inline-block;
+  width: 0.95rem;
+  height: 0.95rem;
+  padding: 0;
+  border: 1px solid rgb(0 0 0 / 0.2);
+  border-radius: 50%;
+  overflow: hidden;
+  cursor: pointer;
+  background: none;
+}
+.layer-tree input.lt-swatch {
+  width: 0.95rem;
+  height: 0.95rem;
+  appearance: none;
+  -webkit-appearance: none;
+}
+input.lt-swatch::-webkit-color-swatch-wrapper {
+  padding: 0;
+}
+input.lt-swatch::-webkit-color-swatch {
+  border: 0;
+  border-radius: 50%;
+}
+input.lt-swatch::-moz-color-swatch {
+  border: 0;
+  border-radius: 50%;
+}
+.lt-twist-space {
+  flex: none;
+  width: 1.6rem;
+}
+.layer-tree .lt-row .ui-icon-button.plain {
+  flex: none;
+  min-width: 1.75rem;
+  min-height: 1.75rem;
+  padding: 0;
+  color: var(--ink-faint);
+}
+.layer-tree .lt-twist {
+  min-width: 1.6rem !important;
+}
+.layer-tree .lt-twist svg {
+  transition: transform 120ms ease;
+}
+.layer-tree .lt-twist.is-open svg {
+  transform: rotate(90deg);
+}
+.layer-tree .ui-icon-button.is-on {
+  color: var(--accent);
+}
+.layer-tree .ui-icon-button.lt-lock.is-within {
+  opacity: 0.5;
+}
+.lt-grip {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 1.1rem;
+  min-height: 1.75rem;
+  color: var(--ink-faint);
+  cursor: grab;
+  touch-action: none;
+}
+.lt-more button {
+  margin-left: 1.6rem;
+  font-size: 0.85rem;
+}
+
+/* With a mouse, the less used buttons show on the row under it, or with the focus in it, so the
+   names have room; the eye and an engaged lock always show. */
+@media (hover: hover) and (pointer: fine) {
+  .lt-row:not(:hover):not(:focus-within) .lt-grip {
+    visibility: hidden;
+  }
+  .lt-row:not(:hover):not(:focus-within):not(:has([aria-expanded="true"])) .lt-extra,
+  .lt-row:not(:hover):not(:focus-within):not(:has([aria-expanded="true"])) .lt-menu,
+  .lt-row:not(:hover):not(:focus-within) .lt-lock:not(.is-on):not(.is-within),
+  .lt-feature:not(:hover):not(:focus-within) .lt-eye:not(.is-on) {
+    display: none;
+  }
+  .layer-tree .lt-row .ui-icon-button.plain {
+    min-width: 1.6rem;
+    min-height: 1.6rem;
+  }
+}
+
+/* While dragging: where the drop would go. */
+.lt-rows.is-dragging .lt-row {
+  cursor: grabbing;
+}
+.lt-row.drop-before {
+  box-shadow: inset 0 2px 0 var(--accent);
+}
+.lt-row.drop-after {
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+.lt-row.drop-into {
+  border-color: var(--accent);
+  border-style: dashed;
+  background: var(--accent-soft);
+}
+.lt-ghost {
+  position: fixed;
+  z-index: 1000;
+  max-width: 14rem;
+  padding: 0.25rem 0.55rem;
+  overflow: hidden;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  background: var(--paper);
+  box-shadow: 0 4px 14px rgb(0 0 0 / 0.18);
+  color: var(--ink);
+  font-size: 0.85rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+/* The properties and delete dialogs. */
+.lt-check {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.45rem;
+  margin: 0 0 0.6rem;
+}
+.lt-check select {
+  min-width: 0;
+  max-width: 100%;
+}
+.lt-delete-choice {
+  margin: 0 0 0.4rem;
+  padding: 0;
+  border: 0;
+}
+.layer-properties select,
+.lt-delete-choice select {
+  padding: 0.35rem 0.4rem;
+  border: 1px solid var(--rule);
+  border-radius: 5px;
+  background: var(--paper-raised);
+  color: var(--ink);
+  font: inherit;
+}
+.lt-colour-field input[type="color"] {
+  width: 3rem;
+  height: 2rem;
+  padding: 0;
+}
+
+/* On a phone: rows a finger can hit; properties and delete are in the row's menu. */
+@media (max-width: 34rem) {
+  .lt-row {
+    min-height: 2.75rem;
+  }
+  .layer-tree .lt-row .ui-icon-button.plain {
+    min-width: 2.5rem;
+    min-height: 2.5rem;
+  }
+  .lt-grip {
+    width: 1.6rem;
+    min-height: 2.5rem;
+  }
+  .layer-tree .lt-extra {
+    display: none;
+  }
+}

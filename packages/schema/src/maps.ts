@@ -49,7 +49,17 @@ export const MapImage = z
 export type MapImage = z.infer<typeof MapImage>;
 
 export const MapLayer = z
-  .object({ id: ItemId, name: z.string(), visible: z.boolean(), color: z.string() })
+  .object({
+    id: ItemId,
+    name: z.string(),
+    /** Whether the map opens with this layer shown. A hidden layer hides its sublayers too. */
+    visible: z.boolean(),
+    color: z.string(),
+    /** The layer this one is a sublayer of; none (left out of the file) at the top level. */
+    parent: ItemId.nullish(),
+    /** Its features, and those of its sublayers, cannot be picked on the map; left out: no. */
+    locked: z.boolean().optional(),
+  })
   .passthrough();
 export type MapLayer = z.infer<typeof MapLayer>;
 
@@ -141,6 +151,8 @@ export const MapFile = z
       if (!unique(map[key])) ctx.addIssue({ code: "custom", message: `Two ${key} share an id.` });
     }
     const layers = new Set(map.layers.map((l) => l.id));
+    const problem = layerProblem(map.layers);
+    if (problem) ctx.addIssue({ code: "custom", message: problem });
     for (const f of map.features) {
       if (!layers.has(f.layer)) {
         ctx.addIssue({ code: "custom", message: `A feature is in a layer that does not exist.` });
@@ -172,7 +184,8 @@ const TOP = [
 ];
 const ITEM_KEYS: Record<string, string[]> = {
   images: ["id", "name", "path", "extent", "visible"],
-  layers: ["id", "name", "visible", "color"],
+  // Fields added later go at the end, so that older files read and write the same.
+  layers: ["id", "name", "visible", "color", "parent", "locked"],
   features: [
     "id",
     "kind",
@@ -222,12 +235,30 @@ export function orderFeature(feature: MapFeature): MapFeature {
   );
 }
 
+/**
+ * A layer with its keys in the order the file is written in. "At the top level" and "not locked"
+ * are written by leaving the key out, so a file from before sublayers keeps its bytes, and the
+ * same layer compares as equal however it was put together.
+ */
+export function orderLayer<T extends MapLayer>(layer: T): T {
+  const { parent, locked, ...rest } = layer;
+  return inOrder(
+    {
+      ...rest,
+      ...(parent != null ? { parent } : {}),
+      ...(locked === true ? { locked } : {}),
+    } as T,
+    ITEM_KEYS.layers!,
+  );
+}
+
 const ordered = (map: MapFile): MapFile => {
   // "Lies under nothing" is written by leaving the key out.
   const { under, ...rest } = map;
   return {
     ...rest,
     ...(under != null ? { under } : {}),
+    layers: map.layers.map(orderLayer),
     features: map.features.map(orderFeature),
   } as MapFile;
 };
@@ -291,6 +322,10 @@ export function mergeMaps(base0: MapFile, mine0: MapFile, theirs0: MapFile): Map
   };
   const images = mergeItemLists(base.images, mine.images, theirs.images);
   const layers = mergeItemLists(base.layers, mine.layers, theirs.layers);
+  // The order of the layers is the order they are drawn in: a reorder made on one side only is
+  // kept. Then a sublayer whose layer the other side removed goes to the top level, and a loop
+  // made by each side putting a layer inside the other is broken.
+  layers.items = repairLayers(keepReorder(base.layers, mine.layers, theirs.layers, layers.items));
   const features = mergeItemLists(base.features, mine.features, theirs.features);
   clashes.push(...images.clashes, ...layers.clashes, ...features.clashes);
 
@@ -312,6 +347,229 @@ export function mergeMaps(base0: MapFile, mine0: MapFile, theirs0: MapFile): Map
     features: features.items.map((f) => (layerIds.has(f.layer) ? f : { ...f, layer: fallback })),
   };
   return { map, clashes };
+}
+
+/** The ids of `list` that are also in `among`, in the order of `list`. */
+const sharedOrder = (list: readonly { id: string }[], among: Set<string>) =>
+  list.filter((i) => among.has(i.id)).map((i) => i.id);
+
+/**
+ * The merged list in my order when only I reordered what all three versions have; otherwise as
+ * merged, which follows their order. What only they added comes after, as in the merge.
+ */
+function keepReorder<T extends { id: string }>(
+  base: readonly T[],
+  mine: readonly T[],
+  theirs: readonly T[],
+  merged: T[],
+): T[] {
+  const inMine = new Set(mine.map((i) => i.id));
+  const inTheirs = new Set(theirs.map((i) => i.id));
+  const inAll = new Set(
+    base.filter((b) => inMine.has(b.id) && inTheirs.has(b.id)).map((b) => b.id),
+  );
+  const b = sharedOrder(base, inAll).join();
+  if (sharedOrder(mine, inAll).join() === b || sharedOrder(theirs, inAll).join() !== b) {
+    return merged;
+  }
+  const byId = new Map(merged.map((i) => [i.id, i]));
+  const out: T[] = [];
+  const placed = new Set<string>();
+  for (const { id } of [...mine, ...merged]) {
+    const item = byId.get(id);
+    if (item && !placed.has(id)) {
+      placed.add(id);
+      out.push(item);
+    }
+  }
+  return out;
+}
+
+// ---- Layers and sublayers --------------------------------------------------------------------
+
+/**
+ * Why a map's layers cannot be saved, or null: each sublayer's layer must be there, and no layer
+ * may be inside itself, however deep.
+ */
+export function layerProblem(layers: readonly MapLayer[]): string | null {
+  const ids = new Set(layers.map((l) => l.id));
+  if (layers.some((l) => l.parent != null && !ids.has(l.parent))) {
+    return "A sublayer is in a layer that does not exist.";
+  }
+  if (layerLoops(layers).length > 0) return "A layer is inside itself.";
+  return null;
+}
+
+/** Each loop of layers inside one another, as the ids in it. */
+function layerLoops(layers: readonly MapLayer[]): string[][] {
+  const parentOf = new Map(layers.map((l) => [l.id, l.parent ?? null]));
+  const done = new Set<string>();
+  const loops: string[][] = [];
+  for (const start of layers) {
+    const path: string[] = [];
+    let at: string | null = start.id;
+    while (at !== null && parentOf.has(at) && !done.has(at)) {
+      const seen = path.indexOf(at);
+      if (seen >= 0) {
+        loops.push(path.slice(seen));
+        break;
+      }
+      path.push(at);
+      at = parentOf.get(at) ?? null;
+    }
+    for (const id of path) done.add(id);
+  }
+  return loops;
+}
+
+/**
+ * The layers made sound: a sublayer of a layer that is not there goes to the top level, and
+ * each loop is broken at the layer in it with the smallest id, which goes to the top level, so
+ * that every device breaks it the same way. The same list comes back when nothing was wrong.
+ */
+export function repairLayers<T extends MapLayer>(layers: T[]): T[] {
+  const ids = new Set(layers.map((l) => l.id));
+  const top = (l: T) => orderLayer({ ...l, parent: null });
+  let out = layers.map((l) => (l.parent != null && !ids.has(l.parent) ? top(l) : l));
+  for (const loop of layerLoops(out)) {
+    const first = [...loop].sort()[0];
+    out = out.map((l) => (l.id === first ? top(l) : l));
+  }
+  return out.every((l, i) => l === layers[i]) ? layers : out;
+}
+
+/** One layer in the tree: how deep it is (0 at the top level) and how many sublayers it has. */
+export interface LayerNode {
+  layer: MapLayer;
+  depth: number;
+  children: number;
+}
+
+/** Each layer's sublayers, in the order of the list; the top level under null. */
+function sublayers<T extends MapLayer>(layers: T[], repair = true): Map<string | null, T[]> {
+  const kids = new Map<string | null, T[]>();
+  for (const l of repair ? repairLayers(layers) : layers) {
+    const p = l.parent ?? null;
+    kids.set(p, [...(kids.get(p) ?? []), l]);
+  }
+  return kids;
+}
+
+/** The tree flattened: each layer, then its sublayers, depth first. */
+function flatten<T extends MapLayer>(kids: Map<string | null, T[]>): { layer: T; depth: number }[] {
+  const out: { layer: T; depth: number }[] = [];
+  const walk = (parent: string | null, depth: number) => {
+    for (const l of kids.get(parent) ?? []) {
+      out.push({ layer: l, depth });
+      walk(l.id, depth + 1);
+    }
+  };
+  walk(null, 0);
+  return out;
+}
+
+/**
+ * The layers as a tree, flattened: each layer followed by its sublayers, siblings in the order
+ * of the list. This is the order they are drawn in: a layer's features, then its sublayers'
+ * over them, then the next layer's. A loop or a missing layer is read as the top level.
+ */
+export function layerTree(layers: readonly MapLayer[]): LayerNode[] {
+  const kids = sublayers([...layers]);
+  return flatten(kids).map(({ layer, depth }) => ({
+    layer,
+    depth,
+    children: kids.get(layer.id)?.length ?? 0,
+  }));
+}
+
+/** The ids of a layer's sublayers, theirs, and so on down; not the layer itself. */
+export function layersWithin(layers: readonly MapLayer[], id: string): Set<string> {
+  const out = new Set<string>();
+  const tree = layerTree(layers);
+  const at = tree.findIndex((n) => n.layer.id === id);
+  for (let i = at + 1; at >= 0 && i < tree.length && tree[i]!.depth > tree[at]!.depth; i++) {
+    out.add(tree[i]!.layer.id);
+  }
+  return out;
+}
+
+/** The ids in the tree under each layer for which `on` holds, with those layers. */
+function withinWhere(layers: readonly MapLayer[], on: (l: MapLayer) => boolean): Set<string> {
+  const out = new Set<string>();
+  let under: number | null = null;
+  for (const node of layerTree(layers)) {
+    if (under !== null && node.depth <= under) under = null;
+    if (under === null && on(node.layer)) under = node.depth;
+    if (under !== null) out.add(node.layer.id);
+  }
+  return out;
+}
+
+/**
+ * What is hidden, with the sublayers of each hidden layer added: a hidden layer hides all that is
+ * inside it. Other ids in `hidden`, such as single features, are kept.
+ */
+export function hiddenWithin(
+  layers: readonly MapLayer[],
+  hidden: ReadonlySet<string>,
+): Set<string> {
+  return new Set([...hidden, ...withinWhere(layers, (l) => hidden.has(l.id))]);
+}
+
+/** The ids of the layers that are locked, by themselves or by a layer they are inside. */
+export function lockedWithin(layers: readonly MapLayer[]): Set<string> {
+  return withinWhere(layers, (l) => l.locked === true);
+}
+
+/**
+ * The layers with one moved, with its sublayers, into `parent` (null: the top level), before its
+ * sibling `before` (null: after the last). The list comes back in tree order. The same list comes
+ * back when the move cannot be made: into itself or one of its own sublayers.
+ */
+export function moveLayer<T extends MapLayer>(
+  layers: T[],
+  id: string,
+  parent: string | null,
+  before: string | null = null,
+): T[] {
+  const moving = layers.find((l) => l.id === id);
+  if (!moving || before === id) return layers;
+  if (parent !== null && (parent === id || !layers.some((l) => l.id === parent))) return layers;
+  if (parent !== null && layersWithin(layers, id).has(parent)) return layers;
+  // Its sublayers stay with it: they still name it as their layer.
+  const kids = sublayers(
+    repairLayers(layers).filter((l) => l.id !== id),
+    false,
+  );
+  const siblings = kids.get(parent) ?? [];
+  const at = before === null ? -1 : siblings.findIndex((l) => l.id === before);
+  const moved = orderLayer({ ...moving, parent });
+  kids.set(
+    parent,
+    at < 0 ? [...siblings, moved] : [...siblings.slice(0, at), moved, ...siblings.slice(at)],
+  );
+  const next = flatten(kids).map((n) => n.layer);
+  return next.length === layers.length && next.every((l, i) => sameLayer(l, layers[i]))
+    ? layers
+    : next;
+}
+
+const sameLayer = (a: MapLayer, b: MapLayer | undefined) =>
+  b !== undefined && same(orderLayer(a), orderLayer(b));
+
+/**
+ * The layers with one moved a step up (-1) or down (1) among its siblings. The same list comes
+ * back when it is already first or last.
+ */
+export function stepLayer<T extends MapLayer>(layers: T[], id: string, by: 1 | -1): T[] {
+  const layer = layers.find((l) => l.id === id);
+  if (!layer) return layers;
+  const parent = layer.parent ?? null;
+  const siblings = (sublayers(layers).get(parent) ?? []).map((l) => l.id);
+  const to = siblings.indexOf(id) + by;
+  if (to < 0 || to >= siblings.length) return layers;
+  // Down: before the sibling after the next one; up: before the one before.
+  return moveLayer(layers, id, parent, by === 1 ? (siblings[to + 1] ?? null) : siblings[to]!);
 }
 
 // ---- Changes the map page makes -----------------------------------------------------------------

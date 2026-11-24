@@ -1,6 +1,14 @@
-import { initialView, makeView, measure, panBy, type Position, turnTo } from "@frontier/geo";
+import {
+  centreOn,
+  initialView,
+  makeView,
+  measure,
+  panBy,
+  type Position,
+  turnTo,
+} from "@frontier/geo";
 import { MapPin, Layers as LayersIcon, Palette } from "lucide-react";
-import { orderFeature, reorderFeature } from "@frontier/schema";
+import { hiddenWithin, lockedWithin, orderFeature, reorderFeature } from "@frontier/schema";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { entryUrl, mapUrl } from "../api.ts";
@@ -109,7 +117,16 @@ export function MapPage() {
     },
   });
   const { map, change } = file;
-  const shown = useShownAt(map, time, { selected, editing, hidden });
+  // What is not drawn: the hidden layers with all that is inside them, and hidden features.
+  const layers = map?.layers;
+  const hiddenNow = useMemo(
+    () => (layers ? hiddenWithin(layers, hidden) : hidden),
+    [layers, hidden],
+  );
+  const locked = useMemo(() => (layers ? lockedWithin(layers) : new Set<string>()), [layers]);
+  /** The selected feature is in a locked layer: it is shown, but cannot be changed on the map. */
+  const selectedLocked = !!map?.features.some((f) => f.id === selected && locked.has(f.layer));
+  const shown = useShownAt(map, time, { selected, editing, hidden: hiddenNow });
   const { onScreen } = shown;
   // The library's path and zone styles, shared by every open map.
   const { styles } = useMapStyles();
@@ -136,7 +153,7 @@ export function MapPage() {
     ...shown,
     view,
     size,
-    hidden,
+    hidden: hiddenNow,
     shownImages,
     selected,
     vertex,
@@ -173,7 +190,8 @@ export function MapPage() {
     yearRef: time.yearRef,
     editing,
     tool,
-    selected,
+    // A feature in a locked layer, chosen in the Layers tab, cannot be dragged.
+    selected: selectedLocked ? null : selected,
     sketch,
     activeLayer,
     focusing,
@@ -219,6 +237,7 @@ export function MapPage() {
   const deleteSelection = () => {
     const now = file.mapRef.current;
     if (!now || !selected) return;
+    if (selectedLocked) return say("It is in a locked layer.");
     if (vertex !== null && shown.onScreen) {
       const done = removePoint(now, shown.onScreen, vertex);
       if (done && "reason" in done) say(done.reason);
@@ -322,11 +341,34 @@ export function MapPage() {
         }
       : null,
   );
-  // A feature chosen on the map opens its panel.
+  // A feature chosen on the map opens its panel; one chosen in the Layers tab leaves that open.
   const showPanel = bar.show;
+  const fromLayers = useRef(false);
   useEffect(() => {
-    if (showsFeature) showPanel("feature");
+    if (showsFeature && !fromLayers.current) showPanel("feature");
+    fromLayers.current = false;
   }, [selected, showsFeature, showPanel]);
+  /** Selects a feature from the Layers tab, and centres the map on it. */
+  const selectFromLayers = (id: string) => {
+    const f = map?.features.find((x) => x.id === id);
+    if (!f) return;
+    fromLayers.current = true;
+    if (tool !== "select" && editing) chooseTool("select");
+    setSelected(id);
+    setVertex(null);
+    // Where it is at the year shown; a kind of feature this page does not know may have either.
+    const drawn = (shown.resolved.find((r) => r.feature.id === id)?.feature ?? f) as {
+      at?: Position;
+      points?: Position[];
+    };
+    const at = drawn.at ?? drawn.points?.[0];
+    if (!at || !view) return;
+    // On a phone the sheet covers the foot of the map: the feature goes in the middle of the rest.
+    const sheet = document.querySelector(".bottom-sheet")?.getBoundingClientRect();
+    const box = frame.current?.getBoundingClientRect();
+    const covered = sheet && box ? Math.max(0, Math.min(box.bottom - sheet.top, box.height)) : 0;
+    setView(panBy(centreOn(view, at), 0, -covered / 2));
+  };
   usePageTitle(map?.title ?? "Map");
   useSheetFloor(frame, "bottom", map !== null);
 
@@ -434,7 +476,7 @@ export function MapPage() {
   // The legend: the styles of the features drawn now, in shown layers and present at the year.
   const legend = legendOf(
     shown.resolved
-      .filter((r) => !hidden.has(r.feature.layer))
+      .filter((r) => !hiddenNow.has(r.feature.layer) && !hiddenNow.has(r.feature.id))
       .filter((r) => r.presence !== "not_yet" && r.presence !== "gone")
       .map((r) => r.feature),
     styles,
@@ -453,6 +495,9 @@ export function MapPage() {
       onShownImages={setShownImages}
       onActive={setActiveLayer}
       onChange={change}
+      selected={selected}
+      onSelect={selectFromLayers}
+      titleOf={titleOf}
     />
   );
   if (feature) {
