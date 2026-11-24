@@ -12,14 +12,14 @@ import {
   type Space,
   type View,
 } from "@frontier/geo";
-import type { MapFeature } from "@frontier/schema";
+import { isLined, type MapFeature } from "@frontier/schema";
 import type { PointerKind } from "./gesture.ts";
 
 type Lined = Extract<MapFeature, { kind: "path" | "zone" }>;
 
 /** Whether a path or zone is drawn as a curve through its points. */
 export const isCurved = (f: MapFeature): boolean =>
-  f.kind !== "marker" && (f as { curve?: string }).curve === "smooth";
+  isLined(f) && (f as { curve?: string }).curve === "smooth";
 
 /** The outline of a path or a zone, with the shape it has in `points`. */
 export function outlineOf(space: Space, f: Lined): Outline {
@@ -49,7 +49,7 @@ export interface Plus {
  * length, and not on one too short on the screen for the pointer that last pressed the map.
  */
 export function plusHandles(space: Space, view: View, f: MapFeature, kind: PointerKind): Plus[] {
-  if (f.kind === "marker") return [];
+  if (!isLined(f)) return [];
   const o = outlineOf(space, f);
   const n = f.points.length;
   const out: Plus[] = [];

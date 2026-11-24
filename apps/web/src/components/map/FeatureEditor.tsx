@@ -1,5 +1,5 @@
 import { measure, type Space } from "@frontier/geo";
-import type { MapFeature, MapFile, MapStyle } from "@frontier/schema";
+import { isLined, type MapFeature, type MapFile, type MapStyle } from "@frontier/schema";
 import { type ReactNode, useId, useState } from "react";
 import { imageUrl } from "../../api.ts";
 import { isCurved, outlineOf } from "../../map/handles.ts";
@@ -9,6 +9,7 @@ import type { MarkerSets, Names } from "../../map/useMapFile.ts";
 import { iconLabel } from "../../map/viewUrl.ts";
 import { shortcutText } from "../../keys.ts";
 import { EntryCombobox } from "../EntryCombobox.tsx";
+import { LabelFields } from "./LabelFields.tsx";
 import { Combobox, type ComboboxOption } from "../ui/Combobox.tsx";
 import { Tip } from "../ui/Tip.tsx";
 
@@ -54,6 +55,8 @@ export function FeatureEditor({
   vertex,
   onChange,
   onLink,
+  onCreateEntry,
+  generate,
   onCurve,
   onDelete,
   onRemoveVertex,
@@ -93,6 +96,10 @@ export function FeatureEditor({
   vertex: number | null;
   onChange: (next: MapFeature) => void;
   onLink: (path: string | null, title: string) => void;
+  /** Makes an entry from a name typed in the entry list that no entry has, and links it. */
+  onCreateEntry?: (name: string) => void;
+  /** Generate with AI: a name and description for the feature. */
+  generate?: ReactNode;
   /** Draws the path or zone curved or straight. */
   onCurve: (curved: boolean) => void;
   onDelete: () => void;
@@ -130,16 +137,22 @@ export function FeatureEditor({
           value={entryPath}
           allowNone
           onChange={(path, title) => onLink(path, title)}
+          {...(onCreateEntry ? { onCreate: onCreateEntry } : {})}
         />
       </div>
-      <label className="field">
-        <span>Label {linked && <em className="muted">instead of the entry's name</em>}</span>
-        <input
-          type="text"
-          value={feature.label ?? ""}
-          onChange={(e) => onChange({ ...feature, label: e.target.value || null })}
-        />
-      </label>
+      {feature.kind === "label" ? (
+        <LabelFields label={feature} onChange={onChange} />
+      ) : (
+        <label className="field">
+          <span>Label {linked && <em className="muted">instead of the entry's name</em>}</span>
+          <input
+            type="text"
+            value={feature.label ?? ""}
+            onChange={(e) => onChange({ ...feature, label: e.target.value || null } as MapFeature)}
+          />
+        </label>
+      )}
+      {generate}
       <label className="field">
         <span>Layer</span>
         <select
@@ -164,7 +177,7 @@ export function FeatureEditor({
           empty="No map has that name."
         />
       </div>
-      {feature.kind !== "marker" && (
+      {isLined(feature) && (
         <div className="field">
           <span id={`${ids}-curve`}>
             Line <em className="muted">for all of this feature's shapes</em>
@@ -189,7 +202,7 @@ export function FeatureEditor({
           </span>
         </div>
       )}
-      {feature.kind !== "marker" && (
+      {isLined(feature) && (
         <div className="field feature-style">
           <span id={`${ids}-style`}>{feature.kind === "path" ? "Path style" : "Zone style"}</span>
           {styleState(feature, styles) === "deleted" && (
@@ -286,7 +299,7 @@ export function FeatureEditor({
       {time}
       {extra}
       <p className="change-actions">
-        {feature.kind !== "marker" && vertex !== null && (
+        {isLined(feature) && vertex !== null && (
           <Tip
             label="Remove this point"
             keys={shortcutText("map.delete")}

@@ -412,6 +412,15 @@ keys.register(
   { id: "map.path", keys: ["p"], scope: "map", label: "Path tool", when: "editing" },
   { id: "map.zone", keys: ["z"], scope: "map", label: "Zone tool", when: "editing" },
   { id: "map.measure", keys: ["r"], scope: "map", label: "Measure tool", when: "editing" },
+  { id: "map.label", keys: ["w"], scope: "map", label: "Label tool", when: "editing" },
+  { id: "map.place", keys: ["g"], scope: "map", label: "Place with AI", when: "editing" },
+  {
+    id: "map.snap",
+    keys: ["s"],
+    scope: "map",
+    label: "Snap to other paths and zones, on or off (hold Alt to place freely)",
+    when: "editing",
+  },
   { id: "map.undo", keys: ["Mod-z"], scope: "map", label: "Undo", when: "editing" },
   { id: "map.redo", keys: ["Shift-Mod-z", "Mod-y"], scope: "map", label: "Redo", when: "editing" },
   {

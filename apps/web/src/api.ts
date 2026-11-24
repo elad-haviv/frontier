@@ -411,6 +411,8 @@ export const api = {
     ),
   discover: (map: string, at: [number, number], chronicle: string | null, year: number | null) =>
     post<{ discoveries: Discovery[] }>(`/api/maps/${map}/discover`, { at, chronicle, year }),
+  generateFeatures: (map: string, ask: GenerateAsk) =>
+    post<{ items: GeneratedFeature[] }>(`/api/maps/${map}/generate`, ask),
   discoveryArt: (map: string, id: string) =>
     post<{ discovery: Discovery }>(`/api/maps/${map}/discoveries/${id}/art`, {}),
   keepDiscovery: (map: string, id: string, folder: string) =>
@@ -631,6 +633,26 @@ export interface CharacterLine {
 }
 export const talkUrl = (path: string): string =>
   "/talk/" + path.split("/").map(encodeURIComponent).join("/");
+
+/** What the map page asks names and descriptions for: a feature to fill in, or a few to place. */
+export interface GenerateAsk {
+  kind: "marker" | "path" | "zone" | "label";
+  at: [number, number];
+  count: number;
+  prompt: string | null;
+  exclude: string | null;
+  /** The looks it may take: styles of its kind, or marker icons as "set/name". */
+  choices: { id: string; name: string }[];
+  chronicle: string | null;
+  year: number | null;
+}
+
+export interface GeneratedFeature {
+  name: string;
+  description: string;
+  choice: string | null;
+  basis: { path: string; quote: string }[];
+}
 
 export interface Discovery {
   id: string;

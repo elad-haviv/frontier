@@ -7,6 +7,7 @@ import {
   type ChronicleFile,
   type ChronicleSpan,
   type LaterShape,
+  isLined,
   type MapFeature,
   type MapFile,
   orderFeature,
@@ -81,7 +82,7 @@ export function spanFor(feature: MapFeature, time: MapTime): SpanFor {
 const fits = (feature: MapFeature, shape: LaterShape): boolean => {
   const pairs = (p: unknown): p is Pair[] =>
     Array.isArray(p) && p.every((q) => Array.isArray(q) && q.length === 2);
-  if (feature.kind === "marker") return Array.isArray(shape.at) && shape.points === undefined;
+  if (!isLined(feature)) return Array.isArray(shape.at) && shape.points === undefined;
   return pairs(shape.points) && shape.points.length >= (feature.kind === "zone" ? 3 : 2);
 };
 
@@ -179,7 +180,7 @@ export function presenceOf(feature: MapFeature, time: MapTime, year: number): Re
 const withShape = (feature: MapFeature, shape: LaterShape | null): MapFeature =>
   !shape
     ? feature
-    : feature.kind === "marker"
+    : !isLined(feature)
       ? { ...feature, at: shape.at as Pair }
       : ({ ...feature, points: shape.points as Pair[] } as MapFeature);
 
@@ -245,7 +246,7 @@ export function writeShape(feature: MapFeature, shapeId: string | null, shape: S
 
 /** The shape a feature has on screen, read back from a resolved feature. */
 export function shapeOf(feature: MapFeature): Shape {
-  return feature.kind === "marker" ? { at: feature.at } : { points: feature.points };
+  return !isLined(feature) ? { at: feature.at } : { points: feature.points };
 }
 
 export function addShape(feature: MapFeature, id: string, from: string, shape: Shape): MapFeature {

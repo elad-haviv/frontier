@@ -617,6 +617,23 @@ describe("pick", () => {
     expect(pick(input(), { x: 98, y: 97 })).toEqual({ kind: "corner", feature: "z1", vertex: 2 });
   });
 
+  it("drags the selected label from anywhere on its words, as a marker (16d)", () => {
+    const words = { id: "w1", kind: "label", ...base, label: "Sea", at: [400, 400] } as MapFeature;
+    const box: Shape = {
+      id: "w1",
+      kind: "zone",
+      points: [
+        [370, 390],
+        [430, 390],
+        [430, 410],
+        [370, 410],
+      ],
+    };
+    const over = { chosen: words, shapes: [...shapes, box] };
+    expect(pick(input(over), { x: 425, y: 405 })).toEqual({ kind: "marker", feature: "w1" });
+    expect(pick(input(over), { x: 500, y: 500 })).toBeNull();
+  });
+
   it("then the selected marker, within 24 px", () => {
     const at = { x: 220, y: 210 };
     expect(pick(input({ chosen: marker }), at)).toEqual({ kind: "marker", feature: "m1" });

@@ -4,7 +4,14 @@
  * otherwise the feature is drawn as if it had none. Pure, so the overlay, the legend and the
  * samples all draw from the same answers.
  */
-import { DASHES, type Dash, type MapFeature, type MapStyle, PLAIN_LOOK } from "@frontier/schema";
+import {
+  DASHES,
+  type Dash,
+  isLined,
+  type MapFeature,
+  type MapStyle,
+  PLAIN_LOOK,
+} from "@frontier/schema";
 
 /** The colour of a line whose layer has none. */
 export const INK = "#2a2420";
@@ -26,7 +33,7 @@ export interface Paint {
 
 /** The style a feature is drawn in: its own when it exists and is for its kind, else none. */
 export function styleOf(feature: MapFeature, styles: readonly MapStyle[]): MapStyle | null {
-  const id = feature.kind === "marker" ? undefined : feature.style;
+  const id = !isLined(feature) ? undefined : feature.style;
   if (!id) return null;
   return styles.find((s) => s.id === id && s.for === feature.kind) ?? null;
 }
@@ -39,7 +46,7 @@ export function styleState(
   feature: MapFeature,
   styles: readonly MapStyle[],
 ): "none" | "found" | "deleted" {
-  if (feature.kind === "marker" || !feature.style) return "none";
+  if (!isLined(feature) || !feature.style) return "none";
   return styleOf(feature, styles) ? "found" : "deleted";
 }
 
@@ -122,7 +129,7 @@ export function freshName(styles: readonly MapStyle[], kind: MapStyle["for"]): s
 
 /** A feature with this style, or none: a missing key means no style. */
 export function withStyle(feature: MapFeature, style: string | null): MapFeature {
-  if (feature.kind === "marker") return feature;
+  if (!isLined(feature)) return feature;
   const next = { ...feature } as MapFeature & { style?: string };
   if (style) next.style = style;
   else delete next.style;

@@ -17,7 +17,7 @@ export function useDiscovery(
     setNotice: (notice: string | null) => void;
   },
 ) {
-  const [exploring, setExploring] = useState(false);
+  const [exploring, setExploringNow] = useState(false);
   const [found, setFound] = useState<{
     items: Discovery[];
     ready: boolean;
@@ -26,17 +26,24 @@ export function useDiscovery(
   }>({ items: [], ready: false, art: false, folders: [] });
   const [openFound, setOpenFound] = useState<string | null>(null);
   const [seeking, setSeeking] = useState(false);
+  /** Why the last tap found nothing, shown where the tap was asked for until the next one. */
+  const [failed, setFailed] = useState<string | null>(null);
   useEffect(() => {
     api.discoveries(id).then(
       (r) => setFound({ items: r.discoveries, ready: r.ready, art: r.art, folders: r.folders }),
       () => undefined,
     );
   }, [id]);
+  const setExploring = (on: boolean) => {
+    setExploringNow(on);
+    setFailed(null);
+  };
 
   /** Exploring: a tap asks what is found there. */
   function explore(position: Position | null) {
     if (!position || seeking) return;
     setSeeking(true);
+    setFailed(null);
     setNotice("Looking at what is near…");
     api
       .discover(id, position, timeOn ? chronicleId : null, timeOn ? year : null)
@@ -46,11 +53,25 @@ export function useDiscovery(
           setOpenFound(r.discoveries[0]?.id ?? null);
           setNotice(null);
         },
-        (err: unknown) =>
-          setNotice(err instanceof ApiFailure ? err.message : "Nothing could be discovered."),
+        (err: unknown) => {
+          const message =
+            err instanceof ApiFailure ? err.message : "Nothing could be discovered. Try again.";
+          setFailed(message);
+          setNotice(message);
+        },
       )
       .finally(() => setSeeking(false));
   }
 
-  return { exploring, setExploring, found, setFound, openFound, setOpenFound, seeking, explore };
+  return {
+    exploring,
+    setExploring,
+    found,
+    setFound,
+    openFound,
+    setOpenFound,
+    seeking,
+    failed,
+    explore,
+  };
 }

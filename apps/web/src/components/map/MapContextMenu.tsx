@@ -1,4 +1,4 @@
-import type { MapFeature, MapFile, MapStyle } from "@frontier/schema";
+import { isLined, type MapFeature, type MapFile, type MapStyle } from "@frontier/schema";
 import {
   ArrowDownToLine,
   ArrowUpToLine,
@@ -133,7 +133,7 @@ function Items({ menu }: { menu: MapMenu }) {
         <ContextMenuItem icon={Pencil} onSelect={() => menu.showInBar(feature)}>
           Edit in the side bar
         </ContextMenuItem>
-        {feature.kind !== "marker" && (
+        {isLined(feature) && (
           <ContextMenuItem
             icon={(feature as { curve?: string }).curve === "smooth" ? Slash : Spline}
             keys={shortcutText("map.curve")}
@@ -146,7 +146,7 @@ function Items({ menu }: { menu: MapMenu }) {
               : "Make it curved"}
           </ContextMenuItem>
         )}
-        {feature.kind !== "marker" && (
+        {isLined(feature) && (
           <ContextMenuSub
             label={feature.kind === "path" ? "Path style" : "Zone style"}
             icon={Palette}
