@@ -19,7 +19,9 @@ import { LibraryFileStore } from "./library/files.js";
 import { folderRoutes } from "./routes/folders.js";
 import { libraryFileRoutes } from "./routes/libraryFiles.js";
 import { Conversations } from "./ai/conversations.js";
+import { EntryDrafter } from "./ai/draftEntry.js";
 import { LoreAsker } from "./ai/lore.js";
+import { entryDraftRoutes } from "./routes/entryDraft.js";
 import { loreRoutes } from "./routes/lore.js";
 import { writingRoutes } from "./routes/writing.js";
 import { commentRoutes } from "./routes/comments.js";
@@ -106,6 +108,7 @@ export interface Services {
   libraryFiles: LibraryFileStore;
   folders: FolderStore;
   lore: LoreAsker;
+  drafter: EntryDrafter;
   writing: WritingHelper;
   characters: CharacterTalk;
   discoverer: Discoverer;
@@ -310,6 +313,13 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
     settings,
     mayRead: (path) => quarantine.aiMayRead(path) === null,
   });
+  const drafter = new EntryDrafter({
+    index,
+    search,
+    provider: ai,
+    settings,
+    mayRead: (path) => quarantine.aiMayRead(path) === null,
+  });
   await quarantine.load();
   const reportAi = async () => status.ai(await ai.ready("extraction"), ai.lastError);
 
@@ -341,6 +351,7 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
     libraryFiles,
     folders,
     lore,
+    drafter,
     writing,
     characters,
     discoverer,
@@ -556,6 +567,7 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
   libraryFileRoutes(app, services);
   folderRoutes(app, services);
   loreRoutes(app, services);
+  entryDraftRoutes(app, services);
   writingRoutes(app, services);
   commentRoutes(app, services);
   characterRoutes(app, services);

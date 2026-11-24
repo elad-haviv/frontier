@@ -386,7 +386,7 @@ const ADDITION: AnswerSchema<z.infer<typeof Addition>> = {
   },
 };
 
-function entriesText(given: readonly Given[]): string {
+export function entriesText(given: readonly Given[]): string {
   return given
     .map((g) =>
       [`=== Entry: ${g.path}`, `Title: ${g.title}`, "", g.body.trim(), "=== End"].join("\n"),

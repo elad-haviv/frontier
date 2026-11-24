@@ -1,0 +1,189 @@
+/* A new entry drafted from what the author said: edited in place, checked against the lore. */
+.ed {
+  margin-top: 1.5rem;
+}
+.ed-said {
+  margin: 0 0 0.8rem;
+  padding-left: 0.7rem;
+  border-left: 3px solid var(--accent-soft);
+  color: var(--ink-soft);
+  font-family: var(--serif);
+  font-style: italic;
+  font-size: 0.95rem;
+}
+.ed-read {
+  margin: 0 0 0.9rem;
+  font-size: 0.88rem;
+}
+.ed-card {
+  padding: 1rem 1.1rem;
+}
+.ed-card .crumbs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+.ed-folder {
+  max-width: 100%;
+  padding: 0.05rem 0.5rem;
+  border: 1px solid var(--rule);
+  border-radius: 99px;
+  background: none;
+  color: var(--ink-faint);
+  font: inherit;
+  font-size: 0.72rem;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+.ed-title {
+  width: calc(100% + 1rem);
+  margin: 0 -0.5rem 0.5rem;
+  padding: 0.1rem 0.5rem;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: none;
+  color: var(--ink);
+  font-family: var(--serif);
+  font-size: 1.7rem;
+  font-weight: 600;
+  line-height: 1.15;
+}
+.ed-title:hover,
+.ed-para:hover {
+  border-color: var(--rule);
+}
+.ed-title:focus,
+.ed-para:focus {
+  border-color: var(--accent);
+  background: var(--paper);
+  outline: none;
+}
+.ed-block {
+  margin: 0 0 0.9rem;
+}
+.ed-block.has-conflict {
+  padding-left: 0.7rem;
+  border-left: 3px dashed var(--warn);
+}
+.ed-para {
+  display: block;
+  width: calc(100% + 1rem);
+  margin: 0 -0.5rem;
+  padding: 0.3rem 0.5rem;
+  overflow: hidden;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: none;
+  color: var(--ink);
+  font-family: var(--serif);
+  font-size: 1.08rem;
+  line-height: 1.65;
+  resize: none;
+}
+.ed-conflict {
+  margin: 0.2rem 0 0.3rem;
+}
+.ed-conflict .guess {
+  margin: 0.3rem 0 0.1rem;
+  color: var(--warn);
+  font-size: 0.85rem;
+}
+.ed-conflict blockquote {
+  margin: 0.3rem 0;
+  padding: 0.2rem 0.7rem;
+  border-left: 3px solid var(--accent-soft);
+  font-family: var(--serif);
+  font-size: 0.95rem;
+}
+.ed-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 0.6rem;
+  align-items: center;
+  min-height: 1.6rem;
+  margin: 0.15rem 0 0;
+  font-size: 0.8rem;
+}
+.ed-meta .lore-chip {
+  display: inline-flex;
+  gap: 0.3rem;
+  align-items: center;
+}
+.ed-meta button.lore-chip {
+  cursor: pointer;
+}
+.ed-mark {
+  color: var(--accent);
+}
+.ed-prompt {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  margin-top: 0.5rem;
+  padding: 0.6rem;
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  background: var(--paper);
+}
+.ed-prompt input {
+  flex: 1;
+  min-width: 10rem;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  background: var(--paper-raised);
+  color: var(--ink);
+}
+.ed-chips {
+  display: flex;
+  flex-basis: 100%;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+.ed-chips .lore-chip {
+  cursor: pointer;
+}
+.ed-problem {
+  flex-basis: 100%;
+  margin: 0;
+  font-size: 0.85rem;
+}
+.ed-sug {
+  margin-top: 0.5rem;
+  padding: 0.7rem 0.8rem;
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  background: var(--paper);
+}
+.ed-sug .crumbs {
+  margin: 0 0 0.3rem;
+  color: var(--accent);
+}
+.ed-sug-text {
+  margin: 0;
+  font-family: var(--serif);
+  font-size: 1.02rem;
+  line-height: 1.6;
+}
+.ed ins {
+  background: color-mix(in srgb, #3a8a4d 22%, transparent);
+  text-decoration: none;
+}
+.ed del {
+  background: color-mix(in srgb, var(--warn) 18%, transparent);
+  text-decoration-color: color-mix(in srgb, var(--warn) 50%, transparent);
+}
+.ed-not-said {
+  margin: 0.2rem 0 0.9rem;
+  padding-left: 1.2rem;
+  font-size: 0.9rem;
+}
+.lore-chip.is-new {
+  border-style: dashed;
+}
+.ed-note {
+  margin: 0.5rem 0 0;
+  font-size: 0.85rem;
+}

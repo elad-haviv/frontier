@@ -518,6 +518,21 @@ export const api = {
     },
     signal?: AbortSignal,
   ) => post<{ text: string }>("/api/write/rewrite", body, signal),
+  /** A new entry drafted from what the author said; nothing is saved. `signal` stops it. */
+  draftEntry: (said: string, signal?: AbortSignal) =>
+    post<{ draft: EntryProposal }>("/api/lore/draft", { said }, signal),
+  /** One changed paragraph of a draft entry, checked against the lore again. */
+  checkEntryDraft: (
+    body: { title: string; paragraphs: string[]; changed: number },
+    signal?: AbortSignal,
+  ) => post<EntryDraftCheck>("/api/lore/draft/check", body, signal),
+  /** Keeps a draft entry as an unsaved change: a new entry that waits to be published. */
+  keepEntryDraft: (body: {
+    title: string;
+    folder: string;
+    paragraphs: string[];
+    againstLore: { paragraph: number; path: string }[];
+  }) => post<{ draft: string; path: string }>("/api/lore/draft/keep", body),
   comments: (path: string) =>
     call<{ comments: PassageComment[] }>(`/api/comments?path=${encodeURIComponent(path)}`),
   commentCount: (path: string) =>
@@ -752,6 +767,35 @@ export interface ImportResult {
 
 export const historyUrl = (path: string): string =>
   "/history/" + path.split("/").map(encodeURIComponent).join("/");
+
+/** A sentence of a draft entry that an entry of the lore contradicts, with that entry's own words. */
+export interface EntryDraftConflict {
+  /** The paragraph it is in, counting from 0. */
+  paragraph: number;
+  path: string;
+  title: string;
+  quote: string;
+}
+/** A new entry drafted from what the author said. */
+export interface EntryProposal {
+  title: string;
+  /** Where it may go, the best place first. */
+  folders: string[];
+  paragraphs: string[];
+  /** What an entry like this would need, that he did not say. */
+  notSaid: string[];
+  conflicts: EntryDraftConflict[];
+  /** The entry that already has this title, if one does. */
+  existing: string | null;
+  given: string[];
+  links: { title: string; exists: boolean }[];
+  model: string;
+}
+export interface EntryDraftCheck {
+  conflicts: EntryDraftConflict[];
+  existing: string | null;
+  links: { title: string; exists: boolean }[];
+}
 
 /** A lore conversation, as the server keeps it. */
 export interface LoreAddition {
