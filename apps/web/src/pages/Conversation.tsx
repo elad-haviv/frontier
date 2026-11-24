@@ -4,6 +4,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { api, ApiFailure, askUrl, entryUrl, type LoreConversation, type LoreTurn } from "../api.ts";
 import { Diff } from "../components/Diff.tsx";
 import { useDialogs } from "../components/Dialogs.tsx";
+import { LiveTurn, TurnWork, useLoreAsk } from "../components/LoreWork.tsx";
 import { useRefresh } from "../components/Shell.tsx";
 
 const titleOf = (path: string) => path.split("/").pop()!.replace(/\.md$/i, "");
@@ -160,6 +161,7 @@ function Answer(p: {
   return (
     <li className="turn">
       <p className="turn-question">{p.turn.question}</p>
+      {p.turn.trace && <TurnWork turn={p.turn} gone={p.gone} />}
       {answer.paragraphs.map((para, i) => (
         <div key={i} className={"answer-para" + (para.grounded ? "" : " is-guess")}>
           {/* The model's words are shown as plain text: never as markup, links or pictures. */}
@@ -228,22 +230,24 @@ function Answer(p: {
           ))}
         </p>
       )}
-      <details className="turn-meta">
-        <summary>
-          Read {p.turn.given.length} {p.turn.given.length === 1 ? "entry" : "entries"} · $
-          {p.turn.costUsd.toFixed(3)}
-        </summary>
-        <p className="muted">
-          {p.turn.given.map((g, j) => (
-            <span key={g}>
-              {j > 0 && ", "}
-              <EntryLink path={g} gone={p.gone} />
-            </span>
-          ))}
-          {answer.droppedQuotes > 0 &&
-            ` · ${answer.droppedQuotes} quoted ${answer.droppedQuotes === 1 ? "passage was" : "passages were"} not found in the entries and left out.`}
-        </p>
-      </details>
+      {!p.turn.trace && (
+        <details className="turn-meta">
+          <summary>
+            Read {p.turn.given.length} {p.turn.given.length === 1 ? "entry" : "entries"} · $
+            {p.turn.costUsd.toFixed(3)}
+          </summary>
+          <p className="muted">
+            {p.turn.given.map((g, j) => (
+              <span key={g}>
+                {j > 0 && ", "}
+                <EntryLink path={g} gone={p.gone} />
+              </span>
+            ))}
+            {answer.droppedQuotes > 0 &&
+              ` · ${answer.droppedQuotes} quoted ${answer.droppedQuotes === 1 ? "passage was" : "passages were"} not found in the entries and left out.`}
+          </p>
+        </details>
+      )}
     </li>
   );
 }
@@ -257,7 +261,16 @@ export function ConversationPage() {
   const [gone, setGone] = useState<ReadonlySet<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
   const [question, setQuestion] = useState("");
-  const [busy, setBusy] = useState(false);
+  const {
+    live,
+    ask: askLive,
+    stop,
+  } = useLoreAsk((r) => {
+    setConversation(r.conversation);
+    setGone(new Set(r.gone));
+    setQuestion("");
+  });
+  const busy = live?.state === "working" || live?.state === "stopping";
 
   useEffect(() => {
     api.conversation(id).then(
@@ -269,21 +282,11 @@ export function ConversationPage() {
     );
   }, [id]);
 
-  async function ask(e: FormEvent) {
+  function ask(e: FormEvent) {
     e.preventDefault();
-    if (!question.trim()) return;
-    setBusy(true);
+    if (!question.trim() || busy) return;
     setError(null);
-    try {
-      const r = await api.ask(question.trim(), id);
-      setConversation(r.conversation);
-      setGone(new Set(r.gone));
-      setQuestion("");
-    } catch (err) {
-      setError(failed(err, "The question could not be asked."));
-    } finally {
-      setBusy(false);
-    }
+    void askLive(question.trim(), id);
   }
 
   async function remove() {
@@ -317,6 +320,7 @@ export function ConversationPage() {
         {conversation.turns.map((turn, n) => (
           <Answer key={n} id={id} n={n} turn={turn} gone={gone} onChange={setConversation} />
         ))}
+        {live && <LiveTurn live={live} onStop={stop} />}
       </ol>
       <form className="ask-box" onSubmit={ask}>
         <label className="field">
@@ -335,7 +339,7 @@ export function ConversationPage() {
         )}
         <p className="change-actions">
           <ActionButton type="submit" className="primary" disabled={busy || !question.trim()}>
-            {busy ? "Reading the entries…" : "Ask"}
+            Ask
           </ActionButton>
           <ActionButton type="button" className="plain danger" onClick={() => void remove()}>
             Delete the conversation

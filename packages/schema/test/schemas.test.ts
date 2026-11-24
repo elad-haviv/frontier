@@ -369,7 +369,8 @@ describe("errors", () => {
     expect(statusOf("has_drafts")).toBe(409);
     expect(statusOf("has_images")).toBe(409);
     expect(statusOf("image_fetch_failed")).toBe(422);
-    expect(Object.keys(ERROR_STATUS)).toHaveLength(23);
+    expect(statusOf("ai_stopped")).toBe(409);
+    expect(Object.keys(ERROR_STATUS)).toHaveLength(24);
   });
 
   it("takes a web address of at most 2,048 characters for an image", () => {

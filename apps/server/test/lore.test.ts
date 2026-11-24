@@ -279,7 +279,8 @@ async function startStreaming(replies: Parameters<typeof streamingProvider>[0]) 
   return p;
 }
 
-/** The events of a stream from Frontier, in order. */
+/** The events of a stream from Frontier, in order. Their data is read as loosely as JSON is. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function eventsOf(payload: string): { event: string; data: any }[] {
   return payload
     .split("\n\n")
@@ -311,9 +312,7 @@ describe("asking the lore, step by step", () => {
     const steps = events.filter((e) => e.event === "step").map((e) => e.data);
     const texts = steps.map((s) => s.step.text);
     expect(texts).toContain("Looked for entries the question names");
-    expect(steps.find((s) => s.step.text.startsWith("Looked for"))!.step.entries).toContain(
-      NIRANI,
-    );
+    expect(steps.find((s) => s.step.text.startsWith("Looked for"))!.step.entries).toContain(NIRANI);
     expect(texts.some((x) => x.startsWith("Searched the library for “"))).toBe(true);
     expect(texts.some((x) => /^Reading \d+ entries$/.test(x))).toBe(true);
     // The model's step is begun, then told again as done under the same number.
@@ -357,13 +356,16 @@ describe("asking the lore, step by step", () => {
       paragraphs: [],
       related: [],
       missing: "",
-      more: { searches: ["deep currents"], entries: ["Vaakh", "Not There", "99 Appendices/Old talk.md"] },
+      more: {
+        searches: ["deep currents"],
+        entries: ["Vaakh", "Not There", "99 Appendices/Old talk.md"],
+      },
     };
     const p = await startStreaming([{ answer: asking }]);
     const res = await askStreaming("What is the toll on the Long Road?");
     const events = eventsOf(res.payload);
     const texts = events.filter((e) => e.event === "step").map((e) => e.data.step.text);
-    expect(texts).toContain("Searching the library for “deep currents”");
+    expect(texts).toContain("Searched the library for “deep currents”");
     expect(texts).toContain(`Reading ${VAAKH}`);
     expect(texts).toContain("Could not read “Not There”");
     expect(texts).toContain("Could not read “99 Appendices/Old talk.md”");

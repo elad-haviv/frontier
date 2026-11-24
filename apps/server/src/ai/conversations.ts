@@ -52,6 +52,7 @@ export const Turn = z.object({
     .object({
       steps: z.array(
         z.object({
+          kind: z.string(),
           text: z.string(),
           detail: z.string().optional(),
           entries: z.array(z.string()).optional(),

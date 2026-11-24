@@ -155,6 +155,105 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
   throw failure;
 }
 
+/** Splits server-sent events into `{ event, data }`, keeping an unfinished one for the next text. */
+export function eventsIn(text: string): {
+  events: { event: string; data: string }[];
+  rest: string;
+} {
+  const blocks = text.replace(/\r\n?/g, "\n").split("\n\n");
+  const rest = blocks.pop() ?? "";
+  const events: { event: string; data: string }[] = [];
+  for (const block of blocks) {
+    let event = "message";
+    const data: string[] = [];
+    for (const line of block.split("\n")) {
+      if (line.startsWith("event:")) event = line.slice(6).trim();
+      else if (line.startsWith("data:")) data.push(line.slice(5).replace(/^ /, ""));
+    }
+    // A block of comments only (the keep-alives) has no data.
+    if (data.length > 0) events.push({ event, data: data.join("\n") });
+  }
+  return { events, rest };
+}
+
+/**
+ * A POST whose answer comes as server-sent events: each is passed to `onEvent` as it arrives, and
+ * the `done` event's data is returned. An `error` event, or a refusal before the stream starts, is
+ * thrown as an ApiFailure. `signal` stops reading, not the work on the server.
+ */
+async function streamed<T>(
+  url: string,
+  body: unknown,
+  onEvent: (event: string, data: unknown) => void,
+  signal?: AbortSignal,
+): Promise<T> {
+  const lost = () =>
+    new ApiFailure(0, "offline", "The connection was lost before the answer came.");
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      method: "POST",
+      credentials: "same-origin",
+      headers: headers({ headers: { "content-type": "application/json" } }),
+      body: JSON.stringify(body),
+      ...(signal ? { signal } : {}),
+    });
+  } catch (err) {
+    if (signal?.aborted) throw err;
+    connection.unreachable();
+    throw unreachable();
+  }
+  if (!(res.headers.get("content-type") ?? "").includes("text/event-stream") || !res.body) {
+    const read: unknown = await res.json().catch(() => null);
+    if (GATEWAY.has(res.status) && !isErrorBody(read)) {
+      connection.unreachable();
+      throw unreachable();
+    }
+    if (res.status === 401) connection.unauthorised();
+    else connection.reached();
+    const error = isErrorBody(read) ? read.error : null;
+    throw new ApiFailure(
+      res.status,
+      error?.code ?? "unknown",
+      error?.message ?? `The server answered with status ${res.status}.`,
+    );
+  }
+  connection.reached();
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let result: { done: T } | null = null;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      buffer += done ? "\n\n" : decoder.decode(value, { stream: true });
+      const { events, rest } = eventsIn(buffer);
+      buffer = rest;
+      for (const e of events) {
+        const data: unknown = JSON.parse(e.data);
+        if (e.event === "done") result = { done: data as T };
+        else if (e.event === "error") {
+          const said = data as { code?: string; message?: string };
+          throw new ApiFailure(
+            200,
+            said.code ?? "unknown",
+            said.message ?? "The answer could not be made.",
+          );
+        } else onEvent(e.event, data);
+      }
+      if (done) break;
+    }
+  } catch (err) {
+    if (err instanceof ApiFailure || signal?.aborted) throw err;
+    throw lost();
+  } finally {
+    reader.releaseLock();
+  }
+  if (!result) throw lost();
+  return result.done;
+}
+
 const send = <T>(method: string, url: string, body?: unknown) =>
   call<T>(url, {
     method,
@@ -374,6 +473,23 @@ export const api = {
       question,
       ...(conversation ? { conversation } : {}),
     }),
+  /**
+   * Asks as `ask` does, telling each step of the work as it happens. Stopping the reading does not
+   * stop the work: `stopAsking` does.
+   */
+  askStreamed: (
+    question: string,
+    conversation: string | undefined,
+    onEvent: (event: LoreEvent) => void,
+    signal?: AbortSignal,
+  ) =>
+    streamed<{ conversation: LoreConversation; gone: string[] }>(
+      "/api/lore/stream",
+      { question, ...(conversation ? { conversation } : {}) },
+      (type, data) => onEvent({ ...(data as object), type } as LoreEvent),
+      signal,
+    ),
+  stopAsking: (run: string) => post<{ ok: true }>(`/api/lore/runs/${run}/stop`),
   rewrite: (body: { path: string; passage: string; before: string; after: string; how: string }) =>
     post<{ text: string }>("/api/write/rewrite", body),
   comments: (path: string) =>
@@ -600,7 +716,22 @@ export interface LoreTurn {
   at: string;
   addition: LoreAddition | null;
   kept: { path: string; at: string } | null;
+  /** What was done to answer; null on turns from before it was kept. */
+  trace?: { steps: LoreStep[]; reasoning: string; ms: number } | null;
 }
+/** One thing done while a question was answered: "Searched the library for …". */
+export interface LoreStep {
+  kind: string;
+  text: string;
+  detail?: string;
+  entries?: string[];
+}
+/** What the server tells while it answers a question, as `POST /api/lore/stream` sends it. */
+export type LoreEvent =
+  | { type: "run"; run: string; conversation: string }
+  | { type: "step"; n: number; step: LoreStep; active: boolean }
+  | { type: "reasoning"; text: string }
+  | { type: "writing"; chars: number };
 export interface LoreConversation {
   id: string;
   title: string;

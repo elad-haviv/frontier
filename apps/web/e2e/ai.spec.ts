@@ -115,7 +115,7 @@ test("CUJ 11: asks the lore, reads cited answers, and keeps a drafted addition a
   await expect(supported.locator(".sources")).toContainText("Shade");
   await expect(turn.locator(".answer-para.is-guess")).toContainText("Bells ring at dawn.");
   await expect(turn.locator(".guess")).toBeVisible();
-  await expect(turn.locator(".turn-meta summary")).toContainText(/Read \d+ entr/);
+  await expect(turn.locator(".turn-meta > summary")).toContainText(/Read \d+ entr/);
 
   // A follow-up the lore does not cover: an addition is drafted and kept as a draft.
   await page.getByLabel("Ask again").fill("What is unknown about Shade?");
@@ -149,6 +149,79 @@ test("CUJ 11: asks the lore, reads cited answers, and keeps a drafted addition a
     "2 questions",
   );
   await page.locator(".map-list a", { hasText: "Who is Shade?" }).click();
+  await page.getByRole("button", { name: "Delete the conversation" }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Delete", exact: true }).click();
+  await expect(page).toHaveURL(/\/ask$/);
+});
+
+test("shows the work while the lore is answered, step by step, and can stop it", async ({
+  page,
+}, info) => {
+  test.skip(info.project.name !== "phone", "The AI settings are one per server.");
+  await page.setViewportSize({ width: 375, height: 740 });
+  await page.goto("/settings");
+  await page.getByLabel(/Provider key/).fill("sk-or-browser-test-key");
+  await page.getByLabel("Model for lore conversations").fill("sample/reader");
+  await page.getByRole("button", { name: "Save" }).click();
+  await expect(page.locator(".banner-ok")).toHaveText("Saved.");
+
+  // The model asks for more once, then answers: each step shows as it happens.
+  await page.goto("/ask");
+  await page.getByLabel("A question").fill("Who is Shade? Look further.");
+  await page.getByRole("button", { name: "Ask" }).click();
+  const live = page.locator(".lore-live");
+  await expect(live.locator(".turn-question")).toHaveText("Who is Shade? Look further.");
+  const named = live.locator(".lore-step", { hasText: "Looked for entries the question names" });
+  await expect(named.locator(".lore-chip", { hasText: "Shade" })).toBeVisible();
+  await expect(live.locator(".lore-step.is-active")).toContainText("Asking the model");
+  await expect(live.locator(".lore-thinking summary")).toHaveText("Thinking…");
+  await expect(live.locator(".lore-thinking-text")).toContainText("Looking at the entries");
+  await expect(live.getByRole("button", { name: "Stop" })).toBeVisible();
+  await expect(
+    live.locator(".lore-step", { hasText: "The model asked for more entries" }),
+  ).toBeVisible();
+  await expect(
+    live.locator(".lore-step", { hasText: "Searched the library for “Mira”" }),
+  ).toBeVisible();
+
+  // The answer arrives; the work folds to one line, which opens again.
+  await expect(page).toHaveURL(/\/ask\/[a-z0-9]{12}$/, { timeout: 30_000 });
+  const turn = page.locator(".turn").first();
+  await expect(turn.locator(".answer-para").first().locator("blockquote")).toBeVisible();
+  const work = turn.locator(".lore-work");
+  await expect(work.locator("> summary")).toContainText(/Read \d+ entries · thought for \d+s/);
+  await expect(work.locator(".lore-step").first()).toBeHidden();
+  await work.locator("> summary").click();
+  await expect(work.locator(".lore-step", { hasText: "Checked the quotes" })).toBeVisible();
+  await expect(
+    work.locator(".lore-step", { hasText: "Searched the library for “Mira”" }),
+  ).toBeVisible();
+  await work.locator(".lore-thinking summary").click();
+  await expect(work.locator(".lore-thinking-text")).toContainText("quote its opening line");
+  await work.locator(".lore-chip", { hasText: "Shade" }).first().click();
+  await expect(page).toHaveURL(/Shade/);
+  await page.goBack();
+
+  // A failure shows in the conversation, in the provider's words.
+  await page.getByLabel("Ask again").fill("Will the provider fall over?");
+  await page.getByRole("button", { name: "Ask" }).click();
+  const failed = page.locator(".lore-live .lore-failed");
+  await expect(failed).toContainText("The answer could not be finished.");
+  await expect(failed).toContainText("The test provider fell over");
+
+  // Stopped while it thinks: nothing is kept.
+  await page.getByLabel("Ask again").fill("Who is Mira, slowly?");
+  await page.getByRole("button", { name: "Ask" }).click();
+  await expect(page.locator(".lore-live .lore-thinking-text")).toContainText("Looking");
+  await page.locator(".lore-live").getByRole("button", { name: "Stop" }).click();
+  await expect(page.locator(".lore-live")).toContainText("Stopped. Nothing was kept.");
+  await expect(page.getByLabel("Ask again")).toHaveValue("Who is Mira, slowly?");
+  await page.reload();
+  await expect(page.locator(".turn")).toHaveCount(1);
+  await expect(
+    page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+  ).resolves.toBe(true);
+
   await page.getByRole("button", { name: "Delete the conversation" }).click();
   await page.getByRole("dialog").getByRole("button", { name: "Delete", exact: true }).click();
   await expect(page).toHaveURL(/\/ask$/);
