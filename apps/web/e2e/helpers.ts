@@ -185,11 +185,21 @@ export async function rightPanel(page: Page, name: string) {
   const tab = page.getByRole("tab", { name: new RegExp(`^${name}\\b`) });
   if ((await tab.count()) === 0 || (await tab.getAttribute("aria-selected")) !== "true") {
     if ((await tab.count()) === 0) {
-      // The side bar is closed: the page's own button for the panel opens it.
-      await page
+      // The side bar is closed: the page's own button for the panel opens it, or, where the
+      // page keeps its actions behind "More actions" (an entry on a phone), the menu's item.
+      const button = page
         .getByRole("button", { name: new RegExp(`^${name}\\b`) })
-        .first()
-        .click();
+        .locator("visible=true")
+        .first();
+      const more = page.getByRole("button", { name: "More actions", exact: true });
+      // Wait until the page has drawn one or the other.
+      await expect(button.or(more).first()).toBeVisible();
+      if (await button.isVisible()) {
+        await button.click();
+      } else {
+        await openMenu(page, "More actions");
+        await page.getByRole("menuitem", { name, exact: true }).click();
+      }
     }
     await page.getByRole("tab", { name: new RegExp(`^${name}\\b`) }).click();
   }
