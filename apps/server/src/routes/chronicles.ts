@@ -9,6 +9,7 @@ import {
 } from "@frontier/schema";
 import { stem } from "@frontier/vault";
 import { z } from "zod";
+import { onMapsOf } from "../chronicles/onMaps.js";
 import { ApiError } from "../errors.js";
 import type { Services } from "../app.js";
 
@@ -64,7 +65,13 @@ export function chronicleRoutes(app: FastifyInstance, s: Services): void {
         if (path) entries[span.entry] = { path, title: stem(path) };
       }
     }
-    return { ...loaded, entries };
+    // Which spans something on a map follows: shown on the timeline, never saved.
+    const maps = await s.maps.list().catch(() => []);
+    const onMaps = onMapsOf(
+      loaded.chronicle,
+      maps.map((m) => m.map),
+    );
+    return { ...loaded, entries, onMaps };
   });
 
   app.post("/api/chronicles", async (request) => {

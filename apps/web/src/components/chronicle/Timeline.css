@@ -1,0 +1,613 @@
+/* The chronicle as a timeline (stage 17): rows on the left, bars on a ruler on the right. One
+   scroller moves both ways; the list column and the ruler stay put with position: sticky. */
+.tl {
+  --map-year: #1f5f8b;
+  --tl-soft: 0.45;
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+}
+@media (prefers-color-scheme: dark) {
+  .tl {
+    --map-year: #6aaee0;
+  }
+}
+.tl-scroll {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  border-top: 1px solid var(--rule);
+}
+.tl-inner {
+  position: relative;
+  min-width: 100%;
+}
+.tl-head,
+.tl-row {
+  display: flex;
+}
+.tl-head {
+  position: sticky;
+  top: 0;
+  z-index: 6;
+  height: var(--tl-ruler);
+}
+.tl-corner,
+.tl-cell {
+  position: sticky;
+  left: 0;
+  flex: none;
+  width: var(--tl-list);
+  background: var(--paper-raised);
+  border-right: 1px solid var(--rule);
+}
+.tl-corner {
+  z-index: 7;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 8.5rem;
+  align-items: end;
+  padding: 0 0.6rem 0.4rem 0.9rem;
+  border-bottom: 1px solid var(--rule);
+  color: var(--ink-faint);
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.tl-ruler {
+  position: relative;
+  flex: none;
+  width: var(--tl-width);
+  border-bottom: 1px solid var(--rule);
+  background: var(--paper-raised);
+}
+.tl-tick {
+  position: absolute;
+  bottom: 0;
+  height: 7px;
+  border-left: 1px solid var(--rule);
+}
+.tl-tick.is-major {
+  height: 14px;
+  border-color: var(--ink-faint);
+}
+.tl-tick span {
+  position: absolute;
+  bottom: 15px;
+  left: 3px;
+  color: var(--ink-faint);
+  font-size: 0.7rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.tl-lines {
+  position: absolute;
+  inset: var(--tl-ruler) 0 0 0;
+  pointer-events: none;
+}
+.tl-lines i {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-left: 1px solid color-mix(in srgb, var(--rule) 55%, transparent);
+}
+.tl-ties {
+  position: absolute;
+  z-index: 1;
+  overflow: visible;
+  pointer-events: none;
+}
+.tl-ties path {
+  fill: none;
+  stroke: var(--ink-faint);
+  stroke-dasharray: 2 3;
+  stroke-width: 1.2;
+}
+
+.tl-row {
+  height: var(--tl-row);
+}
+.tl-cell {
+  z-index: 4;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 8.5rem;
+  column-gap: 0.5rem;
+  align-items: center;
+  padding: 0 0.6rem 0 0.9rem;
+  border-bottom: 1px solid color-mix(in srgb, var(--rule) 60%, transparent);
+  cursor: default;
+  white-space: nowrap;
+}
+.tl-cell.is-selected {
+  background: var(--accent-soft);
+}
+.tl-cell.is-group {
+  grid-template-columns: auto auto minmax(0, 1fr) auto auto;
+  column-gap: 0.4rem;
+  padding-left: 0.3rem;
+  background: var(--paper);
+  font-weight: 700;
+}
+.tl-cell.is-add {
+  display: flex;
+}
+.tl-cell.is-add button {
+  padding-left: 1.6rem;
+  color: var(--ink-faint);
+  font-size: 0.85rem;
+}
+.tl-name {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.35rem;
+  overflow: hidden;
+  padding-left: 1.1rem;
+  text-overflow: ellipsis;
+}
+.tl-kind {
+  position: absolute;
+  margin-left: 0.2rem;
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+  background: var(--lane);
+}
+.tl-kind.is-moment {
+  transform: rotate(45deg);
+}
+.tl-red {
+  color: var(--warn);
+}
+.tl-when {
+  overflow: hidden;
+  color: var(--ink-soft);
+  font-size: 0.82rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 400;
+  text-overflow: ellipsis;
+}
+.tl-when.is-none {
+  color: var(--ink-faint);
+  font-style: italic;
+}
+.tl-when-edit {
+  position: relative;
+}
+.tl-when-edit input {
+  width: 100%;
+  padding: 0.15rem 0.3rem;
+  font-size: 0.82rem;
+}
+.tl-when-error {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  z-index: 9;
+  width: 16rem;
+  padding: 0.3rem 0.5rem;
+  border-radius: 5px;
+  background: var(--ink);
+  color: var(--paper);
+  font-size: 0.78rem;
+  font-style: normal;
+  white-space: normal;
+}
+.tl-fold {
+  min-width: 1.6rem;
+  min-height: 1.6rem;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ink-soft);
+}
+.tl-dot {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+  background: var(--lane);
+}
+.tl-group-name {
+  min-width: 0;
+  overflow: hidden;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  text-overflow: ellipsis;
+}
+.tl-rename {
+  min-width: 0;
+  padding: 0.1rem 0.3rem;
+  font-weight: 600;
+}
+
+.tl-track {
+  position: relative;
+  flex: none;
+  width: var(--tl-width);
+  border-bottom: 1px solid color-mix(in srgb, var(--rule) 60%, transparent);
+}
+.tl-track.is-group {
+  background: color-mix(in srgb, var(--ink) 2%, transparent);
+}
+.tl-track.is-selected {
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
+}
+.tl-track.can-draw {
+  cursor: crosshair;
+}
+.tl-summary {
+  position: absolute;
+  top: calc(var(--tl-row) - 13px);
+  height: 5px;
+  border-radius: 3px;
+  background: var(--lane);
+  opacity: 0.45;
+}
+
+/* A bar: the solid core, the soft ends, and its name. */
+.tl-bar,
+.tl-moment {
+  position: absolute;
+  top: calc((var(--tl-row) - 20px) / 2);
+  display: flex;
+  height: 20px;
+  align-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: inherit;
+  cursor: grab;
+  touch-action: pan-x pan-y;
+  user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+}
+.is-narrow .tl-bar,
+.is-narrow .tl-moment {
+  top: calc((var(--tl-row) - 28px) / 2);
+  height: 28px;
+}
+.is-dragging .tl-bar,
+.is-dragging .tl-moment {
+  cursor: grabbing;
+}
+.tl-core,
+.tl-soft,
+.tl-open {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+}
+.tl-core {
+  border-radius: 3px;
+  background: var(--lane);
+}
+.tl-soft {
+  background: repeating-linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--lane) 55%, transparent) 0 3px,
+    color-mix(in srgb, var(--lane) 25%, transparent) 3px 6px
+  );
+}
+.tl-soft::after {
+  content: "";
+  position: absolute;
+  bottom: -5px;
+  width: 1px;
+  height: 5px;
+  background: var(--ink-soft);
+}
+.tl-soft.is-start {
+  border-radius: 3px 0 0 3px;
+}
+.tl-soft.is-start::after {
+  left: 0;
+}
+.tl-soft.is-end {
+  border-radius: 0 3px 3px 0;
+}
+.tl-soft.is-end::after {
+  right: 0;
+}
+.tl-soft.is-start::before,
+.tl-soft.is-end::before {
+  content: "";
+  position: absolute;
+  bottom: -5px;
+  width: 1px;
+  height: 5px;
+  background: var(--ink-soft);
+}
+.tl-soft.is-start::before {
+  right: 0;
+}
+.tl-soft.is-end::before {
+  left: 0;
+}
+.tl-bar.is-unknown-start .tl-core {
+  border-left: 2px dashed var(--paper-raised);
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 60%);
+  mask-image: linear-gradient(to right, transparent, #000 60%);
+}
+.tl-bar.is-unknown-end .tl-core {
+  -webkit-mask-image: linear-gradient(to left, transparent, #000 60%);
+  mask-image: linear-gradient(to left, transparent, #000 60%);
+}
+.tl-open {
+  display: grid;
+  width: 20px;
+  place-items: center;
+  color: #fff;
+  font-style: normal;
+  font-weight: 800;
+}
+.tl-open.is-start {
+  left: 0;
+}
+.tl-open.is-end {
+  right: 0;
+}
+.tl-label {
+  position: sticky;
+  left: calc(var(--tl-list) + 6px);
+  z-index: 1;
+  display: inline-flex;
+  gap: 0.3rem;
+  margin-left: 6px;
+  color: #fff;
+  font-size: 0.78rem;
+  font-weight: 600;
+  pointer-events: none;
+  text-shadow: 0 1px 1px rgb(0 0 0 / 0.3);
+  white-space: nowrap;
+}
+.tl-bar.is-open-start .tl-label {
+  margin-left: 22px;
+}
+.tl-label.is-out {
+  position: absolute;
+  margin-left: 0;
+  color: var(--ink);
+  font-weight: 500;
+  text-shadow: none;
+}
+.tl-moment .tl-label.is-out {
+  left: 14px;
+}
+.tl-icon {
+  font-size: 0.72rem;
+  text-shadow: none;
+}
+.tl-bar.is-selected,
+.tl-moment.is-selected .tl-diamond {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+.tl-bar.is-red .tl-core,
+.tl-bar.is-red .tl-soft,
+.tl-moment.is-red .tl-diamond {
+  box-shadow: 0 0 0 2px var(--warn);
+}
+.tl-bar:focus-visible,
+.tl-moment:focus-visible,
+.tl-nodates:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+.tl-grip {
+  position: absolute;
+  top: -4px;
+  bottom: -4px;
+  z-index: 2;
+  width: 10px;
+  cursor: ew-resize;
+  touch-action: none;
+}
+.tl-grip::after {
+  content: "";
+  position: absolute;
+  top: 5px;
+  bottom: 5px;
+  left: 4px;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--ink);
+}
+.tl-grip.is-start {
+  left: -5px;
+}
+.tl-grip.is-end {
+  right: -5px;
+}
+.is-narrow .tl-grip {
+  width: 44px;
+  top: -8px;
+  bottom: -8px;
+}
+.is-narrow .tl-grip::after {
+  left: 20px;
+}
+.is-narrow .tl-grip.is-start {
+  left: -22px;
+}
+.is-narrow .tl-grip.is-end {
+  right: -22px;
+}
+
+.tl-moment {
+  width: 0;
+  overflow: visible;
+}
+.tl-diamond {
+  position: absolute;
+  left: -7px;
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--paper-raised);
+  background: var(--lane);
+  box-shadow: 0 0 0 1px rgb(0 0 0 / 0.15);
+  transform: rotate(45deg);
+}
+.tl-moment.is-open .tl-diamond {
+  opacity: 0.6;
+}
+.tl-whisker {
+  position: absolute;
+  height: 2px;
+  background: var(--lane);
+}
+.tl-whisker::before,
+.tl-whisker::after {
+  content: "";
+  position: absolute;
+  top: -4px;
+  width: 2px;
+  height: 10px;
+  background: inherit;
+}
+.tl-whisker::before {
+  left: 0;
+}
+.tl-whisker::after {
+  right: 0;
+}
+
+/* An event with no dates yet: a dashed box at the left edge of what is in sight. */
+.tl-nodates {
+  position: sticky;
+  left: calc(var(--tl-list) + 8px);
+  top: 0;
+  display: inline-flex;
+  max-width: calc(100vw - var(--tl-list) - 2rem);
+  margin-top: calc((var(--tl-row) - 24px) / 2);
+  height: 24px;
+  align-items: center;
+  overflow: hidden;
+  padding: 0 0.5rem;
+  border: 1.5px dashed var(--ink-faint);
+  border-radius: 4px;
+  background: var(--paper-raised);
+  color: var(--ink-faint);
+  font-size: 0.78rem;
+  cursor: grab;
+  text-overflow: ellipsis;
+  touch-action: pan-x pan-y;
+  user-select: none;
+  -webkit-touch-callout: none;
+  white-space: nowrap;
+}
+.tl-nodates.is-selected {
+  border-color: var(--ink);
+  color: var(--ink);
+}
+.tl-drawing {
+  position: absolute;
+  top: calc((var(--tl-row) - 20px) / 2);
+  height: 20px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--lane, var(--accent)) 50%, transparent);
+  pointer-events: none;
+}
+.tl-ghost {
+  position: absolute;
+  top: calc((var(--tl-row) - 24px) / 2);
+  height: 24px;
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--ink-faint) 22%, transparent);
+  pointer-events: none;
+}
+.tl-ghost.is-moment {
+  width: 12px;
+  transform: rotate(45deg) scale(0.9);
+}
+.tl-ghost.is-differs {
+  outline: 2px dashed var(--ink-soft);
+}
+
+/* The year the maps show. */
+.tl-mapline {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 3;
+  width: 10px;
+  margin-left: -5px;
+  cursor: ew-resize;
+  touch-action: none;
+}
+.tl-mapline::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 4px;
+  border-left: 2px solid var(--map-year);
+}
+.tl-mapflag {
+  position: absolute;
+  top: 3px;
+  margin-left: -1px;
+  padding: 1px 7px;
+  border: 0;
+  cursor: ew-resize;
+  touch-action: none;
+  border-radius: 0 4px 4px 0;
+  background: var(--map-year);
+  color: #fff;
+  font-size: 0.7rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.tl-empty-chart {
+  position: absolute;
+  max-width: 24rem;
+  margin: 0;
+  color: var(--ink-soft);
+  pointer-events: none;
+}
+.tl-drag-label {
+  position: fixed;
+  z-index: var(--layer-tooltip);
+  padding: 0.25rem 0.5rem;
+  border-radius: 5px;
+  background: var(--ink);
+  color: var(--paper);
+  font-size: 0.78rem;
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+/* The phone: no list column; group headers and the add row sit at the left of what is in sight. */
+.tl-sticky-head {
+  position: sticky;
+  left: 0;
+  display: inline-flex;
+  height: 100%;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0 0.5rem;
+  font-weight: 700;
+}
+.tl-sticky-head .tl-fold {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-height: 2.75rem;
+  color: var(--ink);
+  font-weight: 700;
+}
+.tl-sticky-head.is-add button {
+  min-height: 2.75rem;
+  color: var(--ink-faint);
+  font-size: 0.85rem;
+}
