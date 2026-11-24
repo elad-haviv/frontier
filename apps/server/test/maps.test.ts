@@ -257,6 +257,31 @@ describe("map files", () => {
     expect((await load(id)).map.layers[1]!.parent).toBe(top.id);
   });
 
+  it("saves a label with its words and look, and refuses one without words", async () => {
+    const id = await create();
+    const { map } = await load(id);
+    const layer = map.layers[0]!.id;
+    const label = {
+      id: "lab1",
+      kind: "label" as const,
+      layer,
+      at: [10, 20] as [number, number],
+      entry: null,
+      label: "The Grey Sea",
+      child: null,
+      size: 24,
+      rotate: 30,
+    };
+    const res = await save(id, { ...map, features: [label] }, 1);
+    expect(res.statusCode, res.body).toBe(200);
+    expect((await load(id)).map.features[0]).toEqual(label);
+    const un = UnpublishedResponse.parse((await t.get("/api/unpublished")).json());
+    expect(un.drafts[0]!.text).toContain('"label":"The Grey Sea","size":24,"rotate":30');
+
+    const bad = await save(id, { ...map, features: [{ ...label, label: "" }] }, 2);
+    expect(bad.statusCode).toBe(400);
+  });
+
   it("does not let the note routes change a map draft", async () => {
     const id = await create();
     const draft = UnpublishedResponse.parse((await t.get("/api/unpublished")).json()).drafts[0]!;

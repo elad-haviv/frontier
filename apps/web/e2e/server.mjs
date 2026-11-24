@@ -76,6 +76,22 @@ function discovery(user) {
   };
 }
 
+// Names and descriptions for features to fill in or place: as many as asked, each with the first
+// look offered, if any.
+function generated(user) {
+  const asked = /What to propose: (one feature|(\d) features)/.exec(user);
+  const count = asked?.[2] ? Number(asked[2]) : 1;
+  const look = /Looks to choose from:\n- (.*?): /.exec(user)?.[1] ?? "";
+  return {
+    items: Array.from({ length: count }, (_, i) => ({
+      name: `Test Watchtower${i ? ` ${i + 1}` : ""}`,
+      description: "A watchtower the test made up.",
+      choice: look,
+      basis: [],
+    })),
+  };
+}
+
 function character(user) {
   const { path, line } = firstLine(user);
   return {
@@ -233,17 +249,31 @@ const ai = createServer((req, res) => {
     }
     const asked = JSON.parse(raw);
     const user = asked.messages[1].content;
+    // A model that spends its room thinking: the answer stops at the token limit, cut off.
+    if (user.includes('"Truncated Point"')) {
+      res.end(
+        JSON.stringify({
+          choices: [
+            { message: { content: '{"candidates":[{"kind":"sett' }, finish_reason: "length" },
+          ],
+          usage: { prompt_tokens: 100, completion_tokens: 10500, cost: 0.001 },
+        }),
+      );
+      return;
+    }
     const lines = user.split("\n").slice(1);
     const quote = lines.find((l) => l.trim() !== "" && !l.startsWith("#")) ?? "";
     const answer = user.startsWith("Entry:")
       ? { type: null, time: [{ what: "happened", when: "in the year of the test", quote }] }
-      : user.startsWith("Entries about what is near")
-        ? discovery(user)
-        : user.startsWith("The character:")
-          ? character(user)
-          : user.startsWith("Entries:")
-            ? lore(user)
-            : { reply: "ok" };
+      : user.includes("\nWhat to propose: ")
+        ? generated(user)
+        : user.startsWith("Entries about what is near")
+          ? discovery(user)
+          : user.startsWith("The character:")
+            ? character(user)
+            : user.startsWith("Entries:")
+              ? lore(user)
+              : { reply: "ok" };
     if (asked.stream) {
       void streamAnswer(req, res, JSON.stringify(answer), user);
       return;

@@ -16,6 +16,21 @@ const Discover = z.object({
   year: z.number().nullable().default(null),
 });
 const Keep = z.object({ folder: z.string().min(1).max(300) });
+const Generate = Discover.extend({
+  kind: z.enum(["marker", "path", "zone", "label"]),
+  count: z.number().int().min(1).max(5).default(1),
+  prompt: z
+    .string()
+    .max(500)
+    .nullable()
+    .default(null)
+    .transform((p) => p?.trim() || null),
+  exclude: z.string().max(40).nullable().default(null),
+  choices: z
+    .array(z.object({ id: z.string().min(1).max(200), name: z.string().max(200) }))
+    .max(200)
+    .default([]),
+});
 
 export function discoverRoutes(app: FastifyInstance, s: Services): void {
   app.get("/api/maps/:id/discoveries", async (request) => {
@@ -42,6 +57,12 @@ export function discoverRoutes(app: FastifyInstance, s: Services): void {
     const { id } = MapParam.parse(request.params);
     const { at, chronicle, year } = Discover.parse(request.body);
     return { discoveries: await s.discoverer.discover(id, at, { chronicle, year }) };
+  });
+
+  // Names and descriptions for features the author fills in or places: proposals, not stored.
+  app.post("/api/maps/:id/generate", async (request) => {
+    const { id } = MapParam.parse(request.params);
+    return { items: await s.discoverer.generate(id, Generate.parse(request.body)) };
   });
 
   app.post("/api/maps/:id/discoveries/:d/art", async (request) => {

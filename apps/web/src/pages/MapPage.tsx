@@ -7,15 +7,20 @@ import {
   type Position,
   turnTo,
 } from "@frontier/geo";
-import { MapPin, Layers as LayersIcon, Palette } from "lucide-react";
-import { hiddenWithin, lockedWithin, orderFeature, reorderFeature } from "@frontier/schema";
+import { MapPin, Layers as LayersIcon, Palette, Sparkles } from "lucide-react";
+import {
+  hiddenWithin,
+  isLined,
+  lockedWithin, orderFeature, reorderFeature } from "@frontier/schema";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { entryUrl, mapUrl } from "../api.ts";
 import { useDialogs } from "../components/Dialogs.tsx";
 import { OfflineCopy } from "../components/OfflineCopy.tsx";
 import { DiscoveryPins, OpenDiscovery } from "../components/map/DiscoveryPins.tsx";
+import { FeatureEntryDialog } from "../components/map/FeatureEntryDialog.tsx";
 import { FeaturePanel } from "../components/map/FeaturePanel.tsx";
+import { GhostPins, PlacePanel, usePlace } from "../components/map/PlacePanel.tsx";
 import { LayerPanel } from "../components/map/LayerPanel.tsx";
 import { Legend } from "../components/map/Legend.tsx";
 import { MapBar } from "../components/map/MapBar.tsx";
@@ -50,6 +55,9 @@ import {
   takeBackPoint,
   type Tool,
 } from "../map/tools.ts";
+import { folderFor } from "../map/featureEntry.ts";
+import { choicesFor, ghostMarker, withProposal } from "../map/place.ts";
+import { useSnapSetting } from "../map/snap.ts";
 import { useDiscovery } from "../map/useDiscovery.ts";
 import { useMapDraw } from "../map/useMapDraw.ts";
 import { useMapFile } from "../map/useMapFile.ts";
@@ -100,6 +108,17 @@ export function MapPage() {
   );
   // New paths and zones curved or not; the kind of pointer that last pressed, for the "+" sizes.
   const [curve, setCurveOn] = useCurveSetting();
+  // Points of paths and zones snap to the paths and zones beside them, unless turned off here.
+  const [snap, setSnap] = useSnapSetting();
+  /** The entry being made for a feature, from its entry list or a generated description. */
+  const [makingEntry, setMakingEntry] = useState<{
+    feature: string;
+    name: string;
+    body: string;
+  } | null>(null);
+  // Place with AI: the proposals on the map, and the one picked in its tab.
+  const place = usePlace(id);
+  const [pickedGhost, setPickedGhost] = useState<string | null>(null);
   const [pressKind, setPressKind] = useState<PointerKind>(() =>
     window.matchMedia("(pointer: coarse)").matches ? "touch" : "mouse",
   );
@@ -145,7 +164,7 @@ export function MapPage() {
       // Where a feature is at the year shown: the shape in force then, or its first.
       placeOf: (f) => {
         const drawn = shown.resolved.find((r) => r.feature.id === f.id)?.feature ?? f;
-        return drawn.kind === "marker" ? drawn.at : drawn.points[0]!;
+        return !isLined(drawn) ? drawn.at : drawn.points[0]!;
       },
     },
   );
@@ -169,6 +188,11 @@ export function MapPage() {
   });
   const { titleOf } = draw;
   const discovery = useDiscovery(id, { ...time, setNotice });
+  /** The moment the map is seen at, which what the AI proposes must fit. */
+  const moment = {
+    chronicle: time.timeOn ? time.chronicleId : null,
+    year: time.timeOn ? time.year : null,
+  };
   const { found, openFound, setOpenFound } = discovery;
 
   /** Sets what a tool's step changes. */
@@ -203,6 +227,7 @@ export function MapPage() {
     paused: menuOpen,
     curve,
     onPressKind: setPressKind,
+    snap,
   });
   const { box, setBox } = pointer;
   useWheelZoom(draw.topCanvas, viewRef, setView, [map === null, draw.glError]);
@@ -232,6 +257,11 @@ export function MapPage() {
     setTool(next);
     setSketch([]);
     if (next !== "select") setSelected(null);
+    // Proposals not placed are only previews: they go with the tool.
+    if (next !== "place") {
+      place.setGhosts([]);
+      setPickedGhost(null);
+    }
   };
   /** Deletes the picked point if there is one, else the selected feature: one step to undo. */
   const deleteSelection = () => {
@@ -251,7 +281,9 @@ export function MapPage() {
     setSelected(null);
   };
   const whole = () => map && setView(initialView(map.space, size.width, size.height));
-  const drawing = sketch.length > 0 && (tool === "path" || tool === "zone" || tool === "measure");
+  const drawing =
+    sketch.length > 0 &&
+    (tool === "path" || tool === "zone" || tool === "measure" || tool === "place");
   /** Finishes the path or zone being drawn, when it has the points it needs. */
   const finish = () => {
     if (!map || !canFinish(tool, sketch)) return false;
@@ -261,7 +293,7 @@ export function MapPage() {
   const toggleCurve = () => {
     if (tool === "path" || tool === "zone") return setCurveOn(!curve);
     const chosen = file.mapRef.current?.features.find((f) => f.id === selected);
-    if (tool !== "select" || !chosen || chosen.kind === "marker") return false;
+    if (tool !== "select" || !chosen || !isLined(chosen)) return false;
     file.setFeature(setCurve(chosen, (chosen as { curve?: string }).curve !== "smooth"));
   };
   const schematicMap = map?.space.kind === "flat" && map.space.schematic === true;
@@ -279,7 +311,16 @@ export function MapPage() {
     finish,
     toggleCurve,
     tool,
-    tools: ["select", "marker", "path", "zone", ...(schematicMap ? [] : ["measure" as const])],
+    tools: [
+      "select",
+      "marker",
+      "path",
+      "zone",
+      "label",
+      ...(schematicMap ? [] : ["measure" as const]),
+      ...(found.ready ? ["place" as const] : []),
+    ],
+    toggleSnap: () => setSnap(!snap),
     setTool: chooseTool,
     vertex,
     clearVertex: () => setVertex(null),
@@ -326,8 +367,16 @@ export function MapPage() {
       ? { id: "styles", title: "Styles", icon: Palette, render: () => <StylesPanel /> }
       : null,
   );
-  // The Marker tool stays on: the marker just placed opens its tab, to be linked at once.
-  const showsFeature = feature !== null && (!editing || tool === "select" || tool === "marker");
+  // The Marker and Label tools stay on: what was just placed opens its tab, to be named at once.
+  const showsFeature =
+    feature !== null && (!editing || tool === "select" || tool === "marker" || tool === "label");
+  // Place with AI has its own tab while the tool is on.
+  let placePanel: ReactNode = null;
+  usePanel(
+    map && editing && tool === "place"
+      ? { id: "place", title: "Place with AI", icon: Sparkles, render: () => placePanel }
+      : null,
+  );
   usePanel(
     map ? { id: "layers", title: "Layers", icon: LayersIcon, render: () => layersPanel } : null,
   );
@@ -369,6 +418,12 @@ export function MapPage() {
     const covered = sheet && box ? Math.max(0, Math.min(box.bottom - sheet.top, box.height)) : 0;
     setView(panBy(centreOn(view, at), 0, -covered / 2));
   };
+
+  // The first tap of Place with AI opens its tab, to say what to place there.
+  const placing = editing && tool === "place";
+  useEffect(() => {
+    if (placing && sketch.length === 1) showPanel("place");
+  }, [placing, sketch.length, showPanel]);
   usePageTitle(map?.title ?? "Map");
   useSheetFloor(frame, "bottom", map !== null);
 
@@ -518,9 +573,42 @@ export function MapPage() {
         onEdit={() => startEditing(feature.id)}
         styles={styles}
         onEditStyles={() => bar.show("styles")}
+        generate={
+          found.ready
+            ? {
+                mapId: id,
+                choices: choicesFor(feature.kind, map, styles, file.sets),
+                moment,
+                onUse: (proposal) => {
+                  const now = file.mapRef.current?.features.find((f) => f.id === feature.id);
+                  if (now) file.setFeature(withProposal(now, proposal));
+                },
+              }
+            : null
+        }
+        onMakeEntry={(name, body) => setMakingEntry({ feature: feature.id, name, body })}
       />
     );
   }
+  const placeChoices = choicesFor("marker", map, styles, file.sets);
+  placePanel = (
+    <PlacePanel
+      marked={sketch}
+      place={place}
+      choices={placeChoices}
+      picked={pickedGhost}
+      onPick={setPickedGhost}
+      onPropose={(ask) =>
+        view && place.propose(view, size, sketch, { ...ask, choices: placeChoices }, moment)
+      }
+      onAccept={(ghost) => {
+        const now = file.mapRef.current;
+        if (now) change({ ...now, features: [...now.features, ghostMarker(ghost, activeLayer)] });
+      }}
+      onClear={() => setSketch([])}
+    />
+  );
+  const makingFor = makingEntry && map.features.find((f) => f.id === makingEntry.feature);
 
   return (
     <div className="map-page">
@@ -576,7 +664,10 @@ export function MapPage() {
         <MapTools
           tool={tool}
           schematic={schematic}
+          canPlace={found.ready}
           onTool={chooseTool}
+          snap={snap}
+          onSnap={setSnap}
           canUndo={file.history.past.length > 0}
           canRedo={file.history.future.length > 0}
           onUndo={file.undo}
@@ -632,6 +723,32 @@ export function MapPage() {
         </MapContextMenu>
         <canvas ref={draw.liveCanvas} className="map-canvas map-live" aria-hidden="true" />
         <MapHover hovered={menuOpen ? null : hovered} editing={editing} frame={size} />
+        {view && placing && (
+          <GhostPins
+            ghosts={place.ghosts}
+            view={view}
+            size={size}
+            picked={pickedGhost}
+            onPick={(key) => {
+              setPickedGhost(key);
+              bar.show("place");
+            }}
+          />
+        )}
+        {makingEntry && makingFor && (
+          <FeatureEntryDialog
+            name={makingEntry.name}
+            body={makingEntry.body}
+            folder={folderFor(map, makingFor.kind, file.names)}
+            onClose={() => setMakingEntry(null)}
+            onMade={(path, title) => {
+              setMakingEntry(null);
+              const now = file.mapRef.current?.features.find((f) => f.id === makingFor.id);
+              if (now) file.link(now, path, title);
+              refresh();
+            }}
+          />
+        )}
         {view && (
           <DiscoveryPins
             items={found.items}
@@ -645,10 +762,16 @@ export function MapPage() {
           />
         )}
         {discovery.exploring && !openFound && (
-          <p className="map-hint" role="status">
+          // Why a tap found nothing is said here, over the map, where the eye is.
+          <p
+            className={`map-hint${discovery.failed && !discovery.seeking ? " map-hint-failed" : ""}`}
+            role={discovery.failed && !discovery.seeking ? "alert" : "status"}
+          >
             {discovery.seeking
               ? "Looking at what is near…"
-              : "Tap a place to see what might be found there."}
+              : discovery.failed
+                ? `${discovery.failed} Tap a place to try again.`
+                : "Tap a place to see what might be found there."}
           </p>
         )}
         <FocusBox box={box} focusing={focusing} onCancel={() => setFocusing(false)} />

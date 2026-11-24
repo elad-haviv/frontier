@@ -30,16 +30,22 @@ export function NewEntry({
   onMake,
   onRetry,
   onClose,
+  name: initialName = "",
+  action = "Make the entry",
 }: {
   tree: Loaded<TreeResponse>;
   /** The folder in view, offered first. "" is the top of the library. */
   folder: string;
+  /** The name to start from, as typed where the entry was asked for. */
+  name?: string;
+  /** The words of the button that makes it. */
+  action?: string;
   /** Called with the new entry's path, and the type its folder gives its entries, if any. */
   onMake: (path: string, type?: string) => void;
   onRetry: () => void;
   onClose: () => void;
 }) {
-  const [name, setName] = useState("");
+  const [name, setName] = useState(initialName);
   const [where, setWhere] = useState(folder);
   const [problem, setProblem] = useState<string | null>(null);
   const field = useRef<HTMLInputElement>(null);
@@ -144,7 +150,7 @@ export function NewEntry({
           Cancel
         </button>
         <button type="submit" className="primary">
-          Make the entry
+          {action}
         </button>
       </p>
     </DialogFrame>

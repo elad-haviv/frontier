@@ -15,10 +15,13 @@ import {
   zonePolygon,
 } from "@frontier/geo";
 import {
+  isLined,
+  LABEL_LOOK,
   layerTree,
   lockedWithin,
   type MapFeature,
   type MapFile,
+  type MapLabel,
   type MapStyle,
 } from "@frontier/schema";
 import { geoContains, geoOrthographic, geoPath } from "d3-geo";
@@ -265,6 +268,73 @@ export function drawSample(
   stroke(ctx, colour, look);
 }
 
+/** Where a place is drawn on the screen: once on a globe, once per repeat of a flat picture. */
+function spotsOf(view: View, at: Position): Point[] {
+  return view.state.kind === "globe"
+    ? [view.project(at)].filter((p): p is Point => p !== null)
+    : view.repeats().map((shift): Point => {
+        const p = view.projectClamped(at).point;
+        return [p[0] + shift, p[1]];
+      });
+}
+
+/** The font a label is written in, at its size. */
+export const labelFont = (size: number) => `600 ${size}px Georgia, "Times New Roman", serif`;
+
+/**
+ * Writes a label centred on a point of the screen, turned and spaced as it says, with a paper
+ * halo so it reads over any picture; with `ring`, a box in that colour marks it as selected.
+ * Gives the four corners of the box around its words.
+ */
+export function drawLabel(
+  ctx: CanvasRenderingContext2D,
+  label: MapLabel,
+  [x, y]: Point,
+  ring: string | null,
+): Point[] {
+  const size = label.size ?? LABEL_LOOK.size;
+  ctx.font = labelFont(size);
+  const letters = [...label.label];
+  const gap = (label.spacing ?? LABEL_LOOK.spacing) * size;
+  const widths = letters.map((l) => ctx.measureText(l).width);
+  const width = widths.reduce((a, b) => a + b, 0) + gap * Math.max(0, letters.length - 1);
+  const half = { w: width / 2 + 4, h: size * 0.65 };
+  const turn = ((label.rotate ?? LABEL_LOOK.rotate) * Math.PI) / 180;
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(turn);
+  if (ring) {
+    ctx.strokeStyle = ring;
+    ctx.lineWidth = 2;
+    ctx.setLineDash([5, 3]);
+    ctx.strokeRect(-half.w, -half.h, half.w * 2, half.h * 2);
+    ctx.setLineDash([]);
+  }
+  ctx.textAlign = "left";
+  ctx.textBaseline = "middle";
+  ctx.lineJoin = "round";
+  ctx.strokeStyle = PAPER;
+  ctx.lineWidth = Math.max(3, size / 6);
+  ctx.fillStyle = label.color ?? LABEL_LOOK.color;
+  // Letter by letter, so the spacing is the same in every browser.
+  let left = -width / 2;
+  letters.forEach((letter, i) => {
+    ctx.strokeText(letter, left, 0);
+    ctx.fillText(letter, left, 0);
+    left += widths[i]! + gap;
+  });
+  ctx.restore();
+  const [c, s] = [Math.cos(turn), Math.sin(turn)];
+  return (
+    [
+      [-half.w, -half.h],
+      [half.w, -half.h],
+      [half.w, half.h],
+      [-half.w, half.h],
+    ] as Point[]
+  ).map(([px, py]): Point => [x + px * c - py * s, y + px * s + py * c]);
+}
+
 export function drawOverlay(ctx: CanvasRenderingContext2D, input: OverlayInput): DrawnShape[] {
   const { map, view } = input;
   const accent = input.selected ? selectColour() : "";
@@ -408,14 +478,7 @@ export function drawOverlay(ctx: CanvasRenderingContext2D, input: OverlayInput):
     const style = look(f);
     ctx.setLineDash([]);
     const colour = colours.get(f.layer) ?? INK;
-    const spots: Point[] =
-      view.state.kind === "globe"
-        ? [view.project(f.at)].filter((p): p is Point => p !== null)
-        : view.repeats().map((shift): Point => {
-            const p = view.projectClamped(f.at).point;
-            return [p[0] + shift, p[1]];
-          });
-    for (const [x, y] of spots) {
+    for (const [x, y] of spotsOf(view, f.at)) {
       if (x < -40 || x > view.width + 40 || y < -40 || y > view.height + 40) continue;
       const picked = f.id === input.selected;
       const icon = input.iconFor(f);
@@ -480,16 +543,30 @@ export function drawOverlay(ctx: CanvasRenderingContext2D, input: OverlayInput):
 
   plain();
 
+  // Labels written on the map, above everything else, in the order of the file.
+  for (const f of features) {
+    if (f.kind !== "label") continue;
+    // Seen in time, a label fades as a marker does.
+    look(f);
+    for (const at of spotsOf(view, f.at)) {
+      // Tapped and hovered by the box around its words, as a zone is by its outline.
+      const box = drawLabel(ctx, f, at, f.id === input.selected ? accent : null);
+      shapes.push({ id: f.id, kind: "zone", points: box, width: 1 });
+    }
+  }
+
+  plain();
+
   // Corner handles of the selected path or zone, and its "+" handles between them; none for a
   // feature in a locked layer, which cannot be changed on the map.
   const locked = lockedWithin(map.layers);
   const chosen = features.find((f) => f.id === input.selected && !locked.has(f.layer));
-  if (input.editing && chosen && chosen.kind !== "marker" && input.pluses) {
+  if (input.editing && chosen && isLined(chosen) && input.pluses) {
     for (const h of plusHandles(map.space, view, chosen, input.pluses)) {
       for (const shift of view.repeats()) plus(ctx, [h.screen[0] + shift, h.screen[1]]);
     }
   }
-  if (input.editing && chosen && chosen.kind !== "marker") {
+  if (input.editing && chosen && isLined(chosen)) {
     chosen.points.forEach((p, i) => {
       const s = view.project(p);
       if (!s) return;

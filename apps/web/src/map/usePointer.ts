@@ -15,7 +15,7 @@ import {
   type ViewState,
   zoomAt,
 } from "@frontier/geo";
-import type { MapFeature, MapFile } from "@frontier/schema";
+import { isLined, type MapFeature, type MapFile } from "@frontier/schema";
 import { type RefObject, useEffect, useRef, useState } from "react";
 import {
   type Effect,
@@ -39,12 +39,14 @@ import {
   dragShape,
   insertPoint,
   moveZone,
+  placeLabel,
   placeMarker,
   type Step,
   tapSelect,
   type Tool,
 } from "./tools.ts";
 import { focusIsFree } from "../keys.ts";
+import { type Snapped, snapAt } from "./snap.ts";
 import { pointOn } from "./useMapView.ts";
 
 export function usePointer(p: {
@@ -82,7 +84,13 @@ export function usePointer(p: {
   curve: boolean;
   /** Tells the page the kind of pointer that pressed the map, which sizes the "+" handles. */
   onPressKind: (kind: PointerKind) => void;
+  /** Points of paths and zones snap to other paths and zones near them. */
+  snap: boolean;
 }) {
+  /** Alt held with the last pointer event: points go exactly where they are put. */
+  const altHeld = useRef(false);
+  /** Where the point being placed or dragged snaps to now, marked on the live canvas. */
+  const snapMark = useRef<Snapped | null>(null);
   const { size, editing, tool, selected, focusing } = p;
   /** Space is held: a drag pans, even over the selected zone. */
   const spaceHeld = useRef(false);
@@ -92,7 +100,9 @@ export function usePointer(p: {
   const halo = useRef<Target | null>(null);
   const bandAt = useRef<Point | null>(null);
   const drawing = () =>
-    editing && (tool === "path" || tool === "zone" || tool === "measure") && p.sketch.length > 0;
+    editing &&
+    (tool === "path" || tool === "zone" || tool === "measure" || tool === "place") &&
+    p.sketch.length > 0;
   const [box, setBox] = useState<Rect | null>(null);
   const machine = useRef<GestureState>(IDLE);
   /** What the mouse is over, and where it met it: kept until what it is over changes. */
@@ -120,11 +130,11 @@ export function usePointer(p: {
   function bandFor(at: Point | null): NonNullable<LiveInput["band"]> | null {
     const view = viewNow();
     const s = space();
-    const position = at && view ? view.unproject(at.x, at.y) : null;
+    const position = at && view ? (snapFor(at, null)?.at ?? view.unproject(at.x, at.y)) : null;
     if (!position || !view || !s || !drawing()) return null;
     const points = [...p.sketch, position];
-    const curve = tool !== "measure" && p.curve;
-    if (tool !== "zone") {
+    const curve = tool !== "measure" && tool !== "place" && p.curve;
+    if (tool !== "zone" && tool !== "place") {
       return {
         line: screenLines(view, outline(s, points, { curve, closed: false }).line),
         closing: [],
@@ -136,6 +146,22 @@ export function usePointer(p: {
       line: screenLines(view, o.line.slice(0, turn + 1)),
       closing: screenLines(view, o.line.slice(turn)),
     };
+  }
+
+  /**
+   * Where a point of the screen snaps to, while editing with snapping on and Alt not held; `skip`
+   * is the feature whose point it is. Measuring does not snap.
+   */
+  function snapFor(at: Point, skip: string | null): Snapped | null {
+    const view = viewNow();
+    if (!view || !p.snap || altHeld.current || !editing || tool === "measure") return null;
+    return snapAt(
+      view,
+      p.resolvedRef.current.map((r) => r.feature),
+      p.shapes.current,
+      [at.x, at.y],
+      skip,
+    );
   }
 
   /** Draws the hover halo of a target, or clears it. */
@@ -157,7 +183,7 @@ export function usePointer(p: {
     let corner: [number, number] | null = null;
     if (target?.kind === "corner") {
       const shape = chosen();
-      const at = shape && shape.kind !== "marker" ? shape.points[target.vertex] : undefined;
+      const at = shape && isLined(shape) ? shape.points[target.vertex] : undefined;
       corner = at ? (viewNow()?.project(at) ?? null) : null;
     }
     // A "+" is ringed as a corner is.
@@ -171,6 +197,7 @@ export function usePointer(p: {
           : [],
       corner,
       band: bandFor(bandAt.current),
+      snap: snapMark.current,
     });
   }
   // A point added, or taken back, moves the band with it.
@@ -203,6 +230,7 @@ export function usePointer(p: {
     if (waiting.current) cancelAnimationFrame(waiting.current.frame);
     waiting.current = null;
     bandAt.current = null;
+    snapMark.current = null;
     hover(null, { x: 0, y: 0 });
     paintLive();
   }
@@ -248,14 +276,25 @@ export function usePointer(p: {
       return;
     }
 
-    if (editing && tool === "marker") {
+    if (editing && (tool === "marker" || tool === "label")) {
       if (!position) return;
-      p.apply(placeMarker(now, p.activeLayer, position));
+      const place = tool === "marker" ? placeMarker : placeLabel;
+      p.apply(place(now, p.activeLayer, position));
       return;
     }
-    if (editing && (tool === "path" || tool === "zone" || tool === "measure")) {
+    if (editing && (tool === "path" || tool === "zone" || tool === "measure" || tool === "place")) {
       if (!p.map) return;
-      const step = addSketchPoint(p.map, v, tool, p.sketch, p.activeLayer, [x, y], p.curve);
+      const snapped = snapFor({ x, y }, null);
+      const step = addSketchPoint(
+        p.map,
+        v,
+        tool,
+        p.sketch,
+        p.activeLayer,
+        snapped ? snapped.screen : [x, y],
+        p.curve,
+        snapped?.at,
+      );
       if (step) p.apply(step);
       return;
     }
@@ -279,8 +318,9 @@ export function usePointer(p: {
     const state = p.viewRef.current;
     switch (effect.type) {
       case "hover":
-        if (drawing() || bandAt.current) {
+        if (drawing() || bandAt.current || snapMark.current) {
           bandAt.current = drawing() ? effect.at : null;
+          snapMark.current = drawing() ? snapFor(effect.at, null) : null;
           paintLive();
         }
         hover(effect.target, effect.at);
@@ -316,15 +356,24 @@ export function usePointer(p: {
         return;
       case "dragTo": {
         const view = viewNow();
-        const position = view?.unproject(effect.at.x, effect.at.y);
+        const { target } = effect;
+        // A corner, or a point pulled out of a "+", snaps to the paths and zones beside it.
+        const snapped =
+          target.kind === "corner" || target.kind === "insert"
+            ? snapFor(effect.at, target.feature)
+            : null;
+        if (snapped || snapMark.current) {
+          snapMark.current = snapped;
+          paintLive();
+        }
+        const position = snapped?.at ?? view?.unproject(effect.at.x, effect.at.y);
         const now = p.mapRef.current;
         const drawn = p.resolvedRef.current.find((r) => r.feature.id === effect.target.feature);
         // When the pointer leaves the globe, what is dragged stays where it last was.
         if (!view || !position || !now || !drawn) return;
-        const { target } = effect;
         if (target.kind === "insert" || target.kind === "zone") {
           // Both start from the shape as it was at the press, so neither drifts.
-          if (dragStart.current?.feature !== target.feature && drawn.feature.kind !== "marker") {
+          if (dragStart.current?.feature !== target.feature && isLined(drawn.feature)) {
             dragStart.current = { feature: target.feature, points: drawn.feature.points };
           }
           const start = dragStart.current;
@@ -386,6 +435,7 @@ export function usePointer(p: {
   }
 
   function handle(e: React.PointerEvent, type: GestureEvent["type"]) {
+    altHeld.current = e.altKey;
     const event: GestureEvent = {
       type,
       id: e.pointerId,
@@ -427,6 +477,11 @@ export function usePointer(p: {
     if (state.name === "idle" && p.coarse.current) {
       p.coarse.current = false;
       p.redrawNow();
+    }
+    // A drag that ended takes its snap mark with it; while drawing, the next move sets it again.
+    if (state.name === "idle" && before.name !== "idle" && snapMark.current) {
+      snapMark.current = null;
+      paintLive();
     }
   }
 

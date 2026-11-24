@@ -2010,8 +2010,12 @@ input.map-title {
 .map-top.tool-marker,
 .map-top.tool-path,
 .map-top.tool-zone,
-.map-top.tool-measure {
+.map-top.tool-measure,
+.map-top.tool-place {
   cursor: crosshair;
+}
+.map-top.tool-label {
+  cursor: text;
 }
 .map-zoom {
   position: absolute;
@@ -2047,6 +2051,13 @@ input.map-title {
 }
 .map-hint .primary {
   padding: 0.15rem 0.7rem;
+}
+/* Why exploring found nothing: as a warning, and wide enough to read in full (16d). */
+.map-hint.map-hint-failed {
+  width: max-content;
+  border-color: var(--warn);
+  border-radius: 8px;
+  color: var(--warn);
 }
 .feature-card,
 .layer-panel {
@@ -3981,6 +3992,10 @@ input.map-title {
   }
   .map-tools {
     order: 1;
+    /* With Label, Place with AI and snapping the bar no longer fits one row of a phone: it takes
+       two, so Undo and Redo are always in reach rather than scrolled away (16d). */
+    flex-wrap: wrap;
+    row-gap: 0.3rem;
     justify-content: space-between;
     border-top: 1px solid var(--rule);
     border-bottom: 0;
@@ -4204,4 +4219,92 @@ button[data-offline] {
     top: auto;
     bottom: 0.6rem;
   }
+}
+
+/* Map tools of 16d: generated names, Place with AI and its proposals, and labels. */
+.feature-generate > span:first-child {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+.feature-generate-ask {
+  display: grid;
+  gap: 0.4rem;
+}
+.generate-preview,
+.place-list li {
+  padding: 0.5rem 0.6rem;
+  border: 1px dashed var(--accent);
+  border-radius: 6px;
+}
+.generate-preview p,
+.place-list p {
+  margin: 0.3rem 0;
+}
+.generate-basis {
+  font-size: 0.85rem;
+}
+.place-panel {
+  display: grid;
+  gap: 0.6rem;
+  padding: 0.75rem;
+}
+.place-panel form {
+  display: grid;
+  gap: 0.5rem;
+}
+.place-list {
+  display: grid;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.place-list li.is-picked {
+  border-style: solid;
+  background: var(--accent-soft);
+}
+.place-name {
+  padding: 0;
+  text-align: left;
+}
+.ghost-pin {
+  position: absolute;
+  z-index: 4;
+  width: 18px;
+  height: 18px;
+  margin: -9px 0 0 -9px;
+  padding: 0;
+  border: 2px dashed var(--accent);
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--paper-raised) 70%, transparent);
+}
+.ghost-pin::after {
+  content: "";
+  position: absolute;
+  inset: -10px;
+}
+.ghost-pin.is-open {
+  background: var(--accent);
+}
+.ghost-name {
+  position: absolute;
+  top: 18px;
+  left: 50%;
+  padding: 0 0.3rem;
+  transform: translateX(-50%);
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--paper-raised) 85%, transparent);
+  color: var(--ink);
+  font-size: 0.8rem;
+  font-style: italic;
+  white-space: nowrap;
+}
+.label-look {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.6rem;
+}
+.label-look input[type="number"] {
+  width: 100%;
 }

@@ -94,6 +94,30 @@ export function MapHints({
       </p>
     );
   }
+  if (tool === "label") {
+    return (
+      <p className="map-hint">
+        {hover ? "Click where the words go · Esc to stop" : "Tap where the words go."}
+        {into}
+      </p>
+    );
+  }
+  if (tool === "place") {
+    return (
+      <p className="map-hint" role="status">
+        {sketch.length === 0
+          ? "Tap a spot, or tap around an area, to place features there."
+          : sketch.length < 3
+            ? "Placing around this spot. Tap more points to mark an area."
+            : "Placing in this area."}{" "}
+        {sketch.length > 0 && (
+          <button type="button" className="plain" onClick={onClear}>
+            Clear
+          </button>
+        )}
+      </p>
+    );
+  }
   if (tool === "measure") {
     return (
       <p className="map-hint" role="status">
