@@ -50,6 +50,7 @@ import {
 } from "../../map/findPaths/client.ts";
 import { type Mode, MODES, type Variant } from "../../map/findPaths/cost.ts";
 import { nearestOn } from "../../map/findPaths/lines.ts";
+import { crossCorners, joinNewPath, joinReach } from "../../map/joins.ts";
 import {
   addToPath,
   kmPerUnit,
@@ -205,6 +206,8 @@ export default function FindPaths(p: {
   /** Groups the paths made in a row. */
   onGroup: (ids: string[]) => void;
   snap: boolean;
+  /** Snapping to paths is on: a new path that ends on another is joined to it. */
+  joinPaths: boolean;
   /** New paths are curved: the map's own Straight / Curved setting. */
   curve: boolean;
   onCurve: (curved: boolean) => void;
@@ -391,7 +394,7 @@ export default function FindPaths(p: {
 
   const [proposal, setProposal] = useState<{ key: string; value: Proposal } | null>(null);
   const [busy, setBusy] = useState(false);
-  const proposalKey = JSON.stringify([terrainKey, pend, kind, meander, mode, variant, eps, p.snap, p.curve, dragging]);
+  const proposalKey = JSON.stringify([terrainKey, pend, kind, meander, mode, variant, eps, p.snap, p.joinPaths, p.curve, dragging]);
   const wanted = useRef("");
   wanted.current = proposalKey;
   /** The names of a route's ends: a marker's, or Start and End. */
@@ -419,7 +422,7 @@ export default function FindPaths(p: {
           exact: pend.exact,
           meander,
           eps,
-          snap: p.snap,
+          snap: p.joinPaths,
         });
         if (!r.ok) {
           const why = {
@@ -765,7 +768,7 @@ export default function FindPaths(p: {
       }
       const asked =
         kind === "river"
-          ? riverAt({ at: px(where), from, exact: true, meander, eps, snap: p.snap }).then((r) =>
+          ? riverAt({ at: px(where), from, exact: true, meander, eps, snap: p.joinPaths }).then((r) =>
               r.ok ? { line: r.points.map(pos), tag: "" } : null,
             )
           : traceAt({ at: px(where), end: null, eps, curved: p.curve, branches: false }).then((r) =>
@@ -882,8 +885,30 @@ export default function FindPaths(p: {
     if (!canMake || !current) return;
     if (layerLocked) return p.say("That layer is locked. Choose another to make the path in.");
     const now = p.mapRef.current;
+    if (now && carryOn && continuing) {
+      // Continue: the proposed path and the one it meets become one path.
+      const next = addToPath(now, carryOn.drawn, current.paths[0]!.points);
+      if (!next) return;
+      p.change(next);
+      p.onSelect(carryOn.drawn.feature.id);
+      reset();
+      if (current.note) p.say(current.note);
+      return;
+    }
     const done = now ? makePaths(now, p.activeLayer, style || null, p.curve, current.paths) : null;
     if (!done) return;
+    if (p.joinPaths) {
+      // Each new path that ends on another path is joined to it: the other gets a corner there.
+      for (const id of done.ids) done.map = joinNewPath(done.map, space, id);
+      // A new road that crosses a road gets a crossroads corner in both.
+      const roads = new Set(
+        drawn.filter((f) => f.kind === "path" && roadIds.has(f.id)).map((f) => f.id),
+      );
+      const isRoad = countsAs(pathStyles.find((s) => s.id === style)) === "road";
+      if (isRoad && roads.size > 0) {
+        for (const id of done.ids) done.map = crossCorners(done.map, space, id, roads).map;
+      }
+    }
     p.change(done.map);
     if (done.ids.length > 1) p.onSelectSeveral(done.ids);
     else p.onSelect(done.ids[0]!);
@@ -891,6 +916,39 @@ export default function FindPaths(p: {
     reset();
     if (current.note) p.say(current.note);
   };
+  /** The paths that count as roads, by their styles. */
+  const roadIds = useMemo(
+    () => new Set(features.filter((f) => f.counts === "road").map((f) => f.id)),
+    [features],
+  );
+  // Continue: the proposed path starts or ends on the very end of a path of the same kind (the
+  // same style, or one that counts as the same). The two can be made one path.
+  const carryOn = useMemo(() => {
+    const main = current?.paths.length === 1 ? current.paths[0]! : null;
+    if (!main || !p.joinPaths) return null;
+    const mine = countsAs(pathStyles.find((s) => s.id === style));
+    const reach = joinReach(space);
+    const ends = [main.points[0]!, main.points[main.points.length - 1]!];
+    for (const r of p.resolved) {
+      const f = r.feature;
+      if (f.kind !== "path" || p.hidden.has(f.id) || p.hidden.has(f.layer) || p.locked.has(f.layer)) {
+        continue;
+      }
+      const theirs = countsAs(pathStyles.find((s) => s.id === f.style));
+      const alike = (f.style ?? "") === style || (mine !== null && mine === theirs);
+      if (!alike) continue;
+      const tips = [f.points[0]!, f.points[f.points.length - 1]!];
+      if (ends.some((e) => tips.some((t) => Math.hypot(e[0] - t[0], e[1] - t[1]) <= reach))) {
+        return { drawn: r, name: p.titleOf(f) || "the path" };
+      }
+    }
+    return null;
+    // The proposal changes with its key; the map with what is drawn.
+  }, [current, p.resolved, p.joinPaths, style]);
+  const [separate, setSeparate] = useState(false);
+  const continuing = carryOn !== null && !separate;
+  // Each new proposal starts with the default again: Continue.
+  useEffect(() => setSeparate(false), [pend]);
   const selectedPath = p.resolved.find(
     (r) => r.feature.id === p.selected && r.feature.kind === "path",
   );
@@ -1129,7 +1187,11 @@ export default function FindPaths(p: {
 
   const layers = layerTree(map.layers);
   const makeCount = current?.paths.length ?? 0;
-  const makeLabel = makeCount > 1 ? `Make ${makeCount} paths` : "Make path";
+  const makeLabel = continuing
+    ? `Continue “${carryOn.name}”`
+    : makeCount > 1
+      ? `Make ${makeCount} paths`
+      : "Make path";
   const makeReason = !pend
     ? `${phone ? "Tap" : "Click"} the map first`
     : !canMake
@@ -1522,6 +1584,19 @@ export default function FindPaths(p: {
           {!phone && clearButton}
           {!phone && addToButton}
           {!phone && groupButton}
+          {carryOn && (
+            <Tip
+              label={
+                continuing
+                  ? "It meets the end of a path of the same kind: the two become one path"
+                  : "It is made a path of its own, joined to the other at the end they share"
+              }
+            >
+              <button type="button" aria-pressed={separate} onClick={() => setSeparate(!separate)}>
+                {separate ? "Make separate path ✓" : "Make separate path"}
+              </button>
+            </Tip>
+          )}
           <Tip
             label="Make a path of what is proposed, in the current layer"
             keys={shortcutText("map.pathsMake")}

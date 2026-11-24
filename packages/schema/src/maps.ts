@@ -155,7 +155,20 @@ export const MapFeature = z.discriminatedUnion("kind", [
     })
     .passthrough(),
   z
-    .object({ ...featureBase, kind: z.literal("path"), points: z.array(Pair).min(2), curve, style })
+    .object({
+      ...featureBase,
+      kind: z.literal("path"),
+      points: z.array(Pair).min(2),
+      curve,
+      style,
+      /**
+       * A join: this path's first (`startOn`) or last (`endOn`) point lies on another path, whose id
+       * this is, at a corner the two share. The app keeps the end on that corner as either path
+       * is changed. A join to a path that is gone is dropped on reading and on merging.
+       */
+      startOn: ItemId.nullish(),
+      endOn: ItemId.nullish(),
+    })
     .passthrough(),
   z
     .object({ ...featureBase, kind: z.literal("zone"), points: z.array(Pair).min(3), curve, style })
@@ -322,6 +335,8 @@ const ITEM_KEYS: Record<string, string[]> = {
     "shapes",
     "orbit",
     "group",
+    "startOn",
+    "endOn",
   ],
   groups: [
     "id",
@@ -367,13 +382,16 @@ function inOrder<T extends object>(item: T, keys: string[]): T {
  * feature then gives the same bytes, and compares as equal, however it was put together.
  */
 export function orderFeature(feature: MapFeature): MapFeature {
-  const { span, shapes, orbit, group, ...rest } = feature as MapFeature & Record<string, unknown>;
+  const { span, shapes, orbit, group, startOn, endOn, ...rest } = feature as MapFeature &
+    Record<string, unknown>;
   return inOrder(
     {
       ...rest,
       ...(span != null ? { span } : {}),
       ...(orbit != null ? { orbit } : {}),
       ...(group != null ? { group } : {}),
+      ...(startOn != null ? { startOn } : {}),
+      ...(endOn != null ? { endOn } : {}),
       ...(Array.isArray(shapes) && shapes.length > 0
         ? { shapes: shapes.map((h) => inOrder(h as LaterShape, SHAPE_KEYS)) }
         : {}),
@@ -461,7 +479,7 @@ export function parseMap(text: string): ParsedMap {
       message: `${issue?.message ?? "It does not have the form of a map."}${where}`,
     };
   }
-  return { ok: true, map: repairGroups(parsed.data) };
+  return { ok: true, map: repairJoins(repairGroups(parsed.data)) };
 }
 
 // ---- Merging ---------------------------------------------------------------------------------
@@ -520,7 +538,30 @@ export function mergeMaps(base0: MapFile, mine0: MapFile, theirs0: MapFile): Map
     groups: groups.items.map((g) => (layerIds.has(g.layer) ? g : { ...g, layer: fallback })),
   };
   // A member whose group the other side removed, or moved to another layer, is no longer in it.
-  return { map: ordered(repairGroups(map)), clashes };
+  return { map: ordered(repairJoins(repairGroups(map))), clashes };
+}
+
+// ---- Joins -------------------------------------------------------------------------------------
+
+/**
+ * The map with its joins made sound: a path's join to a feature that is not there, is not a path,
+ * or is the path itself, is dropped. The same map comes back when nothing was wrong.
+ */
+export function repairJoins(map: MapFile): MapFile {
+  const paths = new Set(map.features.filter((f) => f.kind === "path").map((f) => f.id));
+  let changed = false;
+  const features = map.features.map((f) => {
+    if (f.kind !== "path") return f;
+    const bad = (on: string | null | undefined) => on != null && (!paths.has(on) || on === f.id);
+    if (!bad(f.startOn) && !bad(f.endOn)) return f;
+    changed = true;
+    return orderFeature({
+      ...f,
+      startOn: bad(f.startOn) ? null : f.startOn,
+      endOn: bad(f.endOn) ? null : f.endOn,
+    });
+  });
+  return changed ? { ...map, features } : map;
 }
 
 // ---- Groups ------------------------------------------------------------------------------------

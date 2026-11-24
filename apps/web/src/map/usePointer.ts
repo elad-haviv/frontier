@@ -48,8 +48,9 @@ import {
   type Tool,
 } from "./tools.ts";
 import { focusIsFree } from "../keys.ts";
-import { type Snapped, snapAt } from "./snap.ts";
+import { SNAP_REACH, type Snapped, snapAt, type SnapTargets } from "./snap.ts";
 import { pointOn } from "./useMapView.ts";
+import { joinedTo } from "./joins.ts";
 
 /** What Find areas and Find paths hear from the pointer: taps, and where a mouse is. */
 export interface FindPointer {
@@ -99,6 +100,8 @@ export function usePointer(p: {
   onPressKind: (kind: PointerKind) => void;
   /** Points of paths and zones snap to other paths and zones near them. */
   snap: boolean;
+  /** What they snap to; left out: everything. */
+  snapTargets?: SnapTargets;
   /** The Find areas tool, while it is on: it takes the taps and the hover. */
   find?: RefObject<FindPointer | null>;
   /** Changes the whole map: a group moved by a drag, as one step with `beginStep`. */
@@ -194,12 +197,26 @@ export function usePointer(p: {
   function snapFor(at: Point, skip: string | null): Snapped | null {
     const view = viewNow();
     if (!view || !p.snap || altHeld.current || !editing || tool === "measure") return null;
+    // A path joined to the one being changed shares the dragged corner: snapping to it would
+    // hold the corner where it was.
+    const now = p.mapRef.current;
+    const joined = new Set<string>();
+    if (skip && now) {
+      for (const j of joinedTo(now, skip)) joined.add(j.path);
+      const own = now.features.find((f) => f.id === skip);
+      if (own?.kind === "path") {
+        if (own.startOn) joined.add(own.startOn);
+        if (own.endOn) joined.add(own.endOn);
+      }
+    }
     return snapAt(
       view,
-      p.resolvedRef.current.map((r) => r.feature),
+      p.resolvedRef.current.map((r) => r.feature).filter((f) => !joined.has(f.id)),
       p.shapes.current,
       [at.x, at.y],
       skip,
+      SNAP_REACH,
+      p.snapTargets,
     );
   }
 
@@ -339,6 +356,7 @@ export function usePointer(p: {
         snapped ? snapped.screen : [x, y],
         p.curve,
         snapped?.at,
+        p.snap && p.snapTargets?.paths !== false,
       );
       if (step) p.apply(step);
       return;

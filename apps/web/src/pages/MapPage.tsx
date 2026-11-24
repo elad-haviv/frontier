@@ -79,7 +79,7 @@ import {
 } from "../map/tools.ts";
 import { folderFor } from "../map/featureEntry.ts";
 import { choicesFor, ghostMarker, withProposal } from "../map/place.ts";
-import { useSnapSetting } from "../map/snap.ts";
+import { useSnapSetting, useSnapTargets } from "../map/snap.ts";
 import { useReliefSetting } from "../map/reliefSetting.ts";
 import { useDiscovery } from "../map/useDiscovery.ts";
 import { useMapDraw } from "../map/useMapDraw.ts";
@@ -158,6 +158,9 @@ export function MapPage() {
   const [curve, setCurveOn] = useCurveSetting();
   // Points of paths and zones snap to the paths and zones beside them, unless turned off here.
   const [snap, setSnap] = useSnapSetting();
+  // What they snap to: with Paths off, a new path neither snaps to nor joins another.
+  const [snapTargets, setSnapTargets] = useSnapTargets();
+  const joinPaths = snap && snapTargets.paths;
   /** The entry being made for a feature, from its entry list or a generated description. */
   const [makingEntry, setMakingEntry] = useState<{
     feature: string;
@@ -308,6 +311,7 @@ export function MapPage() {
     curve,
     onPressKind: setPressKind,
     snap,
+    snapTargets,
     group: groups.dragGroup,
     pickTap: groups.pickTap,
     haloIds: groups.haloIds,
@@ -379,7 +383,7 @@ export function MapPage() {
   /** Finishes the path or zone being drawn, when it has the points it needs. */
   const finish = () => {
     if (!map || !canFinish(tool, sketch)) return false;
-    apply(finishSketch(map, tool, sketch, activeLayer, curve));
+    apply(finishSketch(map, tool, sketch, activeLayer, curve, joinPaths));
   };
   /** Curved or straight: the next path or zone while drawing, else the selected one. */
   const toggleCurve = () => {
@@ -951,6 +955,8 @@ export function MapPage() {
           onTool={chooseTool}
           snap={snap}
           onSnap={setSnap}
+          snapTargets={snapTargets}
+          onSnapTargets={setSnapTargets}
           canUndo={canUndo}
           canRedo={canRedo}
           onUndo={undo}
@@ -1163,6 +1169,7 @@ export function MapPage() {
               }}
               onGroup={(ids) => groups.group(ids)}
               snap={snap}
+              joinPaths={joinPaths}
               curve={curve}
               onCurve={setCurveOn}
               styles={styles}

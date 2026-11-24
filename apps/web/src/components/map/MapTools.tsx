@@ -1,5 +1,6 @@
 import {
   type LucideIcon,
+  ChevronDown,
   LayoutGrid,
   Magnet,
   MapPin,
@@ -14,8 +15,10 @@ import {
   Undo2,
   WandSparkles,
 } from "lucide-react";
+import { type SnapTargets, TARGET_LABELS, targetsText } from "../../map/snap.ts";
 import type { Tool } from "../../map/tools.ts";
 import { IconButton } from "../ui/IconButton.tsx";
+import { Menu, MenuItem } from "../ui/Menu.tsx";
 
 const TOOLS: { tool: Tool; label: string; icon: LucideIcon; shortcut: string }[] = [
   { tool: "select", label: "Select", icon: MousePointer2, shortcut: "map.select" },
@@ -42,6 +45,8 @@ export function MapTools({
   onTool,
   snap,
   onSnap,
+  snapTargets,
+  onSnapTargets,
   canUndo,
   canRedo,
   onUndo,
@@ -60,6 +65,9 @@ export function MapTools({
   /** Points of paths and zones snap to others near them. */
   snap: boolean;
   onSnap: (on: boolean) => void;
+  /** What snapping snaps to: paths, zones, markers and labels. */
+  snapTargets: SnapTargets;
+  onSnapTargets: (next: SnapTargets) => void;
   canUndo: boolean;
   canRedo: boolean;
   onUndo: () => void;
@@ -95,8 +103,21 @@ export function MapTools({
         icon={Magnet}
         shortcut="map.snap"
         aria-pressed={snap}
+        note={targetsText(snap, snapTargets)}
         onClick={() => onSnap(!snap)}
       />
+      <Menu label="Snap to" icon={ChevronDown} className="snap-targets">
+        {(Object.keys(TARGET_LABELS) as (keyof SnapTargets)[]).map((k) => (
+          <MenuItem
+            key={k}
+            checked={snapTargets[k]}
+            onSelect={() => onSnapTargets({ ...snapTargets, [k]: !snapTargets[k] })}
+          >
+            {snapTargets[k] ? "✓ " : ""}
+            {TARGET_LABELS[k]}
+          </MenuItem>
+        ))}
+      </Menu>
       {onPicking && (
         <IconButton
           label="Select several"

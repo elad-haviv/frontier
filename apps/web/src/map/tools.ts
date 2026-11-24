@@ -13,6 +13,7 @@ import {
 } from "@frontier/geo";
 import { isLined, type MapFeature, type MapFile, orderFeature } from "@frontier/schema";
 import { type MapTime, orbitAt, type Resolved, turnAbout, writeShape } from "./time.ts";
+import { joinNewPath } from "./joins.ts";
 import { newItemId } from "./viewUrl.ts";
 
 /**
@@ -92,6 +93,8 @@ export function finishSketch(
   sketch: Position[],
   layer: string,
   curve = false,
+  /** A path that starts or ends on another path is joined to it (snapping to paths is on). */
+  join = false,
 ): Step {
   const kind = tool === "zone" ? "zone" : "path";
   if (sketch.length >= FEWEST_POINTS[kind]) {
@@ -105,8 +108,9 @@ export function finishSketch(
       label: null,
       child: null,
     } as MapFeature);
+    const made = { ...map, features: [...map.features, feature] };
     return {
-      map: { ...map, features: [...map.features, feature] },
+      map: join && kind === "path" ? joinNewPath(made, map.space as Space, feature.id) : made,
       selected: feature.id,
       sketch: [],
       tool: "select",
@@ -129,6 +133,7 @@ export function addSketchPoint(
   curve = false,
   /** Where the point snapped to, which wins over the place under the pointer. */
   snapped?: Position,
+  join = false,
 ): Step | null {
   const position = snapped ?? view.unproject(x, y);
   if (!position) return null;
@@ -138,7 +143,7 @@ export function addSketchPoint(
   // A double-click finishes through this rule: its first click adds a point, its second lands
   // on that point. A measured line and an area to place in are not features: they go on.
   if (onLast && (tool === "path" || tool === "zone")) {
-    return finishSketch(map, tool, sketch, layer, curve);
+    return finishSketch(map, tool, sketch, layer, curve, join);
   }
   if (!onLast) return { sketch: [...sketch, position] };
   return null;
