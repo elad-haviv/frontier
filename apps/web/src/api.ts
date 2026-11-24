@@ -404,6 +404,8 @@ export const api = {
       state: string;
       blob: string;
       entries: Record<string, { path: string; title: string }>;
+      /** Which spans something on a map follows (stage 17); absent from an older server. */
+      onMaps?: Record<string, { map: string; title: string; features: number }[]>;
     }>(`/api/chronicles/${id}`),
   createChronicle: (title: string) => post<{ id: string }>("/api/chronicles", { title }),
   copyChronicle: (copyOf: string) => post<{ id: string }>("/api/chronicles", { copyOf }),

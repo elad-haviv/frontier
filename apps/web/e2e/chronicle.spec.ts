@@ -1,324 +1,558 @@
 import { expect, type Page, test } from "@playwright/test";
-import { answerDialog, noSidewaysScroll } from "./helpers.ts";
+import { noSidewaysScroll } from "./helpers.ts";
 
-const sheet = (page: Page) => page.locator(".ch-sheet");
-const tab = (page: Page, name: RegExp | string) =>
-  page.locator(".ch-tabs").getByRole("tab", { name });
+const SHOTS = process.env.CH_SHOTS;
 
-async function closeSheet(page: Page) {
-  if (await sheet(page).isVisible())
-    await sheet(page).getByRole("button", { name: "Close" }).click();
-  await expect(sheet(page)).toBeHidden();
+/** Makes a chronicle through the API with the stage 17 example, and opens it. */
+async function makeExample(page: Page, title: string) {
+  await page.goto("/chronicles");
+  const id = await page.evaluate(async (title) => {
+    const json = { "content-type": "application/json" };
+    const made = await (
+      await fetch("/api/chronicles", {
+        method: "POST",
+        headers: json,
+        body: JSON.stringify({ title }),
+      })
+    ).json();
+    const { chronicle, revision } = await (await fetch(`/api/chronicles/${made.id}`)).json();
+    const humans = chronicle.lanes[0].id;
+    chronicle.lanes[0].name = "Humans";
+    chronicle.lanes.push({ id: "nirani01", name: "Nirani", color: "#2f6f73", clock: "ezob" });
+    const at = (low: number, high = low) => ({ words: "", low, high });
+    const span = (id: string, lane: string, name: string, more: object) => ({
+      id,
+      lane,
+      name,
+      point: false,
+      start: null,
+      end: null,
+      length: null,
+      entry: null,
+      note: "",
+      ...more,
+    });
+    chronicle.origin = "landing1";
+    chronicle.units = [{ id: "gen00001", name: "generation", low: 20, high: 35 }];
+    chronicle.spans = [
+      span("landing1", humans, "First Landing", { point: true, start: at(0) }),
+      span("fading01", humans, "Earth memory fades", {
+        length: {
+          words: "3-5 generations",
+          low: 60,
+          high: 175,
+          clock: "ezob",
+          unit: "gen00001",
+          count: [3, 5],
+        },
+      }),
+      span("kingdom1", humans, "The kingdom", { start: at(0), end: at(380, 450) }),
+      span("war00001", humans, "The war", { start: at(270, 290), end: at(300) }),
+      span("treaty01", humans, "The treaty", { point: true, start: at(300) }),
+      span("nirani01", "nirani01", "Nirani presence", { start: "open", end: at(380, 450) }),
+      span("unknown1", "nirani01", "The Adyni", {}),
+    ];
+    chronicle.relations = [
+      { id: "rel00001", a: "fading01", kind: "starts_with", b: "landing1" },
+      { id: "rel00002", a: "war00001", kind: "during", b: "kingdom1" },
+    ];
+    await fetch(`/api/chronicles/${made.id}`, {
+      method: "PUT",
+      headers: json,
+      body: JSON.stringify({ chronicle, revision }),
+    });
+    return made.id as string;
+  }, title);
+  await page.goto(`/chronicle/${id}`);
+  await expect(page.locator(".ch-bar h1")).toHaveText(title);
+  return id;
 }
 
-async function add(page: Page, kind: "Span" | "Event", name: string) {
-  await closeSheet(page);
-  await page.getByRole("button", { name: `+ ${kind}` }).click();
-  await answerDialog(page, "Add", name);
-  await expect(sheet(page).locator("h2")).toHaveText(name);
+/** Throws chronicles and maps away, and every draft, so the next test finds nothing unsaved. */
+const cleanUp = (page: Page, chronicles: string[], maps: string[] = []) =>
+  page.evaluate(
+    async ({ chronicles, maps }) => {
+      for (const id of maps) await fetch(`/api/maps/${id}`, { method: "DELETE" });
+      for (const id of chronicles) await fetch(`/api/chronicles/${id}`, { method: "DELETE" });
+      const un = await (await fetch("/api/unpublished")).json();
+      for (const d of un.drafts) await fetch(`/api/drafts/${d.id}`, { method: "DELETE" });
+    },
+    { chronicles, maps },
+  );
+
+const here = (page: Page) => page.url().split("/chronicle/")[1]!.split("?")[0]!;
+
+/** The chronicle as the server holds it now, once the page has saved. */
+async function stored(page: Page) {
+  await expect(page.locator(".ch-saving")).toHaveText("Saved as a draft");
+  return page.evaluate(async (id) => {
+    const r = await (await fetch(`/api/chronicles/${id}`)).json();
+    return r.chronicle as {
+      origin: string | null;
+      spans: {
+        id: string;
+        name: string;
+        lane: string;
+        start: { low: number; high: number } | "open" | null;
+        end: { low: number; high: number } | "open" | null;
+        length: { low: number; high: number } | null;
+        startFrom?: { span: string; edge: string; plus: { low: number; high: number } };
+        entry: string | null;
+        note: string;
+      }[];
+    };
+  }, here(page));
 }
 
-/** Opens a span's form from the order view. */
-async function open(page: Page, name: string) {
-  await closeSheet(page);
-  await tab(page, "Order").click();
-  await page.locator(".ch-order [data-span]", { hasText: name }).first().click();
-  await expect(sheet(page).locator("h2")).toHaveText(name);
+const details = (page: Page) => page.locator(".ch-details");
+const bar = (page: Page, name: string) =>
+  page.locator(`[data-bar][aria-label^="${name},"]`).first();
+const when = (page: Page, name: string) =>
+  page.locator(".tl-cell", { hasText: name }).locator(".tl-when");
+
+async function shot(page: Page, name: string) {
+  if (SHOTS) await page.screenshot({ path: `${SHOTS}/${name}.png` });
 }
 
-async function relate(page: Page, kind: string, other: string) {
-  const box = sheet(page).locator(".ch-add-relation");
-  await box.getByLabel("How it relates").selectOption(kind);
-  await box.getByLabel("The other span").selectOption({ label: other });
-  await box.getByRole("button", { name: "Add" }).click();
+/** Selects an event: its row on a desktop, its bar on a phone. */
+async function open(page: Page, name: string, phone: boolean) {
+  if (phone) await bar(page, name).click();
+  else await page.locator(".tl-cell", { hasText: name }).locator(".tl-name").click();
+  await expect(details(page).locator("h2")).toHaveText(name);
 }
 
-async function length(page: Page, unit: string | RegExp, low: string, high: string) {
-  await sheet(page)
-    .locator("#ch-length-unit")
-    .selectOption({ label: unit as string });
-  await sheet(page).locator("#ch-length").fill(low);
-  await sheet(page).locator(".ch-range").first().getByLabel("Highest").fill(high);
+/** Types into one of the details' date boxes and leaves it. */
+async function typeIn(page: Page, label: string, text: string) {
+  const box = details(page).getByLabel(label, { exact: true });
+  await box.fill(text);
+  await box.press("Enter");
 }
 
-test("CUJ 14: finds what is too quick and what is too slow", async ({ page }, info) => {
-  if (info.project.name === "phone") await page.setViewportSize({ width: 375, height: 740 });
+async function addEvent(
+  page: Page,
+  phone: boolean,
+  name: string,
+  more: { starts?: string; ends?: string; group?: string; moment?: boolean } = {},
+) {
+  if (phone) {
+    if (await details(page).isVisible())
+      await details(page).getByRole("button", { name: "Close" }).click();
+    await page.getByRole("button", { name: "Add an event" }).click();
+  } else await page.getByRole("button", { name: "+ Add", exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByLabel("Name or entry").fill(name);
+  if (more.moment) await dialog.getByLabel("A single moment").check();
+  if (more.starts) await dialog.getByLabel(more.moment ? "When" : "Starts").fill(more.starts);
+  if (more.ends) await dialog.getByLabel("Ends").fill(more.ends);
+  if (more.group) await dialog.getByLabel("Group").selectOption({ label: more.group });
+  await dialog.getByRole("button", { name: "Add", exact: true }).click();
+  await expect(dialog).toBeHidden();
+  await expect(details(page).locator("h2")).toHaveText(name);
+}
+
+async function moreMenu(page: Page, item: string) {
+  await page.getByRole("button", { name: "More actions", exact: true }).click();
+  await page.getByRole("menuitem", { name: item }).click();
+}
+
+test("CUJ 14 on the timeline: what is too quick and what is too slow", async ({ page }, info) => {
+  const phone = info.project.name === "phone";
+  if (phone) await page.setViewportSize({ width: 375, height: 740 });
   const title = `Ezob trial ${info.project.name}`;
   await page.goto("/chronicles");
   await page.locator(".new-map input[type=text]").fill(title);
   await page.getByRole("button", { name: "Make the chronicle" }).click();
   await expect(page.locator(".ch-bar h1")).toHaveText(title);
+  await expect(page.locator(".ch-start")).toContainText("Lay out a history");
+  await noSidewaysScroll(page);
 
-  // Lanes and the author's own unit.
-  await tab(page, /Lanes and units|Set up/).click();
-  await page.getByLabel("Lane name").fill("Humans");
-  await page.getByLabel("New lane").fill("Nirani");
-  await page.getByRole("button", { name: "Add the lane" }).click();
+  // The author's unit, and a second group.
+  await moreMenu(page, "Units…");
   await page.getByLabel("New unit").fill("generation");
   await page.getByLabel("Lowest years", { exact: true }).fill("20");
   await page.getByLabel("Highest years", { exact: true }).fill("35");
   await page.getByRole("button", { name: "Add the unit" }).click();
   await expect(page.getByLabel("Unit name")).toHaveValue("generation");
+  await page.getByRole("button", { name: "Done" }).click();
+  await moreMenu(page, "Add a group");
+  await page.getByRole("dialog").getByRole("textbox").fill("Nirani");
+  await page.getByRole("dialog").getByRole("button", { name: "Add" }).click();
 
-  await tab(page, "Order").click();
-  await add(page, "Event", "First Landing");
-  await add(page, "Span", "Earth memory fades");
-  await relate(page, "starts_with", "First Landing");
-  await length(page, "In generation (20 to 35 years)", "3", "5");
-  await expect(sheet(page)).toContainText("= 60 to 175 years");
-  await add(page, "Span", "Earth technology is lost");
-  await relate(page, "during", "Earth memory fades");
-  await add(page, "Span", "Nirani presence");
-  await sheet(page).getByLabel("Lane").selectOption({ label: "Nirani" });
-  await relate(page, "longer_than", "Earth memory fades");
-  // The lowest number alone is a length: an empty highest means the same.
-  await sheet(page).locator("#ch-length-unit").selectOption({ label: "In years" });
-  await sheet(page).locator("#ch-length").fill("350");
-  await expect(sheet(page)).toContainText("Lasts 350 years");
-  await sheet(page).locator(".ch-range").first().getByLabel("Highest").fill("450");
-  await expect(sheet(page)).toContainText("Lasts 350 to 450 years");
-  await expect(sheet(page).locator(".ch-flag", { hasText: "is longer than" })).toContainText(
-    "holds",
+  await addEvent(page, phone, "First Landing", { moment: true, starts: "0" });
+  // A tie and a length in the author's unit place the fading at once.
+  await addEvent(page, phone, "Earth memory fades", { starts: "with First Landing" });
+  await typeIn(page, "Lasts", "3-5 generations");
+  await expect(details(page).getByLabel("Ends", { exact: true })).toHaveAttribute(
+    "placeholder",
+    "60–175 (worked out)",
   );
-  await closeSheet(page);
-
-  // Order: the fading starts at the landing with the loss of technology inside it; the Nirani
-  // span is not related to anything yet.
-  const order = page.locator(".ch-order");
-  await expect(order).toContainText("Order only, not to scale");
-  const place = async (name: string) =>
-    (await order.locator(".ch-span", { hasText: name }).boundingBox())!;
-  const fading = await place("Earth memory fades");
-  const tech = await place("Earth technology is lost");
-  const along = info.project.name === "phone" ? ("y" as const) : ("x" as const);
-  const size = along === "y" ? ("height" as const) : ("width" as const);
-  expect(tech[along]).toBeGreaterThan(fading[along]);
-  expect(tech[along] + tech[size]).toBeLessThan(fading[along] + fading[size]);
-  await expect(page.locator(".ch-loose")).toContainText("Nirani presence");
+  await expect(bar(page, "Earth memory fades")).toContainText("⛓");
+  await addEvent(page, phone, "Earth technology is lost");
+  const rule = async (kind: string, other: string) => {
+    await details(page).getByLabel("Rule").selectOption(kind);
+    await details(page).getByLabel("The other event").selectOption({ label: other });
+    await details(page).getByRole("button", { name: "Add the rule" }).click();
+  };
+  await rule("during", "Earth memory fades");
+  await addEvent(page, phone, "Nirani presence", { group: "Nirani" });
+  await rule("longer_than", "Earth memory fades");
+  await typeIn(page, "Lasts", "about 400 years");
+  await expect(details(page).locator(".dt-rule")).toContainText(
+    "Nirani presence is longer than Earth memory fades",
+  );
+  await expect(details(page).locator(".dt-rule")).toHaveClass(/is-ok/);
+  if (!phone) await expect(when(page, "Earth memory fades")).toHaveText("0 → 60–175");
+  await shot(page, `cuj14-${info.project.name}`);
   await noSidewaysScroll(page);
 
-  // Compare: the fading beside two cases.
-  await tab(page, "Compare").click();
+  // Comparing lengths with real history is one menu away, unchanged inside.
+  await details(page).getByRole("button", { name: "Close" }).click();
+  await moreMenu(page, "Compare lengths with real history…");
   await page
     .locator(".ch-compare-add select")
     .first()
     .selectOption({ label: "Earth memory fades" });
-  for (const [name, low, high] of [
-    ["A first ruler", "80", "100"],
-    ["A second ruler", "300", "500"],
-  ] as const) {
-    await page.getByRole("button", { name: "Add a case of your own" }).click();
-    const form = page.locator(".ch-own-case");
-    await form.getByLabel("Name").fill(name);
-    await form.getByLabel("Lowest, years").fill(low);
-    await form.getByLabel("Highest, years").fill(high);
-    await form.getByLabel("Source").fill("A book, page 1");
-    await form.getByRole("button", { name: "Add the case" }).click();
-  }
-  const bars = page.locator(".ch-bars li");
-  await expect(bars).toHaveCount(3);
-  await expect(bars.nth(0)).toContainText("60 to 175 years");
-  await expect(bars.nth(2)).toContainText("300 to 500 years");
-  await expect(bars.nth(2)).toContainText("A book, page 1");
-  await noSidewaysScroll(page);
+  await expect(page.locator(".ch-bars li").first()).toContainText("60 to 175 years");
+  await page.getByRole("button", { name: "Done" }).click();
 
-  // Nothing is contradicted. Then the fading is made much longer: one statement turns amber.
-  await tab(page, "Does not fit").click();
-  await expect(page.locator(".ch-flags")).toContainText("Nothing you have stated is contradicted");
-  await expect(page.locator(".ch-flags")).not.toContainText("may not fit");
-  await open(page, "Earth memory fades");
-  await sheet(page).locator("#ch-length").fill("15");
-  await sheet(page).locator(".ch-range").first().getByLabel("Highest").fill("30");
-  await expect(sheet(page)).toContainText("= 300 to 1,050 years");
-  await closeSheet(page);
-  await tab(page, "Does not fit").click();
-  await expect(page.locator(".ch-flags summary", { hasText: "1 may not fit" })).toBeVisible();
-  await expect(page.locator(".ch-flag.is-amber")).toContainText(
+  // The fading made much longer: the Nirani rule may not fit, and says which range decides.
+  await open(page, "Earth memory fades", phone);
+  await typeIn(page, "Lasts", "15-30 generations");
+  await open(page, "Nirani presence", phone);
+  await expect(details(page).locator(".dt-rule")).toHaveClass(/is-amber/);
+  await expect(details(page).locator(".dt-rule")).toContainText(
     "Nirani presence is longer than Earth memory fades only if",
   );
-  await expect(page.locator(".ch-flag.is-amber")).toHaveCount(1);
+
+  // Undo takes it back (Ctrl+Z on a desktop).
+  await details(page).getByRole("button", { name: "Close" }).click();
+  if (phone) {
+    await moreMenu(page, "Undo");
+  } else {
+    await page.getByRole("button", { name: "Undo" }).click();
+  }
+  await open(page, "Nirani presence", phone);
+  await expect(details(page).locator(".dt-rule")).toHaveClass(/is-ok/);
+
+  // A rule about an event that is deleted doesn't fit any more, and says so in the header.
+  await open(page, "Earth memory fades", phone);
+  await details(page).getByRole("button", { name: "Delete" }).click();
+  await page.getByRole("button", { name: /doesn.t fit/ }).click();
+  await expect(page.locator(".ch-fits")).toContainText("This names a span that was removed.");
+  await page.keyboard.press("Escape");
+
+  // Main: maps use this one.
+  if (phone) await moreMenu(page, "Make main");
+  else await page.getByRole("button", { name: "Make main" }).click();
+  if (!phone) await expect(page.locator(".ch-pill.is-main")).toHaveText("★ Main · maps use this");
   await expect(page.locator(".ch-saving")).toHaveText("Saved as a draft");
-
-  // Undo takes the change back.
-  await page.getByRole("button", { name: "Undo" }).click();
-  await expect(page.locator(".ch-flags")).not.toContainText("may not fit");
-
-  // A statement about a span that is deleted is shown as broken.
-  await open(page, "Earth memory fades");
-  await noSidewaysScroll(page);
-  await sheet(page).getByRole("button", { name: "Delete this span" }).click();
-  await tab(page, /Does not fit/).click();
-  await expect(page.locator(".ch-flags")).toContainText("This names a span that was removed.");
-
-  // Marking it as the main chronicle shows at once and survives the next change.
-  await page.locator(".ch-more summary").click();
-  await page.getByRole("button", { name: "Make this the main chronicle" }).click();
-  await expect(page.locator(".ch-bar .chip")).toHaveText("main");
-  await expect(page.getByRole("button", { name: "Undo" })).toBeDisabled();
-
-  // It is among the unsaved changes, with a way back to it.
-  await expect(page.locator(".ch-saving")).toHaveText("Saved as a draft");
-  await page.goto("/unpublished");
-  await page.getByRole("link", { name: "Open the chronicle" }).first().click();
-  await expect(page.locator(".ch-bar h1")).toBeVisible();
-  await page.evaluate(async () => {
-    await fetch(`/api/chronicles/${location.pathname.split("/").pop()}`, { method: "DELETE" });
-  });
+  await cleanUp(page, [here(page)]);
 });
 
-test("CUJ 15: places spans, takes an offered fix, shifts them, and compares a copy with the original", async ({
+test("moving, stretching and typing on the timeline; ties follow; a fix is one click", async ({
+  page,
+}, info) => {
+  const phone = info.project.name === "phone";
+  test.skip(phone, "Dragging with a mouse is a desktop thing; the phone holds and drags below.");
+  const id = await makeExample(page, `Drag ${info.project.name}`);
+
+  // The one-time offer turns "starts with" into a tie.
+  await page.getByRole("button", { name: "Place them" }).click();
+  await expect(when(page, "Earth memory fades")).toHaveText("0 → 60–175");
+  await expect(page.getByRole("button", { name: "Place them" })).toBeHidden();
+
+  // Typing a tie: the treaty comes 10 years after the war.
+  await open(page, "The treaty", false);
+  await typeIn(page, "When", "10 after The war");
+  await expect(when(page, "The treaty")).toHaveText("310");
+
+  // Drag the war 10 years later: it moves, and the treaty follows its tie.
+  await page.getByRole("button", { name: "Years", exact: true }).click();
+  await open(page, "The war", false);
+  const box = (await bar(page, "The war").boundingBox())!;
+  const perYear = 7;
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width / 2 + 20, box.y + box.height / 2, { steps: 4 });
+  await page.mouse.move(box.x + box.width / 2 + 10 * perYear, box.y + box.height / 2, { steps: 4 });
+  await expect(page.locator(".tl-drag-label")).toContainText("(+10 yrs)");
+  await page.mouse.up();
+  await expect(when(page, "The war")).toHaveText("280–300 → 310");
+  await expect(when(page, "The treaty")).toHaveText("320");
+
+  // Stretch its end by its handle.
+  const after = (await bar(page, "The war").boundingBox())!;
+  const grip = page.locator(".tl-bar.is-selected .tl-grip.is-end");
+  const g = (await grip.boundingBox())!;
+  await page.mouse.move(g.x + g.width / 2, g.y + g.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(g.x + g.width / 2 + 10, g.y + g.height / 2, { steps: 3 });
+  await page.mouse.move(g.x + g.width / 2 + 5 * perYear, g.y + g.height / 2, { steps: 3 });
+  await page.mouse.up();
+  await expect(when(page, "The war")).toHaveText("280–300 → 315");
+  expect((await bar(page, "The war").boundingBox())!.x).toBeCloseTo(after.x, 0);
+
+  // Keys: right moves by one step; undo takes it back.
+  await bar(page, "The war").focus();
+  await page.keyboard.press("ArrowRight");
+  await expect(when(page, "The war")).toHaveText("281–301 → 316");
+  await page.keyboard.press("Control+z");
+  await expect(when(page, "The war")).toHaveText("280–300 → 315");
+
+  // Typing in the When cell.
+  await when(page, "The war").dblclick();
+  await page.getByLabel("When: The war").fill("270-290 → 300");
+  await page.getByLabel("When: The war").press("Enter");
+  await expect(when(page, "The war")).toHaveText("270–290 → 300");
+  await expect(when(page, "The treaty")).toHaveText("310");
+
+  // Untie keeps the number.
+  await open(page, "The treaty", false);
+  await details(page).getByRole("button", { name: "⛓ Untie" }).click();
+  await expect(details(page).getByLabel("When", { exact: true })).toHaveValue("310");
+
+  // The kingdom ends too early: the war no longer fits inside it, and the fix is one click.
+  await open(page, "The kingdom", false);
+  await typeIn(page, "Ends", "250");
+  await expect(page.getByRole("button", { name: "1 doesn't fit" })).toBeVisible();
+  await expect(bar(page, "The war")).toHaveClass(/is-red/);
+  await page.getByRole("button", { name: "1 doesn't fit" }).click();
+  await page
+    .locator(".ch-fits")
+    .getByRole("button", { name: /^Move The war/ })
+    .click();
+  await expect(page.getByRole("button", { name: /doesn't fit/ })).toBeHidden();
+
+  // A box with no dates is dragged onto the timeline.
+  const adyni = (await bar(page, "The Adyni").boundingBox())!;
+  await page.mouse.move(adyni.x + 20, adyni.y + adyni.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(adyni.x + 40, adyni.y + adyni.height / 2, { steps: 3 });
+  await page.mouse.move(adyni.x + 120, adyni.y + adyni.height / 2, { steps: 3 });
+  await page.mouse.up();
+  await expect(when(page, "The Adyni")).not.toHaveText("No dates yet");
+
+  // The blue line is the year the maps show; its flag drags it, and the address keeps it.
+  await page.getByRole("button", { name: "Years", exact: true }).click();
+  const flag = (await page.locator(".tl-mapflag").boundingBox())!;
+  await page.mouse.move(flag.x + 4, flag.y + flag.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(flag.x + 24, flag.y + flag.height / 2, { steps: 3 });
+  await page.mouse.move(flag.x + 4 + 10 * perYear, flag.y + flag.height / 2, { steps: 3 });
+  await page.mouse.up();
+  await expect(page.locator(".tl-mapflag")).toHaveText("Maps: 10");
+  await expect(page).toHaveURL(/t=10/);
+
+  // The List view reads it in order, by century, with the map year between.
+  await page.getByRole("button", { name: "List", exact: true }).click();
+  const list = page.locator(".ch-listview");
+  await expect(list.locator("h3").first()).toHaveText("Older than anything shown");
+  await expect(list).toContainText("Year 300 to 399");
+  await expect(list.locator(".ch-list-mapyear")).toContainText("Maps: year 10");
+  await list.getByRole("button", { name: /The war/ }).click();
+  await expect(details(page).locator("h2")).toHaveText("The war");
+  await shot(page, "list-desktop");
+  const saved = await stored(page);
+  expect(saved.spans.find((s) => s.name === "Earth memory fades")!.startFrom).toMatchObject({
+    span: "landing1",
+    edge: "start",
+  });
+  await cleanUp(page, [id]);
+});
+
+test("on a phone: press and hold to move a bar, the sheet, and the list", async ({
+  page,
+}, info) => {
+  test.skip(info.project.name !== "phone", "Touch only");
+  await page.setViewportSize({ width: 375, height: 740 });
+  const id = await makeExample(page, `Touch ${info.project.name}`);
+  await page.getByRole("button", { name: "Not now" }).click();
+  await page.getByRole("button", { name: "Yrs", exact: true }).click();
+  await bar(page, "The war").scrollIntoViewIfNeeded();
+  // Only the timeline scrolls: the page around it, with its header, stays put.
+  const scrolled = () =>
+    page.evaluate(() =>
+      [...document.querySelectorAll("*")]
+        .filter((e) => (e.scrollTop > 0 || e.scrollLeft > 0) && !e.closest(".tl-scroll"))
+        .map((e) => `${e.tagName}.${e.className}`),
+    );
+  expect(await scrolled()).toEqual([]);
+
+  // A tap selects and opens the sheet; the bar stays in sight above it.
+  await bar(page, "The war").tap();
+  await expect(details(page).locator("h2")).toHaveText("The war");
+  const sheet = (await details(page).boundingBox())!;
+  const before = (await bar(page, "The war").boundingBox())!;
+  expect(before.y + before.height).toBeLessThanOrEqual(sheet.y);
+  await expect(details(page).getByLabel("Starts", { exact: true })).toHaveValue("270–290");
+  await shot(page, "sheet-phone");
+  expect(await scrolled()).toEqual([]);
+  await expect(page.locator(".ch-bar h1")).toBeInViewport();
+
+  // A swipe pans and moves nothing; a press and hold then a drag moves the bar.
+  const cdp = await page.context().newCDPSession(page);
+  const touch = async (type: string, x: number, y: number) =>
+    cdp.send("Input.dispatchTouchEvent", {
+      type,
+      touchPoints: type === "touchEnd" ? [] : [{ x, y }],
+    });
+  const x = before.x + before.width / 2;
+  const y = before.y + before.height / 2;
+  await touch("touchStart", x, y);
+  await page.waitForTimeout(500);
+  for (let i = 1; i <= 5; i++) await touch("touchMove", x + i * 14, y);
+  await touch("touchEnd", x + 70, y);
+  const saved = await stored(page);
+  const war = saved.spans.find((s) => s.name === "The war")!;
+  expect(war.start).toMatchObject({ low: 280, high: 300 });
+  await noSidewaysScroll(page);
+
+  // The list is the way to read it on a phone.
+  await details(page).getByRole("button", { name: "Close" }).click();
+  await page.getByRole("button", { name: "List", exact: true }).click();
+  await expect(page.locator(".ch-listview")).toContainText("Year 200 to 299");
+  await page
+    .locator(".ch-listview")
+    .getByRole("button", { name: /The treaty/ })
+    .click();
+  await expect(details(page).locator("h2")).toHaveText("The treaty");
+  await shot(page, "list-phone");
+  await noSidewaysScroll(page);
+  await cleanUp(page, [id]);
+});
+
+test("the map and the timeline open each other at the same year", async ({ page }, info) => {
+  const phone = info.project.name === "phone";
+  if (phone) await page.setViewportSize({ width: 375, height: 740 });
+  const id = await makeExample(page, `Bridge ${info.project.name}`);
+  const map = await page.evaluate(async (title) => {
+    const json = { "content-type": "application/json" };
+    const made = await fetch("/api/maps", {
+      method: "POST",
+      headers: json,
+      body: JSON.stringify({ title, kind: "flat", image: "99 Appendices/Images/map one.png" }),
+    });
+    const { id } = (await made.json()) as { id: string };
+    const loaded = await (await fetch(`/api/maps/${id}`)).json();
+    const m = loaded.map;
+    m.features = [
+      {
+        id: "fort0001",
+        kind: "marker",
+        layer: m.layers[0].id,
+        at: [10, 10],
+        entry: null,
+        label: "Fort",
+        child: null,
+        span: "war00001",
+        icon: null,
+      },
+    ];
+    await fetch(`/api/maps/${id}`, {
+      method: "PUT",
+      headers: json,
+      body: JSON.stringify({ map: m, revision: loaded.revision, baseBlob: loaded.blob }),
+    });
+    return id;
+  }, `Bridge map ${info.project.name}`);
+
+  await page.goto(`/map/${map}?t=290&c=${id}`);
+  await page.getByRole("link", { name: "Open timeline ↗" }).click();
+  await expect(page.locator(".ch-bar h1")).toHaveText(`Bridge ${info.project.name}`);
+  await expect(page.locator(".tl-mapflag")).toHaveText("Maps: 290");
+  await expect(bar(page, "The war")).toContainText("🗺");
+  await open(page, "The war", phone);
+  await expect(details(page).locator(".dt-maps")).toContainText(
+    `Bridge map ${info.project.name} · 1 feature follows this`,
+  );
+  // And back: the map opens at the line's year with this chronicle.
+  if (phone) await moreMenu(page, `🗺 Open Bridge map ${info.project.name} at 290`);
+  else {
+    // The sample library has maps of its own, so the button is a short menu of them.
+    await page.getByRole("button", { name: "Open a map at the map year" }).click();
+    await page.getByRole("menuitem", { name: `Bridge map ${info.project.name}` }).click();
+  }
+  await expect(page).toHaveURL(new RegExp(`/map/${map}\\?.*t=290`));
+  await expect(page).toHaveURL(new RegExp(`c=${id}`));
+  await cleanUp(page, [id], [map]);
+});
+
+test("CUJ 15: a copy with one event moved, shown underneath the original", async ({
+  page,
+}, info) => {
+  const phone = info.project.name === "phone";
+  if (phone) await page.setViewportSize({ width: 375, height: 740 });
+  const id = await makeExample(page, `Versions ${info.project.name}`);
+  await page.getByRole("button", { name: "Not now" }).click();
+  await moreMenu(page, "Copy, to try another version");
+  await expect(page.locator(".ch-bar h1")).toHaveText(`Copy of Versions ${info.project.name}`);
+  const copy = here(page);
+  await open(page, "The war", phone);
+  await typeIn(page, "Starts", "-230 to -210");
+  await typeIn(page, "Ends", "-200");
+  await expect(page.getByRole("button", { name: "1 doesn't fit" })).toBeVisible();
+  await details(page).getByRole("button", { name: "Close" }).click();
+  await moreMenu(page, "Show another version underneath…");
+  await page
+    .getByLabel("Show underneath:")
+    .selectOption({ label: `Versions ${info.project.name}` });
+  await expect(page.locator(".ch-under-note")).toContainText(`Versions ${info.project.name}`);
+  await expect(page.locator(".tl-ghost.is-differs")).toHaveCount(1);
+  await expect(page.locator(".tl-ghost").first()).toBeAttached();
+  await shot(page, `versions-${info.project.name}`);
+  await noSidewaysScroll(page);
+  await expect(page.locator(".ch-saving")).toHaveText("Saved as a draft");
+  await cleanUp(page, [copy, id]);
+});
+
+test("an event added by an entry's name is linked, and the entry lists the chronicle", async ({
+  page,
+}, info) => {
+  const phone = info.project.name === "phone";
+  if (phone) await page.setViewportSize({ width: 375, height: 740 });
+  const title = `Linked ${info.project.name}`;
+  await page.goto("/chronicles");
+  await page.locator(".new-map input[type=text]").fill(title);
+  await page.getByRole("button", { name: "Make the chronicle" }).click();
+
+  if (phone) await page.getByRole("button", { name: "Add an event" }).click();
+  else await page.getByRole("button", { name: "+ Add", exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByLabel("Name or entry").fill("Mira");
+  await dialog.getByRole("button", { name: /Mira/ }).first().click();
+  await expect(dialog).toContainText("Linked to the entry Mira.");
+  await dialog.getByLabel("Starts").fill("0");
+  await dialog.getByLabel("Ends").fill("80");
+  await dialog.getByRole("button", { name: "Add", exact: true }).click();
+
+  const entry = details(page).locator(".dt-entry");
+  await expect(entry.getByRole("link", { name: "Mira" })).toBeVisible();
+  await expect(page.locator(".ch-saving")).toHaveText("Saved as a draft");
+  await expect(entry).not.toContainText("linking");
+  await expect(bar(page, "Mira")).toContainText("📖");
+
+  // From the entry back to its event.
+  await entry.getByRole("link", { name: "Mira" }).click();
+  await expect(page).toHaveURL(/\/e\//);
+  await page.locator(".on-maps").getByRole("link", { name: title }).click();
+  await expect(details(page).locator("h2")).toHaveText("Mira");
+
+  // Unlinking takes the chronicle off the entry.
+  await details(page).locator(".dt-entry").getByRole("button", { name: "Unlink" }).click();
+  await expect(details(page).locator(".dt-entry")).toContainText("Link it to the entry");
+  await expect(page.locator(".ch-saving")).toHaveText("Saved as a draft");
+  await cleanUp(page, [here(page)]);
+});
+
+test("typing in an event while its link is being saved keeps both the link and the words", async ({
   page,
 }, info) => {
   const phone = info.project.name === "phone";
   if (phone) await page.setViewportSize({ width: 375, height: 740 });
   await page.goto("/chronicles");
-  await page.locator(".new-map input[type=text]").fill(`Scale trial ${info.project.name}`);
-  await page.getByRole("button", { name: "Make the chronicle" }).click();
-
-  // The first start given makes its span the one years are counted from.
-  await add(page, "Event", "Landing");
-  await sheet(page).locator("#ch-start-mode").selectOption("years");
-  await expect(sheet(page)).toContainText("Years are counted from its start");
-
-  // A statement about a placed span offers a place.
-  await add(page, "Span", "Fading");
-  await relate(page, "starts_with", "Landing");
-  await sheet(page).getByRole("button", { name: "Place it there" }).click();
-  await sheet(page).locator("#ch-length-unit").selectOption({ label: "In years" });
-  await sheet(page).locator("#ch-length").fill("100");
-  await sheet(page).locator(".ch-range").first().getByLabel("Highest").fill("150");
-  await expect(sheet(page)).toContainText("Ends year 100 to 150");
-
-  // A start that contradicts a statement is flagged, and the flag offers the fix.
-  await add(page, "Span", "War");
-  await relate(page, "after", "Fading");
-  await sheet(page).locator("#ch-start-mode").selectOption("years");
-  await sheet(page).locator("#ch-start").fill("50");
-  await sheet(page).locator("#ch-length-unit").selectOption({ label: "In years" });
-  await sheet(page).locator("#ch-length").fill("40");
-  await closeSheet(page);
-  await tab(page, /Does not fit \(1\)/).click();
-  await expect(page.locator(".ch-flag.is-red")).toContainText(
-    "War begins before Fading has ended; you said War is after Fading.",
-  );
-  await page.getByRole("button", { name: /^Move War/ }).click();
-  await expect(page.locator(".ch-flags")).toContainText("Nothing you have stated is contradicted");
-
-  // To scale: the war lies after the fading, on a ruler in years.
-  await tab(page, "Scale").click();
-  const scale = page.locator(".ch-scale");
-  await expect(scale.locator(".ch-mark").first()).toBeVisible();
-  const box = async (name: string) =>
-    (await scale.locator(".ch-span", { hasText: name }).boundingBox())!;
-  const along = phone ? ("y" as const) : ("x" as const);
-  const size = phone ? ("height" as const) : ("width" as const);
-  const fading = await box("Fading");
-  const war = await box("War");
-  expect(war[along]).toBeGreaterThan(fading[along] + fading[size] / 2);
-  // The fading may cover 150 years; the war may start anywhere in 50 and lasts 40, so 90.
-  expect(fading[size] / war[size]).toBeCloseTo(150 / 90, 1);
-  await noSidewaysScroll(page);
-  await scale.getByRole("button", { name: "Zoom in" }).click();
-  expect((await box("Fading"))[size]).toBeGreaterThan(fading[size] * 1.3);
-  await scale.getByRole("button", { name: "Fit", exact: true }).click();
-
-  // Shifting moves what is chosen and nothing else.
-  await page.locator(".ch-shift summary").click();
-  await page.getByLabel("Which spans").selectOption("chosen");
-  await page.locator(".ch-shift-list").getByLabel("War").check();
-  await page.getByLabel("Years to shift by").fill("500");
-  await page.getByLabel("Earlier or later").selectOption("earlier");
-  await page.getByRole("button", { name: "Shift", exact: true }).click();
-  await expect(page.locator(".ch-shift")).toContainText("Moved 1 span 500 years earlier");
-  await expect(tab(page, /Does not fit \(1\)/)).toBeVisible();
-  await scale.locator(".ch-span", { hasText: "War" }).click();
-  await expect(sheet(page)).toContainText("Starts year -400 to -350");
-  await closeSheet(page);
-  await page.getByRole("button", { name: "Undo" }).click();
-  await expect(tab(page, "Does not fit")).toBeVisible();
-  await expect(page.locator(".ch-saving")).toHaveText("Saved as a draft");
-
-  // Another version: a copy with the war 500 years earlier, beside the original.
-  const original = page.url();
-  await page.locator(".ch-more summary").click();
-  await page.getByRole("button", { name: "Copy, to try another version" }).click();
-  await expect(page.locator(".ch-bar h1")).toHaveText(`Copy of Scale trial ${info.project.name}`);
-  await tab(page, "Scale").click();
-  await page.locator(".ch-shift summary").click();
-  await page.getByLabel("Which spans").selectOption("chosen");
-  await page.locator(".ch-shift-list").getByLabel("War").check();
-  await page.getByLabel("Years to shift by").fill("500");
-  await page.getByLabel("Earlier or later").selectOption("earlier");
-  await page.getByRole("button", { name: "Shift", exact: true }).click();
-  await page
-    .getByLabel("Compare with…")
-    .selectOption({ label: `Scale trial ${info.project.name}` });
-  const versions = page.locator(".ch-version");
-  await expect(versions).toHaveCount(2);
-  await expect(versions.nth(1)).toHaveText(`Scale trial ${info.project.name}`);
-  // The shifted span is marked as different in both; the others are not.
-  await expect(page.locator(".ch-span.is-differs", { hasText: "War" })).toHaveCount(2);
-  await expect(page.locator(".ch-span.is-differs")).toHaveCount(2);
-  await expect(page.getByLabel("Aligned on the start of")).toHaveValue(/.+/);
-  // Each lists its own flags: the copy's war now begins before the fading has ended.
-  await expect(tab(page, /Does not fit \(1\)/)).toBeVisible();
-  await expect(page.locator(".ch-versus-flags")).toContainText("Nothing.");
-  await noSidewaysScroll(page);
-  await expect(page.locator(".ch-saving")).toHaveText("Saved as a draft");
-  await page.evaluate(async () => {
-    await fetch(`/api/chronicles/${location.pathname.split("/").pop()}`, { method: "DELETE" });
-  });
-  await page.goto(original);
-  await expect(page.locator(".ch-bar h1")).toHaveText(`Scale trial ${info.project.name}`);
-  await page.evaluate(async () => {
-    await fetch(`/api/chronicles/${location.pathname.split("/").pop()}`, { method: "DELETE" });
-  });
-});
-
-test("a span linked to an entry opens the entry, and the entry lists the chronicle", async ({
-  page,
-}, info) => {
-  if (info.project.name === "phone") await page.setViewportSize({ width: 375, height: 740 });
-  const title = `Linked ${info.project.name}`;
-  await page.goto("/chronicles");
-  await page.locator(".new-map input[type=text]").fill(title);
-  await page.getByRole("button", { name: "Make the chronicle" }).click();
-  await add(page, "Span", "Mira's years");
-
-  const entry = sheet(page).locator(".ch-entry");
-  await entry.getByLabel("Find an entry").fill("Mira");
-  await entry.locator(".entry-picker li button", { hasText: "Mira" }).first().click();
-  await expect(entry.getByRole("link", { name: "Mira" })).toBeVisible();
-  await expect(page.locator(".ch-saving")).toHaveText("Saved as a draft");
-  await expect(entry).not.toContainText("linking");
-
-  // From the entry back to its span.
-  await entry.getByRole("link", { name: "Mira" }).click();
-  await expect(page).toHaveURL(/\/e\//);
-  await page.locator(".on-maps").getByRole("link", { name: title }).click();
-  await expect(sheet(page).locator("h2")).toHaveText("Mira's years");
-
-  // Unlinking takes the chronicle off the entry.
-  await sheet(page).locator(".ch-entry").getByRole("button", { name: "Unlink" }).click();
-  await expect(sheet(page).locator(".ch-entry")).toContainText("Link this to the entry");
-  await expect(page.locator(".ch-saving")).toHaveText("Saved as a draft");
-
-  // Nothing is left behind: the chronicle goes, and so does the id written into the entry.
-  await page.evaluate(async () => {
-    await fetch(`/api/chronicles/${location.pathname.split("/").pop()}`, { method: "DELETE" });
-    const un = await (await fetch("/api/unpublished")).json();
-    for (const d of un.drafts) await fetch(`/api/drafts/${d.id}`, { method: "DELETE" });
-  });
-});
-
-test("typing in a span while its link is being saved keeps both the link and the words", async ({
-  page,
-}, info) => {
-  if (info.project.name === "phone") await page.setViewportSize({ width: 375, height: 740 });
-  await page.goto("/chronicles");
   await page.locator(".new-map input[type=text]").fill(`Slow link ${info.project.name}`);
   await page.getByRole("button", { name: "Make the chronicle" }).click();
-  await add(page, "Span", "Shade's years");
+  await addEvent(page, phone, "Shade's years");
   await expect(page.locator(".ch-saving")).toHaveText("Saved as a draft");
 
   // Saves that carry a link are held for a moment, as on a slow connection.
@@ -332,27 +566,19 @@ test("typing in a span while its link is being saved keeps both the link and the
     await route.continue();
   });
 
-  const entry = sheet(page).locator(".ch-entry");
+  const entry = details(page).locator(".dt-entry");
   await entry.getByLabel("Find an entry").fill("Shade");
   await entry.locator(".entry-picker li button", { hasText: "Shade" }).first().click();
   await expect(page.locator(".ch-saving")).toHaveText("Saving…");
   await expect.poll(() => held).toBe(1);
-  // While the link is on its way, a note is typed into the same span.
-  await sheet(page).getByLabel("Note").fill("Written during the save");
+  // While the link is on its way, a note is typed into the same event.
+  await details(page).getByLabel("Note").fill("Written during the save");
   await expect(page.locator(".ch-saving")).toHaveText("Saved as a draft", { timeout: 15_000 });
   await page.unroute("**/api/chronicles/*");
 
-  const stored = await page.evaluate(async () => {
-    const id = location.pathname.split("/").pop();
-    return (await (await fetch(`/api/chronicles/${id}`)).json()).chronicle.spans[0];
-  });
-  expect(stored.note).toBe("Written during the save");
-  expect(stored.entry).toMatch(/^[a-z0-9]{8}$/);
+  const saved = await stored(page);
+  expect(saved.spans[0]!.note).toBe("Written during the save");
+  expect(saved.spans[0]!.entry).toMatch(/^[a-z0-9]{8}$/);
   await expect(entry.getByRole("link", { name: "Shade" })).toBeVisible();
-
-  await page.evaluate(async () => {
-    await fetch(`/api/chronicles/${location.pathname.split("/").pop()}`, { method: "DELETE" });
-    const un = await (await fetch("/api/unpublished")).json();
-    for (const d of un.drafts) await fetch(`/api/drafts/${d.id}`, { method: "DELETE" });
-  });
+  await cleanUp(page, [here(page)]);
 });

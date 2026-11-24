@@ -10,9 +10,12 @@ import {
   type Order,
   type Range,
   type SpanPoints,
+  type Tie,
   allSpanPoints,
   checkRelations,
   orderOf,
+  placeable,
+  resolveTies,
 } from "@frontier/time";
 
 /** Changes that follow each other with the same `tag` are one step for undo. */
@@ -190,6 +193,33 @@ export function applyOffer(
   if (start) return { ...span, start, end: follow(span.end, stored(span.start), start.low) };
   if (end) return { ...span, end, start: follow(span.start, stored(span.end), end.low) };
   return span;
+}
+
+/**
+ * The chronicle with every tied start and end worked out again (stage 17). The page runs every
+ * change and every merge through this, so a tied number always follows what it is tied to. The
+ * same object comes back when nothing moved, so an unchanged chronicle is not saved again.
+ */
+export function withTies(chronicle: ChronicleFile): ChronicleFile {
+  const spans = resolveTies(chronicle.spans).spans;
+  return spans === chronicle.spans ? chronicle : { ...chronicle, spans };
+}
+
+/** Ties one point of a span, or unties it (keeping the number it had) when `tie` is null. */
+export function setTie(span: ChronicleSpan, part: "start" | "end", tie: Tie | null): ChronicleSpan {
+  const key = part === "start" ? "startFrom" : "endFrom";
+  const rest: Record<string, unknown> = { ...span };
+  delete rest[key];
+  return (tie ? { ...rest, [key]: tie } : rest) as ChronicleSpan;
+}
+
+/** Turns the statements that can place a span into ties: the one-time offer on opening. */
+export function placeFromStatements(chronicle: ChronicleFile): ChronicleFile {
+  let next = chronicle;
+  for (const p of placeable(chronicle)) {
+    next = withSpan(next, p.span, (s) => setTie(s, p.part, p.tie));
+  }
+  return withTies(next);
 }
 
 /** Counts years from another span's start: every stored start and end moves by one amount. */
