@@ -309,9 +309,9 @@ describe("a group in time", () => {
   });
 
   it("combines the two presences", () => {
-    expect(withGroup("present", "gone")).toBe("gone");
-    expect(withGroup("not_yet", "present")).toBe("not_yet");
-    expect(withGroup("present", "perhaps")).toBe("perhaps");
+    expect(withGroup("there", "gone")).toBe("gone");
+    expect(withGroup("not_yet", "there")).toBe("not_yet");
+    expect(withGroup("there", "perhaps")).toBe("perhaps");
     expect(withGroup("timeless", undefined)).toBe("timeless");
   });
 });

@@ -997,7 +997,10 @@ export function MapPage() {
               // A double-click on a piece of a group goes inside, to that piece.
               if (!editing || tool !== "select") return;
               const at = pointOn(e.currentTarget, e);
-              groups.goInside(shapeAt(draw.shapes.current, [at.x, at.y]));
+              // The piece under the pointer, past the group's name written over it.
+              const ids = new Set(map.features.map((f) => f.id));
+              const shapes = draw.shapes.current.filter((s) => ids.has(s.id));
+              groups.goInside(shapeAt(shapes, [at.x, at.y]));
             }}
           />
         </MapContextMenu>

@@ -12,6 +12,7 @@ import {
   panBy,
   type Position,
   type Shape,
+  shapeAt,
   type Space,
   type ViewState,
   zoomAt,
@@ -104,7 +105,10 @@ export function usePointer(p: {
    * What a tap on a feature (or a group's name), or on nothing, selects: the page decides, by the
    * groups and by whether Shift or Ctrl/⌘ was held to pick several.
    */
-  pickTap: (hit: string | null, how: { add: boolean; kind: PointerKind }) => void;
+  pickTap: (
+    hit: string | null,
+    how: { add: boolean; kind: PointerKind; piece: string | null },
+  ) => void;
   /** The features lit with a hovered one: its group's, unless the selection is inside it. */
   haloIds: (feature: string) => ReadonlySet<string>;
 }) {
@@ -352,7 +356,13 @@ export function usePointer(p: {
     // A corner of the selected shape is picked here; what a tap selects, the page decides.
     if (step.selected === undefined) return p.apply(step);
     p.apply({ vertex: null });
-    p.pickTap(step.selected, { add: editing && addHeld.current, kind });
+    // The piece of a feature under the tap, past any group's name written over it.
+    const ids = new Set(now.features.map((f) => f.id));
+    const piece = shapeAt(
+      p.shapes.current.filter((s) => ids.has(s.id)),
+      [x, y],
+    );
+    p.pickTap(step.selected, { add: editing && addHeld.current, kind, piece });
   }
 
   function carryOut(effect: Effect, e: GestureEvent) {

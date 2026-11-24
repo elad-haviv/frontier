@@ -109,7 +109,10 @@ export function useGroupSelection(o: {
   };
 
   /** What a tap on the map selects: see `pickOf`; with Shift, Ctrl or ⌘, or picking, it adds. */
-  function pickTap(hit: string | null, how: { add: boolean; kind: PointerKind }) {
+  function pickTap(
+    hit: string | null,
+    how: { add: boolean; kind: PointerKind; piece?: string | null },
+  ) {
     const now = o.mapRef.current;
     if (!now) return;
     if (how.add || picking) {
@@ -133,7 +136,8 @@ export function useGroupSelection(o: {
       editing &&
       how.kind !== "mouse" &&
       !!groupById(now, selected) &&
-      groupOf(now, hit)?.id === selected;
+      groupOf(now, how.piece)?.id === selected;
+    if (second && how.piece) return setSelected(how.piece);
     setSelected(editing ? pickOf(now, hit, selected, second) : pickOf(now, hit, null));
   }
 
