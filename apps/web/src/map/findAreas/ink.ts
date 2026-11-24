@@ -71,6 +71,123 @@ export interface Ink {
 export const lineLength = (w: number, h: number): number =>
   Math.max(40, Math.round(Math.max(w, h) * 0.094));
 
+/** The widest gap in a line of ink that is bridged, in pixels. */
+const GAP = 8;
+
+/** Labels the pieces of a mask (8-connected) in `comp`, -1 off the mask; returns how many. */
+function label(mask: Uint8Array, w: number, h: number, comp: Int32Array): number {
+  const stack = new Int32Array(w * h);
+  comp.fill(-1);
+  let count = 0;
+  for (let s = 0; s < w * h; s++) {
+    if (!mask[s] || comp[s]! >= 0) continue;
+    let sp = 0;
+    stack[sp++] = s;
+    comp[s] = count;
+    while (sp) {
+      const i = stack[--sp]!;
+      const x = i % w;
+      const y = (i / w) | 0;
+      for (let dy = -1; dy <= 1; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          const xx = x + dx;
+          const yy = y + dy;
+          if (xx < 0 || yy < 0 || xx >= w || yy >= h) continue;
+          const j = yy * w + xx;
+          if (mask[j] && comp[j]! < 0) {
+            comp[j] = count;
+            stack[sp++] = j;
+          }
+        }
+      }
+    }
+    count++;
+  }
+  return count;
+}
+
+/**
+ * Joins pieces of ink that lie within `gap` pixels of each other, by a straight stroke from each
+ * edge pixel of one to the nearest pixel of another. Closing with a square (grow, then shrink)
+ * joins the dashes of a line that runs along the grid, but not of a thin slanted one: there the
+ * shrinking square never fits and the gaps open again. This joins them whichever way they run.
+ */
+export function bridgeGaps(mask: Uint8Array, w: number, h: number, gap: number): void {
+  const comp = new Int32Array(w * h);
+  if (label(mask, w, h, comp) < 2) return;
+  // Blocks of the picture that hold one piece only (its number), none (-1) or several (-2), so
+  // the pixels with no other piece near are passed over at once.
+  const bw = Math.ceil(w / gap);
+  const bh = Math.ceil(h / gap);
+  const block = new Int32Array(bw * bh).fill(-1);
+  for (let i = 0; i < w * h; i++) {
+    const c = comp[i]!;
+    if (c < 0) continue;
+    const b = (((i / w) | 0) / gap | 0) * bw + (((i % w) / gap) | 0);
+    if (block[b] === -1) block[b] = c;
+    else if (block[b] !== c) block[b] = -2;
+  }
+  const strokes: [number, number][] = [];
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const i = y * w + x;
+      const c = comp[i]!;
+      if (c < 0) continue;
+      // Only the edge of a piece reaches out.
+      const inside =
+        x > 0 && x < w - 1 && y > 0 && y < h - 1 && comp[i - 1] === c && comp[i + 1] === c && comp[i - w] === c && comp[i + w] === c;
+      if (inside) continue;
+      const bx = (x / gap) | 0;
+      const by = (y / gap) | 0;
+      let other = false;
+      for (let dy = -1; dy <= 1 && !other; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          const xx = bx + dx;
+          const yy = by + dy;
+          if (xx < 0 || yy < 0 || xx >= bw || yy >= bh) continue;
+          const v = block[yy * bw + xx]!;
+          if (v !== -1 && v !== c) {
+            other = true;
+            break;
+          }
+        }
+      }
+      if (!other) continue;
+      let best = -1;
+      let bd = gap * gap + 1;
+      for (let dy = -gap; dy <= gap; dy++) {
+        const yy = y + dy;
+        if (yy < 0 || yy >= h) continue;
+        for (let dx = -gap; dx <= gap; dx++) {
+          const xx = x + dx;
+          if (xx < 0 || xx >= w) continue;
+          const d = dx * dx + dy * dy;
+          const j = yy * w + xx;
+          if (d < bd && comp[j]! >= 0 && comp[j] !== c) {
+            bd = d;
+            best = j;
+          }
+        }
+      }
+      if (best >= 0) strokes.push([i, best]);
+    }
+  }
+  for (const [from, to] of strokes) {
+    const x0 = from % w;
+    const y0 = (from / w) | 0;
+    const x1 = to % w;
+    const y1 = (to / w) | 0;
+    const steps = Math.max(Math.abs(x1 - x0), Math.abs(y1 - y0)) * 2;
+    for (let k = 0; k <= steps; k++) {
+      const x = Math.round(x0 + ((x1 - x0) * k) / steps);
+      const y = Math.round(y0 + ((y1 - y0) * k) / steps);
+      mask[y * w + x] = 1;
+      // A second pixel beside it: a stroke one pixel wide lets a four-way step slip through.
+      if (x + 1 < w) mask[y * w + x + 1] = 1;
+    }
+  }
+}
+
 /**
  * Finds the ink. A pixel is ink when it is clearly darker than the mean of its 13×13
  * neighbourhood (a black top-hat): lines and letters are, a forest painted dark is not, since
@@ -84,6 +201,7 @@ export function findInk(pic: LabPicture): Ink {
   const dark = new Uint8Array(n);
   for (let i = 0; i < n; i++) dark[i] = L[i]! < mean[i]! - 9 ? 1 : 0;
   const closed = morph(morph(dark, w, h, 4, true), w, h, 4, false);
+  bridgeGaps(closed, w, h, GAP);
   // Each piece of the closed ink (8-connected), sorted into lines and marks.
   const comp = new Int32Array(n).fill(-1);
   const stack = new Int32Array(n);
