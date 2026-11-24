@@ -1,10 +1,28 @@
 import { aliasesOf, dirname, splitFrontmatter, stem } from "@frontier/vault";
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
-import { api, ApiFailure, chronicleUrl, editUrl, entryUrl, mapUrl, talkUrl } from "../api.ts";
+import {
+  api,
+  ApiFailure,
+  chronicleUrl,
+  editUrl,
+  entryUrl,
+  mapUrl,
+  type PassageComment,
+  talkUrl,
+} from "../api.ts";
+import { CommentsPanel } from "../components/CommentsPanel.tsx";
+import { CommentBubbles, useMargin } from "../components/comments/CommentBubbles.tsx";
+import { passageRange } from "../components/comments/passage.ts";
 import { HoverPreview } from "../components/HoverPreview.tsx";
 import { LightboxProvider } from "../components/Lightbox.tsx";
-import { currentEntryPath, scrollPageToTop, useRefresh, useWords } from "../components/Shell.tsx";
+import {
+  currentEntryPath,
+  scrollPageToTop,
+  usePhone,
+  useRefresh,
+  useWords,
+} from "../components/Shell.tsx";
 import {
   PageAction,
   useOpenPanel,
@@ -13,12 +31,11 @@ import {
   useRevealInTree,
   useRightBar,
 } from "../components/shell/panels.tsx";
-import { Fields } from "../components/Fields.tsx";
+import { CustomFields, Fields } from "../components/Fields.tsx";
 import { ProposeFields } from "../components/ProposeFields.tsx";
 import { Markdown } from "../render/Markdown.tsx";
-import { Menu, MenuItem, MenuSeparator } from "../components/ui/Menu.tsx";
 import { IconButton } from "../components/ui/IconButton.tsx";
-import { FileDown, FolderInput, History, Pencil, TableOfContents, Waypoints } from "lucide-react";
+import { FileDown, History, MessageSquare, TableOfContents, Waypoints } from "lucide-react";
 import { Problem } from "../components/ui/Problem.tsx";
 import { Progress } from "../components/ui/Progress.tsx";
 import { useToast } from "../components/ui/Toast.tsx";
@@ -27,7 +44,11 @@ import { useCurrentHeading } from "../components/entry/useCurrentHeading.ts";
 import { OutlinePanel } from "../components/entry/OutlinePanel.tsx";
 import { HistoryPanel } from "../components/entry/HistoryPanel.tsx";
 import { ExportPanel } from "../components/entry/ExportPanel.tsx";
-import { WideMenuItem } from "../components/entry/WideMenuItem.tsx";
+import {
+  type EntryActionsProps,
+  EntryPhoneActions,
+  EntryToolbar,
+} from "../components/entry/EntryActions.tsx";
 import {
   MoveField,
   pendingPath,
@@ -70,6 +91,8 @@ function Crumbs({ path, pending }: { path: string; pending: boolean }) {
   );
 }
 
+const NO_COMMENTS: PassageComment[] = [];
+
 const join = (folder: string, name: string) => `${folder ? folder + "/" : ""}${name}.md`;
 
 export function EntryPage() {
@@ -89,8 +112,15 @@ export function EntryPage() {
   const canTalk = ai.state === "ready" && ai.value.ready;
   const comments = useAsync(() => api.commentCount(path), `comments:${path}@${key}`);
   const openComments = comments.state === "ready" ? comments.value.open : 0;
+  // The comments themselves, for the margin and the Comments tab.
+  const commentList = useAsync(() => api.comments(path), `comment-list:${path}@${key}`);
+  const passageComments = commentList.state === "ready" ? commentList.value.comments : NO_COMMENTS;
+  /** The comment whose bubble was pressed last; a new object at each press. */
+  const [focusComment, setFocusComment] = useState<{ id: string } | null>(null);
+  const article = useRef<HTMLElement>(null);
   const offline = useNeedsConnection();
-  const [wide, setWide] = useWide();
+  const [wide] = useWide();
+  const phone = usePhone();
   const [renaming, setRenaming] = useState(false);
   const [moving, setMoving] = useState(false);
   const openPanel = useOpenPanel();
@@ -147,6 +177,60 @@ export function EntryPage() {
   const editable = !!e && !e.readOnly && e.draft?.kind !== "delete";
   const reached = current >= 0 ? (headings[current]?.text ?? null) : null;
   const relocate = useRelocate(e, entry.retry);
+
+  /** Scrolls the page to a comment's passage. */
+  function showPassage(c: PassageComment) {
+    const root = prose.current;
+    if (!root || !loaded) return;
+    const range = passageRange(root, loaded.text, c);
+    range?.startContainer.parentElement?.scrollIntoView({ block: "center" });
+  }
+
+  usePanel(
+    !e || passageComments.length === 0
+      ? null
+      : {
+          id: "comments",
+          title: "Comments",
+          icon: MessageSquare,
+          badge: passageComments.length,
+          render: () => (
+            <CommentsPanel
+              key={e.path}
+              view={null}
+              text={e.text}
+              path={e.path}
+              comments={passageComments}
+              adding={null}
+              canAi={canTalk}
+              focus={focusComment}
+              onShow={showPassage}
+              onChanged={() => {
+                commentList.retry();
+                comments.retry();
+              }}
+              onClose={() => bar.hide()}
+            />
+          ),
+        },
+  );
+
+  // While the side bar is closed, comments show as bubbles in the margin beside their passages.
+  const margin = useMargin(
+    article,
+    bar.open === null && !!loaded,
+    (box) => {
+      const root = prose.current;
+      if (!root || !loaded) return [];
+      return passageComments.flatMap((c) => {
+        const range = passageRange(root, loaded.text, c);
+        if (!range) return [];
+        const top = range.getBoundingClientRect().top - box.top;
+        return [{ id: c.id, top: Math.round(top), text: c.text, for: c.for }];
+      });
+    },
+    [passageComments, view, wide],
+  );
 
   /** Goes to a heading chosen in the outline. On a phone the sheet steps aside for the text. */
   function goTo(i: number) {
@@ -266,62 +350,53 @@ export function EntryPage() {
     }
   }
 
-  const menu = (
-    <Menu label="More actions">
-      <MenuItem
-        icon={Pencil}
-        disabled={offline !== undefined}
-        disabledReason={offline}
-        onSelect={startRename}
-      >
-        Rename
-      </MenuItem>
-      <MenuItem
-        icon={FolderInput}
-        disabled={offline !== undefined}
-        disabledReason={offline}
-        onSelect={startMove}
-      >
-        Move to…
-      </MenuItem>
-      <WideMenuItem />
-      <MenuSeparator />
-      <MenuItem icon={History} onSelect={() => openPanel("history")}>
-        History
-      </MenuItem>
-      <MenuItem icon={FileDown} onSelect={() => openPanel("export")}>
-        Export
-      </MenuItem>
-    </Menu>
-  );
+  const toggle = (id: string) => () => (bar.open === id ? bar.hide() : openPanel(id));
+  const actions: EntryActionsProps = {
+    editHref: editable ? editUrl(ent.path) : undefined,
+    onOutline: headings.length > 0 ? toggle("outline") : undefined,
+    outlineOpen: bar.open === "outline",
+    onGraph: toggle("graph"),
+    graphOpen: bar.open === "graph",
+    changes: editable
+      ? {
+          onRename: startRename,
+          onMove: startMove,
+          onHistory: () => openPanel("history"),
+          onExport: () => openPanel("export"),
+          offline,
+        }
+      : undefined,
+  };
 
   const moved = ent.rename !== null && dirname(ent.rename.to) !== dirname(ent.path);
   const renamed = ent.rename !== null && stem(ent.rename.to) !== stem(ent.path);
 
   return (
     <>
+      {/* On a desktop the entry's actions are at the right of the bar at the top; on a phone,
+          Edit and "⋯" are in the top line, beside the title. */}
       <StickyLine
         shown={titleGone}
         folder={folder}
         name={name}
         heading={reached}
-        wide={wide}
-        onFolder={() => revealInTree(folder)}
+        onFolder={revealInTree}
         onTop={scrollPageToTop}
-        onOutline={headings.length > 0 ? () => openPanel("outline") : undefined}
-        onWide={() => setWide(!wide)}
-        actions={
-          editable && (
-            <>
-              <Link to={editUrl(ent.path)} className="edit-link">
-                Edit
-              </Link>
-              {menu}
-            </>
-          )
-        }
+        actions={<EntryToolbar {...actions} />}
       />
-      <article className={`entry${wide ? " is-wide" : ""}`}>
+      {phone && (
+        <PageAction>
+          <EntryPhoneActions {...actions} />
+        </PageAction>
+      )}
+      <article className={`entry${wide ? " is-wide" : ""}`} ref={article}>
+        <CommentBubbles
+          {...margin}
+          onOpen={(id) => {
+            setFocusComment({ id });
+            openPanel("comments");
+          }}
+        />
         {entry.reloading && <Progress label="Opening" />}
         {entry.error && <Problem reason={entry.error.message} onRetry={entry.retry} />}
         <header className="entry-head">
@@ -337,41 +412,8 @@ export function EntryPage() {
             ) : (
               <div className="entry-title">
                 <h1>{name}</h1>
-                {editable && (
-                  <IconButton
-                    label="Rename"
-                    icon={Pencil}
-                    size="sm"
-                    className="entry-rename"
-                    disabled={offline !== undefined}
-                    {...(offline ? { disabledReason: offline } : {})}
-                    onClick={() => setRenaming(true)}
-                  />
-                )}
               </div>
             )}
-            <span className="entry-actions">
-              {outlineButton("entry-outline")}
-              <IconButton
-                label="Graph"
-                icon={Waypoints}
-                size="sm"
-                aria-pressed={bar.open === "graph"}
-                onClick={() => (bar.open === "graph" ? bar.hide() : openPanel("graph"))}
-              />
-              {editable && (
-                <>
-                  {/* On a phone, Edit moves into the top line, beside the title. */}
-                  <PageAction>
-                    <Link to={editUrl(ent.path)} className="edit-link">
-                      Edit
-                    </Link>
-                  </PageAction>
-                  {/* One clear action; the rest wait behind "⋯", as the review asked. */}
-                  {menu}
-                </>
-              )}
-            </span>
           </div>
           {moving && (
             <MoveField
@@ -443,6 +485,7 @@ export function EntryPage() {
             </p>
           )}
           <Fields fields={ent.fields} />
+          <CustomFields text={ent.text} links={ent.links} />
           {canTalk && (ent.fields.type === "person" || ent.fields.type === "deity") && (
             <p className="talk-with">
               <Link to={talkUrl(ent.path)}>

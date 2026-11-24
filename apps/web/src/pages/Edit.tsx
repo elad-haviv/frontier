@@ -9,6 +9,7 @@ import { type BlockStyle, insertEmbeds, lineStyle, run } from "../components/edi
 import { LinkToEntry } from "../components/LinkToEntry.tsx";
 import { passageOf, WritingPanel } from "../components/WritingPanel.tsx";
 import { CommentsPanel } from "../components/CommentsPanel.tsx";
+import { CommentBubbles, useMargin } from "../components/comments/CommentBubbles.tsx";
 import { type Anchor, anchorAt, locate, MIN_QUOTE } from "../components/anchor.ts";
 import { setCommentMarks } from "../components/commentMarks.ts";
 import { Properties } from "../components/Properties.tsx";
@@ -107,7 +108,10 @@ export function EditPage() {
   // Highlights move with typing; after a pause they are found again from the words, so an undone
   // deletion or a replaced text brings them back. The pause also redraws the panel's list.
   const marksTimer = useRef<number | undefined>(undefined);
-  const [, setTextTick] = useState(0);
+  const [textTick, setTextTick] = useState(0);
+  /** The comment whose bubble in the margin was pressed last; a new object at each press. */
+  const [focusComment, setFocusComment] = useState<{ id: string } | null>(null);
+  const page = useRef<HTMLDivElement>(null);
   const placeMarks = useCallback((list: PassageComment[]) => {
     const v = view.current;
     if (!v) return;
@@ -452,6 +456,7 @@ export function EditPage() {
               <CommentsPanel
                 key={`${path}:${commenting.n}`}
                 view={view.current}
+                focus={focusComment}
                 path={path}
                 comments={comments}
                 adding={commenting.adding}
@@ -488,6 +493,25 @@ export function EditPage() {
   const outline = useEditorOutline(view);
   usePanel(initial === null ? null : outline.panel);
   const [wide] = useWide();
+
+  // While the side bar is closed, comments show as bubbles in the margin beside their passages.
+  const margin = useMargin(
+    page,
+    bar.open === null && initial !== null,
+    (box) => {
+      const v = view.current;
+      if (!v) return [];
+      const text = v.state.doc.toString();
+      return comments.flatMap((c) => {
+        const at = locate(text, c);
+        if (!at) return [];
+        // Lines out of sight are not drawn; their place is still known from the line heights.
+        const top = v.coordsAtPos(at.from)?.top ?? v.documentTop + v.lineBlockAt(at.from).top;
+        return [{ id: c.id, top: Math.round(top - box.top), text: c.text, for: c.for }];
+      });
+    },
+    [comments, textTick, preview, wide, initial],
+  );
 
   async function discard() {
     const ok = await dialogs.confirm({
@@ -570,7 +594,14 @@ export function EditPage() {
   if (initial === null) return <p className="center muted">Opening…</p>;
 
   return (
-    <div className={`editor-page${wide ? " is-wide" : ""}`}>
+    <div className={`editor-page${wide ? " is-wide" : ""}`} ref={page}>
+      <CommentBubbles
+        {...margin}
+        onOpen={(id) => {
+          setFocusComment({ id });
+          bar.show("comments");
+        }}
+      />
       <div className="editor-bar">
         <span className="editor-path" title={path}>
           {path.split("/").pop()?.replace(/\.md$/i, "")}

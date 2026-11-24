@@ -1,30 +1,25 @@
-/* The sticky line holds no room in the page: it rests at the top of the page area, out of sight,
-   and slides in once the title has gone. */
+/* The bar at the top of an entry: it stays at the top of the page area as the page scrolls. */
 .sticky-holder {
   position: sticky;
   top: 0;
   z-index: var(--layer-sticky);
-  height: 0;
 }
 
 .sticky-line {
+  container: entry-bar / inline-size;
   display: flex;
   align-items: center;
   gap: var(--space-3);
   height: 2.75rem;
   padding: 0 var(--space-3) 0 var(--space-4);
-  border-bottom: 1px solid var(--rule);
+  border-bottom: 1px solid transparent;
   background: color-mix(in srgb, var(--paper) 94%, transparent);
   backdrop-filter: blur(6px);
-  transform: translateY(-100%);
-  opacity: 0;
-  transition:
-    transform 0.16s ease,
-    opacity 0.16s ease;
+  transition: border-color 0.16s ease;
 }
+/* Once the title has gone, a rule sets the bar apart from the text under it. */
 .sticky-line.is-shown {
-  transform: none;
-  opacity: 1;
+  border-bottom-color: var(--rule);
 }
 @media (prefers-reduced-motion: reduce) {
   .sticky-line {
@@ -81,15 +76,18 @@ button.sticky-crumb:hover {
   color: var(--ink-faint);
 }
 
-.sticky-actions {
-  flex: none;
+.sticky-parent {
+  flex: 0 8 auto;
+  min-width: 2.5ch;
   display: flex;
-  align-items: center;
-  gap: var(--space-1);
+  gap: var(--space-2);
+  overflow: hidden;
 }
-.sticky-actions .edit-link {
-  margin: 0;
-  padding: 0.2rem 0.75rem;
+.sticky-folder-up {
+  color: var(--ink-faint);
+  font-size: 0.78rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
 }
 
 /* A phone has its slim top line instead. */

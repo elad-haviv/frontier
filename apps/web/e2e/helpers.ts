@@ -138,6 +138,22 @@ export async function openMenu(page: Page, name: string): Promise<void> {
   await expect(page.getByRole("menu")).toBeVisible();
 }
 
+/**
+ * Runs one of the entry's actions, such as "Rename" or "History": its icon in the bar at the top
+ * of the page where the bar has room for it, or the item in "More actions" where it does not, as
+ * on a phone.
+ */
+export async function entryAction(page: Page, name: string): Promise<void> {
+  await expect(page.locator(".entry h1").first()).toBeVisible();
+  const tool = page.locator(".sticky-line").getByRole("button", { name, exact: true });
+  if (await tool.isVisible()) {
+    await tool.click();
+    return;
+  }
+  await openMenu(page, "More actions");
+  await page.getByRole("menuitem", { name, exact: true }).click();
+}
+
 /** On a phone, opens the side bar's drawer; on a desktop the side bar is always there. */
 export async function openSideBar(page: Page): Promise<void> {
   const menu = page.getByRole("button", { name: "Open the side bar", exact: true });
@@ -186,7 +202,8 @@ export async function rightPanel(page: Page, name: string) {
 export async function newEntry(page: Page, folder: string, name: string): Promise<void> {
   // On a phone the button is in the side bar's drawer.
   await openSideBar(page);
-  await page.getByRole("button", { name: "New entry", exact: true }).click();
+  // The side bar's own New entry, which starts in the folder in view; the tree's starts at the top.
+  await page.locator(".left-actions .new-entry").click();
   const dialog = page.getByRole("dialog");
   await dialog.getByLabel("Name").fill(name);
   await dialog.getByRole("combobox", { name: "Folder", exact: true }).click();
