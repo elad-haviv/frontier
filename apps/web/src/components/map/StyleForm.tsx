@@ -1,4 +1,13 @@
-import { DASH_NAMES, type Dash, type MapStyle, styleNameTaken } from "@frontier/schema";
+import {
+  COUNTS_FOR,
+  type CountsAs,
+  countsAs,
+  DASH_NAMES,
+  type Dash,
+  type MapStyle,
+  STARTER_STYLES,
+  styleNameTaken,
+} from "@frontier/schema";
 import { useEffect, useId, useState } from "react";
 import { Tip } from "../ui/Tip.tsx";
 import { StyleSample } from "./StyleSample.tsx";
@@ -21,6 +30,26 @@ export const DASH_LABELS: Record<Dash, string> = {
   long: "Long dashes",
   "dash-dot": "Dash and dot",
 };
+
+export const COUNTS_LABELS: Record<CountsAs, string> = {
+  water: "Water",
+  forest: "Forest",
+  marsh: "Marsh",
+  mountains: "Mountains",
+  river: "River",
+  road: "Road",
+};
+
+/**
+ * The style counting as something, or as nothing. Nothing is written by leaving the key out,
+ * except on a usual style, which would count by its id: there it is said outright.
+ */
+export function withCounts(style: MapStyle, counts: CountsAs | null): MapStyle {
+  const next = { ...style };
+  delete next.counts;
+  if (counts) return { ...next, counts };
+  return STARTER_STYLES.some((s) => s.id === style.id && s.counts) ? { ...next, counts: "nothing" } : next;
+}
 
 /** Why a name cannot be taken, or null when it can. */
 export function nameProblem(styles: MapStyle[], style: MapStyle, name: string): string | null {
@@ -165,6 +194,26 @@ export function StyleForm({
           />
         </label>
       )}
+      <label className="field">
+        <span>Counts as</span>
+        <select
+          value={countsAs(style) ?? ""}
+          aria-describedby={`${ids}-counts`}
+          onChange={(e) => onChange(withCounts(style, (e.target.value || null) as CountsAs | null))}
+        >
+          <option value="">Nothing</option>
+          {COUNTS_FOR[style.for].map((c) => (
+            <option key={c} value={c}>
+              {COUNTS_LABELS[c]}
+            </option>
+          ))}
+        </select>
+        <small className="muted" id={`${ids}-counts`}>
+          {style.for === "path"
+            ? "Find paths reads it: a river is in a traveller's way, a road is quicker."
+            : "Find paths reads it as this kind of ground."}
+        </small>
+      </label>
       <p className="change-actions">
         <button type="button" className="quiet" onClick={onDone}>
           Close the form

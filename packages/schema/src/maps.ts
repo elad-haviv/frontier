@@ -48,6 +48,40 @@ export const MapImage = z
   .passthrough();
 export type MapImage = z.infer<typeof MapImage>;
 
+/**
+ * The map's terrain: a height picture the tools read (Find paths, relief), never drawn as one of
+ * the map's pictures. It lies on the map through its own extent, so it need not be the size of the
+ * map's picture. Set in the Terrain dialog (docs/designs/stage-20-terrain-dialog.md).
+ */
+export const MapTerrain = z
+  .object({
+    /** The height picture's path in the vault. */
+    image: z
+      .string()
+      .min(1)
+      .max(400)
+      .refine((p) => !p.startsWith("/") && !p.split("/").includes(".."), "Not a path in the vault."),
+    /** Where it lies, as an image's extent; left out: over the whole map. */
+    extent: Extent.optional(),
+    /** Black is high; left out: white is high. */
+    invert: z.literal(true).optional(),
+    /** The grey, 0 to 1 after inverting, below which it is sea; left out: matched to the picture. */
+    seaLevel: z.number().min(0).max(1).optional(),
+    /** The heights of the lowest and the highest grey; left out: heights are only relative. */
+    range: z
+      .tuple([z.number(), z.number()])
+      .refine(([low, high]) => low < high, "The lowest height comes first.")
+      .optional(),
+    /** The unit of the range: "m", "ft" or the map's own. */
+    rangeUnit: z.string().max(20).optional(),
+    /** How much the picture is smoothed as it is read, 0 (none) to 4; left out: 0. */
+    smoothing: z.number().int().min(0).max(4).optional(),
+    /** A guess kept as a height picture, which stays marked as one. */
+    guessed: z.literal(true).optional(),
+  })
+  .passthrough();
+export type MapTerrain = z.infer<typeof MapTerrain>;
+
 export const MapLayer = z
   .object({
     id: ItemId,
@@ -213,9 +247,15 @@ export const MapFile = z
     features: z.array(MapFeature),
     /** Features drawn as one place; left out when there are none. */
     groups: z.array(MapGroup).optional(),
+    /** The height picture the tools read; left out when the map has none. */
+    terrain: MapTerrain.nullish(),
   })
   .passthrough()
   .superRefine((map, ctx) => {
+    if (map.terrain?.extent) {
+      const problem = extentProblem(map.space, map.terrain.extent);
+      if (problem) ctx.addIssue({ code: "custom", message: `The terrain's place: ${problem}` });
+    }
     for (const key of ["images", "layers", "features"] as const) {
       if (!unique(map[key])) ctx.addIssue({ code: "custom", message: `Two ${key} share an id.` });
     }
@@ -255,6 +295,8 @@ const TOP = [
   "layers",
   "features",
   "groups",
+  // Added later, so it goes last: a file without it keeps its bytes.
+  "terrain",
 ];
 const ITEM_KEYS: Record<string, string[]> = {
   images: ["id", "name", "path", "extent", "visible"],
@@ -299,6 +341,16 @@ const ITEM_KEYS: Record<string, string[]> = {
 };
 
 const SHAPE_KEYS = ["id", "from", "at", "points"];
+const TERRAIN_KEYS = [
+  "image",
+  "extent",
+  "invert",
+  "seaLevel",
+  "range",
+  "rangeUnit",
+  "smoothing",
+  "guessed",
+];
 
 function inOrder<T extends object>(item: T, keys: string[]): T {
   const from = item as Record<string, unknown>;
@@ -366,14 +418,15 @@ export function orderGroup<T extends MapGroup>(group: T): T {
 }
 
 const ordered = (map: MapFile): MapFile => {
-  // "Lies under nothing" and "no groups" are written by leaving the key out.
-  const { under, groups, ...rest } = map;
+  // "Lies under nothing", "no groups" and "no terrain" are written by leaving the key out.
+  const { under, groups, terrain, ...rest } = map;
   return {
     ...rest,
     ...(under != null ? { under } : {}),
     layers: map.layers.map(orderLayer),
     features: map.features.map(orderFeature),
     ...(groups && groups.length > 0 ? { groups: groups.map(orderGroup) } : {}),
+    ...(terrain != null ? { terrain: inOrder(terrain, TERRAIN_KEYS) } : {}),
   } as MapFile;
 };
 
@@ -428,7 +481,7 @@ export function mergeMaps(base0: MapFile, mine0: MapFile, theirs0: MapFile): Map
   // The same feature must compare as equal whatever order its keys were set in.
   const [base, mine, theirs] = [ordered(base0), ordered(mine0), ordered(theirs0)];
   const clashes: string[] = [];
-  const pick = <K extends "title" | "space" | "markerSets" | "under">(key: K): MapFile[K] => {
+  const pick = <K extends "title" | "space" | "markerSets" | "under" | "terrain">(key: K): MapFile[K] => {
     if (same(mine[key], theirs[key]) || same(base[key], theirs[key])) return mine[key];
     if (same(base[key], mine[key])) return theirs[key];
     clashes.push(key);
@@ -457,6 +510,10 @@ export function mergeMaps(base0: MapFile, mine0: MapFile, theirs0: MapFile): Map
       : {}),
     space: pick("space"),
     markerSets: pick("markerSets"),
+    // The terrain is one item: set, changed or taken away on one side, it is that side's.
+    ...(mine.terrain != null || theirs.terrain != null || base.terrain != null
+      ? { terrain: pick("terrain") }
+      : {}),
     images: images.items,
     layers: kept,
     features: features.items.map((f) => (layerIds.has(f.layer) ? f : { ...f, layer: fallback })),
