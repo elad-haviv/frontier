@@ -23,7 +23,13 @@ export function EntryCombobox({
   allowNone = false,
   open,
   onOpenChange,
+  onCreate,
 }: {
+  /**
+   * Given, a name typed that no entry has is offered as a new entry, "Create entry “…”", and
+   * handed here to be made.
+   */
+  onCreate?: (name: string) => void;
   labelledBy: string;
   value: string | null;
   onChange: (path: string | null, title: string) => void;
@@ -99,6 +105,9 @@ export function EntryCombobox({
       empty="No entry has that name."
       placeholder="Choose an entry"
       onSearch={setQuery}
+      {...(onCreate
+        ? { create: { label: (typed: string) => `Create entry “${typed}”`, onCreate } }
+        : {})}
       {...(open !== undefined ? { open } : {})}
       {...(onOpenChange ? { onOpenChange } : {})}
     />

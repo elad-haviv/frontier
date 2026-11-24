@@ -7,8 +7,10 @@ import { EditToolbar } from "../components/EditToolbar.tsx";
 import { EditorContextMenu } from "../components/EditorContextMenu.tsx";
 import { type BlockStyle, insertEmbeds, lineStyle, run } from "../components/editCommands.ts";
 import { LinkToEntry } from "../components/LinkToEntry.tsx";
-import { passageOf, WritingPanel } from "../components/WritingPanel.tsx";
+import { openHelp, passageOf, startHelp } from "../components/writing/helpCard.ts";
+import { WritingHelp } from "../components/writing/WritingHelp.tsx";
 import { CommentsPanel } from "../components/CommentsPanel.tsx";
+import { CommentBubbles, useMargin } from "../components/comments/CommentBubbles.tsx";
 import { type Anchor, anchorAt, locate, MIN_QUOTE } from "../components/anchor.ts";
 import { setCommentMarks } from "../components/commentMarks.ts";
 import { Properties } from "../components/Properties.tsx";
@@ -25,11 +27,14 @@ import { folderTypeOf, type OfflineOpen, openOrCreate } from "../offline/openOrC
 import { NotOnDevice } from "../components/NotOnDevice.tsx";
 import type { DraftKind, FolderFile } from "@frontier/schema";
 import { setFrontmatterKey } from "@frontier/vault";
-import { MessageSquare, SlidersHorizontal, Trash2, Undo2, WandSparkles } from "lucide-react";
+import { MessageSquare, SlidersHorizontal, Trash2, Undo2 } from "lucide-react";
 import { PageAction, usePanel, useRightBar } from "../components/shell/panels.tsx";
 import { useEditorOutline } from "../components/entry/EditorOutline.tsx";
 import { WideMenuItem } from "../components/entry/WideMenuItem.tsx";
 import { useWide } from "../width.ts";
+
+/** A phone, where the right bar is a sheet over the text. */
+const PHONE = "(max-width: 47.99rem)";
 
 /** Said when an image is pasted, dropped or picked with no connection. */
 const IMAGES_NEED_CONNECTION = "Images need a connection. Your text stays.";
@@ -82,13 +87,12 @@ export function EditPage() {
   const [offlineAt, setOfflineAt] = useState<number | null>(null);
   /** The server's copy the text was opened from, to see whether a later read differs. */
   const openedFrom = useRef({ id: "", revision: 0, blob: "" });
-  // The panels beside the text: Properties, Comments and, once a model is chosen, Writing help.
+  // The panels beside the text: Properties and Comments. Writing help opens in the text itself.
   const bar = useRightBar();
   // Discarding goes straight to the server, so it waits for a connection.
   const offline = useNeedsConnection();
-  /** Changes each time Writing help is asked for, so it starts afresh on the passage. */
-  const [writing, setWriting] = useState(0);
-  const [canWrite, setCanWrite] = useState(false);
+  /** Whether a model is chosen for writing help; null until the server says. */
+  const [canWrite, setCanWrite] = useState<boolean | null>(null);
   useEffect(() => {
     api.conversations().then(
       (r) => setCanWrite(r.ready),
@@ -107,7 +111,10 @@ export function EditPage() {
   // Highlights move with typing; after a pause they are found again from the words, so an undone
   // deletion or a replaced text brings them back. The pause also redraws the panel's list.
   const marksTimer = useRef<number | undefined>(undefined);
-  const [, setTextTick] = useState(0);
+  const [textTick, setTextTick] = useState(0);
+  /** The comment whose bubble in the margin was pressed last; a new object at each press. */
+  const [focusComment, setFocusComment] = useState<{ id: string } | null>(null);
+  const page = useRef<HTMLDivElement>(null);
   const placeMarks = useCallback((list: PassageComment[]) => {
     const v = view.current;
     if (!v) return;
@@ -359,7 +366,7 @@ export function EditPage() {
   function comment() {
     const v = view.current;
     if (!v) return;
-    const at = passageOf(v);
+    const at = passageOf(v.state);
     if (at.text.replace(/\s/g, "").length < MIN_QUOTE) {
       setMessage("Select a few words, or put the cursor in a paragraph, to comment on it.");
       return;
@@ -374,6 +381,34 @@ export function EditPage() {
       n: c.n + 1,
     }));
     bar.show("comments");
+  }
+
+  /** A comment for the AI: its suggestion opens in the writing help card on its passage. */
+  function suggestFor(c: PassageComment, at: { from: number; to: number }) {
+    const v = view.current;
+    if (!v) return;
+    v.dispatch({
+      effects: openHelp.of({ ...at, comment: { id: c.id, text: c.text } }),
+      scrollIntoView: true,
+    });
+    // On a phone the panel's sheet would cover the card.
+    if (window.matchMedia(PHONE).matches) bar.hide();
+  }
+
+  /** Asking the lore about a passage is not editing it: the Ask page opens with it quoted. */
+  function askAbout() {
+    const v = view.current;
+    if (!v) return;
+    const at = passageOf(v.state);
+    if (!at.text.trim()) {
+      setMessage("Select some words, or put the cursor in a paragraph, to ask about it.");
+      return;
+    }
+    const title = path.split("/").pop()!.replace(/\.md$/i, "");
+    void queue.sendNow(key);
+    navigate("/ask", {
+      state: { question: `About this passage of "${title}":\n"""\n${at.text}\n"""\n` },
+    });
   }
 
   // Coming back to this tab: if the server changed the draft meanwhile, such as by accepting a
@@ -412,6 +447,9 @@ export function EditPage() {
   useScope("table");
   useShortcut("editor.save", () => void queue.sendNow(key));
   useShortcut("editor.done", () => void done());
+  useShortcut("editor.help", () => {
+    if (view.current) startHelp(view.current);
+  });
 
   // The folded frontmatter line in the text opens the Properties panel, at its first field.
   const [focusProperties, setFocusProperties] = useState(0);
@@ -452,32 +490,16 @@ export function EditPage() {
               <CommentsPanel
                 key={`${path}:${commenting.n}`}
                 view={view.current}
+                focus={focusComment}
                 path={path}
                 comments={comments}
                 adding={commenting.adding}
-                canAi={canWrite}
+                canAi={canWrite === true}
+                onSuggest={suggestFor}
                 onChanged={() => {
                   setCommenting((c) => ({ ...c, adding: null }));
                   void loadComments();
                 }}
-                onClose={() => bar.hide()}
-              />
-            ),
-        },
-  );
-  usePanel(
-    initial === null || !canWrite
-      ? null
-      : {
-          id: "writing",
-          title: "Writing help",
-          icon: WandSparkles,
-          render: () =>
-            view.current && (
-              <WritingPanel
-                key={`${path}:${writing}`}
-                view={view.current}
-                path={path}
                 onClose={() => bar.hide()}
               />
             ),
@@ -488,6 +510,25 @@ export function EditPage() {
   const outline = useEditorOutline(view);
   usePanel(initial === null ? null : outline.panel);
   const [wide] = useWide();
+
+  // While the side bar is closed, comments show as bubbles in the margin beside their passages.
+  const margin = useMargin(
+    page,
+    bar.open === null && initial !== null,
+    (box) => {
+      const v = view.current;
+      if (!v) return [];
+      const text = v.state.doc.toString();
+      return comments.flatMap((c) => {
+        const at = locate(text, c);
+        if (!at) return [];
+        // Lines out of sight are not drawn; their place is still known from the line heights.
+        const top = v.coordsAtPos(at.from)?.top ?? v.documentTop + v.lineBlockAt(at.from).top;
+        return [{ id: c.id, top: Math.round(top - box.top), text: c.text, for: c.for }];
+      });
+    },
+    [comments, textTick, preview, wide, initial],
+  );
 
   async function discard() {
     const ok = await dialogs.confirm({
@@ -548,12 +589,10 @@ export function EditPage() {
     onLink: () => setLinking(true),
     onImage: () => setPicking(true),
     onComment: comment,
-    onWrite: canWrite
-      ? () => {
-          setWriting((n) => n + 1);
-          bar.show("writing");
-        }
-      : undefined,
+    onHelp: () => {
+      if (view.current) startHelp(view.current);
+    },
+    onAsk: askAbout,
   };
 
   if (notOnDevice) {
@@ -570,7 +609,14 @@ export function EditPage() {
   if (initial === null) return <p className="center muted">Opening…</p>;
 
   return (
-    <div className={`editor-page${wide ? " is-wide" : ""}`}>
+    <div className={`editor-page${wide ? " is-wide" : ""}`} ref={page}>
+      <CommentBubbles
+        {...margin}
+        onOpen={(id) => {
+          setFocusComment({ id });
+          bar.show("comments");
+        }}
+      />
       <div className="editor-bar">
         <span className="editor-path" title={path}>
           {path.split("/").pop()?.replace(/\.md$/i, "")}
@@ -667,6 +713,12 @@ export function EditPage() {
         />
       </EditorContextMenu>
       <EditToolbar view={view} inTable={inTable} style={style} {...tools} />
+      <WritingHelp
+        view={view}
+        path={path}
+        canWrite={canWrite}
+        onCommentDone={() => void loadComments()}
+      />
       {linking && view.current && (
         <LinkToEntry view={view.current} onClose={() => setLinking(false)} />
       )}

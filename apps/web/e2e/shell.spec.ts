@@ -64,6 +64,61 @@ test("the side bar folds to a rail that keeps the counts and the connection", as
   await discardDraft(page);
 });
 
+test("the left side bar has the places above the folders, and its width is set by dragging or with the keys, and kept", async ({
+  page,
+  isMobile,
+}) => {
+  test.skip(isMobile, "A phone has a drawer instead of the side bar.");
+  await page.goto(entry("01 Places/Harbor/Harbor.md"));
+  await expect(side(page).locator(".tree")).toBeVisible();
+  // The places come first; the folders below them fill the rest and scroll on their own.
+  const maps = side(page).getByRole("link", { name: /^Maps/ });
+  const library = side(page).getByRole("heading", { name: "Library" });
+  expect((await maps.boundingBox())!.y).toBeLessThan((await library.boundingBox())!.y);
+  await side(page)
+    .locator(".left-scroll")
+    .evaluate((el) => el.scrollTo({ top: el.scrollHeight }));
+  await expect(maps).toBeInViewport();
+
+  const width = async () => (await side(page).boundingBox())!.width;
+  const before = await width();
+
+  // Dragging its edge widens it, and the page beside it gives way.
+  const splitter = page.getByRole("separator", { name: "Side bar width" });
+  const grip = (await splitter.boundingBox())!;
+  await page.mouse.move(grip.x + grip.width / 2, grip.y + grip.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(grip.x + 100, grip.y + grip.height / 2, { steps: 6 });
+  await page.mouse.up();
+  const wider = await width();
+  expect(wider).toBeGreaterThan(before + 80);
+  const text = (await page.locator(".content").boundingBox())!;
+  expect(text.x).toBeGreaterThanOrEqual(wider - 1);
+
+  // It is kept on this device, on every kind of screen.
+  await page.reload();
+  await expect(side(page).locator(".tree")).toBeVisible();
+  expect(Math.abs((await width()) - wider)).toBeLessThan(6);
+  await openEditor(page, "01 Places/Harbor/Harbor.md");
+  await expect(side(page).locator(".tree")).toBeVisible();
+  expect(Math.abs((await width()) - wider)).toBeLessThan(6);
+
+  // The arrow keys move the edge too; it never gets narrower than its least width.
+  await splitter.focus();
+  for (let i = 0; i < 30; i++) await page.keyboard.press("ArrowLeft");
+  await expect.poll(width).toBeLessThan(wider - 40);
+  expect(await width()).toBeGreaterThanOrEqual(199);
+
+  // Folding still folds it to the rail, and unfolded it has the width it had.
+  const narrow = await width();
+  await page.keyboard.press("Control+\\");
+  await expect(side(page)).toHaveClass(/is-rail/);
+  await expect(page.getByRole("separator", { name: "Side bar width" })).toHaveCount(0);
+  await side(page).getByRole("button", { name: "Unfold the side bar" }).click();
+  await expect(side(page).locator(".tree")).toBeVisible();
+  expect(Math.abs((await width()) - narrow)).toBeLessThan(6);
+});
+
 test("the right side bar remembers its tab and its width", async ({ page, isMobile }) => {
   test.skip(isMobile, "A phone has a bottom sheet instead of the right side bar.");
   await openEditor(page, "01 Places/Harbor/Harbor.md");
@@ -236,11 +291,17 @@ test("writes that go straight to the server wait for a connection, and say so", 
     await expect(page.getByRole("tooltip")).toContainText("Needs a connection");
     await expect(page.getByRole("button", { name: "Add an image" })).toBeDisabled();
   } else {
+    // Where the bar has room for the things to insert but not for Comment (a desktop beside the
+    // side bar, now that Help keeps its name on the bar), the image button is on the bar.
+    const image = page.locator(".edit-toolbar").getByRole("button", { name: "Add an image" });
+    const imageOnBar = await image.isVisible();
+    if (imageOnBar) await expect(image).toBeDisabled();
     await page.getByRole("button", { name: "More tools" }).click();
     const item = page.getByRole("menuitem", { name: /^Comment/ });
     await expect(item).toBeDisabled();
     await expect(item).toContainText("Needs a connection");
-    await expect(page.getByRole("menuitem", { name: /^Add an image/ })).toBeDisabled();
+    if (!imageOnBar)
+      await expect(page.getByRole("menuitem", { name: /^Add an image/ })).toBeDisabled();
     await page.keyboard.press("Escape");
   }
 

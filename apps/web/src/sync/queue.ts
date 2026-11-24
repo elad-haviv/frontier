@@ -561,10 +561,22 @@ export class Queue {
     let next = Infinity;
     for (const r of this.cache.values()) {
       if (r.state === "attention" || this.inFlight.has(r.key)) continue;
+      // A map linking a feature to an entry made on this device goes after that entry, so the
+      // server finds it; the entry's send pumps again when it is done.
+      if (this.waitsForEntry(r)) continue;
       if (r.nextTry <= now) void this.send(r.key);
       else next = Math.min(next, r.nextTry);
     }
     if (next < Infinity) this.timer = setTimeout(() => this.pump(), next - now);
+  }
+
+  /** Whether a record links to an entry this device is still making. */
+  private waitsForEntry(r: QueueRecord): boolean {
+    if (kindOf(r.key) !== "map" || !r.link) return false;
+    return r.link.some((l) => {
+      const made = l.path ? this.cache.get(`entry:${l.path}`) : undefined;
+      return made !== undefined && made.kind === "create" && made.state !== "attention";
+    });
   }
 
   private async send(key: QueueKey): Promise<void> {

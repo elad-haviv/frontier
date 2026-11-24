@@ -212,6 +212,39 @@ test("CUJ 2: an entry read and written with no connection, sent when it returns"
   await discardDraft(page);
 });
 
+test("a property of the author's own added with no connection is sent when it returns", async ({
+  page,
+  context,
+}) => {
+  const path = "03 Things/Rope.md";
+  await install(page);
+  await read(page, path);
+  await kept(page, "/api/graph", "/api/tree");
+  await reloadOffline(page);
+
+  // The Properties panel writes the frontmatter in the editor's text, which the queue keeps.
+  await page.goto(edit(path));
+  await expect(page.locator(".cm-content")).toBeVisible();
+  await page.getByRole("button", { name: "Properties", exact: true }).click();
+  const panel = page.getByRole("tabpanel");
+  await panel.getByRole("button", { name: "Add a property" }).click();
+  await panel.getByLabel("Name", { exact: true }).fill("Length");
+  await panel.getByRole("button", { name: "Add", exact: true }).click();
+  await panel.getByLabel("Value of Length").fill("Forty fathoms");
+  await panel.getByLabel("Value of Length").press("Enter");
+  await page.getByRole("button", { name: "Hide the panel" }).click();
+  await page.getByRole("button", { name: "Done", exact: true }).click();
+  await expect(page.locator(".custom-fields")).toContainText("Forty fathoms");
+  await expect(page.getByText("Not sent yet:")).toBeVisible();
+
+  await context.setOffline(false);
+  await allSent(page);
+  const res = await page.request.get(entryAnswer(path));
+  expect(((await res.json()) as { text: string }).text).toContain("Length: Forty fathoms\n");
+  await page.goto(edit(path));
+  await discardDraft(page);
+});
+
 test("CUJ 5: an entry not on the device says so; what needs the server is disabled", async ({
   page,
   context,

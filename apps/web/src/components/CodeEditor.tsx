@@ -5,6 +5,7 @@ import { EditorView } from "@codemirror/view";
 import { basicSetup } from "codemirror";
 import { useEffect, useRef } from "react";
 import { commentMarks } from "./commentMarks.ts";
+import { helpCard } from "./writing/helpCard.ts";
 import { completeLinks } from "./linkComplete.ts";
 import { notePath } from "./imageWidget.ts";
 import { editorKeymap } from "../keys.ts";
@@ -23,6 +24,12 @@ const theme = EditorView.theme({
   ".cm-comment": {
     backgroundColor: "color-mix(in srgb, #e0b13a 30%, transparent)",
     borderBottom: "2px solid color-mix(in srgb, #c08a12 70%, transparent)",
+  },
+  // The passage writing help works on, while its card is open.
+  ".cm-help-passage": {
+    backgroundColor: "var(--accent-soft)",
+    boxShadow: "0 0 0 2px var(--accent-soft)",
+    borderRadius: "2px",
   },
   ".cm-selectionBackground, &.cm-focused .cm-selectionBackground": {
     backgroundColor: "color-mix(in srgb, var(--accent) 25%, transparent) !important",
@@ -118,6 +125,7 @@ export function CodeEditor({
           autocompletion({ override: [completeLinks], icons: false }),
           EditorView.lineWrapping,
           commentMarks,
+          helpCard,
           EditorState.readOnly.of(readOnly),
           theme,
           EditorView.updateListener.of((update) => {

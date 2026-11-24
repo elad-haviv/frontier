@@ -39,6 +39,8 @@ export interface ChatRequest {
   tools?: ToolSpec[];
   maxTokens?: number;
   reasoning?: Reasoning;
+  /** Asks for the model's thinking to be sent back, where it can be (a streamed answer shows it). */
+  showReasoning?: boolean;
   /** Ends the request: a timeout, the author leaving, or both. */
   signal: AbortSignal;
 }
@@ -58,6 +60,13 @@ export interface ChatResult {
   usage: Usage;
   finishReason: string | null;
 }
+
+/**
+ * Whether a finish reason says the answer stopped at the token limit: "length" (OpenAI's format),
+ * "max_tokens" (Anthropic), "MAX_TOKENS" (Gemini).
+ */
+export const isCutOff = (finishReason: string | null): boolean =>
+  finishReason === "length" || finishReason === "max_tokens" || finishReason === "MAX_TOKENS";
 
 /** What a streamed answer yields, in order. `done` comes once, last. */
 export type StreamEvent =

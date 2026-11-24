@@ -138,6 +138,22 @@ export async function openMenu(page: Page, name: string): Promise<void> {
   await expect(page.getByRole("menu")).toBeVisible();
 }
 
+/**
+ * Runs one of the entry's actions, such as "Rename" or "History": its icon in the bar at the top
+ * of the page where the bar has room for it, or the item in "More actions" where it does not, as
+ * on a phone.
+ */
+export async function entryAction(page: Page, name: string): Promise<void> {
+  await expect(page.locator(".entry h1").first()).toBeVisible();
+  const tool = page.locator(".sticky-line").getByRole("button", { name, exact: true });
+  if (await tool.isVisible()) {
+    await tool.click();
+    return;
+  }
+  await openMenu(page, "More actions");
+  await page.getByRole("menuitem", { name, exact: true }).click();
+}
+
 /** On a phone, opens the side bar's drawer; on a desktop the side bar is always there. */
 export async function openSideBar(page: Page): Promise<void> {
   const menu = page.getByRole("button", { name: "Open the side bar", exact: true });
@@ -164,16 +180,48 @@ export async function goTo(page: Page, place: string): Promise<void> {
     .click();
 }
 
+/**
+ * Waits until the map is drawn as it is now. A tap is tested against where the features were at
+ * the last draw, which comes on the frame after a change, and after the canvas has taken its
+ * frame's new size when a panel beside the map opens or closes (the drawing sets the canvas's
+ * size, so a canvas the size it is laid out at has been drawn at that size).
+ */
+export async function drawn(page: Page): Promise<void> {
+  await expect
+    .poll(() =>
+      page
+        .locator(".map-top")
+        .evaluate(
+          (c: HTMLCanvasElement) =>
+            c.width === Math.round(c.clientWidth * (window.devicePixelRatio || 1)),
+        ),
+    )
+    .toBe(true);
+  await page.evaluate(
+    () => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))),
+  );
+}
+
 /** Opens a panel of the right side bar (the bottom sheet on a phone) by its tab, and gives it. */
 export async function rightPanel(page: Page, name: string) {
   const tab = page.getByRole("tab", { name: new RegExp(`^${name}\\b`) });
   if ((await tab.count()) === 0 || (await tab.getAttribute("aria-selected")) !== "true") {
     if ((await tab.count()) === 0) {
-      // The side bar is closed: the page's own button for the panel opens it.
-      await page
+      // The side bar is closed: the page's own button for the panel opens it, or, where the
+      // page keeps its actions behind "More actions" (an entry on a phone), the menu's item.
+      const button = page
         .getByRole("button", { name: new RegExp(`^${name}\\b`) })
-        .first()
-        .click();
+        .locator("visible=true")
+        .first();
+      const more = page.getByRole("button", { name: "More actions", exact: true });
+      // Wait until the page has drawn one or the other.
+      await expect(button.or(more).first()).toBeVisible();
+      if (await button.isVisible()) {
+        await button.click();
+      } else {
+        await openMenu(page, "More actions");
+        await page.getByRole("menuitem", { name, exact: true }).click();
+      }
     }
     await page.getByRole("tab", { name: new RegExp(`^${name}\\b`) }).click();
   }
@@ -186,7 +234,8 @@ export async function rightPanel(page: Page, name: string) {
 export async function newEntry(page: Page, folder: string, name: string): Promise<void> {
   // On a phone the button is in the side bar's drawer.
   await openSideBar(page);
-  await page.getByRole("button", { name: "New entry", exact: true }).click();
+  // The side bar's own New entry, which starts in the folder in view; the tree's starts at the top.
+  await page.locator(".left-actions .new-entry").click();
   const dialog = page.getByRole("dialog");
   await dialog.getByLabel("Name").fill(name);
   await dialog.getByRole("combobox", { name: "Folder", exact: true }).click();

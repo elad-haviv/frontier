@@ -337,6 +337,9 @@ export function pick(input: PickInput, at: Point, kind: PointerKind = "mouse"): 
       if (s && Math.hypot(s[0] - at.x, s[1] - at.y) < 24) {
         return { kind: "marker", feature: chosen.id };
       }
+    } else if (chosen.kind === "label") {
+      // A label is dragged from anywhere on its words, as a marker is from its dot.
+      if (insideDrawn(input.shapes, chosen.id, p)) return { kind: "marker", feature: chosen.id };
     } else {
       // A corner on the far side of a globe is not drawn, so it cannot be picked.
       const corner = vertexAt(

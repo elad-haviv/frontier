@@ -239,6 +239,49 @@ describe("map files", () => {
     expect((await t.get("/api/maps/zzzzzzzz")).statusCode).toBe(404);
   });
 
+  it("saves sublayers and locks, and refuses a sublayer of a missing layer or a loop", async () => {
+    const id = await create();
+    const { map } = await load(id);
+    const top = map.layers[0]!;
+    const sub = { id: "sub1", name: "Roads", visible: true, color: "#333333", parent: top.id };
+    const saved = await save(id, { ...map, layers: [{ ...top, locked: true }, sub] }, 1);
+    expect(saved.statusCode, saved.body).toBe(200);
+    expect((await load(id)).map.layers).toEqual([{ ...top, locked: true }, sub]);
+    const gone = await save(id, { ...map, layers: [top, { ...sub, parent: "gone" }] }, 2);
+    expect(gone.statusCode).toBe(400);
+    const loop = [
+      { ...top, parent: "sub1" },
+      { ...sub, parent: top.id },
+    ];
+    expect((await save(id, { ...map, layers: loop }, 2)).statusCode).toBe(400);
+    expect((await load(id)).map.layers[1]!.parent).toBe(top.id);
+  });
+
+  it("saves a label with its words and look, and refuses one without words", async () => {
+    const id = await create();
+    const { map } = await load(id);
+    const layer = map.layers[0]!.id;
+    const label = {
+      id: "lab1",
+      kind: "label" as const,
+      layer,
+      at: [10, 20] as [number, number],
+      entry: null,
+      label: "The Grey Sea",
+      child: null,
+      size: 24,
+      rotate: 30,
+    };
+    const res = await save(id, { ...map, features: [label] }, 1);
+    expect(res.statusCode, res.body).toBe(200);
+    expect((await load(id)).map.features[0]).toEqual(label);
+    const un = UnpublishedResponse.parse((await t.get("/api/unpublished")).json());
+    expect(un.drafts[0]!.text).toContain('"label":"The Grey Sea","size":24,"rotate":30');
+
+    const bad = await save(id, { ...map, features: [{ ...label, label: "" }] }, 2);
+    expect(bad.statusCode).toBe(400);
+  });
+
   it("does not let the note routes change a map draft", async () => {
     const id = await create();
     const draft = UnpublishedResponse.parse((await t.get("/api/unpublished")).json()).drafts[0]!;

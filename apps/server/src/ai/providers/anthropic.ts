@@ -24,6 +24,7 @@ import {
   type StreamEvent,
   type ToolCall,
   type Usage,
+  isCutOff,
   ProviderError,
 } from "./types.js";
 
@@ -73,8 +74,11 @@ export class AnthropicAdapter implements ProviderAdapter {
 
   /** `viaTool` asks for the structured answer as the input of a forced tool call. */
   private body(req: ChatRequest, stream: boolean, viaTool: boolean): Record<string, unknown> {
+    // Adaptive thinking and an effort are for the 4.6 models and later; the older ones are not
+    // asked, rather than refused.
+    const adaptive = /^claude-(opus|sonnet|haiku|fable|mythos)-(4-[6-9]|[5-9])/.test(req.model);
     const effort =
-      req.reasoning === undefined || req.reasoning === "off"
+      req.reasoning === undefined || req.reasoning === "off" || !adaptive
         ? null
         : typeof req.reasoning === "string"
           ? req.reasoning
@@ -113,7 +117,14 @@ export class AnthropicAdapter implements ProviderAdapter {
       ...(tools.length ? { tools } : {}),
       // A forced tool call cannot be combined with thinking, so thinking is not asked for then.
       ...(viaTool && req.schema ? { tool_choice: { type: "tool", name: req.schema.name } } : {}),
-      ...(effort && !viaTool ? { thinking: { type: "adaptive" } } : {}),
+      ...(effort && !viaTool
+        ? {
+            thinking: {
+              type: "adaptive",
+              ...(req.showReasoning ? { display: "summarized" } : {}),
+            },
+          }
+        : {}),
       ...(Object.keys(outputConfig).length ? { output_config: outputConfig } : {}),
       ...(stream ? { stream: true } : {}),
     };
@@ -164,7 +175,8 @@ export class AnthropicAdapter implements ProviderAdapter {
         else toolCalls.push(call);
       }
     }
-    if (text === "" && toolCalls.length === 0) throw emptyAnswer(usage);
+    const finishReason = typeof b.stop_reason === "string" ? b.stop_reason : null;
+    if (text === "" && toolCalls.length === 0 && !isCutOff(finishReason)) throw emptyAnswer(usage);
     return {
       text,
       reasoning,

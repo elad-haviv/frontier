@@ -16,10 +16,38 @@ async function folderMenu(page: Page, name: string, isMobile: boolean): Promise<
 
 /** Opens an entry and shows the tree: in the side bar, or in the drawer on a phone. */
 async function openTree(page: Page, path = "README.md"): Promise<void> {
+  await roomForTree(page);
   await page.goto(entry(path));
   await expect(page.locator(".entry h1").first()).toBeVisible();
   await openSideBar(page);
   await expect(page.getByRole("tree")).toBeVisible();
+  await treeSettled(page);
+}
+
+/**
+ * On a desktop, a taller window: the folders sit below the places and scroll on their own, and a
+ * drag is surest when the rows it starts and ends on are both in sight.
+ */
+async function roomForTree(page: Page): Promise<void> {
+  const size = page.viewportSize();
+  if (size && size.width >= 768) await page.setViewportSize({ width: size.width, height: 1200 });
+}
+
+/**
+ * Waits until the folders have stopped scrolling: they scroll on their own below the places, and
+ * bring the entry in view into sight once it opens. A drag started before that misses its row.
+ */
+async function treeSettled(page: Page): Promise<void> {
+  const at = () =>
+    page.evaluate(
+      () =>
+        new Promise<boolean>((resolve) => {
+          const box = document.querySelector(".left-scroll");
+          const before = box?.scrollTop ?? 0;
+          setTimeout(() => resolve((box?.scrollTop ?? 0) === before), 250);
+        }),
+    );
+  await expect.poll(at).toBe(true);
 }
 
 /** Waits until the server holds the folder file with `text` in it, sent by the save queue. */
@@ -159,7 +187,10 @@ test("a moved folder's entries open where they are, and its settings wait for a 
   isMobile,
 }) => {
   test.skip(isMobile, "The same on a phone; the move itself is tested there in CUJ 2.");
+  await roomForTree(page);
   await page.goto(entry("README.md"));
+  await expect(page.locator(".entry h1").first()).toBeVisible();
+  await treeSettled(page);
   await row(page, "Marsh").dragTo(row(page, "02 People"));
   await expect(page.locator(".ui-toast")).toContainText("Moved 1 entry");
   await expect(row(page, "Marsh").locator(".tree-mark")).toHaveText("moved");
@@ -185,8 +216,11 @@ test("a folder reordered by dragging keeps its place after a reload", async ({
   isMobile,
 }) => {
   test.skip(isMobile, "Dragging is for a mouse; on touch, folders move with Move to….");
+  await roomForTree(page);
   await page.goto(entry("README.md"));
   await expect(row(page, "03 Things")).toBeVisible();
+  await expect(page.locator(".entry h1").first()).toBeVisible();
+  await treeSettled(page);
   const top = () =>
     page
       .locator('[role="treeitem"][aria-level="1"]')
@@ -317,4 +351,26 @@ test("a long press on a folder opens its menu", async ({ page, isMobile }) => {
   }
   await page.keyboard.press("Escape");
   await expect(menu).toHaveCount(0);
+});
+
+test("New entry beside New folder starts an entry at the top of the library", async ({
+  page,
+  isMobile,
+}) => {
+  // In view is an entry in a folder; the side bar's own New entry would start there.
+  await openTree(page, "01 Places/Harbor/Harbor.md");
+  const button = page.locator(".left-tree").getByRole("button", { name: "New entry", exact: true });
+  if (!isMobile) {
+    await button.hover();
+    await expect(page.getByRole("tooltip")).toHaveText("New entry");
+  }
+  await button.click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog.getByRole("combobox", { name: "Folder", exact: true })).toHaveText(
+    "Top of the library",
+  );
+  await dialog.getByLabel("Name").fill("Lighthouse Keepers");
+  await dialog.getByRole("button", { name: "Make the entry", exact: true }).click();
+  await expect(page).toHaveURL(/\/edit\/Lighthouse%20Keepers\.md\?new=1$/);
+  await expect(page.locator(".editor-path")).toHaveText("Lighthouse Keepers");
 });

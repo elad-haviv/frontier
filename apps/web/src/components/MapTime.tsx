@@ -60,6 +60,15 @@ export function TimeBar(p: {
             />
           </label>
         )}
+        {p.chosen && (
+          <Link
+            className="time-open"
+            to={`${chronicleUrl(p.chosen)}?t=${encodeURIComponent(String(p.year))}`}
+            title="Open this chronicle's timeline at this year"
+          >
+            Open timeline ↗
+          </Link>
+        )}
         <button type="button" className="quiet" onClick={p.onClose}>
           Time off
         </button>

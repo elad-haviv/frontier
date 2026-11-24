@@ -136,6 +136,8 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
   try {
     res = await fetch(url, { credentials: "same-origin", ...init, headers: headers(init) });
   } catch {
+    // Stopped on purpose, as by a Stop button: the server is not unreachable.
+    if (init?.signal?.aborted) throw new ApiFailure(0, "stopped", "Stopped.");
     if (watched) connection.unreachable();
     throw unreachable();
   }
@@ -143,6 +145,7 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
     (body: unknown) => ({ body }),
     () => null,
   );
+  if (init?.signal?.aborted) throw new ApiFailure(0, "stopped", "Stopped.");
   // A gateway's page, or a captive portal's, is not the server: as if it could not be reached.
   if (res.ok ? read === null : GATEWAY.has(res.status) && !isErrorBody(read?.body)) {
     if (watched) connection.unreachable();
@@ -164,6 +167,105 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
   throw failure;
 }
 
+/** Splits server-sent events into `{ event, data }`, keeping an unfinished one for the next text. */
+export function eventsIn(text: string): {
+  events: { event: string; data: string }[];
+  rest: string;
+} {
+  const blocks = text.replace(/\r\n?/g, "\n").split("\n\n");
+  const rest = blocks.pop() ?? "";
+  const events: { event: string; data: string }[] = [];
+  for (const block of blocks) {
+    let event = "message";
+    const data: string[] = [];
+    for (const line of block.split("\n")) {
+      if (line.startsWith("event:")) event = line.slice(6).trim();
+      else if (line.startsWith("data:")) data.push(line.slice(5).replace(/^ /, ""));
+    }
+    // A block of comments only (the keep-alives) has no data.
+    if (data.length > 0) events.push({ event, data: data.join("\n") });
+  }
+  return { events, rest };
+}
+
+/**
+ * A POST whose answer comes as server-sent events: each is passed to `onEvent` as it arrives, and
+ * the `done` event's data is returned. An `error` event, or a refusal before the stream starts, is
+ * thrown as an ApiFailure. `signal` stops reading, not the work on the server.
+ */
+async function streamed<T>(
+  url: string,
+  body: unknown,
+  onEvent: (event: string, data: unknown) => void,
+  signal?: AbortSignal,
+): Promise<T> {
+  const lost = () =>
+    new ApiFailure(0, "offline", "The connection was lost before the answer came.");
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      method: "POST",
+      credentials: "same-origin",
+      headers: headers({ headers: { "content-type": "application/json" } }),
+      body: JSON.stringify(body),
+      ...(signal ? { signal } : {}),
+    });
+  } catch (err) {
+    if (signal?.aborted) throw err;
+    connection.unreachable();
+    throw unreachable();
+  }
+  if (!(res.headers.get("content-type") ?? "").includes("text/event-stream") || !res.body) {
+    const read: unknown = await res.json().catch(() => null);
+    if (GATEWAY.has(res.status) && !isErrorBody(read)) {
+      connection.unreachable();
+      throw unreachable();
+    }
+    if (res.status === 401) connection.unauthorised();
+    else connection.reached();
+    const error = isErrorBody(read) ? read.error : null;
+    throw new ApiFailure(
+      res.status,
+      error?.code ?? "unknown",
+      error?.message ?? `The server answered with status ${res.status}.`,
+    );
+  }
+  connection.reached();
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let result: { done: T } | null = null;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      buffer += done ? "\n\n" : decoder.decode(value, { stream: true });
+      const { events, rest } = eventsIn(buffer);
+      buffer = rest;
+      for (const e of events) {
+        const data: unknown = JSON.parse(e.data);
+        if (e.event === "done") result = { done: data as T };
+        else if (e.event === "error") {
+          const said = data as { code?: string; message?: string };
+          throw new ApiFailure(
+            200,
+            said.code ?? "unknown",
+            said.message ?? "The answer could not be made.",
+          );
+        } else onEvent(e.event, data);
+      }
+      if (done) break;
+    }
+  } catch (err) {
+    if (err instanceof ApiFailure || signal?.aborted) throw err;
+    throw lost();
+  } finally {
+    reader.releaseLock();
+  }
+  if (!result) throw lost();
+  return result.done;
+}
+
 const send = <T>(method: string, url: string, body?: unknown) =>
   call<T>(url, {
     method,
@@ -172,9 +274,10 @@ const send = <T>(method: string, url: string, body?: unknown) =>
       : { headers: { "content-type": "application/json" }, body: JSON.stringify(body) }),
   });
 
-const post = <T>(url: string, body?: unknown) =>
+const post = <T>(url: string, body?: unknown, signal?: AbortSignal) =>
   call<T>(url, {
     method: "POST",
+    ...(signal ? { signal } : {}),
     ...(body === undefined
       ? {}
       : { headers: { "content-type": "application/json" }, body: JSON.stringify(body) }),
@@ -310,6 +413,8 @@ export const api = {
       state: string;
       blob: string;
       entries: Record<string, { path: string; title: string }>;
+      /** Which spans something on a map follows (stage 17); absent from an older server. */
+      onMaps?: Record<string, { map: string; title: string; features: number }[]>;
     }>(`/api/chronicles/${id}`),
   createChronicle: (title: string) => post<{ id: string }>("/api/chronicles", { title }),
   copyChronicle: (copyOf: string) => post<{ id: string }>("/api/chronicles", { copyOf }),
@@ -383,8 +488,36 @@ export const api = {
       question,
       ...(conversation ? { conversation } : {}),
     }),
-  rewrite: (body: { path: string; passage: string; before: string; after: string; how: string }) =>
-    post<{ text: string }>("/api/write/rewrite", body),
+  /**
+   * Asks as `ask` does, telling each step of the work as it happens. Stopping the reading does not
+   * stop the work: `stopAsking` does.
+   */
+  askStreamed: (
+    question: string,
+    conversation: string | undefined,
+    onEvent: (event: LoreEvent) => void,
+    signal?: AbortSignal,
+  ) =>
+    streamed<{ conversation: LoreConversation; gone: string[] }>(
+      "/api/lore/stream",
+      { question, ...(conversation ? { conversation } : {}) },
+      (type, data) => onEvent({ ...(data as object), type } as LoreEvent),
+      signal,
+    ),
+  stopAsking: (run: string) => post<{ ok: true }>(`/api/lore/runs/${run}/stop`),
+  /** A passage rewritten as asked; `signal` stops the request, and the server's call with it. */
+  rewrite: (
+    body: {
+      path: string;
+      passage: string;
+      before: string;
+      after: string;
+      how: string;
+      previous?: string[];
+      refine?: { suggestion: string; how: string };
+    },
+    signal?: AbortSignal,
+  ) => post<{ text: string }>("/api/write/rewrite", body, signal),
   comments: (path: string) =>
     call<{ comments: PassageComment[] }>(`/api/comments?path=${encodeURIComponent(path)}`),
   commentCount: (path: string) =>
@@ -394,8 +527,11 @@ export const api = {
   changeComment: (id: string, change: { text?: string; for?: "me" | "ai" }) =>
     send<{ comment: PassageComment }>("PATCH", `/api/comments/${id}`, change),
   removeComment: (id: string) => send<{ ok: true }>("DELETE", `/api/comments/${id}`),
-  workOnComment: (id: string, around: { before: string; after: string }) =>
-    post<{ text: string }>(`/api/comments/${id}/work`, around),
+  workOnComment: (
+    id: string,
+    around: { before: string; after: string; previous?: string[] },
+    signal?: AbortSignal,
+  ) => post<{ text: string }>(`/api/comments/${id}/work`, around, signal),
   characterProfile: (path: string) =>
     call<{ profile: CharacterProfile | null }>(
       `/api/characters/profile?path=${encodeURIComponent(path)}`,
@@ -420,6 +556,8 @@ export const api = {
     ),
   discover: (map: string, at: [number, number], chronicle: string | null, year: number | null) =>
     post<{ discoveries: Discovery[] }>(`/api/maps/${map}/discover`, { at, chronicle, year }),
+  generateFeatures: (map: string, ask: GenerateAsk) =>
+    post<{ items: GeneratedFeature[] }>(`/api/maps/${map}/generate`, ask),
   discoveryArt: (map: string, id: string) =>
     post<{ discovery: Discovery }>(`/api/maps/${map}/discoveries/${id}/art`, {}),
   keepDiscovery: (map: string, id: string, folder: string) =>
@@ -641,7 +779,22 @@ export interface LoreTurn {
   at: string;
   addition: LoreAddition | null;
   kept: { path: string; at: string } | null;
+  /** What was done to answer; null on turns from before it was kept. */
+  trace?: { steps: LoreStep[]; reasoning: string; ms: number } | null;
 }
+/** One thing done while a question was answered: "Searched the library for …". */
+export interface LoreStep {
+  kind: string;
+  text: string;
+  detail?: string;
+  entries?: string[];
+}
+/** What the server tells while it answers a question, as `POST /api/lore/stream` sends it. */
+export type LoreEvent =
+  | { type: "run"; run: string; conversation: string }
+  | { type: "step"; n: number; step: LoreStep; active: boolean }
+  | { type: "reasoning"; text: string }
+  | { type: "writing"; chars: number };
 export interface LoreConversation {
   id: string;
   title: string;
@@ -672,6 +825,26 @@ export interface CharacterLine {
 }
 export const talkUrl = (path: string): string =>
   "/talk/" + path.split("/").map(encodeURIComponent).join("/");
+
+/** What the map page asks names and descriptions for: a feature to fill in, or a few to place. */
+export interface GenerateAsk {
+  kind: "marker" | "path" | "zone" | "label";
+  at: [number, number];
+  count: number;
+  prompt: string | null;
+  exclude: string | null;
+  /** The looks it may take: styles of its kind, or marker icons as "set/name". */
+  choices: { id: string; name: string }[];
+  chronicle: string | null;
+  year: number | null;
+}
+
+export interface GeneratedFeature {
+  name: string;
+  description: string;
+  choice: string | null;
+  basis: { path: string; quote: string }[];
+}
 
 export interface Discovery {
   id: string;

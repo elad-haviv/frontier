@@ -4,6 +4,7 @@ import { isNote } from "@frontier/vault";
 import { z } from "zod";
 import { ApiError } from "../errors.js";
 import type { Services } from "../app.js";
+import { Previous, whileAsked } from "./writing.js";
 
 const For = z.enum(["me", "ai"]);
 const Words = z.string().trim().min(1).max(2000);
@@ -26,6 +27,7 @@ const PathQuery = z.object({ path: VaultPath });
 const Work = z.object({
   before: z.string().max(1500).default(""),
   after: z.string().max(1500).default(""),
+  previous: Previous,
 });
 
 export function commentRoutes(app: FastifyInstance, s: Services): void {
@@ -57,9 +59,9 @@ export function commentRoutes(app: FastifyInstance, s: Services): void {
   });
 
   /** The passage rewritten as a comment for the AI asks. Nothing is saved: the editor shows it. */
-  app.post("/api/comments/:id/work", async (request) => {
+  app.post("/api/comments/:id/work", async (request, reply) => {
     const { id } = Id.parse(request.params);
-    const { before, after } = Work.parse(request.body);
+    const { before, after, previous } = Work.parse(request.body);
     const comment = await s.comments.get(id);
     if (!comment) throw new ApiError("not_found", "That comment is not there any more.");
     if (comment.for !== "ai") {
@@ -73,6 +75,8 @@ export function commentRoutes(app: FastifyInstance, s: Services): void {
       before,
       after,
       how: `Do what this comment on the passage asks: ${comment.text}`,
+      previous,
+      signal: whileAsked(reply),
     });
     return { text };
   });

@@ -252,12 +252,21 @@ describe("calling the provider", () => {
 
     await t.close();
     const q = await start([503, 503]);
+    // Each failure is written to the server's log too, with the task, model and what was said.
+    const warned: object[] = [];
+    t.services.ai.logFailuresTo({ warn: (details) => warned.push(details) });
     const res = await propose();
     expect(res.statusCode).toBe(502);
     expect(res.json().error.code).toBe("ai_failed");
     expect(res.json().error.message).toContain("upstream trouble");
     expect(q.calls).toHaveLength(2);
     expect((await t.get("/api/status")).json().ai.lastError).toContain("upstream trouble");
+    expect(warned).toHaveLength(2);
+    expect(warned[0]).toMatchObject({
+      task: "extraction",
+      model: QMODEL,
+      error: expect.stringContaining("upstream trouble"),
+    });
   });
 
   it("does not retry a refused call or an answer in the wrong form", async () => {

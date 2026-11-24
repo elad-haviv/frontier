@@ -21,7 +21,12 @@ export interface Hovered {
 /** How long the pointer stays on a feature before its entry's preview takes the tooltip's place. */
 export const PREVIEW_DELAY = 350;
 
-const UNNAMED = { marker: "Unnamed marker", path: "Unnamed path", zone: "Unnamed zone" };
+const UNNAMED = {
+  marker: "Unnamed marker",
+  path: "Unnamed path",
+  zone: "Unnamed zone",
+  label: "Label",
+};
 
 /** A box placed beside a point, kept inside the frame. */
 function placed(

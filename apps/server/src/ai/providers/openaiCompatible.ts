@@ -29,6 +29,7 @@ import {
   type StreamEvent,
   type ToolCall,
   type Usage,
+  isCutOff,
   ProviderError,
 } from "./types.js";
 
@@ -44,7 +45,7 @@ const effortOf = (r: Exclude<Reasoning, "off">): Effort =>
 
 interface Flavour {
   /** The request fields that ask for (or switch off) thinking, for this model. */
-  reasoning(r: Reasoning, model: string): Record<string, unknown>;
+  reasoning(r: Reasoning, model: string, show: boolean): Record<string, unknown>;
   maxTokensField: "max_tokens" | "max_completion_tokens";
   /** Whether usage must be asked for in a stream; OpenRouter always sends it. */
   askStreamUsage: boolean;
@@ -82,12 +83,13 @@ const plain = (known: (id: string) => Known = unknownModel): Flavour => ({
 
 const FLAVOURS: Record<CompatKind, Flavour> = {
   openrouter: {
-    reasoning: (r) =>
+    // Thinking is sent back only when it is shown, as the lore page's "Thinking" does.
+    reasoning: (r, _model, show) =>
       r === "off"
         ? { reasoning: { enabled: false } }
         : typeof r === "object"
-          ? { reasoning: { max_tokens: r.budgetTokens } }
-          : { reasoning: { effort: r } },
+          ? { reasoning: { max_tokens: r.budgetTokens, exclude: !show } }
+          : { reasoning: { effort: r, exclude: !show } },
     maxTokensField: "max_tokens",
     askStreamUsage: false,
     imagePath: "/images",
@@ -207,7 +209,9 @@ export class OpenAiCompatibleAdapter implements ProviderAdapter {
       stream,
       ...(stream && this.flavour.askStreamUsage ? { stream_options: { include_usage: true } } : {}),
       ...(req.maxTokens ? { [this.flavour.maxTokensField]: req.maxTokens } : {}),
-      ...(req.reasoning ? this.flavour.reasoning(req.reasoning, req.model) : {}),
+      ...(req.reasoning
+        ? this.flavour.reasoning(req.reasoning, req.model, req.showReasoning === true)
+        : {}),
     };
   }
 
@@ -218,6 +222,11 @@ export class OpenAiCompatibleAdapter implements ProviderAdapter {
       body: JSON.stringify(this.body(req, false)),
       signal: req.signal,
     });
+    return this.fromJson(res);
+  }
+
+  /** A whole answer, read from its JSON. */
+  private async fromJson(res: Response): Promise<ChatResult> {
     const b = await readJson(res);
     const usage = usageOf(b.usage);
     // OpenRouter can report a failure inside a 200 answer.
@@ -230,7 +239,11 @@ export class OpenAiCompatibleAdapter implements ProviderAdapter {
       arguments: typeof t.function?.arguments === "string" ? t.function.arguments : "",
     }));
     const text = typeof message?.content === "string" ? message.content : null;
-    if (text === null && toolCalls.length === 0) throw emptyAnswer(usage);
+    const finishReason = typeof choice?.finish_reason === "string" ? choice.finish_reason : null;
+    // An answer cut off at the token limit is told apart by its finish reason, not as empty.
+    if (text === null && toolCalls.length === 0 && !isCutOff(finishReason)) {
+      throw emptyAnswer(usage);
+    }
     const reasoning =
       typeof message?.reasoning === "string"
         ? message.reasoning
@@ -242,7 +255,7 @@ export class OpenAiCompatibleAdapter implements ProviderAdapter {
       reasoning,
       toolCalls,
       usage,
-      finishReason: typeof choice?.finish_reason === "string" ? choice.finish_reason : null,
+      finishReason,
     };
   }
 
@@ -257,13 +270,30 @@ export class OpenAiCompatibleAdapter implements ProviderAdapter {
       const b = await readJson(res);
       throw refused(res.status, saidIn(b), usageOf(b.usage));
     }
+    // A server that answers in one piece despite the stream asked for: told as one piece.
+    if (!(res.headers.get("content-type") ?? "").includes("text/event-stream")) {
+      const whole = await this.fromJson(res);
+      if (whole.reasoning) yield { type: "reasoning", text: whole.reasoning };
+      if (whole.text) yield { type: "text", text: whole.text };
+      for (const call of whole.toolCalls) yield { type: "tool_call", call };
+      yield { type: "done", usage: whole.usage, finishReason: whole.finishReason };
+      return;
+    }
     let usage = noUsage();
     let finishReason: string | null = null;
     const calls = new Map<number, ToolCall>();
     for await (const payload of sseData(res)) {
       const e = parseEvent(payload);
       if (!e) continue;
-      if (e.error) throw refused(res.status === 200 ? 502 : res.status, saidIn(e));
+      if (e.error) {
+        // The provider can report a failure after the stream has begun.
+        const said = saidIn(e);
+        throw new ProviderError(
+          `The AI provider failed while answering${said ? `: ${said}` : "."}`,
+          false,
+          { status: 502, usage },
+        );
+      }
       if (e.usage) usage = usageOf(e.usage);
       const choice = (
         e.choices as

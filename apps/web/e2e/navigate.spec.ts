@@ -1,5 +1,13 @@
 import { expect, test } from "@playwright/test";
-import { commitCount, entry, noSidewaysScroll, onMain, openMenu, publish } from "./helpers.ts";
+import {
+  commitCount,
+  entry,
+  entryAction,
+  noSidewaysScroll,
+  onMain,
+  openMenu,
+  publish,
+} from "./helpers.ts";
 
 test("jumps to an entry by name or alias with the switcher", async ({ page }) => {
   await page.goto(entry("README.md"));
@@ -24,8 +32,8 @@ test("jumps to an entry by name or alias with the switcher", async ({ page }) =>
 test("CUJ 3: renames an entry and rewrites the links to it in one commit", async ({ page }) => {
   const before = commitCount();
   await page.goto(entry("03 Things/Lantern.md"));
-  // The pencil beside the title turns it into a field; Enter renames.
-  await page.getByRole("button", { name: "Rename", exact: true }).click();
+  // Rename turns the title into a field; Enter renames.
+  await entryAction(page, "Rename");
   const field = page.getByRole("textbox", { name: "New name for Lantern" });
   await expect(field).toBeFocused();
   await field.fill("Storm Lantern");
@@ -59,7 +67,7 @@ test("refuses a rename onto an existing entry, and one in an append-only folder"
   // The old address of the rename page opens the entry, where renaming is now.
   await page.goto("/rename/" + ["02 People", "Mira.md"].map(encodeURIComponent).join("/"));
   await expect(page).toHaveURL(/\/e\/02%20People\/Mira\.md$/);
-  await page.getByRole("button", { name: "Rename", exact: true }).click();
+  await entryAction(page, "Rename");
   const field = page.getByRole("textbox", { name: "New name for Mira" });
   await field.fill("Shade");
   await field.press("Enter");
@@ -71,6 +79,9 @@ test("refuses a rename onto an existing entry, and one in an append-only folder"
   await page.goto(entry("99 Appendices/Logs/Session.md"));
   await expect(page.locator(".edit-link")).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Rename", exact: true })).toHaveCount(0);
+  await openMenu(page, "More actions");
+  await expect(page.getByRole("menuitem", { name: "Rename", exact: true })).toHaveCount(0);
+  await page.keyboard.press("Escape");
 });
 
 test("CUJ 2: renames and moves an entry in place, as one pending rename, with Undo", async ({
@@ -85,7 +96,7 @@ test("CUJ 2: renames and moves an entry in place, as one pending rename, with Un
     ).renames.filter((r) => r.from === from);
 
   await page.goto(entry(from));
-  await page.getByRole("button", { name: "Rename", exact: true }).click();
+  await entryAction(page, "Rename");
   const field = page.getByRole("textbox", { name: "New name for Old Quay" });
   await field.fill("Greywater Quay");
   await field.press("Enter");
@@ -131,7 +142,7 @@ test("searches the text of entries from the same box", async ({ page }) => {
 
 test("lists an entry's headings in the Outline tab and jumps to one", async ({ page }) => {
   await page.goto(entry("01 Places/Harbor/Harbor.md"));
-  await page.getByRole("button", { name: "Outline", exact: true }).first().click();
+  await entryAction(page, "Outline");
   const outline = page.getByRole("navigation", { name: "Outline" });
   await expect(outline.getByRole("button")).toHaveText(["History", "Tides"]);
   await outline.getByRole("button", { name: "Tides" }).click();

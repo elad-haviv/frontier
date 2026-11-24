@@ -1,10 +1,9 @@
 import type { EditorView } from "@codemirror/view";
 import { ActionButton } from "./ui/ActionButton.tsx";
 import { EditorSelection } from "@codemirror/state";
-import { type FormEvent, useState } from "react";
+import { type FormEvent, useEffect, useRef, useState } from "react";
 import { api, ApiFailure, type PassageComment } from "../api.ts";
 import { type Anchor, locate } from "./anchor.ts";
-import { Diff } from "./Diff.tsx";
 
 const failed = (err: unknown, fallback: string) =>
   err instanceof ApiFailure ? err.message : fallback;
@@ -13,27 +12,49 @@ const short = (s: string, n: number) => (s.length > n ? `${s.slice(0, n)} …` :
 
 /**
  * The comments on an entry: adding one on a passage, going to a passage, marking a comment done,
- * and, for a comment for the AI, its rewrite of the passage, shown as a difference first.
+ * and, for a comment for the AI, a suggested change, shown in the writing help card under its
+ * passage. On the entry's page, without an editor, it lists them, goes to their passages and
+ * marks them done; adding one and the AI's work are in the editor.
  */
 export function CommentsPanel(p: {
-  view: EditorView;
+  /** The editor, or null on the entry's page. */
+  view: EditorView | null;
+  /** The entry's text, on the entry's page. */
+  text?: string;
+  /** Goes to a comment's passage on the entry's page. */
+  onShow?: (c: PassageComment) => void;
+  /** A comment to bring into view and mark, as when its bubble in the margin was pressed. */
+  focus?: { id: string } | null;
   path: string;
   comments: PassageComment[];
   /** A passage to comment on, when the panel was opened to add one. */
   adding: (Anchor & { from: number; to: number }) | null;
   /** Whether a model is chosen, so a comment can be for the AI. */
   canAi: boolean;
+  /** Opens the writing help card on a comment's passage, with the change the comment asks for. */
+  onSuggest?: (c: PassageComment, at: { from: number; to: number }) => void;
   onChanged: () => void;
   onClose: () => void;
 }) {
   const [text, setText] = useState("");
   const [forWhom, setForWhom] = useState<"me" | "ai">("me");
   const [adding, setAdding] = useState(p.adding);
-  const [work, setWork] = useState<{ id: string; text: string } | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const doc = () => p.view.state.doc.toString();
+  const doc = () => (p.view ? p.view.state.doc.toString() : (p.text ?? ""));
+  const list = useRef<HTMLUListElement>(null);
+
+  // A comment asked for is brought into view in the list, and its passage shown.
+  useEffect(() => {
+    if (!p.focus) return;
+    const id = p.focus.id;
+    list.current
+      ?.querySelector(`[data-id="${CSS.escape(id)}"]`)
+      ?.scrollIntoView({ block: "nearest" });
+    const c = p.comments.find((x) => x.id === id);
+    if (c && locate(doc(), c)) show(c, false);
+  }, [p.focus]);
 
   async function save(e: FormEvent) {
     e.preventDefault();
@@ -66,14 +87,19 @@ export function CommentsPanel(p: {
     return at;
   }
 
-  function show(c: PassageComment) {
+  /** Goes to a comment's passage: selected in the editor, or scrolled to on the entry's page. */
+  function show(c: PassageComment, focus = true) {
     const at = find(c);
     if (!at) return;
+    if (!p.view) {
+      p.onShow?.(c);
+      return;
+    }
     p.view.dispatch({
       selection: EditorSelection.single(at.from, at.to),
       scrollIntoView: true,
     });
-    p.view.focus();
+    if (focus) p.view.focus();
   }
 
   async function done(id: string) {
@@ -81,7 +107,6 @@ export function CommentsPanel(p: {
     setError(null);
     try {
       await api.removeComment(id);
-      if (work?.id === id) setWork(null);
       p.onChanged();
     } catch (err) {
       setError(failed(err, "The comment could not be marked done."));
@@ -103,34 +128,10 @@ export function CommentsPanel(p: {
     }
   }
 
-  async function workOn(c: PassageComment) {
+  function suggest(c: PassageComment) {
     setError(null);
-    setWork(null);
     const at = find(c);
-    if (!at) return;
-    setBusy(c.id);
-    const text = doc();
-    try {
-      const res = await api.workOnComment(c.id, {
-        before: text.slice(Math.max(0, at.from - 1200), at.from),
-        after: text.slice(at.to, at.to + 1200),
-      });
-      setWork({ id: c.id, text: res.text });
-    } catch (err) {
-      setError(failed(err, "Nothing came back."));
-    } finally {
-      setBusy(null);
-    }
-  }
-
-  /** Puts the AI's work in place of the passage, if the passage is still there, and closes it. */
-  async function replace(c: PassageComment) {
-    if (!work || work.id !== c.id) return;
-    const at = find(c);
-    if (!at) return;
-    p.view.dispatch({ changes: { from: at.from, to: at.to, insert: work.text } });
-    setWork(null);
-    await done(c.id);
+    if (at) p.onSuggest?.(c, at);
   }
 
   const text_ = doc();
@@ -194,14 +195,20 @@ export function CommentsPanel(p: {
 
       {p.comments.length === 0 && !adding && (
         <p className="muted">
-          No comments. Select a passage and press Comment in the toolbar to add one.
+          {p.view
+            ? "No comments. Select a passage and press Comment in the toolbar to add one."
+            : "No comments. To add one, edit the entry, select a passage and press Comment."}
         </p>
       )}
-      <ul className="comment-list">
+      <ul className="comment-list" ref={list}>
         {p.comments.map((c) => {
           const at = locate(text_, c);
           return (
-            <li key={c.id} className={at ? "" : "comment-lost"}>
+            <li
+              key={c.id}
+              data-id={c.id}
+              className={`${at ? "" : "comment-lost"}${p.focus?.id === c.id ? " is-focused" : ""}`}
+            >
               <p className="comment-quote">
                 {at ? (
                   <button type="button" className="plain" onClick={() => show(c)}>
@@ -216,14 +223,14 @@ export function CommentsPanel(p: {
               <p className="comment-text">{c.text}</p>
               <p className="comment-actions">
                 <span className="chip chip-quiet">{c.for === "ai" ? "for the AI" : "for me"}</span>
-                {c.for === "ai" && p.canAi && at && (
+                {c.for === "ai" && p.canAi && at && p.view && (
                   <ActionButton
                     type="button"
                     className="quiet"
                     disabled={busy !== null}
-                    onClick={() => void workOn(c)}
+                    onClick={() => suggest(c)}
                   >
-                    {busy === c.id ? "Working…" : "Work on it"}
+                    Suggest a change
                   </ActionButton>
                 )}
                 {(c.for === "ai" || p.canAi) && (
@@ -245,19 +252,6 @@ export function CommentsPanel(p: {
                   Done
                 </ActionButton>
               </p>
-              {work?.id === c.id && (
-                <div className="comment-work">
-                  <Diff before={c.quote} after={work.text} />
-                  <p className="change-actions">
-                    <button type="button" className="primary" onClick={() => void replace(c)}>
-                      Replace
-                    </button>
-                    <button type="button" className="plain" onClick={() => setWork(null)}>
-                      Discard
-                    </button>
-                  </p>
-                </div>
-              )}
             </li>
           );
         })}

@@ -52,6 +52,8 @@ export interface MapKeys {
   toggleLayers: () => void;
   /** Turns time on or off; false when the map has no time to turn on. */
   toggleTime: () => boolean | void;
+  /** Snapping on or off. */
+  toggleSnap: () => void;
 }
 
 const ARROWS: Record<string, [number, number]> = {
@@ -110,6 +112,9 @@ export function useMapKeys(k: MapKeys) {
   useShortcut("map.path", tool("path"));
   useShortcut("map.zone", tool("zone"));
   useShortcut("map.measure", tool("measure"));
+  useShortcut("map.label", tool("label"));
+  useShortcut("map.place", tool("place"));
+  useShortcut("map.snap", () => (editing && free() ? k.toggleSnap() : false));
   useShortcut("map.undo", () => (editing && free() && k.canUndo ? k.undo() : false));
   useShortcut("map.redo", () => (editing && free() && k.canRedo ? k.redo() : false));
   useShortcut("map.delete", () => {

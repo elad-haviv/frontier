@@ -420,6 +420,8 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
       ? { redact: ["req.headers.authorization", "req.headers.cookie", "req.body.key"] }
       : false,
   });
+  // A failed AI call is written to the server's log too, or production shows only a bare 502.
+  ai.logFailuresTo(app.log);
 
   // Keep the unparsed body: the webhook signature is computed over the exact bytes sent.
   app.addContentTypeParser("application/json", { parseAs: "buffer" }, (request, body, done) => {

@@ -11,11 +11,12 @@ import {
   vertexAt,
   type View,
 } from "@frontier/geo";
-import { type MapFeature, type MapFile, orderFeature } from "@frontier/schema";
+import { isLined, type MapFeature, type MapFile, orderFeature } from "@frontier/schema";
 import { type MapTime, orbitAt, type Resolved, turnAbout, writeShape } from "./time.ts";
 import { newItemId } from "./viewUrl.ts";
 
-export type Tool = "select" | "marker" | "path" | "zone" | "measure";
+/** `label` writes words on the map; `place` marks a spot or an area to place features with AI. */
+export type Tool = "select" | "marker" | "path" | "zone" | "measure" | "label" | "place";
 
 /** What a tap changes: each part that is given is set on the page. */
 export interface Step {
@@ -41,6 +42,23 @@ export function placeMarker(map: MapFile, layer: string, position: Position): St
     entry: null,
     label: null,
     icon: null,
+    child: null,
+  };
+  return { map: { ...map, features: [...map.features, feature] }, selected: feature.id };
+}
+
+/**
+ * A new label at a place, selected, its words ready to be typed over. The Label tool stays on, as
+ * the Marker tool does.
+ */
+export function placeLabel(map: MapFile, layer: string, position: Position): Step {
+  const feature: MapFeature = {
+    id: newItemId(),
+    kind: "label",
+    layer,
+    at: position,
+    entry: null,
+    label: "Label",
     child: null,
   };
   return { map: { ...map, features: [...map.features, feature] }, selected: feature.id };
@@ -96,15 +114,19 @@ export function addSketchPoint(
   layer: string,
   [x, y]: [number, number],
   curve = false,
+  /** Where the point snapped to, which wins over the place under the pointer. */
+  snapped?: Position,
 ): Step | null {
-  const position = view.unproject(x, y);
+  const position = snapped ?? view.unproject(x, y);
   if (!position) return null;
   const last = sketch[sketch.length - 1];
   const lastOnScreen = last ? view.project(last) : null;
   const onLast = lastOnScreen !== null && Math.hypot(lastOnScreen[0] - x, lastOnScreen[1] - y) < 16;
   // A double-click finishes through this rule: its first click adds a point, its second lands
-  // on that point.
-  if (onLast && tool !== "measure") return finishSketch(map, tool, sketch, layer, curve);
+  // on that point. A measured line and an area to place in are not features: they go on.
+  if (onLast && (tool === "path" || tool === "zone")) {
+    return finishSketch(map, tool, sketch, layer, curve);
+  }
   if (!onLast) return { sketch: [...sketch, position] };
   return null;
 }
@@ -120,7 +142,7 @@ export function tapSelect(
   shapes: Shape[],
   [x, y]: [number, number],
 ): Step {
-  if (editing && chosen && chosen.kind !== "marker") {
+  if (editing && chosen && isLined(chosen)) {
     // A corner on the far side of a globe is not drawn, so it cannot be picked.
     const corners = chosen.points.map(
       (p): [number, number] => view.project(p) ?? [Number.POSITIVE_INFINITY, 0],
@@ -145,10 +167,9 @@ export function dragShape(
 ): MapFeature | null {
   const feature = map.features.find((f) => f.id === drawn.feature.id);
   if (!feature) return null;
-  const shape =
-    drawn.feature.kind === "marker"
-      ? { at: position }
-      : { points: drawn.feature.points.map((q, i) => (i === vertex ? position : q)) };
+  const shape = !isLined(drawn.feature)
+    ? { at: position }
+    : { points: drawn.feature.points.map((q, i) => (i === vertex ? position : q)) };
   // A revolving marker is dropped where the finger is at the year shown: its own place is
   // that point turned back by the orbit.
   const orbit = orbitAt(map, feature, time, year);
@@ -176,7 +197,7 @@ export function insertPoint(
   position: Position,
 ): { feature: MapFeature; vertex: number } | null {
   const feature = map.features.find((f) => f.id === drawn.feature.id);
-  if (!feature || drawn.feature.kind === "marker") return null;
+  if (!feature || !isLined(drawn.feature)) return null;
   const points = [...drawn.feature.points];
   points.splice(segment + 1, 0, position);
   return { feature: writeShape(feature, drawn.shape, { points }), vertex: segment + 1 };
@@ -203,7 +224,7 @@ export function moveZone(
  * of a feature's shapes are curved or straight together.
  */
 export function setCurve(feature: MapFeature, curved: boolean): MapFeature {
-  if (feature.kind === "marker") return feature;
+  if (!isLined(feature)) return feature;
   const next = { ...feature } as MapFeature & { curve?: string };
   delete next.curve;
   return orderFeature((curved ? { ...next, curve: "smooth" } : next) as MapFeature);
@@ -211,7 +232,7 @@ export function setCurve(feature: MapFeature, curved: boolean): MapFeature {
 
 /** Why a point cannot be taken from a shape on screen, or null when one can. */
 export function removeReason(drawn: MapFeature): string | null {
-  if (drawn.kind === "marker") return "A marker has no points";
+  if (!isLined(drawn)) return `A ${drawn.kind} has no points`;
   const fewest = FEWEST_POINTS[drawn.kind];
   return drawn.points.length > fewest ? null : `A ${drawn.kind} needs at least ${fewest} points`;
 }
@@ -228,7 +249,7 @@ export function removePoint(
   const feature = map.features.find((f) => f.id === drawn.feature.id);
   if (!feature) return null;
   const reason = removeReason(drawn.feature);
-  if (reason || drawn.feature.kind === "marker") return { reason: reason ?? "" };
+  if (reason || !isLined(drawn.feature)) return { reason: reason ?? "" };
   const points = drawn.feature.points.filter((_, i) => i !== vertex);
   return { feature: writeShape(feature, drawn.shape, { points }) };
 }

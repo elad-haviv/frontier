@@ -8,6 +8,7 @@ import type { Conversation, Turn } from "../ai/conversations.js";
 import type { Services } from "../app.js";
 
 const IdParam = z.object({ id: z.string().regex(/^[a-z0-9]{12}$/) });
+const RunParam = z.object({ run: z.string().regex(/^[a-f0-9]{32}$/) });
 const TurnParam = IdParam.extend({ n: z.coerce.number().int().min(0) });
 const Ask = z.object({
   question: z.string().trim().min(1).max(2000),
@@ -78,11 +79,87 @@ export function loreRoutes(app: FastifyInstance, s: Services): void {
     const start = conversation ? await load(conversation) : await s.conversations.create(question);
     return inTurn(start.id, async () => {
       const c = conversation ? await load(conversation) : start;
-      const turn = await s.lore.ask(question, c.turns, `lore:${c.id}`);
+      const turn = await s.lore.ask(question, c.turns, { entry: `lore:${c.id}` });
       const next = { ...c, turns: [...c.turns, turn] };
       await s.conversations.save(next);
       return { conversation: next, gone: gone(next) };
     });
+  });
+
+  /** The answers being worked on, by run, so the author can stop one. */
+  const runs = new Map<string, AbortController>();
+
+  /**
+   * Asks as `POST /api/lore` does, but answers as server-sent events while it works: `run` first,
+   * then each `step`, the model's `reasoning` and how much it has `writing`, and last `done` with
+   * what `POST /api/lore` answers, or `error`. A connection that closes does not stop the work: the
+   * turn is still saved. `POST /api/lore/runs/:run/stop` stops it.
+   */
+  app.post("/api/lore/stream", async (request, reply) => {
+    const { question, conversation } = Ask.parse(request.body);
+    const start = conversation ? await load(conversation) : await s.conversations.create(question);
+    // Refused as a plain error while it still can be, before the stream starts.
+    await s.lore.model();
+
+    reply.hijack();
+    const res = reply.raw;
+    res.writeHead(200, {
+      "content-type": "text/event-stream; charset=utf-8",
+      // No proxy may hold the events back to compress or gather them (nginx reads the last one).
+      "cache-control": "no-cache, no-transform",
+      "x-accel-buffering": "no",
+      "x-content-type-options": "nosniff",
+    });
+    let open = true;
+    const write = (text: string) => {
+      if (open) res.write(text);
+    };
+    const send = (event: string, data: unknown) =>
+      write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+    // Some proxies hold back the first few kilobytes; a comment that long gets the events moving.
+    write(`: ${" ".repeat(2048)}\n\n`);
+    // A comment now and then keeps the proxies in front from closing a quiet connection.
+    const beat = setInterval(() => write(": keep-alive\n\n"), 15_000);
+    res.on("close", () => {
+      open = false;
+      clearInterval(beat);
+    });
+
+    const run = randomBytes(16).toString("hex");
+    const stop = new AbortController();
+    runs.set(run, stop);
+    send("run", { run, conversation: start.id });
+    try {
+      const done = await inTurn(start.id, async () => {
+        const c = conversation ? await load(conversation) : start;
+        const turn = await s.lore.ask(question, c.turns, {
+          entry: `lore:${c.id}`,
+          signal: stop.signal,
+          onEvent: (e) => send(e.type, e),
+        });
+        const next = { ...c, turns: [...c.turns, turn] };
+        await s.conversations.save(next);
+        return { conversation: next, gone: gone(next) };
+      });
+      send("done", done);
+    } catch (err) {
+      if (err instanceof ApiError) {
+        send("error", { code: err.code, message: err.message });
+      } else {
+        app.log.error(err);
+        send("error", { code: "merge_failed", message: "The server hit an unexpected error." });
+      }
+    } finally {
+      runs.delete(run);
+      clearInterval(beat);
+      if (open) res.end();
+    }
+  });
+
+  app.post("/api/lore/runs/:run/stop", async (request) => {
+    const { run } = RunParam.parse(request.params);
+    runs.get(run)?.abort();
+    return { ok: true as const };
   });
 
   app.delete("/api/lore/:id", async (request) => {

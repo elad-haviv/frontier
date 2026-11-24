@@ -1,4 +1,5 @@
 import {
+  isLined,
   type MapFeature,
   type MapFile,
   type MapStyle,
@@ -13,7 +14,9 @@ import type { TimeState } from "../../map/useMapTime.ts";
 import { newItemId } from "../../map/viewUrl.ts";
 import { FeatureTime, OrbitEditor } from "../MapTime.tsx";
 import { FeatureCard } from "./FeatureCard.tsx";
+import type { GeneratedFeature } from "../../api.ts";
 import { FeatureEditor } from "./FeatureEditor.tsx";
+import { FeatureGenerate } from "./FeatureGenerate.tsx";
 
 /**
  * The selected feature in the side bar: its card while reading (the Selected tab), its form while
@@ -35,11 +38,22 @@ export function FeaturePanel({
   onEdit,
   styles,
   onEditStyles,
+  generate,
+  onMakeEntry,
 }: {
   /** The library's path and zone styles. */
   styles: MapStyle[];
   /** Opens the Styles tab. */
   onEditStyles: () => void;
+  /** Generate with AI, once a model is chosen: where to ask, and what to do with the answer. */
+  generate: {
+    mapId: string;
+    choices: { id: string; name: string }[];
+    moment: { chronicle: string | null; year: number | null };
+    onUse: (proposal: GeneratedFeature) => void;
+  } | null;
+  /** Opens New entry for the feature, to make its entry and link it. */
+  onMakeEntry: (name: string, body: string) => void;
   feature: MapFeature;
   map: MapFile;
   editing: boolean;
@@ -74,7 +88,7 @@ export function FeaturePanel({
     );
   }
   // The Marker tool stays on after a marker is placed, and its tab opens to link it.
-  if (tool !== "select" && (tool !== "marker" || feature.kind !== "marker")) return null;
+  if (tool !== "select" && tool !== feature.kind) return null;
   return (
     <FeatureEditor
       key={feature.id}
@@ -93,6 +107,23 @@ export function FeaturePanel({
       vertex={vertex}
       onChange={(next) => setFeature(next)}
       onLink={(path, title) => file.link(feature, path, title)}
+      onCreateEntry={(typed) => onMakeEntry(typed, "")}
+      generate={
+        generate && (
+          <FeatureGenerate
+            mapId={generate.mapId}
+            feature={feature}
+            choices={generate.choices}
+            moment={generate.moment}
+            onUse={generate.onUse}
+            onMakeEntry={
+              feature.entry || file.pendingNames[feature.id]
+                ? null
+                : (name, body) => onMakeEntry(name, body)
+            }
+          />
+        )
+      }
       onDelete={() => {
         change(deleteFeature(map, feature.id));
         onSelect(null);
@@ -104,7 +135,7 @@ export function FeaturePanel({
         setFeature(done.feature);
         onVertex(null);
       }}
-      {...(onScreen && onScreen.feature.kind !== "marker"
+      {...(onScreen && isLined(onScreen.feature)
         ? { corners: onScreen.feature.points.length }
         : {})}
       extra={

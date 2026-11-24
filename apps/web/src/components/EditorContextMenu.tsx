@@ -189,11 +189,12 @@ export function EditorContextMenu({
         <ContextMenuItem
           key={t.id}
           icon={t.icon}
-          disabled={offline !== undefined}
-          disabledReason={offline}
+          keys={shortcutText(t.shortcut)}
+          disabled={t.online === true && offline !== undefined}
+          disabledReason={t.online ? offline : undefined}
           onSelect={on(t.act)}
         >
-          {t.label}
+          {t.menuLabel ?? t.label}
         </ContextMenuItem>
       ))}
     </>

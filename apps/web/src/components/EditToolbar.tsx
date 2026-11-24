@@ -61,6 +61,20 @@ export function EditToolbar({
   const list = tools(handlers);
   const current = BLOCK_STYLES.find((s) => s.style === style)!;
   const backToText = () => view.current?.focus();
+  // Help keeps its name on the bar: among the assist tools where they fit, else first on the bar.
+  const pinned = list.filter((t) => t.pinned);
+  const pinnedButton = (t: (typeof list)[number]) => (
+    <IconButton
+      key={t.id}
+      className="edit-toolbar-pinned"
+      label={t.label}
+      icon={t.icon}
+      showLabel
+      {...(t.shortcut ? { shortcut: t.shortcut } : {})}
+      onPointerDown={keep}
+      onClick={act(t.act)}
+    />
+  );
 
   return (
     <div
@@ -70,6 +84,11 @@ export function EditToolbar({
       aria-label="Formatting"
     >
       <div className="edit-toolbar-row">
+        {pinned.length > 0 && (
+          <div className="edit-toolbar-group" data-group="pinned">
+            {pinned.map(pinnedButton)}
+          </div>
+        )}
         {inTable && (
           <div className="edit-toolbar-group" data-group="table">
             {TABLE_BUTTONS.map(([action, icon, label]) => (
@@ -116,19 +135,23 @@ export function EditToolbar({
         {GROUPS.map(({ group }) => (
           <div key={group} className="edit-toolbar-group" data-group={group}>
             {list
-              .filter((t) => t.group === group)
-              .map((t) => (
-                <IconButton
-                  key={t.id}
-                  label={t.label}
-                  icon={t.icon}
-                  {...(t.shortcut ? { shortcut: t.shortcut } : {})}
-                  disabled={t.online === true && offline !== undefined}
-                  {...(t.online && offline ? { disabledReason: t.offlineReason ?? offline } : {})}
-                  onPointerDown={keep}
-                  onClick={act(t.act)}
-                />
-              ))}
+              .filter((t) => t.group === group && !t.menuOnly)
+              .map((t) =>
+                t.pinned ? (
+                  pinnedButton(t)
+                ) : (
+                  <IconButton
+                    key={t.id}
+                    label={t.label}
+                    icon={t.icon}
+                    {...(t.shortcut ? { shortcut: t.shortcut } : {})}
+                    disabled={t.online === true && offline !== undefined}
+                    {...(t.online && offline ? { disabledReason: t.offlineReason ?? offline } : {})}
+                    onPointerDown={keep}
+                    onClick={act(t.act)}
+                  />
+                ),
+              )}
           </div>
         ))}
         <Menu
@@ -153,7 +176,7 @@ export function EditToolbar({
                     disabledReason={t.online && offline ? (t.offlineReason ?? offline) : undefined}
                     onSelect={act(t.act)}
                   >
-                    {t.label}
+                    {t.menuLabel ?? t.label}
                   </MenuItem>
                 ))}
             </div>

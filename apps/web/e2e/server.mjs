@@ -4,6 +4,7 @@ import { rmSync } from "node:fs";
 import { createServer } from "node:http";
 import { dirname, join } from "node:path";
 import process from "node:process";
+import { clearTimeout, setTimeout } from "node:timers";
 import { fileURLToPath } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -30,8 +31,13 @@ const PICTURE = Buffer.from(
 // Not 127.0.0.1: where localhost resolves there (the CI machines), PUBLIC_URL makes it this
 // server's own address, which the image route refuses. Linux answers on all of 127/8.
 const PICTURE_HOST = "127.0.0.2";
+const slow = { started: 0, stopped: 0 };
 const pictures = createServer((req, res) => {
-  if (req.url?.split("?")[0].endsWith(".png")) {
+  if (req.url === "/ai-slow") {
+    // How many slow writing-help calls the AI stand-in below began, and how many were stopped.
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end(JSON.stringify(slow));
+  } else if (req.url?.split("?")[0].endsWith(".png")) {
     res.writeHead(200, { "content-type": "image/png" });
     res.end(PICTURE);
   } else {
@@ -70,6 +76,22 @@ function discovery(user) {
   };
 }
 
+// Names and descriptions for features to fill in or place: as many as asked, each with the first
+// look offered, if any.
+function generated(user) {
+  const asked = /What to propose: (one feature|(\d) features)/.exec(user);
+  const count = asked?.[2] ? Number(asked[2]) : 1;
+  const look = /Looks to choose from:\n- (.*?): /.exec(user)?.[1] ?? "";
+  return {
+    items: Array.from({ length: count }, (_, i) => ({
+      name: `Test Watchtower${i ? ` ${i + 1}` : ""}`,
+      description: "A watchtower the test made up.",
+      choice: look,
+      basis: [],
+    })),
+  };
+}
+
 function character(user) {
   const { path, line } = firstLine(user);
   return {
@@ -96,8 +118,14 @@ function lore(user) {
     };
   }
   if (user.includes("=== Passage")) {
+    // Writing help: the request's first words, and which try it is when asked again.
     const request = /Request: (.*)$/.exec(user)?.[1] ?? "";
-    return { text: `A rewritten passage (${request.split(":")[0]}).` };
+    const tries = (user.match(/--- Suggestion \d+/g) ?? []).length;
+    return {
+      text: tries
+        ? `Another rewritten passage (${request.split(":")[0]}, try ${tries + 1}).`
+        : `A rewritten passage (${request.split(":")[0]}).`,
+    };
   }
   const first = /=== Entry: (.*)\nTitle: .*\n\n([\s\S]*?)\n=== End/.exec(user);
   const path = first?.[1] ?? "";
@@ -108,6 +136,15 @@ function lore(user) {
     return { path, text: "A line the test drafted to fill the gap." };
   }
   const question = /Question: (.*)$/.exec(user)?.[1] ?? "";
+  // "Look further" makes the model ask for more once before it answers.
+  if (question.includes("Look further") && !user.includes("You asked for:")) {
+    return {
+      paragraphs: [],
+      related: [],
+      missing: "",
+      more: { searches: ["Mira"], entries: [] },
+    };
+  }
   if (question.includes("unknown")) {
     return {
       paragraphs: [{ text: "Nothing is said of this.", sources: [], quotes: [] }],
@@ -131,6 +168,46 @@ function lore(user) {
     related: [],
     missing: "",
   };
+}
+
+const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * Sends an answer as OpenRouter streams one: a keep-alive comment, the model's reasoning in pieces,
+ * then the answer in pieces and the usage. A question with "slowly" in it reasons for a long while,
+ * so a test can watch it work and stop it; one with "fall over" fails partway, as a provider can.
+ */
+async function streamAnswer(req, res, content, user) {
+  const question = /Question: (.*)$/.exec(user)?.[1] ?? "";
+  let open = true;
+  res.on("close", () => (open = false));
+  const send = (data) => open && res.write(`data: ${JSON.stringify(data)}\n\n`);
+  res.writeHead(200, { "content-type": "text/event-stream" });
+  res.write(": OPENROUTER PROCESSING\n\n");
+  const thoughts = (
+    "Looking at the entries I was given. The first one answers the question; " +
+    "I will quote its opening line."
+  ).split(/(?<= )/);
+  const wait = question.includes("slowly") ? 1500 : question.includes("Look further") ? 200 : 60;
+  for (const piece of thoughts) {
+    if (!open) return;
+    send({ choices: [{ delta: { reasoning: piece } }] });
+    await pause(wait);
+  }
+  if (question.includes("fall over")) {
+    send({ error: { code: 502, message: "The test provider fell over" }, choices: [] });
+    res.end();
+    return;
+  }
+  for (let at = 0; at < content.length && open; at += 30) {
+    send({ choices: [{ delta: { content: content.slice(at, at + 30) } }] });
+    await pause(15);
+  }
+  send({
+    choices: [{ delta: {} }],
+    usage: { prompt_tokens: 100, completion_tokens: 20, cost: 0.001 },
+  });
+  if (open) res.end("data: [DONE]\n\n");
 }
 
 // A stand-in for the AI provider. For any entry it "finds" one dated fact and quotes the entry's
@@ -204,24 +281,56 @@ const ai = createServer((req, res) => {
       );
       return;
     }
-    const user = JSON.parse(raw).messages[1].content;
+    const asked = JSON.parse(raw);
+    const user = asked.messages[1].content;
+    // A model that spends its room thinking: the answer stops at the token limit, cut off.
+    if (user.includes('"Truncated Point"')) {
+      res.end(
+        JSON.stringify({
+          choices: [
+            { message: { content: '{"candidates":[{"kind":"sett' }, finish_reason: "length" },
+          ],
+          usage: { prompt_tokens: 100, completion_tokens: 10500, cost: 0.001 },
+        }),
+      );
+      return;
+    }
     const lines = user.split("\n").slice(1);
     const quote = lines.find((l) => l.trim() !== "" && !l.startsWith("#")) ?? "";
     const answer = user.startsWith("Entry:")
       ? { type: null, time: [{ what: "happened", when: "in the year of the test", quote }] }
-      : user.startsWith("Entries about what is near")
-        ? discovery(user)
-        : user.startsWith("The character:")
-          ? character(user)
-          : user.startsWith("Entries:")
-            ? lore(user)
-            : { reply: "ok" };
-    res.end(
-      JSON.stringify({
-        choices: [{ message: { content: JSON.stringify(answer) } }],
-        usage: { prompt_tokens: 100, completion_tokens: 20, cost: 0.001 },
-      }),
-    );
+      : user.includes("\nWhat to propose: ")
+        ? generated(user)
+        : user.startsWith("Entries about what is near")
+          ? discovery(user)
+          : user.startsWith("The character:")
+            ? character(user)
+            : user.startsWith("Entries:")
+              ? lore(user)
+              : { reply: "ok" };
+    if (asked.stream) {
+      void streamAnswer(req, res, JSON.stringify(answer), user);
+      return;
+    }
+    const send = () =>
+      res.end(
+        JSON.stringify({
+          choices: [{ message: { content: JSON.stringify(answer) } }],
+          usage: { prompt_tokens: 100, completion_tokens: 20, cost: 0.001 },
+        }),
+      );
+    // Writing help asked to go "slowly" answers late, so a test can press Stop meanwhile; the
+    // call it stops is counted, for the test to see that it was stopped.
+    if (/Request: .*slowly/.test(user)) {
+      slow.started++;
+      const late = setTimeout(send, 8000);
+      res.on("close", () => {
+        if (!res.writableFinished) {
+          clearTimeout(late);
+          slow.stopped++;
+        }
+      });
+    } else send();
   });
 });
 await new Promise((resolve) => ai.listen(0, "127.0.0.1", resolve));

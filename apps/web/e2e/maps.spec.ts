@@ -160,7 +160,7 @@ test("draws a path and a zone, hides a layer, and undoes", async ({ page }, info
   // Hiding the layer is kept in the address and changes nothing in the map.
   await page.getByRole("button", { name: "Done" }).click();
   await page.getByRole("button", { name: "Layers" }).click();
-  await page.getByLabel("Show Places").uncheck();
+  await page.getByRole("button", { name: "Hide Places" }).click();
   await expect(page).toHaveURL(/hide=/);
   await page.mouse.click(c.x - 30, c.y - 20);
   await expect(page.locator(".feature-card")).toHaveCount(0);

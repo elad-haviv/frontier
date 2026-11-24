@@ -110,10 +110,13 @@ export function useMapDraw(
         selectedVertex: vertex,
         iconFor,
         titleOf,
+        // The spot or area to place features in with AI is drawn as a straight zone being drawn.
         sketch:
           tool === "path" || tool === "zone" || tool === "measure"
             ? { kind: tool, points: sketch, curve }
-            : null,
+            : tool === "place"
+              ? { kind: "zone", points: sketch }
+              : null,
         editing,
         pluses: editing && tool === "select" ? pressKind : null,
       });

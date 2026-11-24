@@ -26,6 +26,7 @@ import {
   type StreamEvent,
   type ToolCall,
   type Usage,
+  isCutOff,
   ProviderError,
 } from "./types.js";
 
@@ -112,7 +113,8 @@ export class GoogleAdapter implements ProviderAdapter {
 
   private thinking(req: ChatRequest): Record<string, unknown> | null {
     const r = req.reasoning;
-    if (r === undefined) return null;
+    // Only the 2.5 models and later think; the others refuse a thinking setting.
+    if (r === undefined || !/^gemini-(2\.5|[3-9])/.test(req.model)) return null;
     const m = req.model;
     if (r === "off") {
       // Only the Flash models can stop thinking; Pro always thinks.
@@ -120,11 +122,14 @@ export class GoogleAdapter implements ProviderAdapter {
     }
     if (/^gemini-[3-9]/.test(m)) {
       const level = typeof r === "string" ? r : r.budgetTokens < 8000 ? "low" : "high";
-      return { thinkingLevel: level === "medium" ? "high" : level, includeThoughts: true };
+      return {
+        thinkingLevel: level === "medium" ? "high" : level,
+        ...(req.showReasoning ? { includeThoughts: true } : {}),
+      };
     }
     const budget =
       typeof r === "object" ? r.budgetTokens : { low: 1024, medium: 8192, high: 24576 }[r];
-    return { thinkingBudget: budget, includeThoughts: true };
+    return { thinkingBudget: budget, ...(req.showReasoning ? { includeThoughts: true } : {}) };
   }
 
   private body(req: ChatRequest): Record<string, unknown> {
@@ -205,7 +210,9 @@ export class GoogleAdapter implements ProviderAdapter {
     if (got.blocked) {
       throw new ProviderError(`The model declined to answer (${got.blocked}).`, false, { usage });
     }
-    if (got.text === "" && got.calls.length === 0) throw emptyAnswer(usage);
+    if (got.text === "" && got.calls.length === 0 && !isCutOff(got.finishReason)) {
+      throw emptyAnswer(usage);
+    }
     return {
       text: got.text,
       reasoning: got.reasoning,

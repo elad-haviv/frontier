@@ -10,7 +10,10 @@ import { encrypt } from "../src/state/secrets.js";
 import { makeTestApp, type TestApp } from "./helpers/app.js";
 
 let t: TestApp;
-afterEach(() => t.close());
+afterEach(async () => {
+  anthropicReply = null;
+  await t.close();
+});
 
 const SECRET = Buffer.alloc(32, 3);
 const SECRETS = { SECRETS_KEY: SECRET.toString("base64") };
@@ -21,6 +24,9 @@ interface Sent {
   headers: Headers;
   body: Record<string, unknown> | null;
 }
+
+/** Anthropic's next answer to a message, when a test sets one. */
+let anthropicReply: object | null = null;
 
 /** Stands in for OpenRouter, Anthropic and OpenAI, each at its own address. */
 function providers() {
@@ -69,6 +75,7 @@ function providers() {
         ];
         return new Response(
           lines.map((l) => `data: ${JSON.stringify(l)}\n\n`).join("") + "data: [DONE]\n\n",
+          { headers: { "content-type": "text/event-stream" } },
         );
       }
       return Response.json({
@@ -101,6 +108,7 @@ function providers() {
           has_more: false,
         });
       }
+      if (anthropicReply) return Response.json(anthropicReply);
       return Response.json({
         type: "message",
         content: [{ type: "text", text: '{"reply":"ok"}' }],
@@ -450,5 +458,81 @@ describe("calls", () => {
         ok: true,
       }),
     ]);
+  });
+
+  it("give every provider room to think, and say when the answer was cut off at the limit", async () => {
+    const p = await start();
+    await t.post("/api/ai/providers", { kind: "anthropic", key: GOOD_ANT });
+    await t.put("/api/settings/ai", { models: { conversation: "anthropic:claude-sonnet-5-5" } });
+    const warned: object[] = [];
+    t.services.ai.logFailuresTo({ warn: (details) => warned.push(details) });
+    const ask = () =>
+      t.services.ai.complete({
+        task: "conversation",
+        system: "s",
+        user: "u",
+        maxTokens: 2500,
+        schema: {
+          name: "reply",
+          json: { type: "object" },
+          check: { safeParse: (v: unknown) => ({ success: v !== undefined, data: v }) } as never,
+        },
+      });
+    anthropicReply = {
+      type: "message",
+      content: [{ type: "text", text: '{"reply":"o' }],
+      stop_reason: "max_tokens",
+      usage: { input_tokens: 10, output_tokens: 10500 },
+    };
+    await expect(ask()).rejects.toThrow("The model ran out of room");
+    const sent = p.sent.at(-1)!.body!;
+    expect(sent.max_tokens).toBe(2500 + 8000);
+    // Brief thinking by default, through the provider's own setting.
+    expect(sent).toMatchObject({
+      thinking: { type: "adaptive" },
+      output_config: { effort: "low" },
+    });
+    anthropicReply = { type: "message", content: [], stop_reason: "max_tokens", usage: {} };
+    await expect(ask()).rejects.toThrow("ran out of room");
+    expect(warned).toHaveLength(2);
+  });
+
+  it("stream a fixed-form answer piece by piece, and log a call the author stopped without warning", async () => {
+    await start();
+    await t.put("/api/settings/ai", {
+      key: "sk-or-good-0002",
+      models: { conversation: "test/model" },
+    });
+    const pieces: object[] = [];
+    const answer = await t.services.ai.complete({
+      task: "conversation",
+      system: "s",
+      user: "u",
+      onStream: (piece) => pieces.push(piece),
+      schema: {
+        name: "reply",
+        json: { type: "object" },
+        check: { safeParse: (v: unknown) => ({ success: true, data: v }) } as never,
+      },
+    });
+    expect(answer).toEqual({ reply: "ok" });
+    expect(pieces).toEqual([{ reasoning: "Hm." }, { content: '{"reply":' }, { content: '"ok"}' }]);
+
+    const warned: object[] = [];
+    t.services.ai.logFailuresTo({ warn: (details) => warned.push(details) });
+    const stop = new AbortController();
+    stop.abort();
+    await expect(
+      t.services.ai.complete({
+        task: "conversation",
+        system: "s",
+        user: "u",
+        signal: stop.signal,
+        onStream: () => undefined,
+        schema: { name: "x", json: {}, check: { safeParse: () => ({ success: true }) } as never },
+      }),
+    ).rejects.toMatchObject({ code: "ai_stopped" });
+    expect(warned).toEqual([]);
+    expect(logLines().at(-1)).toMatchObject({ ok: false, error: "Stopped by the author." });
   });
 });

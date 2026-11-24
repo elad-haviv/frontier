@@ -1,7 +1,8 @@
 import { ActionButton } from "../components/ui/ActionButton.tsx";
 import { type FormEvent, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
-import { api, ApiFailure, askUrl } from "../api.ts";
+import { Link, useLocation, useNavigate } from "react-router-dom";
+import { api, askUrl } from "../api.ts";
+import { LiveTurn, useLoreAsk } from "../components/LoreWork.tsx";
 import { Problem } from "../components/ui/Problem.tsx";
 import { Progress } from "../components/ui/Progress.tsx";
 import { failureOf, useAsync } from "../useAsync.ts";
@@ -10,22 +11,20 @@ import { failureOf, useAsync } from "../useAsync.ts";
 export function AskPage() {
   const list = useAsync(() => api.conversations(), "conversations");
   const navigate = useNavigate();
-  const [question, setQuestion] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  // The editor's "Ask the lore about this…" comes with the passage quoted, ready for a question.
+  const quoted = (useLocation().state as { question?: string } | null)?.question;
+  const [question, setQuestion] = useState(quoted ?? "");
+  const {
+    live,
+    ask: askLive,
+    stop,
+  } = useLoreAsk(({ conversation }) => navigate(askUrl(conversation.id)));
+  const busy = live?.state === "working" || live?.state === "stopping";
 
-  async function ask(e: FormEvent) {
+  function ask(e: FormEvent) {
     e.preventDefault();
-    if (!question.trim()) return;
-    setBusy(true);
-    setError(null);
-    try {
-      const { conversation } = await api.ask(question.trim());
-      navigate(askUrl(conversation.id));
-    } catch (err) {
-      setError(err instanceof ApiFailure ? err.message : "The question could not be asked.");
-      setBusy(false);
-    }
+    if (!question.trim() || busy) return;
+    void askLive(question.trim());
   }
 
   const ready = list.state === "ready" && list.value.ready;
@@ -42,7 +41,7 @@ export function AskPage() {
       {list.state === "ready" && !list.value.ready && (
         <p className="banner">
           No model is chosen for lore conversations.{" "}
-          <Link to="/settings">Choose one in Settings</Link>.
+          <Link to="/settings/ai/models/conversation">Choose one in Settings</Link>.
         </p>
       )}
 
@@ -53,25 +52,34 @@ export function AskPage() {
             rows={3}
             value={question}
             disabled={!ready || busy}
+            ref={(box) => {
+              // Once it can be typed in, the cursor waits after the quoted passage.
+              if (box && quoted && ready && !box.dataset.placed) {
+                box.dataset.placed = "1";
+                box.focus();
+                box.setSelectionRange(box.value.length, box.value.length);
+              }
+            }}
             placeholder="How do the Nirani keep time?"
             onChange={(e) => setQuestion(e.target.value)}
           />
         </label>
-        {error && (
-          <p className="error" role="alert">
-            {error}
-          </p>
-        )}
         <p className="change-actions">
           <ActionButton
             type="submit"
             className="primary"
             disabled={!ready || busy || !question.trim()}
           >
-            {busy ? "Reading the entries…" : "Ask"}
+            Ask
           </ActionButton>
         </p>
       </form>
+
+      {live && (
+        <ol className="turns">
+          <LiveTurn live={live} onStop={stop} />
+        </ol>
+      )}
 
       {list.state === "ready" && list.value.conversations.length > 0 && (
         <section>

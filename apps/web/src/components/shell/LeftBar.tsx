@@ -1,6 +1,7 @@
 import type { TreeResponse } from "@frontier/schema";
 import {
   CircleDot,
+  FilePlus2,
   FolderPlus,
   GitCompareArrows,
   Images,
@@ -138,14 +139,25 @@ export function TreeSection({
       <div className="left-heading-row">
         <h2 className="left-heading">Library</h2>
         {tree.state === "ready" && (
-          <IconButton
-            label="New folder"
-            icon={FolderPlus}
-            size="sm"
-            tipSide="right"
-            className="left-new-folder"
-            onClick={() => setAsked((n) => n + 1)}
-          />
+          <span className="left-heading-actions">
+            {/* A new entry at the top of the library, whatever entry is in view. */}
+            <IconButton
+              label="New entry"
+              icon={FilePlus2}
+              size="sm"
+              tipSide="right"
+              className="left-new-entry"
+              onClick={() => onNewEntryIn("")}
+            />
+            <IconButton
+              label="New folder"
+              icon={FolderPlus}
+              size="sm"
+              tipSide="right"
+              className="left-new-folder"
+              onClick={() => setAsked((n) => n + 1)}
+            />
+          </span>
         )}
       </div>
       {tree.state === "loading" && <p className="muted pad">Loading…</p>}
@@ -164,9 +176,9 @@ export function TreeSection({
 }
 
 /**
- * The left side bar: search, New entry, the library's folders, the main places, and a footer
- * with the connection, what waits, and the app menu. In the phone's drawer the places come
- * before the folders, so they are found without scrolling past every folder.
+ * The left side bar: search, New entry, the main places, the library's folders, and a footer
+ * with the connection, what waits, and the app menu. The places come before the folders, so they
+ * are found without scrolling past every folder; the folders scroll in the room left.
  */
 export function LeftBar({
   tree,
@@ -238,15 +250,15 @@ export function LeftBar({
           New entry
         </button>
       </div>
+      {/* The places stay in reach at the top; the folders fill the rest and scroll on their own. */}
+      {places}
       <div className="left-scroll">
-        {drawer && places}
         <TreeSection
           tree={tree}
           current={current}
           onRetry={onRetryTree}
           onNewEntryIn={onNewEntryIn}
         />
-        {!drawer && places}
       </div>
       <div className="left-foot">
         <nav className="left-waiting" aria-label="Waiting for you">

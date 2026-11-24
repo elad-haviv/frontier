@@ -10,6 +10,7 @@ import {
   finishSketch,
   insertPoint,
   moveZone,
+  placeLabel,
   placeMarker,
   removePoint,
   removeReason,
@@ -56,6 +57,49 @@ describe("the marker tool", () => {
     expect(added).toMatchObject({ kind: "marker", layer: "l2", at: [5, 6], entry: null });
     expect(step.selected).toBe(added.id);
     expect(step.tool).toBeUndefined();
+  });
+});
+
+describe("the label tool (16d)", () => {
+  it("writes a label to the layer drawn into and selects it; the tool stays on", () => {
+    const step = placeLabel(flat([zone("z")]), "l2", [5, 6]);
+    const added = step.map!.features[1]!;
+    expect(added).toMatchObject({ kind: "label", layer: "l2", at: [5, 6], label: "Label" });
+    expect(step.selected).toBe(added.id);
+    expect(step.tool).toBeUndefined();
+  });
+
+  it("drags a label by its place, and has no points to take", () => {
+    const words = { id: "w", kind: "label", ...base, label: "Sea", at: [1, 1] } as MapFeature;
+    const map = flat([words]);
+    const drawn = resolve(map, null, 0, plain)[0]!;
+    expect(dragShape(map, drawn, null, [9, 9], null, 0)).toMatchObject({ at: [9, 9] });
+    expect(removeReason(words)).toBe("A label has no points");
+    expect(removePoint(map, drawn, 0)).toEqual({ reason: "A label has no points" });
+    expect(setCurve(words, true)).toBe(words);
+  });
+});
+
+describe("snapping while drawing (16d)", () => {
+  it("adds the point snapped to rather than the one under the pointer", () => {
+    const map = flat([]);
+    expect(addSketchPoint(map, view, "path", [[0, 0]], "l1", [50, 50], false, [52, 49])).toEqual({
+      sketch: [
+        [0, 0],
+        [52, 49],
+      ],
+    });
+  });
+
+  it("goes on marking the area to place in when the last point is tapped again", () => {
+    const map = flat([]);
+    expect(addSketchPoint(map, view, "place", [[0, 0]], "l1", [2, 2])).toBeNull();
+    expect(addSketchPoint(map, view, "place", [[0, 0]], "l1", [60, 60])).toEqual({
+      sketch: [
+        [0, 0],
+        [60, 60],
+      ],
+    });
   });
 });
 

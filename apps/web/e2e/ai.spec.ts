@@ -127,7 +127,7 @@ test("CUJ 11: asks the lore, reads cited answers, and keeps a drafted addition a
   await expect(supported.locator(".sources")).toContainText("Shade");
   await expect(turn.locator(".answer-para.is-guess")).toContainText("Bells ring at dawn.");
   await expect(turn.locator(".guess")).toBeVisible();
-  await expect(turn.locator(".turn-meta summary")).toContainText(/Read \d+ entr/);
+  await expect(turn.locator(".turn-meta > summary")).toContainText(/Read \d+ entr/);
 
   // A follow-up the lore does not cover: an addition is drafted and kept as a draft.
   await page.getByLabel("Ask again").fill("What is unknown about Shade?");
@@ -166,33 +166,107 @@ test("CUJ 11: asks the lore, reads cited answers, and keeps a drafted addition a
   await expect(page).toHaveURL(/\/ask$/);
 });
 
-test("writing help rewrites a passage in the editor, shown as a difference first", async ({
+test("shows the work while the lore is answered, step by step, and can stop it", async ({
   page,
 }, info) => {
   test.skip(info.project.name !== "phone", "The AI settings are one per server.");
   await page.setViewportSize({ width: 375, height: 740 });
   await setUpAi(page, { conversation: "sample/reader" });
 
+  // The model asks for more once, then answers: each step shows as it happens.
+  await page.goto("/ask");
+  await page.getByLabel("A question").fill("Who is Shade? Look further.");
+  await page.getByRole("button", { name: "Ask" }).click();
+  const live = page.locator(".lore-live");
+  await expect(live.locator(".turn-question")).toHaveText("Who is Shade? Look further.");
+  const named = live.locator(".lore-step", { hasText: "Looked for entries the question names" });
+  await expect(named.locator(".lore-chip", { hasText: "Shade" })).toBeVisible();
+  await expect(live.locator(".lore-step.is-active")).toContainText("Asking the model");
+  await expect(live.locator(".lore-thinking summary")).toHaveText("Thinking…");
+  await expect(live.locator(".lore-thinking-text")).toContainText("Looking at the entries");
+  await expect(live.getByRole("button", { name: "Stop" })).toBeVisible();
+  await expect(
+    live.locator(".lore-step", { hasText: "The model asked for more entries" }),
+  ).toBeVisible();
+  await expect(
+    live.locator(".lore-step", { hasText: "Searched the library for “Mira”" }),
+  ).toBeVisible();
+
+  // The answer arrives; the work folds to one line, which opens again.
+  await expect(page).toHaveURL(/\/ask\/[a-z0-9]{12}$/, { timeout: 30_000 });
+  const turn = page.locator(".turn").first();
+  await expect(turn.locator(".answer-para").first().locator("blockquote")).toBeVisible();
+  const work = turn.locator(".lore-work");
+  await expect(work.locator("> summary")).toContainText(/Read \d+ entries · thought for \d+s/);
+  await expect(work.locator(".lore-step").first()).toBeHidden();
+  await work.locator("> summary").click();
+  await expect(work.locator(".lore-step", { hasText: "Checked the quotes" })).toBeVisible();
+  await expect(
+    work.locator(".lore-step", { hasText: "Searched the library for “Mira”" }),
+  ).toBeVisible();
+  await work.locator(".lore-thinking summary").click();
+  await expect(work.locator(".lore-thinking-text")).toContainText("quote its opening line");
+  await work.locator(".lore-chip", { hasText: "Shade" }).first().click();
+  await expect(page).toHaveURL(/Shade/);
+  await page.goBack();
+
+  // A failure shows in the conversation, in the provider's words.
+  await page.getByLabel("Ask again").fill("Will the provider fall over?");
+  await page.getByRole("button", { name: "Ask" }).click();
+  const failed = page.locator(".lore-live .lore-failed");
+  await expect(failed).toContainText("The answer could not be finished.");
+  await expect(failed).toContainText("The test provider fell over");
+
+  // Stopped while it thinks: nothing is kept.
+  await page.getByLabel("Ask again").fill("Who is Mira, slowly?");
+  await page.getByRole("button", { name: "Ask" }).click();
+  await expect(page.locator(".lore-live .lore-thinking-text")).toContainText("Looking");
+  await page.locator(".lore-live").getByRole("button", { name: "Stop" }).click();
+  await expect(page.locator(".lore-live")).toContainText("Stopped. Nothing was kept.");
+  await expect(page.getByLabel("Ask again")).toHaveValue("Who is Mira, slowly?");
+  await page.reload();
+  await expect(page.locator(".turn")).toHaveCount(1);
+  await expect(
+    page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+  ).resolves.toBe(true);
+
+  await page.getByRole("button", { name: "Delete the conversation" }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Delete", exact: true }).click();
+  await expect(page).toHaveURL(/\/ask$/);
+});
+
+test("writing help on a phone: a card under the passage, and asking the lore about it", async ({
+  page,
+}, info) => {
+  test.skip(info.project.name !== "phone", "The AI settings are one per server.");
+  await page.setViewportSize({ width: 375, height: 740 });
+  await setUpAi(page, { conversation: "sample/reader" });
+
+  // Asking the lore is in the toolbar's "⋯": the Ask page opens with the passage quoted.
   await openEditor(page, "02 People/Shade.md");
-  // The cursor in the paragraph is enough: the whole paragraph is the passage.
   await page.locator(".cm-content").getByText("A quiet figure.").click();
-  // At phone size, Writing help and Comment are in the toolbar's "⋯".
-  await pressTool(page, "Writing help");
-  const panel = page.locator(".writing-panel");
-  await expect(panel.locator(".writing-passage")).toContainText("A quiet figure.");
-  await panel.getByRole("button", { name: "Shorter" }).click();
-  await expect(panel.locator(".diff")).toContainText("A rewritten passage (Make it shorter)");
-  await panel.getByRole("button", { name: "Replace" }).click();
-  await expect(panel).toHaveCount(0);
+  await pressTool(page, "Ask the lore about this…");
+  await expect(page).toHaveURL(/\/ask$/);
+  await expect(page.getByLabel("A question")).toHaveValue(
+    /^About this passage of "Shade":\n"""\nA quiet figure\.[^"]*\n"""\n$/,
+  );
+
+  // The cursor in the paragraph is enough: the whole paragraph is the passage. Help is the first
+  // button on the bar.
+  await openEditor(page, "02 People/Shade.md");
+  await page.locator(".cm-content").getByText("A quiet figure.").click();
+  await page.locator(".edit-toolbar").getByRole("button", { name: "Help", exact: true }).click();
+  const card = page.getByRole("region", { name: "Writing help" });
+  await expect(page.locator(".cm-help-passage")).toContainText("A quiet figure.");
+  await card.getByRole("button", { name: "Shorter" }).click();
+  await expect(card.locator(".help-card-suggestion")).toContainText(
+    "A rewritten passage (Make it shorter)",
+  );
+  await expect(card).toBeInViewport();
+  await card.getByRole("button", { name: "Keep" }).click();
+  await expect(card).toHaveCount(0);
   await expect(page.locator(".cm-content")).toContainText("A rewritten passage (Make it shorter).");
   await expect(page.locator(".cm-content")).not.toContainText("A quiet figure.");
-
-  // Asked about the passage, the lore answers in the panel.
-  await pressTool(page, "Writing help");
-  await panel.getByLabel("Ask the lore about this passage").fill("Who is this?");
-  await panel.getByRole("button", { name: "Ask" }).click();
-  await expect(panel.locator(".writing-answer")).toContainText("Open the conversation");
-  await panel.getByRole("button", { name: "Close" }).click();
 
   await discardDraft(page);
 });
@@ -214,11 +288,15 @@ test("comments on a passage: one for the author, one the AI works on", async ({ 
   await expect(page.locator(".cm-comment").first()).toBeVisible();
   await expect(page.getByRole("button", { name: "Comments (1)" })).toBeVisible();
 
-  await panel.getByRole("button", { name: "Work on it" }).click();
-  await expect(panel.locator(".diff")).toContainText(
+  // Its suggestion shows in the writing help card, under the passage.
+  await panel.getByRole("button", { name: "Suggest a change" }).click();
+  const card = page.getByRole("region", { name: "Writing help" });
+  await expect(card.locator(".help-card-suggestion")).toContainText(
     "A rewritten passage (Do what this comment on the passage asks)",
   );
-  await panel.getByRole("button", { name: "Replace" }).click();
+  await card.getByRole("button", { name: "Keep" }).click();
+  await expect(card).toHaveCount(0);
+  await page.getByRole("button", { name: "Comments", exact: true }).click();
   await expect(panel.locator(".comment-list > li")).toHaveCount(0);
   await expect(page.locator(".cm-content")).toContainText("A rewritten passage (Do what");
   await expect(page.locator(".cm-comment")).toHaveCount(0);

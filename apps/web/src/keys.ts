@@ -336,7 +336,7 @@ keys.register(
     handledBy: "the switcher",
   },
 
-  // The editor. Bold to Done are run by CodeMirror from editorKeymap() below.
+  // The editor. Bold to Help are run by CodeMirror from editorKeymap() below.
   { id: "editor.bold", keys: ["Mod-b"], scope: "editor", label: "Bold" },
   { id: "editor.italic", keys: ["Mod-i"], scope: "editor", label: "Italic" },
   { id: "editor.underline", keys: ["Mod-u"], scope: "editor", label: "Underline" },
@@ -352,6 +352,12 @@ keys.register(
   { id: "editor.paragraph", keys: ["Shift-Mod-0"], scope: "editor", label: "Paragraph" },
   { id: "editor.save", keys: ["Mod-s"], scope: "editor", label: "Save now" },
   { id: "editor.done", keys: ["Mod-Enter"], scope: "editor", label: "Done" },
+  {
+    id: "editor.help",
+    keys: ["Mod-j"],
+    scope: "editor",
+    label: "Writing help on the selection or paragraph",
+  },
   {
     id: "editor.indent",
     keys: ["Tab"],
@@ -412,6 +418,15 @@ keys.register(
   { id: "map.path", keys: ["p"], scope: "map", label: "Path tool", when: "editing" },
   { id: "map.zone", keys: ["z"], scope: "map", label: "Zone tool", when: "editing" },
   { id: "map.measure", keys: ["r"], scope: "map", label: "Measure tool", when: "editing" },
+  { id: "map.label", keys: ["w"], scope: "map", label: "Label tool", when: "editing" },
+  { id: "map.place", keys: ["g"], scope: "map", label: "Place with AI", when: "editing" },
+  {
+    id: "map.snap",
+    keys: ["s"],
+    scope: "map",
+    label: "Snap to other paths and zones, on or off (hold Alt to place freely)",
+    when: "editing",
+  },
   { id: "map.undo", keys: ["Mod-z"], scope: "map", label: "Undo", when: "editing" },
   { id: "map.redo", keys: ["Shift-Mod-z", "Mod-y"], scope: "map", label: "Redo", when: "editing" },
   {
@@ -478,6 +493,80 @@ keys.register(
   // The chronicle
   { id: "chronicle.undo", keys: ["Mod-z"], scope: "chronicle", label: "Undo" },
   { id: "chronicle.redo", keys: ["Shift-Mod-z"], scope: "chronicle", label: "Redo" },
+  { id: "chronicle.up", keys: ["ArrowUp"], scope: "chronicle", label: "Select the event above" },
+  {
+    id: "chronicle.down",
+    keys: ["ArrowDown"],
+    scope: "chronicle",
+    label: "Select the event below",
+  },
+  { id: "chronicle.left", keys: ["ArrowLeft"], scope: "chronicle", label: "Move it earlier" },
+  { id: "chronicle.right", keys: ["ArrowRight"], scope: "chronicle", label: "Move it later" },
+  {
+    id: "chronicle.leftFar",
+    keys: ["Shift-ArrowLeft"],
+    scope: "chronicle",
+    label: "Move it ten steps earlier",
+  },
+  {
+    id: "chronicle.rightFar",
+    keys: ["Shift-ArrowRight"],
+    scope: "chronicle",
+    label: "Move it ten steps later",
+  },
+  {
+    id: "chronicle.endEarlier",
+    keys: ["Alt-ArrowLeft"],
+    scope: "chronicle",
+    label: "Move only its end earlier",
+  },
+  {
+    id: "chronicle.endLater",
+    keys: ["Alt-ArrowRight"],
+    scope: "chronicle",
+    label: "Move only its end later",
+  },
+  {
+    id: "chronicle.startEarlier",
+    keys: ["Alt-Shift-ArrowLeft"],
+    scope: "chronicle",
+    label: "Move only its start earlier",
+  },
+  {
+    id: "chronicle.startLater",
+    keys: ["Alt-Shift-ArrowRight"],
+    scope: "chronicle",
+    label: "Move only its start later",
+  },
+  { id: "chronicle.name", keys: ["Enter"], scope: "chronicle", label: "Edit its name" },
+  { id: "chronicle.dates", keys: ["d"], scope: "chronicle", label: "Edit its dates" },
+  { id: "chronicle.add", keys: ["n"], scope: "chronicle", label: "Add an event" },
+  { id: "chronicle.fold", keys: [" "], scope: "chronicle", label: "Fold or unfold a group" },
+  { id: "chronicle.zoom1", keys: ["1"], scope: "chronicle", label: "Zoom to years" },
+  { id: "chronicle.zoom2", keys: ["2"], scope: "chronicle", label: "Zoom to decades" },
+  { id: "chronicle.zoom3", keys: ["3"], scope: "chronicle", label: "Zoom to centuries" },
+  { id: "chronicle.zoom4", keys: ["4"], scope: "chronicle", label: "Zoom to millennia" },
+  { id: "chronicle.fit", keys: ["f"], scope: "chronicle", label: "Fit everything" },
+  { id: "chronicle.zoomIn", keys: ["+", "="], scope: "chronicle", label: "Zoom in" },
+  { id: "chronicle.zoomOut", keys: ["-"], scope: "chronicle", label: "Zoom out" },
+  {
+    id: "chronicle.mapYear",
+    keys: ["y"],
+    scope: "chronicle",
+    label: "Put the map year at the selected event's start",
+  },
+  {
+    id: "chronicle.delete",
+    keys: ["Delete", "Backspace"],
+    scope: "chronicle",
+    label: "Delete the selected event",
+  },
+  {
+    id: "chronicle.deselect",
+    keys: ["Escape"],
+    scope: "chronicle",
+    label: "Deselect and close the details",
+  },
 
   // Dialogs, menus and the lists that choose
   { id: "lightbox.close", keys: ["Escape"], scope: "dialog", label: "Close the image" },
@@ -617,6 +706,8 @@ export function editorKeymap(registry = keys): Extension {
     // The browser's "Save page" never opens from the editor, even before the page binds Save.
     ...bind("editor.save", runBound("editor.save", registry), { preventDefault: true }),
     ...bind("editor.done", runBound("editor.done", registry)),
+    // The browser's own Ctrl+J (its downloads) never opens from the editor.
+    ...bind("editor.help", runBound("editor.help", registry), { preventDefault: true }),
     // In a list Tab nests the item; elsewhere it indents the line.
     ...bind("editor.indent", (v) => command(indentListItem)(v) || indentMore(v)),
     ...bind("editor.outdent", (v) => command(outdentListItem)(v) || indentLess(v)),

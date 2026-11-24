@@ -145,7 +145,7 @@ describe("OpenRouter", () => {
     await adapter("openrouter", s.fake).complete(req({ reasoning: "off" }));
     expect(s.sent[1]!.body!.reasoning).toEqual({ enabled: false });
     await adapter("openrouter", s.fake).complete(req({ reasoning: { budgetTokens: 2000 } }));
-    expect(s.sent[2]!.body!.reasoning).toEqual({ max_tokens: 2000 });
+    expect(s.sent[2]!.body!.reasoning).toEqual({ max_tokens: 2000, exclude: true });
   });
 
   it("turns a refusal into words, even inside a 200 answer, and retries only the provider's trouble", async () => {
@@ -480,9 +480,9 @@ describe("Anthropic", () => {
       tools: [{ name: "answer", input_schema: SCHEMA.json }],
       tool_choice: { type: "tool", name: "answer" },
     });
-    // A forced tool call cannot think.
+    // A forced tool call cannot think, and a model before 4.6 is not asked to.
     expect(s.sent[1]!.body!.thinking).toBeUndefined();
-    expect(s.sent[1]!.body!.output_config).toEqual({ effort: "high" });
+    expect(s.sent[1]!.body!.output_config).toBeUndefined();
   });
 
   it("says plainly when the model declines", async () => {
@@ -636,7 +636,8 @@ describe("Google AI Studio", () => {
         responseMimeType: "application/json",
         responseSchema: { type: "OBJECT" },
         maxOutputTokens: 100,
-        thinkingConfig: { thinkingBudget: 1024, includeThoughts: true },
+        // Thoughts are sent back only when they are shown.
+        thinkingConfig: { thinkingBudget: 1024 },
       },
     });
     await adapter("google", s.fake).complete(req({ model: "gemini-2.5-flash", reasoning: "off" }));

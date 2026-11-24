@@ -564,6 +564,40 @@ describe("maps and chronicles in the queue", () => {
     expect((await q.get(MAP))?.value).toMatchObject({ title: "Changed meanwhile" });
   });
 
+  it("sends a map linking to an entry made offline after that entry (16d)", async () => {
+    const connection = fakeConnection("offline");
+    const api = fakeApi();
+    let release: () => void = () => undefined;
+    const held = new Promise<void>((r) => (release = r));
+    const plain = api.saveDraft;
+    api.saveDraft = vi.fn(async (...args: Parameters<SenderApi["saveDraft"]>) => {
+      await held;
+      return plain(...args);
+    });
+    const q = makeQueue(api, connection);
+    const made = "entry:03 Places/Gull Rock.md" as const;
+    await q.put(made, "# Gull Rock\n", {
+      kind: "create",
+      draftId: "d1",
+      revision: 0,
+      baseBlob: "",
+    });
+    await q.put(MAP, baseMap, {
+      base: baseMap,
+      revision: 1,
+      baseBlob: "",
+      link: [{ id: "f1", path: "03 Places/Gull Rock.md" }],
+      delay: 0,
+    });
+    // Both are due when the connection comes back; the map waits for the entry.
+    connection.set("online");
+    await vi.waitFor(() => expect(api.saveDraft).toHaveBeenCalledTimes(1));
+    expect(api.saveMap).not.toHaveBeenCalled();
+    release();
+    await vi.waitFor(() => expect(api.saveMap).toHaveBeenCalledTimes(1));
+    expect(api.calls.map((c) => c[0])).toEqual(["draft", "map"]);
+  });
+
   it("combines the links of two changes by feature, and takes an unlinked one back", async () => {
     const api = fakeApi();
     const q = makeQueue(api, fakeConnection("offline"));

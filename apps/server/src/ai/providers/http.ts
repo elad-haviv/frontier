@@ -20,7 +20,7 @@ export function unreachable(err: unknown): ProviderError {
     return new ProviderError("The AI provider did not answer in time.", true, { timedOut: true });
   }
   if (name === "AbortError") {
-    return new ProviderError("The call was stopped.", false, { aborted: true });
+    return new ProviderError("Stopped by the author.", false, { aborted: true });
   }
   return new ProviderError("The AI provider could not be reached.", true);
 }

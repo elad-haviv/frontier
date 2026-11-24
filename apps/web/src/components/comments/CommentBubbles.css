@@ -1,0 +1,51 @@
+/* Comments in the blank margin to the right of the text, while the right side bar is closed. */
+.comment-margin {
+  position: absolute;
+  top: 0;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.comment-bubble {
+  position: absolute;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.4rem;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--rule);
+  border-radius: 10px 10px 10px 2px;
+  background: var(--paper-raised);
+  box-shadow: 0 1px 2px rgba(20, 16, 10, 0.08);
+  color: var(--ink-soft);
+  font: inherit;
+  font-size: 0.82rem;
+  line-height: 1.35;
+  text-align: left;
+  cursor: pointer;
+  pointer-events: auto;
+}
+.comment-bubble:hover,
+.comment-bubble:focus-visible {
+  border-color: var(--accent);
+  color: var(--ink);
+}
+.comment-bubble .ui-icon {
+  flex: none;
+  margin-top: 0.1rem;
+  color: var(--accent);
+}
+.comment-bubble.is-ai .ui-icon {
+  color: var(--ink-faint);
+}
+/* Three lines at most; the whole comment opens beside the text. */
+.comment-bubble-text {
+  min-width: 0;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}

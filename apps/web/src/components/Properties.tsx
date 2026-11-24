@@ -12,6 +12,7 @@ import type { SchemaResponse } from "@frontier/schema";
 import type { EditorView } from "@codemirror/view";
 import { useEffect, useRef, useState } from "react";
 import { api } from "../api.ts";
+import { CustomProperties } from "./CustomProperties.tsx";
 
 const LISTS = [
   { key: "aliases", label: "Other names", hint: "Names that also link to this entry" },
@@ -95,14 +96,16 @@ export function Properties({
   }
 
   /** Runs one change on the note's text and puts the result in the editor. */
-  function write(change: (text: string) => string) {
+  function write(change: (text: string) => string): boolean {
     const v = view.current;
-    if (!v) return;
+    if (!v) return false;
     try {
       applyText(v, change(v.state.doc.toString()));
       setError(null);
+      return true;
     } catch (err) {
       setError(err instanceof FrontmatterError ? UNREADABLE : "Could not write the property.");
+      return false;
     }
   }
 
@@ -247,6 +250,7 @@ export function Properties({
               </button>
             )}
           </div>
+          <CustomProperties read={() => view.current?.state.doc.toString() ?? ""} write={write} />
         </>
       )}
     </section>

@@ -194,6 +194,28 @@ What was built differs from the sections above as follows; where they disagree, 
     makes a draft; conversations stored, listed and deleted.
 *   **Browser**, with the stand-in: CUJ 11 on a phone.
 
+### The work shown as it happens (release 16b)
+
+*   **`POST /api/lore/stream`** takes what `POST /api/lore` takes and answers as server-sent events:
+    `run` (an id to stop it with), each `step` (kind, text, a detail, the entries found; a step
+    begun as active is sent again under the same number when done), `reasoning` pieces for models
+    that reason (asked with `reasoning: { exclude: false }`, which never makes a model reason),
+    `writing` (characters of the answer written so far), then `done` with what `POST /api/lore`
+    answers, or `error` with the code and the provider's message. A 2 KB comment opens the stream
+    and a comment every 15 s keeps proxies from closing it. `POST /api/lore/runs/:run/stop` stops
+    it; a connection that closes does not, and the turn is still saved. `POST /api/lore` stays for
+    writing help.
+*   **The answer is shown only once checked.** It is strict JSON and its quotes are checked before
+    anyone sees it, so the page streams the steps and the thinking and shows how much is written,
+    not the answer's words.
+*   **The model may ask for more**: the answer has a `more` field of up to 3 searches and 4 entries
+    (by path or title). Frontier finds them, under the same rules as the lookup, and asks again; at
+    most twice, then the model must answer. Asking again for nothing new ends the asking at once.
+*   **Each turn keeps its `trace`**: the steps, the reasoning (up to 20,000 characters) and how long
+    it took, shown folded above the answer as "Read 6 entries · thought for 12s".
+*   **Every failed AI call** is also written to the server's log as a warning with the task, model,
+    entry and the provider's message.
+
 ## 8b Writing help in the editor
 
 Built on 2026-11-21 with these choices, which the author can overrule; comments on a passage, from

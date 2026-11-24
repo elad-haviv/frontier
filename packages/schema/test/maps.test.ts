@@ -1,6 +1,15 @@
 import { describe, expect, it } from "vitest";
 import {
   extentProblem,
+  hiddenWithin,
+  layerProblem,
+  layersWithin,
+  layerTree,
+  lockedWithin,
+  type MapLayer,
+  moveLayer,
+  repairLayers,
+  stepLayer,
   orderFeature,
   type MapFeature,
   type MapFile,
@@ -462,5 +471,247 @@ describe("a path or zone style", () => {
       edit((m) => ((m.features[0] as { at: number[] }).at = [1, 1])),
     );
     expect((merged.map.features[1] as { style?: string }).style).toBe("k3v9x2pa");
+  });
+});
+
+describe("layers and sublayers", () => {
+  const layer = (id: string, extra: Partial<MapLayer> = {}): MapLayer => ({
+    id,
+    name: id,
+    visible: true,
+    color: "#333333",
+    ...extra,
+  });
+  const order = (layers: MapLayer[]) =>
+    layerTree(layers).map((n) => `${"-".repeat(n.depth)}${n.layer.id}`);
+  const withLayers = (layers: MapLayer[]) => edit((m) => (m.layers = layers));
+
+  it("reads a file from before sublayers, and writes it with the same bytes", () => {
+    const text = serialiseMap(base);
+    expect(text).toContain('{"id":"l1","name":"Cities","visible":true,"color":"#9a3b1f"}');
+    const back = parseMap(text);
+    expect(back.ok && back.map.layers[0]!.parent).toBeUndefined();
+    expect(back.ok && serialiseMap(back.map)).toBe(text);
+  });
+
+  it("writes the parent and the lock after the older fields, and leaves out the defaults", () => {
+    const map = withLayers([
+      layer("l1", { locked: false, parent: null }),
+      { color: "#111111", locked: true, parent: "l1", visible: false, name: "Roads", id: "l2" },
+    ]);
+    const text = serialiseMap(map);
+    expect(text).toContain('{"id":"l1","name":"l1","visible":true,"color":"#333333"}');
+    expect(text).toContain(
+      '{"id":"l2","name":"Roads","visible":false,"color":"#111111","parent":"l1","locked":true}',
+    );
+    const back = parseMap(text);
+    expect(back.ok && back.map.layers[1]).toMatchObject({ parent: "l1", locked: true });
+  });
+
+  it("refuses a sublayer of a missing layer, and a loop", () => {
+    const bad = (layers: MapLayer[]) => {
+      const r = parseMap(JSON.stringify(withLayers(layers)));
+      return r.ok ? "ok" : r.message;
+    };
+    expect(bad([layer("l1"), layer("l2", { parent: "gone" })])).toMatch(/does not exist/);
+    expect(bad([layer("l1", { parent: "l1" })])).toMatch(/inside itself/);
+    expect(
+      bad([
+        layer("l1", { parent: "l3" }),
+        layer("l2", { parent: "l1" }),
+        layer("l3", { parent: "l2" }),
+      ]),
+    ).toMatch(/inside itself/);
+    expect(bad([layer("l1"), layer("l2", { parent: "l1" }), layer("l3", { parent: "l2" })])).toBe(
+      "ok",
+    );
+    expect(layerProblem([layer("a"), layer("b", { parent: "a" })])).toBeNull();
+  });
+
+  it("is a tree in the order of the list, safe with a loop", () => {
+    const layers = [
+      layer("a"),
+      layer("c", { parent: "b" }),
+      layer("b", { parent: "a" }),
+      layer("d"),
+      layer("e", { parent: "a" }),
+    ];
+    expect(order(layers)).toEqual(["a", "-b", "--c", "-e", "d"]);
+    expect(layerTree(layers)[0]!.children).toBe(2);
+    expect([...layersWithin(layers, "a")].sort()).toEqual(["b", "c", "e"]);
+    expect([...layersWithin(layers, "d")]).toEqual([]);
+    // A loop, as a hand-made file could have, is read with its smallest id at the top level.
+    expect(order([layer("y", { parent: "x" }), layer("x", { parent: "y" })])).toEqual(["x", "-y"]);
+  });
+
+  it("hides and locks what is inside a hidden or locked layer", () => {
+    const layers = [
+      layer("a", { locked: true }),
+      layer("b", { parent: "a" }),
+      layer("c", { parent: "b" }),
+      layer("d"),
+      layer("e", { parent: "d" }),
+    ];
+    expect([...hiddenWithin(layers, new Set(["b", "f1"]))].sort()).toEqual(["b", "c", "f1"]);
+    expect([...hiddenWithin(layers, new Set(["d"]))].sort()).toEqual(["d", "e"]);
+    expect([...lockedWithin(layers)].sort()).toEqual(["a", "b", "c"]);
+  });
+
+  it("moves a layer with its sublayers: into another, between, to the top", () => {
+    const layers = [layer("a"), layer("b", { parent: "a" }), layer("c"), layer("d")];
+    const into = moveLayer(layers, "c", "a");
+    expect(order(into)).toEqual(["a", "-b", "-c", "d"]);
+    expect(into.find((l) => l.id === "c")!.parent).toBe("a");
+    expect(order(moveLayer(layers, "d", "a", "b"))).toEqual(["a", "-d", "-b", "c"]);
+    // A layer moves with what is inside it.
+    expect(order(moveLayer(layers, "a", "d"))).toEqual(["c", "d", "-a", "--b"]);
+    expect(order(moveLayer(layers, "a", null))).toEqual(["c", "d", "a", "-b"]);
+    const out = moveLayer(layers, "b", null, "a");
+    expect(order(out)).toEqual(["b", "a", "c", "d"]);
+    expect("parent" in out[0]!).toBe(false);
+    // Not into itself, nor into what is inside it, nor into a layer that is not there.
+    expect(moveLayer(layers, "a", "b")).toBe(layers);
+    expect(moveLayer(layers, "a", "a")).toBe(layers);
+    expect(moveLayer(layers, "a", "gone")).toBe(layers);
+    // A move to where it already is changes nothing.
+    expect(moveLayer(layers, "b", "a")).toBe(layers);
+  });
+
+  it("steps a layer up and down among its siblings", () => {
+    const layers = [
+      layer("a"),
+      layer("b", { parent: "a" }),
+      layer("c", { parent: "a" }),
+      layer("d"),
+    ];
+    expect(order(stepLayer(layers, "c", -1))).toEqual(["a", "-c", "-b", "d"]);
+    expect(order(stepLayer(layers, "b", 1))).toEqual(["a", "-c", "-b", "d"]);
+    expect(order(stepLayer(layers, "a", 1))).toEqual(["d", "a", "-b", "-c"]);
+    expect(stepLayer(layers, "b", -1)).toBe(layers);
+    expect(stepLayer(layers, "d", 1)).toBe(layers);
+  });
+
+  it("repairs a missing layer and a loop the same way on every device", () => {
+    const fine = [layer("a"), layer("b", { parent: "a" })];
+    expect(repairLayers(fine)).toBe(fine);
+    expect(repairLayers([layer("b", { parent: "gone" })])[0]).toEqual(layer("b"));
+    const loop = [layer("q", { parent: "p" }), layer("p", { parent: "q" })];
+    expect(repairLayers(loop).map((l) => l.parent ?? null)).toEqual(["p", null]);
+    expect(repairLayers([...loop].reverse()).map((l) => l.parent ?? null)).toEqual([null, "p"]);
+  });
+
+  describe("merging", () => {
+    const three = withLayers([layer("l1"), layer("l2"), layer("l3")]);
+    const change = (fn: (m: MapFile) => void) => {
+      const m = copy(three);
+      fn(m);
+      return m;
+    };
+
+    it("moves a sublayer to the top level when the other side removed its layer", () => {
+      const mine = change((m) => (m.layers[2]!.parent = "l2"));
+      const theirs = change((m) => m.layers.splice(1, 1));
+      const { map, clashes } = mergeMaps(three, mine, theirs);
+      expect(clashes).toEqual([]);
+      expect(map.layers.map((l) => l.id)).toEqual(["l1", "l3"]);
+      expect(map.layers[1]!.parent ?? null).toBeNull();
+      expect(parseMap(serialiseMap(map)).ok).toBe(true);
+    });
+
+    it("breaks a loop made by each side putting a layer inside the other", () => {
+      const mine = change((m) => (m.layers[1]!.parent = "l3"));
+      const theirs = change((m) => (m.layers[2]!.parent = "l2"));
+      const one = mergeMaps(three, mine, theirs).map;
+      const other = mergeMaps(three, theirs, mine).map;
+      // l2 has the smaller id, so it is the one taken out to the top level, on both devices.
+      for (const map of [one, other]) {
+        expect(parseMap(serialiseMap(map)).ok).toBe(true);
+        expect(map.layers.find((l) => l.id === "l2")!.parent ?? null).toBeNull();
+        expect(map.layers.find((l) => l.id === "l3")!.parent).toBe("l2");
+      }
+    });
+
+    it("keeps a reorder made on one side while the other changed something else", () => {
+      const mine = change((m) => (m.layers = [m.layers[2]!, m.layers[0]!, m.layers[1]!]));
+      const theirs = change((m) => {
+        m.layers[0]!.name = "Renamed";
+        m.layers.push(layer("l4"));
+      });
+      const { map, clashes } = mergeMaps(three, mine, theirs);
+      expect(clashes).toEqual([]);
+      expect(map.layers.map((l) => l.id)).toEqual(["l3", "l1", "l2", "l4"]);
+      expect(map.layers[1]!.name).toBe("Renamed");
+      // Both reordered: theirs is the frame, as for any list.
+      const theirsToo = change((m) => m.layers.reverse());
+      expect(mergeMaps(three, mine, theirsToo).map.layers.map((l) => l.id)).toEqual([
+        "l3",
+        "l2",
+        "l1",
+      ]);
+    });
+
+    it("takes a lock and a nesting made on different sides", () => {
+      const mine = change((m) => (m.layers[0]!.locked = true));
+      const theirs = change((m) => (m.layers[1]!.parent = "l1"));
+      const { map, clashes } = mergeMaps(three, mine, theirs);
+      expect(clashes).toEqual([]);
+      expect(map.layers[0]!.locked).toBe(true);
+      expect(map.layers[1]!.parent).toBe("l1");
+    });
+  });
+});
+
+describe("a label written on the map", () => {
+  const label = (extra: Record<string, unknown> = {}): MapFeature =>
+    ({
+      id: "t1",
+      kind: "label",
+      layer: "l1",
+      at: [5, 6],
+      entry: null,
+      label: "The Grey Sea",
+      child: null,
+      ...extra,
+    }) as MapFeature;
+  const withLabel = (extra: Record<string, unknown> = {}) =>
+    edit((m) => m.features.push(label(extra)));
+
+  it("is written on one line, its look after its words, and reads back the same", () => {
+    const text = serialiseMap(withLabel({ spacing: 0.3, rotate: -15, color: "#336699", size: 28 }));
+    expect(text).toContain(
+      '{"id":"t1","kind":"label","layer":"l1","at":[5,6],"entry":null,"label":"The Grey Sea",' +
+        '"size":28,"color":"#336699","rotate":-15,"spacing":0.3,"child":null}',
+    );
+    const read = parseMap(text);
+    expect(read.ok && read.map.features[3]).toEqual(
+      label({ size: 28, color: "#336699", rotate: -15, spacing: 0.3 }),
+    );
+    expect(read.ok && serialiseMap(read.map)).toBe(text);
+  });
+
+  it("must have words, and a look within bounds", () => {
+    expect(parseMap(JSON.stringify(withLabel())).ok).toBe(true);
+    expect(parseMap(JSON.stringify(withLabel({ label: "" }))).ok).toBe(false);
+    expect(parseMap(JSON.stringify(withLabel({ label: null }))).ok).toBe(false);
+    expect(parseMap(JSON.stringify(withLabel({ size: 0 }))).ok).toBe(false);
+    expect(parseMap(JSON.stringify(withLabel({ color: "red" }))).ok).toBe(false);
+    expect(parseMap(JSON.stringify(withLabel({ at: undefined }))).ok).toBe(false);
+  });
+
+  it("merges item by item: a label changed on one side, a marker moved on the other", () => {
+    const start = withLabel();
+    const mine = copy(start);
+    (mine.features[3] as { label: string }).label = "The Ash Sea";
+    const theirs = copy(start);
+    (theirs.features[0] as { at: number[] }).at = [1, 1];
+    const merged = mergeMaps(start, mine, theirs);
+    expect(merged.clashes).toEqual([]);
+    expect((merged.map.features[3] as { label: string }).label).toBe("The Ash Sea");
+    expect((merged.map.features[0] as { at: number[] }).at).toEqual([1, 1]);
+  });
+
+  it("passes only labels when reordered", () => {
+    const m = withLabel();
+    expect(reorderFeature(m.features, "t1", -1)).toBe(m.features);
   });
 });

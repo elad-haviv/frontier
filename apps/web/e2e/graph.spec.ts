@@ -238,9 +238,9 @@ test("CUJ 6: a link just written, and a new entry, among the neighbours", async 
 }, info) => {
   // The tab opens before the queue has sent the change; the link shows once it is sent.
   await page.goto(entry(MIRA));
-  // On a phone, Edit sits in the top line.
+  // On a phone, Edit sits in the top line; on a desktop, in the bar at the top of the page.
   await page
-    .locator(".entry-head .edit-link, .phone-bar .edit-link")
+    .locator(".sticky-line .edit-link, .phone-bar .edit-link")
     .locator("visible=true")
     .click();
   await expect(page).toHaveURL(edit(MIRA));
