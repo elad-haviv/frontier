@@ -268,8 +268,13 @@ test.describe("with a mouse", () => {
     const place = panel.getByRole("button", { name: /^Place / });
     const placeName = (await place.getAttribute("aria-label"))!;
     await named(placeName, placeName);
-    await named("Move up", "Move up");
-    await named("Move down", "Move down");
+    const layer = (await panel.locator(".lt-layer .lt-name").first().textContent())!;
+    await named(`Hide ${layer}`, `Hide ${layer}`);
+    // The less used buttons of a row show while it is pointed at or has the focus.
+    await panel.locator(".lt-layer").first().focus();
+    await named(`Lock ${layer}`, `Lock ${layer}`);
+    await named(`Properties of ${layer}`, `Properties of ${layer}`);
+    await named("Add a layer", "Add a layer");
     await panel
       .getByRole("button", { name: /^More for / })
       .last()

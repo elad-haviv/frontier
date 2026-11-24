@@ -313,7 +313,7 @@ export function countFeatures(
 ): TimeCounts {
   const counts = { follows: 0, undated: 0, noSpan: 0, timeless: 0 };
   for (const feature of map.features) {
-    if (hidden.has(feature.layer)) continue;
+    if (hidden.has(feature.layer) || hidden.has(feature.id)) continue;
     const found = spanFor(feature, time);
     const points = found.span && time.points.get(found.span.id);
     const numbered = points && (found.span!.point ? points.start : points.start || points.end);

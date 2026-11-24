@@ -2152,9 +2152,6 @@ input.map-title {
   gap: 0.35rem;
   padding: 0.2rem 0;
 }
-.layer-panel li.is-active input[type="text"] {
-  border-color: var(--accent);
-}
 .layer-panel label {
   display: flex;
   align-items: center;
@@ -3973,17 +3970,6 @@ button[data-offline] {
 .map-hint .primary[aria-disabled="true"] {
   opacity: 0.55;
   cursor: not-allowed;
-}
-/* The layer new features go into (MP-6). */
-.layer-panel li.is-active {
-  flex-wrap: wrap;
-}
-.layer-panel .drawing-into {
-  flex: 0 0 100%;
-  color: var(--ink-soft);
-  font-size: 0.75rem;
-  font-weight: 600;
-  letter-spacing: 0.02em;
 }
 .layer-panel .add-image {
   display: inline-flex;
