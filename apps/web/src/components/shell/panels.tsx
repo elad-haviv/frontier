@@ -89,6 +89,28 @@ export function writePrefs(kind: ScreenKind, change: Partial<ScreenPrefs>): void
   }
 }
 
+/** The left side bar's width in pixels: one for the device, whatever the screen. */
+export const LEFT_WIDTH = { fallback: 280, min: 200, max: 480 };
+const LEFT = "frontier.shell.left";
+
+export function readLeftWidth(): number {
+  try {
+    const saved = Number(localStorage.getItem(LEFT));
+    if (!Number.isFinite(saved) || saved <= 0) return LEFT_WIDTH.fallback;
+    return Math.min(LEFT_WIDTH.max, Math.max(LEFT_WIDTH.min, Math.round(saved)));
+  } catch {
+    return LEFT_WIDTH.fallback;
+  }
+}
+
+export function writeLeftWidth(px: number): void {
+  try {
+    localStorage.setItem(LEFT, String(Math.round(px)));
+  } catch {
+    /* the width lasts for this visit only */
+  }
+}
+
 export interface PageTitle {
   title: ReactNode;
   extra?: ReactNode;

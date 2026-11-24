@@ -301,6 +301,7 @@ button.tree-folder {
 /* ---- Entry -------------------------------------------------------------------------------- */
 
 .entry {
+  position: relative;
   max-width: 44rem;
   margin: 0 auto;
   padding: 1.75rem 1.25rem 6rem;
@@ -693,24 +694,16 @@ button.big {
   min-width: 0;
 }
 
-/* The title, with the pencil that renames it close beside. */
 .entry-title {
   flex: 1;
   min-width: 0;
-  display: flex;
-  align-items: baseline;
-  gap: var(--space-1);
-}
-.entry-title .entry-rename {
-  flex: none;
-  color: var(--ink-faint);
-  opacity: 0.7;
-}
-.entry-title:hover .entry-rename,
-.entry-title .entry-rename:focus-visible {
-  opacity: 1;
 }
 
+/* On a desktop the bar at the top names the folder; here it shows only for a move waiting to
+   be saved. */
+.is-desktop .entry-head .crumbs:not(.is-pending) {
+  display: none;
+}
 /* A rename waiting to be saved: the folder it goes to, marked. */
 .crumbs.is-pending {
   color: var(--accent);
@@ -771,6 +764,7 @@ button.big {
 }
 
 .editor-page {
+  position: relative;
   max-width: 52rem;
   margin: 0 auto;
 }
@@ -1255,12 +1249,6 @@ button.big {
   padding: 0.8rem 0.7rem;
 }
 
-.entry-actions {
-  flex: none;
-  display: flex;
-  gap: 0.4rem;
-}
-
 .edit-link.subtle {
   border-color: transparent;
   color: var(--ink-faint);
@@ -1550,6 +1538,91 @@ button.big {
 
 .props-time {
   margin: 0.6rem 0 0.3rem;
+}
+
+/* The author's own properties, in a group of their own below the ones with fields. */
+.custom-props {
+  margin-top: 1rem;
+  padding-top: 0.8rem;
+  border-top: 1px solid var(--rule);
+}
+.props-heading {
+  margin: 0 0 0.4rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+.custom-props-none {
+  margin: 0.3rem 0;
+}
+.custom-prop {
+  display: grid;
+  grid-template-columns: 6.5rem 1fr auto;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0.3rem 0;
+}
+/* The name reads as a label until it is pressed, when it can be changed. */
+.custom-prop-name {
+  min-width: 0;
+  padding: 0.4rem 0.3rem;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: none;
+  color: var(--ink-soft);
+  font: inherit;
+  text-overflow: ellipsis;
+}
+.custom-prop-name:hover,
+.custom-prop-name:focus {
+  border-color: var(--rule);
+  background: var(--paper-raised);
+  color: var(--ink);
+}
+.custom-prop-value {
+  min-width: 0;
+  display: flex;
+}
+.custom-prop-value > input[type="text"],
+.custom-prop-value > input[type="date"],
+.custom-prop-link {
+  flex: 1;
+  min-width: 0;
+}
+.custom-prop-value > input[type="text"],
+.custom-prop-value > input[type="date"],
+.custom-props-new select,
+.custom-props-new input {
+  min-width: 0;
+  padding: 0.4rem 0.55rem;
+  border: 1px solid var(--rule);
+  border-radius: 5px;
+  background: var(--paper-raised);
+  color: var(--ink);
+  font: inherit;
+}
+.custom-prop-value > input[type="checkbox"] {
+  width: 1.1rem;
+  height: 1.1rem;
+  margin: 0.55rem 0.3rem;
+}
+.custom-prop-other {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--mono);
+  font-size: 0.8rem;
+}
+.custom-props-add {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  margin-top: 0.3rem;
+}
+.custom-props-new {
+  margin-top: 0.4rem;
 }
 .props-time > span {
   display: block;
@@ -2303,12 +2376,6 @@ input.map-title {
   .title-row .entry-title,
   .title-row .rename-field {
     flex: 1 1 100%;
-  }
-  .entry-actions {
-    margin-bottom: 0.4rem;
-  }
-  .entry-actions .edit-link {
-    margin-top: 0.2rem;
   }
 }
 
@@ -3671,6 +3738,13 @@ input.map-title {
 .comment-list > li {
   padding: 0.5rem 0;
   border-top: 1px solid var(--rule);
+}
+/* The comment whose bubble in the margin was pressed. */
+.comment-list > li.is-focused {
+  margin: 0 -0.5rem;
+  padding: 0.5rem;
+  border-left: 2px solid var(--accent);
+  background: var(--accent-soft);
 }
 .comment-list p {
   margin: 0.2rem 0;

@@ -1,4 +1,4 @@
-/* The left side bar: a fixed head, the folders and places scrolling, a fixed foot. */
+/* The left side bar: a fixed head and places, the folders scrolling in the room left, a fixed foot. */
 .left-bar {
   display: flex;
   flex-direction: column;
@@ -82,17 +82,10 @@
 }
 
 .left-places {
+  flex: none;
   display: grid;
   gap: 2px;
-  margin-top: var(--space-3);
-  padding-top: var(--space-3);
-  border-top: 1px solid var(--rule);
-}
-.left-bar.is-drawer .left-places {
-  margin-top: 0;
-  padding-top: 0;
-  border-top: 0;
-  padding-bottom: var(--space-2);
+  padding: 0 var(--space-2) var(--space-2);
   border-bottom: 1px solid var(--rule);
 }
 .left-bar.is-rail .left-places {
@@ -221,4 +214,9 @@
   align-items: center;
   justify-content: space-between;
   margin-right: var(--space-1);
+}
+.left-heading-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
 }

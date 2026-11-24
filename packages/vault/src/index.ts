@@ -5,6 +5,7 @@ export * from "./lineEndings.js";
 export * from "./links.js";
 export * from "./names.js";
 export * from "./paths.js";
+export * from "./properties.js";
 export * from "./rename.js";
 export * from "./resolve.js";
 export * from "./fields.js";

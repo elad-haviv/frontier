@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { entry, noSidewaysScroll, openSideBar, pushToMain } from "./helpers.ts";
+import { edit, entry, noSidewaysScroll, openMenu, openSideBar, pushToMain } from "./helpers.ts";
 
 test("refuses the wrong password", async ({ browser }) => {
   // A fresh browser with no session.
@@ -165,4 +165,79 @@ test("opens the folder list and finds an entry in it", async ({ page }) => {
     .getByRole("link", { name: "Harbor", exact: true })
     .click();
   await expect(page.locator(".entry h1").first()).toHaveText("Harbor");
+});
+
+test("the entry's actions are icons at the top right, with Edit a pencil", async ({
+  page,
+  isMobile,
+}) => {
+  await page.goto(entry("01 Places/Harbor/Harbor.md"));
+  await expect(page.locator(".entry h1").first()).toHaveText("Harbor");
+  // Nothing beside the title now: the actions moved to the top of the page.
+  await expect(page.locator(".title-row").getByRole("button")).toHaveCount(0);
+  await expect(page.locator(".title-row").getByRole("link")).toHaveCount(0);
+
+  if (isMobile) {
+    // On a phone: Edit and "⋯" in the top line, beside the title.
+    const line = page.locator(".phone-bar");
+    await expect(line.getByRole("link", { name: "Edit", exact: true })).toBeVisible();
+    await openMenu(page, "More actions");
+    for (const item of ["Outline", "Graph", "Rename", "Move to…", "History", "Export"]) {
+      await expect(page.getByRole("menuitem", { name: item, exact: true })).toBeVisible();
+    }
+    await page.getByRole("menuitem", { name: "History", exact: true }).click();
+    await expect(
+      page.locator(".bottom-sheet").getByRole("tab", { name: "History" }),
+    ).toHaveAttribute("aria-selected", "true");
+    return;
+  }
+
+  // On a desktop: each action an icon in the bar at the top right, named in its tooltip.
+  const bar = page.getByRole("toolbar", { name: "Entry actions" });
+  const barBox = (await bar.boundingBox())!;
+  const titleBox = (await page.locator(".entry h1").first().boundingBox())!;
+  expect(barBox.y + barBox.height).toBeLessThanOrEqual(titleBox.y);
+  for (const name of [
+    "Outline",
+    "Graph",
+    "Full width",
+    "Rename",
+    "Move to…",
+    "History",
+    "Export",
+  ]) {
+    await expect(bar.getByRole("button", { name, exact: true })).toBeVisible();
+  }
+  await expect(page.getByRole("button", { name: "More actions", exact: true })).toHaveCount(0);
+  const pencil = bar.getByRole("link", { name: "Edit", exact: true });
+  await expect(pencil).toHaveText("");
+  await expect(pencil.locator("svg")).toBeVisible();
+  await pencil.hover();
+  await expect(page.getByRole("tooltip")).toHaveText("Edit");
+  await bar.getByRole("button", { name: "History", exact: true }).click();
+  await expect(page.locator(".right-bar").getByRole("tab", { name: "History" })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+  await page.getByRole("button", { name: "Hide the panels" }).click();
+
+  // Narrow, the less used ones go behind "⋯"; Outline, Graph and Edit stay.
+  await page.setViewportSize({ width: 820, height: 800 });
+  await expect(bar.getByRole("button", { name: "Rename", exact: true })).toBeHidden();
+  for (const name of ["Outline", "Graph"]) {
+    await expect(bar.getByRole("button", { name, exact: true })).toBeVisible();
+  }
+  await expect(pencil).toBeVisible();
+  await openMenu(page, "More actions");
+  for (const item of ["Rename", "Move to…", "History", "Export"]) {
+    await expect(page.getByRole("menuitem", { name: item, exact: true })).toBeVisible();
+  }
+  await page.getByRole("menuitem", { name: "Rename", exact: true }).click();
+  await expect(page.getByRole("textbox", { name: "New name for Harbor" })).toBeFocused();
+  await page.keyboard.press("Escape");
+  await noSidewaysScroll(page);
+
+  // The pencil opens the editor.
+  await pencil.click();
+  await expect(page).toHaveURL(edit("01 Places/Harbor/Harbor.md"));
 });

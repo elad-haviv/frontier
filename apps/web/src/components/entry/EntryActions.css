@@ -1,0 +1,52 @@
+/* The entry's actions, at the right of the bar at the top of the page. */
+.entry-tools {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.entry-tools-extra {
+  display: contents;
+}
+.entry-tools-rule {
+  width: 1px;
+  height: 1.1rem;
+  margin: 0 var(--space-1);
+  background: var(--rule);
+}
+/* Edit, the main action, sits apart at the end. */
+.entry-tools .entry-tool-edit {
+  margin-left: var(--space-2);
+  border: 1px solid var(--rule);
+}
+/* "⋯" only where the bar is narrow: then it holds what the bar has no room for. */
+.entry-tools-more {
+  display: none;
+}
+@container entry-bar (max-width: 36rem) {
+  .entry-tools-extra,
+  .entry-tools-rule {
+    display: none;
+  }
+  .entry-tools-more {
+    display: contents;
+  }
+}
+
+.entry-phone-tools {
+  display: flex;
+  align-items: center;
+}
+
+/* Edit is an icon here, not the outlined word it was: the plain icon button's measure. */
+.entry-tools .edit-link,
+.phone-action .entry-phone-tools .edit-link {
+  margin: 0;
+  padding: 0 0.5rem;
+  font-weight: inherit;
+  color: var(--ink-soft);
+}
+.entry-tools .edit-link:hover,
+.phone-action .entry-phone-tools .edit-link:hover {
+  color: var(--ink);
+}
