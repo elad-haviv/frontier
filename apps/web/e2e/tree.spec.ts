@@ -318,3 +318,25 @@ test("a long press on a folder opens its menu", async ({ page, isMobile }) => {
   await page.keyboard.press("Escape");
   await expect(menu).toHaveCount(0);
 });
+
+test("New entry beside New folder starts an entry at the top of the library", async ({
+  page,
+  isMobile,
+}) => {
+  // In view is an entry in a folder; the side bar's own New entry would start there.
+  await openTree(page, "01 Places/Harbor/Harbor.md");
+  const button = page.locator(".left-tree").getByRole("button", { name: "New entry", exact: true });
+  if (!isMobile) {
+    await button.hover();
+    await expect(page.getByRole("tooltip")).toHaveText("New entry");
+  }
+  await button.click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog.getByRole("combobox", { name: "Folder", exact: true })).toHaveText(
+    "Top of the library",
+  );
+  await dialog.getByLabel("Name").fill("Lighthouse Keepers");
+  await dialog.getByRole("button", { name: "Make the entry", exact: true }).click();
+  await expect(page).toHaveURL(/\/edit\/Lighthouse%20Keepers\.md\?new=1$/);
+  await expect(page.locator(".editor-path")).toHaveText("Lighthouse Keepers");
+});

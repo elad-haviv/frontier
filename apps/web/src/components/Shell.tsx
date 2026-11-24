@@ -33,10 +33,13 @@ import { PhoneBar } from "./shell/PhoneBar.tsx";
 import { BottomSheet, RightBar } from "./shell/RightBar.tsx";
 import {
   kindOf,
+  LEFT_WIDTH,
+  readLeftWidth,
   readPrefs,
   type ScreenKind,
   ShellStore,
   ShellStoreProvider,
+  writeLeftWidth,
   writePrefs,
 } from "./shell/panels.tsx";
 import { useFocusTrap } from "./shell/useFocusTrap.ts";
@@ -97,7 +100,8 @@ export function scrollPageToTop(): void {
 /** Below this width the side bars become a drawer and a bottom sheet. */
 const PHONE = "(max-width: 47.99rem)";
 
-function usePhone(): boolean {
+/** Whether the shell is a phone's: a drawer and a bottom sheet in place of the side bars. */
+export function usePhone(): boolean {
   return useSyncExternalStore(
     (changed) => {
       const query = window.matchMedia(PHONE);
@@ -166,6 +170,7 @@ export function Shell({ children }: { children: ReactNode }) {
   const [making, setMaking] = useState<string | null>(null);
   const menuButton = useRef<HTMLButtonElement>(null);
   const rightSize = useRef<number | null>(null);
+  const leftSize = useRef<number | null>(null);
   const dialogs = useDialogs();
   const toast = useToast();
   const refresh = useCallback(() => {
@@ -290,6 +295,7 @@ export function Shell({ children }: { children: ReactNode }) {
     onLogout: () => void logout(),
   };
   const rightOpen = !phone && store.open !== null;
+  const leftOpen = !phone && !rail;
   const width = readPrefs(kind).width;
 
   return (
@@ -312,19 +318,9 @@ export function Shell({ children }: { children: ReactNode }) {
                 />
               </div>
             ) : null}
-            {!phone ? (
-              <aside className={`side${rail ? " is-rail" : ""}`} aria-label="Side bar">
-                {rail ? (
-                  <Rail onExpand={() => fold(false)} {...actions} />
-                ) : (
-                  <LeftBar
-                    tree={tree}
-                    current={current}
-                    onRetryTree={refresh}
-                    onCollapse={() => fold(true)}
-                    {...actions}
-                  />
-                )}
+            {!phone && rail ? (
+              <aside className="side is-rail" aria-label="Side bar">
+                <Rail onExpand={() => fold(false)} {...actions} />
               </aside>
             ) : null}
             <Group
@@ -333,11 +329,42 @@ export function Shell({ children }: { children: ReactNode }) {
               id="shell"
               inert={drawer}
               onLayoutChanged={(_, meta) => {
-                if (meta.isUserInteraction && rightSize.current) {
-                  writePrefs(kind, { width: Math.round(rightSize.current) });
-                }
+                if (!meta.isUserInteraction) return;
+                if (rightSize.current) writePrefs(kind, { width: Math.round(rightSize.current) });
+                if (leftSize.current) writeLeftWidth(leftSize.current);
               }}
             >
+              {leftOpen && (
+                <>
+                  {/* The left side bar's width is the device's, the same on every screen. */}
+                  <Panel
+                    id="left"
+                    className="shell-left"
+                    defaultSize={`${readLeftWidth()}px`}
+                    minSize={LEFT_WIDTH.min}
+                    maxSize={LEFT_WIDTH.max}
+                    groupResizeBehavior="preserve-pixel-size"
+                    onResize={(size) => {
+                      leftSize.current = size.inPixels;
+                    }}
+                  >
+                    <aside className="side" aria-label="Side bar">
+                      <LeftBar
+                        tree={tree}
+                        current={current}
+                        onRetryTree={refresh}
+                        onCollapse={() => fold(true)}
+                        {...actions}
+                      />
+                    </aside>
+                  </Panel>
+                  <Separator
+                    className="splitter left-splitter"
+                    id="left-splitter"
+                    aria-label="Side bar width"
+                  />
+                </>
+              )}
               <Panel id="main" minSize="30%" className="shell-main">
                 <UpdateBar />
                 <DeviceNotices />
@@ -345,7 +372,11 @@ export function Shell({ children }: { children: ReactNode }) {
               </Panel>
               {rightOpen && (
                 <>
-                  <Separator className="right-splitter" id="right-splitter" />
+                  <Separator
+                    className="splitter right-splitter"
+                    id="right-splitter"
+                    aria-label="Panels width"
+                  />
                   <Panel
                     key={kind}
                     id="right"

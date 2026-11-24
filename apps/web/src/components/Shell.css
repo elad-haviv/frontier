@@ -46,24 +46,35 @@
   scroll-padding-top: 4rem;
 }
 
-/* The splitter between the page and the panels: a hairline, with a wider grip to hold. */
-.right-splitter {
+/* The splitters beside the page: a hairline, with a wider grip to hold. Each is reached with Tab
+   and moved with the arrow keys. */
+.splitter {
   position: relative;
+  z-index: var(--layer-side);
   flex: none;
   width: 1px;
   background: var(--rule);
   outline: none;
 }
-.right-splitter::after {
+.splitter::after {
   content: "";
   position: absolute;
   inset: 0 -3px;
 }
-.right-splitter:hover,
-.right-splitter[data-separator="active"],
-.right-splitter:focus-visible {
+.splitter:hover,
+.splitter[data-separator="active"],
+.splitter:focus-visible {
   background: var(--accent);
   box-shadow: 0 0 0 1px var(--accent);
+}
+
+/* The left side bar inside its panel: the panel gives the width, the splitter its edge. */
+.shell-left {
+  height: 100%;
+}
+.shell-left > .side {
+  width: 100%;
+  border-right: 0;
 }
 
 /* The phone: the top line, then the page. */
