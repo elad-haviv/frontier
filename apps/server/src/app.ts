@@ -409,6 +409,8 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
 
   // Coolify's proxy sits in front, so the client address and protocol come from its headers.
   const app = Fastify({ trustProxy: true, logger: options.logger ?? false });
+  // A failed AI call is written to the server's log too, or production shows only a bare 502.
+  ai.logFailuresTo(app.log);
 
   // Keep the unparsed body: the webhook signature is computed over the exact bytes sent.
   app.addContentTypeParser("application/json", { parseAs: "buffer" }, (request, body, done) => {

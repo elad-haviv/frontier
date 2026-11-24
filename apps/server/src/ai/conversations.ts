@@ -47,6 +47,23 @@ export const Turn = z.object({
     .default(null),
   /** Set when that addition was kept as a draft. */
   kept: z.object({ path: z.string(), at: z.string() }).nullable().default(null),
+  /** What was done to answer, as the page showed it while it worked; null on older turns. */
+  trace: z
+    .object({
+      steps: z.array(
+        z.object({
+          text: z.string(),
+          detail: z.string().optional(),
+          entries: z.array(z.string()).optional(),
+        }),
+      ),
+      /** The model's reasoning, for models that reason; empty for others. */
+      reasoning: z.string(),
+      /** How long the answer took, in milliseconds. */
+      ms: z.number(),
+    })
+    .nullable()
+    .default(null),
 });
 export type Turn = z.infer<typeof Turn>;
 
