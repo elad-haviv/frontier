@@ -308,13 +308,14 @@ Then, separately: globes (decision 4), and the AI option if it's ever chosen (de
 The owner approved the design on 2026-11-24 with these decisions. Where they differ from the
 recommendations above, they win.
 
-1. **Holes and islands: not decided yet.** The owner suggested grouping features (a group with a
-   label) instead of multi-piece zones, and that is being mocked up separately. For release 19a:
-   when the chosen areas form several separate pieces, Make zone makes **one zone per piece**, all in
-   the current layer (named "‹name›", "‹name› 2", … when a name is given, unnamed otherwise), and
-   selects them all. A **hole** (a lake inside a country) is **filled** for now. The zone schema gets
-   no new fields. The tracing returns rings with outer/hole roles, kept apart from the code that
-   turns them into zones, so the grouping and holes decision can plug in later.
+1. **Holes and islands: one zone per piece, holes filled (decided).** A zone stays one ring; the
+   zone schema gets no new fields. When the chosen areas form several separate pieces, Make zone
+   makes **one zone per piece**, all in the current layer (unnamed, as a new zone is today), and
+   selects the largest. They are not grouped automatically: feature groups (a group with a label)
+   are a separate feature, and the author groups the pieces there if wanted. A **hole** (a lake
+   inside a country) is **filled**. The tracing still returns rings with outer/hole roles
+   (`findAreas/contour.ts`), kept apart from the code that turns them into zones
+   (`findAreas/zones.ts`), so this rule lives in one place.
 2. **After Make zone, the tool stays in Find areas.**
 3. **AI segmentation: not now.**
 4. **Globes are included in the first release.** The globe's image is analysed in its own
