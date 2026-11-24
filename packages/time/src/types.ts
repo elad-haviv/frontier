@@ -21,6 +21,20 @@ export interface RoughLength extends Rough {
 /** A stored start or end: a rough number, "open", or null when the author gave none. */
 export type End = Rough | "open" | null;
 
+/**
+ * A tie (stage 17): a start or end placed from a point of another span, plus or minus some years.
+ * The span's own `start` or `end` still holds the number worked out from it, so whatever reads
+ * plain numbers (maps, checks, older copies of the app) reads the same.
+ */
+export interface Tie {
+  /** The span it is tied to. */
+  readonly span: string;
+  /** Which of that span's points. */
+  readonly edge: "start" | "end";
+  /** Years added to that point: a lowest and a highest. Negative for "before". */
+  readonly plus: { readonly low: number; readonly high: number };
+}
+
 export interface Span {
   readonly id: string;
   readonly lane: string;
@@ -30,6 +44,10 @@ export interface Span {
   readonly start: End;
   readonly end: End;
   readonly length: RoughLength | null;
+  /** Where the start is tied to, if it is (stage 17). */
+  readonly startFrom?: Tie | null | undefined;
+  /** Where the end is tied to, if it is (stage 17). */
+  readonly endFrom?: Tie | null | undefined;
 }
 
 export interface Relation {
