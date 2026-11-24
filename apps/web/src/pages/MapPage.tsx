@@ -11,7 +11,10 @@ import { MapPin, Layers as LayersIcon, Palette, Sparkles } from "lucide-react";
 import {
   hiddenWithin,
   isLined,
-  lockedWithin, orderFeature, reorderFeature } from "@frontier/schema";
+  lockedWithin,
+  orderFeature,
+  reorderFeature,
+} from "@frontier/schema";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { entryUrl, mapUrl } from "../api.ts";
