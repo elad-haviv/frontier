@@ -1,4 +1,6 @@
-import type { EntryFields } from "@frontier/schema";
+import type { EntryFields, EntryResponse } from "@frontier/schema";
+import { customProperties, linkOf } from "@frontier/vault";
+import { useMemo } from "react";
 import { Link } from "react-router-dom";
 import { entryUrl } from "../api.ts";
 
@@ -83,4 +85,60 @@ export function Fields({ fields }: { fields: EntryFields }) {
       ))}
     </dl>
   );
+}
+
+/**
+ * The author's own properties, under the type and dates: each key with its value. Links go to
+ * their entries; values only the text can show are left out.
+ */
+export function CustomFields({ text, links }: { text: string; links: EntryResponse["links"] }) {
+  const list = useMemo(
+    () => (customProperties(text) ?? []).filter((p) => p.kind !== "other"),
+    [text],
+  );
+  if (list.length === 0) return null;
+  return (
+    <dl className="fields custom-fields">
+      {list.map((p) => (
+        <div key={p.key}>
+          <dt>{p.key}</dt>
+          <dd>
+            <PropertyShown value={p.value} kind={p.kind} links={links} />
+          </dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
+function PropertyShown({
+  value,
+  kind,
+  links,
+}: {
+  value: unknown;
+  kind: string;
+  links: EntryResponse["links"];
+}) {
+  if (value === null || value === undefined || value === "") {
+    return <span className="muted">—</span>;
+  }
+  if (kind === "checkbox") return <>{value === true ? "Yes" : "No"}</>;
+  if (kind === "list") return <>{(value as unknown[]).map(String).join(", ")}</>;
+  if (kind === "link") {
+    const name = linkOf(value)!;
+    const label = name.includes("|") ? name.slice(name.indexOf("|") + 1) : name.split("/").pop();
+    // The server found the link with the others in the text, frontmatter included.
+    const found = links.find((l) => l.raw === value);
+    return found?.kind === "resolved" && found.target ? (
+      <Link to={entryUrl(found.target)} className="link-resolved">
+        {label}
+      </Link>
+    ) : (
+      <span className="link-unresolved" title="No entry of this name">
+        {label}
+      </span>
+    );
+  }
+  return <>{String(value)}</>;
 }

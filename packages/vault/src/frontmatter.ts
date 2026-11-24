@@ -1,4 +1,4 @@
-import { isMap, isScalar, parseDocument, stringify } from "yaml";
+import { isMap, isScalar, parseDocument, type Scalar, stringify, type YAMLMap } from "yaml";
 
 export interface SplitNote {
   /** The frontmatter block including both "---" lines and the line break after the closing one. */
@@ -122,7 +122,8 @@ function eolOf(text: string): string {
 }
 
 function serialisePair(key: string, value: unknown, eol: string): string {
-  const out = stringify({ [key]: value }, { lineWidth: 0 });
+  // An empty value is written as Obsidian writes it: the key and nothing after it.
+  const out = value === null ? `${keyText(key)}:\n` : stringify({ [key]: value }, { lineWidth: 0 });
   return eol === "\n" ? out : out.replace(/\n/g, eol);
 }
 
@@ -150,6 +151,39 @@ export function setFrontmatterKey(text: string, key: string, value: unknown): st
     const needsBreak = normalised !== "" && !normalised.endsWith("\n");
     next = normalised + (needsBreak ? "\n" : "") + pair;
   }
+  return head + (eol === "\n" ? next : next.replace(/\n/g, eol)) + tail + body;
+}
+
+/** A key as YAML writes it: quoted only when it must be. */
+function keyText(key: string): string {
+  const pair = stringify({ [key]: 0 }, { lineWidth: 0 });
+  /* c8 ignore next */
+  if (!pair.endsWith(": 0\n")) throw new FrontmatterError("That name cannot be a key.");
+  return pair.slice(0, -": 0\n".length);
+}
+
+/**
+ * Renames one frontmatter key in place. Its value, its place among the keys, and every other
+ * line stay as they were. A missing key changes nothing. Throws FrontmatterError when the block
+ * cannot be parsed or another key already has the new name.
+ */
+export function renameFrontmatterKey(text: string, from: string, to: string): string {
+  if (from === to) return text;
+  const { frontmatter, body } = splitFrontmatter(text);
+  if (frontmatter === null) return text;
+  const { head, inner, tail } = innerOf(frontmatter);
+  const eol = eolOf(frontmatter);
+  const normalised = inner.replace(/\r\n/g, "\n");
+  // Finds the keys, and refuses a block that cannot be read.
+  const keys = keySpans(normalised).map((s) => s.key);
+  if (!keys.includes(from)) return text;
+  if (keys.includes(to)) throw new FrontmatterError(`There is already a key "${to}".`);
+  const doc = parseDocument(normalised);
+  const pair = (doc.contents as YAMLMap).items.find(
+    (p) => isScalar(p.key) && String(p.key.value) === from,
+  )!;
+  const range = (pair.key as Scalar).range!;
+  const next = normalised.slice(0, range[0]) + keyText(to) + normalised.slice(range[1]);
   return head + (eol === "\n" ? next : next.replace(/\n/g, eol)) + tail + body;
 }
 
