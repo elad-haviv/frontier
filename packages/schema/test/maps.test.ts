@@ -464,3 +464,58 @@ describe("a path or zone style", () => {
     expect((merged.map.features[1] as { style?: string }).style).toBe("k3v9x2pa");
   });
 });
+
+describe("a label written on the map", () => {
+  const label = (extra: Record<string, unknown> = {}): MapFeature =>
+    ({
+      id: "t1",
+      kind: "label",
+      layer: "l1",
+      at: [5, 6],
+      entry: null,
+      label: "The Grey Sea",
+      child: null,
+      ...extra,
+    }) as MapFeature;
+  const withLabel = (extra: Record<string, unknown> = {}) =>
+    edit((m) => m.features.push(label(extra)));
+
+  it("is written on one line, its look after its words, and reads back the same", () => {
+    const text = serialiseMap(withLabel({ spacing: 0.3, rotate: -15, color: "#336699", size: 28 }));
+    expect(text).toContain(
+      '{"id":"t1","kind":"label","layer":"l1","at":[5,6],"entry":null,"label":"The Grey Sea",' +
+        '"size":28,"color":"#336699","rotate":-15,"spacing":0.3,"child":null}',
+    );
+    const read = parseMap(text);
+    expect(read.ok && read.map.features[3]).toEqual(
+      label({ size: 28, color: "#336699", rotate: -15, spacing: 0.3 }),
+    );
+    expect(read.ok && serialiseMap(read.map)).toBe(text);
+  });
+
+  it("must have words, and a look within bounds", () => {
+    expect(parseMap(JSON.stringify(withLabel())).ok).toBe(true);
+    expect(parseMap(JSON.stringify(withLabel({ label: "" }))).ok).toBe(false);
+    expect(parseMap(JSON.stringify(withLabel({ label: null }))).ok).toBe(false);
+    expect(parseMap(JSON.stringify(withLabel({ size: 0 }))).ok).toBe(false);
+    expect(parseMap(JSON.stringify(withLabel({ color: "red" }))).ok).toBe(false);
+    expect(parseMap(JSON.stringify(withLabel({ at: undefined }))).ok).toBe(false);
+  });
+
+  it("merges item by item: a label changed on one side, a marker moved on the other", () => {
+    const start = withLabel();
+    const mine = copy(start);
+    (mine.features[3] as { label: string }).label = "The Ash Sea";
+    const theirs = copy(start);
+    (theirs.features[0] as { at: number[] }).at = [1, 1];
+    const merged = mergeMaps(start, mine, theirs);
+    expect(merged.clashes).toEqual([]);
+    expect((merged.map.features[3] as { label: string }).label).toBe("The Ash Sea");
+    expect((merged.map.features[0] as { at: number[] }).at).toEqual([1, 1]);
+  });
+
+  it("passes only labels when reordered", () => {
+    const m = withLabel();
+    expect(reorderFeature(m.features, "t1", -1)).toBe(m.features);
+  });
+});

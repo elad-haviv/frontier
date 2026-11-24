@@ -114,7 +114,36 @@ export const MapFeature = z.discriminatedUnion("kind", [
   z
     .object({ ...featureBase, kind: z.literal("zone"), points: z.array(Pair).min(3), curve, style })
     .passthrough(),
+  /**
+   * Words written on the map, such as the name of a sea. `label` holds the words, so a label
+   * always has a name. Its size is in pixels on the screen; it is upright unless turned.
+   */
+  z
+    .object({
+      ...featureBase,
+      kind: z.literal("label"),
+      at: Pair,
+      label: z.string().min(1).max(200),
+      size: z.number().min(6).max(160).optional(),
+      color: z
+        .string()
+        .regex(/^#[0-9a-fA-F]{6}$/)
+        .optional(),
+      /** Degrees, clockwise on the screen. */
+      rotate: z.number().min(-360).max(360).optional(),
+      /** The room between letters, in ems. */
+      spacing: z.number().min(-0.2).max(2).optional(),
+    })
+    .passthrough(),
 ]);
+/** A path or a zone: a feature drawn through points. */
+export type LinedFeature = Extract<MapFeature, { kind: "path" | "zone" }>;
+/** A marker or a label: a feature at one place. */
+export type PlacedFeature = Extract<MapFeature, { kind: "marker" | "label" }>;
+export type MapLabel = Extract<MapFeature, { kind: "label" }>;
+export const isLined = (f: MapFeature): f is LinedFeature => f.kind === "path" || f.kind === "zone";
+/** The look a label has when nothing else is set. */
+export const LABEL_LOOK = { size: 16, color: "#2a2420", rotate: 0, spacing: 0 } as const;
 export type MapFeature = z.infer<typeof MapFeature>;
 
 const unique = (items: { id: string }[]) => new Set(items.map((i) => i.id)).size === items.length;
@@ -184,6 +213,10 @@ const ITEM_KEYS: Record<string, string[]> = {
     "label",
     "icon",
     "style",
+    "size",
+    "color",
+    "rotate",
+    "spacing",
     "child",
     "span",
     "shapes",
