@@ -33,6 +33,8 @@ export interface CompleteInput<T> {
   timeoutMs?: number;
   /** Whether a call that timed out is sent again. A timed-out call may still have been billed. */
   retryOnTimeout?: boolean;
+  /** Stops the call, as when the author presses Stop: it is not sent again. */
+  signal?: AbortSignal;
 }
 
 export interface AiProviderDeps {
@@ -112,7 +114,10 @@ export class AiProvider {
     }
 
     let attempt = await this.attempt(key.key, model, input);
-    const again = attempt.retry && !(attempt.timedOut && input.retryOnTimeout === false);
+    const again =
+      attempt.retry &&
+      !input.signal?.aborted &&
+      !(attempt.timedOut && input.retryOnTimeout === false);
     if (!attempt.ok && again) attempt = await this.attempt(key.key, model, input);
     if (!attempt.ok) {
       this.lastError = attempt.error ?? "The AI provider did not answer.";
@@ -227,6 +232,7 @@ export class AiProvider {
 
   private async request<T>(key: string, model: string, input: CompleteInput<T>): Promise<Attempt> {
     const none = { promptTokens: 0, completionTokens: 0, costUsd: 0 };
+    const wait = AbortSignal.timeout(input.timeoutMs ?? this.d.timeoutMs ?? 60_000);
     let res: Response;
     try {
       res = await this.fetch(`${this.d.config.openrouterUrl}/chat/completions`, {
@@ -245,9 +251,12 @@ export class AiProvider {
           stream: false,
           ...(input.maxTokens ? { max_tokens: input.maxTokens } : {}),
         }),
-        signal: AbortSignal.timeout(input.timeoutMs ?? this.d.timeoutMs ?? 60_000),
+        signal: input.signal ? AbortSignal.any([wait, input.signal]) : wait,
       });
     } catch (err) {
+      if (input.signal?.aborted) {
+        return { ...none, ok: false, retry: false, error: "The call was stopped." };
+      }
       const timedOut = err instanceof Error && err.name === "TimeoutError";
       return {
         ...none,
