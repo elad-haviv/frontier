@@ -4,6 +4,7 @@ import { rmSync } from "node:fs";
 import { createServer } from "node:http";
 import { dirname, join } from "node:path";
 import process from "node:process";
+import { clearTimeout, setTimeout } from "node:timers";
 import { fileURLToPath } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -30,8 +31,13 @@ const PICTURE = Buffer.from(
 // Not 127.0.0.1: where localhost resolves there (the CI machines), PUBLIC_URL makes it this
 // server's own address, which the image route refuses. Linux answers on all of 127/8.
 const PICTURE_HOST = "127.0.0.2";
+const slow = { started: 0, stopped: 0 };
 const pictures = createServer((req, res) => {
-  if (req.url?.split("?")[0].endsWith(".png")) {
+  if (req.url === "/ai-slow") {
+    // How many slow writing-help calls the AI stand-in below began, and how many were stopped.
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end(JSON.stringify(slow));
+  } else if (req.url?.split("?")[0].endsWith(".png")) {
     res.writeHead(200, { "content-type": "image/png" });
     res.end(PICTURE);
   } else {
@@ -96,8 +102,14 @@ function lore(user) {
     };
   }
   if (user.includes("=== Passage")) {
+    // Writing help: the request's first words, and which try it is when asked again.
     const request = /Request: (.*)$/.exec(user)?.[1] ?? "";
-    return { text: `A rewritten passage (${request.split(":")[0]}).` };
+    const tries = (user.match(/--- Suggestion \d+/g) ?? []).length;
+    return {
+      text: tries
+        ? `Another rewritten passage (${request.split(":")[0]}, try ${tries + 1}).`
+        : `A rewritten passage (${request.split(":")[0]}).`,
+    };
   }
   const first = /=== Entry: (.*)\nTitle: .*\n\n([\s\S]*?)\n=== End/.exec(user);
   const path = first?.[1] ?? "";
@@ -182,12 +194,25 @@ const ai = createServer((req, res) => {
           : user.startsWith("Entries:")
             ? lore(user)
             : { reply: "ok" };
-    res.end(
-      JSON.stringify({
-        choices: [{ message: { content: JSON.stringify(answer) } }],
-        usage: { prompt_tokens: 100, completion_tokens: 20, cost: 0.001 },
-      }),
-    );
+    const send = () =>
+      res.end(
+        JSON.stringify({
+          choices: [{ message: { content: JSON.stringify(answer) } }],
+          usage: { prompt_tokens: 100, completion_tokens: 20, cost: 0.001 },
+        }),
+      );
+    // Writing help asked to go "slowly" answers late, so a test can press Stop meanwhile; the
+    // call it stops is counted, for the test to see that it was stopped.
+    if (/Request: .*slowly/.test(user)) {
+      slow.started++;
+      const late = setTimeout(send, 8000);
+      res.on("close", () => {
+        if (!res.writableFinished) {
+          clearTimeout(late);
+          slow.stopped++;
+        }
+      });
+    } else send();
   });
 });
 await new Promise((resolve) => ai.listen(0, "127.0.0.1", resolve));

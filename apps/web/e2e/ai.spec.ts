@@ -154,7 +154,7 @@ test("CUJ 11: asks the lore, reads cited answers, and keeps a drafted addition a
   await expect(page).toHaveURL(/\/ask$/);
 });
 
-test("writing help rewrites a passage in the editor, shown as a difference first", async ({
+test("writing help on a phone: a card under the passage, and asking the lore about it", async ({
   page,
 }, info) => {
   test.skip(info.project.name !== "phone", "The AI settings are one per server.");
@@ -165,26 +165,31 @@ test("writing help rewrites a passage in the editor, shown as a difference first
   await page.getByRole("button", { name: "Save" }).click();
   await expect(page.locator(".banner-ok")).toHaveText("Saved.");
 
+  // Asking the lore is in the toolbar's "⋯": the Ask page opens with the passage quoted.
   await openEditor(page, "02 People/Shade.md");
-  // The cursor in the paragraph is enough: the whole paragraph is the passage.
   await page.locator(".cm-content").getByText("A quiet figure.").click();
-  // At phone size, Writing help and Comment are in the toolbar's "⋯".
-  await pressTool(page, "Writing help");
-  const panel = page.locator(".writing-panel");
-  await expect(panel.locator(".writing-passage")).toContainText("A quiet figure.");
-  await panel.getByRole("button", { name: "Shorter" }).click();
-  await expect(panel.locator(".diff")).toContainText("A rewritten passage (Make it shorter)");
-  await panel.getByRole("button", { name: "Replace" }).click();
-  await expect(panel).toHaveCount(0);
+  await pressTool(page, "Ask the lore about this…");
+  await expect(page).toHaveURL(/\/ask$/);
+  await expect(page.getByLabel("A question")).toHaveValue(
+    /^About this passage of "Shade":\n"""\nA quiet figure\.[^"]*\n"""\n$/,
+  );
+
+  // The cursor in the paragraph is enough: the whole paragraph is the passage. Help is the first
+  // button on the bar.
+  await openEditor(page, "02 People/Shade.md");
+  await page.locator(".cm-content").getByText("A quiet figure.").click();
+  await page.locator(".edit-toolbar").getByRole("button", { name: "Help", exact: true }).click();
+  const card = page.getByRole("region", { name: "Writing help" });
+  await expect(page.locator(".cm-help-passage")).toContainText("A quiet figure.");
+  await card.getByRole("button", { name: "Shorter" }).click();
+  await expect(card.locator(".help-card-suggestion")).toContainText(
+    "A rewritten passage (Make it shorter)",
+  );
+  await expect(card).toBeInViewport();
+  await card.getByRole("button", { name: "Keep" }).click();
+  await expect(card).toHaveCount(0);
   await expect(page.locator(".cm-content")).toContainText("A rewritten passage (Make it shorter).");
   await expect(page.locator(".cm-content")).not.toContainText("A quiet figure.");
-
-  // Asked about the passage, the lore answers in the panel.
-  await pressTool(page, "Writing help");
-  await panel.getByLabel("Ask the lore about this passage").fill("Who is this?");
-  await panel.getByRole("button", { name: "Ask" }).click();
-  await expect(panel.locator(".writing-answer")).toContainText("Open the conversation");
-  await panel.getByRole("button", { name: "Close" }).click();
 
   await discardDraft(page);
 });
@@ -210,11 +215,15 @@ test("comments on a passage: one for the author, one the AI works on", async ({ 
   await expect(page.locator(".cm-comment").first()).toBeVisible();
   await expect(page.getByRole("button", { name: "Comments (1)" })).toBeVisible();
 
-  await panel.getByRole("button", { name: "Work on it" }).click();
-  await expect(panel.locator(".diff")).toContainText(
+  // Its suggestion shows in the writing help card, under the passage.
+  await panel.getByRole("button", { name: "Suggest a change" }).click();
+  const card = page.getByRole("region", { name: "Writing help" });
+  await expect(card.locator(".help-card-suggestion")).toContainText(
     "A rewritten passage (Do what this comment on the passage asks)",
   );
-  await panel.getByRole("button", { name: "Replace" }).click();
+  await card.getByRole("button", { name: "Keep" }).click();
+  await expect(card).toHaveCount(0);
+  await page.getByRole("button", { name: "Comments", exact: true }).click();
   await expect(panel.locator(".comment-list > li")).toHaveCount(0);
   await expect(page.locator(".cm-content")).toContainText("A rewritten passage (Do what");
   await expect(page.locator(".cm-comment")).toHaveCount(0);
