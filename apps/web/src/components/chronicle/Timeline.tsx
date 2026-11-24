@@ -429,6 +429,11 @@ export function Timeline(p: Props) {
     const tag = (a as HTMLElement).tagName;
     return tag !== "INPUT" && tag !== "TEXTAREA" && tag !== "SELECT";
   };
+  /** Enter and Delete belong to a focused button, unless it is a bar: then they edit the event. */
+  const onBar = () => {
+    const a = document.activeElement as HTMLElement | null;
+    return !a || a === document.body || a.dataset["bar"] !== undefined;
+  };
   const eventRows = rows.filter((r): r is Extract<Row, { kind: "event" }> => r.kind === "event");
   const step = (by: number) => {
     if (!free() || eventRows.length === 0) return false;
@@ -470,7 +475,7 @@ export function Timeline(p: Props) {
     return true;
   });
   useShortcut("chronicle.delete", () => {
-    if (!free() || p.selected.length === 0) return false;
+    if (!onBar() || p.selected.length === 0) return false;
     const ids = [...p.selected];
     p.change((c) => ids.reduce((acc, id) => withoutSpan(acc, id), c));
     p.onSelect([]);
@@ -482,7 +487,7 @@ export function Timeline(p: Props) {
     return true;
   });
   useShortcut("chronicle.name", () => {
-    if (!free() || !primary) return false;
+    if (!onBar() || !primary) return false;
     p.onEdit("name");
     return true;
   });
