@@ -128,6 +128,8 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
   try {
     res = await fetch(url, { credentials: "same-origin", ...init, headers: headers(init) });
   } catch {
+    // Stopped on purpose, as by a Stop button: the server is not unreachable.
+    if (init?.signal?.aborted) throw new ApiFailure(0, "stopped", "Stopped.");
     if (watched) connection.unreachable();
     throw unreachable();
   }
@@ -135,6 +137,7 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
     (body: unknown) => ({ body }),
     () => null,
   );
+  if (init?.signal?.aborted) throw new ApiFailure(0, "stopped", "Stopped.");
   // A gateway's page, or a captive portal's, is not the server: as if it could not be reached.
   if (res.ok ? read === null : GATEWAY.has(res.status) && !isErrorBody(read?.body)) {
     if (watched) connection.unreachable();
@@ -163,9 +166,10 @@ const send = <T>(method: string, url: string, body?: unknown) =>
       : { headers: { "content-type": "application/json" }, body: JSON.stringify(body) }),
   });
 
-const post = <T>(url: string, body?: unknown) =>
+const post = <T>(url: string, body?: unknown, signal?: AbortSignal) =>
   call<T>(url, {
     method: "POST",
+    ...(signal ? { signal } : {}),
     ...(body === undefined
       ? {}
       : { headers: { "content-type": "application/json" }, body: JSON.stringify(body) }),
@@ -374,8 +378,19 @@ export const api = {
       question,
       ...(conversation ? { conversation } : {}),
     }),
-  rewrite: (body: { path: string; passage: string; before: string; after: string; how: string }) =>
-    post<{ text: string }>("/api/write/rewrite", body),
+  /** A passage rewritten as asked; `signal` stops the request, and the server's call with it. */
+  rewrite: (
+    body: {
+      path: string;
+      passage: string;
+      before: string;
+      after: string;
+      how: string;
+      previous?: string[];
+      refine?: { suggestion: string; how: string };
+    },
+    signal?: AbortSignal,
+  ) => post<{ text: string }>("/api/write/rewrite", body, signal),
   comments: (path: string) =>
     call<{ comments: PassageComment[] }>(`/api/comments?path=${encodeURIComponent(path)}`),
   commentCount: (path: string) =>
@@ -385,8 +400,11 @@ export const api = {
   changeComment: (id: string, change: { text?: string; for?: "me" | "ai" }) =>
     send<{ comment: PassageComment }>("PATCH", `/api/comments/${id}`, change),
   removeComment: (id: string) => send<{ ok: true }>("DELETE", `/api/comments/${id}`),
-  workOnComment: (id: string, around: { before: string; after: string }) =>
-    post<{ text: string }>(`/api/comments/${id}/work`, around),
+  workOnComment: (
+    id: string,
+    around: { before: string; after: string; previous?: string[] },
+    signal?: AbortSignal,
+  ) => post<{ text: string }>(`/api/comments/${id}/work`, around, signal),
   characterProfile: (path: string) =>
     call<{ profile: CharacterProfile | null }>(
       `/api/characters/profile?path=${encodeURIComponent(path)}`,

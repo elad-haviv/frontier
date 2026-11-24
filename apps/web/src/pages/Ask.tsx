@@ -1,6 +1,6 @@
 import { ActionButton } from "../components/ui/ActionButton.tsx";
 import { type FormEvent, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { api, ApiFailure, askUrl } from "../api.ts";
 import { Problem } from "../components/ui/Problem.tsx";
 import { Progress } from "../components/ui/Progress.tsx";
@@ -10,7 +10,9 @@ import { failureOf, useAsync } from "../useAsync.ts";
 export function AskPage() {
   const list = useAsync(() => api.conversations(), "conversations");
   const navigate = useNavigate();
-  const [question, setQuestion] = useState("");
+  // The editor's "Ask the lore about this…" comes with the passage quoted, ready for a question.
+  const quoted = (useLocation().state as { question?: string } | null)?.question;
+  const [question, setQuestion] = useState(quoted ?? "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -53,6 +55,14 @@ export function AskPage() {
             rows={3}
             value={question}
             disabled={!ready || busy}
+            ref={(box) => {
+              // Once it can be typed in, the cursor waits after the quoted passage.
+              if (box && quoted && ready && !box.dataset.placed) {
+                box.dataset.placed = "1";
+                box.focus();
+                box.setSelectionRange(box.value.length, box.value.length);
+              }
+            }}
             placeholder="How do the Nirani keep time?"
             onChange={(e) => setQuestion(e.target.value)}
           />

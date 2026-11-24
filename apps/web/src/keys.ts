@@ -336,7 +336,7 @@ keys.register(
     handledBy: "the switcher",
   },
 
-  // The editor. Bold to Done are run by CodeMirror from editorKeymap() below.
+  // The editor. Bold to Help are run by CodeMirror from editorKeymap() below.
   { id: "editor.bold", keys: ["Mod-b"], scope: "editor", label: "Bold" },
   { id: "editor.italic", keys: ["Mod-i"], scope: "editor", label: "Italic" },
   { id: "editor.underline", keys: ["Mod-u"], scope: "editor", label: "Underline" },
@@ -352,6 +352,12 @@ keys.register(
   { id: "editor.paragraph", keys: ["Shift-Mod-0"], scope: "editor", label: "Paragraph" },
   { id: "editor.save", keys: ["Mod-s"], scope: "editor", label: "Save now" },
   { id: "editor.done", keys: ["Mod-Enter"], scope: "editor", label: "Done" },
+  {
+    id: "editor.help",
+    keys: ["Mod-j"],
+    scope: "editor",
+    label: "Writing help on the selection or paragraph",
+  },
   {
     id: "editor.indent",
     keys: ["Tab"],
@@ -617,6 +623,8 @@ export function editorKeymap(registry = keys): Extension {
     // The browser's "Save page" never opens from the editor, even before the page binds Save.
     ...bind("editor.save", runBound("editor.save", registry), { preventDefault: true }),
     ...bind("editor.done", runBound("editor.done", registry)),
+    // The browser's own Ctrl+J (its downloads) never opens from the editor.
+    ...bind("editor.help", runBound("editor.help", registry), { preventDefault: true }),
     // In a list Tab nests the item; elsewhere it indents the line.
     ...bind("editor.indent", (v) => command(indentListItem)(v) || indentMore(v)),
     ...bind("editor.outdent", (v) => command(outdentListItem)(v) || indentLess(v)),
