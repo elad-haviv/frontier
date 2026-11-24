@@ -69,7 +69,7 @@ export function MapTools({
       ))}
       <span className="edit-toolbar-gap" />
       <IconButton
-        label="Snap to paths and zones"
+        label="Snapping"
         icon={Magnet}
         shortcut="map.snap"
         aria-pressed={snap}

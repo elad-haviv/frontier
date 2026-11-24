@@ -3798,6 +3798,10 @@ input.map-title {
   }
   .map-tools {
     order: 1;
+    /* With Label, Place with AI and snapping the bar no longer fits one row of a phone: it takes
+       two, so Undo and Redo are always in reach rather than scrolled away (16d). */
+    flex-wrap: wrap;
+    row-gap: 0.3rem;
     justify-content: space-between;
     border-top: 1px solid var(--rule);
     border-bottom: 0;

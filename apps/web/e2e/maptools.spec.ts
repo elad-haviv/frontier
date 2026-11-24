@@ -174,7 +174,7 @@ test("snaps a path to a zone's corner and edge, unless Alt is held or snapping i
   const free = await drawPath(true);
   expect(free[0]).not.toEqual(corner);
 
-  const toggle = page.getByRole("button", { name: "Snap to paths and zones" });
+  const toggle = page.getByRole("button", { name: "Snapping" });
   await expect(toggle).toHaveAttribute("aria-pressed", "true");
   await toggle.click();
   await expect(toggle).toHaveAttribute("aria-pressed", "false");
@@ -182,11 +182,11 @@ test("snaps a path to a zone's corner and edge, unless Alt is held or snapping i
   expect(off[0]).not.toEqual(corner);
   // Remembered on this device.
   await page.reload();
-  await expect(page.getByRole("button", { name: "Snap to paths and zones" })).toHaveAttribute(
+  await expect(page.getByRole("button", { name: "Snapping" })).toHaveAttribute(
     "aria-pressed",
     "false",
   );
-  await page.getByRole("button", { name: "Snap to paths and zones" }).click();
+  await page.getByRole("button", { name: "Snapping" }).click();
   await cleanUp(page, [id]);
 });
 
