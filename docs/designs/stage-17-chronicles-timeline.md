@@ -1,6 +1,12 @@
 # Chronicles: a timeline you can drag
 
-For approval before building. Mockup: `chronicles-mockup.html` (kept with the design notes, not in the repo). It was interactive: drag a
+Status: Approved on 2026-11-24 as proposed, with every recommendation in "Decisions for you": ties
+move what is tied to them, rules only check; the Order view is dropped and Compare, units, groups,
+copying and another version underneath are in the ⋯ menu; the phone uses the same horizontal
+timeline plus a List view; the interface says Event, Group, Tie and Rule while the file keeps its
+names; data changes are additive only. "As built" notes are at the end.
+
+Mockup: `chronicles-mockup.html` (kept with the design notes, not in the repo). It was interactive: drag a
 bar to move it, drag its ends to stretch it, drag the blue map-year line, and switch Years / Decades /
 Centuries / Millennia.
 
@@ -291,3 +297,22 @@ Each step ships on its own behind the existing page, and the e2e tests move with
 Risks: dragging on touch next to page scrolling (mitigated by press-and-hold); a long chronicle (hundreds of
 rows) needs row virtualisation later, not now; ties resolved on the client mean two devices editing at once
 could disagree until the next save (the re-resolve after merge covers it).
+
+## As built (17b, 2026-11-24)
+
+* "About N" reaches one step of N's last non-zero digit: about 280 is 270–290, about 4000 is
+  3000–5000; a number ending in another digit reaches 5 either way. Lengths also take decades,
+  centuries and millennia. "-50 to -30" is written with "to", so a minus is not read as a dash.
+* Dragging a tied point keeps the tie and changes its years ("10 after The war" becomes "20 after").
+  Stretching an end whose other end came from a length stores both ends and lets the length go.
+* A tie whose years run from before to after ("-5 to 5") is shown as "the end of X -5 to 5", which
+  the parser does not read back; type it again to change it.
+* The map year starts at `?t=`, else the last one on this device, else 0. It moves by dragging its
+  flag in the ruler (the line itself lets clicks through to the bars) or with Y.
+* A group's ⋯ has Next colour (the palette in turn) rather than a colour picker. Rows move between
+  groups by dragging them in the list on a desktop, or with Group in the details anywhere.
+* The phone sheet unfolds with its handle (a tap, not a swipe). Undo, Redo, Fit, Make main and the
+  map links are in ⋯ on a phone.
+* The ⚠ list's "Show both" selects both events; fixes are today's offers ("Move The war").
+* Old chronicle classes in `styles.css` that nothing uses now are left for a later tidy-up; the page's
+  own styles are in `ChroniclePage.css` and `Timeline.css`, loaded with the page.

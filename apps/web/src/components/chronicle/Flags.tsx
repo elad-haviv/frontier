@@ -7,6 +7,8 @@ interface Props {
   worked: Worked;
   change: Change;
   onSelect: (id: string) => void;
+  /** Selects the two events a rule names, so both are in sight. */
+  onSelectBoth?: (ids: string[]) => void;
 }
 
 /** How many statements are red: the count on the tab. */
@@ -18,7 +20,7 @@ export function redCount(worked: Worked): number {
 }
 
 /** What does not fit: red first, then circles and broken statements, then amber, then grey. */
-export function Flags({ chronicle, worked, change, onSelect }: Props) {
+export function Flags({ chronicle, worked, change, onSelect, onSelectBoth }: Props) {
   const of = (...states: string[]) => worked.checks.filter((c) => states.includes(c.state));
   const red = of("does_not_fit");
   const stuck = of("contradicts", "broken");
@@ -47,11 +49,21 @@ export function Flags({ chronicle, worked, change, onSelect }: Props) {
       <li key={relation.id} className={`ch-flag is-${tone}`}>
         <p>{sentence ?? statementOf(relation, chronicle.spans) + "."}</p>
         <p className="change-actions">
-          {[relation.a, relation.b].filter(has).map((id) => (
-            <button key={id} type="button" className="quiet" onClick={() => onSelect(id)}>
-              Open {spanName(chronicle.spans.find((s) => s.id === id)!)}
+          {has(relation.a) && has(relation.b) && onSelectBoth ? (
+            <button
+              type="button"
+              className="quiet"
+              onClick={() => onSelectBoth([relation.a, relation.b])}
+            >
+              Show both
             </button>
-          ))}
+          ) : (
+            [relation.a, relation.b].filter(has).map((id) => (
+              <button key={id} type="button" className="quiet" onClick={() => onSelect(id)}>
+                Show {spanName(chronicle.spans.find((s) => s.id === id)!)}
+              </button>
+            ))
+          )}
           {check.state === "does_not_fit" &&
             (["a", "b"] as const).map((side) => {
               const offer = offerMove(relation, side, chronicle.spans);
@@ -71,7 +83,7 @@ export function Flags({ chronicle, worked, change, onSelect }: Props) {
               );
             })}
           <button type="button" className="plain danger" onClick={() => remove(relation.id)}>
-            Remove the statement
+            Remove the rule
           </button>
         </p>
       </li>
@@ -83,20 +95,18 @@ export function Flags({ chronicle, worked, change, onSelect }: Props) {
   return (
     <div className="ch-flags">
       {nothing && (
-        <p className="empty">No statements yet. Select a span and say how it relates to another.</p>
+        <p className="empty">No rules yet. Select an event and add one under Must fit.</p>
       )}
       {!nothing && red.length + stuck.length + disagree.length === 0 && (
-        <p className="banner banner-ok">Nothing you have stated is contradicted.</p>
+        <p className="banner banner-ok">Everything fits.</p>
       )}
       <ul>
         {disagree.map((s) => (
           <li key={s.id} className="ch-flag is-red">
-            <p>
-              {spanName(s)}: its own numbers disagree. Its length does not match its start and end.
-            </p>
+            <p>{spanName(s)}: its start, end and length don’t agree.</p>
             <p className="change-actions">
               <button type="button" className="quiet" onClick={() => onSelect(s.id)}>
-                Open {spanName(s)}
+                Show {spanName(s)}
               </button>
             </p>
           </li>

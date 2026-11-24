@@ -202,13 +202,13 @@ export function Timeline(p: Props) {
     anchor.current = { year, offset };
     setPerYear(clampZoom(next));
   };
-  /** The year in the middle of the chart, or the selected event's, or the map year. */
+  /** What a zoom keeps in the middle: the selected event, or else the map year. */
   const focusYear = (): number => {
     const sel = primary ? points.get(primary)?.start : null;
     if (sel && Number.isFinite(sel.lo)) return sel.lo;
+    if (p.mapYear !== null) return p.mapYear;
     const el = scroller.current;
-    if (el) return yearAt(el.scrollLeft + chartWidth / 2);
-    return p.mapYear ?? 0;
+    return el ? yearAt(el.scrollLeft + chartWidth / 2) : 0;
   };
   const middle = () => LIST + chartWidth / 2;
 

@@ -294,6 +294,15 @@ offered.
 
 ## Views
 
+> **Amended by [stage 17](stage-17-chronicles-timeline.md) (2026-11-24).** The views below are
+> replaced by one timeline: rows of events by group beside bars on a ruler, a details panel, and a
+> List view. The Order, Scale, Does not fit and Lanes-and-units tabs and the Shift form are gone;
+> Compare, units and "Compare with…" (now "Show another version underneath…") are in the ⋯ menu.
+> Bars can be dragged and dates typed in short forms. Spans may carry ties (`startFrom`, `endFrom`),
+> which, unlike relations, move a span when what it is tied to moves; "Moving any span because
+> another moved" is no longer a non-goal for ties the author makes. Relations are unchanged and
+> still only check. The file, the checks, the sentences and the merge are unchanged.
+
 One page per chronicle, `/chronicle/:id`.
 
 *   **Order** (5a). Lanes as rows; groups as blocks left to right; no ruler; the label "order only, not

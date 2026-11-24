@@ -542,8 +542,8 @@
   z-index: 3;
   width: 10px;
   margin-left: -5px;
-  cursor: ew-resize;
-  touch-action: none;
+  /* Bars under the line stay easy to grab; the line moves by its flag in the ruler. */
+  pointer-events: none;
 }
 .tl-mapline::before {
   content: "";

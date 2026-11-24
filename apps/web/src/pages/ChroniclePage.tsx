@@ -548,6 +548,10 @@ function Chronicle({ id }: { id: string }) {
               selectOne(sid);
               setSheetOpen(false);
             }}
+            onSelectBoth={(ids) => {
+              select(ids);
+              setSheetOpen(false);
+            }}
           />
         </Popover.Content>
       </Popover.Portal>
@@ -594,6 +598,18 @@ function Chronicle({ id }: { id: string }) {
           </Menu>
         )}
         <Menu label="More actions" className="ch-more-menu">
+          {narrow && (
+            <>
+              <MenuItem disabled={!file.canUndo} onSelect={file.undo}>
+                Undo
+              </MenuItem>
+              <MenuItem disabled={!file.canRedo} onSelect={file.redo}>
+                Redo
+              </MenuItem>
+              <MenuItem onSelect={() => timeline.current?.fit()}>Fit everything</MenuItem>
+              <MenuSeparator />
+            </>
+          )}
           <MenuItem onSelect={() => void rename()}>Rename</MenuItem>
           <MenuItem onSelect={() => void addGroup()}>Add a group</MenuItem>
           <MenuItem onSelect={() => setDialog("units")}>Units…</MenuItem>

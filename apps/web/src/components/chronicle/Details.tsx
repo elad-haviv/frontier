@@ -224,7 +224,7 @@ export function Details(props: Props) {
         </div>
       </div>
 
-      <section className="dt-dates" aria-label="When">
+      <section className="dt-dates" aria-label="Dates">
         <WhenField
           label={span.point ? "When" : "Starts"}
           id="dt-start"

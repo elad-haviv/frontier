@@ -83,9 +83,11 @@
 .ch-views {
   margin-left: auto;
 }
-.ch-body {
+.tl-page .ch-body {
   position: relative;
   display: flex;
+  align-items: stretch;
+  gap: 0;
   flex: 1;
   min-height: 0;
 }
@@ -164,6 +166,23 @@
 }
 .ch-details.is-sheet.is-open {
   max-height: 82%;
+}
+/* Folded down, the sheet leads with when it is; its name, group and kind come with "Show more". */
+.ch-details.is-sheet:not(.is-open) .dt-name,
+.ch-details.is-sheet:not(.is-open) .dt-row {
+  display: none;
+}
+.tl-page.is-narrow .ch-main > .ch-note {
+  display: none;
+}
+.tl-page.is-narrow .ch-tools {
+  flex-wrap: nowrap;
+  gap: 0.35rem;
+  padding: 0.3rem 0.6rem 0.5rem;
+}
+.tl-page.is-narrow .ch-seg button {
+  padding: 0.2rem 0.45rem;
+  font-size: 0.78rem;
 }
 .ch-grab {
   position: absolute;

@@ -4,7 +4,7 @@
  */
 import type { ChronicleFile, ChronicleLane, ChronicleSpan } from "@frontier/schema";
 import { type Range, type SpanPoints, formatRange } from "@frontier/time";
-import { rulerStep } from "./scaleLayout.ts";
+import { rulerStep, scaleBounds } from "./scaleLayout.ts";
 
 export interface ZoomLevel {
   id: "years" | "decades" | "centuries" | "millennia";
@@ -49,18 +49,7 @@ const finite = (r: Range | null | undefined): r is Range =>
   !!r && Number.isFinite(r.lo) && Number.isFinite(r.hi);
 
 /** The earliest and latest year anything placed may be; null when nothing is. */
-export function placedBounds(points: Iterable<SpanPoints>): Range | null {
-  let lo = Infinity;
-  let hi = -Infinity;
-  for (const p of points) {
-    for (const r of [p.start, p.end]) {
-      if (!finite(r)) continue;
-      lo = Math.min(lo, r.lo);
-      hi = Math.max(hi, r.hi);
-    }
-  }
-  return lo <= hi ? { lo, hi } : null;
-}
+export const placedBounds = scaleBounds;
 
 export interface Extent {
   /** The first and last year of the chart. */
