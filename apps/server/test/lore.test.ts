@@ -55,6 +55,8 @@ function provider(answers: object[]) {
     }
     calls.push({ body: JSON.parse(String(init?.body)) });
     const answer = answers[Math.min(calls.length - 1, answers.length - 1)]!;
+    // A whole answer of the provider's own, such as one cut off at the token limit.
+    if ("response" in answer) return Response.json(answer.response);
     return Response.json({
       choices: [{ message: { content: JSON.stringify(answer) } }],
       usage: { prompt_tokens: 900, completion_tokens: 200, cost: 0.004 },
@@ -660,7 +662,7 @@ describe("discovering what lies at a place", () => {
     expect((await t.get(`/api/maps/${MAP_ID}/discoveries`)).json().discoveries).toHaveLength(1);
   });
 
-  it("says when nothing near is linked to an entry", async () => {
+  it("says when nothing near has an entry or a name", async () => {
     await startWithMap([CANDIDATES]);
     t.repo.pushFromOutside({
       [`.frontier/maps/${MAP_ID}.json`]: serialiseMap({ ...map, features: [] }),
@@ -669,5 +671,141 @@ describe("discovering what lies at a place", () => {
     const res = await t.post(`/api/maps/${MAP_ID}/discover`, { at: [1, 1] });
     expect(res.statusCode).toBe(400);
     expect(res.json().error.message).toContain("Nothing near this place");
+  });
+
+  it("draws on the names on the map when nothing near has an entry, and never quotes them", async () => {
+    const p = await startWithMap([CANDIDATES]);
+    const unlinked: MapFile["features"] = [
+      {
+        id: "lab01",
+        kind: "label",
+        layer: "lay1",
+        at: [200, 20],
+        entry: null,
+        label: "The Sunken Coast",
+        child: null,
+      },
+      {
+        id: "zon01",
+        kind: "zone",
+        layer: "lay1",
+        points: [
+          [0, 0],
+          [50, 0],
+          [50, 50],
+        ],
+        entry: null,
+        label: "Saltmarsh",
+        child: null,
+      },
+      // No name and no icon: there is nothing to say of it.
+      {
+        id: "mk001",
+        kind: "marker",
+        layer: "lay1",
+        at: [5, 5],
+        entry: null,
+        label: null,
+        icon: null,
+        child: null,
+      },
+    ];
+    t.repo.pushFromOutside({
+      [`.frontier/maps/${MAP_ID}.json`]: serialiseMap({ ...map, features: unlinked }),
+    });
+    await t.services.sync();
+    const res = await t.post(`/api/maps/${MAP_ID}/discover`, { at: [30, 10] });
+    expect(res.statusCode, res.body).toBe(200);
+    const sent = p.calls[0]!.body.messages[1]!.content;
+    expect(sent).toContain("Entries about what is near and around the place: none.");
+    expect(sent).toContain("only names, not entries: never quote them");
+    expect(sent).toContain('- "Saltmarsh": a zone the place lies inside');
+    expect(sent).toMatch(/- "The Sunken Coast": words written on the map, to the east/);
+    expect(sent).not.toContain("=== Entry:");
+    // Quotes can only come from entries, and the card says what it grew from.
+    const [first] = res.json().discoveries;
+    expect(first.basis).toEqual([]);
+    expect(first.conflicts).toContain("No entry is near: it grows only from the names on the map.");
+  });
+
+  it("asks for room to think, and says plainly when the answer was cut off", async () => {
+    const p = await startWithMap([
+      {
+        response: {
+          choices: [
+            { message: { content: '{"candidates":[{"kind":"sett' }, finish_reason: "length" },
+          ],
+          usage: { prompt_tokens: 900, completion_tokens: 10500, cost: 0.02 },
+        },
+      },
+    ]);
+    const res = await t.post(`/api/maps/${MAP_ID}/discover`, { at: [120, 110] });
+    expect(res.statusCode).toBe(502);
+    expect(res.json().error.message).toContain(
+      "The model ran out of room before finishing its answer",
+    );
+    const body = p.calls[0]!.body as unknown as Record<string, unknown>;
+    expect(body.reasoning).toEqual({ effort: "low", exclude: true });
+    expect(body.max_tokens).toBe(2500 + 8000);
+  });
+
+  it("says it was cut off when the thinking used all the room", async () => {
+    await startWithMap([
+      {
+        response: {
+          choices: [{ message: { content: "" }, finish_reason: "length" }],
+          usage: { prompt_tokens: 900, completion_tokens: 10500, cost: 0.02 },
+        },
+      },
+    ]);
+    const res = await t.post(`/api/maps/${MAP_ID}/discover`, { at: [120, 110] });
+    expect(res.statusCode).toBe(502);
+    expect(res.json().error.message).toContain("ran out of room");
+  });
+
+  it("names and describes features to place, choosing among the looks given", async () => {
+    const p = await startWithMap([
+      {
+        items: [
+          {
+            name: "Pulse Well",
+            description: "A well where the currents are loudest.",
+            choice: "places/well",
+            basis: [{ path: NIRANI, quote: "keep time by the pulse of the deep currents" }],
+          },
+          { name: "Other", description: "More.", choice: "nothing-given", basis: [] },
+        ],
+      },
+    ]);
+    const res = await t.post(`/api/maps/${MAP_ID}/generate`, {
+      at: [120, 110],
+      kind: "marker",
+      count: 2,
+      prompt: "  a well  ",
+      exclude: "near1",
+      choices: [{ id: "places/well", name: "well" }],
+    });
+    expect(res.statusCode, res.body).toBe(200);
+    const [first, second] = res.json().items;
+    expect(first).toMatchObject({ name: "Pulse Well", choice: "places/well" });
+    // The feature being filled in is no context for itself: its entry was not given, so a quote
+    // of it is not kept.
+    expect(first.basis).toEqual([]);
+    // A look that was not offered is not taken.
+    expect(second.choice).toBeNull();
+    const sent = p.calls[0]!.body.messages[1]!.content;
+    expect(sent).toContain("The author's wish: a well");
+    expect(sent).toContain("2 features, each a marker");
+    expect(sent).toContain("- places/well: well");
+    // The feature being filled in is no context for itself: its entry is left out.
+    expect(sent).not.toContain(`=== Entry: ${NIRANI}`);
+    // Discoveries are not stored for it.
+    expect((await t.get(`/api/maps/${MAP_ID}/discoveries`)).json().discoveries).toHaveLength(0);
+    const bad = await t.post(`/api/maps/${MAP_ID}/generate`, {
+      at: [1, 1],
+      kind: "marker",
+      count: 9,
+    });
+    expect(bad.statusCode).toBe(400);
   });
 });

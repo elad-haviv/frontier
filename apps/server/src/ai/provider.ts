@@ -28,6 +28,10 @@ export interface CompleteInput<T> {
   entry?: string;
   /** Overrides the model set for the task. */
   model?: string;
+  /**
+   * The room for the answer itself. A model that thinks first spends the same limit on its
+   * thinking, so the provider is given this plus `THINKING_ROOM`.
+   */
   maxTokens?: number;
   /** How long to wait for the provider; one minute when not given. */
   timeoutMs?: number;
@@ -49,6 +53,8 @@ interface Attempt {
   retry: boolean;
   timedOut?: boolean;
   content?: string;
+  /** The provider stopped at the token limit: the answer may be cut off. */
+  cutOff?: boolean;
   promptTokens: number;
   completionTokens: number;
   costUsd: number;
@@ -56,6 +62,16 @@ interface Attempt {
 }
 
 const money = (n: number) => `$${n.toFixed(2)}`;
+
+/**
+ * The tokens a reasoning model may think with, on top of the answer's own room. OpenRouter counts
+ * thinking in `max_tokens`, so a tight limit cut answers off midway. Thinking is asked to be
+ * brief, so this is rarely used up, and what is not used is not billed.
+ */
+export const THINKING_ROOM = 8000;
+/** Said when the answer stopped at the token limit before it was whole. */
+export const CUT_OFF =
+  "The model ran out of room before finishing its answer. Try again, or choose another model on the settings page.";
 
 export class AiProvider {
   private readonly fetch: typeof fetch;
@@ -127,7 +143,9 @@ export class AiProvider {
     }
     const checked = input.schema.check.safeParse(parsed);
     if (!checked.success) {
-      this.lastError = "The model's answer did not have the form that was asked for.";
+      this.lastError = attempt.cutOff
+        ? CUT_OFF
+        : "The model's answer did not have the form that was asked for.";
       throw new ApiError("ai_bad_answer", this.lastError);
     }
     this.lastError = null;
@@ -243,7 +261,9 @@ export class AiProvider {
             json_schema: { name: input.schema.name, strict: true, schema: input.schema.json },
           },
           stream: false,
-          ...(input.maxTokens ? { max_tokens: input.maxTokens } : {}),
+          // Brief thinking, kept out of the answer, so the answer keeps its room.
+          reasoning: { effort: "low", exclude: true },
+          ...(input.maxTokens ? { max_tokens: input.maxTokens + THINKING_ROOM } : {}),
         }),
         signal: AbortSignal.timeout(input.timeoutMs ?? this.d.timeoutMs ?? 60_000),
       });
@@ -268,7 +288,7 @@ export class AiProvider {
     }
     const b = (body ?? {}) as {
       error?: { message?: unknown };
-      choices?: { message?: { content?: unknown } }[];
+      choices?: { message?: { content?: unknown }; finish_reason?: unknown }[];
       usage?: { prompt_tokens?: unknown; completion_tokens?: unknown; cost?: unknown };
     };
     const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : 0);
@@ -288,9 +308,11 @@ export class AiProvider {
       };
     }
     const content = b.choices?.[0]?.message?.content;
-    if (typeof content !== "string") {
-      return { ...usage, ok: false, retry: false, error: "The AI provider sent an empty answer." };
+    const cutOff = b.choices?.[0]?.finish_reason === "length";
+    if (typeof content !== "string" || (cutOff && content.trim() === "")) {
+      const error = cutOff ? CUT_OFF : "The AI provider sent an empty answer.";
+      return { ...usage, ok: false, retry: false, error };
     }
-    return { ...usage, ok: true, retry: false, content };
+    return { ...usage, ok: true, retry: false, content, ...(cutOff ? { cutOff } : {}) };
   }
 }
