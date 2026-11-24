@@ -15,8 +15,11 @@ import { isLined, type MapFeature, type MapFile, orderFeature } from "@frontier/
 import { type MapTime, orbitAt, type Resolved, turnAbout, writeShape } from "./time.ts";
 import { newItemId } from "./viewUrl.ts";
 
-/** `label` writes words on the map; `place` marks a spot or an area to place features with AI. */
-export type Tool = "select" | "marker" | "path" | "zone" | "measure" | "label" | "place";
+/**
+ * `label` writes words on the map; `place` marks a spot or an area to place features with AI;
+ * `find` makes zones from areas found in the map's picture.
+ */
+export type Tool = "select" | "marker" | "path" | "zone" | "measure" | "label" | "place" | "find";
 
 /** What a tap changes: each part that is given is set on the page. */
 export interface Step {

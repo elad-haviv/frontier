@@ -49,6 +49,13 @@ import { focusIsFree } from "../keys.ts";
 import { type Snapped, snapAt } from "./snap.ts";
 import { pointOn } from "./useMapView.ts";
 
+/** What the Find areas tool hears from the pointer: taps, and where a mouse is. */
+export interface FindPointer {
+  tap(at: Point, how: { alt: boolean; shift: boolean; kind: PointerKind }): void;
+  /** Where a mouse is over the map, or null when it left or the hover ended. */
+  hover(at: Point | null): void;
+}
+
 export function usePointer(p: {
   map: MapFile | null;
   mapRef: RefObject<MapFile | null>;
@@ -86,9 +93,13 @@ export function usePointer(p: {
   onPressKind: (kind: PointerKind) => void;
   /** Points of paths and zones snap to other paths and zones near them. */
   snap: boolean;
+  /** The Find areas tool, while it is on: it takes the taps and the hover. */
+  find?: RefObject<FindPointer | null>;
 }) {
   /** Alt held with the last pointer event: points go exactly where they are put. */
   const altHeld = useRef(false);
+  /** Shift held with the last pointer event: Find areas adds whatever its mode. */
+  const shiftHeld = useRef(false);
   /** Where the point being placed or dragged snaps to now, marked on the live canvas. */
   const snapMark = useRef<Snapped | null>(null);
   const { size, editing, tool, selected, focusing } = p;
@@ -233,6 +244,7 @@ export function usePointer(p: {
     snapMark.current = null;
     hover(null, { x: 0, y: 0 });
     paintLive();
+    p.find?.current?.hover(null);
   }
 
   // Space held pans, while the keys are the map's: not while typing in a field.
@@ -276,6 +288,11 @@ export function usePointer(p: {
       return;
     }
 
+    if (editing && tool === "find") {
+      const how = { alt: altHeld.current, shift: shiftHeld.current, kind };
+      p.find?.current?.tap({ x, y }, how);
+      return;
+    }
     if (editing && (tool === "marker" || tool === "label")) {
       if (!position) return;
       const place = tool === "marker" ? placeMarker : placeLabel;
@@ -324,6 +341,7 @@ export function usePointer(p: {
           paintLive();
         }
         hover(effect.target, effect.at);
+        if (editing && tool === "find") p.find?.current?.hover(effect.at);
         return;
       case "cursor":
         // Set on the canvas directly: the cursor follows every move without drawing the page.
@@ -436,6 +454,7 @@ export function usePointer(p: {
 
   function handle(e: React.PointerEvent, type: GestureEvent["type"]) {
     altHeld.current = e.altKey;
+    shiftHeld.current = e.shiftKey;
     const event: GestureEvent = {
       type,
       id: e.pointerId,

@@ -87,8 +87,10 @@ export function FeaturePanel({
       />
     );
   }
-  // The Marker tool stays on after a marker is placed, and its tab opens to link it.
-  if (tool !== "select" && tool !== feature.kind) return null;
+  // The Marker tool stays on after a marker is placed, and its tab opens to link it; so does
+  // Find areas after a zone is made.
+  const stays = tool === feature.kind || (tool === "find" && feature.kind === "zone");
+  if (tool !== "select" && !stays) return null;
   return (
     <FeatureEditor
       key={feature.id}
