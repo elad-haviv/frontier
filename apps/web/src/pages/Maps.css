@@ -545,7 +545,7 @@ mark {
 .state .dot.solid {
   background: var(--accent);
 }
-.map-more {
+.maps-card-menu {
   position: absolute;
   right: calc(0.55rem + 10px);
   top: 0.5rem;
@@ -555,15 +555,15 @@ mark {
   background: color-mix(in srgb, var(--paper) 82%, transparent);
   backdrop-filter: blur(4px);
 }
-.map-card:hover .map-more,
-.map-card:focus-within .map-more,
-.map-more[data-state="open"],
-.map-row:hover .map-more,
-.map-row:focus-within .map-more {
+.map-card:hover .maps-card-menu,
+.map-card:focus-within .maps-card-menu,
+.maps-card-menu[data-state="open"],
+.map-row:hover .maps-card-menu,
+.map-row:focus-within .maps-card-menu {
   opacity: 1;
 }
 @media (hover: none) {
-  .map-more {
+  .maps-card-menu {
     opacity: 1;
   }
 }
@@ -753,7 +753,7 @@ mark {
   display: flex;
   align-items: center;
 }
-.map-row .map-more {
+.map-row .maps-card-menu {
   position: static;
   opacity: 1;
   background: none;
@@ -801,7 +801,7 @@ mark {
     padding: 0.5rem 0.55rem;
   }
   /* The kind badge is at the top of the picture, so the menu button sits at the foot of the card. */
-  .map-card .map-more {
+  .map-card .maps-card-menu {
     top: auto;
     bottom: calc(0.25rem + 10px);
     right: calc(0.25rem + 10px);

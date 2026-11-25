@@ -60,7 +60,7 @@ export function MapMenu({
   const navigate = useNavigate();
   const stacked = row.kind === "sphere" && inStack(row.id, rows);
   return (
-    <Menu label={`Actions for ${row.title}`} className="map-more">
+    <Menu label={`Actions for ${row.title}`} className="maps-card-menu">
       <MenuItem icon={ExternalLink} onSelect={() => navigate(mapUrl(row.id))}>
         Open
       </MenuItem>
