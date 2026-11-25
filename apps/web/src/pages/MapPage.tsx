@@ -934,6 +934,7 @@ export function MapPage() {
         onCopyLink={() => copyPlace(feature.id)}
         onEdit={() => startEditing(feature.id)}
         styles={styles}
+        joinPaths={joinPaths}
         onEditStyles={() => bar.show("styles")}
         generate={
           found.ready

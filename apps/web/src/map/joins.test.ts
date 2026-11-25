@@ -10,6 +10,7 @@ import {
   keepJoins,
   nearestOnPath,
   type PathFeature,
+  roadCrossings,
 } from "./joins.ts";
 
 const space: Space = { kind: "flat", width: 600, height: 400, scale: 1, unit: "km" };
@@ -313,5 +314,60 @@ describe("joins in the map file", () => {
     expect(mergedGone.map.features.map((f) => f.id)).toEqual(["trib"]);
     expect(get(mergedGone.map, "trib").endOn).toBeUndefined();
     expect(withoutRiver.features).toHaveLength(1);
+  });
+});
+
+describe("a path drawn by hand that becomes a road", () => {
+  const styles = [
+    {
+      id: "roadroad",
+      name: "Road",
+      for: "path",
+      color: "#7a5230",
+      width: 2,
+      dash: "long",
+      counts: "road",
+    },
+    {
+      id: "riverriv",
+      name: "River",
+      for: "path",
+      color: "#2f6f9f",
+      width: 3,
+      dash: "solid",
+      counts: "river",
+    },
+  ] as never[];
+  const kings = path(
+    "kings",
+    [
+      [0, 100],
+      [300, 100],
+    ],
+    { style: "roadroad" },
+  );
+  const drawn = (style?: string) =>
+    path(
+      "drawn",
+      [
+        [150, 0],
+        [150, 200],
+      ],
+      style ? { style } : {},
+    );
+
+  it("gets a crossroads corner with each road it crosses, in both", () => {
+    const map = roadCrossings(mapOf(kings, drawn("roadroad")), space, "drawn", styles);
+    expect(get(map, "kings").points).toContainEqual([150, 100]);
+    expect(get(map, "drawn").points).toContainEqual([150, 100]);
+    // A crossroads is not a join.
+    expect(get(map, "drawn").startOn ?? null).toBeNull();
+  });
+
+  it("leaves a path that is not a road, and roads it does not cross, alone", () => {
+    const river = mapOf(kings, drawn("riverriv"));
+    expect(roadCrossings(river, space, "drawn", styles)).toBe(river);
+    const plain = mapOf(kings, drawn());
+    expect(roadCrossings(plain, space, "drawn", styles)).toBe(plain);
   });
 });

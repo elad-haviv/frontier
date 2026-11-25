@@ -73,3 +73,42 @@
     padding: 0 0.6rem;
   }
 }
+
+/* A route's height profile: the heights along the way, its steep parts coloured. */
+.paths-profile {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  margin: 0;
+  max-width: 100%;
+}
+.paths-profile svg {
+  max-width: 100%;
+  height: auto;
+  border-bottom: 1px solid var(--rule);
+}
+.paths-profile polyline {
+  fill: none;
+  stroke-width: 1.6;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+.paths-profile .is-flat {
+  stroke: var(--ink-soft);
+}
+.paths-profile .is-steep {
+  stroke: #c08a1e;
+}
+.paths-profile .is-steeper {
+  stroke: #b3402a;
+}
+.paths-profile figcaption {
+  color: var(--ink-faint);
+  font-size: 0.76rem;
+}
+.paths-heights {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.45rem 0.85rem;
+}

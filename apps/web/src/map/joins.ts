@@ -9,7 +9,13 @@
  * A join is between the paths' first shapes (`points`); a later shape in time is left alone.
  */
 import { outline, type Position, type Space } from "@frontier/geo";
-import { type MapFeature, type MapFile, orderFeature } from "@frontier/schema";
+import {
+  countsAs,
+  type MapFeature,
+  type MapFile,
+  type MapStyle,
+  orderFeature,
+} from "@frontier/schema";
 
 export type PathFeature = Extract<MapFeature, { kind: "path" }>;
 export type End = "start" | "end";
@@ -293,4 +299,24 @@ export function keepJoins(before: MapFile, after: MapFile, space: Space): MapFil
     from = start;
   }
   return next;
+}
+
+/**
+ * A path drawn by hand that becomes a road (its style is set to one that counts as Road): where
+ * it crosses other roads, both get a crossroads corner, with the same coordinates, as Find
+ * paths' routes do. Nothing happens to a path that is not a road.
+ */
+export function roadCrossings(
+  map: MapFile,
+  space: Space,
+  id: string,
+  styles: readonly MapStyle[],
+): MapFile {
+  const isRoad = (f: MapFeature) =>
+    f.kind === "path" &&
+    countsAs(styles.find((s) => s.id === f.style && s.for === "path")) === "road";
+  const path = map.features.find((f) => f.id === id);
+  if (!path || !isRoad(path)) return map;
+  const roads = new Set(map.features.filter((f) => f.id !== id && isRoad(f)).map((f) => f.id));
+  return roads.size ? crossCorners(map, space, id, roads).map : map;
 }

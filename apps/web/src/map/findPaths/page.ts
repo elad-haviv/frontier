@@ -12,6 +12,7 @@ import {
   type MapStyle,
   type MapTerrain,
   orderFeature,
+  type PathStretch,
   wholeExtent,
 } from "@frontier/schema";
 import type { ImageFrame } from "../findAreas/frame.ts";
@@ -94,17 +95,34 @@ const round = (p: Position): Position => [
   Math.round(p[1] * 1000) / 1000,
 ];
 
-/** A path to make: its points, and whether its last point must stay exactly where it is. */
+/** A stretch of a path to make, between two of its points (indices into `points`). */
+export interface NewStretch {
+  kind: PathStretch["kind"];
+  from: number;
+  to: number;
+  grade?: number;
+}
+
+/** A path to make: its points, and whether its ends must stay exactly where they are. */
 export interface NewPath {
   points: Position[];
   /** It ends on another path: the end is not rounded, so it lies on that path exactly. */
   exactEnd?: boolean;
+  /** It starts on another path (a branch from a road), likewise. */
+  exactStart?: boolean;
   label?: string | null;
+  /** Its tunnels, steps and climbs. */
+  stretches?: NewStretch[];
+  /** How a river ends inland. */
+  endAs?: "sinks" | "dries";
+  /** Its climbs' chevrons are hidden. */
+  steepHidden?: boolean;
 }
 
 /**
  * Make path: a new path for each line, in `layer` with `style` (none: the layer's look), curved
- * when `curve` is on. Null when there is nothing to make.
+ * when `curve` is on. Null when there is nothing to make. A stretch is kept by the coordinates
+ * of its two corners, as they are written.
  */
 export function makePaths(
   map: MapFile,
@@ -115,21 +133,59 @@ export function makePaths(
 ): { map: MapFile; ids: string[] } | null {
   const made = paths
     .filter((p) => p.points.length >= 2)
-    .map((p) =>
-      orderFeature({
+    .map((p) => {
+      const last = p.points.length - 1;
+      const points = p.points.map((q, i) =>
+        (p.exactEnd && i === last) || (p.exactStart && i === 0) ? q : round(q),
+      );
+      const stretches = (p.stretches ?? [])
+        .filter((x) => x.from >= 0 && x.to <= last && x.from < x.to)
+        .map((x): PathStretch => ({
+          kind: x.kind,
+          from: points[x.from]!,
+          to: points[x.to]!,
+          ...(x.grade !== undefined ? { grade: Math.round(x.grade * 1000) / 1000 } : {}),
+        }));
+      return orderFeature({
         id: newItemId(),
         kind: "path",
         layer,
-        points: p.points.map((q, i) => (p.exactEnd && i === p.points.length - 1 ? q : round(q))),
+        points,
         ...(curve ? { curve: "smooth" } : {}),
         ...(style ? { style } : {}),
         entry: null,
         label: p.label ?? null,
         child: null,
-      } as MapFeature),
-    );
+        ...(stretches.length ? { stretches } : {}),
+        ...(p.endAs ? { endAs: p.endAs } : {}),
+        ...(p.steepHidden && stretches.some((x) => x.kind === "climb")
+          ? { steepShown: false }
+          : {}),
+      } as MapFeature);
+    });
   if (made.length === 0) return null;
   return { map: { ...map, features: [...map.features, ...made] }, ids: made.map((f) => f.id) };
+}
+
+/** A zone Find paths makes beside a river: the lake or the marsh of a basin, in `style`. */
+export function makeZone(
+  map: MapFile,
+  layer: string,
+  style: string | null,
+  points: readonly Position[],
+): { map: MapFile; id: string } | null {
+  if (points.length < 3) return null;
+  const zone = orderFeature({
+    id: newItemId(),
+    kind: "zone",
+    layer,
+    points: points.map(round),
+    ...(style ? { style } : {}),
+    entry: null,
+    label: null,
+    child: null,
+  } as MapFeature);
+  return { map: { ...map, features: [...map.features, zone] }, id: zone.id };
 }
 
 /**

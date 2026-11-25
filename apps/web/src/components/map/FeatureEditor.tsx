@@ -234,6 +234,22 @@ export function FeatureEditor({
           <span>Length</span> <span>{length}</span>
         </p>
       )}
+      {feature.kind === "path" && feature.stretches?.some((x) => x.kind === "climb") && (
+        <label className="field feature-steep">
+          <input
+            type="checkbox"
+            checked={feature.steepShown !== false}
+            onChange={(e) => {
+              const next: Record<string, unknown> = { ...feature };
+              if (e.target.checked) delete next.steepShown;
+              else next.steepShown = false;
+              onChange(next as MapFeature);
+            }}
+          />
+          Show steepness
+          <small className="muted">Chevrons on its steep stretches, pointing uphill</small>
+        </label>
+      )}
       {feature.kind === "marker" && usable.length > 0 && (
         <div className="field">
           <span>Icon</span>

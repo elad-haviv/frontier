@@ -29,7 +29,7 @@ import { type RefObject, useEffect, useMemo, useRef, useState } from "react";
 import { mapImageUrl } from "../../api.ts";
 import { focusIsFree, shortcutText, useShortcut } from "../../keys.ts";
 import { openPicture } from "../../map/findAreas/client.ts";
-import type { Px } from "../../map/findAreas/contour.ts";
+import { inRing, type Px } from "../../map/findAreas/contour.ts";
 import { type ImageFrame, toPosition, toPx } from "../../map/findAreas/frame.ts";
 import { DEFAULT_DETAIL, DETAIL_EPS } from "../../map/findAreas/simplify.ts";
 import {
@@ -44,12 +44,21 @@ import {
 } from "../../map/findPaths/client.ts";
 import { type Mode, MODES, type Variant } from "../../map/findPaths/cost.ts";
 import { nearestOn } from "../../map/findPaths/lines.ts";
-import { crossCorners, joinNewPath, joinReach } from "../../map/joins.ts";
+import { snapRing } from "../../map/findAreas/snapRings.ts";
+import {
+  crossCorners,
+  joinNewPath,
+  joinReach,
+  nearestOnPath,
+  type PathFeature,
+} from "../../map/joins.ts";
 import {
   addToPath,
   kmPerUnit,
   makePaths,
+  makeZone,
   type NewPath,
+  type NewStretch,
   plural,
   stopIndex,
   terrainExtent,
@@ -57,12 +66,15 @@ import {
   terrainMetres,
 } from "../../map/findPaths/page.ts";
 import type {
+  BasinEnd,
   Mark,
   OpenedPaths,
+  Profile,
   RouteReply,
   TerrainInfo,
   TraceReply,
 } from "../../map/findPaths/protocol.ts";
+import { drawChevrons, drawTunnel } from "../../map/stretches.ts";
 import { HOURS_A_DAY, travelTime } from "../../map/findPaths/travel.ts";
 import type { Point, PointerKind } from "../../map/gesture.ts";
 import { lengthText } from "../../map/lengthText.ts";
@@ -84,6 +96,8 @@ type Kind = "river" | "route" | "trace";
 interface Stop {
   at: Position;
   name?: string;
+  /** The made road it was put on: a route that starts (or ends) there branches from it. */
+  road?: string;
 }
 /** What has been clicked so far: what the proposed path is worked out from. */
 type Pend =
@@ -96,6 +110,19 @@ interface Ghost {
   points: Position[];
   label: string;
   blue?: boolean;
+  /** A closed outline: a basin's lake or marsh, offered. */
+  ring?: boolean;
+}
+
+/** A route's profile as the bar draws it: its heights along the way, and what it comes to. */
+interface ProfileView {
+  /** 0 to 1 along the way, and the heights there. */
+  at: number[];
+  h: number[];
+  /** The grade from each sample to the next. */
+  grade: number[];
+  /** "Climbs 1 240 m · highest 1 690 m · steepest 18%". */
+  text: string;
 }
 /** What Make path would make, and what else is offered. */
 interface Proposal {
@@ -115,7 +142,42 @@ interface Proposal {
   traced?: "river" | "road" | "line";
   /** Each way's time for the switch, when a route is proposed. */
   ways?: Partial<Record<Variant, { hours: number | null; same: boolean } | null>>;
+  /** A route along a road already there: what "Make new stretches" makes. */
+  pieces?: NewPath[];
+  /** Words over the map: a tunnel, steps, the grade where the way is too steep. */
+  tags?: { at: Position; text: string }[];
+  /** No way within the limit: the way is too steep here. */
+  steep?: { at: Position; grade: number };
+  /** The heights along a route. */
+  profile?: ProfileView;
+  /** A basin the river reaches: how it ends there, and the lake or marsh offered. */
+  basin?: {
+    end: BasinEnd;
+    auto: "drains" | "keeps";
+    zone: { points: Position[]; counts: "water" | "marsh" } | null;
+  };
 }
+
+/** The ways a river can end in a basin, for the bar's switch. */
+const BASIN_ENDS: { value: BasinEnd; label: string; tip: string }[] = [
+  {
+    value: "drains",
+    label: "Lake drains",
+    tip: "The lake fills and the river carries on from its lowest rim",
+  },
+  { value: "keeps", label: "Lake keeps the water", tip: "The river ends at the lake's shore" },
+  {
+    value: "marsh",
+    label: "Marsh",
+    tip: "It spreads into a marsh, an inland delta of fading channels",
+  },
+  { value: "sinks", label: "Sinks underground", tip: "It tapers away into the ground" },
+  { value: "dries", label: "Dries out", tip: "Its last stretch thins and dries up" },
+];
+/** The steepest grades offered for a way of travelling, in percent, and tunnels' longest, in km. */
+const GRADES = [5, 8, 10, 12, 15, 20, 25, 30, 35, 40, 50, 60];
+const TUNNEL_KM = [1, 2, 3, 5, 8, 10, 15, 20];
+const pct = (grade: number) => `${Math.round(Math.abs(grade) * 100)}%`;
 
 const KINDS: { kind: Kind; label: string; icon: typeof Waves; key: string; hint: string }[] = [
   {
@@ -169,6 +231,14 @@ const remembered = {
   follow: true,
   detail: DEFAULT_DETAIL,
   styleFor: {} as Partial<Record<Kind, string>>,
+  /** The steepest grade each way of travelling may take; the owner can change it. */
+  steepest: Object.fromEntries(
+    (Object.keys(MODES) as Mode[]).map((m) => [m, MODES[m].steepest]),
+  ) as Record<Mode, number>,
+  tunnel: false,
+  tunnelKm: 5,
+  steps: false,
+  showSteep: true,
 };
 
 export default function FindPaths(p: {
@@ -233,6 +303,15 @@ export default function FindPaths(p: {
   const [follow, setFollow] = useState(remembered.follow);
   const [detail, setDetail] = useState(remembered.detail);
   const [styleFor, setStyleFor] = useState(remembered.styleFor);
+  const [steepest, setSteepest] = useState(remembered.steepest);
+  const [tunnel, setTunnel] = useState(remembered.tunnel);
+  const [tunnelKm, setTunnelKm] = useState(remembered.tunnelKm);
+  const [allowSteps, setAllowSteps] = useState(remembered.steps);
+  const [showSteep, setShowSteep] = useState(remembered.showSteep);
+  /** How a river ends in a basin, for what is proposed now: "auto" is the rule's choice. */
+  const [basinEnd, setBasinEnd] = useState<BasinEnd | "auto">("auto");
+  /** The basin's lake or marsh is to be made too. */
+  const [takeZone, setTakeZone] = useState(false);
   const [open, setOpen] = useState(false);
   useEffect(() => {
     Object.assign(remembered, {
@@ -247,8 +326,30 @@ export default function FindPaths(p: {
       follow,
       detail,
       styleFor,
+      steepest,
+      tunnel,
+      tunnelKm,
+      steps: allowSteps,
+      showSteep,
     });
-  }, [kind, from, meander, likely, above, mode, variant, useHeights, follow, detail, styleFor]);
+  }, [
+    kind,
+    from,
+    meander,
+    likely,
+    above,
+    mode,
+    variant,
+    useHeights,
+    follow,
+    detail,
+    styleFor,
+    steepest,
+    tunnel,
+    tunnelKm,
+    allowSteps,
+    showSteep,
+  ]);
   // A curve needs fewer points: its thinning may stray further from what was found.
   const eps = DETAIL_EPS[detail]! * (p.curve ? 1.5 : 1);
 
@@ -367,6 +468,11 @@ export default function FindPaths(p: {
     setKindNow(next);
     if (pend) choose(null);
   };
+  // A new click asks again how a river ends in a basin, and whether its lake is made.
+  useEffect(() => {
+    setBasinEnd("auto");
+    setTakeZone(false);
+  }, [pend]);
   /** A stop is being dragged: only the proposed way is worked out until it is let go. */
   const [dragging, setDragging] = useState(false);
 
@@ -378,6 +484,140 @@ export default function FindPaths(p: {
       measure(space, outline(space, points, { curve: p.curve, closed: false }).line),
       false,
     );
+  /** A line's length in map units (pixels of a flat map), as drawn. */
+  const measured = (points: Position[]) =>
+    measure(space, outline(space, points, { curve: p.curve, closed: false }).line).raw;
+  /** A length in map units in the map's words. */
+  const lengthNumber = (raw: number) =>
+    lengthText(
+      {
+        raw,
+        fraction: null,
+        distance:
+          map.space.kind === "flat" && map.space.scale !== null ? raw * map.space.scale : null,
+        unit: map.space.unit,
+      },
+      false,
+    );
+  /** A made road by its id, as drawn now. */
+  const roadById = (id: string): PathFeature | null => {
+    const f = drawn.find((x) => x.id === id);
+    return f?.kind === "path" ? f : null;
+  };
+  /** The name of a marker or label near a place, if one is near enough to name it by. */
+  const placeNear = (at: Position, reach = 0.06): string | null => {
+    const near =
+      map.space.kind === "flat" ? Math.max(map.space.width, map.space.height) * reach : 0;
+    let best: string | null = null;
+    let bd = near;
+    for (const f of drawn) {
+      if (f.kind !== "marker" && f.kind !== "label") continue;
+      const d = Math.hypot(f.at[0] - at[0], f.at[1] - at[1]);
+      const name = p.titleOf(f);
+      if (name && d < bd) {
+        bd = d;
+        best = name;
+      }
+    }
+    return best;
+  };
+  /** Where on a road a route leaves it: by a place there, or how far along the road. */
+  const whereOn = (road: PathFeature, at: Position) => {
+    const place = placeNear(at, 0.03);
+    if (place) return `at ${place}`;
+    const { line } = outline(space, road.points, { curve: road.curve === "smooth", closed: false });
+    const near = nearestOn(at, line);
+    let s = 0;
+    for (let i = 1; i < line.length; i++) {
+      const a = line[i - 1]!;
+      const b = line[i]!;
+      if (nearestOn(near.at, [a, b]).d < 1e-6) {
+        s += Math.hypot(near.at[0] - a[0], near.at[1] - a[1]);
+        break;
+      }
+      s += Math.hypot(b[0] - a[0], b[1] - a[1]);
+    }
+    return `${lengthNumber(s)} along it`;
+  };
+  const midway = (a: Position, b: Position): Position => [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+  /**
+   * Make new stretches: the parts of a route that are not along a road already there, each a
+   * path of its own whose ends lie exactly on the road (a made one; on a painted one, where the
+   * route meets its line), so each is joined to it there. The shared part is not drawn twice.
+   */
+  const newStretches = (
+    whole: NewPath,
+    along: { from: number; to: number; road: string | null }[],
+  ) => {
+    const out: NewPath[] = [];
+    const runs = [...along].sort((a, b) => a.from - b.from);
+    let start = 0;
+    const onRoad = (at: Position, id: string | null) => {
+      const road = id ? roadById(id) : null;
+      return road ? nearestOnPath(space, road, at).at : null;
+    };
+    const piece = (
+      from: number,
+      to: number,
+      before: string | null | undefined,
+      after: string | null | undefined,
+    ) => {
+      if (to - from < 1) return;
+      const points = whole.points.slice(from, to + 1);
+      if (measured(points) <= 0) return;
+      const head = before !== undefined ? onRoad(points[0]!, before) : null;
+      const tail = after !== undefined ? onRoad(points[points.length - 1]!, after) : null;
+      if (head) points[0] = head;
+      if (tail) points[points.length - 1] = tail;
+      out.push({
+        points,
+        ...((from === 0 && whole.exactStart) || head ? { exactStart: true } : {}),
+        ...((to === whole.points.length - 1 && whole.exactEnd) || tail ? { exactEnd: true } : {}),
+        stretches: (whole.stretches ?? [])
+          .filter((x) => x.from >= from && x.to <= to)
+          .map((x) => ({ ...x, from: x.from - from, to: x.to - from })),
+      });
+    };
+    let before: string | null | undefined = undefined;
+    for (const run of runs) {
+      piece(start, run.from, before, run.road);
+      start = run.to;
+      before = run.road;
+    }
+    piece(start, whole.points.length - 1, before, undefined);
+    return out;
+  };
+  /** The other zones on the map as drawn, for a basin's lake to snap to. */
+  const zoneTargets = () =>
+    p.snap
+      ? drawn
+          .filter((f) => f.kind === "zone")
+          .map((f) => {
+            const points = (f as { points: Position[] }).points;
+            return { points, px: points.map(px) };
+          })
+      : [];
+  /** A route's profile in the bar's words: metres when the heights say, else relative. */
+  const profileOf = (r: Profile): ProfileView => {
+    const total = r.d[r.d.length - 1] || 1;
+    const top = terrainReady?.top ?? null;
+    const low = terrain?.range ? terrain.range[0] * (terrain.rangeUnit === "ft" ? 0.3048 : 1) : 0;
+    const approx = top === null || guessed || terrain?.guessed === true || kmPerPx === null;
+    const metres = (h: number) => `${Math.round(h).toLocaleString("en-GB")} m`;
+    const bits: string[] = [];
+    if (top !== null && !guessed) {
+      bits.push(`climbs ${metres(r.climb * top)}`);
+      bits.push(`highest ${metres(low + r.high * top)}`);
+    }
+    bits.push(`steepest ${approx ? "about " : ""}${pct(r.steepest)}`);
+    const text = bits.join(" · ");
+    return {
+      at: r.d.map((d) => d / total),
+      h: r.h,
+      grade: r.grade,
+      text: `${text.charAt(0).toUpperCase()}${text.slice(1)}${approx ? " (grades approximate: no real heights)" : ""}`,
+    };
+  };
   const guessed = terrainReady?.guessed ?? true;
   const terrainNote = guessed
     ? "Terrain guessed from the picture."
@@ -397,6 +637,11 @@ export default function FindPaths(p: {
     p.joinPaths,
     p.curve,
     dragging,
+    steepest[mode],
+    tunnel,
+    tunnelKm,
+    allowSteps,
+    basinEnd,
   ]);
   const wanted = useRef("");
   wanted.current = proposalKey;
@@ -426,6 +671,7 @@ export default function FindPaths(p: {
           meander,
           eps,
           snap: p.joinPaths,
+          basin: basinEnd,
         });
         if (!r.ok) {
           const why = {
@@ -442,7 +688,9 @@ export default function FindPaths(p: {
         const points = r.points.map(pos);
         const joined = r.joined ? p.resolved.find((x) => x.feature.id === r.joined) : undefined;
         const joinedName = joined ? p.titleOf(joined.feature) || "a river" : "";
-        const ends =
+        const b = r.basin;
+        const size = b?.km2 != null ? ` (${Math.round(b.km2).toLocaleString("en-GB")} km²)` : "";
+        const seaEnd =
           r.end === "sea"
             ? terrainReady.hasSea
               ? "reaches the sea"
@@ -450,15 +698,49 @@ export default function FindPaths(p: {
             : r.end === "river"
               ? `joins ${joinedName}`
               : "runs off the map";
+        const ends = !b
+          ? seaEnd
+          : {
+              drains: `fills a lake${size} and runs on: ${seaEnd}`,
+              keeps: `ends in a lake${size}`,
+              marsh: `spreads into a marsh${size}`,
+              sinks: "sinks underground in a basin",
+              dries: "dries out in a basin",
+            }[b.end];
         const length = lengthOf(points);
         const flat = r.flatShare > 1 / 3 ? " · flat ground: the course here is a guess" : "";
+        // The basin's lake or marsh, snapped to the zones beside it as Find areas' zones are.
+        const counts: "water" | "marsh" | null =
+          b && (b.end === "drains" || b.end === "keeps")
+            ? "water"
+            : b?.end === "marsh"
+              ? "marsh"
+              : null;
+        const zone =
+          b && counts
+            ? {
+                points: snapRing(b.ring, zoneTargets(), 5, eps).map((c) => c.at ?? pos(c.px)),
+                counts,
+              }
+            : null;
+        const offer = zone
+          ? ` · ${phone ? "tap" : "click"} the ${counts === "water" ? "lake" : "marsh"} to make it too`
+          : "";
+        const endAs = b?.end === "sinks" ? "sinks" : b?.end === "dries" ? "dries" : undefined;
         return done({
-          paths: [{ points, exactEnd: r.end === "river" }],
-          ghosts: [],
+          paths: [
+            { points, exactEnd: r.end === "river", ...(endAs ? { endAs } : {}) },
+            // A marsh's channels, each fading out: they start where the river reaches it.
+            ...(b?.channels ?? []).map((c): NewPath => ({ points: c.map(pos), endAs: "sinks" })),
+          ],
+          ghosts: zone
+            ? [{ key: "basin", points: zone.points, label: "", blue: false, ring: true }]
+            : [],
           marks: [],
-          text: `River · ${length} · ${ends} · ${plural(points.length, "point")}${flat}`,
+          text: `River · ${length} · ${ends} · ${plural(points.length, "point")}${flat}${offer}`,
           short: `${length} · ${ends}`,
           note: `River of ${length}${r.fall !== null ? `, falling about ${Math.round(r.fall / 10) * 10} m` : ""}. ${terrainNote}`,
+          ...(b ? { basin: { end: b.end, auto: b.auto, zone } } : {}),
         });
       }
 
@@ -473,13 +755,52 @@ export default function FindPaths(p: {
             short: "Now tap the end",
           });
         }
+        // A start or an end put on a made road: the route branches from it, wherever is best.
+        const first = stops[0]!.road ? roadById(stops[0]!.road) : null;
+        const lastStop = stops[stops.length - 1]!;
+        const final =
+          lastStop.road && lastStop.road !== stops[0]!.road ? roadById(lastStop.road) : null;
+        const lineOf = (road: PathFeature | null) =>
+          road ? (features.find((f) => f.id === road.id)?.line ?? null) : null;
         const ask = (m: Mode, v: Variant) =>
-          routeFor({ stops: stops.map((s) => px(s.at)), mode: m, variant: v, eps });
+          routeFor({
+            stops: stops.map((s) => px(s.at)),
+            mode: m,
+            variant: v,
+            eps,
+            steepest: steepest[m],
+            steps: allowSteps && m === "foot",
+            tunnelKm: tunnel ? tunnelKm : null,
+            startOn: lineOf(first),
+            endOn: lineOf(final),
+          });
         const title = `${stopName(stops, 0)} → ${stopName(stops, stops.length - 1)}`;
         const main = await ask(mode, variant);
         if (!current()) return;
         const timeOf = (r: RouteReply & { ok: true }) =>
           r.hours === null ? "" : travelTime(r.hours);
+        const by = MODES[mode].name;
+        if (!main.ok && main.why === "steep") {
+          // No way within the grade: where it is too steep, by the name of the place there.
+          if (variant !== "fast") {
+            const fast = await ask(mode, "fast");
+            if (fast.ok && current()) return setVariant("fast");
+          }
+          const at = pos(main.at);
+          const place = placeNear(at);
+          const grade = pct(main.grade);
+          const what = place ? `${place} is ${grade}` : `the climb is ${grade}`;
+          return done({
+            paths: [],
+            ghosts: [],
+            marks: [],
+            tags: [{ at, text: grade }],
+            text: `No way ${by}: ${what} at its steepest`,
+            short: `No way ${by}: ${grade} at its steepest`,
+            fail: true,
+            steep: { at, grade: main.grade },
+          });
+        }
         if (!main.ok) {
           // No way by land: the same search with sailing allowed, offered.
           const ship = mode === "ship" ? main : await ask("ship", "fast");
@@ -488,7 +809,6 @@ export default function FindPaths(p: {
             const fast = await ask(mode, "fast");
             if (fast.ok && current()) return setVariant("fast");
           }
-          const by = MODES[mode].name;
           const why = terrainReady.hasSea ? ": water is in the way." : ".";
           return done({
             paths: [],
@@ -514,28 +834,85 @@ export default function FindPaths(p: {
           ghosts: Ghost[],
         ): Proposal => {
           const points = r.points.map(pos);
+          // A branch starts (or ends) exactly on the road it leaves, at the curve as drawn.
+          if (first) points[0] = nearestOnPath(space, first, points[0]!).at;
+          if (final)
+            points[points.length - 1] = nearestOnPath(space, final, points[points.length - 1]!).at;
+          const stretches: NewStretch[] = r.stretches.map((x) => ({
+            kind: x.kind,
+            from: x.from,
+            to: x.to,
+            ...(x.grade !== undefined ? { grade: x.grade } : {}),
+          }));
           const bits: string[] = [];
           if (r.bridges) bits.push(plural(r.bridges, "bridge"));
           if (r.fords) bits.push(plural(r.fords, "ford"));
           if (r.seaShare > 0.02) bits.push("part by sea");
+          const tunnels = r.stretches.filter((x) => x.kind === "tunnel");
+          if (tunnels.length) {
+            const long = lengthOf(
+              tunnels.flatMap((x) => [points[x.from]!, points[x.to]!]).slice(0, 2),
+            );
+            bits.push(
+              tunnels.length === 1 ? `a tunnel of ${long}` : plural(tunnels.length, "tunnel"),
+            );
+          }
+          if (r.stretches.some((x) => x.kind === "steps")) bits.push("steps");
           const length = lengthOf(points);
           const time = timeOf(r);
           const about = time ? ` · about ${time} ${MODES[mode].name}` : ` · ${MODES[mode].name}`;
           const extra = bits.length ? ` · ${bits.join(", ")}` : "";
           const noTime =
             r.hours === null ? " Set the map's scale in km or miles to see travelling time." : "";
+          // Along the roads already there: how much of the journey, and the new stretches.
+          const used = new Map<string, number>();
+          let usedAll = 0;
+          for (const a of r.along) {
+            const road = a.road ? roadById(a.road) : null;
+            const name = road ? p.titleOf(road) || "a road" : "the painted road";
+            const km = measured(points.slice(a.from, a.to + 1));
+            used.set(name, (used.get(name) ?? 0) + km);
+            usedAll += km;
+          }
+          const whole = measured(points);
+          const uses = [...used].map(([name, km]) => `uses ${lengthNumber(km)} of ${name}`);
+          const along = uses.length
+            ? ` · ${uses.join(" · ")} · ${lengthNumber(Math.max(0, whole - usedAll))} new`
+            : "";
+          const leaves = [
+            first
+              ? `branches from ${p.titleOf(first) || "the road"} ${whereOn(first, points[0]!)}`
+              : "",
+            final
+              ? `joins ${p.titleOf(final) || "the road"} ${whereOn(final, points[points.length - 1]!)}`
+              : "",
+          ]
+            .filter(Boolean)
+            .map((x) => ` · ${x}`)
+            .join("");
+          const label = stops[0]!.name && lastStop.name ? title : null;
+          const made: NewPath = {
+            points,
+            label,
+            stretches,
+            ...(first ? { exactStart: true } : {}),
+            ...(final ? { exactEnd: true } : {}),
+          };
           return {
-            paths: [
-              {
-                points,
-                label: stops[0]!.name && stops[stops.length - 1]!.name ? title : null,
-              },
-            ],
+            paths: [made],
+            ...(r.along.length ? { pieces: newStretches(made, r.along) } : {}),
             ghosts,
             marks: r.marks.map((m) => ({ at: pos(m.at), kind: m.kind })),
-            text: `${title} · ${length}${about}${extra}`,
+            tags: r.stretches
+              .filter((x) => x.kind === "tunnel" || x.kind === "steps")
+              .map((x) => ({
+                at: midway(points[x.from]!, points[x.to]!),
+                text: x.kind === "tunnel" ? "tunnel" : "steps",
+              })),
+            text: `${title} · ${length}${about}${extra}${along}${leaves}`,
             short: `${length}${time ? ` · ${time}` : ""}${extra}`,
             note: `${WAY_LABELS[variant]} way ${MODES[mode].name}: ${length}${time ? `, about ${time} at ${HOURS_A_DAY} hours a day` : ""}${bits.length ? ` (${bits.join(", ")})` : ""}. ${terrainNote}${noTime}`,
+            profile: profileOf(r.profile),
             ...(ways ? { ways } : {}),
           };
         };
@@ -693,9 +1070,13 @@ export default function FindPaths(p: {
     let best: Ghost | null = null;
     let bd = reach;
     for (const g of ghosts) {
-      const line = onScreen(g.points).map((q): Px => [q.x, q.y]);
+      const line = onScreen(g.ring ? [...g.points, g.points[0]!] : g.points).map((q): Px => [
+        q.x,
+        q.y,
+      ]);
       if (line.length < 2) continue;
-      const d = nearestOn([at.x, at.y], line).d;
+      // A lake or a marsh offered is taken by a click anywhere in it.
+      const d = g.ring && inRing([at.x, at.y], line) ? 0 : nearestOn([at.x, at.y], line).d;
       if (d < bd) {
         bd = d;
         best = g;
@@ -731,6 +1112,23 @@ export default function FindPaths(p: {
         }
       }
       if (best) return best;
+      // On a made road (snapping to paths on): a route that starts or ends there branches from it.
+      if (p.joinPaths) {
+        let road: { at: Position; id: string } | null = null;
+        let rd = 10;
+        for (const f of drawn) {
+          if (f.kind !== "path" || !roadIds.has(f.id)) continue;
+          const on = nearestOnPath(space, f, here);
+          const s = v.project(on.at);
+          if (!s) continue;
+          const d = Math.hypot(s[0] - at.x, s[1] - at.y);
+          if (d < rd) {
+            rd = d;
+            road = { at: on.at, id: f.id };
+          }
+        }
+        if (road) return { at: road.at, road: road.id };
+      }
     }
     return { at: here };
   };
@@ -768,13 +1166,17 @@ export default function FindPaths(p: {
       return setHover({
         at,
         line: null,
-        tag: ghost.blue
-          ? "Click to take this river"
-          : ghost.key === "ship"
-            ? "Click to go by ship"
-            : kind === "trace"
-              ? "Click to add this branch"
-              : "Click to take this way",
+        tag: ghost.ring
+          ? takeZone
+            ? "Click to leave it out"
+            : "Click to make it too"
+          : ghost.blue
+            ? "Click to take this river"
+            : ghost.key === "ship"
+              ? "Click to go by ship"
+              : kind === "trace"
+                ? "Click to add this branch"
+                : "Click to take this way",
       });
     }
     const here = viewNow()?.unproject(at.x, at.y);
@@ -797,9 +1199,15 @@ export default function FindPaths(p: {
       }
       const asked =
         kind === "river"
-          ? riverAt({ at: px(where), from, exact: true, meander, eps, snap: p.joinPaths }).then(
-              (r) => (r.ok ? { line: r.points.map(pos), tag: "" } : null),
-            )
+          ? riverAt({
+              at: px(where),
+              from,
+              exact: true,
+              meander,
+              eps,
+              snap: p.joinPaths,
+              basin: "auto",
+            }).then((r) => (r.ok ? { line: r.points.map(pos), tag: "" } : null))
           : traceAt({ at: px(where), end: null, eps, curved: p.curve, branches: false }).then(
               (r) =>
                 r.ok
@@ -833,6 +1241,7 @@ export default function FindPaths(p: {
     if (!here) return;
     const ghost = ghostAt(at, how.kind);
     if (ghost) {
+      if (ghost.ring) return setTakeZone(!takeZone);
       if (ghost.blue)
         return choose({ kind: "river", at: ghost.points[0]!, from: "source", exact: false });
       if (ghost.key === "ship") return setMode("ship");
@@ -914,11 +1323,18 @@ export default function FindPaths(p: {
   const madeNow = made.filter((id) => map.features.some((f) => f.id === id));
   const canMake = !!current && current.paths.length > 0 && !busy;
   const layerLocked = p.locked.has(p.activeLayer);
-  const make = () => {
+  /** The usual zone style for what a basin's zone is: Water for a lake, Marsh for a marsh. */
+  const zoneStyle = (counts: "water" | "marsh") =>
+    p.styles.find((s) => s.for === "zone" && countsAs(s) === counts)?.id ?? null;
+  /**
+   * Make path. A route along a road already there is made whole, or (`stretches`) as its new
+   * stretches only, each joined to the road at both ends.
+   */
+  const make = (stretches = false) => {
     if (!canMake || !current) return;
     if (layerLocked) return p.say("That layer is locked. Choose another to make the path in.");
     const now = p.mapRef.current;
-    if (now && carryOn && continuing) {
+    if (now && carryOn && continuing && !stretches) {
       // Continue: the proposed path and the one it meets become one path.
       const next = addToPath(now, carryOn.drawn, current.paths[0]!.points);
       if (!next) return;
@@ -928,7 +1344,10 @@ export default function FindPaths(p: {
       if (current.note) p.say(current.note);
       return;
     }
-    const done = now ? makePaths(now, p.activeLayer, style || null, p.curve, current.paths) : null;
+    const chosen = (stretches && current.pieces ? current.pieces : current.paths).map((q) =>
+      showSteep ? q : { ...q, steepHidden: true },
+    );
+    const done = now ? makePaths(now, p.activeLayer, style || null, p.curve, chosen) : null;
     if (!done) return;
     if (p.joinPaths) {
       // Each new path that ends on another path is joined to it: the other gets a corner there.
@@ -941,6 +1360,12 @@ export default function FindPaths(p: {
       if (isRoad && roads.size > 0) {
         for (const id of done.ids) done.map = crossCorners(done.map, space, id, roads).map;
       }
+    }
+    // The basin's lake or marsh, when it was taken: a zone in the current layer.
+    const zone = takeZone ? current.basin?.zone : null;
+    if (zone) {
+      const z = makeZone(done.map, p.activeLayer, zoneStyle(zone.counts), zone.points);
+      if (z) done.map = z.map;
     }
     p.change(done.map);
     if (done.ids.length > 1) p.onSelectSeveral(done.ids);
@@ -1024,7 +1449,8 @@ export default function FindPaths(p: {
   useShortcut("map.pathsSwitch", () => (free() ? switchKind() : false));
   useShortcut("map.pathsMake", () => {
     if (!free() || !canMake) return false;
-    make();
+    // Along a road, Enter makes the new stretches: the first of the two the bar offers.
+    make(!!current?.pieces?.length);
   });
   useShortcut("map.pathsClear", () => {
     if (pend) return clear();
@@ -1120,6 +1546,19 @@ export default function FindPaths(p: {
     }
     // What is offered and not yet taken: thin dashes, blue for likely rivers, grey for the rest.
     for (const g of ghosts) {
+      if (g.ring) {
+        // A basin's lake or marsh, offered: a pale wash in a dashed outline; taken, the accent.
+        trace([...g.points, g.points[0]!], false);
+        ctx.closePath();
+        ctx.fillStyle = takeZone ? `${accent}26` : "rgba(47, 111, 159, 0.14)";
+        ctx.fill();
+        ctx.setLineDash([5, 4]);
+        ctx.strokeStyle = takeZone ? accent : "#2f6f9f";
+        ctx.lineWidth = 1.6;
+        ctx.stroke();
+        ctx.setLineDash([]);
+        continue;
+      }
       trace(g.points, !g.blue && p.curve);
       ctx.setLineDash([]);
       ctx.strokeStyle = paper;
@@ -1168,6 +1607,23 @@ export default function FindPaths(p: {
         ctx.stroke();
       }
     }
+    // The proposed route's tunnels in dashes and its climbs' chevrons, as the made path shows them.
+    const main = shown?.paths[0];
+    for (const x of main?.stretches ?? []) {
+      if (x.kind === "steps" || (x.kind === "climb" && !showSteep)) continue;
+      const { line } = outline(space, main!.points.slice(x.from, x.to + 1), {
+        curve: false,
+        closed: false,
+      });
+      const screen = line.flatMap((q) => {
+        const s = v.project(q);
+        return s ? [s as [number, number]] : [];
+      });
+      const look = { colour: accent, width: 2.5, casing: 5, paper, ink: "#2a2420" };
+      if (x.kind === "tunnel") drawTunnel(ctx, screen, look);
+      else drawChevrons(ctx, screen, x.grade ?? 0, look);
+    }
+    for (const t of shown?.tags ?? []) pill(t.at, t.text, "#5d564d");
     const MARKS: Record<Mark["kind"], string> = {
       ford: "ford",
       bridge: "bridge",
@@ -1433,6 +1889,38 @@ export default function FindPaths(p: {
               <small>{kmPerPx !== null ? `${ABOVE_KM2[above]} km²` : "large"}</small>
             </label>
           )}
+          {shown?.basin && pend && (
+            <>
+              {segmented(
+                "How it ends in the basin",
+                shown.basin.end,
+                BASIN_ENDS.map((b) => ({
+                  ...b,
+                  ...(b.value === shown.basin!.auto
+                    ? {
+                        note: "usual",
+                        tip: `${b.tip}. The usual end here: the land draining into the basin is ${b.value === "drains" ? "large enough to fill it" : "too small to fill it"}`,
+                      }
+                    : {}),
+                })),
+                setBasinEnd,
+              )}
+              {shown.basin.zone && (
+                <Tip label="Make the basin's water a zone in the current layer, beside the river">
+                  <button
+                    type="button"
+                    className="find-chip"
+                    aria-pressed={takeZone}
+                    onClick={() => setTakeZone(!takeZone)}
+                  >
+                    {shown.basin.zone.counts === "water"
+                      ? "Make the lake too"
+                      : "Make the marsh too"}
+                  </button>
+                </Tip>
+              )}
+            </>
+          )}
         </>
       )}
       {kind === "route" && (
@@ -1470,6 +1958,59 @@ export default function FindPaths(p: {
             }),
             setVariant,
             shortcutText("map.pathsSwitch"),
+          )}
+          <span className="find-into">
+            <label>
+              Steepest
+              <select
+                value={Math.round(steepest[mode] * 100)}
+                onChange={(e) => setSteepest({ ...steepest, [mode]: Number(e.target.value) / 100 })}
+              >
+                {[...new Set([...GRADES, Math.round(steepest[mode] * 100)])]
+                  .sort((a, b) => a - b)
+                  .map((g) => (
+                    <option key={g} value={g}>
+                      {g}%
+                    </option>
+                  ))}
+              </select>
+            </label>
+          </span>
+          <Tip label="Allow a tunnel: where there is no way over, straight through the high ground">
+            <button
+              type="button"
+              className="find-chip"
+              aria-pressed={tunnel}
+              onClick={() => setTunnel(!tunnel)}
+            >
+              Tunnel
+            </button>
+          </Tip>
+          {tunnel && (
+            <span className="find-into">
+              <label>
+                Longest tunnel
+                <select value={tunnelKm} onChange={(e) => setTunnelKm(Number(e.target.value))}>
+                  {TUNNEL_KM.map((km) => (
+                    <option key={km} value={km}>
+                      {km} km
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </span>
+          )}
+          {mode === "foot" && (
+            <Tip label="Allow steps: short, very steep stretches on foot, up to 80% and about 300 m">
+              <button
+                type="button"
+                className="find-chip"
+                aria-pressed={allowSteps}
+                onClick={() => setAllowSteps(!allowSteps)}
+              >
+                Steps
+              </button>
+            </Tip>
           )}
         </>
       )}
@@ -1570,6 +2111,21 @@ export default function FindPaths(p: {
           ))}
         </select>
       </span>
+      {kind === "route" && shown?.profile && pend && (
+        <span className="paths-heights">
+          <ProfileChart profile={shown.profile} />
+          <Tip label="Chevrons on steep stretches, pointing uphill: › 12 to 20%, ›› steeper">
+            <button
+              type="button"
+              className="find-chip"
+              aria-pressed={showSteep}
+              onClick={() => setShowSteep(!showSteep)}
+            >
+              Show steepness
+            </button>
+          </Tip>
+        </span>
+      )}
     </div>
   );
 
@@ -1620,6 +2176,26 @@ export default function FindPaths(p: {
           )}
           <span className="find-status" role="status">
             {phone ? short : status}
+            {shown?.steep && pend && (
+              <>
+                {" "}
+                <button type="button" className="plain paths-ship" onClick={() => setTunnel(true)}>
+                  Allow a tunnel
+                </button>
+                {mode === "foot" && (
+                  <>
+                    {" "}
+                    <button
+                      type="button"
+                      className="plain paths-ship"
+                      onClick={() => setAllowSteps(true)}
+                    >
+                      Allow steps
+                    </button>
+                  </>
+                )}
+              </>
+            )}
             {shown?.ship && pend && (
               <>
                 {" "}
@@ -1657,22 +2233,89 @@ export default function FindPaths(p: {
               </button>
             </Tip>
           )}
-          <Tip
-            label="Make a path of what is proposed, in the current layer"
-            keys={shortcutText("map.pathsMake")}
-            {...(makeReason ? { note: makeReason } : {})}
-          >
-            <button
-              type="button"
-              className="primary"
-              aria-disabled={makeReason !== null || undefined}
-              onClick={() => makeReason === null && make()}
+          {current?.pieces ? (
+            <>
+              <Tip
+                label="Make only the new stretches, each a path joined to the road at both ends"
+                keys={shortcutText("map.pathsMake")}
+                {...(current.pieces.length === 0
+                  ? { note: "It runs all the way along the road" }
+                  : makeReason
+                    ? { note: makeReason }
+                    : {})}
+              >
+                <button
+                  type="button"
+                  className="primary"
+                  aria-disabled={makeReason !== null || current.pieces.length === 0 || undefined}
+                  onClick={() => makeReason === null && current.pieces!.length > 0 && make(true)}
+                >
+                  Make new stretches
+                </button>
+              </Tip>
+              <Tip
+                label="Make the whole route one path, along the road too"
+                {...(makeReason ? { note: makeReason } : {})}
+              >
+                <button
+                  type="button"
+                  aria-disabled={makeReason !== null || undefined}
+                  onClick={() => makeReason === null && make(false)}
+                >
+                  Make whole route
+                </button>
+              </Tip>
+            </>
+          ) : (
+            <Tip
+              label="Make a path of what is proposed, in the current layer"
+              keys={shortcutText("map.pathsMake")}
+              {...(makeReason ? { note: makeReason } : {})}
             >
-              {makeLabel}
-            </button>
-          </Tip>
+              <button
+                type="button"
+                className="primary"
+                aria-disabled={makeReason !== null || undefined}
+                onClick={() => makeReason === null && make()}
+              >
+                {makeLabel}
+              </button>
+            </Tip>
+          )}
         </div>
       </div>
     </>
+  );
+}
+
+/**
+ * A route's height profile: its heights along the way, the steep parts coloured (amber from 12%,
+ * red from 20%), with what it comes to beneath.
+ */
+function ProfileChart({ profile }: { profile: ProfileView }) {
+  const W = 220;
+  const H = 40;
+  const lo = Math.min(...profile.h);
+  const hi = Math.max(...profile.h);
+  const y = (h: number) => H - 3 - ((h - lo) / (hi - lo || 1)) * (H - 6);
+  const x = (a: number) => 1 + a * (W - 2);
+  const pieces: { d: string; tone: "flat" | "steep" | "steeper" }[] = [];
+  for (let i = 0; i + 1 < profile.at.length; i++) {
+    const g = Math.abs(profile.grade[i] ?? 0);
+    const tone = g >= 0.2 ? "steeper" : g >= 0.12 ? "steep" : "flat";
+    const seg = `${x(profile.at[i]!).toFixed(1)},${y(profile.h[i]!).toFixed(1)} ${x(profile.at[i + 1]!).toFixed(1)},${y(profile.h[i + 1]!).toFixed(1)}`;
+    const last = pieces[pieces.length - 1];
+    if (last && last.tone === tone) last.d += ` ${seg.split(" ")[1]}`;
+    else pieces.push({ d: seg, tone });
+  }
+  return (
+    <figure className="paths-profile" aria-label={`Height profile: ${profile.text}`}>
+      <svg viewBox={`0 0 ${W} ${H}`} width={W} height={H} aria-hidden="true">
+        {pieces.map((piece, i) => (
+          <polyline key={i} points={piece.d} className={`is-${piece.tone}`} />
+        ))}
+      </svg>
+      <figcaption>{profile.text}</figcaption>
+    </figure>
   );
 }
