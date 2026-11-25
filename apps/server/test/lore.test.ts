@@ -942,20 +942,35 @@ describe("discovering what lies at a place", () => {
     ],
   } as unknown as MapFile;
   const CANDIDATES = {
-    candidates: [
+    places: [
       {
-        kind: "settlement",
-        name: "Current Hollow",
-        description: "A village that listens to the deep currents.",
-        basis: [{ path: NIRANI, quote: "keep time by the pulse of the deep currents" }],
-        conflicts: "",
-      },
-      {
-        kind: "person",
-        name: "Vaakh",
-        description: "A keeper of beats.",
-        basis: [{ path: NIRANI, quote: "they sing to the stars" }],
-        conflicts: "",
+        place: 1,
+        candidates: [
+          {
+            kind: "settlement",
+            role: "village",
+            name: "Current Hollow",
+            description: "A village that listens to the deep currents.",
+            basis: [{ path: NIRANI, quote: "keep time by the pulse of the deep currents" }],
+            conflicts: "",
+          },
+          {
+            kind: "person",
+            role: "keeper",
+            name: "Vaakh",
+            description: "A keeper of beats.",
+            basis: [{ path: NIRANI, quote: "they sing to the stars" }],
+            conflicts: "",
+          },
+          {
+            kind: "thing",
+            role: "a third",
+            name: "Not wanted",
+            description: "One or two are asked for, so a third is not kept.",
+            basis: [],
+            conflicts: "",
+          },
+        ],
       },
     ],
   };
@@ -997,6 +1012,111 @@ describe("discovering what lies at a place", () => {
     // Vaakh is linked from the Nirani entry, so it is drawn on too.
     expect(sent).toContain(`=== Entry: ${VAAKH}`);
     expect((await t.get(`/api/maps/${MAP_ID}/discoveries`)).json().discoveries).toHaveLength(2);
+  });
+
+  /** A road with the Water entry, from west to east through the middle of the map. */
+  const road = {
+    id: "road1",
+    kind: "path",
+    layer: "lay1",
+    points: [
+      [0, 500],
+      [1000, 500],
+    ],
+    entry: "waterid0",
+    label: null,
+    child: null,
+    style: "strroad1",
+  } as unknown as MapFile["features"][number];
+  const spot = (n: number) => ({
+    at: [200 + n * 10, 500],
+    kind: n === 0 ? "crossroads" : "waystation",
+    title: n === 0 ? "Crossroads of the Water Road and the Salt Way" : `A day's ride, ${n}`,
+    lines: [`What is here: place ${n + 1}.`, "On: the Water Road (road, an entry)."],
+    features: ["road1"],
+  });
+
+  it("asks about several places in one call, each with what it is and its road's entry", async () => {
+    const p = await startWithMap([
+      {
+        places: [
+          {
+            place: 2,
+            candidates: [
+              {
+                kind: "place",
+                role: "post-house",
+                name: "Mile Inn",
+                description: "A post-house a day's ride along the road.",
+                basis: [{ path: WATER, quote: "Water is plentiful in the lowlands." }],
+                conflicts: "",
+              },
+            ],
+          },
+          {
+            place: 1,
+            candidates: [
+              {
+                kind: "settlement",
+                role: "inn",
+                name: "Fourways",
+                description: "An inn where the roads cross.",
+                basis: [],
+                conflicts: "",
+              },
+            ],
+          },
+          // A place that was not asked about is let go.
+          { place: 9, candidates: [{ ...CANDIDATES.places[0]!.candidates[0]! }] },
+        ],
+      },
+    ]);
+    t.repo.pushFromOutside({
+      [`.frontier/maps/${MAP_ID}.json`]: serialiseMap({ ...map, features: [...map.features, road] }),
+    });
+    await t.services.sync();
+    const res = await t.post(`/api/maps/${MAP_ID}/discover`, { spots: [spot(0), spot(1)] });
+    expect(res.statusCode, res.body).toBe(200);
+    expect(p.calls).toHaveLength(1);
+    const sent = p.calls[0]!.body.messages[1]!.content;
+    expect(sent).toMatch(/^Entries about what is near and around the places/);
+    // The road's own entry is given, though its nearest point is far from the places.
+    expect(sent).toContain(`=== Entry: ${WATER}`);
+    expect(sent).toContain(
+      '=== Place 1: a crossroads, "Crossroads of the Water Road and the Salt Way"',
+    );
+    expect(sent).toContain("What it might be: an inn, a market, a shrine, a gallows");
+    expect(sent).toContain('=== Place 2: a day\'s travel along a road, "A day\'s ride, 1"');
+    expect(sent).toContain("On: the Water Road (road, an entry).");
+    expect(sent).toContain("one or two discoveries for each");
+    const found = res.json().discoveries;
+    expect(found.map((d: { name: string }) => d.name)).toEqual(["Fourways", "Mile Inn"]);
+    expect(found[0]).toMatchObject({
+      at: [200, 500],
+      role: "inn",
+      spot: { kind: "crossroads", title: "Crossroads of the Water Road and the Salt Way" },
+    });
+    expect(found[1].at).toEqual([210, 500]);
+    expect(found[1].basis).toHaveLength(1);
+  });
+
+  it("asks about six places a call at most, and estimates the calls and the cost", async () => {
+    await startWithMap([CANDIDATES]);
+    const seven = Array.from({ length: 7 }, (_, n) => spot(n));
+    const tooMany = await t.post(`/api/maps/${MAP_ID}/discover`, { spots: seven });
+    expect(tooMany.statusCode).toBe(400);
+    // No price known: the calls are counted, the cost is not.
+    let est = await t.post(`/api/maps/${MAP_ID}/discover/estimate`, { spots: seven });
+    expect(est.statusCode, est.body).toBe(200);
+    expect(est.json()).toMatchObject({ calls: 2, usd: null, spentUsd: 0 });
+    const priced = await t.put("/api/settings/ai/prices", {
+      prices: { [MODEL]: { promptPrice: 3, completionPrice: 15 } },
+    });
+    expect(priced.statusCode, priced.body).toBe(200);
+    est = await t.post(`/api/maps/${MAP_ID}/discover/estimate`, { spots: seven.slice(0, 1) });
+    expect(est.json().calls).toBe(1);
+    expect(est.json().usd).toBeGreaterThan(0.002);
+    expect(est.json().usd).toBeLessThan(0.05);
   });
 
   it("makes a picture only when asked, and keeps a discovery as a new entry with a marker", async () => {

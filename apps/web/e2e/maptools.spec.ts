@@ -233,11 +233,12 @@ test("explores from the names on the map, and says plainly why it cannot", async
     { id: "lab2", kind: "label", at: [0.55, 0.5], label: "Truncated Point" },
   ]);
 
-  // Nothing near: why is said over the map and in the notice.
+  // Nothing near: why is said over the map and in the notice. A tap chooses; Ask asks.
   await open(page, empty, "");
   await page.getByRole("button", { name: "Explore" }).click();
   let c = await onMap(page, [0.5, 0.5]);
   await page.mouse.click(c.x, c.y);
+  await page.getByRole("button", { name: "Ask what is there" }).click();
   await expect(page.locator(".map-hint-failed")).toContainText("Nothing near this place");
   await expect(page.locator(".map-notice")).toBeVisible();
 
@@ -246,6 +247,7 @@ test("explores from the names on the map, and says plainly why it cannot", async
   await page.getByRole("button", { name: "Explore" }).click();
   c = await onMap(page, [0.5, 0.5]);
   await page.mouse.click(c.x, c.y);
+  await page.getByRole("button", { name: "Ask what is there" }).click();
   const card = page.locator(".discovery-card");
   await expect(card.locator("h2")).toHaveText("Test Hollow");
   await expect(card).toContainText("grows only from the names on the map");
@@ -255,6 +257,7 @@ test("explores from the names on the map, and says plainly why it cannot", async
   await page.getByRole("button", { name: "Explore" }).click();
   c = await onMap(page, [0.5, 0.5]);
   await page.mouse.click(c.x, c.y);
+  await page.getByRole("button", { name: "Ask what is there" }).click();
   await expect(page.locator(".map-hint-failed")).toContainText(
     "The model ran out of room before finishing its answer",
   );

@@ -16,6 +16,7 @@ import {
   Layers as LayersIcon,
   Palette,
   Sparkles,
+  Telescope,
 } from "lucide-react";
 import {
   hiddenWithin,
@@ -41,6 +42,14 @@ import { entryUrl, mapUrl } from "../api.ts";
 import { useDialogs } from "../components/Dialogs.tsx";
 import { OfflineCopy } from "../components/OfflineCopy.tsx";
 import { DiscoveryPins, OpenDiscovery } from "../components/map/DiscoveryPins.tsx";
+import {
+  AlongBand,
+  askReason,
+  ExploreBar,
+  ExploreKeys,
+  ExplorePanel,
+  SpotPins,
+} from "../components/map/Explore.tsx";
 import type { FindHandle } from "../components/map/FindAreas.tsx";
 import type { PathsHandle } from "../components/map/FindPaths.tsx";
 import { FeatureEntryDialog } from "../components/map/FeatureEntryDialog.tsx";
@@ -62,7 +71,7 @@ import { useRefresh } from "../components/Shell.tsx";
 import { usePageTitle, usePanel, useRightBar, useSheetFloor } from "../components/shell/panels.tsx";
 import { Tip } from "../components/ui/Tip.tsx";
 import { useToast } from "../components/ui/Toast.tsx";
-import { shortcutText, useShortcut } from "../keys.ts";
+import { focusIsFree, shortcutText, useShortcut } from "../keys.ts";
 import { askSize } from "../map/askSize.ts";
 import { useCurveSetting } from "../map/curveSetting.ts";
 import { type MenuTarget, menuTargetOf, type PointerKind } from "../map/gesture.ts";
@@ -88,6 +97,9 @@ import { useSnapSetting, useSnapTargets } from "../map/snap.ts";
 import { nearestOnPath } from "../map/joins.ts";
 import { useReliefSetting } from "../map/reliefSetting.ts";
 import { useDiscovery } from "../map/useDiscovery.ts";
+import { sendable, useExplore } from "../map/spots/useExplore.ts";
+import type { Spot } from "../map/spots/spots.ts";
+import { usePhone } from "../components/Shell.tsx";
 import { useMapDraw } from "../map/useMapDraw.ts";
 import { useMapFile } from "../map/useMapFile.ts";
 import { useMapKeys } from "../map/useMapKeys.ts";
@@ -286,6 +298,20 @@ export function MapPage() {
     year: time.timeOn ? time.year : null,
   };
   const { found, openFound, setOpenFound } = discovery;
+  // Exploring: the points of interest along the roads and rivers drawn now, and the places chosen.
+  const exploring = discovery.exploring && !editing;
+  const explore = useExplore({
+    id,
+    map,
+    resolved: shown.resolved,
+    hidden: hiddenNow,
+    styles,
+    titleOf,
+    exploring,
+    year: moment.year,
+    moment,
+  });
+  const phone = usePhone();
 
   /** Sets what a tool's step changes. */
   const apply = (step: Step) => {
@@ -313,7 +339,17 @@ export function MapPage() {
     focusing,
     setFocusing,
     exploring: discovery.exploring,
-    explore: discovery.explore,
+    explore: (position, screen, how) => {
+      if (!position) return;
+      const done = explore.tapAt(
+        position,
+        screen,
+        { add: how.shift, touch: how.kind === "touch" },
+        viewRef.current,
+        size,
+      );
+      if (done) openExplore(done === "along" ? null : position);
+    },
     apply,
     frame,
     paused: menuOpen,
@@ -538,6 +574,18 @@ export function MapPage() {
   usePanel(
     map ? { id: "layers", title: "Layers", icon: LayersIcon, render: () => layersPanel } : null,
   );
+  let explorePanel: ReactNode = null;
+  usePanel(
+    map && exploring
+      ? { id: "explore", title: "Explore", icon: Telescope, render: () => explorePanel }
+      : null,
+  );
+  useShortcut("map.explore", () => {
+    if (editing || !found.ready || !focusIsFree(document.activeElement, frame.current)) {
+      return false;
+    }
+    toggleExploring();
+  });
   usePanel(
     showsFeature
       ? {
@@ -608,6 +656,56 @@ export function MapPage() {
     const box = frame.current?.getBoundingClientRect();
     const covered = sheet && box ? Math.max(0, Math.min(box.bottom - sheet.top, box.height)) : 0;
     setView(panBy(centreOn(view, at), 0, -covered / 2));
+  };
+
+  /** Turns exploring on or off; on, the Explore tab opens beside the map (not over it on a phone). */
+  function toggleExploring() {
+    const on = !discovery.exploring;
+    discovery.setExploring(on);
+    setSelected(null);
+    if (on && !phone) bar.show("explore");
+    if (!on && bar.open === "explore") bar.hide();
+  }
+  /**
+   * Shows the Explore tab for what was chosen. On a phone the sheet covers the foot of the map,
+   * so the map moves to keep the place (or the whole road) in the strip above it.
+   */
+  function openExplore(at: Position | null, line: string | null = null) {
+    showPanel("explore");
+    if (!phone) return;
+    // Once the sheet is drawn; measured without its sliding in, where it will come to rest.
+    window.setTimeout(() => {
+      const v = viewRef.current;
+      const sheet = document.querySelector<HTMLElement>(".bottom-sheet");
+      const box = frame.current?.getBoundingClientRect();
+      if (!v || !box) return;
+      const top = sheet
+        ? window.innerHeight - parseFloat(getComputedStyle(sheet).bottom || "0") - sheet.offsetHeight
+        : box.bottom;
+      const covered = Math.max(0, Math.min(box.bottom - top, box.height));
+      const lineId = line ?? explore.along;
+      const path = at ? null : explore.found?.lines.find((l) => l.id === lineId);
+      let centre = at;
+      if (path) {
+        const xs = path.line.map((p) => p[0]);
+        const ys = path.line.map((p) => p[1]);
+        centre = [(Math.min(...xs) + Math.max(...xs)) / 2, (Math.min(...ys) + Math.max(...ys)) / 2];
+      }
+      if (centre) setView(panBy(centreOn(v, centre), 0, -covered / 2));
+    }, 60);
+  }
+  // On a phone the card of what was found is a sheet of its own: the Explore sheet steps aside.
+  const hideBar = bar.hide;
+  const exploreSheetOpen = bar.open === "explore";
+  useEffect(() => {
+    if (phone && openFound && exploreSheetOpen) hideBar();
+  }, [phone, openFound, exploreSheetOpen, hideBar]);
+  const pickSpot = (spot: Spot, add: boolean) => {
+    explore.pick(spot, add);
+    openExplore(spot.at);
+  };
+  const askChosen = () => {
+    void discovery.ask(sendable(explore.asks)).then((ok) => ok && explore.setChosen([]));
   };
 
   // The first tap of Place with AI opens its tab, to say what to place there.
@@ -686,7 +784,12 @@ export function MapPage() {
         copyPlace: (f) => copyPlace(f.id),
         editFeature: (f) => startEditing(f.id),
         copyView,
-        explore: () => discovery.explore(menuAt.at),
+        explore: () => {
+          if (!menuAt.at) return;
+          if (!discovery.exploring) toggleExploring();
+          explore.chooseHere(menuAt.at);
+          openExplore(menuAt.at);
+        },
         showInBar: (f) => {
           chooseTool("select");
           setSelected(f.id);
@@ -973,6 +1076,32 @@ export function MapPage() {
     />
   );
   const makingFor = makingEntry && map.features.find((f) => f.id === makingEntry.feature);
+  /** The title of the entry a feature stands for, or null. */
+  const entryTitle = (feature: string) => {
+    const entry = map.features.find((f) => f.id === feature)?.entry;
+    return entry ? (file.names[entry]?.title ?? null) : null;
+  };
+  if (exploring) {
+    explorePanel = (
+      <ExplorePanel
+        x={explore}
+        discoveries={found.items}
+        seeking={discovery.seeking}
+        failed={discovery.failed}
+        onAsk={askChosen}
+        onOpenFound={(d) => {
+          setSelected(null);
+          setOpenFound(d);
+        }}
+        entryTitle={entryTitle}
+        onAlong={(line) => {
+          explore.setAlong(line);
+          openExplore(null, line);
+        }}
+        onSpot={(spot) => pickSpot(spot, false)}
+      />
+    );
+  }
 
   return (
     <div className="map-page">
@@ -1007,10 +1136,7 @@ export function MapPage() {
         onCopyView={copyView}
         canExplore={found.ready}
         exploring={discovery.exploring}
-        onExplore={() => {
-          discovery.setExploring(!discovery.exploring);
-          setSelected(null);
-        }}
+        onExplore={toggleExploring}
         hasTime={time.chronicles.length > 0}
         timeOn={time.timeOn}
         onTime={() => {
@@ -1189,17 +1315,28 @@ export function MapPage() {
             }}
           />
         )}
-        {discovery.exploring && !openFound && (
-          // Why a tap found nothing is said here, over the map, where the eye is.
-          <p
-            className={`map-hint${discovery.failed && !discovery.seeking ? " map-hint-failed" : ""}`}
-            role={discovery.failed && !discovery.seeking ? "alert" : "status"}
-          >
-            {discovery.seeking
-              ? "Looking at what is near…"
-              : discovery.failed
-                ? `${discovery.failed} Tap a place to try again.`
-                : "Tap a place to see what might be found there."}
+        {exploring && view && (
+          <>
+            <AlongBand x={explore} view={view} size={size} />
+            <SpotPins x={explore} view={view} size={size} onPick={pickSpot} />
+            <ExploreBar x={explore} phone={phone} onList={() => showPanel("explore")} />
+            <ExploreKeys
+              x={explore}
+              frame={frame}
+              canAsk={askReason(explore, discovery.seeking) === null}
+              ask={askChosen}
+              cardOpen={openFound !== null}
+              closeCard={() => setOpenFound(null)}
+              sheetOpen={phone && bar.open === "explore"}
+              closeSheet={bar.hide}
+              onCursor={(spot) => phone && openExplore(spot.at)}
+            />
+          </>
+        )}
+        {exploring && discovery.failed && !discovery.seeking && !openFound && (
+          // Why asking found nothing is said over the map too, where the eye is.
+          <p className="map-hint map-hint-failed" role="alert">
+            {discovery.failed}
           </p>
         )}
         <FocusBox box={box} focusing={focusing} onCancel={() => setFocusing(false)} />
