@@ -331,6 +331,10 @@ export function findHints(src: HintPicture): Found {
     if (count < 10 || sh < 5 || sh > 40 * Math.max(1, S) || sw < 8) continue;
     if (sw / sh < 1.05 || count > sw * sh * 0.7) continue;
     if (ground.water[cellOf([(p.x0 + p.x1) / 2, (p.y0 + p.y1) / 2])]) continue;
+    // Green as a whole (reeds, trees), its edges blended with the ground: not a mountain.
+    let a = 0;
+    for (const i of p.cells) a += pic.A[i]!;
+    if (a / count < meanA - 4) continue;
     // A chain of symbols drawn touching: cut into pieces about as wide as tall-and-a-half.
     const k = sw > 3 * sh ? Math.round(sw / (1.6 * sh)) : 1;
     if (k > 8) continue;

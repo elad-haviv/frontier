@@ -15,9 +15,12 @@ import { zonePx } from "./outline.ts";
 import type { Engine } from "../findPaths/engine.ts";
 import type { PathsRequest } from "../findPaths/protocol.ts";
 import { answerPaths } from "../findPaths/workerSide.ts";
+import type { HintsRequest } from "../terrainHints/protocol.ts";
+import { answerHints } from "../terrainHints/workerSide.ts";
 
 interface Scope {
-  onmessage: ((e: MessageEvent<{ id: number } & (Request | PathsRequest)>) => void) | null;
+  onmessage:
+    ((e: MessageEvent<{ id: number } & (Request | PathsRequest | HintsRequest)>) => void) | null;
   postMessage(message: Reply, transfer?: Transferable[]): void;
 }
 const scope = self as unknown as Scope;
@@ -208,7 +211,9 @@ scope.onmessage = (e) => {
         opened: (url) => opened(url, false),
         full: (shared) => fullPicture(shared as Looked),
       })
-    : answer(req as Request);
+    : req.type.startsWith("hints.")
+      ? answerHints(req as HintsRequest, { opened: (url) => opened(url, false) })
+      : answer(req as Request);
   answered.then(
     ({ value, transfer }) => scope.postMessage({ id, ok: true, value }, transfer ?? []),
     (err: unknown) =>

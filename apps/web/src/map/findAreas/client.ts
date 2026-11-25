@@ -3,6 +3,7 @@
  * the tool is used, so the pictures it has looked at are kept while the app is open.
  */
 import type { PathsRequest } from "../findPaths/protocol.ts";
+import type { HintsRequest } from "../terrainHints/protocol.ts";
 import type { AreaRings, FoundAreas, Opened, Outlined, Reply, Request } from "./protocol.ts";
 
 let worker: Worker | null = null;
@@ -29,7 +30,7 @@ function start(): Worker {
   return worker;
 }
 
-export function ask<T>(req: Request | PathsRequest): Promise<T> {
+export function ask<T>(req: Request | PathsRequest | HintsRequest): Promise<T> {
   const w = start();
   const id = next++;
   return new Promise<T>((resolve, reject) => {

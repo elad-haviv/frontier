@@ -26,7 +26,12 @@ const found = findHints(src);
 const of = (kind: string) => found.hints.filter((h) => h.kind === kind);
 const dist = (a: Px, b: Px) => Math.hypot(a[0] - b[0], a[1] - b[1]);
 const withIds = (hints: readonly FoundHint[]): PxHint[] =>
-  hints.map(({ conf: _c, why: _w, ...h }, i) => ({ ...h, id: `h${i}` }));
+  hints.map((h, i) => {
+    const { conf, why, ...shape } = h;
+    void conf;
+    void why;
+    return { ...shape, id: `h${i}` };
+  });
 
 describe("finding hints in a painted island", () => {
   it("finds the sea and its coast", () => {
