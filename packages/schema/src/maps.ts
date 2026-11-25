@@ -1163,3 +1163,24 @@ export function reorderFeature(features: MapFeature[], id: string, by: 1 | -1): 
   }
   return features;
 }
+
+/**
+ * What the list of maps shows of a map without opening it (stage 23): its first image, or, for a
+ * star map or a system model, the few numbers a small drawing needs. Positions are 0 to 1.
+ */
+export type MapPreview =
+  | { kind: "image"; path: string }
+  | {
+      kind: "stars";
+      /** Where each star is on the plane seen from above, and its colour. */
+      dots: { x: number; y: number; c: string }[];
+      /** Routes, as pairs of indexes into `dots`. */
+      lines: [number, number][];
+    }
+  | {
+      kind: "system";
+      /** The star's colour. */
+      star: string;
+      /** Each planet's orbit as a share of the widest (0 to 1), where it is (radians) and its colour. */
+      rings: { r: number; a: number; c: string }[];
+    };

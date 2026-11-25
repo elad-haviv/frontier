@@ -1,290 +1,446 @@
-import { useNeedsConnection } from "../sync/connection.ts";
-import { type FormEvent, type ReactNode, useState } from "react";
-import { ActionButton } from "../components/ui/ActionButton.tsx";
+import { Grid2x2, List, Plus, Search, X } from "lucide-react";
+import { type KeyboardEvent, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { api, ApiFailure, imageUrl, mapUrl } from "../api.ts";
-import { MapImagePicker } from "../components/images/MapImagePicker.tsx";
+import { api, mapUrl } from "../api.ts";
+import { useDialogs } from "../components/Dialogs.tsx";
+import { MapArt } from "../components/maps/MapArt.tsx";
+import { isDark, KIND_PICTURES } from "../components/maps/KindPictures.tsx";
+import { type MapActions, MapCard, MapRowItem } from "../components/maps/MapItems.tsx";
+import { NewMapDialog } from "../components/maps/NewMapDialog.tsx";
 import { useRefresh } from "../components/Shell.tsx";
-import { queue } from "../sync/queue.ts";
 import { Problem } from "../components/ui/Problem.tsx";
 import { Progress } from "../components/ui/Progress.tsx";
+import { useScope, useShortcut } from "../keys.ts";
+import {
+  byKind,
+  counts,
+  defaultView,
+  filterAndSort,
+  isFiltered,
+  type Kind,
+  KIND_CHIP,
+  KIND_PLURAL,
+  KIND_WORD,
+  KINDS,
+  type MapRow,
+  metaText,
+  NO_FILTERS,
+  recentMaps,
+  rowOf,
+  savedView,
+  saveView,
+  type Sort,
+  toolsFor,
+} from "../map/mapsList.ts";
+import { useNeedsConnection } from "../sync/connection.ts";
+import { queue } from "../sync/queue.ts";
 import { failureOf, useAsync } from "../useAsync.ts";
 import "./Maps.css";
 
-type Kind = "sphere" | "flat" | "stars" | "system";
-
-const STROKE = "var(--ink-soft)";
-const KINDS: { id: Kind; name: string; note: string; dark: boolean; picture: ReactNode }[] = [
-  {
-    id: "sphere",
-    name: "Globe",
-    note: "An image that wraps a whole world, with projections.",
-    dark: false,
-    picture: (
-      <svg viewBox="0 0 80 50" width="80" height="50">
-        <circle cx="40" cy="25" r="18" fill="none" stroke={STROKE} strokeWidth="1.5" />
-        <ellipse cx="40" cy="25" rx="8" ry="18" fill="none" stroke={STROKE} />
-        <path d="M22 25h36" fill="none" stroke={STROKE} />
-      </svg>
-    ),
-  },
-  {
-    id: "flat",
-    name: "Flat map",
-    note: "Your own image of a region or a city, or a diagram with no measuring.",
-    dark: false,
-    picture: (
-      <svg viewBox="0 0 80 50" width="80" height="50">
-        <path
-          d="M14 12l17-4 18 5 17-4v29l-17 4-18-5-17 4z"
-          fill="none"
-          stroke={STROKE}
-          strokeWidth="1.5"
-        />
-        <path d="M31 8v29M49 13v29" fill="none" stroke={STROKE} />
-      </svg>
-    ),
-  },
-  {
-    id: "stars",
-    name: "Star map",
-    note: "Places in open space, joined by routes. No image needed.",
-    dark: true,
-    picture: (
-      <svg viewBox="0 0 80 50" width="80" height="50">
-        <path d="M8 40l22-12h42M20 46l22-18M52 46l-4-18" stroke="#3a3f4e" fill="none" />
-        <path d="M22 18l20 6 18-12" stroke="#e3c58a" fill="none" strokeWidth="1.3" />
-        <circle cx="22" cy="18" r="3" fill="#f2d28a" />
-        <circle cx="42" cy="24" r="2.4" fill="#d9694a" />
-        <circle cx="60" cy="12" r="3.4" fill="#dfe6ee" />
-        <path d="M22 18v14M60 12v18" stroke="#ebe4d6" strokeOpacity=".35" fill="none" />
-      </svg>
-    ),
-  },
-  {
-    id: "system",
-    name: "System model",
-    note: "A star and what circles it, moving as the years pass.",
-    dark: true,
-    picture: (
-      <svg viewBox="0 0 80 50" width="80" height="50">
-        <ellipse cx="40" cy="25" rx="14" ry="7" fill="none" stroke="#ebe4d6" strokeOpacity=".3" />
-        <ellipse cx="40" cy="25" rx="30" ry="15" fill="none" stroke="#ebe4d6" strokeOpacity=".3" />
-        <circle cx="40" cy="25" r="5" fill="#f2d28a" />
-        <circle cx="53" cy="28" r="2.2" fill="#6d9fcf" />
-        <circle cx="14" cy="18" r="3.5" fill="#d9b38c" />
-      </svg>
-    ),
-  },
-];
-
-const STATE: Record<string, string> = {
-  new: "not published yet",
-  unpublished: "unpublished changes",
-};
-
-/** The list of maps, and the form that makes a new one from an image of the vault. */
+/**
+ * The library of maps (stage 23). Each map is one card with a picture; a map that has maps lying
+ * under it is drawn as a deck, which is only how it looks. The page grows into its tools: nothing
+ * but cards for a few maps, then search and sort, then filters and the maps opened last. New map
+ * is a dialog, so the page is always the library and never a form.
+ */
 export function MapsPage() {
   const maps = useAsync(() => api.maps(), "maps");
   const navigate = useNavigate();
   const refresh = useRefresh();
-  const [title, setTitle] = useState("");
+  const dialogs = useDialogs();
   const offline = useNeedsConnection();
-  const [kind, setKind] = useState<Kind>("flat");
-  const [schematic, setSchematic] = useState(false);
-  const [unit, setUnit] = useState<"ly" | "pc">("ly");
-  const [image, setImage] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [picking, setPicking] = useState(false);
+  const [filters, setFilters] = useState(NO_FILTERS);
+  const [sort, setSort] = useState<Sort | null>(null);
+  const [view, setView] = useState<"grid" | "list" | null>(() => savedView());
+  const [making, setMaking] = useState<Kind | null>(null);
+  const search = useRef<HTMLInputElement>(null);
+  const grid = useRef<HTMLUListElement>(null);
 
-  async function create(e: FormEvent) {
-    e.preventDefault();
-    setBusy(true);
-    setError(null);
-    try {
-      const noImage = kind === "stars" || kind === "system";
-      const { id } = await api.createMap(title.trim(), kind, noImage ? undefined : image);
-      // What the map starts with that creating it does not set is kept like any change: on this
-      // device until the server has it.
-      const wanted =
-        kind === "flat" && schematic
-          ? "schematic"
-          : kind === "stars" && unit !== "ly"
-            ? "unit"
-            : null;
-      if (wanted) {
-        const made = await api.map(id);
-        let space = made.map.space;
-        // A schematic map is a flat map with measuring off.
-        if (wanted === "schematic" && space.kind === "flat") space = { ...space, schematic: true };
-        if (wanted === "unit" && space.kind === "stars") space = { ...space, unit };
-        await queue.put(
-          `map:${id}`,
-          { ...made.map, space },
-          { draftId: "", revision: made.revision, baseBlob: made.blob, base: made.map, delay: 0 },
-        );
-        await queue.sendNow(`map:${id}`);
-      }
+  const rows = useMemo(() => (maps.state === "ready" ? maps.value.maps.map(rowOf) : []), [maps]);
+  const hasEdits = rows.some((r) => r.edited !== null);
+  const sortNow: Sort = sort ?? (hasEdits ? "recent" : "name");
+  const viewNow = view ?? defaultView(rows.length);
+  const filtering = isFiltered(filters);
+  const tools = toolsFor(rows.length, filtering);
+  const shown = useMemo(() => filterAndSort(rows, filters, sortNow), [rows, filters, sortNow]);
+  const count = counts(rows);
+  const recent = useMemo(
+    () => (tools.recent && !filtering ? recentMaps(rows) : []),
+    [rows, tools.recent, filtering],
+  );
+
+  useScope("maps");
+  useShortcut("maps.find", () => {
+    if (!search.current) return false;
+    search.current.focus();
+  });
+  useShortcut("maps.new", () => setMaking("flat"));
+
+  const actions: MapActions = {
+    offline,
+    onEdit: (r) => navigate(`${mapUrl(r.id)}?edit=1`),
+    onStack: (r) => navigate(`/stack/${r.id}`),
+    onRename: async (r) => {
+      const title = await dialogs.prompt({
+        title: `Rename the map "${r.title}"`,
+        label: "Title",
+        initial: r.title,
+        action: "Rename",
+      });
+      if (!title?.trim() || title.trim() === r.title) return;
+      // Saved like any change to a map: kept on this device until the server has it.
+      const made = await api.map(r.id);
+      await queue.put(
+        `map:${r.id}`,
+        { ...made.map, title: title.trim() },
+        { draftId: "", revision: made.revision, baseBlob: made.blob, base: made.map, delay: 0 },
+      );
+      await queue.sendNow(`map:${r.id}`);
       refresh();
-      navigate(mapUrl(id) + "?edit=1");
-    } catch (err) {
-      setError(err instanceof ApiFailure ? err.message : "The map could not be made.");
-      setBusy(false);
+      maps.retry();
+    },
+    onDelete: async (r) => {
+      const under = rows.filter((x) => x.under === r.id).length;
+      const ok = await dialogs.confirm({
+        title: `Delete the map "${r.title}"?`,
+        body: `It holds ${r.features} ${r.features === 1 ? "feature" : "features"}.${
+          under ? ` The ${under === 1 ? "map" : `${under} maps`} lying under it stay.` : ""
+        } It is removed from the library when you save a version.`,
+        action: "Delete the map",
+        danger: true,
+      });
+      if (!ok) return;
+      await queue.drop(`map:${r.id}`);
+      await api.deleteMap(r.id).catch(() => undefined);
+      refresh();
+      maps.retry();
+    },
+  };
+
+  // The arrows move between cards and rows; Enter opens the one with the focus.
+  function arrows(e: KeyboardEvent<HTMLElement>) {
+    const keys = ["ArrowRight", "ArrowLeft", "ArrowDown", "ArrowUp"];
+    if (!keys.includes(e.key) || !(e.target instanceof HTMLAnchorElement)) return;
+    const links = [...(grid.current?.querySelectorAll<HTMLAnchorElement>("a.map-link") ?? [])];
+    const at = links.indexOf(e.target);
+    if (at < 0) return;
+    // In a grid a row is as many cards as lie on one line.
+    const top = links[0]?.closest("li")?.getBoundingClientRect().top;
+    const perRow =
+      viewNow === "grid"
+        ? Math.max(
+            1,
+            links.filter((l) => l.closest("li")?.getBoundingClientRect().top === top).length,
+          )
+        : 1;
+    const step =
+      e.key === "ArrowRight"
+        ? 1
+        : e.key === "ArrowLeft"
+          ? -1
+          : e.key === "ArrowDown"
+            ? perRow
+            : -perRow;
+    if (viewNow === "list" && (e.key === "ArrowRight" || e.key === "ArrowLeft")) return;
+    const next = links[at + step];
+    if (next) {
+      e.preventDefault();
+      next.focus();
     }
   }
 
+  function clearSearch() {
+    setFilters({ ...filters, query: "" });
+    search.current?.focus();
+  }
+
+  const unreadable = maps.state === "ready" ? maps.value.problems : [];
+  const loading = maps.state === "loading";
+  const groups = sortNow === "kind" && tools.groups && !filtering && viewNow === "grid";
+
   return (
-    <article className="entry wide maps">
-      <header className="entry-head">
+    <article className="entry wide maps maps-page">
+      <header className="maps-head">
         <h1>Maps</h1>
-        <p className="muted lede">
-          A map is drawn over an image of yours, or, for a star map, in open space. Its markers,
-          paths and zones point at entries.
-        </p>
-      </header>
-
-      {maps.state === "loading" && <p className="muted">Loading…</p>}
-      {maps.reloading && <Progress />}
-      {failureOf(maps) && <Problem reason={failureOf(maps)!.message} onRetry={maps.retry} />}
-      {maps.state === "ready" && (
-        <>
-          {maps.value.maps.length === 0 && (
-            <p className="empty">No maps yet. Make the first below.</p>
-          )}
-          <ul className="map-list">
-            {maps.value.maps.map((m) => {
-              const below = maps.value.maps.filter((x) => x.under === m.id).length;
-              const above = maps.value.maps.find((x) => x.id === m.under);
-              return (
-                <li key={m.id}>
-                  <Link to={mapUrl(m.id)}>{m.title}</Link>
-                  <span className="muted">
-                    {m.space.kind === "sphere"
-                      ? "globe"
-                      : m.space.kind === "stars"
-                        ? "star map"
-                        : m.space.kind === "system"
-                          ? "system model"
-                          : m.space.schematic
-                            ? "schematic map"
-                            : "flat map"}{" "}
-                    · {m.features} {m.features === 1 ? "feature" : "features"}
-                    {above ? ` · lies under ${above.title}` : ""}
-                    {below > 0 ? ` · ${below} ${below === 1 ? "layer" : "layers"} below` : ""}
-                    {STATE[m.state] ? ` · ${STATE[m.state]}` : ""}
-                  </span>
-                </li>
-              );
-            })}
-          </ul>
-          {maps.value.problems.map((p) => (
-            <p key={p.path} className="banner" role="alert">
-              {p.path} is not shown as a map. {p.message}
-            </p>
-          ))}
-        </>
-      )}
-
-      <form className="settings-block new-map settings" onSubmit={create}>
-        <h2>New map</h2>
-        <label className="field">
-          <span>Title</span>
-          <input type="text" value={title} onChange={(e) => setTitle(e.target.value)} />
-        </label>
-        <fieldset className="kinds-field">
-          <legend>Kind</legend>
-          <div className="kinds">
-            {KINDS.map((k) => (
-              <label key={k.id} className="kind">
-                <input
-                  type="radio"
-                  name="map-kind"
-                  value={k.id}
-                  checked={kind === k.id}
-                  onChange={() => setKind(k.id)}
-                />
-                <span className={`pic${k.dark ? " dark" : ""}`} aria-hidden="true">
-                  {k.picture}
-                </span>
-                <b>
-                  {k.name}
-                  {k.dark && <span className="new-tag">New</span>}
-                </b>
-                <small>{k.note}</small>
-              </label>
+        {rows.length > 0 && (
+          <span className="maps-count" aria-live="polite">
+            {filtering
+              ? `${shown.length} of ${rows.length} maps`
+              : `${rows.length} ${rows.length === 1 ? "map" : "maps"}`}
+          </span>
+        )}
+        <span className="maps-grow" />
+        {tools.view && (
+          <div className="maps-toggle" role="group" aria-label="View">
+            {(
+              [
+                ["grid", "Grid of cards", Grid2x2],
+                ["list", "List", List],
+              ] as const
+            ).map(([v, label, Icon]) => (
+              <button
+                key={v}
+                type="button"
+                aria-pressed={viewNow === v}
+                aria-label={label}
+                title={label}
+                onClick={() => {
+                  setView(v);
+                  saveView(v);
+                }}
+              >
+                <Icon size={18} aria-hidden="true" />
+              </button>
             ))}
           </div>
-        </fieldset>
-        {kind === "flat" && (
-          <label className="check">
-            <input
-              type="checkbox"
-              checked={schematic}
-              onChange={(e) => setSchematic(e.target.checked)}
-            />{" "}
-            Schematic: a diagram, with no measuring
-          </label>
         )}
-        {kind === "stars" && (
-          <label className="field">
-            <span>Distances are in</span>
-            <select value={unit} onChange={(e) => setUnit(e.target.value as "ly" | "pc")}>
-              <option value="ly">Light-years</option>
-              <option value="pc">Parsecs</option>
-            </select>
-          </label>
-        )}
-        {(kind === "stars" || kind === "system") && (
-          <p className="muted">
-            {kind === "stars"
-              ? "A star map needs no image. Its places have three numbers: across, along and height above a flat plane."
-              : "A system model needs no image. It begins with its star; add the worlds that circle it."}
-          </p>
-        )}
-        {kind !== "stars" && kind !== "system" && (
-          <div className="field">
-            <span>Image</span>
-            <span className="chosen-image">
-              {image && <img src={imageUrl(image, 320)} alt="" />}
-              {image && <span className="chosen-image-name">{image.split("/").pop()}</span>}
-              {/* Choosing works offline from images already here; the dialog says which need a connection. */}
+        <button type="button" className="primary maps-new" onClick={() => setMaking("flat")}>
+          <Plus size={18} aria-hidden="true" />
+          <span className="maps-new-label">New map</span>
+        </button>
+      </header>
+      <p className="muted lede">
+        A map is drawn over an image of yours, or, for a star map or a system model, in open space.
+        Its markers, paths and zones point at entries.
+      </p>
+
+      {failureOf(maps) && <Problem reason={failureOf(maps)!.message} onRetry={maps.retry} />}
+      {maps.reloading && <Progress />}
+      {unreadable.length > 0 && (
+        <div className="maps-banner" role="alert">
+          <details open>
+            <summary>
+              {unreadable.length} {unreadable.length === 1 ? "map" : "maps"} could not be read
+            </summary>
+            {unreadable.map((p) => (
+              <p key={p.path}>
+                {p.path} is not shown as a map. {p.message}
+              </p>
+            ))}
+          </details>
+        </div>
+      )}
+
+      {(tools.search || tools.chips) && (
+        <div className="maps-tools">
+          {tools.search && (
+            <div className="maps-search">
+              <Search size={16} aria-hidden="true" />
+              <input
+                ref={search}
+                type="search"
+                placeholder="Find a map"
+                aria-label="Find a map"
+                value={filters.query}
+                autoComplete="off"
+                onChange={(e) => setFilters({ ...filters, query: e.target.value })}
+                onKeyDown={(e) => {
+                  if (e.key === "Escape" && filters.query) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setFilters({ ...filters, query: "" });
+                  } else if (e.key === "ArrowDown") {
+                    const first = grid.current?.querySelector<HTMLAnchorElement>("a.map-link");
+                    if (first) {
+                      e.preventDefault();
+                      first.focus();
+                    }
+                  }
+                }}
+              />
+              {filters.query ? (
+                <button type="button" aria-label="Clear search" onClick={clearSearch}>
+                  <X size={16} aria-hidden="true" />
+                </button>
+              ) : (
+                <kbd aria-hidden="true">/</kbd>
+              )}
+            </div>
+          )}
+          {tools.chips && (
+            <div className="maps-chips" role="group" aria-label="Show">
+              {(["all", ...KINDS] as const).map((k) => (
+                <button
+                  key={k}
+                  type="button"
+                  className="chip"
+                  aria-pressed={filters.kind === k}
+                  onClick={() => setFilters({ ...filters, kind: k })}
+                >
+                  {k === "all" ? "All" : KIND_CHIP[k]} <small>{count[k]}</small>
+                </button>
+              ))}
+              <span className="maps-sep" aria-hidden="true" />
               <button
                 type="button"
-                onClick={() => setPicking(true)}
-                title={offline && "Uploads need a connection"}
+                className="chip"
+                aria-pressed={filters.needsPublishing}
+                onClick={() =>
+                  setFilters({ ...filters, needsPublishing: !filters.needsPublishing })
+                }
               >
-                {image ? "Choose another image…" : "Choose an image…"}
+                Needs publishing <small>{count.needsPublishing}</small>
               </button>
-            </span>
+            </div>
+          )}
+          {rows.length >= 12 && (
+            <label className="maps-sort">
+              Sort
+              <select
+                value={sortNow}
+                aria-label="Sort maps"
+                onChange={(e) => setSort(e.target.value as Sort)}
+              >
+                <option value="recent" disabled={!hasEdits}>
+                  Recently edited
+                </option>
+                <option value="name">Name</option>
+                <option value="kind">Kind</option>
+              </select>
+            </label>
+          )}
+        </div>
+      )}
+
+      {loading && (
+        <ul className="maps-grid" aria-hidden="true">
+          {Array.from({ length: 8 }, (_, i) => (
+            <li key={i} className="map-card skeleton">
+              <div className="map-face">
+                <span className="map-thumb" />
+                <div className="map-body">
+                  <h3>&nbsp;</h3>
+                  <span className="map-meta">&nbsp;</span>
+                </div>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {maps.state === "ready" && rows.length === 0 && (
+        <div className="maps-empty">
+          <div className="maps-four" aria-hidden="true">
+            {KINDS.map((k) => (
+              <span key={k} className={`map-thumb${isDark(k) ? " dark" : ""}`}>
+                <span className={`map-art drawing${isDark(k) ? " dark" : ""}`}>
+                  {KIND_PICTURES[k]}
+                </span>
+              </span>
+            ))}
           </div>
-        )}
-        {picking && (
-          <MapImagePicker
-            onClose={() => setPicking(false)}
-            onPick={(path) => {
-              setPicking(false);
-              setImage(path);
-              // An image uploaded in the dialog is a new unpublished change.
-              refresh();
-            }}
-          />
-        )}
-        {error && (
-          <p className="error" role="alert">
-            {error}
+          <h2>No maps yet</h2>
+          <p>
+            Draw a world over an image of yours, or place stars and planets in open space. Each
+            map's markers point at entries.
           </p>
-        )}
-        <p className="change-actions">
-          <ActionButton
-            type="submit"
-            className="primary"
-            disabled={busy || !title.trim() || (kind !== "stars" && kind !== "system" && !image)}
-          >
-            Make the map
-          </ActionButton>
-        </p>
-      </form>
+          <button type="button" className="primary" onClick={() => setMaking("flat")}>
+            <Plus size={18} aria-hidden="true" /> Make the first map
+          </button>
+        </div>
+      )}
+
+      {recent.length > 0 && (
+        <section className="maps-recent" aria-label="Recently opened">
+          <h2>Recently opened</h2>
+          <ul>
+            {recent.map((r) => (
+              <li key={r.id}>
+                <Link to={mapUrl(r.id)} className={`recent-card`}>
+                  <span className={`map-thumb${isDark(r.kind) ? " dark" : ""}`}>
+                    <MapArt row={r} />
+                  </span>
+                  <span>
+                    <b>{r.title}</b>
+                    <small>
+                      {KIND_WORD[r.kind]} · {metaText(r).split(" · ")[1] ?? ""}
+                    </small>
+                  </span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {maps.state === "ready" && rows.length > 0 && shown.length === 0 && (
+        <div className="maps-none">
+          <b>
+            {filters.query.trim()
+              ? `No map is called “${filters.query.trim()}”.`
+              : "No map matches these filters."}
+          </b>
+          {filters.query.trim() && (filters.kind !== "all" || filters.needsPublishing) && (
+            <span>A filter is on as well.</span>
+          )}
+          <span>
+            {filters.query.trim() && (
+              <button type="button" onClick={clearSearch}>
+                Clear search
+              </button>
+            )}
+            {(filters.kind !== "all" || filters.needsPublishing) && (
+              <button
+                type="button"
+                onClick={() => setFilters({ ...filters, kind: "all", needsPublishing: false })}
+              >
+                Show all kinds
+              </button>
+            )}
+          </span>
+        </div>
+      )}
+
+      {shown.length > 0 && viewNow === "grid" && !groups && (
+        <ul className="maps-grid" ref={grid} aria-label="Maps" onKeyDown={arrows}>
+          {shown.map((r) => (
+            <MapCard key={r.id} row={r} rows={rows} query={filters.query} actions={actions} />
+          ))}
+          {!filtering && tools.newTile && (
+            <li className="map-newtile">
+              <button type="button" onClick={() => setMaking("flat")}>
+                <Plus size={20} aria-hidden="true" />
+                <span>New map</span>
+              </button>
+            </li>
+          )}
+        </ul>
+      )}
+      {shown.length > 0 && viewNow === "grid" && groups && (
+        <div ref={undefined} onKeyDown={arrows}>
+          {byKind(shown).map((g) => (
+            <section key={g.kind} aria-label={KIND_PLURAL[g.kind]}>
+              <h2 className="maps-group">
+                {KIND_PLURAL[g.kind]} <small>{g.rows.length}</small>
+              </h2>
+              <ul className="maps-grid" ref={g.kind === byKind(shown)[0]!.kind ? grid : undefined}>
+                {g.rows.map((r) => (
+                  <MapCard key={r.id} row={r} rows={rows} query={filters.query} actions={actions} />
+                ))}
+              </ul>
+            </section>
+          ))}
+        </div>
+      )}
+      {shown.length > 0 && viewNow === "list" && (
+        <div className="maps-list" onKeyDown={arrows}>
+          <div className="maps-list-head" aria-hidden="true">
+            <span />
+            <span>Name</span>
+            <span>Kind</span>
+            <span>Features</span>
+            <span>State</span>
+            <span />
+          </div>
+          <ul ref={grid} aria-label="Maps">
+            {shown.map((r: MapRow) => (
+              <MapRowItem key={r.id} row={r} rows={rows} query={filters.query} actions={actions} />
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {making && <NewMapDialog initialKind={making} onClose={() => setMaking(null)} />}
     </article>
   );
 }

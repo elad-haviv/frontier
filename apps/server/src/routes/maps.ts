@@ -12,6 +12,7 @@ import { stem } from "@frontier/vault";
 import { z } from "zod";
 import { ApiError } from "../errors.js";
 import type { Services } from "../app.js";
+import { previewOf } from "../maps/preview.js";
 
 const IdParam = z.object({ id: z.string().regex(/^[a-z0-9]{8}$/) });
 const Create = z.object({
@@ -45,6 +46,9 @@ export function mapRoutes(app: FastifyInstance, s: Services): void {
         under: map.under ?? null,
         features: map.features.length,
         state,
+        /** When it last changed, and a small preview for its card (stage 23). */
+        edited: s.maps.editedAt(map.id),
+        preview: previewOf(map),
         // What a device holding this map compares, to know whether to read it again.
         v: versionMark(blobs.get(mapPath(map.id)), revision),
       })),

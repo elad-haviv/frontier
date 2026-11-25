@@ -26,13 +26,23 @@ import { nextCell, previousCell, tableCommand } from "./components/tableKeys.ts"
  * Where a shortcut applies, from the outside in. When two bound shortcuts share keys, the one
  * of the later scope in this list wins: a dialog over a page, a table inside the editor.
  */
-export const SCOPES = ["app", "chronicle", "map", "graph", "editor", "table", "dialog"] as const;
+export const SCOPES = [
+  "app",
+  "chronicle",
+  "map",
+  "maps",
+  "graph",
+  "editor",
+  "table",
+  "dialog",
+] as const;
 export type Scope = (typeof SCOPES)[number];
 
 export const SCOPE_NAMES: Record<Scope, string> = {
   app: "Everywhere",
   chronicle: "Chronicle",
   map: "Map",
+  maps: "List of maps",
   graph: "Graph",
   editor: "Editor",
   table: "In a table",
@@ -661,6 +671,10 @@ keys.register(
     label: "Turn the map to the typed angle",
     handledBy: "the Turn panel",
   },
+
+  // The list of maps
+  { id: "maps.find", keys: ["/"], scope: "maps", label: "Find a map" },
+  { id: "maps.new", keys: ["n"], scope: "maps", label: "New map" },
 
   // The graph
   { id: "graph.find", keys: ["/"], scope: "graph", label: "Find an entry in the graph" },

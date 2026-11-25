@@ -304,6 +304,7 @@ export async function newMapInForm(
   image = "map one.png",
 ): Promise<void> {
   await page.goto("/maps");
+  await openNewMap(page);
   await page.locator(".new-map input[type=text]").fill(title);
   await chooseKind(page, space === "sphere" ? "Globe" : "Flat map");
   if (space === "schematic") await page.getByRole("checkbox", { name: /^Schematic/ }).check();
@@ -312,6 +313,12 @@ export async function newMapInForm(
   await expect(page.locator(".map-top")).toBeVisible();
   // The view is written into the address once the map has been laid out.
   await expect(page).toHaveURL(/v=/);
+}
+
+/** Opens the New map dialog from the Maps page. */
+export async function openNewMap(page: Page) {
+  await page.getByRole("button", { name: "New map" }).first().click();
+  await expect(page.getByRole("dialog", { name: "New map" })).toBeVisible();
 }
 
 /** Picks a kind of map on the New map form by the name of its card. */

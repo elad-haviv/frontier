@@ -133,6 +133,22 @@ describe("map files", () => {
     expect(map.features[0]).toMatchObject({ kind: "marker", body: { type: "star", mass: 1 } });
   });
 
+  it("lists each map with when it changed and a small preview of it", async () => {
+    const flat = await create("flat", "Harbor");
+    const stars = (await t.post("/api/maps", { title: "Stars", kind: "stars" })).json()
+      .id as string;
+    const list = (await t.get("/api/maps")).json().maps as {
+      id: string;
+      edited: string | null;
+      preview: { kind: string; path?: string } | null;
+    }[];
+    const harbor = list.find((m) => m.id === flat)!;
+    expect(harbor.preview).toEqual({ kind: "image", path: IMAGE });
+    expect(Date.parse(harbor.edited!)).toBeGreaterThan(Date.now() - 60_000);
+    // A star map with no stars has nothing to draw yet.
+    expect(list.find((m) => m.id === stars)!.preview).toBeNull();
+  });
+
   it("keeps the passages a place holds through a save", async () => {
     const globe = await create("sphere", "Ezob");
     const under = await create("sphere", "Labyrinth");
