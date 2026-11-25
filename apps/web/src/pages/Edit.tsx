@@ -7,7 +7,7 @@ import { EditToolbar } from "../components/EditToolbar.tsx";
 import { EditorContextMenu } from "../components/EditorContextMenu.tsx";
 import { type BlockStyle, insertEmbeds, lineStyle, run } from "../components/editCommands.ts";
 import { LinkToEntry } from "../components/LinkToEntry.tsx";
-import { openHelp, passageOf, startHelp } from "../components/writing/helpCard.ts";
+import { closeHelp, openHelp, passageOf, startHelp } from "../components/writing/helpCard.ts";
 import { WritingHelp } from "../components/writing/WritingHelp.tsx";
 import { CommentsPanel } from "../components/CommentsPanel.tsx";
 import { CommentBubbles, useMargin } from "../components/comments/CommentBubbles.tsx";
@@ -27,7 +27,7 @@ import { folderTypeOf, type OfflineOpen, openOrCreate } from "../offline/openOrC
 import { NotOnDevice } from "../components/NotOnDevice.tsx";
 import type { DraftKind, FolderFile } from "@frontier/schema";
 import { setFrontmatterKey } from "@frontier/vault";
-import { MessageSquare, SlidersHorizontal, Trash2, Undo2 } from "lucide-react";
+import { MessageSquare, Scale, SlidersHorizontal, Trash2, Undo2 } from "lucide-react";
 import { PageAction, usePanel, useRightBar } from "../components/shell/panels.tsx";
 import { useEditorOutline } from "../components/entry/EditorOutline.tsx";
 import { WideMenuItem } from "../components/entry/WideMenuItem.tsx";
@@ -40,6 +40,9 @@ const PHONE = "(max-width: 47.99rem)";
 const IMAGES_NEED_CONNECTION = "Images need a connection. Your text stays.";
 
 // The image dialog loads when it is first opened, so the editor opens as fast as before.
+const ConsultPanel = lazy(() =>
+  import("../components/consult/ConsultPanel.tsx").then((m) => ({ default: m.ConsultPanel })),
+);
 const ImagePicker = lazy(() =>
   import("../components/images/ImagePicker.tsx").then((m) => ({ default: m.ImagePicker })),
 );
@@ -383,6 +386,20 @@ export function EditPage() {
     bar.show("comments");
   }
 
+  // Consult (stage 24): its tab, and a request to run it, which the panel takes when it opens.
+  const [consultRequest, setConsultRequest] = useState(0);
+  const wantConsult = useRef<{ scope?: "content" } | null>(null);
+  const [backToFindings, setBackToFindings] = useState(false);
+  function consult() {
+    const v = view.current;
+    // Two cards under one passage would compete: Consult takes over from Help.
+    if (v) v.dispatch({ effects: closeHelp.of(null) });
+    const selected = v ? v.state.selection.main.from !== v.state.selection.main.to : false;
+    wantConsult.current = selected ? { scope: "content" } : {};
+    bar.show("consult");
+    setConsultRequest((n) => n + 1);
+  }
+
   /** A comment for the AI: its suggestion opens in the writing help card on its passage. */
   function suggestFor(c: PassageComment, at: { from: number; to: number }) {
     const v = view.current;
@@ -450,6 +467,7 @@ export function EditPage() {
   useShortcut("editor.help", () => {
     if (view.current) startHelp(view.current);
   });
+  useShortcut("editor.consult", () => consult());
 
   // The folded frontmatter line in the text opens the Properties panel, at its first field.
   const [focusProperties, setFocusProperties] = useState(0);
@@ -502,6 +520,47 @@ export function EditPage() {
                 }}
                 onClose={() => bar.hide()}
               />
+            ),
+        },
+  );
+
+  // Whether there is anything to compare with the published text: an entry that exists, with a
+  // draft or with text typed since it was opened.
+  const hasChanges =
+    draft.current.kind === "edit" && (openedFrom.current.id !== "" || latest.current !== initial);
+  usePanel(
+    initial === null
+      ? null
+      : {
+          id: "consult",
+          title: "Consult",
+          icon: Scale,
+          render: () =>
+            view.current && (
+              <Suspense fallback={null}>
+                <ConsultPanel
+                  key={path}
+                  view={view.current}
+                  path={path}
+                  canWrite={canWrite}
+                  hasChanges={hasChanges}
+                  textTick={textTick}
+                  runRequest={consultRequest}
+                  takeRun={() => {
+                    const asked = wantConsult.current;
+                    wantConsult.current = null;
+                    return asked;
+                  }}
+                  onJump={() => {
+                    // On a phone the sheet would cover the passage.
+                    if (window.matchMedia(PHONE).matches) {
+                      bar.hide();
+                      setBackToFindings(true);
+                    }
+                  }}
+                  onCommented={() => void loadComments()}
+                />
+              </Suspense>
             ),
         },
   );
@@ -592,6 +651,7 @@ export function EditPage() {
     onHelp: () => {
       if (view.current) startHelp(view.current);
     },
+    onConsult: consult,
     onAsk: askAbout,
   };
 
@@ -712,6 +772,18 @@ export function EditPage() {
           onCursor={outline.onCursor}
         />
       </EditorContextMenu>
+      {backToFindings && bar.open !== "consult" && (
+        <button
+          type="button"
+          className="consult-back"
+          onClick={() => {
+            setBackToFindings(false);
+            bar.show("consult");
+          }}
+        >
+          Back to findings
+        </button>
+      )}
       <EditToolbar view={view} inTable={inTable} style={style} {...tools} />
       <WritingHelp
         view={view}

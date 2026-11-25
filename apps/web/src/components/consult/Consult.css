@@ -1,0 +1,291 @@
+/* The side bar's body scrolls and pads it, so the panel only lays out its own parts. */
+.consult-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  font-size: 0.9rem;
+}
+.consult-pane {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+.consult-seg {
+  display: flex;
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.consult-seg button {
+  flex: 1;
+  padding: 0.45rem 0.5rem;
+  border: 0;
+  background: none;
+  color: var(--ink-soft);
+  font: inherit;
+  cursor: pointer;
+}
+.consult-seg button[aria-pressed="true"] {
+  background: var(--accent-soft);
+  color: var(--ink);
+  font-weight: 600;
+}
+.consult-seg button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.consult-scope,
+.consult-note,
+.consult-edited {
+  margin: 0;
+  color: var(--ink-faint);
+  font-size: 0.85rem;
+}
+.consult-edited {
+  color: var(--accent);
+}
+.consult-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+.consult-chip {
+  padding: 0.2rem 0.65rem;
+  border: 1px solid var(--rule);
+  border-radius: 99px;
+  background: var(--paper);
+  color: var(--ink-soft);
+  font: inherit;
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+.consult-chip[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--ink);
+}
+.consult-say {
+  width: 100%;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  background: var(--paper);
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.9rem;
+}
+.consult-go {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: 0.5rem 1rem;
+  border: 0;
+  border-radius: 8px;
+  background: var(--accent);
+  color: var(--paper);
+  font: inherit;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+}
+.consult-go:disabled {
+  opacity: 0.6;
+}
+.consult-ghost,
+.consult-apply {
+  min-height: 36px;
+  padding: 0.3rem 0.7rem;
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+.consult-ghost:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.consult-apply {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--paper);
+  font-weight: 600;
+}
+.consult-wait {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--ink-soft);
+}
+.consult-spin {
+  width: 0.9rem;
+  height: 0.9rem;
+  border: 2px solid var(--rule);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: consult-spin 1s linear infinite;
+}
+@keyframes consult-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.consult-summary {
+  margin: 0;
+  padding: 0.1rem 0.7rem;
+  border-left: 3px solid var(--accent);
+}
+.consult-summary small {
+  display: block;
+  margin-top: 0.25rem;
+  color: var(--ink-faint);
+}
+.consult-sec {
+  margin: 0.25rem 0 -0.35rem;
+  color: var(--ink-faint);
+  font: 600 0.72rem var(--sans);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.consult-edits {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.consult-edits li {
+  display: flex;
+  gap: 0.5rem;
+  padding: 0.4rem 0;
+  border-bottom: 1px solid var(--rule);
+  font-size: 0.85rem;
+}
+.consult-verdict,
+.consult-kind {
+  flex: none;
+  align-self: flex-start;
+  padding: 0.1rem 0.45rem;
+  border-radius: 4px;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+.consult-verdict.is-better {
+  background: color-mix(in srgb, #3f6b3a 18%, transparent);
+  color: var(--ink);
+}
+.consult-verdict.is-neutral,
+.consult-kind.is-note {
+  background: color-mix(in srgb, var(--ink-faint) 18%, transparent);
+  color: var(--ink-soft);
+}
+.consult-verdict.is-worse,
+.consult-kind.is-problem {
+  background: color-mix(in srgb, var(--warn) 16%, transparent);
+  color: var(--warn);
+}
+.consult-verdict.is-risky,
+.consult-kind.is-concern {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.consult-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  padding: 0.7rem 0.75rem;
+  border: 1px solid var(--rule);
+  border-radius: 10px;
+  background: var(--paper);
+  cursor: pointer;
+}
+.consult-card[aria-current="true"] {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+.consult-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.4rem;
+}
+.consult-cert {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  color: var(--ink-faint);
+  font-size: 0.72rem;
+}
+.consult-cert.is-checked {
+  color: color-mix(in srgb, #3f6b3a 80%, var(--ink));
+  font-weight: 600;
+}
+.consult-head {
+  margin: 0;
+  font-weight: 600;
+  line-height: 1.35;
+}
+.consult-quote,
+.consult-source {
+  margin: 0;
+  padding-left: 0.6rem;
+  border-left: 2px solid var(--rule);
+  color: var(--ink-soft);
+  font: 0.9rem/1.5 var(--serif);
+}
+.consult-suggest,
+.consult-reply {
+  margin: 0;
+  font: 0.9rem/1.5 var(--serif);
+}
+.consult-suggest ins {
+  background: color-mix(in srgb, #3f6b3a 18%, transparent);
+  text-decoration: none;
+}
+.consult-reply {
+  padding: 0.5rem 0.65rem;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--ink-faint) 12%, transparent);
+  font: 0.85rem/1.45 var(--sans);
+}
+.consult-card summary {
+  color: var(--ink-faint);
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+.consult-acts,
+.consult-follow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+.consult-follow .consult-say {
+  flex: 1;
+  width: auto;
+}
+.consult-foot {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding-top: 0.6rem;
+  border-top: 1px solid var(--rule);
+  color: var(--ink-faint);
+  font-size: 0.8rem;
+}
+.consult-back {
+  position: fixed;
+  left: 50%;
+  /* Above the formatting bar and the phone home bar. */
+  bottom: 6.5rem;
+  z-index: var(--layer-sticky);
+  transform: translateX(-50%);
+  padding: 0.6rem 1.1rem;
+  border: 0;
+  border-radius: 99px;
+  background: var(--accent);
+  color: var(--paper);
+  font: 600 0.9rem var(--sans);
+  box-shadow: var(--shadow);
+  cursor: pointer;
+}

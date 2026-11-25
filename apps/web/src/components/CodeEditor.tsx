@@ -6,6 +6,7 @@ import { basicSetup } from "codemirror";
 import { useEffect, useRef } from "react";
 import { commentMarks } from "./commentMarks.ts";
 import { helpCard } from "./writing/helpCard.ts";
+import { consultMark } from "./consult/marks.ts";
 import { completeLinks } from "./linkComplete.ts";
 import { notePath } from "./imageWidget.ts";
 import { editorKeymap } from "../keys.ts";
@@ -30,6 +31,11 @@ const theme = EditorView.theme({
     backgroundColor: "var(--accent-soft)",
     boxShadow: "0 0 0 2px var(--accent-soft)",
     borderRadius: "2px",
+  },
+  // The passage a finding of Consult is about.
+  ".cm-consult-passage": {
+    backgroundColor: "var(--accent-soft)",
+    borderBottom: "2px solid var(--accent)",
   },
   ".cm-selectionBackground, &.cm-focused .cm-selectionBackground": {
     backgroundColor: "color-mix(in srgb, var(--accent) 25%, transparent) !important",
@@ -126,6 +132,7 @@ export function CodeEditor({
           EditorView.lineWrapping,
           commentMarks,
           helpCard,
+          consultMark,
           EditorState.readOnly.of(readOnly),
           theme,
           EditorView.updateListener.of((update) => {

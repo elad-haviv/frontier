@@ -33,6 +33,7 @@ import { exportRoutes } from "./routes/export.js";
 import { Discoverer } from "./ai/discover.js";
 import { CharacterTalk } from "./ai/characters.js";
 import { WritingHelper } from "./ai/writing.js";
+import { EditReviewer } from "./ai/review.js";
 import { chronicleRoutes } from "./routes/chronicles.js";
 import { mapRoutes } from "./routes/maps.js";
 import { historyRoutes } from "./routes/history.js";
@@ -111,6 +112,7 @@ export interface Services {
   lore: LoreAsker;
   drafter: EntryDrafter;
   writing: WritingHelper;
+  review: EditReviewer;
   characters: CharacterTalk;
   discoverer: Discoverer;
   conversations: Conversations;
@@ -314,6 +316,13 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
     settings,
     mayRead: (path) => quarantine.aiMayRead(path) === null,
   });
+  const review = new EditReviewer({
+    index,
+    search,
+    provider: ai,
+    settings,
+    mayRead: (path) => quarantine.aiMayRead(path) === null,
+  });
   const lore = new LoreAsker({
     index,
     search,
@@ -361,6 +370,7 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
     lore,
     drafter,
     writing,
+    review,
     characters,
     discoverer,
     conversations,

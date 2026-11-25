@@ -369,6 +369,12 @@ keys.register(
     label: "Writing help on the selection or paragraph",
   },
   {
+    id: "editor.consult",
+    keys: ["Mod-Alt-r"],
+    scope: "editor",
+    label: "Consult: the AI's opinion of this entry",
+  },
+  {
     id: "editor.indent",
     keys: ["Tab"],
     scope: "editor",
@@ -902,6 +908,7 @@ export function editorKeymap(registry = keys): Extension {
     ...bind("editor.done", runBound("editor.done", registry)),
     // The browser's own Ctrl+J (its downloads) never opens from the editor.
     ...bind("editor.help", runBound("editor.help", registry), { preventDefault: true }),
+    ...bind("editor.consult", runBound("editor.consult", registry), { preventDefault: true }),
     // In a list Tab nests the item; elsewhere it indents the line.
     ...bind("editor.indent", (v) => command(indentListItem)(v) || indentMore(v)),
     ...bind("editor.outdent", (v) => command(outdentListItem)(v) || indentLess(v)),
