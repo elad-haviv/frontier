@@ -154,7 +154,30 @@ export interface ReliefReply {
   rgba: Uint8ClampedArray;
 }
 
+/** What the Terrain dialog measures a height picture against, on a small grid of cells. */
+export interface TerrainLook {
+  /** The preview grid. */
+  gw: number;
+  gh: number;
+  /** The picture's water on it; null when the map has no picture. */
+  water: Uint8Array | null;
+  /** The heights Find paths guesses from the picture alone, on the same grid. */
+  guess: Float32Array | null;
+  /** The height picture's greys, 0 to 1, at a small size; null when none was asked for. */
+  heights: { w: number; h: number; data: Float32Array } | null;
+}
+
 export type PathsRequest =
+  /** The Terrain dialog: the picture's water and a height picture's greys, to measure and draw. */
+  | { type: "paths.look"; url: string | null; heights: string | null }
+  /** The map's relief: a height picture as light and shade, one pixel a cell. */
+  | {
+      type: "paths.shade";
+      url: string;
+      invert: boolean;
+      smoothing: number;
+      seaLevel: number | null;
+    }
   | ({ type: "paths.open" } & OpenPaths)
   | ({ type: "paths.terrain" } & TerrainRequest)
   | ({ type: "paths.river" } & RiverRequest)

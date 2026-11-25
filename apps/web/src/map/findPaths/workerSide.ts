@@ -4,12 +4,20 @@
  * onto the cell grid, and the engine that answers the page.
  */
 import type { Px } from "../findAreas/contour.ts";
-import { boxMean, type Ink } from "../findAreas/ink.ts";
+import type { Ink } from "../findAreas/ink.ts";
 import type { LabPicture } from "../findAreas/lab.ts";
 import { type FullPicture, refineRing } from "../findAreas/refine.ts";
+import { prepared } from "../terrain/fit.ts";
 import { Engine } from "./engine.ts";
-import type { HeightSource, OpenedPaths, PathsRequest } from "./protocol.ts";
-import { type HeightPicture, heightsFromRgba, resampleHeights } from "./terrain.ts";
+import { flatGrid } from "./grid.ts";
+import type { HeightSource, OpenedPaths, PathsRequest, ReliefReply, TerrainLook } from "./protocol.ts";
+import {
+  type HeightPicture,
+  heightsFromRgba,
+  LOWEST_SEA,
+  reliefPicture,
+  resampleHeights,
+} from "./terrain.ts";
 
 /** What Find areas' worker keeps of a picture, as far as paths need it. */
 export interface SharedPicture {
@@ -55,20 +63,6 @@ export async function readHeights(url: string): Promise<HeightPicture> {
   return found;
 }
 
-/**
- * The height picture as the terrain's settings read it: turned over when black is high, and
- * smoothed (two box passes a step), which changes how it is read and never the picture.
- */
-export function prepared(src: HeightPicture, invert: boolean, smoothing: number): HeightPicture {
-  let data = src.data;
-  if (invert) data = data.map((v) => 1 - v);
-  if (smoothing > 0) {
-    const r = Math.max(1, Math.round((smoothing * Math.max(src.w, src.h)) / 500));
-    data = boxMean(boxMean(data, src.w, src.h, r), src.w, src.h, r);
-  }
-  return { w: src.w, h: src.h, data };
-}
-
 let current: Engine | null = null;
 
 async function open(
@@ -80,7 +74,7 @@ async function open(
   if (heights) {
     // A height picture that cannot be read is not the end of the tool: it guesses instead.
     source = await readHeights(heights.url).then(
-      (h) => prepared(h, heights.invert, heights.smoothing),
+      (h) => prepared(h, { invert: heights.invert, smoothing: heights.smoothing }),
       () => null,
     );
   }
@@ -120,12 +114,87 @@ async function open(
   };
 }
 
+/** A picture of heights shrunk to at most `most` pixels, by the mean of each block. */
+function shrunk(src: HeightPicture, most: number): HeightPicture {
+  const f = Math.max(1, Math.ceil(Math.sqrt((src.w * src.h) / most)));
+  if (f === 1) return src;
+  const w = Math.max(1, Math.floor(src.w / f));
+  const h = Math.max(1, Math.floor(src.h / f));
+  const data = new Float32Array(w * h);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      let s = 0;
+      for (let dy = 0; dy < f; dy++) for (let dx = 0; dx < f; dx++) s += src.data[(y * f + dy) * src.w + x * f + dx]!;
+      data[y * w + x] = s / (f * f);
+    }
+  }
+  return { w, h, data };
+}
+
+/** The Terrain dialog's look: at most this many cells, so every slider move is worked out at once. */
+const PREVIEW_CELLS = 40_000;
+
+async function look(
+  req: Extract<PathsRequest, { type: "paths.look" }>,
+  deps: WorkerDeps,
+): Promise<{ value: TerrainLook; transfer: Transferable[] }> {
+  const heights = req.heights ? shrunk(await readHeights(req.heights), 160_000) : null;
+  let gw = heights?.w ?? 1;
+  let gh = heights?.h ?? 1;
+  let water: Uint8Array | null = null;
+  let guess: Float32Array | null = null;
+  if (req.url) {
+    const shared = await deps.opened(req.url);
+    shared.paths ??= new Engine(shared.pic, shared.ink);
+    const ground = shared.paths.pictureGround!;
+    const g = ground.grid;
+    const f = Math.max(1, Math.ceil(Math.sqrt((g.w * g.h) / PREVIEW_CELLS)));
+    gw = Math.max(1, Math.floor(g.w / f));
+    gh = Math.max(1, Math.floor(g.h / f));
+    water = new Uint8Array(gw * gh);
+    guess = new Float32Array(gw * gh);
+    for (let y = 0; y < gh; y++) {
+      for (let x = 0; x < gw; x++) {
+        const i = Math.min(g.h - 1, y * f + (f >> 1)) * g.w + Math.min(g.w - 1, x * f + (f >> 1));
+        water[y * gw + x] = ground.water[i]!;
+        guess[y * gw + x] = ground.guess[i]!;
+      }
+    }
+  } else if (heights) {
+    const small = shrunk(heights, PREVIEW_CELLS);
+    gw = small.w;
+    gh = small.h;
+  }
+  const copy = heights ? { w: heights.w, h: heights.h, data: heights.data.slice() } : null;
+  const transfer: Transferable[] = [];
+  if (water) transfer.push(water.buffer);
+  if (guess) transfer.push(guess.buffer);
+  if (copy) transfer.push(copy.data.buffer);
+  return { value: { gw, gh, water, guess, heights: copy }, transfer };
+}
+
+async function shade(
+  req: Extract<PathsRequest, { type: "paths.shade" }>,
+): Promise<{ value: ReliefReply; transfer: Transferable[] }> {
+  const src = prepared(shrunk(await readHeights(req.url), 250_000), {
+    invert: req.invert,
+    smoothing: req.smoothing,
+  });
+  const level = req.seaLevel ?? LOWEST_SEA;
+  const sea = new Uint8Array(src.w * src.h);
+  for (let i = 0; i < sea.length; i++) sea[i] = src.data[i]! < level ? 1 : 0;
+  const rgba = reliefPicture(flatGrid(src.w, src.h), src.data, sea);
+  return { value: { w: src.w, h: src.h, rgba }, transfer: [rgba.buffer] };
+}
+
 /** Answers one request of Find paths. */
 export async function answerPaths(
   req: PathsRequest,
   deps: WorkerDeps,
 ): Promise<{ value: unknown; transfer?: Transferable[] }> {
   if (req.type === "paths.open") return { value: await open(req, deps) };
+  if (req.type === "paths.look") return look(req, deps);
+  if (req.type === "paths.shade") return shade(req);
   if (req.type === "paths.close") {
     current?.close();
     current = null;

@@ -23,6 +23,7 @@ export function ImagePicker({
   onPick,
   onClose,
   forMap = false,
+  title,
 }: {
   onPick: (paths: string[], names: string[]) => void;
   onClose: () => void;
@@ -31,6 +32,8 @@ export function ImagePicker({
    * address work as for an entry.
    */
   forMap?: boolean;
+  /** The dialog's title, when it is not the usual one. */
+  title?: string;
 }) {
   const gallery = useAsync(() => api.gallery(), "image-picker");
   const [chosen, setChosen] = useState<string[]>([]);
@@ -125,7 +128,7 @@ export function ImagePicker({
 
   return (
     <DialogFrame
-      title={forMap ? "Choose an image" : "Add an image"}
+      title={title ?? (forMap ? "Choose an image" : "Add an image")}
       className="image-picker"
       onCancel={onClose}
       onSubmit={insert}

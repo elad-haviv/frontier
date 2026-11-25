@@ -4409,3 +4409,55 @@ button[data-offline] {
   margin: 0.4rem 0 0;
   font-size: 0.88rem;
 }
+
+/* Terrain (stage 20). On the map: where the terrain comes from, and its relief. */
+.terrain-chip {
+  position: absolute;
+  z-index: 2;
+  bottom: 0.9rem;
+  left: 0.6rem;
+  display: inline-flex;
+  overflow: hidden;
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  background: var(--paper);
+  box-shadow: var(--shadow);
+  font-size: 0.82rem;
+}
+.terrain-chip button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  min-height: 1.9rem;
+  padding: 0 0.65rem;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  color: var(--ink-soft);
+  font: inherit;
+}
+.terrain-chip button + button {
+  border-left: 1px solid var(--rule);
+}
+.terrain-chip button[aria-pressed="true"] {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.map-relief {
+  pointer-events: none;
+}
+.layer-terrain {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0 0 0.6rem;
+  font-size: 0.88rem;
+}
+@media (max-width: 47.99rem) {
+  /* Clear of the tools at the foot of the map. */
+  .terrain-chip {
+    top: 0.6rem;
+    bottom: auto;
+  }
+}

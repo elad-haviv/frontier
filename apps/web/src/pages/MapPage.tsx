@@ -11,6 +11,7 @@ import {
   Boxes,
   Group as GroupIcon,
   MapPin,
+  Mountain,
   Layers as LayersIcon,
   Palette,
   Sparkles,
@@ -18,6 +19,7 @@ import {
 import {
   hiddenWithin,
   isLined,
+  type MapFile,
   type MapGroup,
   lockedWithin,
   orderFeature,
@@ -57,7 +59,9 @@ import { TimeBar } from "../components/MapTime.tsx";
 import { TurnPanel } from "../components/MapTurn.tsx";
 import { useRefresh } from "../components/Shell.tsx";
 import { usePageTitle, usePanel, useRightBar, useSheetFloor } from "../components/shell/panels.tsx";
+import { Tip } from "../components/ui/Tip.tsx";
 import { useToast } from "../components/ui/Toast.tsx";
+import { shortcutText, useShortcut } from "../keys.ts";
 import { askSize } from "../map/askSize.ts";
 import { useCurveSetting } from "../map/curveSetting.ts";
 import { type MenuTarget, menuTargetOf, type PointerKind } from "../map/gesture.ts";
@@ -115,6 +119,9 @@ import { queue } from "../sync/queue.ts";
 const FindAreas = lazy(() => import("../components/map/FindAreas.tsx"));
 /** Find paths shares that worker, and loads the same way. */
 const FindPaths = lazy(() => import("../components/map/FindPaths.tsx"));
+/** The Terrain dialog and the relief it sets up load when they are first wanted. */
+const TerrainDialog = lazy(() => import("../components/map/TerrainDialog.tsx"));
+const ReliefLayer = lazy(() => import("../components/map/ReliefLayer.tsx"));
 
 export function MapPage() {
   const dialogs = useDialogs();
@@ -404,6 +411,29 @@ export function MapPage() {
           ? "Find paths needs a map image"
           : null
         : "Find paths needs a map image or a height map";
+  /** Terrain is for flat maps, for now. */
+  const canTerrain = map?.space.kind === "flat" && !schematicMap;
+  /** Done in the Terrain dialog: one change of the map, with Undo in the toast. */
+  const setMapTerrain = (terrain: MapFile["terrain"]) => {
+    setTerrainOpen(false);
+    const now = file.mapRef.current;
+    if (!now) return;
+    const next: MapFile = { ...now };
+    delete next.terrain;
+    if (terrain) next.terrain = terrain;
+    if (JSON.stringify(next.terrain ?? null) === JSON.stringify(now.terrain ?? null)) return;
+    change(next);
+    toast({
+      message: terrain
+        ? "Terrain set: Find paths now uses the height map."
+        : "Terrain removed. The image stays in the library.",
+      action: { label: "Undo", run: file.undo },
+    });
+  };
+  useShortcut("map.relief", () => {
+    if (!map?.terrain && tool !== "paths") return false;
+    setRelief(!relief);
+  });
   const canUndo = findSteps.undo || file.history.past.length > 0;
   const canRedo = findSteps.redo || file.history.future.length > 0;
   const undo = () => findRef.current?.undo() || pathsRef.current?.undo() || file.undo();
@@ -598,6 +628,9 @@ export function MapPage() {
   if (draw.glError) return <p className="center error">{draw.glError}</p>;
 
   const sphere = map.space.kind === "sphere";
+  const terrainName = map.terrain
+    ? (map.terrain.image.split("/").pop() ?? "").replace(/\.[^.]+$/, "")
+    : "";
 
   // What the mouse is over, as the tooltip and the preview show it.
   const hoveredFeature = pointer.hovered
@@ -705,7 +738,43 @@ export function MapPage() {
     <LayerPanel
       legend={<Legend styles={legend} />}
       timeLine={shown.timeLine}
-      setup={<MapSetup id={id} map={map} otherMaps={file.otherMaps} onChange={change} />}
+      setup={
+        <>
+          <MapSetup id={id} map={map} otherMaps={file.otherMaps} onChange={change} />
+          {canTerrain && (
+            <>
+              <h3>Terrain</h3>
+              <p className="layer-terrain">
+                {map.terrain ? (
+                  <>
+                    <span>{terrainName}</span>
+                    <label>
+                      <input
+                        type="checkbox"
+                        checked={relief}
+                        onChange={(e) => setRelief(e.target.checked)}
+                      />{" "}
+                      Relief
+                    </label>
+                    <button type="button" className="quiet" onClick={() => setTerrainOpen(true)}>
+                      Adjust…
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <span className="muted">
+                      No height map. Find paths guesses the terrain from the picture.
+                    </span>
+                    <button type="button" className="quiet" onClick={() => setTerrainOpen(true)}>
+                      Add a height map…
+                    </button>
+                  </>
+                )}
+              </p>
+            </>
+          )}
+        </>
+      }
       map={map}
       hidden={hidden}
       shownImages={shownImages}
@@ -943,6 +1012,7 @@ export function MapPage() {
         onEdit={() => (editing ? stopEditing() : startEditing())}
         onChange={change}
         onRemove={() => void file.removeMap()}
+        onTerrain={canTerrain ? () => setTerrainOpen(true) : undefined}
       />
 
       {editing && (
@@ -1037,6 +1107,39 @@ export function MapPage() {
           />
         </MapContextMenu>
         <canvas ref={draw.liveCanvas} className="map-canvas map-live" aria-hidden="true" />
+        {relief && map.terrain && tool !== "paths" && (
+          <Suspense fallback={null}>
+            <ReliefLayer map={map} view={view} size={size} />
+          </Suspense>
+        )}
+        {map.terrain && (
+          <span className="terrain-chip" role="group" aria-label="Terrain">
+            {editing && (
+              <Tip label="Adjust the height map in Terrain">
+                <button type="button" onClick={() => setTerrainOpen(true)}>
+                  <Mountain size={14} aria-hidden /> Terrain · {terrainName}
+                </button>
+              </Tip>
+            )}
+            <Tip label="Draws the terrain as light and shade" keys={shortcutText("map.relief")}>
+              <button type="button" aria-pressed={relief} onClick={() => setRelief(!relief)}>
+                Relief
+              </button>
+            </Tip>
+          </span>
+        )}
+        {terrainOpen && canTerrain && (
+          <Suspense fallback={null}>
+            <TerrainDialog
+              map={map}
+              picture={[...map.images].reverse().find((i) => shownImages.has(i.id)) ?? null}
+              drawn={shown.resolved.map((r) => r.feature)}
+              styles={styles}
+              onDone={setMapTerrain}
+              onCancel={() => setTerrainOpen(false)}
+            />
+          </Suspense>
+        )}
         <MapHover hovered={menuOpen ? null : hovered} editing={editing} frame={size} />
         {view && placing && (
           <GhostPins

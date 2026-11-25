@@ -10,6 +10,7 @@ import type {
   RouteReply,
   RouteRequest,
   TerrainInfo,
+  TerrainLook,
   TerrainRequest,
   TraceReply,
   TraceRequest,
@@ -24,3 +25,11 @@ export const routeFor = (req: RouteRequest) => ask<RouteReply>({ type: "paths.ro
 export const traceAt = (req: TraceRequest) => ask<TraceReply>({ type: "paths.trace", ...req });
 export const reliefOf = () => ask<ReliefReply>({ type: "paths.relief" });
 export const closePaths = () => ask<null>({ type: "paths.close" });
+export const lookAtTerrain = (url: string | null, heights: string | null) =>
+  ask<TerrainLook>({ type: "paths.look", url, heights });
+export const shadeOf = (req: {
+  url: string;
+  invert: boolean;
+  smoothing: number;
+  seaLevel: number | null;
+}) => ask<ReliefReply>({ type: "paths.shade", ...req });
