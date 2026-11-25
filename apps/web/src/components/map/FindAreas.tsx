@@ -559,6 +559,10 @@ export default function FindAreas(p: {
   }
 
   const layers = layerTree(map.layers);
+  // The biome new zones are made in; on a computer in the main row, so the bar stays two rows.
+  const biomePicker = (
+    <BiomePicker value={zoneBiome} onChange={setZoneBiome} custom={custom} compact />
+  );
   const zoneStyles = p.styles.filter((s) => s.for === "zone");
   const zoneName = selectedZone ? p.titleOf(selectedZone.feature) : "";
   const addToLabel = zoneName ? `Add to “${zoneName}”` : "Add to selected zone";
@@ -692,7 +696,7 @@ export default function FindAreas(p: {
             ))}
           </select>
         </label>
-        <BiomePicker value={zoneBiome} onChange={setZoneBiome} custom={custom} compact />
+        {phone && biomePicker}
         <select aria-label="Zone style" value={style} onChange={(e) => setStyle(e.target.value)}>
           <option value="">{biome ? "The biome's usual look" : "The layer's look"}</option>
           {zoneStyles.map((s) => (
@@ -741,6 +745,7 @@ export default function FindAreas(p: {
         {(!phone || open) && options_}
         <div className="find-main">
           {modeSwitch}
+          {!phone && biomePicker}
           <span className="find-status" role="status">
             {status}
           </span>
