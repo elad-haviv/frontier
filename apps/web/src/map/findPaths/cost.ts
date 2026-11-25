@@ -3,6 +3,7 @@
  * searched on. Speeds are in km an hour and built in (the owner's per-world speeds come later);
  * the tool's tooltip shows them.
  */
+import { type BiomeCells, biomeFactor } from "./biomes.ts";
 
 export type Mode = "foot" | "horse" | "cart" | "ship";
 /** Fastest; Flattest (climbing counts for more); Avoid water (no fords, no sea). */
@@ -102,6 +103,8 @@ export interface Ground {
   riverWide: Uint8Array;
   /** Cliffs: nothing passes. Left out: none. */
   cliff?: Uint8Array;
+  /** The biome zones' cells: where set, a biome's speed replaces the picture's forest and marsh. */
+  biomes?: BiomeCells;
 }
 
 export interface Surface {
@@ -132,7 +135,9 @@ export function surfaceFor(ground: Ground, mode: Mode, variant: Variant): Surfac
     else if (ground.road[i]) v = m.road;
     else if (ground.riverWide[i]) v = dry ? 0 : m.ford;
     else {
-      v = ground.marsh[i] ? m.marsh : ground.forest[i] ? m.forest : m.open;
+      const biome = biomeFactor(ground.biomes, mode, i);
+      if (biome >= 0) v = m.open * biome;
+      else v = ground.marsh[i] ? m.marsh : ground.forest[i] ? m.forest : m.open;
       v *= 1 - (1 - m.upland) * ground.upland[i]!;
     }
     inv[i] = v > 0 ? 1 / v : Infinity;

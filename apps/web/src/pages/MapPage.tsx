@@ -19,10 +19,13 @@ import {
   Telescope,
 } from "lucide-react";
 import {
+  allBiomes,
+  biomeById,
   hiddenWithin,
   isLined,
   type MapFile,
   type MapGroup,
+  type MapStyle,
   type MapTerrain,
   type MapTerrainHint,
   lockedWithin,
@@ -60,6 +63,10 @@ import { FeaturePanel } from "../components/map/FeaturePanel.tsx";
 import { GhostPins, PlacePanel, usePlace } from "../components/map/PlacePanel.tsx";
 import { LayerPanel } from "../components/map/LayerPanel.tsx";
 import { Legend } from "../components/map/Legend.tsx";
+import { BiomeKeyList, BiomeLegendCard, BiomeViewOptions } from "../components/map/BiomeLegend.tsx";
+import { biomeMeaning } from "../components/map/BiomeFields.tsx";
+import { BiomePicker } from "../components/map/BiomePicker.tsx";
+import type { SuggestHandle, SuggestLegend } from "../components/map/SuggestBiomes.tsx";
 import { MapBar } from "../components/map/MapBar.tsx";
 import { MapContextMenu, type MapMenu } from "../components/map/MapContextMenu.tsx";
 import { type Hovered, MapHover } from "../components/map/MapHover.tsx";
@@ -79,7 +86,12 @@ import { askSize } from "../map/askSize.ts";
 import { useCurveSetting } from "../map/curveSetting.ts";
 import { type MenuTarget, menuTargetOf, type PointerKind } from "../map/gesture.ts";
 import { aboveAndBelow } from "../map/layersBeneath.ts";
-import { legendOf, withStyle } from "../map/mapStyles.ts";
+import { legendOf, paintOf, withStyle } from "../map/mapStyles.ts";
+import { asBiomeZones, type BiomeKey, biomeLegend, biomeZones } from "../map/biomes.ts";
+import { useBiomeView } from "../map/biomeView.ts";
+import { useBiomes } from "../map/useBiomes.ts";
+import { useZoneBiome } from "../map/zoneBiome.ts";
+import { usePhone } from "../components/Shell.tsx";
 import { savePicture } from "../map/savePicture.ts";
 import {
   canFinish,
@@ -102,7 +114,6 @@ import { useReliefSetting } from "../map/reliefSetting.ts";
 import { useDiscovery } from "../map/useDiscovery.ts";
 import { sendable, useExplore } from "../map/spots/useExplore.ts";
 import type { Spot } from "../map/spots/spots.ts";
-import { usePhone } from "../components/Shell.tsx";
 import { useMapDraw } from "../map/useMapDraw.ts";
 import { useMapFile } from "../map/useMapFile.ts";
 import { useMapKeys } from "../map/useMapKeys.ts";
@@ -140,6 +151,8 @@ const FindPaths = lazy(() => import("../components/map/FindPaths.tsx"));
 /** The Terrain dialog and the relief it sets up load when they are first wanted. */
 const TerrainDialog = lazy(() => import("../components/map/TerrainDialog.tsx"));
 const ReliefLayer = lazy(() => import("../components/map/ReliefLayer.tsx"));
+/** Suggest biomes works in Find paths' worker, and loads the same way. */
+const SuggestBiomes = lazy(() => import("../components/map/SuggestBiomes.tsx"));
 
 export function MapPage() {
   const dialogs = useDialogs();
@@ -200,6 +213,14 @@ export function MapPage() {
   const [findSteps, setFindSteps] = useState({ undo: false, redo: false });
   /** Find paths, likewise: it also takes the drag of a route's stop. */
   const pathsRef = useRef<PathsHandle | null>(null);
+  /** Suggest biomes, likewise. */
+  const suggestRef = useRef<SuggestHandle | null>(null);
+  const [suggestLegend, setSuggestLegend] = useState<SuggestLegend | null>(null);
+  // Biome zones: the owner's own biomes, how they are shown here, and the biome new zones get.
+  const { custom } = useBiomes();
+  const [biomeView, setBiomeView] = useBiomeView();
+  const [zoneBiome, setZoneBiome] = useZoneBiome();
+  const phone = usePhone();
   // The terrain in use drawn as relief: a view, remembered on this device.
   const [relief, setRelief] = useReliefSetting();
   const [terrainOpen, setTerrainOpen] = useState(false);
@@ -233,7 +254,20 @@ export function MapPage() {
   const shown = useShownAt(map, time, { selected, editing, hidden: hiddenNow });
   const { onScreen } = shown;
   // The library's path and zone styles, shared by every open map.
-  const { styles } = useMapStyles();
+  const { styles, change: changeStyles } = useMapStyles();
+  /** Adds styles the library lacks: a biome's usual style, the first time it is used. */
+  const addStyles = useCallback(
+    (add: MapStyle[]) =>
+      void changeStyles((f) => ({
+        ...f,
+        styles: [...f.styles, ...add.filter((s) => !f.styles.some((x) => x.id === s.id))],
+      })),
+    [changeStyles],
+  );
+  const drawBiomes = useMemo(
+    () => ({ custom, patterns: biomeView.patterns, soft: biomeView.soft }),
+    [custom, biomeView.patterns, biomeView.soft],
+  );
   // A group perhaps there at the year shown has a faint name, as its members are faint.
   const { seen: seenTime, year: seenYear } = time;
   const groupOpacity = useCallback(
@@ -293,6 +327,7 @@ export function MapPage() {
     pressKind,
     styles,
     groups: groups.draw,
+    biomes: drawBiomes,
   });
   const { titleOf } = draw;
   const discovery = useDiscovery(id, { ...time, setNotice });
@@ -315,10 +350,20 @@ export function MapPage() {
     year: moment.year,
     moment,
   });
-  const phone = usePhone();
 
   /** Sets what a tool's step changes. */
   const apply = (step: Step) => {
+    // A zone drawn with a biome chosen is a biome zone: in the Biomes layer, in the biome's look.
+    const biome = tool === "zone" ? biomeById(zoneBiome, custom) : null;
+    const made = step.map?.features.find(
+      (f) =>
+        f.id === step.selected && f.kind === "zone" && !map?.features.some((x) => x.id === f.id),
+    );
+    if (step.map && biome && made) {
+      const done = asBiomeZones(step.map, [made.id], biome, styles, null);
+      if (done.add) addStyles([done.add]);
+      step = { ...step, map: done.map };
+    }
     if (step.map) change(step.map);
     if (step.selected !== undefined) setSelected(step.selected);
     if (step.vertex !== undefined) setVertex(step.vertex);
@@ -364,7 +409,7 @@ export function MapPage() {
     group: groups.dragGroup,
     pickTap: groups.pickTap,
     haloIds: groups.haloIds,
-    find: tool === "paths" ? pathsRef : findRef,
+    find: tool === "paths" ? pathsRef : tool === "biomes" ? suggestRef : findRef,
   });
   const { box, setBox } = pointer;
   useWheelZoom(draw.topCanvas, viewRef, setView, [map === null, draw.glError]);
@@ -455,6 +500,14 @@ export function MapPage() {
         : "Find paths needs a map image or a height map";
   /** Terrain is for flat maps, for now. */
   const canTerrain = map?.space.kind === "flat" && !schematicMap;
+  /** Suggest biomes reads the terrain in use: a height map, or the guess from the picture. */
+  const biomesReason = !canTerrain
+    ? map?.space.kind === "sphere"
+      ? "Suggest biomes works on flat maps for now"
+      : "Suggest biomes needs a map with real places"
+    : hasPicture || map?.terrain
+      ? null
+      : "Suggest biomes needs terrain: add a height map";
   /** Done in the Terrain dialog: one change of the map, with Undo in the toast. */
   const setMapTerrain = (terrain: MapFile["terrain"]) => {
     setTerrainOpen(false);
@@ -500,8 +553,16 @@ export function MapPage() {
   });
   const canUndo = findSteps.undo || file.history.past.length > 0;
   const canRedo = findSteps.redo || file.history.future.length > 0;
-  const undo = () => findRef.current?.undo() || pathsRef.current?.undo() || file.undo();
-  const redo = () => findRef.current?.redo() || pathsRef.current?.redo() || file.redo();
+  const undo = () =>
+    findRef.current?.undo() ||
+    pathsRef.current?.undo() ||
+    suggestRef.current?.undo() ||
+    file.undo();
+  const redo = () =>
+    findRef.current?.redo() ||
+    pathsRef.current?.redo() ||
+    suggestRef.current?.redo() ||
+    file.redo();
   useMapKeys({
     editing,
     frame,
@@ -526,6 +587,7 @@ export function MapPage() {
       ...(found.ready ? ["place" as const] : []),
       ...(hasPicture ? ["find" as const] : []),
       ...(map && pathsReason === null ? ["paths" as const] : []),
+      ...(map && biomesReason === null ? ["biomes" as const] : []),
     ],
     toggleSnap: () => setSnap(!snap),
     setTool: chooseTool,
@@ -787,6 +849,11 @@ export function MapPage() {
           at: pointer.hovered.at,
           entryPath: hoveredFeature.entry ? (file.names[hoveredFeature.entry]?.path ?? null) : null,
           childTitle: hoveredFeature.child ? (file.children[hoveredFeature.child] ?? null) : null,
+          biome: (() => {
+            const b =
+              hoveredFeature.kind === "zone" ? biomeById(hoveredFeature.biome, custom) : null;
+            return b ? `${b.name} · ${biomeMeaning(b)}` : null;
+          })(),
         }
       : null;
 
@@ -879,9 +946,42 @@ export function MapPage() {
       .map((r) => r.feature),
     styles,
   );
+  // The biomes of the zones drawn now, each in its zones' colour; while suggesting, the ghosts' too.
+  const shownNow = shown.resolved
+    .filter((r) => !hiddenNow.has(r.feature.layer) && !hiddenNow.has(r.feature.id))
+    .filter((r) => r.presence !== "not_yet" && r.presence !== "gone")
+    .map((r) => r.feature);
+  const layerColours = new Map(map.layers.map((l) => [l.id, l.color]));
+  const biomeKeys: BiomeKey[] = biomeLegend(
+    biomeZones(map.space as Space, shownNow, custom),
+    (f) => paintOf(f, layerColours.get(f.layer), styles).colour,
+    allBiomes(custom),
+  );
+  const ghostKeys: BiomeKey[] =
+    editing && tool === "biomes" && suggestLegend
+      ? suggestLegend.ghosts
+          .filter((k) => !biomeKeys.some((b) => b.biome.id === k))
+          .flatMap((k) => {
+            const b = biomeById(k, custom);
+            return b ? [{ biome: b, colour: b.color, ghost: true }] : [];
+          })
+      : [];
+  const legendKeys = [...biomeKeys, ...ghostKeys];
+  const anyBiomes = legendKeys.length > 0 || map.features.some((f) => f.kind === "zone" && f.biome);
   layersPanel = (
     <LayerPanel
-      legend={<Legend styles={legend} />}
+      legend={
+        <>
+          <Legend styles={legend} />
+          {anyBiomes && (
+            <section className="map-legend" aria-label="Biomes">
+              <h3>Biomes</h3>
+              <BiomeKeyList keys={legendKeys} />
+              <BiomeViewOptions view={biomeView} onView={setBiomeView} />
+            </section>
+          )}
+        </>
+      }
       timeLine={shown.timeLine}
       setup={
         <>
@@ -1180,6 +1280,15 @@ export function MapPage() {
             overlay: draw.overlay,
             year: time.timeOn ? time.year : null,
             say: setNotice,
+            ...(biomeView.legend && biomeKeys.length > 0
+              ? {
+                  legend: biomeKeys.map((k) => ({
+                    name: k.biome.name,
+                    colour: k.colour,
+                    pattern: biomeView.patterns ? k.biome.pattern : null,
+                  })),
+                }
+              : {}),
           });
         }}
         onCopyView={copyView}
@@ -1207,6 +1316,7 @@ export function MapPage() {
           canPlace={found.ready}
           findReason={hasPicture ? null : "Find areas needs a map image"}
           pathsReason={pathsReason}
+          biomesReason={biomesReason}
           onTool={chooseTool}
           snap={snap}
           onSnap={setSnap}
@@ -1400,6 +1510,13 @@ export function MapPage() {
           />
         )}
         <MapZoom onZoom={zoom} onWhole={whole} />
+        {biomeView.legend && (legendKeys.length > 0 || suggestLegend?.scale) && (
+          <BiomeLegendCard
+            keys={legendKeys}
+            phone={phone}
+            scale={editing && tool === "biomes" ? (suggestLegend?.scale ?? null) : null}
+          />
+        )}
         {editing && (groups.picking || groups.several.length > 1) && (
           <PickStrip
             count={groups.several.length}
@@ -1484,6 +1601,30 @@ export function MapPage() {
           </Suspense>
         )}
 
+        {editing && tool === "biomes" && biomesReason === null && (
+          <Suspense fallback={null}>
+            <SuggestBiomes
+              map={map}
+              mapRef={file.mapRef}
+              change={change}
+              view={view}
+              size={size}
+              frame={frame}
+              shownImages={shownImages}
+              resolved={shown.resolved}
+              hidden={hiddenNow}
+              styles={styles}
+              addStyles={addStyles}
+              handle={suggestRef}
+              onSteps={setFindSteps}
+              onLegend={setSuggestLegend}
+              onTerrain={() => setTerrainOpen(true)}
+              undoMap={file.undo}
+              say={say}
+            />
+          </Suspense>
+        )}
+
         {editing && (
           <MapHints
             tool={tool}
@@ -1491,7 +1632,16 @@ export function MapPage() {
             measured={measured}
             sphere={sphere}
             curve={curve}
-            layer={map.layers.find((l) => l.id === activeLayer)?.name ?? ""}
+            layer={
+              tool === "zone" && biomeById(zoneBiome, custom)
+                ? "Biomes"
+                : (map.layers.find((l) => l.id === activeLayer)?.name ?? "")
+            }
+            biome={
+              tool === "zone" ? (
+                <BiomePicker value={zoneBiome} onChange={setZoneBiome} custom={custom} compact />
+              ) : null
+            }
             onCurve={setCurveOn}
             onFinish={finish}
             onClear={() => setSketch([])}

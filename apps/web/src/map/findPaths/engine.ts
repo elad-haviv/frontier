@@ -7,6 +7,7 @@ import { outline, type Space } from "@frontier/geo";
 import type { Px } from "../findAreas/contour.ts";
 import type { Ink } from "../findAreas/ink.ts";
 import type { LabPicture } from "../findAreas/lab.ts";
+import { biomeCells, biomeEnd, biomeOf, biomePlace, kmByBiome, waterWeights } from "./biomes.ts";
 import { lookAtGround, type PictureGround } from "./classes.ts";
 import { type Ground, type Mode, type Surface, surfaceFor, type Variant } from "./cost.ts";
 import {
@@ -281,6 +282,8 @@ export class Engine {
       hi = Math.max(hi, heights[i]!);
     }
     const range = hi > lo ? hi - lo : 1;
+    // Biome zones: their speeds, and what they do to the water (a desert takes it, a jungle gives).
+    const biomes = biomeCells(grid, req.biomes ?? []);
     const burned = Float32Array.from(heights);
     const level = Float32Array.from(heights);
     const floor = seaLevel ?? Math.min(0, lo);
@@ -288,7 +291,12 @@ export class Engine {
       if (sea[i]) level[i] = floor;
       else if (river[i]) burned[i] = burned[i]! - 0.04 * range;
     }
-    const f = flow(grid, burned, sea);
+    const f = flow(
+      grid,
+      burned,
+      sea,
+      waterWeights(biomes, req.kmPerPx === null ? 1 : req.kmPerPx * grid.cell),
+    );
 
     const top = useHeights ? this.heightInfo.top : null;
     const kmPerCell = req.kmPerPx === null ? null : req.kmPerPx * grid.cell;
@@ -329,7 +337,17 @@ export class Engine {
       seaLevel,
       heights,
       sea,
-      ground: { sea, forest, marsh, upland, road, river, riverWide, cliff },
+      ground: {
+        sea,
+        forest,
+        marsh,
+        upland,
+        road,
+        river,
+        riverWide,
+        cliff,
+        ...(biomes ? { biomes } : {}),
+      },
       riverOn: riverBy,
       riverNear,
       rivers,
@@ -350,6 +368,33 @@ export class Engine {
       seaLevel,
       rough: useHeights && f.raisedShare > 0.1,
       hasSea: anySea,
+    };
+  }
+
+  /**
+   * The height field in use, as Suggest biomes reads it: whatever the terrain is (a height map,
+   * the guess from the picture, or a height map inferred from it), the same as every tool's.
+   */
+  terrainNow(): {
+    grid: Grid;
+    heights: Float32Array;
+    sea: Uint8Array;
+    acc: Float32Array;
+    kmPerCell: number | null;
+    top: number | null;
+    seaLevel: number | null;
+    guessed: boolean;
+  } {
+    const t = this.inUse();
+    return {
+      grid: this.grid,
+      heights: t.heights,
+      sea: t.sea,
+      acc: t.flow.acc,
+      kmPerCell: t.kmPerPx === null ? null : t.kmPerPx * this.grid.cell,
+      top: t.top,
+      seaLevel: t.seaLevel,
+      guessed: t.guessed,
     };
   }
 
@@ -397,14 +442,21 @@ export class Engine {
       cells = up.concat(course.cells.slice(1));
     } else {
       if (t.sea[start]) return { ok: false, why: "sea" };
-      course = courseFrom(t.flow, t.sea, start, req.snap ? t.riverOn : null);
+      const biomes = t.ground.biomes;
+      course = courseFrom(
+        t.flow,
+        t.sea,
+        start,
+        req.snap ? t.riverOn : null,
+        biomes ? (a, b) => biomeEnd(biomes, t.flow.acc, a, b) : undefined,
+      );
       cells = course.cells;
     }
     if (cells.length < SHORTEST_RIVER) {
       return { ok: false, why: course.end === "river" ? "onRiver" : "short" };
     }
     // A basin on the way that is large enough to be a lake: the river ends there as asked.
-    let end: "sea" | "river" | "edge" | "basin" = course.end;
+    let end: "sea" | "river" | "edge" | "basin" | "dry" | "marsh" = course.end;
     let basin: BasinFound | null = null;
     let joins = course.joined;
     if (req.from === "source") {
@@ -464,11 +516,15 @@ export class Engine {
             t.heights[cells[0]!]! - Math.max(t.seaLevel ?? 0, t.heights[cells[cells.length - 1]!]!),
           ) * t.top
         : null;
+    // A desert or a marsh zone ended it (unless a basin before that did).
+    const endBiome =
+      end === "dry" || end === "marsh" ? biomeOf(t.ground.biomes, cells[cells.length - 1]!) : null;
     return {
       ok: true,
       points,
       end,
       basin,
+      endIn: endBiome ? biomePlace(endBiome) : null,
       joined: target?.id ?? null,
       flatShare: onFlat / cells.length,
       fall,
@@ -769,6 +825,7 @@ export class Engine {
     // The staircase of cells is a little longer than the line as drawn: the time follows the line.
     const drawn = lineLength(points);
     const timed = rawLength > 0 ? hours * Math.min(1, drawn / rawLength) : hours;
+    const biomes = this.withoutBiomes(req, places, limits, cells, timed / Math.max(hours, 1e-9));
     return {
       ok: true,
       points,
@@ -781,6 +838,41 @@ export class Engine {
       stretches: climbed.stretches,
       along: climbed.along,
       profile: this.profile(points, climbed.stretches),
+      ...biomes,
+    };
+  }
+
+  /**
+   * With biome zones on the map: how long the same journey would take without them (the way
+   * found again, over the ground as it would be), and the km of the route in each biome.
+   */
+  private withoutBiomes(
+    req: RouteRequest,
+    places: Place[],
+    limits: Limits,
+    cells: number[],
+    drawnShare: number,
+  ): Pick<Extract<RouteReply, { ok: true }>, "withoutBiomes" | "byBiome"> {
+    const t = this.inUse();
+    const biomes = t.ground.biomes;
+    if (!biomes || t.kmPerPx === null) return { withoutBiomes: null, byBiome: [] };
+    const key = `${req.mode}|${req.variant}|plain`;
+    let plain = t.surfaces.get(key);
+    if (!plain) {
+      const ground = { ...t.ground };
+      delete ground.biomes;
+      plain = surfaceFor(ground, req.mode, req.variant);
+      t.surfaces.set(key, plain);
+    }
+    const legs = routeThrough(t.terrain, plain, places, limits);
+    const byBiome = kmByBiome(
+      biomes,
+      cells,
+      (a, b) => this.grid.stepLength(a, b) * t.terrain.kmPerCell,
+    );
+    return {
+      withoutBiomes: legs ? legs.reduce((h, l) => h + l.hours, 0) * drawnShare : null,
+      byBiome,
     };
   }
 

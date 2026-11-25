@@ -338,7 +338,7 @@ export function usePointer(p: {
       return;
     }
 
-    if (editing && (tool === "find" || tool === "paths")) {
+    if (editing && (tool === "find" || tool === "paths" || tool === "biomes")) {
       const how = { alt: altHeld.current, shift: shiftHeld.current, kind };
       p.find?.current?.tap({ x, y }, how);
       return;
@@ -402,7 +402,8 @@ export function usePointer(p: {
           paintLive();
         }
         hover(effect.target, effect.at);
-        if (editing && (tool === "find" || tool === "paths")) p.find?.current?.hover(effect.at);
+        if (editing && (tool === "find" || tool === "paths" || tool === "biomes"))
+          p.find?.current?.hover(effect.at);
         return;
       case "cursor":
         // Set on the canvas directly: the cursor follows every move without drawing the page.

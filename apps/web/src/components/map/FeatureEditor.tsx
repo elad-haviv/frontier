@@ -70,7 +70,10 @@ export function FeatureEditor({
   onStyle,
   onEditStyles,
   top,
+  biome,
 }: {
+  /** A zone's biome, under its style. */
+  biome?: ReactNode;
   /** The library's path and zone styles. */
   styles?: MapStyle[];
   /** Gives the path or zone a style, or none. */
@@ -229,6 +232,7 @@ export function FeatureEditor({
           </span>
         </div>
       )}
+      {feature.kind === "zone" && biome}
       {length && (
         <p className="field feature-length">
           <span>Length</span> <span>{length}</span>

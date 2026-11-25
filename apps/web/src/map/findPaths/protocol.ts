@@ -5,7 +5,10 @@
  */
 import type { CountsAs } from "@frontier/schema";
 import type { Px } from "../findAreas/contour.ts";
+import type { BiomeSpeeds } from "@frontier/schema";
+import type { TerrainBiome } from "./biomes.ts";
 import type { Mode, Variant } from "./cost.ts";
+import type { SuggestRequest } from "./suggest.ts";
 import type { TraceKind } from "./trace.ts";
 
 /** A feature of the map that counts as terrain, by its style: its line as drawn, in pixels. */
@@ -57,6 +60,8 @@ export interface TerrainRequest {
   /** Painted rivers pull water and block travellers; painted roads are quick. */
   follow: boolean;
   features: TerrainFeature[];
+  /** The biome zones drawn now, each with what its biome does; left out: none. */
+  biomes?: TerrainBiome[];
   /** Kilometres a pixel of the working copy; null when the map has no scale. */
   kmPerPx: number | null;
 }
@@ -113,9 +118,11 @@ export type RiverReply =
   | {
       ok: true;
       points: Px[];
-      end: "sea" | "river" | "edge" | "basin";
+      end: "sea" | "river" | "edge" | "basin" | "dry" | "marsh";
       /** The first basin large enough to be a lake that it reaches, and how it ends there. */
       basin: BasinFound | null;
+      /** Where a biome ended it: "the Tharn Desert", "the wetland / marsh". */
+      endIn: string | null;
       /** The id of the river it joins. */
       joined: string | null;
       /** The share of its course over filled hollows and flats, where the course is a guess. */
@@ -199,6 +206,10 @@ export type RouteReply =
       stretches: RouteStretch[];
       along: RouteAlong[];
       profile: Profile;
+      /** The hours the journey would take without the biome zones; null without biomes or hours. */
+      withoutBiomes: number | null;
+      /** The km of the route in each biome, in the order first met. */
+      byBiome: { biome: string; name: string; km: number; speed: BiomeSpeeds }[];
     }
   /** No way: water is in the way, or the ground is too steep (its steepest step, and where). */
   | { ok: false; why: "water" }
@@ -257,5 +268,7 @@ export type PathsRequest =
   | ({ type: "paths.route" } & RouteRequest)
   | ({ type: "paths.trace" } & TraceRequest)
   | { type: "paths.relief" }
+  /** Suggest biomes: the climate of the terrain in use, as ghost zones. */
+  | ({ type: "paths.suggest" } & SuggestRequest)
   /** Leaving the tool: the heights, the flow and the cost surfaces are let go. */
   | { type: "paths.close" };

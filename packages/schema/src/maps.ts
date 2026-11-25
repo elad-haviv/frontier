@@ -3,6 +3,7 @@
  * merged. A map is a standalone object that refers to entries by their ids.
  */
 import { z } from "zod";
+import { CLIMATE_KEYS, MapClimate } from "./biomes.js";
 import { mergeItemLists, sameValue as same, serialiseItemFile } from "./itemFile.js";
 
 /** 8 random characters, as for an entry. Shorter ids from hand-written files are accepted. */
@@ -266,7 +267,23 @@ export const MapFeature = z.discriminatedUnion("kind", [
     })
     .passthrough(),
   z
-    .object({ ...featureBase, kind: z.literal("zone"), points: z.array(Pair).min(3), curve, style })
+    .object({
+      ...featureBase,
+      kind: z.literal("zone"),
+      points: z.array(Pair).min(3),
+      curve,
+      style,
+      /**
+       * What the ground of the zone is, whatever its style: a built-in biome's key ("taiga") or
+       * the id of one of the owner's biomes. One that is not there counts as none and is kept.
+       */
+      biome: z
+        .string()
+        .regex(/^[a-z0-9-]{2,24}$/, "Not a biome.")
+        .optional(),
+      /** The biome's pattern is not drawn over this zone; left out: it is. */
+      pattern: z.literal(false).optional(),
+    })
     .passthrough(),
   /**
    * Words written on the map, such as the name of a sea. `label` holds the words, so a label
@@ -359,6 +376,8 @@ export const MapFile = z
     terrain: MapTerrain.nullish(),
     /** What says how high the land is, to build a height map from; left out when there are none. */
     terrainHints: z.array(MapTerrainHint).optional(),
+    /** Suggest biomes' world settings, once something it suggested was accepted. */
+    climate: MapClimate.nullish(),
   })
   .passthrough()
   .superRefine((map, ctx) => {
@@ -411,6 +430,7 @@ const TOP = [
   // Added later, so they go last: a file without them keeps its bytes.
   "terrain",
   "terrainHints",
+  "climate",
 ];
 const ITEM_KEYS: Record<string, string[]> = {
   images: ["id", "name", "path", "extent", "visible"],
@@ -441,6 +461,8 @@ const ITEM_KEYS: Record<string, string[]> = {
     "stretches",
     "endAs",
     "steepShown",
+    "biome",
+    "pattern",
   ],
   groups: [
     "id",
@@ -554,9 +576,9 @@ export function orderGroup<T extends MapGroup>(group: T): T {
 }
 
 const ordered = (map: MapFile): MapFile => {
-  // "Lies under nothing", "no groups", "no terrain" and "no hints" are written by leaving the
-  // key out.
-  const { under, groups, terrain, terrainHints, ...rest } = map;
+  // "Lies under nothing", "no groups", "no terrain", "no hints" and "no climate" are written by
+  // leaving the key out.
+  const { under, groups, terrain, terrainHints, climate, ...rest } = map;
   return {
     ...rest,
     ...(under != null ? { under } : {}),
@@ -567,6 +589,7 @@ const ordered = (map: MapFile): MapFile => {
     ...(terrainHints && terrainHints.length > 0
       ? { terrainHints: terrainHints.map((h) => inOrder(h, ITEM_KEYS.terrainHints!)) }
       : {}),
+    ...(climate != null ? { climate: inOrder(climate, CLIMATE_KEYS) } : {}),
   } as MapFile;
 };
 
@@ -621,7 +644,7 @@ export function mergeMaps(base0: MapFile, mine0: MapFile, theirs0: MapFile): Map
   // The same feature must compare as equal whatever order its keys were set in.
   const [base, mine, theirs] = [ordered(base0), ordered(mine0), ordered(theirs0)];
   const clashes: string[] = [];
-  const pick = <K extends "title" | "space" | "markerSets" | "under" | "terrain">(
+  const pick = <K extends "title" | "space" | "markerSets" | "under" | "terrain" | "climate">(
     key: K,
   ): MapFile[K] => {
     if (same(mine[key], theirs[key]) || same(base[key], theirs[key])) return mine[key];
@@ -667,6 +690,10 @@ export function mergeMaps(base0: MapFile, mine0: MapFile, theirs0: MapFile): Map
     // The terrain is one item: set, changed or taken away on one side, it is that side's.
     ...(mine.terrain != null || theirs.terrain != null || base.terrain != null
       ? { terrain: pick("terrain") }
+      : {}),
+    // So is the climate.
+    ...(mine.climate != null || theirs.climate != null || base.climate != null
+      ? { climate: pick("climate") }
       : {}),
     images: images.items,
     layers: kept,

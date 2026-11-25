@@ -1,4 +1,5 @@
-/** The table of library item files: the folder file and the map styles file. */
+/** The table of library item files: the folder file, the map styles file and the biomes file. */
+import { BIOMES_LIBRARY } from "./biomes.js";
 import { FOLDERS } from "./folders.js";
 import type { AnyLibraryFile } from "./libraryFiles.js";
 import { MAP_STYLES } from "./mapStyles.js";
@@ -7,6 +8,7 @@ import { MAP_STYLES } from "./mapStyles.js";
 export const LIBRARY_FILES: AnyLibraryFile[] = [
   FOLDERS as unknown as AnyLibraryFile,
   MAP_STYLES as unknown as AnyLibraryFile,
+  BIOMES_LIBRARY as unknown as AnyLibraryFile,
 ];
 
 /** The kind a library path belongs to, if any. */

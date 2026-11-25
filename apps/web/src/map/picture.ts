@@ -4,6 +4,7 @@
  */
 import { makeView, type ViewState } from "@frontier/geo";
 import type { MapFile } from "@frontier/schema";
+import { drawLegendCard, type LegendRow } from "./biomeLegend.ts";
 import { drawOverlay, type OverlayInput } from "./overlay.ts";
 import { MapRenderer } from "./renderer.ts";
 
@@ -28,6 +29,8 @@ export async function mapPicture(input: {
     OverlayInput,
     "map" | "view" | "selected" | "selectedVertex" | "sketch" | "editing"
   >;
+  /** The biomes' legend card, drawn at the bottom left when there are rows. */
+  legend?: readonly LegendRow[];
 }): Promise<Blob> {
   const ratio = window.devicePixelRatio || 1;
   const f = Math.min(input.scale, LARGEST / (Math.max(input.width, input.height) * ratio));
@@ -69,6 +72,7 @@ export async function mapPicture(input: {
     sketch: null,
     editing: false,
   });
+  if (input.legend?.length) drawLegendCard(top.getContext("2d")!, input.legend, h, ratio);
   ctx.drawImage(top, 0, 0);
   return new Promise((resolve, reject) =>
     out.toBlob(

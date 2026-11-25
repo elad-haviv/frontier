@@ -9,6 +9,7 @@ import type { LabPicture } from "../findAreas/lab.ts";
 import { type FullPicture, refineRing } from "../findAreas/refine.ts";
 import { prepared } from "../terrain/fit.ts";
 import { Engine } from "./engine.ts";
+import { suggestBiomes } from "./suggest.ts";
 import { flatGrid } from "./grid.ts";
 import type {
   HeightSource,
@@ -220,6 +221,10 @@ export async function answerPaths(
       return { value: engine.route(req) };
     case "paths.trace":
       return { value: engine.trace(req) };
+    case "paths.suggest": {
+      const reply = suggestBiomes(engine.terrainNow(), req);
+      return { value: reply, transfer: reply.field ? [reply.field.rgba.buffer] : [] };
+    }
     case "paths.relief": {
       const relief = engine.relief();
       return { value: relief, transfer: [relief.rgba.buffer] };

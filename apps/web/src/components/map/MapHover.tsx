@@ -16,6 +16,8 @@ export interface Hovered {
   entryPath: string | null;
   /** The title of the map of this place, when it has one. */
   childTitle: string | null;
+  /** A biome zone's biome and what it does to travel and rivers. */
+  biome?: string | null;
 }
 
 /** How long the pointer stays on a feature before its entry's preview takes the tooltip's place. */
@@ -98,6 +100,9 @@ export function MapHover({
   return (
     <div ref={box} className="map-tooltip" role="tooltip" style={style}>
       {words}
+      {hovered.kind === "feature" && hovered.biome && (
+        <span className="map-tooltip-biome">{hovered.biome}</span>
+      )}
     </div>
   );
 }

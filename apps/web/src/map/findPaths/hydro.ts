@@ -6,6 +6,7 @@
  * steepest lower neighbour (D8), and walking the flood's order backwards adds each cell's water
  * to the cell it drains to, which gives the land upstream of every cell.
  */
+import type { WaterWeights } from "./biomes.ts";
 import type { Grid } from "./grid.ts";
 import { Heap } from "./heap.ts";
 
@@ -29,7 +30,13 @@ const RISE = 1e-5;
 /** The sea in the flood: below any land. */
 const SEA = -1e6;
 
-export function flow(g: Grid, heights: Float32Array, sea: Uint8Array): Flow {
+export function flow(
+  g: Grid,
+  heights: Float32Array,
+  sea: Uint8Array,
+  /** What biomes do to the water: what each cell gives and takes (see biomes.ts). */
+  water?: WaterWeights,
+): Flow {
   const n = g.w * g.h;
   const filled = new Float32Array(n);
   const dir = new Int32Array(n).fill(-1);
@@ -97,11 +104,13 @@ export function flow(g: Grid, heights: Float32Array, sea: Uint8Array): Flow {
     dir[u] = best;
   }
   const acc = new Float32Array(n);
-  for (let i = 0; i < n; i++) acc[i] = sea[i] ? 0 : 1;
+  for (let i = 0; i < n; i++) acc[i] = sea[i] ? 0 : water ? water.runoff[i]! : 1;
   for (let q = count - 1; q >= 0; q--) {
     const u = order[q]!;
     const d = dir[u]!;
-    if (!sea[u] && d >= 0 && !sea[d]) acc[d] = acc[d]! + acc[u]!;
+    if (!sea[u] && d >= 0 && !sea[d]) {
+      acc[d] = acc[d]! + (water ? Math.max(0, acc[u]! - water.loss[u]!) : acc[u]!);
+    }
   }
   return {
     filled,
@@ -116,8 +125,11 @@ export function flow(g: Grid, heights: Float32Array, sea: Uint8Array): Flow {
 export interface Course {
   /** The cells from the start down to where it ends. */
   cells: number[];
-  /** The sea (or other water), a river already on the map, or the map's edge. */
-  end: "sea" | "river" | "edge";
+  /**
+   * The sea (or other water), a river already on the map, or the map's edge; or in a biome: dried
+   * out in a desert, or spread into a marsh.
+   */
+  end: "sea" | "river" | "edge" | "dry" | "marsh";
   /** The river it joins, as `rivers` numbers it; 0 when it joins none. */
   joined: number;
 }
@@ -132,6 +144,8 @@ export function courseFrom(
   sea: Uint8Array,
   start: number,
   rivers: Int32Array | null = null,
+  /** Where a biome ends the river on the step from one cell to the next (biomes.ts' `biomeEnd`). */
+  stop?: (from: number, to: number) => "dry" | "marsh" | null,
 ): Course {
   const cells = [start];
   let c = start;
@@ -144,6 +158,8 @@ export function courseFrom(
     if (rivers && rivers[d]! > 0 && cells.length > 3) {
       return { cells, end: "river", joined: rivers[d]! };
     }
+    const ended = stop && cells.length > 3 ? stop(c, d) : null;
+    if (ended) return { cells, end: ended, joined: 0 };
     c = d;
   }
   return { cells, end: "edge", joined: 0 };
