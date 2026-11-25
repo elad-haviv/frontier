@@ -1,7 +1,8 @@
 # Stage 20: space maps
 
 - **Author:** Elad Haviv
-- **Status:** 20a (star map) built; 20b (system model) and 20c (layered view) to build
+- **Status:** 20a (star map), 20b (system model) and 20c (layered view) built; Derdama's real shape
+  still to be confirmed (see the last section)
 - **Date:** 2026-11-25
 - **Parents:** [Stage 13, maps](stage-13-maps.md), [stage 7, more map views](stage-7-more-map-views.md),
   [stage 6, maps in time](stage-6-maps-in-time.md)
@@ -107,33 +108,67 @@ Unit: `space3d.test.ts` (projection round trip, distances, picking), `starMap.te
 schema and server tests for the file. Browser: `starmap.spec.ts` (create without an image, place,
 route, lift, drag, undo; phone and desktop).
 
-## 20b: the system model (to build)
+## 20b: the system model
 
-- Space `{ kind: "system", unit: "AU" }`. Bodies are markers with an orbit: what they circle,
-  distance, shape (round to stretched), where they are now. The year follows from the distance by
-  Kepler's third law (period in years = √(distance³ ÷ mass)); typing the year back-solves the
-  distance. Under More: direction, turning the orbit, rings, mass.
-- Kinds: star, rocky planet, ocean world, gas giant, ice giant, dwarf planet, moon, station, belt,
-  comet, second star. Moons and stations use their own exaggerated local scale around the planet.
-- A second star makes a pair that circles a shared centre, heavier star nearer it. Planets circle
-  both.
-- Orbits are fixed tracks, not simulated gravity, so any year can be shown at once. Stability notes
-  are soft and never block (a moon beyond a third of its planet's Hill radius, orbits that cross).
-- Drawn for reading: distances compressed, sizes symbolic, with a "True distances" switch.
-- Time uses the time bar plus Play and a speed (1 day, 1 month, 1 year, 10 years a second); Play is
-  new to maps and is for system models only. Cards say how far a body is from home now and when it
-  is next closest.
-- Drag a body outward to change its distance, around to change where it is. Double-click a planet to
-  follow it and see its moons.
+Built as designed. The file: space `{ kind: "system", unit: "AU" }`, and each body is a marker with a
+`body` record (`type`, `parent`, `a`, `e`, `phase`, `peri`, `retro`, `mass`, `inner`/`outer`, `home`).
+A new system model is made with its star at the centre. Because bodies are markers they have a name,
+an entry and a map of this place like any marker.
 
-## 20c: the layered view (to build)
+- **Orbits.** Distance and the year are one fact: period in years = √(distance³ ÷ total mass), with a
+  moon's distance in thousands of km and its planet's mass setting its month. Type either the
+  distance or the year; the other follows. Stretched orbits solve Kepler's equation, so a comet is
+  quick near its star, and its tail points away from the star.
+- **Pairs.** A second star makes a pair about a shared centre, the heavier star nearer it; planets
+  circle both and use the combined mass.
+- **Kinds.** Star, rocky planet, ocean world, gas giant, ice giant, dwarf planet, moon, station, belt,
+  comet, second star. Soft notes, never blocking: a moon further out than a third of its planet's
+  Hill radius.
+- **Drawing.** Distances compressed by default (square root), with a "True distances" switch; sizes
+  symbolic and never to scale; a flat disc with one soft shadow on the side away from the star. A
+  tilted view or from above. The mild zone is an optional band.
+- **Time.** Day 0 is where every body begins. The time bar has Play, a range of 100 years, the year
+  and day, and a speed (a day, a month, a year or ten years a second). Play is new to maps; it is
+  here only, stops by itself at the end and when editing begins, and the canvas reads the day every
+  frame so playing does not draw the page again. The year is one circuit of the home world (set under
+  More), else 365 days. No chronicle is used yet.
+- **Editing.** Add object (kinds list, then a click says how far out); drag a body outward to
+  change its distance and round to change where it is on the day shown; double-click a planet, or
+  Follow it, to see its moons. Cards say how far a world is from home now and when it is next
+  closest.
 
-- A globe with globes set to lie under it gains "Layers stacked" in its View menu: the surface and
-  each layer as plates, one under the other, built from the maps that already exist. Nothing is
-  stored twice.
-- A line straight down under the pointer shows what lies above and below any spot, since layers share
-  longitude and latitude.
-- **Passages** are the one new thing to draw: a link between a place on one layer and a place on
-  another, kept on the upper map. Each place's card says where its passages lead.
-- You work on one layer at a time; the others dim. Changing a marker's layer drops it straight down.
-- Open question: whether Derdama's layers are flat plates as drawn or have another shape.
+Left out: a chronicle for the years, three or more stars, tilted orbits, physics between bodies.
+
+## 20c: the layered view
+
+Built as a page of its own at `/stack/:id`, reached from the "Layers stacked" button in the bar of a
+globe that has globes above or below it.
+
+- **What it shows.** The globe at the top of the chain and the globes set to lie under it
+  (`under`), as plates one under the other, each the whole globe laid flat: its picture, zones,
+  paths and places. Pictures are stretched over the plate in small flat cells, since a canvas cannot
+  bend a picture in perspective. Nothing is stored twice: each layer is its own map file, loaded and
+  saved on its own.
+- **Straight down.** Layers share longitude and latitude, so a dotted line under the pointer meets
+  the same spot on every layer. A place's card says what is straight above and below it.
+- **Passages.** A passage joins a place on one layer to a place on another. It is held by the upper
+  place as `passages: [{ map, feature }]` on that marker, and shown from either end. The Passage
+  tool: click a place, then one on another layer. Two places on one layer join none, and the same two
+  join once.
+- **Working.** One layer is worked on at a time and the others dim; the Layers tab (or a click on a
+  plate) picks it. The Marker tool puts a place on that layer. Places are renamed, linked to an entry
+  and removed here; removing one takes the passages that led to it, from the other layers too.
+  Everything else about a place (icon, map of this place, style) is set on the layer's own map.
+- **No undo** in this view; each layer's own page has one. Changes are saved as each map's own
+  draft, and Done sends them at once.
+- **Phone.** The sheet covers the foot of the map, so the Layers tab, cards and edit forms are in the
+  sheet and "Hide the panel" puts it away.
+
+Left out: moving a place to another layer, curved shells for the layers, a layer that does not line
+up with the one above (stage 7's open question), editing zones and paths here.
+
+## Open question for the author
+
+Derdama is drawn here as flat-lying layers that line up with Ezob, which is what stage 7 designed. If
+the lore's Derdama is a stack of cylinder-shaped layers, rings, shells, or has a sun inside, the
+plates need another shape; say how it works and the view can follow.

@@ -230,13 +230,9 @@ export function SystemCard({
         ))}
       </dl>
       <p className="star-actions">
-        {entry && (
-          <Link className="button quiet" to={entryUrl(entry.path)}>
-            Open the entry
-          </Link>
-        )}
+        {entry && <Link to={entryUrl(entry.path)}>Open the entry</Link>}
         {feature.child && (
-          <Link className="button primary" to={mapUrl(feature.child)}>
+          <Link to={mapUrl(feature.child)}>
             Open {childTitles[feature.child] ?? "the map of this place"}
           </Link>
         )}

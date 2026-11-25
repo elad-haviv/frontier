@@ -30,6 +30,9 @@ const StarMapPage = lazy(() =>
 const SystemMapPage = lazy(() =>
   import("./pages/SystemMapPage.tsx").then((m) => ({ default: m.SystemMapPage })),
 );
+const StackPage = lazy(() =>
+  import("./pages/StackPage.tsx").then((m) => ({ default: m.StackPage })),
+);
 const ChroniclePage = lazy(() =>
   import("./pages/ChroniclePage.tsx").then((m) => ({ default: m.ChroniclePage })),
 );
@@ -159,6 +162,14 @@ export function App() {
           <Route path="/versions" element={<LibraryHistoryPage />} />
           <Route path="/maps" element={<MapsPage />} />
           <Route path="/map/:id" element={<OneMap />} />
+          <Route
+            path="/stack/:id"
+            element={
+              <Suspense fallback={<Progress />}>
+                <StackPage />
+              </Suspense>
+            }
+          />
           <Route path="/ask" element={<AskPage />} />
           <Route path="/ask/:id" element={<ConversationPage />} />
           <Route path="/talk/*" element={<TalkPage />} />

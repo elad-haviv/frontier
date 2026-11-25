@@ -182,6 +182,20 @@ export const MapFeature = z.discriminatedUnion("kind", [
       size: z.union([z.literal(1), z.literal(2), z.literal(3)]).optional(),
       /** In a system model: this marker is a body on an orbit. */
       body: SystemBody.optional(),
+      /**
+       * On a globe that has globes under it (stage 20c): passages from this place down to places
+       * on other layers. The upper place holds them; the lower is named by its map and feature.
+       */
+      passages: z
+        .array(
+          z
+            .object({
+              map: z.string().regex(/^[a-z0-9]{8}$/),
+              feature: ItemId,
+            })
+            .passthrough(),
+        )
+        .optional(),
     })
     .passthrough(),
   /**
