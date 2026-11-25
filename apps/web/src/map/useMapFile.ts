@@ -14,6 +14,7 @@ import { useSaveState } from "../components/ui/SaveStatus.tsx";
 import { type Known, type LinkItem, type QueueKey, queue } from "../sync/queue.ts";
 import type { Space } from "@frontier/geo";
 import { keepJoins } from "./joins.ts";
+import { keepStretches } from "./stretches.ts";
 import type { OtherMap } from "./layersBeneath.ts";
 import type { TimeState } from "./useMapTime.ts";
 
@@ -209,7 +210,7 @@ export function useMapFile(
         setHistory((h) => ({ past: [...h.past.slice(-99), before], future: [] }));
       }
       // A path joined onto another stays on it, whatever was changed.
-      const kept = keepJoins(before, next, next.space as Space);
+      const kept = keepStretches(before, keepJoins(before, next, next.space as Space));
       mapRef.current = kept;
       setMap(kept);
       store(kept, link);

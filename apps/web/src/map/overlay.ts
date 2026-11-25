@@ -29,6 +29,14 @@ import type { PointerKind } from "./gesture.ts";
 import { autoAnchor, boxOf, clearOfMarkers, nameFits } from "./groupLabel.ts";
 import { outlineOf, PLUS_SIZE, plusHandles } from "./handles.ts";
 import {
+  drawChevrons,
+  drawEnd,
+  drawSteps,
+  drawTunnel,
+  type StretchLook,
+  stretchSpan,
+} from "./stretches.ts";
+import {
   casingOf,
   dashOf,
   fillAlpha,
@@ -478,7 +486,8 @@ export function drawOverlay(ctx: CanvasRenderingContext2D, input: OverlayInput):
     if (f.kind !== "path") continue;
     const undated = look(f).dashed;
     const paint = paintOf(f, colours.get(f.layer), styles);
-    for (const line of screenLines(view, outlineOf(map.space, f).line)) {
+    const drawnLine = outlineOf(map.space, f);
+    for (const line of screenLines(view, drawnLine.line)) {
       ctx.beginPath();
       trace(ctx, line);
       if (isPicked(f.id)) {
@@ -493,6 +502,37 @@ export function drawOverlay(ctx: CanvasRenderingContext2D, input: OverlayInput):
       stroke(ctx, paint.colour, paint);
       if (undated) perforate(ctx, paint.width);
       shapes.push({ id: f.id, kind: "path", points: line, width: paint.width });
+    }
+    // Tunnels, steps and climbs (Find paths), and a river's end inland, over the line.
+    if (f.stretches?.length || f.endAs) {
+      const look: StretchLook = {
+        colour: paint.colour,
+        width: paint.width,
+        casing: casingOf(paint.width),
+        paper: PAPER,
+        ink: INK,
+      };
+      const { line, spans } = drawnLine;
+      const part = (i: number, j: number) =>
+        line.slice(spans[i] ?? 0, (j < spans.length ? spans[j]! : line.length - 1) + 1);
+      for (const s of f.stretches ?? []) {
+        const span = stretchSpan(f.points, s);
+        if (!span) continue;
+        if (s.kind === "climb" && (f.steepShown === false || !s.grade)) continue;
+        // A climb's grade is for the way from `from` to `to`; the drawn piece runs first to last.
+        const forward = f.points[span[0]]![0] === s.from[0] && f.points[span[0]]![1] === s.from[1];
+        for (const piece of screenLines(view, part(span[0], span[1]))) {
+          if (s.kind === "tunnel") drawTunnel(ctx, piece, look);
+          else if (s.kind === "steps") drawSteps(ctx, piece, look);
+          else drawChevrons(ctx, piece, forward ? s.grade! : -s.grade!, look);
+        }
+      }
+      if (f.endAs && f.points.length >= 2) {
+        for (const piece of screenLines(view, part(f.points.length - 2, f.points.length - 1))) {
+          drawEnd(ctx, piece, f.endAs, look);
+        }
+      }
+      ctx.setLineDash([]);
     }
   }
 
