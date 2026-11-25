@@ -13,7 +13,7 @@ import {
   serialiseLibraryFile,
 } from "./libraryFiles.js";
 import { NeedsLoveRule, NeedsLoveRules } from "./keepGoingSettings.js";
-import { Id, VaultPath } from "./state.js";
+import { VaultPath } from "./state.js";
 
 export * from "./keepGoingSettings.js";
 
@@ -199,15 +199,12 @@ export type FromHereResponse = z.infer<typeof FromHereResponse>;
 export const LinkItRequest = z.object({ path: VaultPath, target: VaultPath });
 export type LinkItRequest = z.infer<typeof LinkItRequest>;
 
-/** What Undo needs; the page keeps it and sends it back as it is. */
+/**
+ * What Undo needs; the page keeps it and sends it back as it is. It is only a token: the server
+ * keeps what it stands for (the draft, its revision and its earlier text) for a while.
+ */
 export const LinkItUndo = z.object({
-  path: VaultPath,
-  /** The draft that now holds the change. */
-  draftId: Id,
-  /** The draft's revision right after the change; Undo is refused if it has moved on. */
-  revision: z.number().int().min(1),
-  /** The draft's text before the change; null when the entry had no draft. */
-  previousText: z.string().nullable(),
+  token: z.string().min(16).max(128),
 });
 export type LinkItUndo = z.infer<typeof LinkItUndo>;
 

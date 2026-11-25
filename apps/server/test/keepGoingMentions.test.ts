@@ -45,6 +45,29 @@ describe("a mention that is not linked", () => {
     expect(found("`Mira`, [[Mira]], then Mira.", ["Mira"])).toBe("Mira");
   });
 
+  it("skips footnotes, reference links and their definitions, addresses and email", () => {
+    expect(found("Text[^Mira]\n\n[^Mira]: note", ["Mira"])).toBeNull();
+    expect(found("See [Mira][m] here.\n\n[m]: ./Mira.md", ["Mira"])).toBeNull();
+    expect(found('[m]: https://x/y.md "Mira"', ["Mira"])).toBeNull();
+    expect(found("[Mira][] and [mira]\n\n[mira]: ./x.md", ["Mira"])).toBeNull();
+    expect(found("Visit www.mira.com", ["Mira"])).toBeNull();
+    expect(found("Mail mira@example.com", ["Mira"])).toBeNull();
+    expect(found("<mira@example.com> and <https://a.b/Mira>", ["Mira"])).toBeNull();
+    // A bracket that is no reference is plain text.
+    expect(found("The [Mira] who came", ["Mira"])).toBe("Mira");
+  });
+
+  it("skips setext headings and indented code, but not a paragraph or a list that is indented", () => {
+    expect(found("Setext Mira\n===", ["Mira"])).toBeNull();
+    expect(found("Two lines\nabout Mira\n---\n", ["Mira"])).toBeNull();
+    expect(found("Intro.\n\n    Mira indented code\n    Mira again\n\nNone.", ["Mira"])).toBeNull();
+    expect(found("    Mira in code at the start", ["Mira"])).toBeNull();
+    expect(found("Para\n    Mira goes on the paragraph", ["Mira"])).toBe("Mira");
+    expect(found("- item\n\n    Mira in the item\n", ["Mira"])).toBe("Mira");
+    expect(found("Mira before\n---\n", ["Mira"])).toBeNull();
+    expect(found("Rule\n\n---\n\nMira after a rule", ["Mira"])).toBe("Mira");
+  });
+
   it("escapes characters that mean something in a pattern", () => {
     expect(found("The (Old) Quay (Moon) stands.", ["Quay (Moon)"])).toBe("Quay (Moon)");
     expect(found("Dr. Who? Yes.", ["Dr. Who"])).toBe("Dr. Who");

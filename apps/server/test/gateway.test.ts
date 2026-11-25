@@ -337,6 +337,34 @@ describe("the log of changes (stage 25)", () => {
     expect((await git.changeLog()).length).toBeGreaterThan(2);
   });
 
+  it("follows a rename in the log and in the words, instead of a delete and a new file", async () => {
+    const body = Array.from({ length: 30 }, (_, i) => `w${i}`).join("\n");
+    repo.pushFromOutside({ "03 Things/Old.md": `# Old\n\n${body}\n` }, "Make");
+    repo.pushFromOutside(
+      { "03 Things/Old.md": null, "04 Moved/New.md": `# Old\n\n${body}\n` },
+      "Move",
+    );
+    repo.pushFromOutside(
+      { "04 Moved/New.md": null, "04 Moved/Newer.md": `# Old\n\n${body}\nplus two\n` },
+      "Move and edit",
+    );
+    await git.fetch();
+    const log = await git.changeLog({ limit: 3 });
+    expect(log[1]!.changes).toEqual([
+      { status: "R", path: "04 Moved/New.md", from: "03 Things/Old.md", edited: false },
+    ]);
+    expect(log[0]!.changes).toEqual([
+      { status: "R", path: "04 Moved/Newer.md", from: "04 Moved/New.md", edited: true },
+    ]);
+    const words = await git.wordChanges("2000-01-01");
+    expect(words[1]!.files).toEqual([
+      { path: "04 Moved/New.md", created: false, deleted: false, added: 0, removed: 0 },
+    ]);
+    expect(words[0]!.files).toEqual([
+      { path: "04 Moved/Newer.md", created: false, deleted: false, added: 2, removed: 0 },
+    ]);
+  });
+
   it("counts the words a commit added and took, and whether it made or deleted the file", async () => {
     repo.pushFromOutside({ "03 Things/Words.md": "# Words\n\none two three\nfour\n" }, "Make");
     repo.pushFromOutside(

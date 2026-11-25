@@ -108,7 +108,14 @@ export interface LoggedCommit {
   commit: string;
   /** The commit's time, ISO 8601. */
   at: string;
-  changes: { status: "A" | "M" | "D"; path: string }[];
+  changes: {
+    /** "R" is a rename: `path` is the new name and `from` the old one. */
+    status: "A" | "M" | "D" | "R";
+    path: string;
+    from?: string;
+    /** For a rename: whether the text changed too, not only the name. */
+    edited?: boolean;
+  }[];
 }
 
 /** What one commit did to the words of each Markdown file it touched. */
@@ -130,9 +137,19 @@ function parseChangeLog(out: string): LoggedCommit[] {
         const tab = line.indexOf("\t");
         if (tab === -1) continue;
         const letter = line.slice(0, tab);
+        const names = line.slice(tab + 1).split("\t");
+        if (letter.startsWith("R") && names.length === 2) {
+          changes.push({
+            status: "R",
+            path: names[1]!,
+            from: names[0]!,
+            edited: letter !== "R100",
+          });
+          continue;
+        }
         changes.push({
           status: letter === "A" ? "A" : letter === "D" ? "D" : "M",
-          path: line.slice(tab + 1),
+          path: names[names.length - 1]!,
         });
       }
       return { commit, at, changes };
@@ -164,6 +181,7 @@ function parseWordChanges(out: string): WordCommit[] {
           };
           files.push(file);
         } else if (!file) continue;
+        else if (line.startsWith("rename to ")) file.path = line.slice("rename to ".length);
         else if (line.startsWith("new file mode")) file.created = true;
         else if (line.startsWith("deleted file mode")) file.deleted = true;
         else if (line.startsWith("+++") || line.startsWith("---")) continue;
@@ -582,8 +600,8 @@ export class GitGateway {
   }
 
   /**
-   * The commits that changed Markdown files, newest first, each with the files it added, changed
-   * or deleted. `since` is anything Git reads as a time. A merge commit lists nothing.
+   * The commits that changed Markdown files, newest first, each with the files it added, changed,
+   * renamed or deleted. `since` is anything Git reads as a time. A merge commit lists nothing.
    */
   changeLog(options: { limit?: number; since?: string } = {}): Promise<LoggedCommit[]> {
     return this.locked(async () => {
@@ -592,7 +610,7 @@ export class GitGateway {
           "log",
           `-n${options.limit ?? 5000}`,
           ...(options.since ? [`--since=${options.since}`] : []),
-          "--no-renames",
+          "--find-renames",
           "--name-status",
           "--format=%x01%H%x02%cI",
           "--",
@@ -615,7 +633,7 @@ export class GitGateway {
         [
           "log",
           `--since=${since}`,
-          "--no-renames",
+          "--find-renames",
           "-p",
           "-U0",
           "--format=%x01%H%x02%cI",

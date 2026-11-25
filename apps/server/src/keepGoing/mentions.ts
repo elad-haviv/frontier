@@ -45,8 +45,66 @@ function skipped(text: string): Range[] {
     const from = starts[h.line - 1] ?? 0;
     ranges.push([from, starts[h.line] ?? text.length]);
   }
-  for (const m of text.matchAll(/<!--[\s\S]*?-->|https?:\/\/[^\s)>\]]+/g)) {
+  for (const m of text.matchAll(
+    /<!--[\s\S]*?-->|(?:https?:\/\/|www\.)[^\s)>\]]+|[\w.+-]+@[\w-]+(?:\.[\w-]+)+/gi,
+  )) {
     ranges.push([m.index, m.index + m[0].length]);
+  }
+  ranges.push(...referenceRanges(text), ...blockRanges(text));
+  return ranges;
+}
+
+/** Footnote marks, reference links (`[words][ref]`) and what points at a reference definition. */
+function referenceRanges(text: string): Range[] {
+  const ranges: Range[] = [];
+  const add = (m: RegExpMatchArray) => ranges.push([m.index!, m.index! + m[0].length]);
+  for (const m of text.matchAll(/\[\^[^\]\n]*\]|\[[^\]\n]*\]\[[^\]\n]*\]/g)) add(m);
+  // "[label]: address" lines, and the bare "[label]" shortcut references to them.
+  const labels = new Set<string>();
+  for (const m of text.matchAll(/^ {0,3}\[([^\]\n^][^\]\n]*)\]:[^\n]*/gm)) {
+    add(m);
+    labels.add(m[1]!.trim().toLowerCase());
+  }
+  if (labels.size > 0) {
+    for (const m of text.matchAll(/\[([^\]\n]+)\]/g)) {
+      if (labels.has(m[1]!.trim().toLowerCase())) add(m);
+    }
+  }
+  return ranges;
+}
+
+/** Setext headings (a line underlined with = or -) and indented code blocks. */
+function blockRanges(text: string): Range[] {
+  const ranges: Range[] = [];
+  const lines: { from: number; to: number; text: string }[] = [];
+  let from = 0;
+  for (const line of text.split("\n")) {
+    lines.push({ from, to: from + line.length, text: line });
+    from += line.length + 1;
+  }
+  const blank = (i: number) => (lines[i]?.text ?? "").trim() === "";
+  let code = false;
+  let inList = false;
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]!;
+    if (/^(?: {4}|\t)/.test(line.text) && !blank(i)) {
+      // Indented text is code only where no paragraph or list item is going on.
+      if (code || ((i === 0 || blank(i - 1)) && !inList)) {
+        code = true;
+        ranges.push([line.from, line.to]);
+      }
+      continue;
+    }
+    if (!blank(i)) {
+      code = false;
+      inList = /^ {0,3}(?:[-*+]|\d+[.)])[ \t]/.test(line.text);
+    }
+    // The paragraph above an underline is a heading.
+    if (/^ {0,3}(?:=+|-+)[ \t]*$/.test(line.text) && i > 0 && !blank(i - 1)) {
+      let top = i - 1;
+      while (top > 0 && !blank(top - 1)) top--;
+      ranges.push([lines[top]!.from, line.to]);
+    }
   }
   return ranges;
 }
@@ -183,6 +241,24 @@ export function linkTarget(index: VaultIndex, from: string, target: IndexedNote)
 }
 
 /**
+ * Whether the line holds a "|" that is not part of a link, code or the found words: a table row,
+ * with or without a pipe at its start, where a link's own "|" must be written "\|".
+ */
+function onTableLine(text: string, found: Found): boolean {
+  const lineStart = text.lastIndexOf("\n", found.start - 1) + 1;
+  const end = text.indexOf("\n", found.end);
+  const lineEnd = end === -1 ? text.length : end;
+  const chars = text.slice(lineStart, lineEnd).split("");
+  const blot = (a: number, b: number) => {
+    for (let i = Math.max(a, lineStart); i < Math.min(b, lineEnd); i++) chars[i - lineStart] = " ";
+  };
+  blot(found.start, found.end);
+  for (const link of findLinks(text)) blot(link.start, link.end);
+  for (const [a, b] of codeRanges(text)) blot(a, b);
+  return /(?<!\\)\|/.test(chars.join(""));
+}
+
+/**
  * `text` with the first mention of `target` turned into a link, and what changed. Null when the
  * text holds no mention. The words as written stay as the link's visible text when they differ
  * from the entry's title; in a table a "|" is written "\|".
@@ -198,8 +274,7 @@ export function linkFirstMention(
   if (!found) return null;
   const shown = text.slice(found.start, found.end);
   const written = linkTarget(index, from, target);
-  const lineStart = text.lastIndexOf("\n", found.start - 1) + 1;
-  const bar = /^[ \t]*\|/.test(text.slice(lineStart, found.start)) ? "\\|" : "|";
+  const bar = onTableLine(text, found) ? "\\|" : "|";
   const link = shown === written ? `[[${written}]]` : `[[${written}${bar}${shown}]]`;
   const next = text.slice(0, found.start) + link + text.slice(found.end);
   const before = sentenceAround(text, found.start, found.end).sentence;

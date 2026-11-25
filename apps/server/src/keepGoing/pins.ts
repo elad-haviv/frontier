@@ -46,42 +46,48 @@ export class PinStore {
     };
   }
 
-  private async write(paths: string[]): Promise<void> {
-    await this.d.files.change("pins", (file) => ({
-      ...(file as PinsFile),
-      pins: paths.map((path) => ({ path })),
-    }));
+  /** The pins of a file whose entries still exist, in order. */
+  private live(file: PinsFile): string[] {
+    return file.pins.map((p) => p.path).filter((p) => this.exists(p));
+  }
+
+  /**
+   * Changes the pins from the file as it is when this change's turn comes (changes run one after
+   * another). `next` gets the live paths and returns the new ones, or null to leave the file be;
+   * a dead pin goes with the next change that writes.
+   */
+  private async edit(next: (now: string[], file: PinsFile) => string[] | null): Promise<void> {
+    await this.d.files.change("pins", (raw) => {
+      const file = raw as PinsFile;
+      const paths = next(this.live(file), file);
+      return paths === null ? undefined : { ...file, pins: paths.map((path) => ({ path })) };
+    });
   }
 
   async add(path: string): Promise<void> {
-    if (!this.exists(path)) throw new ApiError("not_found", `There is no entry at "${path}".`);
-    const now = this.paths();
-    if (now.includes(path)) return;
-    if (now.length >= MAX_PINS) {
-      throw new ApiError("invalid", `You can pin up to ${MAX_PINS} entries. Unpin one first.`);
-    }
-    await this.write([...now, path]);
+    await this.edit((now) => {
+      if (!this.exists(path)) throw new ApiError("not_found", `There is no entry at "${path}".`);
+      if (now.includes(path)) return null;
+      if (now.length >= MAX_PINS) {
+        throw new ApiError("invalid", `You can pin up to ${MAX_PINS} entries. Unpin one first.`);
+      }
+      return [...now, path];
+    });
   }
 
   async remove(path: string): Promise<void> {
-    const now = this.paths();
     // Dead pins go with the next change; with none to drop and none to remove, nothing is written.
-    if (!now.includes(path) && now.length === this.file().pins.length) return;
-    await this.write(now.filter((p) => p !== path));
+    await this.edit((now, file) =>
+      !now.includes(path) && now.length === file.pins.length ? null : now.filter((p) => p !== path),
+    );
   }
 
   /** Puts the pins in the order given; those not named keep their order after the named ones. */
   async reorder(order: string[]): Promise<void> {
-    const now = this.paths();
-    const named = order.filter((p, i) => now.includes(p) && order.indexOf(p) === i);
-    const next = [...named, ...now.filter((p) => !named.includes(p))];
-    if (
-      next.join("\n") ===
-      this.file()
-        .pins.map((p) => p.path)
-        .join("\n")
-    )
-      return;
-    await this.write(next);
+    await this.edit((now, file) => {
+      const named = order.filter((p, i) => now.includes(p) && order.indexOf(p) === i);
+      const next = [...named, ...now.filter((p) => !named.includes(p))];
+      return next.join("\n") === file.pins.map((p) => p.path).join("\n") ? null : next;
+    });
   }
 }

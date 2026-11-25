@@ -200,7 +200,7 @@ describe("keep going", () => {
       url: "/api/keep-going/link-it",
       body: { path: "A.md", target: "B.md" },
     });
-    const undo = { path: "A.md", draftId: "abcdefghijkl", revision: 2, previousText: null };
+    const undo = { token: "abcdefghijklmnopqrstuvwx" };
     await api.undoLinkIt(undo);
     expect(last(asked)).toEqual({
       method: "POST",

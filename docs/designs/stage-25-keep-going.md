@@ -175,7 +175,7 @@ Everything the pages need from below the UI. Types are in `@frontier/schema`
 | `GET /api/keep-going/week` | `?tz=` minutes east of UTC, default 0 | `WeekResponse` |
 | `GET /api/keep-going/from-here` | `?path=` | `FromHereResponse` (404 when no such entry) |
 | `POST /api/keep-going/link-it` | `LinkItRequest` `{ path, target }` | `LinkItResponse` |
-| `POST /api/keep-going/link-it/undo` | `LinkItUndo` (the `undo` of the answer, as it was) | `{ ok: true }` |
+| `POST /api/keep-going/link-it/undo` | `LinkItUndo` `{ token }` (the `undo` of the answer, as it was) | `{ ok: true }` |
 | `GET /api/keep-going/random` | `?kind=any\|stub\|folder\|old&folder=&not=` (`RandomQuery`) | `RandomResponse` (`entry` null when nothing fits) |
 | `POST /api/keep-going/after-publish` | `AfterPublishRequest` `{ paths }` | `AfterPublishResponse` (0 to 3 steps) |
 | `POST /api/keep-going/whats-missing` | `WhatsMissingRequest` `{ path }` | `WhatsMissingResponse` (AI) |
@@ -208,26 +208,38 @@ What each answer holds:
   `entriesTouched` counts entries saved in a version in those days; `wordsAdded` is the words added
   net of words taken, per file and version; `linksFilled` is entries *written* this week that some
   older entry already linked to. `onThisDay` has up to 4 rows for each of a month, six months and a
-  year ago (`span`), written ("first written that day") before changed.
+  year ago (`span`), written ("first written that day") before changed. A renamed or moved entry
+  keeps its age: the library's history is read with rename detection, a rename that changes no words
+  is neither a save nor a new entry (it does not touch the entry, fill a link or end its
+  "untouched" time), and one that also changes words is a save but not a new entry. When the
+  history is longer than the 5000 commits read, an entry whose first appearance in them is not its
+  being added has no known "written" day and is only ever listed as changed.
 - **From here.** `missing` (this entry's links with no entry, with library-wide `mentions`),
   `unlinked` (up to `MENTION_LIMIT` = 20 other entries that name this entry's title or an alias
   without linking; one each, with `sentence` and `at` = [from, to) of the name inside it; `unlinkedMore`
   when there are more), `thin` (up to 10 linked neighbours that trip a rule, `direction` says which
   way), `related` (up to 6, most shared links, not directly linked), `previous` and `next` (same
   folder, tree order, null at the ends). Never offered as a mention: code, existing links, headings,
-  comments, web addresses, frontmatter, entries that already link here, appendices, the README. A
+  comments, web addresses and email, footnotes, reference links and definitions, setext headings,
+  indented code, frontmatter, entries that already link here, appendices, the README. A
   title that the library also writes in lower case in three or more entries ("Water") is matched
   only in its own capital; any other name matches in any letter case.
 - **Link it.** Turns the first unlinked mention of `target` in `path` into `[[Title]]`, or
-  `[[Title|words as written]]` when the words differ (an alias, other letter case; `\|` in a table),
+  `[[Title|words as written]]` when the words differ (an alias, other letter case; `\|` on any line that has a table's own `|`, with or without a pipe
+  at its start),
   or the path form when another entry shares the title. It is saved as an ordinary unpublished draft
   of `path`, on top of the author's own draft when there is one, with a new revision, so a device that
-  started from older text gets `stale_revision` on its next save as for any server change. Refused:
+  started from older text gets `stale_revision` on its next save as for any server change. The link
+  is made on the entry's text as it is when it is saved, so an editor save that lands meanwhile is
+  kept. Refused:
   404 when the mention is gone or an entry is missing, 403 `not_allowed` for append-only or read-only
   entries and entries with texts to merge. `before` and `after` are the sentence either side. Keep
-  `undo` and send it to `link-it/undo`: it removes the draft when the entry had none, or puts the
+  `undo` and send it to `link-it/undo` as it is: it is a `{ token }` and nothing else is read from
+  the request. The server keeps what it stands for (the draft, its revision and the text before) for
+  15 minutes, and the newest 200 only. Undo removes the draft when the entry had none, or puts the
   draft's earlier text back; refused with 403 `not_allowed` when the draft has changed since (the
-  toast should then say to undo in the editor), 404 when the draft is gone.
+  toast should then say to undo in the editor), 404 when the draft is gone or the token is unknown,
+  used already or older than 15 minutes (the message says so; treat it as "undo in the editor").
 - **Random.** Picks on the server. `old` is untouched for 6 months (`OLD_MONTHS`), by the library's
   history. `folder` needs `folder` (400 without) and includes sub-folders. `not` is never picked.
 - **After Publish.** `steps`, in this order and each only when there is one: `stub` (a stub a

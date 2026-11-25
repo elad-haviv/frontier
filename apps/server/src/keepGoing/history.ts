@@ -16,7 +16,12 @@ export interface HistoryDeps {
   git: Pick<GitGateway, "changeLog" | "wordChanges">;
   index: VaultIndex;
   now?: () => Date;
+  /** How many commits of the log are read for the ages; the library's own history may be longer. */
+  logLimit?: number;
 }
+
+/** The commits read for the ages of entries. A log as long as this may have been cut off. */
+export const LOG_LIMIT = 5000;
 
 /** When each entry was first written and last changed, in milliseconds since 1970. */
 export interface Ages {
@@ -53,7 +58,10 @@ export class KeepGoingHistory {
   agesOfEntries(): Promise<Ages> {
     const generation = this.d.index.generation;
     if (this.ages?.generation !== generation) {
-      const read = this.d.git.changeLog().then((log) => agesFrom(log));
+      const limit = this.d.logLimit ?? LOG_LIMIT;
+      const read = this.d.git
+        .changeLog({ limit })
+        .then((log) => agesFrom(log, log.length >= limit));
       // A log that cannot be read is tried again next time, not remembered.
       read.catch(() => {
         if (this.ages?.read === read) this.ages = null;
@@ -122,23 +130,38 @@ export class KeepGoingHistory {
   }
 }
 
-/** When each file was first written and last changed, from the log, which is newest first. */
-export function agesFrom(log: LoggedCommit[]): Ages {
+/**
+ * When each file was first written and last changed, from the log, which is newest first. A
+ * rename carries the file's age to its new name. When the log was `cutOff` (there is more history
+ * than was read), a file whose first sight in it is not its being added has no known creation, so
+ * it is left out of `created` rather than dated by the window's edge.
+ */
+export function agesFrom(log: LoggedCommit[], cutOff = false): Ages {
   const created = new Map<string, number>();
   const changed = new Map<string, number>();
   const oldest = new Map<string, number>();
+  // Walking back, the name a file has today, by the name it had then.
+  const nameNow = new Map<string, string>();
   for (const commit of log) {
     const at = Date.parse(commit.at);
-    for (const { status, path } of commit.changes) {
+    for (const { status, path, from, edited } of commit.changes) {
       if (status === "D") continue;
-      if (!changed.has(path)) changed.set(path, at);
+      const now = nameNow.get(path) ?? path;
+      // Moving an entry to another name or folder is not working on it.
+      const moved = status === "R" && edited === false;
+      if (!moved && !changed.has(now)) changed.set(now, at);
       // Walking back in time, so the last write wins: the oldest "added" is the creation.
-      if (status === "A") created.set(path, at);
-      oldest.set(path, at);
+      if (status === "A") {
+        created.set(now, at);
+        // Whatever this name held earlier was another file.
+        nameNow.delete(path);
+      }
+      if (status === "R" && from !== undefined) nameNow.set(from, now);
+      oldest.set(now, at);
     }
   }
-  // A file the log never saw added was there before the log starts.
-  for (const [path, at] of oldest) if (!created.has(path)) created.set(path, at);
+  // A file the log never saw added was there before the log starts, unless the log was cut off.
+  if (!cutOff) for (const [path, at] of oldest) if (!created.has(path)) created.set(path, at);
   return { created, changed };
 }
 
@@ -159,8 +182,10 @@ function weekFrom(
     // A commit dated after today (a clock that is wrong) is no part of this week.
     if (!byDay.has(day)) continue;
     const made = new Set(commit.changes.filter((c) => c.status === "A").map((c) => c.path));
-    for (const { status, path } of commit.changes) {
-      if (status === "D" || !listable(path) || !d.byPath.has(path)) continue;
+    for (const { status, path, edited } of commit.changes) {
+      // Moving an entry without changing its words is not work on it.
+      if (status === "D" || (status === "R" && edited === false)) continue;
+      if (!listable(path) || !d.byPath.has(path)) continue;
       touched.add(path);
       const set = perDay.get(day) ?? new Set<string>();
       set.add(path);

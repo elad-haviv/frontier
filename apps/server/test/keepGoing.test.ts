@@ -330,7 +330,9 @@ describe("Link it", () => {
     expect(made.after).toContain("The road to [[Alpha]] is long");
     const now = await entry(GAMMA);
     expect(now.text).toContain("The road to [[Alpha]] is long, and Alpha Town is far.");
-    expect(now.draft).toMatchObject({ id: made.undo.draftId, revision: made.undo.revision });
+    expect(now.draft).toMatchObject({ revision: 1 });
+    // Undo is a token the server keeps the rest for, not what the page may decide.
+    expect(Object.keys(made.undo)).toEqual(["token"]);
     // Nothing is published.
     expect(t.repo.remoteFile(GAMMA)).not.toContain("[[Alpha]]");
     // The next one is the alias, kept as the words shown.
@@ -367,7 +369,6 @@ describe("Link it", () => {
     const made = LinkItResponse.parse(
       (await t.post("/api/keep-going/link-it", { path: GAMMA, target: ALPHA })).json(),
     );
-    expect(made.undo.previousText).toBe(own);
     const linked = await entry(GAMMA);
     expect(linked.text).toContain("# Gamma, edited");
     expect(linked.text).toContain("[[Alpha]]");
@@ -384,13 +385,17 @@ describe("Link it", () => {
     });
     expect(old.statusCode).toBe(409);
     expect(old.json().error.code).toBe("stale_revision");
+    // Undo puts the author's own draft back, not the text before it.
+    expect((await t.post("/api/keep-going/link-it/undo", made.undo)).statusCode).toBe(200);
+    const back = await entry(GAMMA);
+    expect(back.draft).not.toBeNull();
+    expect(back.text).toBe(own);
   });
 
   it("Undo removes a draft Link it made, or restores the text before", async () => {
     const made = LinkItResponse.parse(
       (await t.post("/api/keep-going/link-it", { path: GAMMA, target: ALPHA })).json(),
     );
-    expect(made.undo.previousText).toBeNull();
     const undone = await t.post("/api/keep-going/link-it/undo", made.undo);
     expect(undone.statusCode, undone.body).toBe(200);
     const back = await entry(GAMMA);
@@ -671,5 +676,156 @@ describe("words and the AI flag in other answers", () => {
 
   it("says in the status whether lore conversations can run", async () => {
     expect((await t.get("/api/status")).json().ai.conversation).toBe(false);
+  });
+});
+
+describe("Link it under pressure", () => {
+  const link = async (path: string, target = ALPHA) =>
+    (await t.post("/api/keep-going/link-it", { path, target })).statusCode;
+
+  it("keeps what the author saves while Link it is reading the entry", async () => {
+    await t.services.changer.apply(GAMMA, (x) => x + "\nfirst draft line\n");
+    const draft = t.services.drafts.byPath(GAMMA)!;
+    // An editor save lands just after the first read of the draft's text.
+    const drafts = t.services.drafts;
+    const real = drafts.text.bind(drafts);
+    let armed = true;
+    drafts.text = async (id: string) => {
+      const text = await real(id);
+      if (armed && id === draft.id) {
+        armed = false;
+        await drafts.serverChange(id, text + "TYPED BY AUTHOR\n");
+      }
+      return text;
+    };
+    expect(await link(GAMMA)).toBe(200);
+    drafts.text = real;
+    const now = (await entry(GAMMA)).text;
+    expect(now).toContain("TYPED BY AUTHOR");
+    expect(now).toContain("The road to [[Alpha]] is long");
+    expect(now).toContain("first draft line");
+  });
+
+  it("links in a file with Windows line endings and keeps them", async () => {
+    t.repo.pushFromOutside({
+      "10 Test/Crlf.md": "# Crlf\r\n\r\nThe road to Alpha is long.\r\n\r\nMore.\r\n",
+    });
+    await t.services.sync();
+    expect(await link("10 Test/Crlf.md")).toBe(200);
+    const draft = t.services.drafts.byPath("10 Test/Crlf.md")!;
+    expect(draft.lineEnding).toBe("crlf");
+    expect((await entry("10 Test/Crlf.md")).text).toContain("The road to [[Alpha]] is long.");
+    expect((await entry("10 Test/Crlf.md")).text).not.toContain("\r\r");
+  });
+
+  it("escapes the bar in a table row with no pipe at its start, and not elsewhere", async () => {
+    t.repo.pushFromOutside({
+      "10 Test/Bare.md": "# Bare\n\nname | note\n--- | ---\nalpha town | here\n",
+      "10 Test/Prose.md": "# Prose\n\nSee [[Beta|the b]] and alpha town.\n",
+    });
+    await t.services.sync();
+    expect(await link("10 Test/Bare.md")).toBe(200);
+    expect((await entry("10 Test/Bare.md")).text).toContain("[[Alpha\\|alpha town]] | here");
+    expect(await link("10 Test/Prose.md")).toBe(200);
+    expect((await entry("10 Test/Prose.md")).text).toContain("and [[Alpha|alpha town]].");
+  });
+
+  it("leaves footnotes, reference links, addresses, setext headings and code alone", async () => {
+    const skipped =
+      "See the note[^Alpha] and [Alpha][a] and www.alpha.com or mail alpha@example.com.\n\n" +
+      "[^Alpha]: a note\n\n[a]: ./Alpha.md\n\nAlpha again\n===========\n\n" +
+      "    Alpha in indented code\n\n";
+    t.repo.pushFromOutside({
+      "10 Test/Foot.md": `# Foot\n\n${skipped}Then Alpha at last.\n`,
+      "10 Test/Foot2.md": `# Foot2\n\n${skipped}`,
+    });
+    await t.services.sync();
+    // Only the plain one is offered, and only the plain one is linked.
+    const offered = FromHereResponse.parse(
+      (await t.get(`/api/keep-going/from-here?path=${encodeURIComponent(ALPHA)}`)).json(),
+    ).unlinked.map((m) => m.path);
+    expect(offered).toContain("10 Test/Foot.md");
+    expect(offered).not.toContain("10 Test/Foot2.md");
+    expect(await link("10 Test/Foot.md")).toBe(200);
+    expect((await entry("10 Test/Foot.md")).text).toBe(
+      `# Foot\n\n${skipped}Then [[Alpha]] at last.\n`,
+    );
+    expect(await link("10 Test/Foot2.md")).toBe(404);
+  });
+
+  it("takes an Undo back only for a token it gave, and only for a while", async () => {
+    const bogus = await t.post("/api/keep-going/link-it/undo", {
+      token: "this-token-was-never-given-out",
+    });
+    expect(bogus.statusCode).toBe(404);
+    expect(bogus.json().error.message).toContain("15 minutes");
+    expect((await t.post("/api/keep-going/link-it/undo", { path: GAMMA })).statusCode).toBe(400);
+    const made = LinkItResponse.parse(
+      (await t.post("/api/keep-going/link-it", { path: GAMMA, target: ALPHA })).json(),
+    );
+    const keeper = t.services.keepGoing as unknown as { d: { now?: () => Date } };
+    keeper.d.now = () => new Date(Date.now() + 16 * 60_000);
+    expect((await t.post("/api/keep-going/link-it/undo", made.undo)).statusCode).toBe(404);
+    // The draft is still there: an expired Undo takes nothing back.
+    expect((await entry(GAMMA)).text).toContain("[[Alpha]]");
+    keeper.d.now = () => new Date(Date.now() + 14 * 60_000);
+    const again = LinkItResponse.parse(
+      (await t.post("/api/keep-going/link-it", { path: GAMMA, target: ALPHA })).json(),
+    );
+    expect((await t.post("/api/keep-going/link-it/undo", again.undo)).statusCode).toBe(200);
+  });
+
+  it("does not trust what a page sends about the draft", async () => {
+    const made = LinkItResponse.parse(
+      (await t.post("/api/keep-going/link-it", { path: GAMMA, target: ALPHA })).json(),
+    );
+    // Extra fields a page might invent change nothing: the draft is removed as the server knows.
+    const res = await t.post("/api/keep-going/link-it/undo", {
+      ...made.undo,
+      draftId: "someotherdraft",
+      revision: 99,
+      previousText: "# Gamma\n\nhijacked\n",
+    });
+    expect(res.statusCode, res.body).toBe(200);
+    const back = await entry(GAMMA);
+    expect(back.draft).toBeNull();
+    expect(back.text).not.toContain("hijacked");
+  });
+
+  it("keeps only the newest Undo records", async () => {
+    const keeper = t.services.keepGoing as unknown as { undos: Map<string, unknown> };
+    const first = LinkItResponse.parse(
+      (await t.post("/api/keep-going/link-it", { path: GAMMA, target: ALPHA })).json(),
+    );
+    for (let i = 0; i < 205; i++) {
+      keeper.undos.set(`filler-${i}-xxxxxxxxxxxxxxxx`, { expires: 1e18 });
+    }
+    await t.post("/api/keep-going/link-it", { path: GAMMA, target: ALPHA });
+    expect(keeper.undos.size).toBeLessThanOrEqual(200);
+    expect(keeper.undos.has(first.undo.token)).toBe(false);
+  });
+});
+
+describe("pins at the same time", () => {
+  it("keeps every pin, in one draft of the file", async () => {
+    const paths = [ALPHA, BETA, GAMMA, DELTA];
+    const answers = await Promise.all(paths.map((path) => t.post("/api/pins", { path })));
+    expect(answers.map((a) => a.statusCode)).toEqual([200, 200, 200, 200]);
+    const now = PinsResponse.parse((await t.get("/api/pins")).json()).pins.map((p) => p.path);
+    expect([...now].sort()).toEqual([...paths].sort());
+    const drafts = t.services.drafts.list().filter((d) => d.path === ".frontier/pins.json");
+    expect(drafts).toHaveLength(1);
+  });
+
+  it("does not lose an unpin or an order that runs with a pin", async () => {
+    await t.post("/api/pins", { path: ALPHA });
+    await t.post("/api/pins", { path: BETA });
+    await Promise.all([
+      t.post("/api/pins", { path: GAMMA }),
+      t.del(`/api/pins?path=${encodeURIComponent(ALPHA)}`),
+      t.put("/api/pins", { paths: [BETA] }),
+    ]);
+    const now = PinsResponse.parse((await t.get("/api/pins")).json()).pins.map((p) => p.path);
+    expect(now).toEqual([BETA, GAMMA]);
   });
 });

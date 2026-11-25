@@ -30,11 +30,13 @@ export class EntryChanger {
 
   /**
    * Applies `change` to the entry's text. Returns the draft that now holds it, or the existing
-   * draft (or null) when the change makes no difference.
+   * draft (or null) when the change makes no difference. `change` is given the text as it is
+   * when it is applied, and whether the entry already had a draft; an author's save that lands
+   * while the text is being read makes the read start again, so it is never overwritten.
    */
   async apply(
     path: string,
-    change: (text: string) => string,
+    change: (text: string, hadDraft: boolean) => string,
     origin?: Origin,
   ): Promise<DraftRecord | null> {
     const note = this.d.index.note(path);
@@ -54,13 +56,16 @@ export class EntryChanger {
       throw new ApiError("not_allowed", "This file is read-only.");
     }
     const text = draft ? await this.d.drafts.text(draft.id) : note!.text;
+    if (this.d.drafts.byPath(path)?.revision !== draft?.revision) {
+      return this.apply(path, change, origin);
+    }
     if (readFrontmatter(text).error) {
       throw new ApiError(
         "not_allowed",
         "The properties block at the top of this entry cannot be read. Correct it in the text first.",
       );
     }
-    const next = change(text);
+    const next = change(text, draft !== undefined);
     if (next === text) return draft ?? null;
 
     const record = draft

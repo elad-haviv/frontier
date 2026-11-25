@@ -145,10 +145,10 @@ describe("requests", () => {
   });
 
   it("holds what Undo needs", () => {
-    const undo = { path: "A.md", draftId: "abcdefghijkl", revision: 2, previousText: null };
+    const undo = { token: "abcdefghijklmnopqrstuvwx" };
     expect(LinkItUndo.parse(undo)).toEqual(undo);
-    expect(LinkItUndo.safeParse({ ...undo, revision: 0 }).success).toBe(false);
-    expect(LinkItUndo.safeParse({ ...undo, draftId: "short" }).success).toBe(false);
+    expect(LinkItUndo.safeParse({ token: "short" }).success).toBe(false);
+    expect(LinkItUndo.safeParse({}).success).toBe(false);
   });
 
   it("has seven days in a week", () => {
