@@ -23,9 +23,12 @@ import {
   isLined,
   type MapFile,
   type MapGroup,
+  type MapTerrain,
+  type MapTerrainHint,
   lockedWithin,
   orderFeature,
   reorderFeature,
+  withTerrainHints,
 } from "@frontier/schema";
 import {
   lazy,
@@ -120,6 +123,7 @@ import {
 } from "../map/groups.ts";
 import { useGroupSelection } from "../map/useGroupSelection.ts";
 import { presenceOf } from "../map/time.ts";
+import { hintsChanged } from "../map/terrainHints/hash.ts";
 import {
   GroupCard,
   GroupEditor,
@@ -468,6 +472,28 @@ export function MapPage() {
       action: { label: "Undo", run: file.undo },
     });
   };
+  /**
+   * Built from hints in the Terrain dialog: the generated terrain and the hints as one change,
+   * with Undo in the toast. Offline, with no terrain, only the hints are kept.
+   */
+  const setTerrainFromHints = (
+    terrain: MapTerrain | null,
+    hints: MapTerrainHint[],
+    count: number,
+  ) => {
+    setTerrainOpen(false);
+    const now = file.mapRef.current;
+    if (!now) return;
+    const next: MapFile = withTerrainHints(now, hints);
+    if (terrain) next.terrain = terrain;
+    change(next);
+    toast({
+      message: terrain
+        ? `Height map built from ${count} ${count === 1 ? "hint" : "hints"}: Find paths and Relief now use it.`
+        : "Hints kept. Build the height map and use it when you are back online.",
+      action: { label: "Undo", run: file.undo },
+    });
+  };
   useShortcut("map.relief", () => {
     if (!map?.terrain && tool !== "paths") return false;
     setRelief(!relief);
@@ -728,9 +754,14 @@ export function MapPage() {
   if (draw.glError) return <p className="center error">{draw.glError}</p>;
 
   const sphere = map.space.kind === "sphere";
-  const terrainName = map.terrain
-    ? (map.terrain.image.split("/").pop() ?? "").replace(/\.[^.]+$/, "")
-    : "";
+  const terrainName = map.terrain?.generated
+    ? "from hints"
+    : map.terrain
+      ? (map.terrain.image.split("/").pop() ?? "").replace(/\.[^.]+$/, "")
+      : "";
+  /** A height map built from hints, and whether the hints have changed since. */
+  const generated = !!map.terrain?.generated;
+  const staleHints = hintsChanged(map);
 
   // What the mouse is over, as the tooltip and the preview show it.
   const hoveredFeature = pointer.hovered
@@ -859,7 +890,21 @@ export function MapPage() {
               <p className="layer-terrain">
                 {map.terrain ? (
                   <>
-                    <span>{terrainName}</span>
+                    <span>
+                      {terrainName}
+                      {generated && (
+                        <span className="terrain-tag" title="Built by Frontier from terrain hints">
+                          generated
+                        </span>
+                      )}
+                    </span>
+                    {generated && (
+                      <span className="muted terrain-from">
+                        {staleHints
+                          ? "Hints changed since it was built"
+                          : `from ${(map.terrainHints ?? []).filter((h) => h.state === "accepted").length} hints`}
+                      </span>
+                    )}
                     <label>
                       <input
                         type="checkbox"
@@ -869,16 +914,18 @@ export function MapPage() {
                       Relief
                     </label>
                     <button type="button" className="quiet" onClick={() => setTerrainOpen(true)}>
-                      Adjust…
+                      {staleHints ? "Build again" : "Adjust…"}
                     </button>
                   </>
                 ) : (
                   <>
                     <span className="muted">
-                      No height map. Find paths guesses the terrain from the picture.
+                      {(map.terrainHints?.length ?? 0) > 0
+                        ? "Terrain hints kept: build the height map to use them."
+                        : "No height map. Find paths guesses the terrain from the picture."}
                     </span>
                     <button type="button" className="quiet" onClick={() => setTerrainOpen(true)}>
-                      Add a height map…
+                      {(map.terrainHints?.length ?? 0) > 0 ? "Build it…" : "Add a height map…"}
                     </button>
                   </>
                 )}
@@ -1272,6 +1319,7 @@ export function MapPage() {
               drawn={shown.resolved.map((r) => r.feature)}
               styles={styles}
               onDone={setMapTerrain}
+              onHints={setTerrainFromHints}
               onCancel={() => setTerrainOpen(false)}
             />
           </Suspense>

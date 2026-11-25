@@ -12,6 +12,7 @@ import {
   type MapImage,
   type MapStyle,
   type MapTerrain,
+  type MapTerrainHint,
   wholeExtent,
 } from "@frontier/schema";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
@@ -33,6 +34,7 @@ import { DialogFrame } from "../Dialogs.tsx";
 import { MapImagePicker } from "../images/MapImagePicker.tsx";
 import { usePhone } from "../Shell.tsx";
 import { COUNTS_LABELS } from "./StyleForm.tsx";
+import TerrainHints from "./TerrainHints.tsx";
 import "./TerrainDialog.css";
 
 type View = "heights" | "relief" | "contours";
@@ -72,6 +74,11 @@ export default function TerrainDialog(p: {
   styles: readonly MapStyle[];
   /** Done: the terrain to set, or null to remove it. */
   onDone: (terrain: MapTerrain | null) => void;
+  /**
+   * Built from hints: the generated terrain and the hints it was built from, as one change; with
+   * no terrain (offline), the hints alone are kept.
+   */
+  onHints: (terrain: MapTerrain | null, hints: MapTerrainHint[], count: number) => void;
   onCancel: () => void;
 }) {
   const { map, picture } = p;
@@ -102,6 +109,15 @@ export default function TerrainDialog(p: {
   const [picking, setPicking] = useState(false);
   const [moving, setMoving] = useState(false);
   const [note, setNote] = useState<string | null>(null);
+  /**
+   * The hints workspace (stage 21): open at once for a terrain built from hints, or for hints
+   * kept while offline; `find` looks at the picture as it opens.
+   */
+  const [work, setWork] = useState<{ find: boolean } | null>(() =>
+    picture && (had?.generated || (!had && (map.terrainHints?.length ?? 0) > 0))
+      ? { find: false }
+      : null,
+  );
   /** Match two points: the places clicked so far (two on the height map, two on the picture). */
   const [points, setPoints] = useState<[number, number][] | null>(null);
 
@@ -627,10 +643,36 @@ export default function TerrainDialog(p: {
       <section className="terrain-section">
         <h3>No height map yet</h3>
         <p>
-          A height map is a grey picture of the same land: white is high, black is low. Wonderdraft,
-          Azgaar's generator, Gaea and any paint program can make one.
+          A height map is a grey picture of the same land: brighter is higher. With one, rivers
+          follow real valleys and routes know every hill.
         </p>
-        <button type="button" className="primary" onClick={() => setPicking(true)}>
+      </section>
+      <section className="terrain-section terrain-build">
+        <h3>Build one from the picture</h3>
+        <p>
+          Frontier looks at the painted map for what tells height: sea and coast, rivers and which
+          way they flow, mountain symbols and where they are drawn largest, lakes and marsh. It
+          marks each as a hint you can accept, move or change, and you can draw your own. Then it
+          builds a height map that agrees with them.
+        </p>
+        <button
+          type="button"
+          className="primary"
+          aria-disabled={!picture || undefined}
+          onClick={() => picture && setWork({ find: true })}
+        >
+          Find hints
+        </button>
+        <p className="muted">
+          {picture
+            ? "All on this device, and nothing changes on the map until you press Use."
+            : "Needs the map's picture shown."}
+        </p>
+      </section>
+      <section className="terrain-section">
+        <h3>Or use a height map you have</h3>
+        <p>Wonderdraft, Azgaar's generator, Gaea and most paint programs can save one.</p>
+        <button type="button" onClick={() => setPicking(true)}>
           Choose a height map…
         </button>
       </section>
@@ -890,6 +932,23 @@ export default function TerrainDialog(p: {
   );
 
   const at_ = STEPS.findIndex((s) => s.id === step);
+  if (work && picture) {
+    return (
+      <TerrainHints
+        map={map}
+        picture={picture}
+        drawn={p.drawn}
+        styles={p.styles}
+        phone={phone}
+        water={seen?.water ? { w: seen.gw, h: seen.gh, data: seen.water } : null}
+        find={work.find}
+        onUse={(terrain, hints, count) => p.onHints(terrain, hints, count)}
+        onKeep={(hints) => p.onHints(null, hints, 0)}
+        onCancel={p.onCancel}
+        {...(had?.generated ? { onPlain: () => setWork(null) } : {})}
+      />
+    );
+  }
   return (
     <>
       <DialogFrame title="Terrain" className="terrain-dialog" onCancel={cancel} onSubmit={done}>
