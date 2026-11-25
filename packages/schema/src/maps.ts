@@ -81,9 +81,78 @@ export const MapTerrain = z
     smoothing: z.number().int().min(0).max(4).optional(),
     /** A guess kept as a height picture, which stays marked as one. */
     guessed: z.literal(true).optional(),
+    /**
+     * Built by Frontier from the map's terrain hints (docs/designs/stage-21-infer-height-map.md):
+     * the settings it was built with, and a hash of the hints in use then, so a change to the
+     * hints since shows as "Hints changed since it was built".
+     */
+    generated: z
+      .object({
+        from: z.literal("hints"),
+        seed: z.number().int(),
+        rough: z.number().min(0).max(1),
+        sharp: z.number().min(0).max(1),
+        erosion: z.number().min(0).max(1),
+        /** 1 draft, 2 normal, 3 fine. */
+        detail: z.number().int().min(1).max(3),
+        carve: z.boolean(),
+        lakes: z.boolean(),
+        hints: z.string().max(40),
+      })
+      .passthrough()
+      .optional(),
   })
   .passthrough();
 export type MapTerrain = z.infer<typeof MapTerrain>;
+
+export const TERRAIN_HINT_KINDS = [
+  "sea",
+  "coast",
+  "lake",
+  "river",
+  "ridge",
+  "peak",
+  "hollow",
+  "valley",
+  "cliff",
+  "highland",
+  "lowland",
+  "plain",
+  "marsh",
+  "road",
+] as const;
+export type TerrainHintKind = (typeof TERRAIN_HINT_KINDS)[number];
+
+/**
+ * What the picture (or the owner) says about height at a place, which a height map is built from:
+ * a peak, a ridge, a river and which way it runs, a marsh. Kept as their own list on the map and
+ * merged hint by hint. Sea and coast hold no shape: they are the picture's water each time. A hint
+ * tied to a feature (`by: "feature:<id>"`) takes its shape from that feature.
+ */
+export const MapTerrainHint = z
+  .object({
+    id: ItemId,
+    kind: z.enum(TERRAIN_HINT_KINDS),
+    /** A point: a peak or a hollow. */
+    at: Pair.optional(),
+    /** A line (a river runs from its source to its mouth) or a zone's ring. */
+    points: z.array(Pair).optional(),
+    /** The height, 0 to 1 of the highest point; a highland's lowest. */
+    h: z.number().min(-1).max(2).optional(),
+    /** A highland's highest. */
+    h2: z.number().min(-1).max(2).optional(),
+    /** How firmly it holds, 0 to 1. */
+    strength: z.number().min(0).max(1).optional(),
+    /** A cliff high on its right as drawn; a river or a valley that runs the other way. */
+    flip: z.literal(true).optional(),
+    state: z.enum(["accepted", "waiting", "rejected"]),
+    /** "found", "you", or "feature:<id>". */
+    by: z.string().min(1).max(60),
+    /** How sure the finding was, 0 to 1; only for found hints. */
+    conf: z.number().min(0).max(1).optional(),
+  })
+  .passthrough();
+export type MapTerrainHint = z.infer<typeof MapTerrainHint>;
 
 export const MapLayer = z
   .object({
@@ -265,6 +334,8 @@ export const MapFile = z
     groups: z.array(MapGroup).optional(),
     /** The height picture the tools read; left out when the map has none. */
     terrain: MapTerrain.nullish(),
+    /** What says how high the land is, to build a height map from; left out when there are none. */
+    terrainHints: z.array(MapTerrainHint).optional(),
   })
   .passthrough()
   .superRefine((map, ctx) => {
@@ -278,6 +349,9 @@ export const MapFile = z
     // A group's members and layer are put right on reading (`repairGroups`), not refused.
     if (map.groups && !unique(map.groups)) {
       ctx.addIssue({ code: "custom", message: "Two groups share an id." });
+    }
+    if (map.terrainHints && !unique(map.terrainHints)) {
+      ctx.addIssue({ code: "custom", message: "Two terrain hints share an id." });
     }
     const layers = new Set(map.layers.map((l) => l.id));
     const problem = layerProblem(map.layers);
@@ -311,8 +385,9 @@ const TOP = [
   "layers",
   "features",
   "groups",
-  // Added later, so it goes last: a file without it keeps its bytes.
+  // Added later, so they go last: a file without them keeps its bytes.
   "terrain",
+  "terrainHints",
 ];
 const ITEM_KEYS: Record<string, string[]> = {
   images: ["id", "name", "path", "extent", "visible"],
@@ -356,6 +431,19 @@ const ITEM_KEYS: Record<string, string[]> = {
     "spacing",
     "locked",
   ],
+  terrainHints: [
+    "id",
+    "kind",
+    "at",
+    "points",
+    "h",
+    "h2",
+    "strength",
+    "flip",
+    "state",
+    "by",
+    "conf",
+  ],
 };
 
 const SHAPE_KEYS = ["id", "from", "at", "points"];
@@ -368,6 +456,7 @@ const TERRAIN_KEYS = [
   "rangeUnit",
   "smoothing",
   "guessed",
+  "generated",
 ];
 
 function inOrder<T extends object>(item: T, keys: string[]): T {
@@ -439,8 +528,9 @@ export function orderGroup<T extends MapGroup>(group: T): T {
 }
 
 const ordered = (map: MapFile): MapFile => {
-  // "Lies under nothing", "no groups" and "no terrain" are written by leaving the key out.
-  const { under, groups, terrain, ...rest } = map;
+  // "Lies under nothing", "no groups", "no terrain" and "no hints" are written by leaving the
+  // key out.
+  const { under, groups, terrain, terrainHints, ...rest } = map;
   return {
     ...rest,
     ...(under != null ? { under } : {}),
@@ -448,6 +538,9 @@ const ordered = (map: MapFile): MapFile => {
     features: map.features.map(orderFeature),
     ...(groups && groups.length > 0 ? { groups: groups.map(orderGroup) } : {}),
     ...(terrain != null ? { terrain: inOrder(terrain, TERRAIN_KEYS) } : {}),
+    ...(terrainHints && terrainHints.length > 0
+      ? { terrainHints: terrainHints.map((h) => inOrder(h, ITEM_KEYS.terrainHints!)) }
+      : {}),
   } as MapFile;
 };
 
@@ -482,7 +575,7 @@ export function parseMap(text: string): ParsedMap {
       message: `${issue?.message ?? "It does not have the form of a map."}${where}`,
     };
   }
-  return { ok: true, map: repairJoins(repairGroups(parsed.data)) };
+  return { ok: true, map: repairHints(repairJoins(repairGroups(parsed.data))) };
 }
 
 // ---- Merging ---------------------------------------------------------------------------------
@@ -518,7 +611,19 @@ export function mergeMaps(base0: MapFile, mine0: MapFile, theirs0: MapFile): Map
   layers.items = repairLayers(keepReorder(base.layers, mine.layers, theirs.layers, layers.items));
   const features = mergeItemLists(base.features, mine.features, theirs.features);
   const groups = mergeItemLists(base.groups ?? [], mine.groups ?? [], theirs.groups ?? []);
-  clashes.push(...images.clashes, ...layers.clashes, ...features.clashes, ...groups.clashes);
+  // Hint by hint: two devices reviewing different hints both keep their work.
+  const hints = mergeItemLists(
+    base.terrainHints ?? [],
+    mine.terrainHints ?? [],
+    theirs.terrainHints ?? [],
+  );
+  clashes.push(
+    ...images.clashes,
+    ...layers.clashes,
+    ...features.clashes,
+    ...groups.clashes,
+    ...hints.clashes,
+  );
 
   // A feature must not be left in a layer that the other side removed.
   const layerIds = new Set(layers.items.map((l) => l.id));
@@ -541,9 +646,31 @@ export function mergeMaps(base0: MapFile, mine0: MapFile, theirs0: MapFile): Map
     layers: kept,
     features: features.items.map((f) => (layerIds.has(f.layer) ? f : { ...f, layer: fallback })),
     groups: groups.items.map((g) => (layerIds.has(g.layer) ? g : { ...g, layer: fallback })),
+    terrainHints: hints.items,
   };
   // A member whose group the other side removed, or moved to another layer, is no longer in it.
-  return { map: ordered(repairJoins(repairGroups(map))), clashes };
+  return { map: ordered(repairHints(repairJoins(repairGroups(map)))), clashes };
+}
+
+// ---- Terrain hints -----------------------------------------------------------------------------
+
+/**
+ * The map with its terrain hints made sound: a hint tied to a feature that is not there is
+ * dropped. The same map comes back when nothing was wrong.
+ */
+export function repairHints(map: MapFile): MapFile {
+  const hints = map.terrainHints;
+  if (!hints || hints.length === 0) return map;
+  const ids = new Set(map.features.map((f) => f.id));
+  const kept = hints.filter((h) => !h.by.startsWith("feature:") || ids.has(h.by.slice(8)));
+  return kept.length === hints.length ? map : withTerrainHints(map, kept);
+}
+
+/** The map with this list of terrain hints; the key is left out when there are none. */
+export function withTerrainHints(map: MapFile, hints: MapTerrainHint[]): MapFile {
+  const next: MapFile = { ...map };
+  delete next.terrainHints;
+  return hints.length > 0 ? { ...next, terrainHints: hints } : next;
 }
 
 // ---- Joins -------------------------------------------------------------------------------------
