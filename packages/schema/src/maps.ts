@@ -139,6 +139,17 @@ const featureBase = {
  */
 const curve = z.literal("smooth").optional();
 
+/** A stretch of a path between two of its corners: see `stretches` on a path. */
+export const PathStretch = z
+  .object({
+    kind: z.enum(["tunnel", "steps", "climb"]),
+    from: Pair,
+    to: Pair,
+    grade: z.number().min(-10).max(10).optional(),
+  })
+  .passthrough();
+export type PathStretch = z.infer<typeof PathStretch>;
+
 /**
  * The id of a path or zone style in the map styles file. A style that is not there, or is for the
  * other kind, counts as none, and the id is kept so that the look comes back with the style.
@@ -171,6 +182,18 @@ export const MapFeature = z.discriminatedUnion("kind", [
        */
       startOn: ItemId.nullish(),
       endOn: ItemId.nullish(),
+      /**
+       * Stretches of the path that are something other than its plain line, each between two of
+       * its corners, given by their coordinates (so a corner put in elsewhere leaves it alone): a
+       * tunnel (drawn dashed), steps, or a climb (`grade`, the steepest grade along it as a
+       * fraction, above 0 when it rises from `from` to `to`; drawn as chevrons pointing uphill).
+       * A stretch whose corners are gone is not drawn. Made by Find paths.
+       */
+      stretches: z.array(PathStretch).max(500).optional(),
+      /** How a river ends inland: it sinks underground (tapers) or dries out (thins, dashed). */
+      endAs: z.enum(["sinks", "dries"]).optional(),
+      /** The chevrons on its climbs are hidden; left out: shown. */
+      steepShown: z.literal(false).optional(),
     })
     .passthrough(),
   z
@@ -340,6 +363,9 @@ const ITEM_KEYS: Record<string, string[]> = {
     "group",
     "startOn",
     "endOn",
+    "stretches",
+    "endAs",
+    "steepShown",
   ],
   groups: [
     "id",

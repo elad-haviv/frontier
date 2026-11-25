@@ -133,3 +133,67 @@ describe("what a style counts as", () => {
     expect(reads(style({ for: "zone", counts: "mountains" }))).toBe(true);
   });
 });
+
+describe("a path's stretches and how it ends (Find paths' steep ground and basins)", () => {
+  const road = {
+    id: "p1",
+    kind: "path",
+    layer: "l1",
+    points: [
+      [0, 0],
+      [10, 0],
+      [20, 5],
+    ],
+    entry: null,
+    label: null,
+    child: null,
+  };
+
+  it("writes the new keys last, in order, and reads them back", () => {
+    const path = {
+      ...road,
+      steepShown: false,
+      endAs: "sinks",
+      stretches: [
+        { kind: "tunnel", from: [0, 0], to: [10, 0] },
+        { kind: "climb", from: [10, 0], to: [20, 5], grade: -0.18 },
+      ],
+    };
+    const text = serialiseMap({ ...flat, features: [path] } as unknown as MapFile);
+    const at = (key: string) => text.indexOf(`"${key}"`);
+    expect(at("child")).toBeLessThan(at("stretches"));
+    expect(at("stretches")).toBeLessThan(at("endAs"));
+    expect(at("endAs")).toBeLessThan(at("steepShown"));
+    const read = parseMap(text);
+    expect(read.ok).toBe(true);
+    if (!read.ok) return;
+    const back = read.map.features[0] as MapFeature & { stretches?: unknown[]; endAs?: string };
+    expect(back.stretches).toHaveLength(2);
+    expect(back.endAs).toBe("sinks");
+    expect(serialiseMap(read.map)).toBe(text);
+  });
+
+  it("keeps the bytes of a path without them, and refuses a stretch of another kind", () => {
+    const text = serialiseMap({ ...flat, features: [road] } as unknown as MapFile);
+    expect(text).not.toContain("stretches");
+    const bad = serialiseMap({
+      ...flat,
+      features: [{ ...road, stretches: [{ kind: "bridge", from: [0, 0], to: [10, 0] }] }],
+    } as unknown as MapFile);
+    expect(parseMap(bad).ok).toBe(false);
+  });
+});
+
+describe("a terrain that was made, not given", () => {
+  it("keeps the mark of a generated height picture, and nothing else for it", () => {
+    const text = serialiseMap({
+      ...flat,
+      terrain: { image: "maps/guess.png", guessed: true },
+    } as unknown as MapFile);
+    expect(text).toContain('"guessed":true');
+    const read = parseMap(text);
+    expect(read.ok && read.map.terrain?.guessed).toBe(true);
+    const wrong = text.replace('"guessed":true', '"guessed":false');
+    expect(parseMap(wrong).ok).toBe(false);
+  });
+});
