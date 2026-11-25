@@ -425,3 +425,77 @@ The owner approved the design with these choices. Where they differ from the pro
 3. **Overlaps are allowed; the smallest containing zone wins** (an oasis in a desert).
 4. **Travel: no separate route card.** Find paths' Route bar gains "+6½ days from biomes" and the km
    crossed in each biome; the hover tag gives each biome's multipliers.
+
+### What release 21b built
+
+**Data.**
+
+- A zone's `biome` (a built-in key such as `desert-sand`, or the id of one of the owner's biomes) and
+  `pattern: false` (its pattern not drawn) go last on the zone; the map's `climate` goes last in the
+  file. Old files keep their bytes; both merge with their item, the climate as one value. A biome
+  that is not there is kept and counts as none.
+- `packages/schema/src/biomes.ts` holds the fifteen kinds with their speeds, river rules, Explore words
+  and usual styles (ids `bio…`), the sixteen patterns, the owner's biomes file (a third library item
+  file, `.frontier/biomes.json`, merged biome by biome and kept on the device like the styles file),
+  and `featureCountsAs`: a zone counts as its biome's ground, else as its style says.
+- An owner's biome behaves like a kind, with its own pattern, speeds, river rule, Explore words and
+  the colour of new zones; its usual style is a zone style under the biome's own id.
+
+**Look.**
+
+- The pattern is drawn over the zone's own fill in a darker shade of its colour, 32 screen pixels a
+  tile at any zoom, anchored to the map. Patterns are on unless turned off for a zone (its Edit tab)
+  or for the view (Layers → Biomes: Patterns, Soft edges, Legend on the map, kept on the device).
+- Within a layer, biome zones are drawn under its other zones, the largest first.
+- Soft edges blurs biome fills (a canvas filter: browsers without one draw them sharp).
+- The legend card sits at the bottom left (top left on a phone, below the terrain chip), lists the
+  biomes drawn now in their zones' usual colour and, while suggesting, the ghosts' biomes as
+  "suggested"; in the Temperature and Rainfall views it is the scale. The saved picture draws it.
+- The Biomes layer is made first in the layer list on the first biome zone, and its row says "drawn
+  under the rest".
+- Fixed on the way: a zone on a flat map is filled by its flat area. A large zone in a picture's
+  pixels (its positions read as latitudes beyond 90°) was left unfilled.
+- **Not built:** a named biome zone's name written in italics at its deepest point (zones are named
+  as before); the multiply blend (the features' canvas lies above the picture's, so a blend there
+  would not reach the picture).
+
+**Making them.**
+
+- The biome picker (swatches, groups Water · Cold · Temperate · Warm · High · Made by you, each with
+  its cart speed; typing narrows it; a sheet on a phone) is in the Zone tool's hint bar, in Find
+  areas' bar beside the style, and in a zone's Edit tab. The Zone tool and Find areas share one choice.
+  A zone made with a biome goes to the Biomes layer in the biome's usual style (added to the library
+  the first time); a style chosen in Find areas is kept. Choosing a biome in the Edit tab keeps the
+  zone's style when it has one.
+- The Styles tab has "Add the usual biomes", the built-in biomes with their cart speeds, and the
+  owner's biomes with + New biome and an editor (name, behaves like, pattern, colour, speeds, rivers,
+  Explore words, Reset).
+- **Suggest biomes** (B, leaf icon) reads the terrain in use through Find paths' engine: a height map,
+  the guess from the picture (marked in amber), or a height map inferred from the picture once that
+  exists. Its bar has the wind dial (a radio group; arrows turn it), latitude, N–S span (no less than
+  the scale gives), temperature, wetness, smallest zone, the terrain line, Biomes · Temperature ·
+  Rainfall (1, 2, 3), Skip all, List and Accept all (⇧Enter). A click (a tap) accepts the ghost under
+  the pointer, Enter too; Delete skips it. The Suggest tab lists the ghosts by biome with Accept and
+  Skip, and Show them again. Accepting is a map change undone by Undo; skipping is the tool's own
+  step. The climate is kept on the map when something is accepted. It works on a grid of at most
+  160,000 cells, so every setting answers at once.
+- Neighbouring ghosts are outlined from one grid between the middles of its cells, so they meet to
+  within a cell; **not built:** arcs between junctions simplified once (identical shared points).
+  Seas and coasts are never suggested. **Not built:** on a child of a globe map, the latitude and span
+  taken from the globe (Suggest biomes, like Terrain, is for flat maps).
+
+**Meaning.**
+
+- Find paths: each cell lies in the smallest biome zone that holds it; a biome's multiplier replaces
+  the picture's forest and marsh on open ground (0 is no way: a cart crosses the jungle only on its
+  road); slope still comes from the heights. A dry biome gives a fifth of the water and takes about
+  4 cells' worth a km from a river crossing it, so a small river "dries out in the Tharn Desert" and
+  a big one crosses; a river reaching a marsh "ends in the Mire of Ost"; "rivers rise here" doubles
+  the water, so likely rivers find more sources. The hooks into `cost.ts` and `hydro.ts` are one call
+  each, into `findPaths/biomes.ts`.
+- The Route bar adds "+6½ days from biomes" and the km of the route in each biome with its
+  multiplier; the hover tag and a zone's Edit tab and card give a biome's speeds and river rule.
+- Explore: the land a place lies in ("The land here: in the sand desert (Tharn Desert); rivers lose
+  water and can dry out.") is given as map context, from the smallest biome zone that holds it, named
+  or not. **Not built:** its distance to the coast and its height, which the server does not work
+  out.
