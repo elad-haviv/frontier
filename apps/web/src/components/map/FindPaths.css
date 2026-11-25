@@ -73,3 +73,13 @@
     padding: 0 0.6rem;
   }
 }
+
+/* A route through biome zones: the km in each, and what each does to the speed. */
+.paths-bar .find-status .paths-biomes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.15rem 0.75rem;
+  margin-top: 0.15rem;
+  color: var(--ink-faint);
+  font-size: 0.8rem;
+}

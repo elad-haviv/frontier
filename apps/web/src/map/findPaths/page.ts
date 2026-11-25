@@ -5,7 +5,9 @@
  */
 import { outline, type Position, type Space } from "@frontier/geo";
 import {
-  countsAs,
+  biomeById,
+  type CustomBiome,
+  featureCountsAs,
   isLined,
   type MapFeature,
   type MapFile,
@@ -18,26 +20,30 @@ import type { ImageFrame } from "../findAreas/frame.ts";
 import { toPx } from "../findAreas/frame.ts";
 import { type Resolved, writeShape } from "../time.ts";
 import { newItemId } from "../viewUrl.ts";
+import type { TerrainBiome } from "./biomes.ts";
 import { joinLines } from "./lines.ts";
 import type { TerrainFeature } from "./protocol.ts";
 import { unitKm } from "./travel.ts";
 
 /**
  * The features that count as terrain: paths in a style that counts as a river or a road, zones
- * in one that counts as water, forest, marsh or mountains. Each as it is drawn (a curved path
- * along its curve), in the picture's pixels.
+ * that count as water, forest, marsh or mountains by their biome or else their style. Each as it
+ * is drawn (a curved path along its curve), in the picture's pixels. A biome zone's own speed
+ * stands for its forest, marsh or mountains (see `terrainBiomes`): only its water is told here.
  */
 export function terrainFeatures(
   space: Space,
   frame: ImageFrame,
   drawn: readonly MapFeature[],
   styles: readonly MapStyle[],
+  custom: readonly CustomBiome[] = [],
 ): TerrainFeature[] {
   const out: TerrainFeature[] = [];
   for (const f of drawn) {
-    if (!isLined(f) || !f.style) continue;
-    const counts = countsAs(styles.find((s) => s.id === f.style && s.for === f.kind));
+    if (!isLined(f)) continue;
+    const counts = featureCountsAs(f, styles, custom);
     if (!counts) continue;
+    if (f.kind === "zone" && counts !== "water" && biomeById(f.biome, custom)) continue;
     const { line } = outline(space, f.points, {
       curve: f.curve === "smooth",
       closed: f.kind === "zone",
@@ -47,15 +53,45 @@ export function terrainFeatures(
   return out;
 }
 
+/**
+ * The biome zones drawn now, as Find paths is told of them: each one's ring in the picture's
+ * pixels, with its biome's speeds and river rule.
+ */
+export function terrainBiomes(
+  space: Space,
+  frame: ImageFrame,
+  drawn: readonly MapFeature[],
+  custom: readonly CustomBiome[],
+): TerrainBiome[] {
+  const out: TerrainBiome[] = [];
+  for (const f of drawn) {
+    if (f.kind !== "zone") continue;
+    const biome = biomeById(f.biome, custom);
+    if (!biome) continue;
+    const { line } = outline(space, f.points, { curve: f.curve === "smooth", closed: true });
+    out.push({
+      id: f.id,
+      biome: biome.id,
+      name: biome.name,
+      label: f.label?.trim() || null,
+      ring: line.map((p) => toPx(frame, p)),
+      speed: biome.speed,
+      rivers: biome.rivers,
+    });
+  }
+  return out;
+}
+
 /** What counts as terrain on a map, in words, for the Terrain dialog: "3 paths count as River". */
 export function terrainHints(
   drawn: readonly MapFeature[],
   styles: readonly MapStyle[],
+  custom: readonly CustomBiome[] = [],
 ): { counts: string; paths: number; zones: number }[] {
   const tally = new Map<string, { paths: number; zones: number }>();
   for (const f of drawn) {
-    if (!isLined(f) || !f.style) continue;
-    const counts = countsAs(styles.find((s) => s.id === f.style && s.for === f.kind));
+    if (!isLined(f)) continue;
+    const counts = featureCountsAs(f, styles, custom);
     if (!counts) continue;
     const t = tally.get(counts) ?? { paths: 0, zones: 0 };
     if (f.kind === "path") t.paths++;

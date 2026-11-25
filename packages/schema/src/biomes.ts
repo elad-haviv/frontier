@@ -485,7 +485,7 @@ export const DEFAULT_CLIMATE: MapClimate = {
  * taiga is a forest, a wetland a marsh, whatever its style); otherwise by its style.
  */
 export function featureCountsAs(
-  feature: { kind: string; style?: string; biome?: string },
+  feature: { kind: string; style?: string | undefined; biome?: string | undefined },
   styles: readonly MapStyle[],
   custom: readonly CustomBiome[] = [],
 ): CountsAs | null {

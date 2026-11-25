@@ -16,7 +16,14 @@ import {
   type View,
   type ViewState,
 } from "@frontier/geo";
-import { countsAs, layerTree, type MapFile, type MapImage, type MapStyle } from "@frontier/schema";
+import {
+  countsAs,
+  layerTree,
+  type MapFile,
+  type MapImage,
+  type MapStyle,
+  speedWords,
+} from "@frontier/schema";
 import {
   Mountain,
   PenLine,
@@ -42,7 +49,9 @@ import {
   setTerrain,
   traceAt,
 } from "../../map/findPaths/client.ts";
+import { biomeDelta } from "../../map/findPaths/biomes.ts";
 import { type Mode, MODES, type Variant } from "../../map/findPaths/cost.ts";
+import { useBiomes } from "../../map/useBiomes.ts";
 import { nearestOn } from "../../map/findPaths/lines.ts";
 import { crossCorners, joinNewPath, joinReach } from "../../map/joins.ts";
 import {
@@ -53,6 +62,7 @@ import {
   plural,
   stopIndex,
   terrainExtent,
+  terrainBiomes,
   terrainFeatures,
   terrainMetres,
 } from "../../map/findPaths/page.ts";
@@ -115,6 +125,8 @@ interface Proposal {
   traced?: "river" | "road" | "line";
   /** Each way's time for the switch, when a route is proposed. */
   ways?: Partial<Record<Variant, { hours: number | null; same: boolean } | null>>;
+  /** A route through biome zones: the km in each, and what each multiplies the speed by. */
+  biomes?: { name: string; km: number; times: number }[];
 }
 
 const KINDS: { kind: Kind; label: string; icon: typeof Waves; key: string; hint: string }[] = [
@@ -310,21 +322,26 @@ export default function FindPaths(p: {
         .map((r) => r.feature),
     [p.resolved, p.hidden],
   );
+  const { custom } = useBiomes();
   const features = useMemo(
-    () => (imageFrame ? terrainFeatures(space, imageFrame, drawn, p.styles) : []),
-    [imageFrame, drawn, p.styles, space],
+    () => (imageFrame ? terrainFeatures(space, imageFrame, drawn, p.styles, custom) : []),
+    [imageFrame, drawn, p.styles, space, custom],
+  );
+  const biomes = useMemo(
+    () => (imageFrame ? terrainBiomes(space, imageFrame, drawn, custom) : []),
+    [imageFrame, drawn, space, custom],
   );
   const perUnit = kmPerUnit(map.space);
   const kmPerPx =
     perUnit !== null && imageFrame
       ? (perUnit * (imageFrame.extent[2] - imageFrame.extent[0])) / imageFrame.w
       : null;
-  const terrainKey = JSON.stringify([sessionKey, useHeights, follow, features, kmPerPx]);
+  const terrainKey = JSON.stringify([sessionKey, useHeights, follow, features, biomes, kmPerPx]);
   const [info, setInfo] = useState<({ key: string } & TerrainInfo) | null>(null);
   useEffect(() => {
     if (!ready) return;
     let stale = false;
-    setTerrain({ useHeights, follow, features, kmPerPx }).then(
+    setTerrain({ useHeights, follow, features, biomes, kmPerPx }).then(
       (t) => !stale && setInfo({ key: terrainKey, ...t }),
       () => {},
     );
@@ -449,7 +466,11 @@ export default function FindPaths(p: {
               : "reaches water"
             : r.end === "river"
               ? `joins ${joinedName}`
-              : "runs off the map";
+              : r.end === "dry"
+                ? `dries out in ${r.endIn ?? "the desert"}`
+                : r.end === "marsh"
+                  ? `ends in ${r.endIn ?? "the marsh"}`
+                  : "runs off the map";
         const length = lengthOf(points);
         const flat = r.flatShare > 1 / 3 ? " · flat ground: the course here is a guess" : "";
         return done({
@@ -524,6 +545,12 @@ export default function FindPaths(p: {
           const extra = bits.length ? ` · ${bits.join(", ")}` : "";
           const noTime =
             r.hours === null ? " Set the map's scale in km or miles to see travelling time." : "";
+          // What the biome zones did to it: "+6½ days from biomes", and the km in each.
+          const fromBiomes =
+            r.hours !== null && r.withoutBiomes !== null && r.byBiome.length > 0
+              ? ` · ${biomeDelta(r.hours - r.withoutBiomes)}`
+              : "";
+          const modeKey = mode === "ship" ? "foot" : mode;
           return {
             paths: [
               {
@@ -533,8 +560,17 @@ export default function FindPaths(p: {
             ],
             ghosts,
             marks: r.marks.map((m) => ({ at: pos(m.at), kind: m.kind })),
-            text: `${title} · ${length}${about}${extra}`,
-            short: `${length}${time ? ` · ${time}` : ""}${extra}`,
+            text: `${title} · ${length}${about}${extra}${fromBiomes}`,
+            short: `${length}${time ? ` · ${time}` : ""}${extra}${fromBiomes}`,
+            ...(r.byBiome.length > 0
+              ? {
+                  biomes: r.byBiome.map((b) => ({
+                    name: b.name,
+                    km: b.km,
+                    times: b.speed[modeKey],
+                  })),
+                }
+              : {}),
             note: `${WAY_LABELS[variant]} way ${MODES[mode].name}: ${length}${time ? `, about ${time} at ${HOURS_A_DAY} hours a day` : ""}${bits.length ? ` (${bits.join(", ")})` : ""}. ${terrainNote}${noTime}`,
             ...(ways ? { ways } : {}),
           };
@@ -1620,6 +1656,15 @@ export default function FindPaths(p: {
           )}
           <span className="find-status" role="status">
             {phone ? short : status}
+            {shown?.biomes && pend && !phone && (
+              <span className="paths-biomes">
+                {shown.biomes.map((b) => (
+                  <span key={b.name}>
+                    {b.name} {Math.round(b.km)} km · {speedWords(b.times)}
+                  </span>
+                ))}
+              </span>
+            )}
             {shown?.ship && pend && (
               <>
                 {" "}
