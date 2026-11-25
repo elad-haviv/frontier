@@ -1,0 +1,79 @@
+/* The New map form: kinds of map as cards, each with a small drawing. The two kinds that need no
+   image are drawn on dark, as their canvases are. */
+.new-map .kinds-field {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+.new-map .kinds-field legend {
+  padding: 0;
+  margin-bottom: 0.3rem;
+  font-size: 0.8rem;
+  color: var(--ink-faint);
+}
+.new-map .kinds {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.6rem;
+}
+.new-map .kind {
+  position: relative;
+  display: grid;
+  gap: 0.35rem;
+  align-content: start;
+  padding: 0.6rem;
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  background: var(--paper-raised);
+  color: var(--ink);
+  cursor: pointer;
+}
+.new-map .kind input {
+  /* The whole card is the radio button: it sits over the card, unseen. */
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+.new-map .kind:has(input:checked) {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+.new-map .kind:has(input:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.new-map .kind .pic {
+  display: grid;
+  place-items: center;
+  height: 4.4rem;
+  overflow: hidden;
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--ink) 8%, var(--paper));
+}
+.new-map .kind .pic.dark {
+  background: #12141c;
+}
+.new-map .kind b {
+  font-family: var(--serif);
+  font-size: 1rem;
+}
+.new-map .kind small {
+  color: var(--ink-faint);
+  font-size: 0.8rem;
+  line-height: 1.3;
+}
+.new-map .new-tag {
+  margin-left: 0.3rem;
+  font: 600 0.65rem var(--sans);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+@media (max-width: 47.99rem) {
+  .new-map .kinds {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

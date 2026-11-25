@@ -1,5 +1,5 @@
 import { expect, type Page, test } from "@playwright/test";
-import { rightPanel } from "./helpers.ts";
+import { chooseKind, rightPanel } from "./helpers.ts";
 
 /** Throws the open map away, so the next test finds nothing unpublished. */
 async function discardMap(page: Page) {
@@ -11,7 +11,7 @@ async function discardMap(page: Page) {
 async function newStarMap(page: Page, title: string) {
   await page.goto("/maps");
   await page.locator(".new-map input[type=text]").fill(title);
-  await page.locator(".new-map select").selectOption("stars");
+  await chooseKind(page, "Star map");
   // A star map needs no image: Make the map is enough.
   await page.getByRole("button", { name: "Make the map" }).click();
   await expect(page.locator(".star-canvas")).toBeVisible();
@@ -91,12 +91,12 @@ test("the New map form hides the image for a star map and shows it again for a f
   await page.goto("/maps");
   const image = page.locator(".new-map .field:has(.chosen-image)");
   await expect(image).toBeVisible();
-  await page.locator(".new-map select").selectOption("stars");
+  await chooseKind(page, "Star map");
   await expect(image).toBeHidden();
   await expect(page.getByRole("button", { name: "Make the map" })).toBeDisabled();
   await page.locator(".new-map input[type=text]").fill("Anything");
   await expect(page.getByRole("button", { name: "Make the map" })).toBeEnabled();
-  await page.locator(".new-map select").selectOption("flat");
+  await chooseKind(page, "Flat map");
   await expect(image).toBeVisible();
   await expect(page.getByRole("button", { name: "Make the map" })).toBeDisabled();
 });
@@ -154,5 +154,27 @@ test("a star slides level when dragged, rises with its handle, and undo takes ea
   await expect(across).toHaveValue(moved);
   await page.keyboard.press("ControlOrMeta+z");
   await expect(across).toHaveValue(String(startX));
+  await discardMap(page);
+});
+
+test("a star map made in parsecs keeps that unit", async ({ page }, info) => {
+  await page.goto("/maps");
+  await page.locator(".new-map input[type=text]").fill(`Parsecs ${info.project.name}`);
+  await chooseKind(page, "Star map");
+  await page.getByLabel("Distances are in").selectOption("pc");
+  await page.getByRole("button", { name: "Make the map" }).click();
+  await expect(page.locator(".star-canvas")).toBeVisible();
+  const unit = await page.evaluate(async () => {
+    const id = location.pathname.split("/").pop();
+    for (let i = 0; i < 20; i++) {
+      const got = (await (await fetch(`/api/maps/${id}`)).json()) as {
+        map: { space: { unit: string } };
+      };
+      if (got.map.space.unit === "pc") return "pc";
+      await new Promise((r) => setTimeout(r, 250));
+    }
+    return "ly";
+  });
+  expect(unit).toBe("pc");
   await discardMap(page);
 });
