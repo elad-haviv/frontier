@@ -75,17 +75,82 @@ test("reads the whole entry, jumps to a passage, applies a suggestion and undoes
   // Apply is one edit, with a way back.
   await opinion.getByRole("button", { name: "Apply" }).click();
   await expect(text).toContainText("A clearer opening.");
-  await expect(opinion).toHaveCount(0);
+  // The finding stays in its review, saying what was done and what it replaced.
+  await expect(opinion).toContainText("Applied");
+  await expect(opinion.locator(".consult-suggest del")).toContainText("The person.");
   await page.locator(".ui-toast").getByRole("button", { name: "Undo" }).click();
   await expect(text).toContainText("The person.");
   await expect(text).not.toContainText("A clearer opening.");
+  await expect(opinion).not.toContainText("Applied");
 
-  // Dismiss takes a finding away; the text is untouched.
+  // Dismiss folds a finding into "Dismissed", where it can be restored; the text is untouched.
+  await opinion.getByRole("button", { name: "Dismiss" }).click();
+  const dismissed = panel.locator(".consult-dismissed");
+  await expect(dismissed).toContainText("Dismissed (1)");
+  await dismissed.locator("summary").click();
+  await dismissed.getByRole("button", { name: "Restore" }).click();
+  await expect(panel.locator(".consult-dismissed")).toHaveCount(0);
+  await expect(opinion).toBeVisible();
+  await discardDraft(page);
+});
+
+test("keeps its history: a review survives leaving the page, with what was done with each finding", async ({
+  page,
+}, info) => {
+  test.skip(info.project.name !== "desktop", "The AI settings are one per server.");
+  await conversationModel(page, "sample/reader");
+  await page.request.delete(`/api/write/reviews?path=${encodeURIComponent(NOTE)}`);
+  await page.goto(edit(NOTE));
+  const text = page.locator(".cm-content");
+  await text.getByText("The person.").click();
+  await page.keyboard.press("Control+Alt+r");
+  const panel = page.getByRole("complementary", { name: "Consult" });
+  const opinion = panel.locator(".consult-card", { hasText: "I find this opening unclear." });
+  await expect(opinion).toBeVisible();
+  await opinion.getByRole("button", { name: "Apply" }).click();
+  await expect(opinion).toContainText("Applied");
   await panel
-    .locator(".consult-card", { hasText: "I find this opening unclear." })
+    .locator(".consult-card", { hasText: "conflicts with another entry" })
     .getByRole("button", { name: "Dismiss" })
     .click();
-  await expect(panel.locator(".consult-card")).toHaveCount(1);
+  await expect(panel.locator(".consult-dismissed")).toContainText("Dismissed (1)");
+
+  // Leave and come back: the review is there as it was left, and nothing runs by itself.
+  await page.goto("/");
+  await page.goto(edit(NOTE));
+  await page.getByRole("tab", { name: "Consult" }).click();
+  const back = page.getByRole("complementary", { name: "Consult" });
+  await expect(back).toContainText("Latest review");
+  await expect(back).toContainText("A stand-in opinion.");
+  await expect(
+    back.locator(".consult-card", { hasText: "I find this opening unclear." }),
+  ).toContainText("Applied");
+  await expect(back.locator(".consult-dismissed")).toContainText("Dismissed (1)");
+
+  // A second review is added to the history, newest first; open the older one, then delete it.
+  await back.getByRole("button", { name: "Consult again" }).click();
+  await expect(back.getByRole("button", { name: /History \(2\)/ })).toBeVisible();
+  await back.getByRole("button", { name: /History \(2\)/ }).click();
+  const rows = back.locator(".consult-row-btn");
+  await expect(rows).toHaveCount(2);
+  await expect(rows.nth(1)).toContainText("1 applied");
+  await expect(rows.nth(1)).toContainText("1 dismissed");
+  await rows.nth(1).click();
+  await expect(
+    back.locator(".consult-card", { hasText: "I find this opening unclear." }),
+  ).toContainText("Applied");
+  await back.getByRole("button", { name: "Delete this review" }).click();
+  await back.getByRole("button", { name: "Delete", exact: true }).click();
+  await expect(rows).toHaveCount(1);
+
+  // Clear history asks first, then empties it.
+  await back.getByRole("button", { name: "Clear history" }).click();
+  await back.getByRole("button", { name: "Delete all" }).click();
+  // Back to the panel as it is before any review: no history, and "Consult" not "Consult again".
+  await expect(back.getByRole("button", { name: "Consult", exact: true })).toBeVisible();
+  await expect(back.getByText("Latest review")).toHaveCount(0);
+  await expect(back.getByRole("button", { name: /History/ })).toHaveCount(0);
+  await page.request.delete(`/api/write/reviews?path=${encodeURIComponent(NOTE)}`);
   await discardDraft(page);
 });
 

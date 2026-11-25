@@ -289,3 +289,117 @@
   box-shadow: var(--shadow);
   cursor: pointer;
 }
+.consult-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+.consult-top b {
+  display: block;
+  font-size: 0.92rem;
+}
+.consult-top small {
+  display: block;
+  color: var(--ink-faint);
+  font-size: 0.78rem;
+}
+.consult-link {
+  padding: 0.3rem 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  font-size: 0.85rem;
+  text-decoration: underline;
+  text-underline-offset: 0.18em;
+  cursor: pointer;
+}
+.consult-tags {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.3rem;
+}
+.consult-state {
+  padding: 0.1rem 0.45rem;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--ink-faint) 18%, transparent);
+  color: var(--ink-soft);
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+.consult-state.is-applied {
+  background: color-mix(in srgb, #3f6b3a 18%, transparent);
+  color: var(--ink);
+}
+.consult-state.is-open {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.consult-card.is-dismissed {
+  background: transparent;
+  opacity: 0.85;
+}
+.consult-dismissed {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.consult-dismissed > summary {
+  margin-bottom: 0.5rem;
+  color: var(--ink-faint);
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+.consult-suggest del {
+  background: color-mix(in srgb, var(--warn) 14%, transparent);
+  color: var(--warn);
+}
+.consult-thread {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+.consult-question {
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 0.85rem;
+  font-style: italic;
+}
+.consult-row-btn {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  width: 100%;
+  min-height: 44px;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid var(--rule);
+  border-radius: 10px;
+  background: var(--paper);
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.consult-row-btn:hover {
+  border-color: var(--accent);
+}
+.consult-hrow-top {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+.consult-confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding: 0.6rem;
+  border: 1px solid var(--warn);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--warn) 10%, transparent);
+  font-size: 0.85rem;
+}

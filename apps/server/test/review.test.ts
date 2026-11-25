@@ -220,3 +220,105 @@ describe("consult", () => {
     expect(map.statusCode).toBe(400);
   });
 });
+
+describe("consult history", () => {
+  const answer = {
+    summary: "One note.",
+    overall: "minor",
+    edits: [],
+    findings: [
+      finding({
+        id: "f1",
+        kind: "clarity",
+        basis: "craft",
+        severity: "note",
+        anchor: "slow beats",
+      }),
+      finding({
+        id: "f2",
+        kind: "gap",
+        basis: "craft",
+        severity: "concern",
+        anchor: "stone floors",
+      }),
+    ],
+  };
+  const review = () =>
+    t.post("/api/write/review", { path: VAAKH, text: NOTES[VAAKH]!, focus: "content" });
+  const list = async (path = VAAKH) =>
+    (await t.get(`/api/write/reviews?path=${encodeURIComponent(path)}`)).json().reviews;
+  const patch = (id: string, f: string, body: object) =>
+    t.app.inject({
+      method: "PATCH",
+      url: `/api/write/reviews/${id}/findings/${f}`,
+      headers: { cookie: t.cookie },
+      payload: body,
+    });
+
+  it("saves each review, newest first, and keeps what the author did with each finding", async () => {
+    await start([answer]);
+    const first = (await review()).json();
+    expect(first.id).toMatch(/^[a-z0-9]{12}$/);
+    expect(first.scope).toBe("content");
+    expect(first.findings.map((f: { state: string }) => f.state)).toEqual(["open", "open"]);
+    const second = (await review()).json();
+    expect((await list()).map((r: { id: string }) => r.id)).toEqual([second.id, first.id]);
+
+    expect((await patch(second.id, "f1", { state: "dismissed" })).statusCode).toBe(200);
+    await patch(second.id, "f2", {
+      state: "applied",
+      commented: true,
+      applied: { before: "stone floors", after: "flagstones" },
+    });
+    await patch(second.id, "f2", { ask: { question: "Why?", reply: "Because.", checked: false } });
+    const byId = (r: { findings: { id: string }[] }, id: string) =>
+      r.findings.find((f) => f.id === id);
+    const saved = (await list())[0];
+    expect(byId(saved, "f1")).toMatchObject({ state: "dismissed" });
+    expect(byId(saved, "f2")).toMatchObject({
+      state: "applied",
+      commented: true,
+      applied: { before: "stone floors", after: "flagstones" },
+      asks: [{ question: "Why?", reply: "Because.", checked: false }],
+    });
+    // Restored.
+    await patch(second.id, "f1", { state: "open" });
+    expect(byId((await list())[0], "f1")).toMatchObject({ state: "open" });
+
+    // Kept across a restart, as the comments are.
+    const { ConsultStore } = await import("../src/consults/store.js");
+    const { join } = await import("node:path");
+    const again = new ConsultStore(join(t.services.config.dataDir, "state"), t.services.files);
+    expect(await again.forPath(VAAKH)).toHaveLength(2);
+  });
+
+  it("keeps the last 20 reviews of an entry, and each entry's own", async () => {
+    await start([answer]);
+    for (let i = 0; i < 22; i++) await review();
+    await t.post("/api/write/review", { path: NIRANI, text: NOTES[NIRANI]!, focus: "content" });
+    expect(await list()).toHaveLength(20);
+    expect(await list(NIRANI)).toHaveLength(1);
+  });
+
+  it("deletes one review or all of an entry's, and refuses a finding that is not there", async () => {
+    await start([answer]);
+    const a = (await review()).json();
+    await review();
+    expect((await patch(a.id, "zzz", { state: "applied" })).statusCode).toBe(404);
+    expect((await patch("a".repeat(12), "f1", { state: "applied" })).statusCode).toBe(404);
+    expect((await t.del(`/api/write/reviews/${a.id}`)).statusCode).toBe(200);
+    expect(await list()).toHaveLength(1);
+    expect((await t.del(`/api/write/reviews?path=${encodeURIComponent(VAAKH)}`)).statusCode).toBe(
+      200,
+    );
+    expect(await list()).toEqual([]);
+  });
+
+  it("follows its entry when it is renamed", async () => {
+    await start([answer]);
+    await review();
+    await t.services.consults.renamed(VAAKH, "01 Universe/Vaakh Beats.md");
+    expect(await list()).toEqual([]);
+    expect(await list("01 Universe/Vaakh Beats.md")).toHaveLength(1);
+  });
+});

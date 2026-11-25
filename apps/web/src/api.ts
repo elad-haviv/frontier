@@ -533,7 +533,20 @@ export const api = {
       how?: string;
     },
     signal?: AbortSignal,
-  ) => post<ConsultResult>("/api/write/review", body, signal),
+  ) => post<ConsultReview>("/api/write/review", body, signal),
+  /** The saved consultations of an entry, newest first. */
+  consultReviews: (path: string) =>
+    call<{ reviews: ConsultReview[] }>(`/api/write/reviews?path=${encodeURIComponent(path)}`),
+  /** Keeps what the author did with a finding. */
+  consultChange: (id: string, finding: string, change: ConsultChange) =>
+    send<{ review: ConsultReview }>(
+      "PATCH",
+      `/api/write/reviews/${id}/findings/${finding}`,
+      change,
+    ),
+  consultDelete: (id: string) => send<{ ok: true }>("DELETE", `/api/write/reviews/${id}`),
+  consultClear: (path: string) =>
+    send<{ ok: true }>("DELETE", `/api/write/reviews?path=${encodeURIComponent(path)}`),
   /** A follow-up about one finding of a consultation. */
   consultAsk: (
     body: {
@@ -1013,7 +1026,7 @@ export async function downloadExport(kind: ExportKind, pick: ExportPick): Promis
   setTimeout(() => URL.revokeObjectURL(url), 10_000);
 }
 
-/** What a consultation gives back (stage 24). */
+/** One finding of a consultation, and what the author did with it (stage 24). */
 export interface ConsultFinding {
   id: string;
   kind: "contradiction" | "rule" | "dependency" | "clarity" | "gap" | "voice" | "structure";
@@ -1024,9 +1037,21 @@ export interface ConsultFinding {
   comment: string;
   suggestion: string;
   sources: { path: string; title: string; quote: string }[];
+  state: "open" | "applied" | "dismissed";
+  /** Whether a comment was made from it. */
+  commented: boolean;
+  /** The words an applied suggestion replaced, and the words put in their place. */
+  applied: { before: string; after: string } | null;
+  asks: { question: string; reply: string; checked: boolean }[];
 }
 
-export interface ConsultResult {
+/** A consultation, as the server keeps it. */
+export interface ConsultReview {
+  id: string;
+  path: string;
+  at: string;
+  /** What was read: the changes, the whole entry, or a selected passage. */
+  scope: "edits" | "content" | "passage";
   focus: "edits" | "content";
   summary: string;
   overall: "no_issues" | "minor" | "needs_attention";
@@ -1043,4 +1068,12 @@ export interface ConsultResult {
   partial: boolean;
   droppedFindings: number;
   droppedQuotes: number;
+}
+
+/** What the author did with a finding; any part may be given. */
+export interface ConsultChange {
+  state?: ConsultFinding["state"];
+  commented?: boolean;
+  applied?: { before: string; after: string } | null;
+  ask?: { question: string; reply: string; checked: boolean };
 }

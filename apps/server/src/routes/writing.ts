@@ -46,6 +46,24 @@ const ConsultAsk = z.object({
   }),
 });
 
+const ReviewId = z.string().regex(/^[a-z0-9]{12}$/);
+const ReviewIds = z.object({ id: ReviewId, finding: z.string().max(40) });
+const FindingChange = z.object({
+  state: z.enum(["open", "applied", "dismissed"]).optional(),
+  commented: z.boolean().optional(),
+  applied: z
+    .object({ before: z.string().max(8000), after: z.string().max(8000) })
+    .nullable()
+    .optional(),
+  ask: z
+    .object({
+      question: z.string().max(600),
+      reply: z.string().max(8000),
+      checked: z.boolean(),
+    })
+    .optional(),
+});
+
 /**
  * A signal that aborts when the browser goes away before the answer is sent, as when the author
  * presses Stop, so the provider call stops too instead of running on for nobody.
@@ -75,7 +93,39 @@ export function writingRoutes(app: FastifyInstance, s: Services): void {
     if (!isNote(input.path)) throw new ApiError("invalid", "Only an entry can be reviewed.");
     const held = s.quarantine.aiMayRead(input.path);
     if (held !== null) throw new ApiError("not_allowed", held);
-    return s.review.review({ ...input, signal: whileAsked(reply) });
+    const result = await s.review.review({ ...input, signal: whileAsked(reply) });
+    // Kept, so leaving the page loses nothing; the answer carries the saved review's id.
+    return s.consults.add({
+      path: input.path,
+      scope: result.focus === "edits" ? "edits" : input.passage?.trim() ? "passage" : "content",
+      ...result,
+    });
+  });
+
+  /** The reviews of an entry, newest first. */
+  app.get("/api/write/reviews", async (request) => {
+    const { path } = z.object({ path: VaultPath }).parse(request.query);
+    return { reviews: await s.consults.forPath(path) };
+  });
+
+  /** What the author did with a finding: applied, dismissed, restored, commented, or asked more. */
+  app.patch("/api/write/reviews/:id/findings/:finding", async (request) => {
+    const { id, finding } = ReviewIds.parse(request.params);
+    const change = FindingChange.parse(request.body);
+    return { review: await s.consults.change(id, finding, change) };
+  });
+
+  app.delete("/api/write/reviews/:id", async (request) => {
+    const { id } = z.object({ id: ReviewId }).parse(request.params);
+    await s.consults.remove(id);
+    return { ok: true };
+  });
+
+  /** Every review of an entry. */
+  app.delete("/api/write/reviews", async (request) => {
+    const { path } = z.object({ path: VaultPath }).parse(request.query);
+    await s.consults.clear(path);
+    return { ok: true };
   });
 
   /** A follow-up about one finding of a review. */
