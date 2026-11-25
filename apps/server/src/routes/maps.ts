@@ -1,5 +1,13 @@
 import type { FastifyInstance } from "fastify";
-import { ClashKeys, Id, MapFile, mapPath, VaultPath, versionMark } from "@frontier/schema";
+import {
+  ClashKeys,
+  Id,
+  MapFile,
+  mapPath,
+  repairJoins,
+  VaultPath,
+  versionMark,
+} from "@frontier/schema";
 import { stem } from "@frontier/vault";
 import { z } from "zod";
 import { ApiError } from "../errors.js";
@@ -50,7 +58,8 @@ export function mapRoutes(app: FastifyInstance, s: Services): void {
     if (!loaded) throw new ApiError("not_found", "There is no such map.");
     const entries: Record<string, { path: string; title: string }> = {};
     const children: Record<string, string> = {};
-    for (const f of loaded.map.features) {
+    // Groups name their entries and maps of their place as features do.
+    for (const f of [...loaded.map.features, ...(loaded.map.groups ?? [])]) {
       if (f.entry && !(f.entry in entries)) {
         const path = await s.maps.entryPath(f.entry);
         if (path) entries[f.entry] = { path, title: stem(path) };
@@ -72,7 +81,12 @@ export function mapRoutes(app: FastifyInstance, s: Services): void {
   app.put("/api/maps/:id", async (request) => {
     const { id } = IdParam.parse(request.params);
     const { map, revision, link, baseBlob, op, clashes } = Save.parse(request.body);
-    const result = await s.maps.save(id, map, revision, link, { baseBlob, op, clashes });
+    // A join to a path that is not in the map is not kept.
+    const result = await s.maps.save(id, repairJoins(map), revision, link, {
+      baseBlob,
+      op,
+      clashes,
+    });
     changed();
     return result;
   });

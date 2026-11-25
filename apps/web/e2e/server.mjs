@@ -61,18 +61,25 @@ function firstLine(user) {
   return { path, line };
 }
 
+// One discovery for each place asked about: "Test Hollow", then "Test Hollow 2" and so on, an
+// inn at the first place.
 function discovery(user) {
   const { path, line } = firstLine(user);
+  const places = Math.max(1, (user.match(/^=== Place \d+:/gm) ?? []).length);
   return {
-    candidates: [
-      {
-        kind: "settlement",
-        name: "Test Hollow",
-        description: "A small place the test found.",
-        basis: line ? [{ path, quote: line }] : [],
-        conflicts: "",
-      },
-    ],
+    places: Array.from({ length: places }, (_, i) => ({
+      place: i + 1,
+      candidates: [
+        {
+          kind: "settlement",
+          role: i === 0 ? "inn" : "camp",
+          name: `Test Hollow${i ? ` ${i + 1}` : ""}`,
+          description: "A small place the test found.",
+          basis: line ? [{ path, quote: line }] : [],
+          conflicts: "",
+        },
+      ],
+    })),
   };
 }
 

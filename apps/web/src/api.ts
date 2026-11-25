@@ -569,8 +569,20 @@ export const api = {
     call<{ discoveries: Discovery[]; ready: boolean; art: boolean; folders: string[] }>(
       `/api/maps/${map}/discoveries`,
     ),
-  discover: (map: string, at: [number, number], chronicle: string | null, year: number | null) =>
-    post<{ discoveries: Discovery[] }>(`/api/maps/${map}/discover`, { at, chronicle, year }),
+  /** Asks what is found at up to six places, in one AI call. */
+  discover: (map: string, spots: SpotAsk[], chronicle: string | null, year: number | null) =>
+    post<{ discoveries: Discovery[] }>(`/api/maps/${map}/discover`, { spots, chronicle, year }),
+  /** What asking about places would cost; nothing is sent to the AI. */
+  estimateDiscovery: (
+    map: string,
+    spots: SpotAsk[],
+    chronicle: string | null,
+    year: number | null,
+  ) =>
+    post<{ calls: number; usd: number | null; spentUsd: number; capUsd: number }>(
+      `/api/maps/${map}/discover/estimate`,
+      { spots, chronicle, year },
+    ),
   generateFeatures: (map: string, ask: GenerateAsk) =>
     post<{ items: GeneratedFeature[] }>(`/api/maps/${map}/generate`, ask),
   discoveryArt: (map: string, id: string) =>
@@ -900,6 +912,18 @@ export interface Discovery {
   conflicts: string[];
   art: boolean;
   model: string;
+  /** What it is at its place: an inn, a ford. */
+  role?: string;
+  /** The point of interest it was found at. */
+  spot?: { kind: string; title: string };
+}
+/** A place to explore, as it is sent: what Frontier read from the map about it. */
+export interface SpotAsk {
+  at: [number, number];
+  kind: string;
+  title: string;
+  lines: string[];
+  features: string[];
 }
 export const discoveryArtUrl = (map: string, id: string): string =>
   `/api/maps/${map}/discoveries/${id}/art`;

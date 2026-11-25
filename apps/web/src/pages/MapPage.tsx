@@ -5,28 +5,69 @@ import {
   measure,
   panBy,
   type Position,
+  type Space,
   turnTo,
 } from "@frontier/geo";
-import { MapPin, Layers as LayersIcon, Palette, Sparkles } from "lucide-react";
 import {
+  Boxes,
+  Group as GroupIcon,
+  MapPin,
+  Mountain,
+  Layers as LayersIcon,
+  Palette,
+  Sparkles,
+  Telescope,
+} from "lucide-react";
+import {
+  allBiomes,
+  biomeById,
   hiddenWithin,
   isLined,
+  type MapFile,
+  type MapGroup,
+  type MapStyle,
+  type MapTerrain,
+  type MapTerrainHint,
   lockedWithin,
   orderFeature,
   planarSpace,
   reorderFeature,
+  withTerrainHints,
 } from "@frontier/schema";
-import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import {
+  lazy,
+  type ReactNode,
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { entryUrl, mapUrl } from "../api.ts";
 import { useDialogs } from "../components/Dialogs.tsx";
 import { OfflineCopy } from "../components/OfflineCopy.tsx";
 import { DiscoveryPins, OpenDiscovery } from "../components/map/DiscoveryPins.tsx";
+import {
+  AlongBand,
+  askReason,
+  ExploreBar,
+  ExploreKeys,
+  ExplorePanel,
+  SpotPins,
+} from "../components/map/Explore.tsx";
+import type { FindHandle } from "../components/map/FindAreas.tsx";
+import type { PathsHandle } from "../components/map/FindPaths.tsx";
 import { FeatureEntryDialog } from "../components/map/FeatureEntryDialog.tsx";
 import { FeaturePanel } from "../components/map/FeaturePanel.tsx";
 import { GhostPins, PlacePanel, usePlace } from "../components/map/PlacePanel.tsx";
 import { LayerPanel } from "../components/map/LayerPanel.tsx";
 import { Legend } from "../components/map/Legend.tsx";
+import { BiomeKeyList, BiomeLegendCard, BiomeViewOptions } from "../components/map/BiomeLegend.tsx";
+import { biomeMeaning } from "../components/map/BiomeFields.tsx";
+import { BiomePicker } from "../components/map/BiomePicker.tsx";
+import type { SuggestHandle, SuggestLegend } from "../components/map/SuggestBiomes.tsx";
 import { MapBar } from "../components/map/MapBar.tsx";
 import { MapContextMenu, type MapMenu } from "../components/map/MapContextMenu.tsx";
 import { type Hovered, MapHover } from "../components/map/MapHover.tsx";
@@ -39,12 +80,19 @@ import { TimeBar } from "../components/MapTime.tsx";
 import { TurnPanel } from "../components/MapTurn.tsx";
 import { useRefresh } from "../components/Shell.tsx";
 import { usePageTitle, usePanel, useRightBar, useSheetFloor } from "../components/shell/panels.tsx";
+import { Tip } from "../components/ui/Tip.tsx";
 import { useToast } from "../components/ui/Toast.tsx";
+import { focusIsFree, shortcutText, useShortcut } from "../keys.ts";
 import { askSize } from "../map/askSize.ts";
 import { useCurveSetting } from "../map/curveSetting.ts";
 import { type MenuTarget, menuTargetOf, type PointerKind } from "../map/gesture.ts";
 import { aboveAndBelow } from "../map/layersBeneath.ts";
-import { legendOf, withStyle } from "../map/mapStyles.ts";
+import { legendOf, paintOf, withStyle } from "../map/mapStyles.ts";
+import { asBiomeZones, type BiomeKey, biomeLegend, biomeZones } from "../map/biomes.ts";
+import { useBiomeView } from "../map/biomeView.ts";
+import { useBiomes } from "../map/useBiomes.ts";
+import { useZoneBiome } from "../map/zoneBiome.ts";
+import { usePhone } from "../components/Shell.tsx";
 import { savePicture } from "../map/savePicture.ts";
 import {
   canFinish,
@@ -61,8 +109,12 @@ import {
 } from "../map/tools.ts";
 import { folderFor } from "../map/featureEntry.ts";
 import { choicesFor, ghostMarker, withProposal } from "../map/place.ts";
-import { useSnapSetting } from "../map/snap.ts";
+import { useSnapSetting, useSnapTargets } from "../map/snap.ts";
+import { nearestOnPath } from "../map/joins.ts";
+import { useReliefSetting } from "../map/reliefSetting.ts";
 import { useDiscovery } from "../map/useDiscovery.ts";
+import { sendable, useExplore } from "../map/spots/useExplore.ts";
+import type { Spot } from "../map/spots/spots.ts";
 import { useMapDraw } from "../map/useMapDraw.ts";
 import { useMapFile } from "../map/useMapFile.ts";
 import { useMapKeys } from "../map/useMapKeys.ts";
@@ -70,7 +122,38 @@ import { useMapStyles } from "../map/useMapStyles.ts";
 import { useMapTime, useShownAt } from "../map/useMapTime.ts";
 import { openingShown, pointOn, useMapView, useWheelZoom } from "../map/useMapView.ts";
 import { usePointer } from "../map/usePointer.ts";
+import { shapeAt } from "@frontier/geo";
+import {
+  addToGroup,
+  groupById,
+  hiddenMembers,
+  membersOf,
+  moveGroupTo,
+  setGroup,
+  takeOut,
+  withFeature,
+} from "../map/groups.ts";
+import { useGroupSelection } from "../map/useGroupSelection.ts";
+import { presenceOf } from "../map/time.ts";
+import { hintsChanged } from "../map/terrainHints/hash.ts";
+import {
+  GroupCard,
+  GroupEditor,
+  MemberFields,
+  PickStrip,
+  SeveralPanel,
+} from "../components/map/GroupPanel.tsx";
 import { queue } from "../sync/queue.ts";
+
+/** Find areas, with the worker that looks at the picture, loads when the tool is first chosen. */
+const FindAreas = lazy(() => import("../components/map/FindAreas.tsx"));
+/** Find paths shares that worker, and loads the same way. */
+const FindPaths = lazy(() => import("../components/map/FindPaths.tsx"));
+/** The Terrain dialog and the relief it sets up load when they are first wanted. */
+const TerrainDialog = lazy(() => import("../components/map/TerrainDialog.tsx"));
+const ReliefLayer = lazy(() => import("../components/map/ReliefLayer.tsx"));
+/** Suggest biomes works in Find paths' worker, and loads the same way. */
+const SuggestBiomes = lazy(() => import("../components/map/SuggestBiomes.tsx"));
 
 export function MapPage() {
   const dialogs = useDialogs();
@@ -114,6 +197,9 @@ export function MapPage() {
   const [curve, setCurveOn] = useCurveSetting();
   // Points of paths and zones snap to the paths and zones beside them, unless turned off here.
   const [snap, setSnap] = useSnapSetting();
+  // What they snap to: with Paths off, a new path neither snaps to nor joins another.
+  const [snapTargets, setSnapTargets] = useSnapTargets();
+  const joinPaths = snap && snapTargets.paths;
   /** The entry being made for a feature, from its entry list or a generated description. */
   const [makingEntry, setMakingEntry] = useState<{
     feature: string;
@@ -123,6 +209,22 @@ export function MapPage() {
   // Place with AI: the proposals on the map, and the one picked in its tab.
   const place = usePlace(id);
   const [pickedGhost, setPickedGhost] = useState<string | null>(null);
+  /** Find areas while it is on: it takes the taps, and its clicks are undone before the map's. */
+  const findRef = useRef<FindHandle | null>(null);
+  const [findSteps, setFindSteps] = useState({ undo: false, redo: false });
+  /** Find paths, likewise: it also takes the drag of a route's stop. */
+  const pathsRef = useRef<PathsHandle | null>(null);
+  /** Suggest biomes, likewise. */
+  const suggestRef = useRef<SuggestHandle | null>(null);
+  const [suggestLegend, setSuggestLegend] = useState<SuggestLegend | null>(null);
+  // Biome zones: the owner's own biomes, how they are shown here, and the biome new zones get.
+  const { custom } = useBiomes();
+  const [biomeView, setBiomeView] = useBiomeView();
+  const [zoneBiome, setZoneBiome] = useZoneBiome();
+  const phone = usePhone();
+  // The terrain in use drawn as relief: a view, remembered on this device.
+  const [relief, setRelief] = useReliefSetting();
+  const [terrainOpen, setTerrainOpen] = useState(false);
   const [pressKind, setPressKind] = useState<PointerKind>(() =>
     window.matchMedia("(pointer: coarse)").matches ? "touch" : "mouse",
   );
@@ -142,17 +244,53 @@ export function MapPage() {
   const { map, change } = file;
   // What is not drawn: the hidden layers with all that is inside them, and hidden features.
   const layers = map?.layers;
-  const hiddenNow = useMemo(
-    () => (layers ? hiddenWithin(layers, hidden) : hidden),
-    [layers, hidden],
-  );
+  const hiddenNow = useMemo(() => {
+    if (!layers || !map) return hidden;
+    // A hidden group hides its members.
+    return new Set([...hiddenWithin(layers, hidden), ...hiddenMembers(map, hidden)]);
+  }, [layers, hidden, map]);
   const locked = useMemo(() => (layers ? lockedWithin(layers) : new Set<string>()), [layers]);
   /** The selected feature is in a locked layer: it is shown, but cannot be changed on the map. */
   const selectedLocked = !!map?.features.some((f) => f.id === selected && locked.has(f.layer));
   const shown = useShownAt(map, time, { selected, editing, hidden: hiddenNow });
   const { onScreen } = shown;
   // The library's path and zone styles, shared by every open map.
-  const { styles } = useMapStyles();
+  const { styles, change: changeStyles } = useMapStyles();
+  /** Adds styles the library lacks: a biome's usual style, the first time it is used. */
+  const addStyles = useCallback(
+    (add: MapStyle[]) =>
+      void changeStyles((f) => ({
+        ...f,
+        styles: [...f.styles, ...add.filter((s) => !f.styles.some((x) => x.id === s.id))],
+      })),
+    [changeStyles],
+  );
+  const drawBiomes = useMemo(
+    () => ({ custom, patterns: biomeView.patterns, soft: biomeView.soft }),
+    [custom, biomeView.patterns, biomeView.soft],
+  );
+  // A group perhaps there at the year shown has a faint name, as its members are faint.
+  const { seen: seenTime, year: seenYear } = time;
+  const groupOpacity = useCallback(
+    (g: MapGroup) => (seenTime && presenceOf(g, seenTime, seenYear ?? 0) === "perhaps" ? 0.45 : 1),
+    [seenTime, seenYear],
+  );
+  const groups = useGroupSelection({
+    map,
+    mapRef: file.mapRef,
+    change,
+    editing,
+    selected,
+    setSelected,
+    hiddenNow,
+    lockedLayers: locked,
+    names: file.names,
+    styles,
+    say,
+    toast,
+    undo: file.undo,
+    opacityOf: groupOpacity,
+  });
   // A picked corner lasts while its shape stays on screen.
   useEffect(() => setVertex(null), [onScreen?.shape]);
   const { view, setView, viewRef, size, frame, goLayer, zoom, placeLink, viewLink } = useMapView(
@@ -189,6 +327,8 @@ export function MapPage() {
     curve,
     pressKind,
     styles,
+    groups: groups.draw,
+    biomes: drawBiomes,
   });
   const { titleOf } = draw;
   const discovery = useDiscovery(id, { ...time, setNotice });
@@ -198,9 +338,33 @@ export function MapPage() {
     year: time.timeOn ? time.year : null,
   };
   const { found, openFound, setOpenFound } = discovery;
+  // Exploring: the points of interest along the roads and rivers drawn now, and the places chosen.
+  const exploring = discovery.exploring && !editing;
+  const explore = useExplore({
+    id,
+    map,
+    resolved: shown.resolved,
+    hidden: hiddenNow,
+    styles,
+    titleOf,
+    exploring,
+    year: moment.year,
+    moment,
+  });
 
   /** Sets what a tool's step changes. */
   const apply = (step: Step) => {
+    // A zone drawn with a biome chosen is a biome zone: in the Biomes layer, in the biome's look.
+    const biome = tool === "zone" ? biomeById(zoneBiome, custom) : null;
+    const made = step.map?.features.find(
+      (f) =>
+        f.id === step.selected && f.kind === "zone" && !map?.features.some((x) => x.id === f.id),
+    );
+    if (step.map && biome && made) {
+      const done = asBiomeZones(step.map, [made.id], biome, styles, null);
+      if (done.add) addStyles([done.add]);
+      step = { ...step, map: done.map };
+    }
     if (step.map) change(step.map);
     if (step.selected !== undefined) setSelected(step.selected);
     if (step.vertex !== undefined) setVertex(step.vertex);
@@ -225,13 +389,28 @@ export function MapPage() {
     focusing,
     setFocusing,
     exploring: discovery.exploring,
-    explore: discovery.explore,
+    explore: (position, screen, how) => {
+      if (!position) return;
+      const done = explore.tapAt(
+        position,
+        screen,
+        { add: how.shift, touch: how.kind === "touch" },
+        viewRef.current,
+        size,
+      );
+      if (done) openExplore(done === "along" ? null : position);
+    },
     apply,
     frame,
     paused: menuOpen,
     curve,
     onPressKind: setPressKind,
     snap,
+    snapTargets,
+    group: groups.dragGroup,
+    pickTap: groups.pickTap,
+    haloIds: groups.haloIds,
+    find: tool === "paths" ? pathsRef : tool === "biomes" ? suggestRef : findRef,
   });
   const { box, setBox } = pointer;
   useWheelZoom(draw.topCanvas, viewRef, setView, [map === null, draw.glError]);
@@ -256,11 +435,15 @@ export function MapPage() {
     setTool("select");
     setSketch([]);
     setSelected(null);
+    groups.clearPicks();
   };
   const chooseTool = (next: Tool) => {
     setTool(next);
     setSketch([]);
-    if (next !== "select") setSelected(null);
+    // Find areas keeps the selection: the chosen areas can be added to the selected zone; Find
+    // paths keeps it too, to add the proposed path to the selected one.
+    if (next !== "select" && next !== "find" && next !== "paths") setSelected(null);
+    if (next !== "select") groups.clearPicks();
     // Proposals not placed are only previews: they go with the tool.
     if (next !== "place") {
       place.setGhosts([]);
@@ -270,8 +453,11 @@ export function MapPage() {
   /** Deletes the picked point if there is one, else the selected feature: one step to undo. */
   const deleteSelection = () => {
     const now = file.mapRef.current;
+    if (now && groups.several.length > 0) return groups.deletePicked();
     if (!now || !selected) return;
     if (selectedLocked) return say("It is in a locked layer.");
+    // A group goes with its members, one step to undo.
+    if (groupById(now, selected)) return groups.deletePicked([selected]);
     if (vertex !== null && shown.onScreen) {
       const done = removePoint(now, shown.onScreen, vertex);
       if (done && "reason" in done) say(done.reason);
@@ -281,7 +467,8 @@ export function MapPage() {
       }
       return;
     }
-    change(deleteFeature(now, selected));
+    // A group left with one member is dissolved.
+    change(takeOut(deleteFeature(now, selected), []));
     setSelected(null);
   };
   const whole = () => map && setView(initialView(planarSpace(map.space), size.width, size.height));
@@ -291,16 +478,92 @@ export function MapPage() {
   /** Finishes the path or zone being drawn, when it has the points it needs. */
   const finish = () => {
     if (!map || !canFinish(tool, sketch)) return false;
-    apply(finishSketch(map, tool, sketch, activeLayer, curve));
+    apply(finishSketch(map, tool, sketch, activeLayer, curve, joinPaths));
   };
   /** Curved or straight: the next path or zone while drawing, else the selected one. */
   const toggleCurve = () => {
-    if (tool === "path" || tool === "zone") return setCurveOn(!curve);
+    if (tool === "path" || tool === "zone" || tool === "paths") return setCurveOn(!curve);
     const chosen = file.mapRef.current?.features.find((f) => f.id === selected);
     if (tool !== "select" || !chosen || !isLined(chosen)) return false;
     file.setFeature(setCurve(chosen, (chosen as { curve?: string }).curve !== "smooth"));
   };
   const schematicMap = map?.space.kind === "flat" && map.space.schematic === true;
+  /** Find areas looks at the map's picture: it needs one shown. */
+  const hasPicture = !!map?.images.some((i) => shownImages.has(i.id));
+  /** Find paths reads a flat map's picture or its height map; a diagram has only Trace. */
+  const pathsReason =
+    map?.space.kind === "sphere"
+      ? "Find paths works on flat maps for now"
+      : hasPicture || map?.terrain
+        ? schematicMap && !hasPicture
+          ? "Find paths needs a map image"
+          : null
+        : "Find paths needs a map image or a height map";
+  /** Terrain is for flat maps, for now. */
+  const canTerrain = map?.space.kind === "flat" && !schematicMap;
+  /** Suggest biomes reads the terrain in use: a height map, or the guess from the picture. */
+  const biomesReason = !canTerrain
+    ? map?.space.kind === "sphere"
+      ? "Suggest biomes works on flat maps for now"
+      : "Suggest biomes needs a map with real places"
+    : hasPicture || map?.terrain
+      ? null
+      : "Suggest biomes needs terrain: add a height map";
+  /** Done in the Terrain dialog: one change of the map, with Undo in the toast. */
+  const setMapTerrain = (terrain: MapFile["terrain"]) => {
+    setTerrainOpen(false);
+    const now = file.mapRef.current;
+    if (!now) return;
+    const next: MapFile = { ...now };
+    delete next.terrain;
+    if (terrain) next.terrain = terrain;
+    if (JSON.stringify(next.terrain ?? null) === JSON.stringify(now.terrain ?? null)) return;
+    change(next);
+    toast({
+      message: terrain
+        ? "Terrain set: Find paths now uses the height map."
+        : "Terrain removed. The image stays in the library.",
+      action: { label: "Undo", run: file.undo },
+    });
+  };
+  /**
+   * Built from hints in the Terrain dialog: the generated terrain and the hints as one change,
+   * with Undo in the toast. Offline, with no terrain, only the hints are kept.
+   */
+  const setTerrainFromHints = (
+    terrain: MapTerrain | null,
+    hints: MapTerrainHint[],
+    count: number,
+  ) => {
+    setTerrainOpen(false);
+    const now = file.mapRef.current;
+    if (!now) return;
+    const next: MapFile = withTerrainHints(now, hints);
+    if (terrain) next.terrain = terrain;
+    change(next);
+    toast({
+      message: terrain
+        ? `Height map built from ${count} ${count === 1 ? "hint" : "hints"}: Find paths and Relief now use it.`
+        : "Hints kept. Build the height map and use it when you are back online.",
+      action: { label: "Undo", run: file.undo },
+    });
+  };
+  useShortcut("map.relief", () => {
+    if (!map?.terrain && tool !== "paths") return false;
+    setRelief(!relief);
+  });
+  const canUndo = findSteps.undo || file.history.past.length > 0;
+  const canRedo = findSteps.redo || file.history.future.length > 0;
+  const undo = () =>
+    findRef.current?.undo() ||
+    pathsRef.current?.undo() ||
+    suggestRef.current?.undo() ||
+    file.undo();
+  const redo = () =>
+    findRef.current?.redo() ||
+    pathsRef.current?.redo() ||
+    suggestRef.current?.redo() ||
+    file.redo();
   useMapKeys({
     editing,
     frame,
@@ -323,6 +586,9 @@ export function MapPage() {
       "label",
       ...(schematicMap ? [] : ["measure" as const]),
       ...(found.ready ? ["place" as const] : []),
+      ...(hasPicture ? ["find" as const] : []),
+      ...(map && pathsReason === null ? ["paths" as const] : []),
+      ...(map && biomesReason === null ? ["biomes" as const] : []),
     ],
     toggleSnap: () => setSnap(!snap),
     setTool: chooseTool,
@@ -332,10 +598,10 @@ export function MapPage() {
     clearSelection: () => setSelected(null),
     edit: () => startEditing(selected),
     done: stopEditing,
-    canUndo: file.history.past.length > 0,
-    canRedo: file.history.future.length > 0,
-    undo: file.undo,
-    redo: file.redo,
+    canUndo,
+    canRedo,
+    undo,
+    redo,
     remove: deleteSelection,
     zoom,
     fit: whole,
@@ -346,6 +612,13 @@ export function MapPage() {
       time.setTimeOn(!time.timeOn);
       time.setPin(null);
     },
+    inside: groups.insideGroup !== null,
+    backOut: () => groups.insideGroup && setSelected(groups.insideGroup.id),
+    picking: groups.several.length > 0 || groups.picking,
+    clearPicks: groups.clearPicks,
+    group: () => groups.group(),
+    ungroup: () => groups.ungroup(),
+    enter: () => (tool === "select" ? groups.enter() : false),
   });
 
   // ---- The page --------------------------------------------------------------------------------
@@ -376,7 +649,13 @@ export function MapPage() {
   );
   // The Marker and Label tools stay on: what was just placed opens its tab, to be named at once.
   const showsFeature =
-    feature !== null && (!editing || tool === "select" || tool === "marker" || tool === "label");
+    feature !== null &&
+    (!editing ||
+      tool === "select" ||
+      tool === "marker" ||
+      tool === "label" ||
+      tool === "find" ||
+      tool === "paths");
   // Place with AI has its own tab while the tool is on.
   let placePanel: ReactNode = null;
   usePanel(
@@ -387,6 +666,18 @@ export function MapPage() {
   usePanel(
     map ? { id: "layers", title: "Layers", icon: LayersIcon, render: () => layersPanel } : null,
   );
+  let explorePanel: ReactNode = null;
+  usePanel(
+    map && exploring
+      ? { id: "explore", title: "Explore", icon: Telescope, render: () => explorePanel }
+      : null,
+  );
+  useShortcut("map.explore", () => {
+    if (editing || !found.ready || !focusIsFree(document.activeElement, frame.current)) {
+      return false;
+    }
+    toggleExploring();
+  });
   usePanel(
     showsFeature
       ? {
@@ -397,23 +688,56 @@ export function MapPage() {
         }
       : null,
   );
+  // A selected group has its own tab, as several picked do (not while the phone's "Select
+  // several" is on: the sheet stays closed so the map is free to tap).
+  let groupPanel: ReactNode = null;
+  const showsGroup = groups.selectedGroup !== null && tool === "select";
+  usePanel(
+    showsGroup
+      ? {
+          id: "group",
+          title: editing ? "Edit group" : "Selected",
+          icon: GroupIcon,
+          render: () => groupPanel,
+        }
+      : null,
+  );
+  let severalPanel: ReactNode = null;
+  const showsSeveral = editing && groups.several.length > 1 && !groups.picking;
+  usePanel(
+    showsSeveral
+      ? {
+          id: "several",
+          title: `${groups.several.length} selected`,
+          icon: Boxes,
+          render: () => severalPanel,
+        }
+      : null,
+  );
   // A feature chosen on the map opens its panel; one chosen in the Layers tab leaves that open.
   const showPanel = bar.show;
   const fromLayers = useRef(false);
   useEffect(() => {
     if (showsFeature && !fromLayers.current) showPanel("feature");
+    if (showsGroup && !fromLayers.current) showPanel("group");
     fromLayers.current = false;
-  }, [selected, showsFeature, showPanel]);
-  /** Selects a feature from the Layers tab, and centres the map on it. */
+  }, [selected, showsFeature, showsGroup, showPanel]);
+  useEffect(() => {
+    if (showsSeveral) showPanel("several");
+  }, [showsSeveral, showPanel]);
+  /** Selects a feature or a group from the Layers tab, and centres the map on it. */
   const selectFromLayers = (id: string) => {
-    const f = map?.features.find((x) => x.id === id);
+    const g = map ? groupById(map, id) : null;
+    const f = map?.features.find((x) => x.id === (g ? membersOf(map!, g.id)[0]?.id : id));
     if (!f) return;
     fromLayers.current = true;
-    if (tool !== "select" && editing) chooseTool("select");
+    // Find areas stays on: a zone chosen in Layers is one to add the chosen areas to.
+    if (tool !== "select" && tool !== "find" && tool !== "paths" && editing) chooseTool("select");
+    groups.clearPicks();
     setSelected(id);
     setVertex(null);
     // Where it is at the year shown; a kind of feature this page does not know may have either.
-    const drawn = (shown.resolved.find((r) => r.feature.id === id)?.feature ?? f) as {
+    const drawn = (shown.resolved.find((r) => r.feature.id === f.id)?.feature ?? f) as {
       at?: Position;
       points?: Position[];
     };
@@ -424,6 +748,58 @@ export function MapPage() {
     const box = frame.current?.getBoundingClientRect();
     const covered = sheet && box ? Math.max(0, Math.min(box.bottom - sheet.top, box.height)) : 0;
     setView(panBy(centreOn(view, at), 0, -covered / 2));
+  };
+
+  /** Turns exploring on or off; on, the Explore tab opens beside the map (not over it on a phone). */
+  function toggleExploring() {
+    const on = !discovery.exploring;
+    discovery.setExploring(on);
+    setSelected(null);
+    if (on && !phone) bar.show("explore");
+    if (!on && bar.open === "explore") bar.hide();
+  }
+  /**
+   * Shows the Explore tab for what was chosen. On a phone the sheet covers the foot of the map,
+   * so the map moves to keep the place (or the whole road) in the strip above it.
+   */
+  function openExplore(at: Position | null, line: string | null = null) {
+    showPanel("explore");
+    if (!phone) return;
+    // Once the sheet is drawn; measured without its sliding in, where it will come to rest.
+    window.setTimeout(() => {
+      const v = viewRef.current;
+      const sheet = document.querySelector<HTMLElement>(".bottom-sheet");
+      const box = frame.current?.getBoundingClientRect();
+      if (!v || !box) return;
+      const top = sheet
+        ? window.innerHeight -
+          parseFloat(getComputedStyle(sheet).bottom || "0") -
+          sheet.offsetHeight
+        : box.bottom;
+      const covered = Math.max(0, Math.min(box.bottom - top, box.height));
+      const lineId = line ?? explore.along;
+      const path = at ? null : explore.found?.lines.find((l) => l.id === lineId);
+      let centre = at;
+      if (path) {
+        const xs = path.line.map((p) => p[0]);
+        const ys = path.line.map((p) => p[1]);
+        centre = [(Math.min(...xs) + Math.max(...xs)) / 2, (Math.min(...ys) + Math.max(...ys)) / 2];
+      }
+      if (centre) setView(panBy(centreOn(v, centre), 0, -covered / 2));
+    }, 60);
+  }
+  // On a phone the card of what was found is a sheet of its own: the Explore sheet steps aside.
+  const hideBar = bar.hide;
+  const exploreSheetOpen = bar.open === "explore";
+  useEffect(() => {
+    if (phone && openFound && exploreSheetOpen) hideBar();
+  }, [phone, openFound, exploreSheetOpen, hideBar]);
+  const pickSpot = (spot: Spot, add: boolean) => {
+    explore.pick(spot, add);
+    openExplore(spot.at);
+  };
+  const askChosen = () => {
+    void discovery.ask(sendable(explore.asks)).then((ok) => ok && explore.setChosen([]));
   };
 
   // The first tap of Place with AI opens its tab, to say what to place there.
@@ -446,6 +822,14 @@ export function MapPage() {
   if (draw.glError) return <p className="center error">{draw.glError}</p>;
 
   const sphere = map.space.kind === "sphere";
+  const terrainName = map.terrain?.generated
+    ? "from hints"
+    : map.terrain
+      ? (map.terrain.image.split("/").pop() ?? "").replace(/\.[^.]+$/, "")
+      : "";
+  /** A height map built from hints, and whether the hints have changed since. */
+  const generated = !!map.terrain?.generated;
+  const staleHints = hintsChanged(map);
 
   // What the mouse is over, as the tooltip and the preview show it.
   const hoveredFeature = pointer.hovered
@@ -459,10 +843,21 @@ export function MapPage() {
               ? pointer.hovered.target.kind
               : "feature",
           feature: hoveredFeature,
-          title: titleOf(hoveredFeature),
+          // A member is named with its group: "Aldmere · Skerra".
+          title: (() => {
+            const g = groupById(map, hoveredFeature.group);
+            const own = titleOf(hoveredFeature);
+            if (!g) return own;
+            return own ? `${groups.titleOfGroup(g)} · ${own}` : groups.titleOfGroup(g);
+          })(),
           at: pointer.hovered.at,
           entryPath: hoveredFeature.entry ? (file.names[hoveredFeature.entry]?.path ?? null) : null,
           childTitle: hoveredFeature.child ? (file.children[hoveredFeature.child] ?? null) : null,
+          biome: (() => {
+            const b =
+              hoveredFeature.kind === "zone" ? biomeById(hoveredFeature.biome, custom) : null;
+            return b ? `${b.name} · ${biomeMeaning(b)}` : null;
+          })(),
         }
       : null;
 
@@ -493,16 +888,21 @@ export function MapPage() {
         copyPlace: (f) => copyPlace(f.id),
         editFeature: (f) => startEditing(f.id),
         copyView,
-        explore: () => discovery.explore(menuAt.at),
+        explore: () => {
+          if (!menuAt.at) return;
+          if (!discovery.exploring) toggleExploring();
+          explore.chooseHere(menuAt.at);
+          openExplore(menuAt.at);
+        },
         showInBar: (f) => {
           chooseTool("select");
           setSelected(f.id);
           bar.show("feature");
         },
-        moveToLayer: (f, layer) => file.setFeature(orderFeature({ ...f, layer })),
+        moveToLayer: (f, layer) => change(withFeature(map, orderFeature({ ...f, layer }))),
         reorder: (f, by) => change({ ...map, features: reorderFeature(map.features, f.id, by) }),
         remove: (f) => {
-          change(deleteFeature(map, f.id));
+          change(takeOut(deleteFeature(map, f.id), []));
           if (selected === f.id) setSelected(null);
         },
         insertPoint: (f, segment, at) => {
@@ -528,6 +928,13 @@ export function MapPage() {
           chooseTool("path");
           if (menuAt.at) setSketch([menuAt.at]);
         },
+        branch: (f) => {
+          // From the place on the path nearest the click: finished, it is joined there.
+          if (f.kind !== "path" || !menuAt.at) return;
+          const on = nearestOnPath(map.space as Space, f, menuAt.at).at;
+          chooseTool("path");
+          setSketch([on]);
+        },
         startZone: () => {
           chooseTool("zone");
           if (menuAt.at) setSketch([menuAt.at]);
@@ -543,11 +950,96 @@ export function MapPage() {
       .map((r) => r.feature),
     styles,
   );
+  // The biomes of the zones drawn now, each in its zones' colour; while suggesting, the ghosts' too.
+  const shownNow = shown.resolved
+    .filter((r) => !hiddenNow.has(r.feature.layer) && !hiddenNow.has(r.feature.id))
+    .filter((r) => r.presence !== "not_yet" && r.presence !== "gone")
+    .map((r) => r.feature);
+  const layerColours = new Map(map.layers.map((l) => [l.id, l.color]));
+  const biomeKeys: BiomeKey[] = biomeLegend(
+    biomeZones(map.space as Space, shownNow, custom),
+    (f) => paintOf(f, layerColours.get(f.layer), styles).colour,
+    allBiomes(custom),
+  );
+  const ghostKeys: BiomeKey[] =
+    editing && tool === "biomes" && suggestLegend
+      ? suggestLegend.ghosts
+          .filter((k) => !biomeKeys.some((b) => b.biome.id === k))
+          .flatMap((k) => {
+            const b = biomeById(k, custom);
+            return b ? [{ biome: b, colour: b.color, ghost: true }] : [];
+          })
+      : [];
+  const legendKeys = [...biomeKeys, ...ghostKeys];
+  const anyBiomes = legendKeys.length > 0 || map.features.some((f) => f.kind === "zone" && f.biome);
   layersPanel = (
     <LayerPanel
-      legend={<Legend styles={legend} />}
+      legend={
+        <>
+          <Legend styles={legend} />
+          {anyBiomes && (
+            <section className="map-legend" aria-label="Biomes">
+              <h3>Biomes</h3>
+              <BiomeKeyList keys={legendKeys} />
+              <BiomeViewOptions view={biomeView} onView={setBiomeView} />
+            </section>
+          )}
+        </>
+      }
       timeLine={shown.timeLine}
-      setup={<MapSetup id={id} map={map} otherMaps={file.otherMaps} onChange={change} />}
+      setup={
+        <>
+          <MapSetup id={id} map={map} otherMaps={file.otherMaps} onChange={change} />
+          {canTerrain && (
+            <>
+              <h3>Terrain</h3>
+              <p className="layer-terrain">
+                {map.terrain ? (
+                  <>
+                    <span>
+                      {terrainName}
+                      {generated && (
+                        <span className="terrain-tag" title="Built by Frontier from terrain hints">
+                          generated
+                        </span>
+                      )}
+                    </span>
+                    {generated && (
+                      <span className="muted terrain-from">
+                        {staleHints
+                          ? "Hints changed since it was built"
+                          : `from ${(map.terrainHints ?? []).filter((h) => h.state === "accepted").length} hints`}
+                      </span>
+                    )}
+                    <label>
+                      <input
+                        type="checkbox"
+                        checked={relief}
+                        onChange={(e) => setRelief(e.target.checked)}
+                      />{" "}
+                      Relief
+                    </label>
+                    <button type="button" className="quiet" onClick={() => setTerrainOpen(true)}>
+                      {staleHints ? "Build again" : "Adjust…"}
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <span className="muted">
+                      {(map.terrainHints?.length ?? 0) > 0
+                        ? "Terrain hints kept: build the height map to use them."
+                        : "No height map. Find paths guesses the terrain from the picture."}
+                    </span>
+                    <button type="button" className="quiet" onClick={() => setTerrainOpen(true)}>
+                      {(map.terrainHints?.length ?? 0) > 0 ? "Build it…" : "Add a height map…"}
+                    </button>
+                  </>
+                )}
+              </p>
+            </>
+          )}
+        </>
+      }
       map={map}
       hidden={hidden}
       shownImages={shownImages}
@@ -560,8 +1052,127 @@ export function MapPage() {
       selected={selected}
       onSelect={selectFromLayers}
       titleOf={titleOf}
+      groupTitle={groups.titleOfGroup}
+      onPickSeveral={(ids) => {
+        setSelected(null);
+        groups.setPicks(ids);
+      }}
+      onGroup={(ids) => groups.group(ids)}
+      onUngroup={(gid) => groups.ungroup(gid)}
+      onDeleteGroup={(gid) => groups.deletePicked([gid])}
     />
   );
+  const memberTop =
+    feature && editing ? (
+      <MemberFields
+        map={map}
+        feature={feature}
+        names={file.names}
+        onBack={setSelected}
+        onGroup={(gid) => {
+          const now = file.mapRef.current ?? map;
+          change(gid ? addToGroup(now, [feature.id], gid) : takeOut(now, [feature.id]));
+          if (gid === null && feature.group) {
+            toast({
+              message: "Taken out of the group.",
+              action: { label: "Undo", run: file.undo },
+            });
+          }
+        }}
+        onNewGroup={() => {
+          setSelected(null);
+          groups.setPicks([feature.id]);
+          groups.setPicking(true);
+          say("Tap what to group it with, then Group.");
+        }}
+      />
+    ) : null;
+  const selectedGroup = groups.selectedGroup;
+  if (selectedGroup && editing) {
+    const gid = selectedGroup.id;
+    // A key set to undefined goes back to its default: the file leaves undefined keys out.
+    const set = (next: object) =>
+      change(setGroup(file.mapRef.current ?? map, gid, next as Parameters<typeof setGroup>[2]));
+    groupPanel = (
+      <GroupEditor
+        key={gid}
+        group={selectedGroup}
+        map={map}
+        names={file.names}
+        pendingEntry={file.pendingNames[gid] ?? null}
+        pendingPath={file.pendingPathOf(gid)}
+        titleOf={titleOf}
+        styles={styles}
+        otherMaps={file.otherMaps}
+        shownNow={draw.shapes.current.some((s) => s.id === gid)}
+        spans={
+          time.seen
+            ? time.seen.chronicle.spans.map((s) => ({ id: s.id, name: time.spanName(s) }))
+            : null
+        }
+        focusName={groups.justMade === gid}
+        act={{
+          set,
+          link: (path, title) => file.link(selectedGroup, path, title),
+          styleZones: (style) => {
+            const now = file.mapRef.current ?? map;
+            change({
+              ...now,
+              features: now.features.map((f) =>
+                f.group === gid && f.kind === "zone" ? withStyle(f, style) : f,
+              ),
+            });
+          },
+          moveTo: (layer) => change(moveGroupTo(file.mapRef.current ?? map, gid, layer)),
+          open: (member) => setSelected(member),
+          takeOut: (member) => {
+            const now = file.mapRef.current ?? map;
+            const next = takeOut(now, [member]);
+            change(next);
+            if (!groupById(next, gid))
+              setSelected(membersOf(now, gid).find((f) => f.id !== member)?.id ?? null);
+          },
+          ungroup: () => groups.ungroup(gid),
+          remove: () => groups.deletePicked([gid]),
+          close: () => setSelected(null),
+        }}
+      />
+    );
+  } else if (selectedGroup) {
+    groupPanel = (
+      <GroupCard
+        group={selectedGroup}
+        map={map}
+        names={file.names}
+        children={file.children}
+        titleOf={titleOf}
+        onOpenEntry={(path) => navigate(entryUrl(path))}
+        onOpenChild={(child) => navigate(mapUrl(child) + (time.carry ? `?${time.carry}` : ""))}
+        onEdit={() => startEditing(selectedGroup.id)}
+        onClose={() => setSelected(null)}
+      />
+    );
+  }
+  if (groups.several.length > 1) {
+    severalPanel = (
+      <SeveralPanel
+        items={groups.several}
+        map={map}
+        label={(pid) => {
+          const g = groupById(map, pid);
+          if (g) return groups.titleOfGroup(g);
+          const f = map.features.find((x) => x.id === pid);
+          return f ? titleOf(f) || f.kind : pid;
+        }}
+        groupReason={groups.reason}
+        addTo={groups.addTo}
+        moveNote={groups.moveNote}
+        onGroup={() => groups.group()}
+        onDelete={() => groups.deletePicked()}
+        onClear={groups.clearPicks}
+      />
+    );
+  }
   if (feature) {
     featurePanel = (
       <FeaturePanel
@@ -579,6 +1190,7 @@ export function MapPage() {
         onCopyLink={() => copyPlace(feature.id)}
         onEdit={() => startEditing(feature.id)}
         styles={styles}
+        joinPaths={joinPaths}
         onEditStyles={() => bar.show("styles")}
         generate={
           found.ready
@@ -594,6 +1206,7 @@ export function MapPage() {
             : null
         }
         onMakeEntry={(name, body) => setMakingEntry({ feature: feature.id, name, body })}
+        memberTop={memberTop}
       />
     );
   }
@@ -616,6 +1229,32 @@ export function MapPage() {
     />
   );
   const makingFor = makingEntry && map.features.find((f) => f.id === makingEntry.feature);
+  /** The title of the entry a feature stands for, or null. */
+  const entryTitle = (feature: string) => {
+    const entry = map.features.find((f) => f.id === feature)?.entry;
+    return entry ? (file.names[entry]?.title ?? null) : null;
+  };
+  if (exploring) {
+    explorePanel = (
+      <ExplorePanel
+        x={explore}
+        discoveries={found.items}
+        seeking={discovery.seeking}
+        failed={discovery.failed}
+        onAsk={askChosen}
+        onOpenFound={(d) => {
+          setSelected(null);
+          setOpenFound(d);
+        }}
+        entryTitle={entryTitle}
+        onAlong={(line) => {
+          explore.setAlong(line);
+          openExplore(null, line);
+        }}
+        onSpot={(spot) => pickSpot(spot, false)}
+      />
+    );
+  }
 
   return (
     <div className="map-page">
@@ -645,15 +1284,21 @@ export function MapPage() {
             overlay: draw.overlay,
             year: time.timeOn ? time.year : null,
             say: setNotice,
+            ...(biomeView.legend && biomeKeys.length > 0
+              ? {
+                  legend: biomeKeys.map((k) => ({
+                    name: k.biome.name,
+                    colour: k.colour,
+                    pattern: biomeView.patterns ? k.biome.pattern : null,
+                  })),
+                }
+              : {}),
           });
         }}
         onCopyView={copyView}
         canExplore={found.ready}
         exploring={discovery.exploring}
-        onExplore={() => {
-          discovery.setExploring(!discovery.exploring);
-          setSelected(null);
-        }}
+        onExplore={toggleExploring}
         hasTime={time.chronicles.length > 0}
         timeOn={time.timeOn}
         onTime={() => {
@@ -665,6 +1310,7 @@ export function MapPage() {
         onEdit={() => (editing ? stopEditing() : startEditing())}
         onChange={change}
         onRemove={() => void file.removeMap()}
+        onTerrain={canTerrain ? () => setTerrainOpen(true) : undefined}
       />
 
       {editing && (
@@ -672,13 +1318,26 @@ export function MapPage() {
           tool={tool}
           schematic={schematic}
           canPlace={found.ready}
+          findReason={hasPicture ? null : "Find areas needs a map image"}
+          pathsReason={pathsReason}
+          biomesReason={biomesReason}
           onTool={chooseTool}
           snap={snap}
           onSnap={setSnap}
-          canUndo={file.history.past.length > 0}
-          canRedo={file.history.future.length > 0}
-          onUndo={file.undo}
-          onRedo={file.redo}
+          snapTargets={snapTargets}
+          onSnapTargets={setSnapTargets}
+          canUndo={canUndo}
+          canRedo={canRedo}
+          onUndo={undo}
+          onRedo={redo}
+          picking={groups.picking}
+          onPicking={(on) => {
+            if (!on) return groups.clearPicks();
+            chooseTool("select");
+            groups.setPicks(selected ? [selected] : []);
+            setSelected(null);
+            groups.setPicking(true);
+          }}
         />
       )}
 
@@ -721,14 +1380,66 @@ export function MapPage() {
               const at = pointOn(e.currentTarget, e);
               const v = viewRef.current && makeView(viewRef.current, size.width, size.height);
               pointer.endHover();
+              const picked = pointer.pickAt(at);
+              // On a selected group, the menu is the piece's under the pointer.
+              const piece =
+                picked?.kind === "group" ? shapeAt(draw.shapes.current, [at.x, at.y]) : null;
               setMenuAt({
-                target: menuTargetOf(pointer.pickAt(at)),
+                target:
+                  picked?.kind === "groupName"
+                    ? { kind: "nothing" }
+                    : piece
+                      ? { kind: "feature", feature: piece }
+                      : menuTargetOf(picked),
                 at: v ? v.unproject(at.x, at.y) : null,
               });
+            }}
+            onDoubleClick={(e) => {
+              // A double-click on a piece of a group goes inside, to that piece.
+              if (!editing || tool !== "select") return;
+              const at = pointOn(e.currentTarget, e);
+              // The piece under the pointer, past the group's name written over it.
+              const ids = new Set(map.features.map((f) => f.id));
+              const shapes = draw.shapes.current.filter((s) => ids.has(s.id));
+              groups.goInside(shapeAt(shapes, [at.x, at.y]));
             }}
           />
         </MapContextMenu>
         <canvas ref={draw.liveCanvas} className="map-canvas map-live" aria-hidden="true" />
+        {relief && map.terrain && tool !== "paths" && (
+          <Suspense fallback={null}>
+            <ReliefLayer map={map} view={view} size={size} />
+          </Suspense>
+        )}
+        {map.terrain && (
+          <span className="terrain-chip" role="group" aria-label="Terrain">
+            {editing && (
+              <Tip label="Adjust the height map in Terrain">
+                <button type="button" onClick={() => setTerrainOpen(true)}>
+                  <Mountain size={14} aria-hidden /> Terrain · {terrainName}
+                </button>
+              </Tip>
+            )}
+            <Tip label="Draws the terrain as light and shade" keys={shortcutText("map.relief")}>
+              <button type="button" aria-pressed={relief} onClick={() => setRelief(!relief)}>
+                Relief
+              </button>
+            </Tip>
+          </span>
+        )}
+        {terrainOpen && canTerrain && (
+          <Suspense fallback={null}>
+            <TerrainDialog
+              map={map}
+              picture={[...map.images].reverse().find((i) => shownImages.has(i.id)) ?? null}
+              drawn={shown.resolved.map((r) => r.feature)}
+              styles={styles}
+              onDone={setMapTerrain}
+              onHints={setTerrainFromHints}
+              onCancel={() => setTerrainOpen(false)}
+            />
+          </Suspense>
+        )}
         <MapHover hovered={menuOpen ? null : hovered} editing={editing} frame={size} />
         {view && placing && (
           <GhostPins
@@ -768,17 +1479,28 @@ export function MapPage() {
             }}
           />
         )}
-        {discovery.exploring && !openFound && (
-          // Why a tap found nothing is said here, over the map, where the eye is.
-          <p
-            className={`map-hint${discovery.failed && !discovery.seeking ? " map-hint-failed" : ""}`}
-            role={discovery.failed && !discovery.seeking ? "alert" : "status"}
-          >
-            {discovery.seeking
-              ? "Looking at what is near…"
-              : discovery.failed
-                ? `${discovery.failed} Tap a place to try again.`
-                : "Tap a place to see what might be found there."}
+        {exploring && view && (
+          <>
+            <AlongBand x={explore} view={view} size={size} />
+            <SpotPins x={explore} view={view} size={size} onPick={pickSpot} />
+            <ExploreBar x={explore} phone={phone} onList={() => showPanel("explore")} />
+            <ExploreKeys
+              x={explore}
+              frame={frame}
+              canAsk={askReason(explore, discovery.seeking) === null}
+              ask={askChosen}
+              cardOpen={openFound !== null}
+              closeCard={() => setOpenFound(null)}
+              sheetOpen={phone && bar.open === "explore"}
+              closeSheet={bar.hide}
+              onCursor={(spot) => phone && openExplore(spot.at)}
+            />
+          </>
+        )}
+        {exploring && discovery.failed && !discovery.seeking && !openFound && (
+          // Why asking found nothing is said over the map too, where the eye is.
+          <p className="map-hint map-hint-failed" role="alert">
+            {discovery.failed}
           </p>
         )}
         <FocusBox box={box} focusing={focusing} onCancel={() => setFocusing(false)} />
@@ -792,10 +1514,119 @@ export function MapPage() {
           />
         )}
         <MapZoom onZoom={zoom} onWhole={whole} />
+        {biomeView.legend && (legendKeys.length > 0 || suggestLegend?.scale) && (
+          <BiomeLegendCard
+            keys={legendKeys}
+            phone={phone}
+            scale={editing && tool === "biomes" ? (suggestLegend?.scale ?? null) : null}
+          />
+        )}
+        {editing && (groups.picking || groups.several.length > 1) && (
+          <PickStrip
+            count={groups.several.length}
+            canGroup={groups.reason === null}
+            addTo={groups.addTo}
+            onCancel={groups.clearPicks}
+            onGroup={() => groups.group()}
+          />
+        )}
         {said && (
           <p className="map-hint map-said" role="status">
             {said}
           </p>
+        )}
+
+        {editing && tool === "find" && hasPicture && (
+          <Suspense fallback={null}>
+            <FindAreas
+              map={map}
+              mapRef={file.mapRef}
+              change={change}
+              view={view}
+              size={size}
+              frame={frame}
+              shownImages={shownImages}
+              resolved={shown.resolved}
+              hidden={hiddenNow}
+              locked={locked}
+              activeLayer={activeLayer}
+              onActiveLayer={setActiveLayer}
+              selected={selected}
+              onSelect={setSelected}
+              onSelectSeveral={(ids) => {
+                setSelected(null);
+                groups.setPicks(ids);
+              }}
+              snap={snap}
+              styles={styles}
+              titleOf={titleOf}
+              handle={findRef}
+              onSteps={setFindSteps}
+              say={say}
+            />
+          </Suspense>
+        )}
+
+        {editing && tool === "paths" && pathsReason === null && (
+          <Suspense fallback={null}>
+            <FindPaths
+              map={map}
+              mapRef={file.mapRef}
+              change={change}
+              view={view}
+              size={size}
+              frame={frame}
+              shownImages={shownImages}
+              resolved={shown.resolved}
+              hidden={hiddenNow}
+              locked={locked}
+              activeLayer={activeLayer}
+              onActiveLayer={setActiveLayer}
+              selected={selected}
+              onSelect={setSelected}
+              onSelectSeveral={(ids) => {
+                setSelected(null);
+                groups.setPicks(ids);
+              }}
+              onGroup={(ids) => groups.group(ids)}
+              snap={snap}
+              joinPaths={joinPaths}
+              curve={curve}
+              onCurve={setCurveOn}
+              styles={styles}
+              titleOf={titleOf}
+              handle={pathsRef}
+              onSteps={setFindSteps}
+              say={say}
+              relief={relief}
+              onRelief={setRelief}
+              onTerrain={() => setTerrainOpen(true)}
+            />
+          </Suspense>
+        )}
+
+        {editing && tool === "biomes" && biomesReason === null && (
+          <Suspense fallback={null}>
+            <SuggestBiomes
+              map={map}
+              mapRef={file.mapRef}
+              change={change}
+              view={view}
+              size={size}
+              frame={frame}
+              shownImages={shownImages}
+              resolved={shown.resolved}
+              hidden={hiddenNow}
+              styles={styles}
+              addStyles={addStyles}
+              handle={suggestRef}
+              onSteps={setFindSteps}
+              onLegend={setSuggestLegend}
+              onTerrain={() => setTerrainOpen(true)}
+              undoMap={file.undo}
+              say={say}
+            />
+          </Suspense>
         )}
 
         {editing && (
@@ -805,7 +1636,16 @@ export function MapPage() {
             measured={measured}
             sphere={sphere}
             curve={curve}
-            layer={map.layers.find((l) => l.id === activeLayer)?.name ?? ""}
+            layer={
+              tool === "zone" && biomeById(zoneBiome, custom)
+                ? "Biomes"
+                : (map.layers.find((l) => l.id === activeLayer)?.name ?? "")
+            }
+            biome={
+              tool === "zone" ? (
+                <BiomePicker value={zoneBiome} onChange={setZoneBiome} custom={custom} compact />
+              ) : null
+            }
             onCurve={setCurveOn}
             onFinish={finish}
             onClear={() => setSketch([])}

@@ -1,4 +1,4 @@
-# Stage 20: space maps
+# Stage 22: space maps
 
 - **Author:** Elad Haviv
 - **Status:** 20a (star map), 20b (system model) and 20c (layered view) built; Derdama's real shape

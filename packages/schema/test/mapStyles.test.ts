@@ -48,8 +48,8 @@ const ok = (style: Record<string, unknown>) =>
 
 describe("the map styles file", () => {
   it("is the second library file, after the folder file", () => {
-    expect(LIBRARY_FILES.map((k) => k.name)).toEqual(["folders", "map-styles"]);
-    expect(LIBRARY_FILE_NAMES).toEqual(["folders", "map-styles"]);
+    expect(LIBRARY_FILES.map((k) => k.name)).toEqual(["folders", "map-styles", "biomes"]);
+    expect(LIBRARY_FILE_NAMES).toEqual(["folders", "map-styles", "biomes"]);
     expect(libraryFileOf(MAP_STYLES_FILE)).toBe(MAP_STYLES);
     expect(libraryFileNamed("map-styles")).toBe(MAP_STYLES);
     expect(MAP_STYLES.empty()).toEqual({ version: 1, styles: [] });
@@ -135,6 +135,7 @@ describe("the map styles file", () => {
       "zone:Forest",
       "zone:Water",
       "zone:Marsh",
+      "zone:Mountains",
     ]);
     expect(parseMapStyles(JSON.stringify({ version: 1, styles: STARTER_STYLES })).ok).toBe(true);
   });

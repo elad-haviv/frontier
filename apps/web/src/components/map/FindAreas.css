@@ -1,0 +1,228 @@
+/* Find areas (stage 19): its outlines over the map, the tag beside the pointer, and its bar. */
+
+/* The outlines are drawn over the features; the pointer goes through to the map. */
+.map-find {
+  pointer-events: none;
+}
+.map-top.tool-find {
+  cursor: crosshair;
+}
+
+.find-tag {
+  position: absolute;
+  z-index: 4;
+  max-width: 18rem;
+  padding: 0.15rem 0.45rem;
+  border-radius: 5px;
+  background: var(--ink);
+  color: var(--paper);
+  font-size: 0.76rem;
+  pointer-events: none;
+}
+.find-tag-remove {
+  background: var(--warn);
+  color: #fff;
+}
+
+.find-bar {
+  position: absolute;
+  z-index: 3;
+  top: 3.9rem;
+  left: 0.6rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  max-width: calc(100% - 1.2rem);
+  padding: 0.5rem 0.65rem;
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  background: var(--paper);
+  box-shadow: var(--shadow);
+  font-size: 0.86rem;
+}
+.find-options,
+.find-main,
+.find-into,
+.find-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.45rem 0.85rem;
+}
+.find-main {
+  gap: 0.5rem;
+}
+.find-range {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: var(--ink-soft);
+  white-space: nowrap;
+}
+.find-range input[type="range"] {
+  width: 6.5rem;
+  accent-color: var(--accent);
+}
+.find-range small {
+  color: var(--ink-faint);
+  font-size: 0.74rem;
+}
+.find-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-height: 1.9rem;
+  padding: 0 0.6rem;
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  background: var(--paper-raised);
+  color: var(--ink-soft);
+  font: inherit;
+  white-space: nowrap;
+}
+.find-chip::before {
+  content: "";
+  width: 0.8rem;
+  height: 0.8rem;
+  box-sizing: border-box;
+  border: 1.5px solid var(--ink-faint);
+  border-radius: 3px;
+}
+.find-chip[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.find-chip[aria-pressed="true"]::before {
+  border-color: var(--accent);
+  background: var(--accent);
+  box-shadow: inset 0 0 0 2px var(--accent-soft);
+}
+.find-into label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: var(--ink-soft);
+}
+.find-into select {
+  max-width: 11rem;
+  min-height: 1.9rem;
+  padding: 0 0.3rem;
+  border: 1px solid var(--rule);
+  border-radius: 5px;
+  background: var(--paper-raised);
+  color: var(--ink);
+  font: inherit;
+}
+.find-mode {
+  display: inline-flex;
+  flex: none;
+  overflow: hidden;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  background: var(--paper-raised);
+}
+.find-mode button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  min-height: 2rem;
+  padding: 0.2rem 0.6rem;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  color: var(--ink-soft);
+  font: inherit;
+}
+.find-mode button + button {
+  border-left: 1px solid var(--rule);
+}
+.find-mode button[aria-pressed="true"] {
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
+}
+.find-status {
+  flex: 1;
+  min-width: 10rem;
+  color: var(--ink-soft);
+  font-variant-numeric: tabular-nums;
+}
+.find-busy {
+  width: 0.7rem;
+  height: 0.7rem;
+  border: 2px solid var(--rule);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: find-spin 0.7s linear infinite;
+}
+@keyframes find-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.find-main button:not(.find-mode button),
+.find-actions button {
+  min-height: 2.1rem;
+  padding: 0 0.8rem;
+  white-space: nowrap;
+}
+.find-bar button[aria-disabled="true"] {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* On a phone: a one-line strip at the foot of the map, just above the tools; Options opens the
+   rest above it. */
+@media (max-width: 47.99rem) {
+  .find-bar {
+    top: auto;
+    right: 0.5rem;
+    bottom: 0.5rem;
+    left: 0.5rem;
+    max-width: none;
+    padding: 0.45rem;
+  }
+  .find-options {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.6rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid var(--rule);
+  }
+  .find-range {
+    justify-content: space-between;
+  }
+  .find-range input[type="range"] {
+    flex: 1;
+    width: auto;
+  }
+  .find-main {
+    flex-wrap: nowrap;
+  }
+  .find-status {
+    min-width: 0;
+    font-size: 0.8rem;
+    line-height: 1.2;
+  }
+  .find-mode button {
+    min-height: 2.6rem;
+    padding: 0 0.65rem;
+  }
+  .find-main button:not(.find-mode button),
+  .find-actions button {
+    min-height: 2.6rem;
+  }
+  .find-more {
+    flex: none;
+    display: inline-grid;
+    place-items: center;
+    min-width: 2.6rem;
+  }
+  /* The zoom buttons and the passing words go to the top while the strip is at the foot. */
+  .map-frame:has(> .find-bar) .map-zoom,
+  .map-frame:has(> .find-bar) .map-hint.map-said {
+    top: 0.6rem;
+    bottom: auto;
+  }
+}

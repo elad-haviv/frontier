@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
+import { PLACES_PER_CALL, SPOT_KIND_IDS } from "../ai/discover.js";
 import { ApiError } from "../errors.js";
 import type { Services } from "../app.js";
 
@@ -15,6 +16,21 @@ const Discover = z.object({
     .default(null),
   year: z.number().nullable().default(null),
 });
+/** A place to explore as the map page sends it: a point of interest, or a place clicked. */
+const Spot = z.object({
+  at: z.tuple([z.number(), z.number()]),
+  kind: z.enum(SPOT_KIND_IDS),
+  title: z.string().trim().min(1).max(200),
+  lines: z.array(z.string().max(600)).max(14).default([]),
+  features: z.array(z.string().max(40)).max(30).default([]),
+});
+const Moment = Discover.omit({ at: true });
+/** The places of one call: up to six; `{ at }` alone, as before, is one place clicked. */
+const Ask = Moment.extend({
+  at: z.tuple([z.number(), z.number()]).optional(),
+  spots: z.array(Spot).min(1).max(PLACES_PER_CALL).optional(),
+}).refine((b) => b.spots || b.at, "Say which places to explore.");
+const Estimate = Moment.extend({ spots: z.array(Spot).min(1).max(120) });
 const Keep = z.object({ folder: z.string().min(1).max(300) });
 const Generate = Discover.extend({
   kind: z.enum(["marker", "path", "zone", "label"]),
@@ -55,8 +71,18 @@ export function discoverRoutes(app: FastifyInstance, s: Services): void {
 
   app.post("/api/maps/:id/discover", async (request) => {
     const { id } = MapParam.parse(request.params);
-    const { at, chronicle, year } = Discover.parse(request.body);
-    return { discoveries: await s.discoverer.discover(id, at, { chronicle, year }) };
+    const { at, spots, chronicle, year } = Ask.parse(request.body);
+    const places = spots ?? [
+      { at: at!, kind: "here" as const, title: "This place", lines: [], features: [] },
+    ];
+    return { discoveries: await s.discoverer.discover(id, places, { chronicle, year }) };
+  });
+
+  // What asking about places would cost, before it is asked; nothing is sent to the AI.
+  app.post("/api/maps/:id/discover/estimate", async (request) => {
+    const { id } = MapParam.parse(request.params);
+    const { spots, chronicle, year } = Estimate.parse(request.body);
+    return await s.discoverer.estimate(id, spots, { chronicle, year });
   });
 
   // Names and descriptions for features the author fills in or places: proposals, not stored.

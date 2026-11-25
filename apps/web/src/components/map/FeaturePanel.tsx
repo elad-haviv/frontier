@@ -6,6 +6,10 @@ import {
   orderFeature,
   reorderFeature,
 } from "@frontier/schema";
+import type { ReactNode } from "react";
+import type { Space } from "@frontier/geo";
+import { takeOut, withFeature } from "../../map/groups.ts";
+import { roadCrossings } from "../../map/joins.ts";
 import { withStyle } from "../../map/mapStyles.ts";
 import { addShape, reasonFor, removeShape, type Resolved, shapeOf, tie } from "../../map/time.ts";
 import { deleteFeature, removePoint, setCurve, type Tool } from "../../map/tools.ts";
@@ -15,6 +19,7 @@ import { newItemId } from "../../map/viewUrl.ts";
 import { FeatureTime, OrbitEditor } from "../MapTime.tsx";
 import { FeatureCard } from "./FeatureCard.tsx";
 import type { GeneratedFeature } from "../../api.ts";
+import { BiomeFields } from "./BiomeFields.tsx";
 import { FeatureEditor } from "./FeatureEditor.tsx";
 import { FeatureGenerate } from "./FeatureGenerate.tsx";
 
@@ -40,7 +45,11 @@ export function FeaturePanel({
   onEditStyles,
   generate,
   onMakeEntry,
+  memberTop,
+  joinPaths = false,
 }: {
+  /** Snapping to paths is on: a path given a road's style gets crossroads with roads it crosses. */
+  joinPaths?: boolean;
   /** The library's path and zone styles. */
   styles: MapStyle[];
   /** Opens the Styles tab. */
@@ -52,6 +61,8 @@ export function FeaturePanel({
     moment: { chronicle: string | null; year: number | null };
     onUse: (proposal: GeneratedFeature) => void;
   } | null;
+  /** For a member of a group: the crumb back to its group, and its Group field. */
+  memberTop?: ReactNode;
   /** Opens New entry for the feature, to make its entry and link it. */
   onMakeEntry: (name: string, body: string) => void;
   feature: MapFeature;
@@ -87,8 +98,13 @@ export function FeaturePanel({
       />
     );
   }
-  // The Marker tool stays on after a marker is placed, and its tab opens to link it.
-  if (tool !== "select" && tool !== feature.kind) return null;
+  // The Marker tool stays on after a marker is placed, and its tab opens to link it; so does
+  // Find areas after a zone is made.
+  const stays =
+    tool === feature.kind ||
+    (tool === "find" && feature.kind === "zone") ||
+    (tool === "paths" && feature.kind === "path");
+  if (tool !== "select" && !stays) return null;
   return (
     <FeatureEditor
       key={feature.id}
@@ -100,12 +116,25 @@ export function FeaturePanel({
       {...(onScreen ? { drawn: onScreen.feature } : {})}
       onCurve={(curved) => setFeature(setCurve(feature, curved))}
       styles={styles}
-      onStyle={(style) => setFeature(withStyle(feature, style))}
+      onStyle={(style) => {
+        const now = file.mapRef.current ?? map;
+        const styled = withFeature(now, withStyle(feature, style));
+        // A path made a road crosses the roads it meets at shared corners (snapping to paths on).
+        change(
+          joinPaths && feature.kind === "path"
+            ? roadCrossings(styled, map.space as Space, feature.id, styles)
+            : styled,
+        );
+      }}
       onEditStyles={onEditStyles}
+      {...(feature.kind === "zone"
+        ? { biome: <BiomeFields feature={feature} onChange={setFeature} /> }
+        : {})}
       sets={file.sets}
       otherMaps={file.otherMaps}
       vertex={vertex}
-      onChange={(next) => setFeature(next)}
+      onChange={(next) => change(withFeature(file.mapRef.current ?? map, next))}
+      {...(memberTop ? { top: memberTop } : {})}
       onLink={(path, title) => file.link(feature, path, title)}
       onCreateEntry={(typed) => onMakeEntry(typed, "")}
       generate={
@@ -125,7 +154,7 @@ export function FeaturePanel({
         )
       }
       onDelete={() => {
-        change(deleteFeature(map, feature.id));
+        change(takeOut(deleteFeature(map, feature.id), []));
         onSelect(null);
       }}
       onRemoveVertex={() => {

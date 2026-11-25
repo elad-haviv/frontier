@@ -1,4 +1,5 @@
 import type { Length, Position } from "@frontier/geo";
+import type { ReactNode } from "react";
 import { shortcutText } from "../../keys.ts";
 import { lengthText } from "../../map/lengthText.ts";
 import { canFinish, FEWEST_POINTS, type Tool } from "../../map/tools.ts";
@@ -20,7 +21,10 @@ export function MapHints({
   onFinish,
   onClear,
   onSize,
+  biome = null,
 }: {
+  /** The Zone tool's choice of biome for new zones. */
+  biome?: ReactNode;
   tool: Tool;
   /** The points placed so far. */
   sketch: Position[];
@@ -49,6 +53,7 @@ export function MapHints({
             : "Tap to add points. Tap the last point again to finish."}
           {into}
         </span>{" "}
+        {tool === "zone" && biome}{" "}
         <span className="map-curve" role="group" aria-label="Straight or curved">
           {([false, true] as const).map((on) => (
             <Tip

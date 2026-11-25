@@ -54,6 +54,19 @@ export interface MapKeys {
   toggleTime: () => boolean | void;
   /** Snapping on or off. */
   toggleSnap: () => void;
+  /** The selection is a member of a group, gone inside it: Esc comes back out to the group. */
+  inside?: boolean;
+  /** Back out from a member to its group. */
+  backOut?: () => void;
+  /** Several are picked: Esc lets them go first. */
+  picking?: boolean;
+  clearPicks?: () => void;
+  /** Groups what is picked; false when it cannot be. */
+  group?: () => boolean | void;
+  /** Ungroups the selected group; false when no group is selected. */
+  ungroup?: () => boolean | void;
+  /** Goes inside the selected group, to its first member; false when no group is selected. */
+  enter?: () => boolean | void;
 }
 
 const ARROWS: Record<string, [number, number]> = {
@@ -65,7 +78,8 @@ const ARROWS: Record<string, [number, number]> = {
 
 /**
  * Esc, one step at a time: the focus box, then the drawing in progress (the tool stays), then a
- * tool other than Select, then the picked point, then the selection. False when none applies.
+ * tool other than Select, then the picked point, then several picked, then from inside a group
+ * back out to it, then the selection. False when none applies.
  */
 export function cancelStep(k: MapKeys): boolean {
   if (k.focusing) {
@@ -82,6 +96,14 @@ export function cancelStep(k: MapKeys): boolean {
   }
   if (k.editing && k.vertex !== null) {
     k.clearVertex();
+    return true;
+  }
+  if (k.picking && k.clearPicks) {
+    k.clearPicks();
+    return true;
+  }
+  if (k.inside && k.backOut) {
+    k.backOut();
     return true;
   }
   if (k.selected !== null) {
@@ -114,17 +136,24 @@ export function useMapKeys(k: MapKeys) {
   useShortcut("map.measure", tool("measure"));
   useShortcut("map.label", tool("label"));
   useShortcut("map.place", tool("place"));
+  useShortcut("map.find", tool("find"));
+  useShortcut("map.paths", tool("paths"));
+  useShortcut("map.biomes", tool("biomes"));
   useShortcut("map.snap", () => (editing && free() ? k.toggleSnap() : false));
   useShortcut("map.undo", () => (editing && free() && k.canUndo ? k.undo() : false));
   useShortcut("map.redo", () => (editing && free() && k.canRedo ? k.redo() : false));
   useShortcut("map.delete", () => {
     if (!editing || !free()) return false;
     if (k.drawing) return k.takeBack();
-    return k.vertex !== null || k.selected !== null ? k.remove() : false;
+    return k.vertex !== null || k.selected !== null || k.picking ? k.remove() : false;
   });
   useShortcut("map.finish", () =>
     editing && free() && k.drawing && (k.tool === "path" || k.tool === "zone") ? k.finish() : false,
   );
+  // Ctrl+G and ⌘G are the browser's "find next": the map takes them only from its own frame.
+  useShortcut("map.group", () => (editing && free() && k.group ? k.group() : false));
+  useShortcut("map.ungroup", () => (editing && free() && k.ungroup ? k.ungroup() : false));
+  useShortcut("map.enter", () => (editing && free() && !k.drawing && k.enter ? k.enter() : false));
   useShortcut("map.curve", () => (editing ? k.toggleCurve() : false));
   useShortcut("map.cancel", () => cancelStep(k));
   useShortcut("map.zoomIn", () => k.zoom(1.6));

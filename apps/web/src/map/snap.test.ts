@@ -1,7 +1,7 @@
 import type { Shape, View } from "@frontier/geo";
 import type { MapFeature } from "@frontier/schema";
 import { describe, expect, it } from "vitest";
-import { snapAt } from "./snap.ts";
+import { ALL_TARGETS, SNAP_REACH, snapAt, type SnapTargets, targetsText } from "./snap.ts";
 
 /** A view whose screen is the map's own units. */
 const view = {
@@ -76,7 +76,7 @@ describe("snapping a point to the paths and zones beside it", () => {
     expect(snapAt(view, features, shapes, [305, 96], "land")).toBeNull();
   });
 
-  it("leaves out what is not drawn, as a hidden layer is, and markers and labels", () => {
+  it("leaves out what is not drawn, as a hidden layer is, and each target that is turned off", () => {
     const label = {
       id: "words",
       kind: "label",
@@ -86,6 +86,43 @@ describe("snapping a point to the paths and zones beside it", () => {
     } as MapFeature;
     const all = [...features, label];
     expect(snapAt(view, all, drawnOf([road, label]), [305, 96], null)).toBeNull();
-    expect(snapAt(view, all, drawnOf(all), [602, 600], null)).toBeNull();
+    // Markers and labels are snapped to at their own place, unless that target is off.
+    expect(snapAt(view, all, drawnOf(all), [602, 600], null)).toMatchObject({
+      at: [600, 600],
+      feature: "words",
+    });
+    const off = (t: Partial<SnapTargets>) => ({ ...ALL_TARGETS, ...t });
+    expect(
+      snapAt(view, all, drawnOf(all), [602, 600], null, SNAP_REACH, off({ markers: false })),
+    ).toBeNull();
+    // With Zones off the land is not snapped to; with Paths off as well, nothing is.
+    const here = snapAt(view, all, drawnOf(all), [305, 96], null);
+    expect(here?.feature).toBe("land");
+    const noZones = snapAt(
+      view,
+      all,
+      drawnOf(all),
+      [305, 96],
+      null,
+      SNAP_REACH,
+      off({ zones: false }),
+    );
+    expect(noZones?.feature ?? "road").toBe("road");
+    expect(
+      snapAt(
+        view,
+        all,
+        drawnOf(all),
+        [305, 96],
+        null,
+        SNAP_REACH,
+        off({ zones: false, paths: false }),
+      ),
+    ).toBeNull();
+    expect(targetsText(true, off({ markers: false }))).toBe("Snaps to paths and zones");
+    expect(targetsText(true, off({ paths: false, zones: false, markers: false }))).toBe(
+      "Snaps to nothing",
+    );
+    expect(targetsText(false, ALL_TARGETS)).toBe("Off");
   });
 });

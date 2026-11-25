@@ -1,0 +1,454 @@
+/* Explore along paths (stage 21): the pins of the points of interest, the band along the road
+   or river explored, the bar's kinds, and the Explore tab with its tray. The bar itself is Find
+   areas' bar (FindAreas.css). */
+
+.fam-roads {
+  --fam: #8a5a2e;
+}
+.fam-crossings {
+  --fam: #7a6a2a;
+}
+.fam-waters {
+  --fam: #2f6f9f;
+}
+.fam-heights {
+  --fam: #5b6470;
+}
+.fam-stops {
+  --fam: #a0621c;
+}
+.fam-edges {
+  --fam: #6b4f7a;
+}
+.fam-here {
+  --fam: var(--accent);
+}
+
+.spot-pin {
+  position: absolute;
+  z-index: 4;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  margin: -14px 0 0 -14px;
+  padding: 0;
+  border: 2px dashed var(--fam);
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--paper-raised) 88%, transparent);
+  color: var(--fam);
+  cursor: pointer;
+}
+/* A larger place to tap than the pin shows. */
+.spot-pin::after {
+  content: "";
+  position: absolute;
+  inset: -8px;
+  border-radius: 50%;
+}
+.spot-pin:hover,
+.spot-pin.is-cursor {
+  border-style: solid;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--fam) 25%, transparent);
+}
+.spot-pin.is-chosen {
+  border-style: solid;
+  background: var(--fam);
+  color: var(--paper-raised);
+  box-shadow:
+    0 0 0 3px var(--paper-raised),
+    0 0 0 5px var(--fam);
+}
+.spot-pin.is-dim {
+  opacity: 0.35;
+}
+.spot-count {
+  position: absolute;
+  top: -7px;
+  right: -7px;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 3px;
+  border-radius: 8px;
+  background: var(--ink);
+  color: var(--paper);
+  font-size: 0.65rem;
+  font-weight: 700;
+  line-height: 15px;
+}
+.spot-tip {
+  position: absolute;
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  max-width: 17rem;
+  padding: 0.35rem 0.55rem;
+  border-radius: 6px;
+  background: var(--ink);
+  color: var(--paper);
+  font-size: 0.78rem;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.explore-band {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+}
+.explore-band polyline {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 9;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0.3;
+}
+
+/* Over the pins, which pass beneath it. */
+.explore-bar {
+  z-index: 5;
+}
+.explore-bar .explore-mark {
+  flex: none;
+  color: var(--accent);
+}
+.explore-hint {
+  color: var(--ink-faint);
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+.explore-families {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+.explore-family {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  min-height: 1.9rem;
+  padding: 0 0.6rem;
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  background: var(--paper-raised);
+  color: var(--ink-faint);
+  font: inherit;
+  white-space: nowrap;
+}
+.explore-family[aria-pressed="true"] {
+  border-color: var(--fam);
+  color: var(--fam);
+}
+.explore-family b {
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+.explore-family:disabled {
+  opacity: 0.5;
+}
+.explore-day {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: var(--ink-soft);
+  white-space: nowrap;
+}
+
+/* The tab: a list that scrolls, and the tray at its foot. */
+.explore-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+}
+.explore-scroll {
+  flex: 1;
+  padding-bottom: 0.75rem;
+}
+.explore-panel h3 {
+  margin: 1rem 0 0.35rem;
+  color: var(--ink-soft);
+  font-size: 0.75rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.explore-intro {
+  margin-top: 0;
+}
+.explore-lines,
+.explore-spots,
+.explore-along,
+.explore-chips {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.explore-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.35rem 0.3rem;
+  border: 0;
+  border-radius: 5px;
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+}
+button.explore-row:hover {
+  background: var(--accent-soft);
+}
+button.explore-row[aria-pressed="true"] {
+  background: color-mix(in srgb, var(--accent-soft) 70%, transparent);
+}
+.explore-row small {
+  display: block;
+  color: var(--ink-faint);
+  font-size: 0.78rem;
+}
+.explore-swatch {
+  flex: none;
+  width: 1.4rem;
+  height: 0;
+  margin-top: 0.65rem;
+  border-top: 3px solid #2f6f9f;
+}
+.explore-swatch.is-road {
+  border-top: 3px dashed #7a5230;
+}
+.explore-icon,
+.explore-found {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 1.4rem;
+  height: 1.4rem;
+  border: 1.5px dashed var(--fam, var(--accent));
+  border-radius: 50%;
+  color: var(--fam, var(--accent));
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+.explore-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  padding: 0;
+  color: var(--accent);
+}
+.explore-title {
+  margin: 0.4rem 0 0;
+  font-size: 1.15rem;
+}
+.explore-sub {
+  margin: 0.1rem 0 0.5rem;
+}
+.explore-all {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+.explore-along li {
+  display: grid;
+  grid-template-columns: 3.4rem 1fr;
+  align-items: start;
+}
+.explore-km {
+  padding-top: 0.45rem;
+  color: var(--ink-faint);
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  padding-right: 0.4rem;
+}
+.explore-check {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 1rem;
+  height: 1rem;
+  margin-top: 0.2rem;
+  border: 1.5px solid var(--ink-faint);
+  border-radius: 3px;
+}
+[aria-pressed="true"] > .explore-check {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--paper-raised);
+}
+.explore-dot {
+  flex: none;
+  width: 0.75rem;
+  height: 0.75rem;
+  margin: 0.3rem 0.35rem 0 0.15rem;
+  border: 3px solid var(--accent);
+  border-radius: 50%;
+  background: var(--paper-raised);
+}
+
+.explore-tray {
+  position: sticky;
+  /* Sticky within the panel's padding: down over it, to the very foot. */
+  bottom: calc(-1 * var(--space-6));
+  z-index: 1;
+  /* Out to the edges of the panel, and down over its bottom padding. */
+  margin: 0 calc(-1 * var(--space-4)) calc(-1 * var(--space-6));
+  padding: 0.6rem var(--space-4) 0.75rem;
+  border-top: 1px solid var(--rule);
+  background: var(--paper-raised);
+  font-size: 0.86rem;
+}
+.explore-tray.is-empty p {
+  margin: 0;
+}
+.explore-tray-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.35rem;
+  margin: 0 0 0.4rem;
+}
+.explore-tray-head button {
+  margin-left: auto;
+  color: var(--accent);
+}
+.explore-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  max-height: 6.5rem;
+  overflow: auto;
+}
+.explore-chips li {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  max-width: 100%;
+  padding: 0.1rem 0.15rem 0.1rem 0.25rem;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  font-size: 0.8rem;
+}
+.explore-chips li > span:nth-child(2) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.explore-chips .explore-icon {
+  width: 1.15rem;
+  height: 1.15rem;
+}
+.explore-chips button {
+  display: grid;
+  place-items: center;
+  min-width: 1.6rem;
+  min-height: 1.6rem;
+  padding: 0;
+}
+.explore-sends {
+  margin: 0.45rem 0;
+}
+.explore-sends summary {
+  color: var(--ink-soft);
+  font-weight: 600;
+  cursor: pointer;
+}
+.explore-sends > :not(summary) {
+  max-height: 14rem;
+  overflow: auto;
+}
+.explore-send {
+  margin: 0.35rem 0;
+  padding: 0.4rem 0.5rem;
+  border: 1px solid var(--rule);
+  border-radius: 5px;
+  background: var(--paper);
+}
+.explore-send p {
+  margin: 0.2rem 0 0;
+  font-size: 0.8rem;
+}
+.explore-ask {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem 0.7rem;
+}
+.explore-ask .primary {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-height: 2.4rem;
+  padding: 0 0.9rem;
+}
+.explore-ask .primary[aria-disabled="true"] {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.explore-cost,
+.explore-why {
+  flex: 1;
+  min-width: 9rem;
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 0.78rem;
+}
+.explore-why {
+  flex-basis: 100%;
+  color: var(--warn);
+}
+
+.discovery-card {
+  z-index: 5;
+}
+.discovery-where {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin: 0.2rem 0 0;
+  color: var(--ink-soft);
+  font-size: 0.85rem;
+}
+.discovery-step {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  margin: 0 0 0.3rem;
+  color: var(--ink-soft);
+  font-size: 0.8rem;
+}
+.discovery-step button {
+  min-width: 2rem;
+  min-height: 2rem;
+  padding: 0;
+}
+
+@media (max-width: 47.99rem) {
+  .discovery-card {
+    max-height: 72%;
+  }
+  .spot-pin {
+    width: 30px;
+    height: 30px;
+    margin: -15px 0 0 -15px;
+  }
+  /* 44 px to tap. */
+  .spot-pin::after {
+    inset: -7px;
+  }
+  .explore-families {
+    gap: 0.3rem;
+  }
+  .explore-ask .primary {
+    flex: 1 1 100%;
+    justify-content: center;
+    min-height: 2.75rem;
+  }
+  .bottom-sheet .explore-tray {
+    bottom: calc(-1 * max(var(--space-4), env(safe-area-inset-bottom)));
+    margin-bottom: calc(-1 * max(var(--space-4), env(safe-area-inset-bottom)));
+    padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
+  }
+}

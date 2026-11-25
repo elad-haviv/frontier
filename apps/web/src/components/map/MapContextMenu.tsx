@@ -1,5 +1,6 @@
 import { isLined, type MapFeature, type MapFile, type MapStyle } from "@frontier/schema";
 import {
+  GitBranch,
   ArrowDownToLine,
   ArrowUpToLine,
   BookOpen,
@@ -66,6 +67,8 @@ export interface MapMenu {
   addMarker: () => void;
   startPath: () => void;
   startZone: () => void;
+  /** Starts a new path on this one, where it was right-clicked: a branch, joined at its start. */
+  branch: (feature: MapFeature) => void;
 }
 
 /** The items for what was right-clicked: a feature, a corner of the selected one, or nothing. */
@@ -144,6 +147,11 @@ function Items({ menu }: { menu: MapMenu }) {
             {(feature as { curve?: string }).curve === "smooth"
               ? "Make it straight"
               : "Make it curved"}
+          </ContextMenuItem>
+        )}
+        {feature.kind === "path" && (
+          <ContextMenuItem icon={GitBranch} onSelect={() => menu.branch(feature)}>
+            Branch a path from here
           </ContextMenuItem>
         )}
         {isLined(feature) && (

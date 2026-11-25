@@ -7,10 +7,12 @@
 import {
   focusOn,
   makeView,
+  moveBy,
   outline,
   panBy,
   type Position,
   type Shape,
+  shapeAt,
   type Space,
   type ViewState,
   zoomAt,
@@ -33,7 +35,7 @@ import {
 } from "./gesture.ts";
 import { drawLive, type LiveInput } from "./live.ts";
 import { screenLines } from "./overlay.ts";
-import type { MapTime, Resolved } from "./time.ts";
+import { type MapTime, type Resolved, writeShape } from "./time.ts";
 import {
   addSketchPoint,
   dragShape,
@@ -46,8 +48,20 @@ import {
   type Tool,
 } from "./tools.ts";
 import { focusIsFree } from "../keys.ts";
-import { type Snapped, snapAt } from "./snap.ts";
+import { SNAP_REACH, type Snapped, snapAt, type SnapTargets } from "./snap.ts";
 import { pointOn } from "./useMapView.ts";
+import { joinedTo } from "./joins.ts";
+
+/** What Find areas and Find paths hear from the pointer: taps, and where a mouse is. */
+export interface FindPointer {
+  tap(at: Point, how: { alt: boolean; shift: boolean; kind: PointerKind }): void;
+  /** Where a mouse is over the map, or null when it left or the hover ended. */
+  hover(at: Point | null): void;
+  /** Find paths: the stop of the proposed route under a press, which a drag then moves. */
+  grab?(at: Point, kind: PointerKind): number | null;
+  dragStop?(index: number, at: Point): void;
+  dropStop?(): void;
+}
 
 export function usePointer(p: {
   map: MapFile | null;
@@ -74,7 +88,12 @@ export function usePointer(p: {
   focusing: boolean;
   setFocusing: (focusing: boolean) => void;
   exploring: boolean;
-  explore: (position: Position | null) => void;
+  /** A click while exploring: where on the map and on the screen, and how. */
+  explore: (
+    position: Position | null,
+    screen: Point,
+    how: { shift: boolean; kind: PointerKind },
+  ) => void;
   setFeature: (next: MapFeature, remember?: boolean) => void;
   beginStep: () => void;
   apply: (step: Step) => void;
@@ -86,9 +105,37 @@ export function usePointer(p: {
   onPressKind: (kind: PointerKind) => void;
   /** Points of paths and zones snap to other paths and zones near them. */
   snap: boolean;
+  /** What they snap to; left out: everything. */
+  snapTargets?: SnapTargets;
+  /** The Find areas tool, while it is on: it takes the taps and the hover. */
+  find?: RefObject<FindPointer | null>;
+  /** Changes the whole map: a group moved by a drag, as one step with `beginStep`. */
+  change: (next: MapFile, remember?: boolean) => void;
+  /** The selected group, when one is selected and can be changed on the map. */
+  group: { id: string; members: ReadonlySet<string> } | null;
+  /**
+   * What a tap on a feature (or a group's name), or on nothing, selects: the page decides, by the
+   * groups and by whether Shift or Ctrl/⌘ was held to pick several.
+   */
+  pickTap: (
+    hit: string | null,
+    how: { add: boolean; kind: PointerKind; piece: string | null },
+  ) => void;
+  /** The features lit with a hovered one: its group's, unless the selection is inside it. */
+  haloIds: (feature: string) => ReadonlySet<string>;
 }) {
   /** Alt held with the last pointer event: points go exactly where they are put. */
   const altHeld = useRef(false);
+  /** Shift, Ctrl or ⌘ held as the map was pressed: a tap adds to what is picked. */
+  const addHeld = useRef(false);
+  /** Where each piece of a dragged group was when the drag began. */
+  const groupStart = useRef<{
+    group: string;
+    pieces: { resolved: Resolved; points: Position[] }[];
+    at: Position | null;
+  } | null>(null);
+  /** Shift held with the last pointer event: Find areas adds whatever its mode. */
+  const shiftHeld = useRef(false);
   /** Where the point being placed or dragged snaps to now, marked on the live canvas. */
   const snapMark = useRef<Snapped | null>(null);
   const { size, editing, tool, selected, focusing } = p;
@@ -155,12 +202,26 @@ export function usePointer(p: {
   function snapFor(at: Point, skip: string | null): Snapped | null {
     const view = viewNow();
     if (!view || !p.snap || altHeld.current || !editing || tool === "measure") return null;
+    // A path joined to the one being changed shares the dragged corner: snapping to it would
+    // hold the corner where it was.
+    const now = p.mapRef.current;
+    const joined = new Set<string>();
+    if (skip && now) {
+      for (const j of joinedTo(now, skip)) joined.add(j.path);
+      const own = now.features.find((f) => f.id === skip);
+      if (own?.kind === "path") {
+        if (own.startOn) joined.add(own.startOn);
+        if (own.endOn) joined.add(own.endOn);
+      }
+    }
     return snapAt(
       view,
-      p.resolvedRef.current.map((r) => r.feature),
+      p.resolvedRef.current.map((r) => r.feature).filter((f) => !joined.has(f.id)),
       p.shapes.current,
       [at.x, at.y],
       skip,
+      SNAP_REACH,
+      p.snapTargets,
     );
   }
 
@@ -193,7 +254,7 @@ export function usePointer(p: {
       height: size.height,
       shapes:
         target && target.kind !== "corner" && target.kind !== "insert"
-          ? p.shapes.current.filter((s) => s.id === target.feature)
+          ? p.shapes.current.filter((s) => p.haloIds(target.feature).has(s.id))
           : [],
       corner,
       band: bandFor(bandAt.current),
@@ -233,6 +294,7 @@ export function usePointer(p: {
     snapMark.current = null;
     hover(null, { x: 0, y: 0 });
     paintLive();
+    p.find?.current?.hover(null);
   }
 
   // Space held pans, while the keys are the map's: not while typing in a field.
@@ -272,10 +334,15 @@ export function usePointer(p: {
     const position = v.unproject(x, y);
 
     if (p.exploring && !editing) {
-      p.explore(position);
+      p.explore(position, { x, y }, { shift: shiftHeld.current, kind });
       return;
     }
 
+    if (editing && (tool === "find" || tool === "paths" || tool === "biomes")) {
+      const how = { alt: altHeld.current, shift: shiftHeld.current, kind };
+      p.find?.current?.tap({ x, y }, how);
+      return;
+    }
     if (editing && (tool === "marker" || tool === "label")) {
       if (!position) return;
       const place = tool === "marker" ? placeMarker : placeLabel;
@@ -294,6 +361,7 @@ export function usePointer(p: {
         snapped ? snapped.screen : [x, y],
         p.curve,
         snapped?.at,
+        p.snap && p.snapTargets?.paths !== false,
       );
       if (step) p.apply(step);
       return;
@@ -311,7 +379,17 @@ export function usePointer(p: {
       return;
     }
 
-    p.apply(tapSelect(v, editing, chosen(), p.shapes.current, [x, y]));
+    const step = tapSelect(v, editing, chosen(), p.shapes.current, [x, y]);
+    // A corner of the selected shape is picked here; what a tap selects, the page decides.
+    if (step.selected === undefined) return p.apply(step);
+    p.apply({ vertex: null });
+    // The piece of a feature under the tap, past any group's name written over it.
+    const ids = new Set(now.features.map((f) => f.id));
+    const piece = shapeAt(
+      p.shapes.current.filter((s) => ids.has(s.id)),
+      [x, y],
+    );
+    p.pickTap(step.selected, { add: editing && addHeld.current, kind, piece });
   }
 
   function carryOut(effect: Effect, e: GestureEvent) {
@@ -324,6 +402,8 @@ export function usePointer(p: {
           paintLive();
         }
         hover(effect.target, effect.at);
+        if (editing && (tool === "find" || tool === "paths" || tool === "biomes"))
+          p.find?.current?.hover(effect.at);
         return;
       case "cursor":
         // Set on the canvas directly: the cursor follows every move without drawing the page.
@@ -334,6 +414,7 @@ export function usePointer(p: {
         return;
       case "beginStep":
         dragStart.current = null;
+        groupStart.current = null;
         p.beginStep();
         return;
       case "box":
@@ -357,6 +438,10 @@ export function usePointer(p: {
       case "dragTo": {
         const view = viewNow();
         const { target } = effect;
+        if (target.kind === "stop") {
+          p.find?.current?.dragStop?.(target.index, effect.at);
+          return;
+        }
         // A corner, or a point pulled out of a "+", snaps to the paths and zones beside it.
         const snapped =
           target.kind === "corner" || target.kind === "insert"
@@ -370,7 +455,27 @@ export function usePointer(p: {
         const now = p.mapRef.current;
         const drawn = p.resolvedRef.current.find((r) => r.feature.id === effect.target.feature);
         // When the pointer leaves the globe, what is dragged stays where it last was.
-        if (!view || !position || !now || !drawn) return;
+        if (!view || !position || !now) return;
+        if (!drawn && target.kind !== "group" && target.kind !== "groupName") return;
+        if (target.kind === "groupName") {
+          // Placed by hand: it stays where it is put, relative to the map.
+          const group = now.groups?.find((g) => g.id === target.feature);
+          if (!group) return;
+          p.change(
+            {
+              ...now,
+              groups: now.groups!.map((g) => (g.id === group.id ? { ...g, at: position } : g)),
+            },
+            false,
+          );
+          return;
+        }
+        if (target.kind === "group") {
+          const from = view.unproject(effect.from.x, effect.from.y);
+          if (from) moveGroup(now, target.feature, from, position);
+          return;
+        }
+        if (!drawn) return;
         if (target.kind === "insert" || target.kind === "zone") {
           // Both start from the shape as it was at the press, so neither drifts.
           if (dragStart.current?.feature !== target.feature && isLined(drawn.feature)) {
@@ -409,6 +514,51 @@ export function usePointer(p: {
     }
   }
 
+  /**
+   * Moves every piece of a group, and its name placed by hand, as the pointer went from `from` to
+   * `to`: each from where it was when the drag began, so nothing drifts. One change of the map.
+   */
+  function moveGroup(now: MapFile, id: string, from: Position, to: Position) {
+    const s = space();
+    if (!s) return;
+    if (groupStart.current?.group !== id) {
+      groupStart.current = {
+        group: id,
+        pieces: p.resolvedRef.current
+          .filter((r) => r.feature.group === id)
+          .map((r) => ({
+            resolved: r,
+            points: isLined(r.feature)
+              ? r.feature.points
+              : r.feature.kind === "route"
+                ? []
+                : [r.feature.at],
+          })),
+        at: now.groups?.find((g) => g.id === id)?.at ?? null,
+      };
+    }
+    const start = groupStart.current;
+    const moved = new Map<string, MapFeature>();
+    for (const { resolved, points } of start.pieces) {
+      const feature = now.features.find((f) => f.id === resolved.feature.id);
+      if (!feature) continue;
+      const to2 = moveBy(s, points, from, to);
+      const shape = isLined(resolved.feature) ? { points: to2 } : { at: to2[0]! };
+      moved.set(feature.id, writeShape(feature, resolved.shape, shape));
+    }
+    const at = start.at ? moveBy(s, [start.at], from, to)[0]! : null;
+    p.change(
+      {
+        ...now,
+        features: now.features.map((f) => moved.get(f.id) ?? f),
+        ...(at && now.groups
+          ? { groups: now.groups.map((g) => (g.id === id ? { ...g, at } : g)) }
+          : {}),
+      },
+      false,
+    );
+  }
+
   const context = (): GestureContext => ({
     focusing,
     spaceHeld: spaceHeld.current,
@@ -417,8 +567,20 @@ export function usePointer(p: {
       const view = viewNow();
       const s = space();
       if (!view || !s) return null;
+      if (editing && tool === "paths") {
+        const stop = p.find?.current?.grab?.(at, kind) ?? null;
+        return stop === null ? null : { kind: "stop", feature: String(stop), index: stop };
+      }
       return pick(
-        { space: s, view, editing, tool, chosen: chosen(), shapes: p.shapes.current },
+        {
+          space: s,
+          view,
+          editing,
+          tool,
+          chosen: chosen(),
+          shapes: p.shapes.current,
+          group: p.group,
+        },
         at,
         kind,
       );
@@ -436,6 +598,8 @@ export function usePointer(p: {
 
   function handle(e: React.PointerEvent, type: GestureEvent["type"]) {
     altHeld.current = e.altKey;
+    if (type === "down") addHeld.current = e.shiftKey || e.ctrlKey || e.metaKey;
+    shiftHeld.current = e.shiftKey;
     const event: GestureEvent = {
       type,
       id: e.pointerId,
@@ -470,6 +634,9 @@ export function usePointer(p: {
       p.frame.current?.focus({ preventScroll: true, focusVisible: false } as FocusOptions);
     }
     const { before, state } = run(event);
+    if (before.name === "drag" && state.name !== "drag" && before.target.kind === "stop") {
+      p.find?.current?.dropStop?.();
+    }
     // Whatever was pressed keeps the pointer until it is lifted, even off the canvas.
     if (type === "down" && state !== before) {
       (e.target as Element).setPointerCapture(e.pointerId);

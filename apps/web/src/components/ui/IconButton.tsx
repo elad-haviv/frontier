@@ -16,6 +16,8 @@ interface Common {
   /** Shows the label beside the icon as well, where there is room for it. */
   showLabel?: boolean;
   tipSide?: "top" | "bottom" | "left" | "right";
+  /** A second line in the tooltip, such as the control's current setting. */
+  note?: string;
 }
 
 type ButtonProps = Common &
@@ -37,6 +39,7 @@ export function IconButton({
   size = "md",
   showLabel = false,
   tipSide,
+  note,
   disabled = false,
   disabledReason,
   className,
@@ -56,7 +59,7 @@ export function IconButton({
     <Tip
       label={label}
       keys={shortcutText(shortcut)}
-      {...(disabled && disabledReason ? { note: disabledReason } : {})}
+      {...(disabled && disabledReason ? { note: disabledReason } : note ? { note } : {})}
       {...(tipSide ? { side: tipSide } : {})}
     >
       <button

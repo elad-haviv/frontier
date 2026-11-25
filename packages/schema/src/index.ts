@@ -8,6 +8,7 @@ export * from "./chronicles.js";
 export * from "./libraryFiles.js";
 export * from "./folders.js";
 export * from "./mapStyles.js";
+export * from "./biomes.js";
 export * from "./libraryKinds.js";
 export * from "./client.js";
 export * from "./graph.js";

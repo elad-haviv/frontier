@@ -3,6 +3,7 @@
  * merged. A map is a standalone object that refers to entries by their ids.
  */
 import { z } from "zod";
+import { CLIMATE_KEYS, MapClimate } from "./biomes.js";
 import { mergeItemLists, sameValue as same, serialiseItemFile } from "./itemFile.js";
 
 /** 8 random characters, as for an entry. Shorter ids from hand-written files are accepted. */
@@ -64,6 +65,112 @@ export const MapImage = z
   .passthrough();
 export type MapImage = z.infer<typeof MapImage>;
 
+/**
+ * The map's terrain: a height picture the tools read (Find paths, relief), never drawn as one of
+ * the map's pictures. It lies on the map through its own extent, so it need not be the size of the
+ * map's picture. Set in the Terrain dialog (docs/designs/stage-20-terrain-dialog.md).
+ */
+export const MapTerrain = z
+  .object({
+    /** The height picture's path in the vault. */
+    image: z
+      .string()
+      .min(1)
+      .max(400)
+      .refine(
+        (p) => !p.startsWith("/") && !p.split("/").includes(".."),
+        "Not a path in the vault.",
+      ),
+    /** Where it lies, as an image's extent; left out: over the whole map. */
+    extent: Extent.optional(),
+    /** Black is high; left out: white is high. */
+    invert: z.literal(true).optional(),
+    /** The grey, 0 to 1 after inverting, below which it is sea; left out: matched to the picture. */
+    seaLevel: z.number().min(0).max(1).optional(),
+    /** The heights of the lowest and the highest grey; left out: heights are only relative. */
+    range: z
+      .tuple([z.number(), z.number()])
+      .refine(([low, high]) => low < high, "The lowest height comes first.")
+      .optional(),
+    /** The unit of the range: "m", "ft" or the map's own. */
+    rangeUnit: z.string().max(20).optional(),
+    /** How much the picture is smoothed as it is read, 0 (none) to 4; left out: 0. */
+    smoothing: z.number().int().min(0).max(4).optional(),
+    /** A guess kept as a height picture, which stays marked as one. */
+    guessed: z.literal(true).optional(),
+    /**
+     * Built by Frontier from the map's terrain hints (docs/designs/stage-21-infer-height-map.md):
+     * the settings it was built with, and a hash of the hints in use then, so a change to the
+     * hints since shows as "Hints changed since it was built".
+     */
+    generated: z
+      .object({
+        from: z.literal("hints"),
+        seed: z.number().int(),
+        rough: z.number().min(0).max(1),
+        sharp: z.number().min(0).max(1),
+        erosion: z.number().min(0).max(1),
+        /** 1 draft, 2 normal, 3 fine. */
+        detail: z.number().int().min(1).max(3),
+        carve: z.boolean(),
+        lakes: z.boolean(),
+        hints: z.string().max(40),
+      })
+      .passthrough()
+      .optional(),
+  })
+  .passthrough();
+export type MapTerrain = z.infer<typeof MapTerrain>;
+
+export const TERRAIN_HINT_KINDS = [
+  "sea",
+  "coast",
+  "lake",
+  "river",
+  "ridge",
+  "peak",
+  "hollow",
+  "valley",
+  "cliff",
+  "highland",
+  "lowland",
+  "plain",
+  "marsh",
+  "road",
+] as const;
+export type TerrainHintKind = (typeof TERRAIN_HINT_KINDS)[number];
+
+/**
+ * What the picture (or the owner) says about height at a place, which a height map is built from:
+ * a peak, a ridge, a river and which way it runs, a marsh. Kept as their own list on the map and
+ * merged hint by hint. Sea and coast hold no shape: they are the picture's water each time. A hint
+ * tied to a feature (`by: "feature:<id>"`) takes its shape from that feature.
+ */
+export const MapTerrainHint = z
+  .object({
+    id: ItemId,
+    kind: z.enum(TERRAIN_HINT_KINDS),
+    /** A point: a peak or a hollow. */
+    at: Pair.optional(),
+    /** A line (a river runs from its source to its mouth) or a zone's ring. */
+    points: z.array(Pair).optional(),
+    /** The height, 0 to 1 of the highest point; a highland's lowest. */
+    h: z.number().min(-1).max(2).optional(),
+    /** A highland's highest. */
+    h2: z.number().min(-1).max(2).optional(),
+    /** How firmly it holds, 0 to 1. */
+    strength: z.number().min(0).max(1).optional(),
+    /** A cliff high on its right as drawn; a river or a valley that runs the other way. */
+    flip: z.literal(true).optional(),
+    state: z.enum(["accepted", "waiting", "rejected"]),
+    /** "found", "you", or "feature:<id>". */
+    by: z.string().min(1).max(60),
+    /** How sure the finding was, 0 to 1; only for found hints. */
+    conf: z.number().min(0).max(1).optional(),
+  })
+  .passthrough();
+export type MapTerrainHint = z.infer<typeof MapTerrainHint>;
+
 export const MapLayer = z
   .object({
     id: ItemId,
@@ -110,6 +217,8 @@ const featureBase = {
   shapes: z.array(LaterShape).optional(),
   /** On a flat map: turns about another marker, once every `period` years, as time moves. */
   orbit: z.object({ around: ItemId, period: z.number().positive() }).passthrough().nullish(),
+  /** The group it is one piece of, in its own layer; none (left out of the file) when in none. */
+  group: ItemId.nullish(),
 };
 
 /**
@@ -117,6 +226,17 @@ const featureBase = {
  * point. It belongs to the feature: all of its shapes are curved or straight together.
  */
 const curve = z.literal("smooth").optional();
+
+/** A stretch of a path between two of its corners: see `stretches` on a path. */
+export const PathStretch = z
+  .object({
+    kind: z.enum(["tunnel", "steps", "climb"]),
+    from: Pair,
+    to: Pair,
+    grade: z.number().min(-10).max(10).optional(),
+  })
+  .passthrough();
+export type PathStretch = z.infer<typeof PathStretch>;
 
 /**
  * The id of a path or zone style in the map styles file. A style that is not there, or is for the
@@ -211,10 +331,51 @@ export const MapFeature = z.discriminatedUnion("kind", [
     })
     .passthrough(),
   z
-    .object({ ...featureBase, kind: z.literal("path"), points: z.array(Pair).min(2), curve, style })
+    .object({
+      ...featureBase,
+      kind: z.literal("path"),
+      points: z.array(Pair).min(2),
+      curve,
+      style,
+      /**
+       * A join: this path's first (`startOn`) or last (`endOn`) point lies on another path, whose id
+       * this is, at a corner the two share. The app keeps the end on that corner as either path
+       * is changed. A join to a path that is gone is dropped on reading and on merging.
+       */
+      startOn: ItemId.nullish(),
+      endOn: ItemId.nullish(),
+      /**
+       * Stretches of the path that are something other than its plain line, each between two of
+       * its corners, given by their coordinates (so a corner put in elsewhere leaves it alone): a
+       * tunnel (drawn dashed), steps, or a climb (`grade`, the steepest grade along it as a
+       * fraction, above 0 when it rises from `from` to `to`; drawn as chevrons pointing uphill).
+       * A stretch whose corners are gone is not drawn. Made by Find paths.
+       */
+      stretches: z.array(PathStretch).max(500).optional(),
+      /** How a river ends inland: it sinks underground (tapers) or dries out (thins, dashed). */
+      endAs: z.enum(["sinks", "dries"]).optional(),
+      /** The chevrons on its climbs are hidden; left out: shown. */
+      steepShown: z.literal(false).optional(),
+    })
     .passthrough(),
   z
-    .object({ ...featureBase, kind: z.literal("zone"), points: z.array(Pair).min(3), curve, style })
+    .object({
+      ...featureBase,
+      kind: z.literal("zone"),
+      points: z.array(Pair).min(3),
+      curve,
+      style,
+      /**
+       * What the ground of the zone is, whatever its style: a built-in biome's key ("taiga") or
+       * the id of one of the owner's biomes. One that is not there counts as none and is kept.
+       */
+      biome: z
+        .string()
+        .regex(/^[a-z0-9-]{2,24}$/, "Not a biome.")
+        .optional(),
+      /** The biome's pattern is not drawn over this zone; left out: it is. */
+      pattern: z.literal(false).optional(),
+    })
     .passthrough(),
   /**
    * Words written on the map, such as the name of a sea. `label` holds the words, so a label
@@ -248,6 +409,42 @@ export const isLined = (f: MapFeature): f is LinedFeature => f.kind === "path" |
 export const LABEL_LOOK = { size: 16, color: "#2a2420", rotate: 0, spacing: 0 } as const;
 export type MapFeature = z.infer<typeof MapFeature>;
 
+/**
+ * A named set of features of one layer that stand for one place, such as the islands of a realm.
+ * Which features are in it is written on each feature (`group`), so that two devices adding
+ * different pieces merge without a clash. Its name is written on the map once for all of them.
+ */
+export const MapGroup = z
+  .object({
+    id: ItemId,
+    /** The layer it is in; its members are features of this layer. */
+    layer: ItemId,
+    /** The name; shown instead of the entry's title. */
+    label: z.string().nullable(),
+    entry: z.string().nullable(),
+    /** The id of a more detailed map of this place. */
+    child: z.string().nullable().optional(),
+    span: ItemId.nullish(),
+    /** The name on the map: left out, written; false, not written. */
+    write: z.literal(false).optional(),
+    /** Where the name is written; left out, placed by itself. */
+    at: Pair.optional(),
+    // The name's look, as a label's; left out, the defaults. Colour left out: from the zones.
+    size: z.number().min(6).max(160).optional(),
+    color: z
+      .string()
+      .regex(/^#[0-9a-fA-F]{6}$/)
+      .optional(),
+    rotate: z.number().min(-360).max(360).optional(),
+    spacing: z.number().min(-0.2).max(2).optional(),
+    /** Its members cannot be picked on the map; left out: no. */
+    locked: z.boolean().optional(),
+  })
+  .passthrough();
+export type MapGroup = z.infer<typeof MapGroup>;
+/** The look a group's name has when nothing else is set: written larger, and spaced. */
+export const GROUP_LOOK = { size: 18, rotate: 0, spacing: 0.25 } as const;
+
 const unique = (items: { id: string }[]) => new Set(items.map((i) => i.id)).size === items.length;
 
 export const MapFile = z
@@ -265,11 +462,30 @@ export const MapFile = z
     markerSets: z.array(z.string()),
     layers: z.array(MapLayer).min(1),
     features: z.array(MapFeature),
+    /** Features drawn as one place; left out when there are none. */
+    groups: z.array(MapGroup).optional(),
+    /** The height picture the tools read; left out when the map has none. */
+    terrain: MapTerrain.nullish(),
+    /** What says how high the land is, to build a height map from; left out when there are none. */
+    terrainHints: z.array(MapTerrainHint).optional(),
+    /** Suggest biomes' world settings, once something it suggested was accepted. */
+    climate: MapClimate.nullish(),
   })
   .passthrough()
   .superRefine((map, ctx) => {
+    if (map.terrain?.extent) {
+      const problem = extentProblem(map.space, map.terrain.extent);
+      if (problem) ctx.addIssue({ code: "custom", message: `The terrain's place: ${problem}` });
+    }
     for (const key of ["images", "layers", "features"] as const) {
       if (!unique(map[key])) ctx.addIssue({ code: "custom", message: `Two ${key} share an id.` });
+    }
+    // A group's members and layer are put right on reading (`repairGroups`), not refused.
+    if (map.groups && !unique(map.groups)) {
+      ctx.addIssue({ code: "custom", message: "Two groups share an id." });
+    }
+    if (map.terrainHints && !unique(map.terrainHints)) {
+      ctx.addIssue({ code: "custom", message: "Two terrain hints share an id." });
     }
     const layers = new Set(map.layers.map((l) => l.id));
     const problem = layerProblem(map.layers);
@@ -302,6 +518,11 @@ const TOP = [
   "markerSets",
   "layers",
   "features",
+  "groups",
+  // Added later, so they go last: a file without them keeps its bytes.
+  "terrain",
+  "terrainHints",
+  "climate",
 ];
 const ITEM_KEYS: Record<string, string[]> = {
   images: ["id", "name", "path", "extent", "visible"],
@@ -326,10 +547,57 @@ const ITEM_KEYS: Record<string, string[]> = {
     "span",
     "shapes",
     "orbit",
+    "group",
+    "startOn",
+    "endOn",
+    "stretches",
+    "endAs",
+    "steepShown",
+    "biome",
+    "pattern",
+  ],
+  groups: [
+    "id",
+    "layer",
+    "label",
+    "entry",
+    "child",
+    "span",
+    "write",
+    "at",
+    "size",
+    "color",
+    "rotate",
+    "spacing",
+    "locked",
+  ],
+  terrainHints: [
+    "id",
+    "kind",
+    "at",
+    "points",
+    "h",
+    "h2",
+    "strength",
+    "flip",
+    "state",
+    "by",
+    "conf",
   ],
 };
 
 const SHAPE_KEYS = ["id", "from", "at", "points"];
+const TERRAIN_KEYS = [
+  "image",
+  "extent",
+  "invert",
+  "seaLevel",
+  "range",
+  "rangeUnit",
+  "smoothing",
+  "guessed",
+  "generated",
+];
 
 function inOrder<T extends object>(item: T, keys: string[]): T {
   const from = item as Record<string, unknown>;
@@ -346,12 +614,16 @@ function inOrder<T extends object>(item: T, keys: string[]): T {
  * feature then gives the same bytes, and compares as equal, however it was put together.
  */
 export function orderFeature(feature: MapFeature): MapFeature {
-  const { span, shapes, orbit, ...rest } = feature as MapFeature & Record<string, unknown>;
+  const { span, shapes, orbit, group, startOn, endOn, ...rest } = feature as MapFeature &
+    Record<string, unknown>;
   return inOrder(
     {
       ...rest,
       ...(span != null ? { span } : {}),
       ...(orbit != null ? { orbit } : {}),
+      ...(group != null ? { group } : {}),
+      ...(startOn != null ? { startOn } : {}),
+      ...(endOn != null ? { endOn } : {}),
       ...(Array.isArray(shapes) && shapes.length > 0
         ? { shapes: shapes.map((h) => inOrder(h as LaterShape, SHAPE_KEYS)) }
         : {}),
@@ -377,14 +649,39 @@ export function orderLayer<T extends MapLayer>(layer: T): T {
   );
 }
 
+/**
+ * A group with its keys in the order the file is written in. What is "none" or the default (no
+ * map of the place, no span, the name written, not locked) is written by leaving the key out.
+ */
+export function orderGroup<T extends MapGroup>(group: T): T {
+  const { child, span, write, locked, ...rest } = group;
+  return inOrder(
+    {
+      ...rest,
+      ...(child != null ? { child } : {}),
+      ...(span != null ? { span } : {}),
+      ...(write === false ? { write } : {}),
+      ...(locked === true ? { locked } : {}),
+    } as T,
+    ITEM_KEYS.groups!,
+  );
+}
+
 const ordered = (map: MapFile): MapFile => {
-  // "Lies under nothing" is written by leaving the key out.
-  const { under, ...rest } = map;
+  // "Lies under nothing", "no groups", "no terrain", "no hints" and "no climate" are written by
+  // leaving the key out.
+  const { under, groups, terrain, terrainHints, climate, ...rest } = map;
   return {
     ...rest,
     ...(under != null ? { under } : {}),
     layers: map.layers.map(orderLayer),
     features: map.features.map(orderFeature),
+    ...(groups && groups.length > 0 ? { groups: groups.map(orderGroup) } : {}),
+    ...(terrain != null ? { terrain: inOrder(terrain, TERRAIN_KEYS) } : {}),
+    ...(terrainHints && terrainHints.length > 0
+      ? { terrainHints: terrainHints.map((h) => inOrder(h, ITEM_KEYS.terrainHints!)) }
+      : {}),
+    ...(climate != null ? { climate: inOrder(climate, CLIMATE_KEYS) } : {}),
   } as MapFile;
 };
 
@@ -419,7 +716,7 @@ export function parseMap(text: string): ParsedMap {
       message: `${issue?.message ?? "It does not have the form of a map."}${where}`,
     };
   }
-  return { ok: true, map: parsed.data };
+  return { ok: true, map: repairHints(repairJoins(repairGroups(parsed.data))) };
 }
 
 // ---- Merging ---------------------------------------------------------------------------------
@@ -439,7 +736,9 @@ export function mergeMaps(base0: MapFile, mine0: MapFile, theirs0: MapFile): Map
   // The same feature must compare as equal whatever order its keys were set in.
   const [base, mine, theirs] = [ordered(base0), ordered(mine0), ordered(theirs0)];
   const clashes: string[] = [];
-  const pick = <K extends "title" | "space" | "markerSets" | "under">(key: K): MapFile[K] => {
+  const pick = <K extends "title" | "space" | "markerSets" | "under" | "terrain" | "climate">(
+    key: K,
+  ): MapFile[K] => {
     if (same(mine[key], theirs[key]) || same(base[key], theirs[key])) return mine[key];
     if (same(base[key], mine[key])) return theirs[key];
     clashes.push(key);
@@ -452,7 +751,20 @@ export function mergeMaps(base0: MapFile, mine0: MapFile, theirs0: MapFile): Map
   // made by each side putting a layer inside the other is broken.
   layers.items = repairLayers(keepReorder(base.layers, mine.layers, theirs.layers, layers.items));
   const features = mergeItemLists(base.features, mine.features, theirs.features);
-  clashes.push(...images.clashes, ...layers.clashes, ...features.clashes);
+  const groups = mergeItemLists(base.groups ?? [], mine.groups ?? [], theirs.groups ?? []);
+  // Hint by hint: two devices reviewing different hints both keep their work.
+  const hints = mergeItemLists(
+    base.terrainHints ?? [],
+    mine.terrainHints ?? [],
+    theirs.terrainHints ?? [],
+  );
+  clashes.push(
+    ...images.clashes,
+    ...layers.clashes,
+    ...features.clashes,
+    ...groups.clashes,
+    ...hints.clashes,
+  );
 
   // A feature must not be left in a layer that the other side removed.
   const layerIds = new Set(layers.items.map((l) => l.id));
@@ -467,11 +779,103 @@ export function mergeMaps(base0: MapFile, mine0: MapFile, theirs0: MapFile): Map
       : {}),
     space: pick("space"),
     markerSets: pick("markerSets"),
+    // The terrain is one item: set, changed or taken away on one side, it is that side's.
+    ...(mine.terrain != null || theirs.terrain != null || base.terrain != null
+      ? { terrain: pick("terrain") }
+      : {}),
+    // So is the climate.
+    ...(mine.climate != null || theirs.climate != null || base.climate != null
+      ? { climate: pick("climate") }
+      : {}),
     images: images.items,
     layers: kept,
     features: features.items.map((f) => (layerIds.has(f.layer) ? f : { ...f, layer: fallback })),
+    groups: groups.items.map((g) => (layerIds.has(g.layer) ? g : { ...g, layer: fallback })),
+    terrainHints: hints.items,
   };
-  return { map, clashes };
+  // A member whose group the other side removed, or moved to another layer, is no longer in it.
+  return { map: ordered(repairHints(repairJoins(repairGroups(map)))), clashes };
+}
+
+// ---- Terrain hints -----------------------------------------------------------------------------
+
+/**
+ * The map with its terrain hints made sound: a hint tied to a feature that is not there is
+ * dropped. The same map comes back when nothing was wrong.
+ */
+export function repairHints(map: MapFile): MapFile {
+  const hints = map.terrainHints;
+  if (!hints || hints.length === 0) return map;
+  const ids = new Set(map.features.map((f) => f.id));
+  const kept = hints.filter((h) => !h.by.startsWith("feature:") || ids.has(h.by.slice(8)));
+  return kept.length === hints.length ? map : withTerrainHints(map, kept);
+}
+
+/** The map with this list of terrain hints; the key is left out when there are none. */
+export function withTerrainHints(map: MapFile, hints: MapTerrainHint[]): MapFile {
+  const next: MapFile = { ...map };
+  delete next.terrainHints;
+  return hints.length > 0 ? { ...next, terrainHints: hints } : next;
+}
+
+// ---- Joins -------------------------------------------------------------------------------------
+
+/**
+ * The map with its joins made sound: a path's join to a feature that is not there, is not a path,
+ * or is the path itself, is dropped. The same map comes back when nothing was wrong.
+ */
+export function repairJoins(map: MapFile): MapFile {
+  const paths = new Set(map.features.filter((f) => f.kind === "path").map((f) => f.id));
+  let changed = false;
+  const features = map.features.map((f) => {
+    if (f.kind !== "path") return f;
+    const bad = (on: string | null | undefined) => on != null && (!paths.has(on) || on === f.id);
+    if (!bad(f.startOn) && !bad(f.endOn)) return f;
+    changed = true;
+    return orderFeature({
+      ...f,
+      startOn: bad(f.startOn) ? null : f.startOn,
+      endOn: bad(f.endOn) ? null : f.endOn,
+    });
+  });
+  return changed ? { ...map, features } : map;
+}
+
+// ---- Groups ------------------------------------------------------------------------------------
+
+/**
+ * The map with its groups made sound, without refusing anything: a group in a layer that is not
+ * there goes to the first layer; a feature's group that is not there, or is in another layer, is
+ * cleared; a group with no members left is dropped. The same map comes back when nothing was wrong.
+ */
+export function repairGroups(map: MapFile): MapFile {
+  const before = map.groups ?? [];
+  const layerIds = new Set(map.layers.map((l) => l.id));
+  const fallback = map.layers[0]?.id;
+  let groups = before.map((g) =>
+    layerIds.has(g.layer) || !fallback ? g : orderGroup({ ...g, layer: fallback }),
+  );
+  const layerOf = new Map(groups.map((g) => [g.id, g.layer]));
+  let changed = groups.some((g, i) => g !== before[i]);
+  const features = map.features.map((f) => {
+    if (f.group == null || layerOf.get(f.group) === f.layer) return f;
+    changed = true;
+    return orderFeature({ ...f, group: null });
+  });
+  const used = new Set(features.map((f) => f.group).filter((g) => g != null));
+  if (groups.some((g) => !used.has(g.id))) {
+    changed = true;
+    groups = groups.filter((g) => used.has(g.id));
+  }
+  if (!changed) return map;
+  return withGroups({ ...map, features }, groups);
+}
+
+/** The map with this list of groups; the key is left out when there are none. */
+export function withGroups(map: MapFile, groups: MapGroup[]): MapFile {
+  const next: MapFile = { ...map };
+  delete next.groups;
+  return groups.length > 0 ? { ...next, groups } : next;
 }
 
 /** The ids of `list` that are also in `among`, in the order of `list`. */

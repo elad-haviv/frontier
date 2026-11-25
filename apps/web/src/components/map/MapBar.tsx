@@ -10,6 +10,7 @@ import {
   Rotate3d,
   Telescope,
   Trash2,
+  Mountain,
 } from "lucide-react";
 import { shortcutText } from "../../keys.ts";
 import type { OtherMap } from "../../map/layersBeneath.ts";
@@ -54,6 +55,7 @@ export function MapBar({
   onEdit,
   onChange,
   onRemove,
+  onTerrain,
 }: {
   map: MapFile;
   editing: boolean;
@@ -83,6 +85,8 @@ export function MapBar({
   onEdit: () => void;
   onChange: (next: MapFile) => void;
   onRemove: () => void;
+  /** Opens the Terrain dialog; left out where the map cannot have terrain (a globe, for now). */
+  onTerrain?: (() => void) | undefined;
 }) {
   // Deleting the map goes straight to the server, so it waits for a connection.
   const offline = useNeedsConnection();
@@ -181,6 +185,7 @@ export function MapBar({
           <IconButton
             label="Explore"
             icon={Telescope}
+            shortcut="map.explore"
             showLabel
             className="quiet"
             aria-pressed={exploring}
@@ -230,6 +235,11 @@ export function MapBar({
           <MenuItem icon={Link2} onSelect={onCopyView}>
             Copy a link to this view
           </MenuItem>
+          {editing && onTerrain && (
+            <MenuItem icon={Mountain} onSelect={onTerrain}>
+              Terrain…
+            </MenuItem>
+          )}
           <MenuSeparator />
           <MenuItem
             icon={Trash2}

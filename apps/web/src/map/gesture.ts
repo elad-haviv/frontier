@@ -55,6 +55,12 @@ export type Target =
   | { kind: "insert"; feature: string; segment: number; at: Position }
   | { kind: "marker"; feature: string }
   | { kind: "zone"; feature: string }
+  /** Any piece of the selected group, which moves the whole group; `feature` is the group's id. */
+  | { kind: "group"; feature: string }
+  /** The selected group's name on the map, which places it by hand. */
+  | { kind: "groupName"; feature: string }
+  /** A stop of the route Find paths proposes, which a drag moves; `feature` is its number. */
+  | { kind: "stop"; feature: string; index: number }
   | { kind: "feature"; feature: string };
 export type DragTarget = Exclude<Target, { kind: "feature" }>;
 
@@ -221,10 +227,11 @@ export function step(state: GestureState, e: GestureEvent, ctx: GestureContext):
         const from = state.at;
         return {
           state: { name: "drag", id: e.id, kind: state.kind, at: e.at, target: state.target, from },
-          effects: [
-            { type: "beginStep" },
-            { type: "dragTo", target: state.target, at: e.at, from },
-          ],
+          // A stop of a proposed route is not on the map yet: moving it is no step of the map's.
+          effects:
+            state.target.kind === "stop"
+              ? [{ type: "dragTo", target: state.target, at: e.at, from }]
+              : [{ type: "beginStep" }, { type: "dragTo", target: state.target, at: e.at, from }],
         };
       }
       const pan: Effect = { type: "pan", dx: e.at.x - state.at.x, dy: e.at.y - state.at.y };
@@ -318,6 +325,8 @@ export interface PickInput {
   chosen: MapFeature | undefined;
   /** The shapes on the screen, as the overlay drew them. */
   shapes: Shape[];
+  /** The selected group, when a group is selected and can be changed: its id and members. */
+  group?: { id: string; members: ReadonlySet<string> } | null;
 }
 
 /** Stands in for a point that is not on the screen: never within reach. */
@@ -331,6 +340,16 @@ const FAR: ScreenPoint = [Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY];
 export function pick(input: PickInput, at: Point, kind: PointerKind = "mouse"): Target | null {
   const { view, chosen } = input;
   const p: ScreenPoint = [at.x, at.y];
+  const group = input.group;
+  if (input.editing && input.tool === "select" && group) {
+    // The name is dragged to place it; any piece drags the whole group.
+    if (insideDrawn(input.shapes, group.id, p)) return { kind: "groupName", feature: group.id };
+    const piece = shapeAt(
+      input.shapes.filter((s) => group.members.has(s.id)),
+      p,
+    );
+    if (piece !== null) return { kind: "group", feature: group.id };
+  }
   if (input.editing && input.tool === "select" && chosen) {
     if (chosen.kind === "marker") {
       const s = view.project(chosen.at);
@@ -388,7 +407,7 @@ export type MenuTarget =
 
 /** The context menu's target from what `pick` found: the selected marker or zone is a feature. */
 export function menuTargetOf(target: Target | null): MenuTarget {
-  if (!target) return { kind: "nothing" };
+  if (!target || target.kind === "stop") return { kind: "nothing" };
   if (target.kind === "corner" || target.kind === "insert") return target;
   return { kind: "feature", feature: target.feature };
 }

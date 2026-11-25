@@ -27,6 +27,8 @@ const REASON: Record<string, string> = {
   rename_blocked: "This rename cannot be carried out.",
   map_styles_changed_on_both:
     "The map styles were changed here and in the vault in the same places. Keep one of the two.",
+  biomes_changed_on_both:
+    "The biomes were changed here and in the vault in the same places. Keep one of the two.",
 };
 
 /** The reason for a library file's clash, named by the file. */

@@ -8,6 +8,7 @@ import { useDialogs } from "../Dialogs.tsx";
 import { Icon } from "../ui/Icon.tsx";
 import { Menu, MenuItem } from "../ui/Menu.tsx";
 import { useToast } from "../ui/Toast.tsx";
+import { BiomesSection } from "./BiomesSection.tsx";
 import { nameProblem, StyleForm } from "./StyleForm.tsx";
 import { StyleSample } from "./StyleSample.tsx";
 import "./StylesPanel.css";
@@ -160,6 +161,15 @@ export function StylesPanel({
       )}
       {list("path")}
       {list("zone")}
+      <BiomesSection
+        styles={styles}
+        onAddStyles={(add) =>
+          void change((f) => ({
+            ...f,
+            styles: [...f.styles, ...add.filter((s) => !f.styles.some((x) => x.id === s.id))],
+          }))
+        }
+      />
       {styles.length === 0 && (
         <p className="change-actions">
           <button

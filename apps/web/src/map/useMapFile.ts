@@ -2,7 +2,7 @@
  * A map's file on this device: loading it, the save queue, changes with undo and redo, and the
  * entries being linked to its features.
  */
-import { type MapFeature, type MapFile, mergeMaps } from "@frontier/schema";
+import { type MapFeature, type MapFile, type MapGroup, mergeMaps } from "@frontier/schema";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api, ApiFailure, fromServer } from "../api.ts";
@@ -12,6 +12,9 @@ import { useDialogs } from "../components/Dialogs.tsx";
 import { useRefresh } from "../components/Shell.tsx";
 import { useSaveState } from "../components/ui/SaveStatus.tsx";
 import { type Known, type LinkItem, type QueueKey, queue } from "../sync/queue.ts";
+import type { Space } from "@frontier/geo";
+import { keepJoins } from "./joins.ts";
+import { keepStretches } from "./stretches.ts";
 import type { OtherMap } from "./layersBeneath.ts";
 import type { TimeState } from "./useMapTime.ts";
 
@@ -139,7 +142,12 @@ export function useMapFile(
           if (e.link.length > 0) {
             // The server gave the linked features their entry ids; nothing else is taken from it.
             const saved = e.value as MapFile;
-            const ids = new Map(saved.features.map((f) => [f.id, f.entry]));
+            // A group's entry is linked as a feature's is.
+            const ids = new Map(
+              [...saved.features, ...(saved.groups ?? [])].map((f) => [f.id, f.entry]),
+            );
+            const linked = (f: { id: string }) =>
+              e.link.some((l) => l.id === f.id) && !linkTitles.current.has(f.id);
             const added: Names = {};
             for (const l of e.link) {
               const entry = ids.get(l.id);
@@ -153,10 +161,15 @@ export function useMapFile(
                 ? {
                     ...now,
                     features: now.features.map((f) =>
-                      e.link.some((l) => l.id === f.id) && !linkTitles.current.has(f.id)
-                        ? { ...f, entry: ids.get(f.id) ?? null }
-                        : f,
+                      linked(f) ? { ...f, entry: ids.get(f.id) ?? null } : f,
                     ),
+                    ...(now.groups
+                      ? {
+                          groups: now.groups.map((g) =>
+                            linked(g) ? { ...g, entry: ids.get(g.id) ?? null } : g,
+                          ),
+                        }
+                      : {}),
                   }
                 : now,
             );
@@ -196,9 +209,11 @@ export function useMapFile(
         if (yearRef.current !== null) stamps.current.set(before, yearRef.current);
         setHistory((h) => ({ past: [...h.past.slice(-99), before], future: [] }));
       }
-      mapRef.current = next;
-      setMap(next);
-      store(next, link);
+      // A path joined onto another stays on it, whatever was changed.
+      const kept = keepStretches(before, keepJoins(before, next, next.space as Space));
+      mapRef.current = kept;
+      setMap(kept);
+      store(kept, link);
     },
     [store],
   );
@@ -258,7 +273,7 @@ export function useMapFile(
   }
 
   /** Links a feature to an entry, or unlinks it with a null path. */
-  function link(feature: MapFeature, path: string | null, title: string) {
+  function link(feature: MapFeature | MapGroup, path: string | null, title: string) {
     setPendingNames((p) => {
       const next = { ...p };
       if (path) next[feature.id] = title;
@@ -272,7 +287,17 @@ export function useMapFile(
     change(
       {
         ...now,
-        features: now.features.map((f) => (f.id === feature.id ? { ...feature, entry: null } : f)),
+        features: now.features.map((f) =>
+          f.id === feature.id ? ({ ...feature, entry: null } as MapFeature) : f,
+        ),
+        // A group is linked the same way; the server finds it by its id among the groups.
+        ...(now.groups
+          ? {
+              groups: now.groups.map((g) =>
+                g.id === feature.id ? ({ ...feature, entry: null } as MapGroup) : g,
+              ),
+            }
+          : {}),
       },
       true,
       [{ id: feature.id, path: path || null }],

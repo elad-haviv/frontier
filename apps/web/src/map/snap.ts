@@ -2,8 +2,7 @@
  * Snapping: while a point of a path or zone is placed or dragged, it lands on a corner or an edge
  * of another path or zone close by on the screen, so that two borders can share their line. Land
  * is snapped to the same way, as a zone: a coastline traced once as a zone is snapped to after.
- * The map's pictures are not looked at: finding a coast in the pixels would mean analysing the
- * image, which is not done here.
+ * Outlines found in the map's picture snap to zones in findAreas/snapRings.ts.
  */
 import type { Point, Position, Shape, View } from "@frontier/geo";
 import { isLined, type MapFeature } from "@frontier/schema";
@@ -45,12 +44,32 @@ export function snapAt(
   at: Point,
   skip: string | null,
   reach = SNAP_REACH,
+  targets: SnapTargets = ALL_TARGETS,
 ): Snapped | null {
   // Only what is drawn now: not a hidden layer, not the far side of a globe.
   const onScreen = new Set(shapes.map((s) => s.id));
-  const lined = drawn.filter((f) => isLined(f) && f.id !== skip && onScreen.has(f.id));
+  const lined = drawn.filter(
+    (f) =>
+      isLined(f) &&
+      f.id !== skip &&
+      onScreen.has(f.id) &&
+      (f.kind === "path" ? targets.paths : targets.zones),
+  );
   let best: Snapped | null = null;
   let bestD = reach;
+  if (targets.markers) {
+    // A marker or a label is snapped to at its own place.
+    for (const f of drawn) {
+      if (isLined(f) || f.kind === "route" || f.id === skip || !onScreen.has(f.id)) continue;
+      const s = view.project(f.at);
+      if (!s) continue;
+      const d = Math.hypot(s[0] - at[0], s[1] - at[1]);
+      if (d <= bestD) {
+        best = { at: f.at, screen: s, kind: "corner", feature: f.id };
+        bestD = d;
+      }
+    }
+  }
   for (const f of lined) {
     if (!isLined(f)) continue;
     for (const p of f.points) {
@@ -84,6 +103,55 @@ export function snapAt(
   if (!edge) return null;
   const position = view.unproject(edge.at[0], edge.at[1]);
   return position ? { at: position, screen: edge.at, kind: "edge", feature: edge.feature } : null;
+}
+
+/** What a point snaps to. Each can be turned off by itself; S turns snapping off as a whole. */
+export interface SnapTargets {
+  paths: boolean;
+  zones: boolean;
+  /** Markers and labels. */
+  markers: boolean;
+}
+export const ALL_TARGETS: SnapTargets = { paths: true, zones: true, markers: true };
+export const SNAP_TARGETS_KEY = "frontier:map-snap-targets";
+export const TARGET_LABELS: Record<keyof SnapTargets, string> = {
+  paths: "Paths",
+  zones: "Zones",
+  markers: "Markers & labels",
+};
+
+/** The targets in words, for the magnet's tooltip: "Snaps to paths and zones". */
+export function targetsText(on: boolean, t: SnapTargets): string {
+  if (!on) return "Off";
+  const names = (Object.keys(TARGET_LABELS) as (keyof SnapTargets)[])
+    .filter((k) => t[k])
+    .map((k) => TARGET_LABELS[k].toLowerCase());
+  if (names.length === 0) return "Snaps to nothing";
+  const last = names.pop()!;
+  return `Snaps to ${names.length ? `${names.join(", ")} and ${last}` : last}`;
+}
+
+/** What snapping snaps to, remembered on this device; everything until one is turned off. */
+export function useSnapTargets(): [SnapTargets, (next: SnapTargets) => void] {
+  const [targets, setTargets] = useState<SnapTargets>(() => {
+    try {
+      const kept = JSON.parse(window.localStorage.getItem(SNAP_TARGETS_KEY) ?? "{}") as object;
+      return { ...ALL_TARGETS, ...kept };
+    } catch {
+      return ALL_TARGETS;
+    }
+  });
+  return [
+    targets,
+    (next: SnapTargets) => {
+      setTargets(next);
+      try {
+        window.localStorage.setItem(SNAP_TARGETS_KEY, JSON.stringify(next));
+      } catch {
+        // Not remembered, as in a private window; it still holds for this visit.
+      }
+    },
+  ];
 }
 
 export const SNAP_KEY = "frontier:map-snap";

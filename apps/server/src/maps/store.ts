@@ -13,6 +13,7 @@ import {
   mapIdOf,
   mapPath,
   parseMap,
+  repairGroups,
   serialiseMap,
 } from "@frontier/schema";
 import { basename, isImage, isNote, makeEntryId, readFields, stem } from "@frontier/vault";
@@ -284,19 +285,25 @@ export class MapStore {
 
     const unlinked: { feature: string; reason: string }[] = [];
     const features = [...input.features];
+    // A group is linked to its entry as a feature is; the two never share an id.
+    const groups = [...(input.groups ?? [])];
     for (const { feature, path: entryPath } of link) {
-      const at = features.findIndex((f) => f.id === feature);
+      const list: { id: string; entry: string | null }[] = features.some((f) => f.id === feature)
+        ? features
+        : groups;
+      const at = list.findIndex((f) => f.id === feature);
       if (at === -1) continue;
       try {
         if (!isNote(entryPath)) throw new ApiError("invalid", "Only an entry can be linked.");
-        features[at] = { ...features[at]!, entry: await this.d.changer.ensureId(entryPath) };
+        list[at] = { ...list[at]!, entry: await this.d.changer.ensureId(entryPath) };
       } catch (err) {
         if (!(err instanceof ApiError)) throw err;
-        features[at] = { ...features[at]!, entry: null };
+        list[at] = { ...list[at]!, entry: null };
         unlinked.push({ feature, reason: err.message });
       }
     }
-    const map = { ...input, features };
+    // Memberships that name no group, or one in another layer, are cleared, never refused.
+    const map = repairGroups({ ...input, features, ...(groups.length > 0 ? { groups } : {}) });
     const text = serialiseMap(map);
     // The device merged items both sides changed and kept its own: the side it replaces is kept
     // beside the draft, made first from the library's copy when there is none.

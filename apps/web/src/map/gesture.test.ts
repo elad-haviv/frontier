@@ -634,6 +634,30 @@ describe("pick", () => {
     expect(pick(input(over), { x: 500, y: 500 })).toBeNull();
   });
 
+  it("drags a selected group by any piece, and its name to place it (stage 19)", () => {
+    const name: Shape = {
+      id: "g1",
+      kind: "zone",
+      points: [
+        [40, 30],
+        [80, 30],
+        [80, 45],
+        [40, 45],
+      ],
+    };
+    const group = { id: "g1", members: new Set(["z1", "m1"]) };
+    const over = { chosen: undefined, group, shapes: [...shapes, name] };
+    expect(pick(input(over), { x: 60, y: 40 })).toEqual({ kind: "groupName", feature: "g1" });
+    expect(pick(input(over), { x: 80, y: 60 })).toEqual({ kind: "group", feature: "g1" });
+    expect(pick(input(over), { x: 205, y: 200 })).toEqual({ kind: "group", feature: "g1" });
+    expect(pick(input(over), { x: 600, y: 600 })).toBeNull();
+    // While viewing, a press finds the piece, to select.
+    expect(pick(input({ ...over, editing: false }), { x: 80, y: 60 })).toEqual({
+      kind: "feature",
+      feature: "z1",
+    });
+  });
+
   it("then the selected marker, within 24 px", () => {
     const at = { x: 220, y: 210 };
     expect(pick(input({ chosen: marker }), at)).toEqual({ kind: "marker", feature: "m1" });

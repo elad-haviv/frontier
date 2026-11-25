@@ -69,13 +69,19 @@ export function FeatureEditor({
   styles = [],
   onStyle,
   onEditStyles,
+  top,
+  biome,
 }: {
+  /** A zone's biome, under its style. */
+  biome?: ReactNode;
   /** The library's path and zone styles. */
   styles?: MapStyle[];
   /** Gives the path or zone a style, or none. */
   onStyle?: (style: string | null) => void;
   /** Opens the Styles tab. */
   onEditStyles?: () => void;
+  /** The first part of the form: for a member of a group, its crumb and Group field. */
+  top?: ReactNode;
   /** More parts of the editor, such as how a world revolves. */
   extra?: ReactNode;
   /** How many points the shape on screen has, when it is not the feature's first shape. */
@@ -130,6 +136,7 @@ export function FeatureEditor({
       <button type="button" className="plain card-close" aria-label="Close" onClick={onClose}>
         ✕
       </button>
+      {top}
       <div className="field">
         <span id={`${ids}-entry`}>Entry</span>
         <EntryCombobox
@@ -225,10 +232,27 @@ export function FeatureEditor({
           </span>
         </div>
       )}
+      {feature.kind === "zone" && biome}
       {length && (
         <p className="field feature-length">
           <span>Length</span> <span>{length}</span>
         </p>
+      )}
+      {feature.kind === "path" && feature.stretches?.some((x) => x.kind === "climb") && (
+        <label className="field feature-steep">
+          <input
+            type="checkbox"
+            checked={feature.steepShown !== false}
+            onChange={(e) => {
+              const next: Record<string, unknown> = { ...feature };
+              if (e.target.checked) delete next.steepShown;
+              else next.steepShown = false;
+              onChange(next as MapFeature);
+            }}
+          />
+          Show steepness
+          <small className="muted">Chevrons on its steep stretches, pointing uphill</small>
+        </label>
       )}
       {feature.kind === "marker" && usable.length > 0 && (
         <div className="field">
