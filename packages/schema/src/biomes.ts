@@ -431,9 +431,13 @@ export function biomeStyle(kind: BiomeKind): MapStyle {
 /** "Add the usual biomes": a zone style for each built-in kind. */
 export const STARTER_BIOME_STYLES: MapStyle[] = BIOME_KINDS.map(biomeStyle);
 
-/** The style a new zone of a biome is given: a kind's usual one; an owner's, its kind's. */
+/**
+ * The style a new zone of a biome is given: a kind's usual one. An owner's biome has one of its
+ * own, of its colour, under the biome's own id (styles and biomes are separate files).
+ */
 export function usualStyleOf(biome: Biome): MapStyle {
-  return biomeStyle(biome.like);
+  if (!biome.custom) return biomeStyle(biome.like);
+  return { ...biomeStyle(biome.like), id: biome.id, name: biome.name, color: biome.color };
 }
 
 /** How a multiplier reads: "0.6×", "no way". */

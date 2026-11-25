@@ -8,6 +8,7 @@ import type { Px } from "../findAreas/contour.ts";
 import type { BiomeSpeeds } from "@frontier/schema";
 import type { TerrainBiome } from "./biomes.ts";
 import type { Mode, Variant } from "./cost.ts";
+import type { SuggestRequest } from "./suggest.ts";
 import type { TraceKind } from "./trace.ts";
 
 /** A feature of the map that counts as terrain, by its style: its line as drawn, in pixels. */
@@ -195,5 +196,7 @@ export type PathsRequest =
   | ({ type: "paths.route" } & RouteRequest)
   | ({ type: "paths.trace" } & TraceRequest)
   | { type: "paths.relief" }
+  /** Suggest biomes: the climate of the terrain in use, as ghost zones. */
+  | ({ type: "paths.suggest" } & SuggestRequest)
   /** Leaving the tool: the heights, the flow and the cost surfaces are let go. */
   | { type: "paths.close" };

@@ -131,6 +131,35 @@ export function styleForBiome(
   return { style: usual.id, missing: there ? null : usual };
 }
 
+/**
+ * New zones made biome zones: each gets the biome, the style asked for (none: the biome's usual
+ * style, which `add` names when the library lacks it) and goes to the Biomes layer, made first
+ * when there is none. One change of the map.
+ */
+export function asBiomeZones(
+  map: MapFile,
+  ids: readonly string[],
+  biome: Biome,
+  styles: readonly MapStyle[],
+  asked: string | null,
+): { map: MapFile; add: MapStyle | null; layer: string } {
+  const { map: withLayer, layer } = biomesLayer(map);
+  const { style, missing } = styleForBiome(biome, styles, asked);
+  const wanted = new Set(ids);
+  return {
+    map: {
+      ...withLayer,
+      features: withLayer.features.map((f) =>
+        wanted.has(f.id) && f.kind === "zone"
+          ? ({ ...withBiome(f, biome.id), layer, style } as MapFeature)
+          : f,
+      ),
+    },
+    add: missing,
+    layer,
+  };
+}
+
 /** One row of the legend's biomes: the biome and the colour its zones are mostly drawn in. */
 export interface BiomeKey {
   biome: Biome;

@@ -17,6 +17,7 @@ import { newItemId } from "../../map/viewUrl.ts";
 import { FeatureTime, OrbitEditor } from "../MapTime.tsx";
 import { FeatureCard } from "./FeatureCard.tsx";
 import type { GeneratedFeature } from "../../api.ts";
+import { BiomeFields } from "./BiomeFields.tsx";
 import { FeatureEditor } from "./FeatureEditor.tsx";
 import { FeatureGenerate } from "./FeatureGenerate.tsx";
 
@@ -112,6 +113,9 @@ export function FeaturePanel({
       styles={styles}
       onStyle={(style) => setFeature(withStyle(feature, style))}
       onEditStyles={onEditStyles}
+      {...(feature.kind === "zone"
+        ? { biome: <BiomeFields feature={feature} onChange={setFeature} /> }
+        : {})}
       sets={file.sets}
       otherMaps={file.otherMaps}
       vertex={vertex}

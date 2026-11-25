@@ -2,6 +2,7 @@ import {
   type LucideIcon,
   ChevronDown,
   LayoutGrid,
+  Leaf,
   Magnet,
   MapPin,
   MousePointer2,
@@ -27,6 +28,7 @@ const TOOLS: { tool: Tool; label: string; icon: LucideIcon; shortcut: string }[]
   { tool: "zone", label: "Zone", icon: Pentagon, shortcut: "map.zone" },
   { tool: "find", label: "Find areas", icon: WandSparkles, shortcut: "map.find" },
   { tool: "paths", label: "Find paths", icon: Route, shortcut: "map.paths" },
+  { tool: "biomes", label: "Suggest biomes", icon: Leaf, shortcut: "map.biomes" },
   { tool: "label", label: "Label", icon: Type, shortcut: "map.label" },
   { tool: "measure", label: "Measure", icon: Ruler, shortcut: "map.measure" },
   { tool: "place", label: "Place with AI", icon: Sparkles, shortcut: "map.place" },
@@ -42,6 +44,7 @@ export function MapTools({
   canPlace,
   findReason,
   pathsReason,
+  biomesReason = null,
   onTool,
   snap,
   onSnap,
@@ -61,6 +64,8 @@ export function MapTools({
   findReason: string | null;
   /** Why Find paths cannot be used, or null when it can. */
   pathsReason: string | null;
+  /** Why Suggest biomes cannot be used, or null when it can. */
+  biomesReason?: string | null;
   onTool: (tool: Tool) => void;
   /** Points of paths and zones snap to others near them. */
   snap: boolean;
@@ -93,6 +98,9 @@ export function MapTools({
             : {})}
           {...(t.tool === "paths" && pathsReason
             ? { disabled: true, disabledReason: pathsReason }
+            : {})}
+          {...(t.tool === "biomes" && biomesReason
+            ? { disabled: true, disabledReason: biomesReason }
             : {})}
           onClick={() => onTool(t.tool)}
         />

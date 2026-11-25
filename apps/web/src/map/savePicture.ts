@@ -15,6 +15,8 @@ export async function savePicture(input: {
   scale: number;
   shownImages: Set<string>;
   overlay: Parameters<typeof mapPicture>[0]["overlay"];
+  /** The biomes' legend card, when it is shown on the map. */
+  legend?: Parameters<typeof mapPicture>[0]["legend"];
   /** The year shown, named in the file, when the map is seen in time. */
   year: number | null;
   /** Shows a line of news over the map, or clears it. */
@@ -33,6 +35,7 @@ export async function savePicture(input: {
         .filter((i) => input.shownImages.has(i.id))
         .map((i) => ({ id: i.id, extent: i.extent, url: mapImageUrl(i.path, 4096) })),
       overlay: input.overlay,
+      ...(input.legend ? { legend: input.legend } : {}),
     });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");

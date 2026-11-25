@@ -8,7 +8,7 @@
  */
 import { makeView, type Position, type Space, type ViewState } from "@frontier/geo";
 import type { Point } from "../../map/gesture.ts";
-import { layerTree, type MapFile, type MapImage, type MapStyle } from "@frontier/schema";
+import { biomeById, layerTree, type MapFile, type MapImage, type MapStyle } from "@frontier/schema";
 import { Minus, Plus, SlidersHorizontal } from "lucide-react";
 import { type RefObject, useEffect, useMemo, useRef, useState } from "react";
 import { mapImageUrl } from "../../api.ts";
@@ -21,7 +21,12 @@ import type { AreaRings, FoundAreas } from "../../map/findAreas/protocol.ts";
 import { type AreaOptions, DEFAULT_OPTIONS, INK } from "../../map/findAreas/segment.ts";
 import { DEFAULT_DETAIL, DETAIL_EPS } from "../../map/findAreas/simplify.ts";
 import { addToZone, holeCount, makeZones, zoneRings } from "../../map/findAreas/zones.ts";
+import { asBiomeZones, BIOMES_LAYER } from "../../map/biomes.ts";
 import { selectColour } from "../../map/overlay.ts";
+import { useBiomes } from "../../map/useBiomes.ts";
+import { useMapStyles } from "../../map/useMapStyles.ts";
+import { useZoneBiome } from "../../map/zoneBiome.ts";
+import { BiomePicker } from "./BiomePicker.tsx";
 import type { Resolved } from "../../map/time.ts";
 import type { FindPointer } from "../../map/usePointer.ts";
 import { usePhone } from "../Shell.tsx";
@@ -106,6 +111,11 @@ export default function FindAreas(p: {
   const [options, setOptions] = useState<AreaOptions>(remembered.options);
   const [detail, setDetail] = useState(remembered.detail);
   const [style, setStyle] = useState(remembered.style);
+  // New zones may be biome zones: they then go to the Biomes layer, in the biome's usual style.
+  const [zoneBiome, setZoneBiome] = useZoneBiome();
+  const { custom } = useBiomes();
+  const { change: changeStyles } = useMapStyles();
+  const biome = biomeById(zoneBiome, custom);
   const [mode, setMode] = useState<Mode>(remembered.mode);
   const [open, setOpen] = useState(false);
   useEffect(() => {
@@ -407,7 +417,11 @@ export default function FindAreas(p: {
     if (!now) return;
     const made = makeZones(now, p.activeLayer, style || null, current);
     if (!made) return;
-    p.change(made.map);
+    if (biome) {
+      const done = asBiomeZones(made.map, made.ids, biome, p.styles, style || null);
+      if (done.add) void changeStyles((f) => ({ ...f, styles: [...f.styles, done.add!] }));
+      p.change(done.map);
+    } else p.change(made.map);
     if (made.ids.length > 1 && p.onSelectSeveral) p.onSelectSeveral(made.ids);
     else p.onSelect(made.ids[0]!);
     reset();
@@ -662,7 +676,12 @@ export default function FindAreas(p: {
         </span>
       )}
       <span className="find-into">
-        <label>
+        {biome && (
+          <span className="find-into-biomes">
+            New zone in <strong>{BIOMES_LAYER}</strong>
+          </span>
+        )}
+        <label hidden={!!biome}>
           New zone in
           <select value={p.activeLayer} onChange={(e) => p.onActiveLayer(e.target.value)}>
             {layers.map((n) => (
@@ -673,8 +692,9 @@ export default function FindAreas(p: {
             ))}
           </select>
         </label>
+        <BiomePicker value={zoneBiome} onChange={setZoneBiome} custom={custom} compact />
         <select aria-label="Zone style" value={style} onChange={(e) => setStyle(e.target.value)}>
-          <option value="">The layer's look</option>
+          <option value="">{biome ? "The biome's usual look" : "The layer's look"}</option>
           {zoneStyles.map((s) => (
             <option key={s.id} value={s.id}>
               {s.name}

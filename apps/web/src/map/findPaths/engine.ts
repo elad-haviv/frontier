@@ -276,6 +276,33 @@ export class Engine {
     };
   }
 
+  /**
+   * The height field in use, as Suggest biomes reads it: whatever the terrain is (a height map,
+   * the guess from the picture, or a height map inferred from it), the same as every tool's.
+   */
+  terrainNow(): {
+    grid: Grid;
+    heights: Float32Array;
+    sea: Uint8Array;
+    acc: Float32Array;
+    kmPerCell: number | null;
+    top: number | null;
+    seaLevel: number | null;
+    guessed: boolean;
+  } {
+    const t = this.inUse();
+    return {
+      grid: this.grid,
+      heights: t.heights,
+      sea: t.sea,
+      acc: t.flow.acc,
+      kmPerCell: t.kmPerPx === null ? null : t.kmPerPx * this.grid.cell,
+      top: t.top,
+      seaLevel: t.seaLevel,
+      guessed: t.guessed,
+    };
+  }
+
   private inUse(): InUse {
     if (!this.t) throw new Error("The terrain has not been worked out yet.");
     return this.t;
