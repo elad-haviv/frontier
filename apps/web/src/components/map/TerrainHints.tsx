@@ -1042,7 +1042,7 @@ export default function TerrainHints(p: {
               rangeUnit: topH.unit,
             }
           : {}),
-        generated: { from: "hints", ...settings, hints: hintsHash(hints) },
+        generated: { from: "hints", ...settings, hints: hintsHash(forStore(hints)) },
       };
       p.onUse(terrain, forStore(hints), accepted.length);
     } catch {
