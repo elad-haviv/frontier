@@ -723,9 +723,6 @@ export default function FindPaths(p: {
                 counts,
               }
             : null;
-        const offer = zone
-          ? ` · ${phone ? "tap" : "click"} the ${counts === "water" ? "lake" : "marsh"} to make it too`
-          : "";
         const endAs = b?.end === "sinks" ? "sinks" : b?.end === "dries" ? "dries" : undefined;
         return done({
           paths: [
@@ -737,7 +734,7 @@ export default function FindPaths(p: {
             ? [{ key: "basin", points: zone.points, label: "", blue: false, ring: true }]
             : [],
           marks: [],
-          text: `River · ${length} · ${ends} · ${plural(points.length, "point")}${flat}${offer}`,
+          text: `River · ${length} · ${ends} · ${plural(points.length, "point")}${flat}`,
           short: `${length} · ${ends}`,
           note: `River of ${length}${r.fall !== null ? `, falling about ${Math.round(r.fall / 10) * 10} m` : ""}. ${terrainNote}`,
           ...(b ? { basin: { end: b.end, auto: b.auto, zone } } : {}),
@@ -1127,7 +1124,11 @@ export default function FindPaths(p: {
             road = { at: on.at, id: f.id };
           }
         }
-        if (road) return { at: road.at, road: road.id };
+        if (road) {
+          const f = roadById(road.id);
+          const name = f ? p.titleOf(f) : "";
+          return name ? { at: road.at, road: road.id, name } : { at: road.at, road: road.id };
+        }
       }
     }
     return { at: here };
@@ -1675,8 +1676,15 @@ export default function FindPaths(p: {
   if (session.status === "failed") status = "The map could not be looked at.";
   else if (!ready) status = picture ? "Looking at the picture…" : "Reading the height map…";
   else if (!terrainReady) status = "Working out the water…";
-  else if (shown && pend) status = shown.text;
-  else if (pend) status = "Working it out…";
+  else if (shown && pend) {
+    status = shown.text;
+    // The basin's lake or marsh: whether it is made too, and how to change that.
+    const zone = shown.basin?.zone;
+    if (zone) {
+      const what = zone.counts === "water" ? "lake" : "marsh";
+      status += takeZone ? ` · the ${what} is made too` : ` · ${click} the ${what} to make it too`;
+    }
+  } else if (pend) status = "Working it out…";
   else if (kind === "river") {
     status =
       from === "source"

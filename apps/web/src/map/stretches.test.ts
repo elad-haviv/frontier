@@ -1,6 +1,6 @@
 import type { MapFeature, MapFile } from "@frontier/schema";
 import { describe, expect, it } from "vitest";
-import { along, keepStretches, stretchSpan } from "./stretches.ts";
+import { along, keepStretches, stretchSpan, tailOf } from "./stretches.ts";
 
 const path = (points: [number, number][], stretches: unknown[]): MapFeature =>
   ({
@@ -97,5 +97,33 @@ describe("a path's stretches", () => {
     );
     expect(at.p).toEqual([10, 5]);
     expect([at.dx, at.dy]).toEqual([0, 1]);
+    // The end of a line, from a distance along it: where a river's end is drawn tapering.
+    expect(
+      tailOf(
+        [
+          [0, 0],
+          [10, 0],
+          [10, 10],
+        ],
+        5,
+      ),
+    ).toEqual([
+      [5, 0],
+      [10, 0],
+      [10, 10],
+    ]);
+    expect(
+      tailOf(
+        [
+          [0, 0],
+          [10, 0],
+          [10, 10],
+        ],
+        15,
+      ),
+    ).toEqual([
+      [10, 5],
+      [10, 10],
+    ]);
   });
 });

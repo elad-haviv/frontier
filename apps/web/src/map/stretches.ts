@@ -184,22 +184,40 @@ export function drawChevrons(
   }
 }
 
+/** The run of a screen line from a distance along it to its end. */
+export function tailOf(line: readonly Point[], from: number): Point[] {
+  const out: Point[] = [along(line, from).p];
+  let s = 0;
+  for (let i = 1; i < line.length; i++) {
+    s += Math.hypot(line[i]![0] - line[i - 1]![0], line[i]![1] - line[i - 1]![1]);
+    if (s > from) out.push(line[i]!);
+  }
+  return out;
+}
+
 /**
- * How a river ends inland, over its last stored segment: sinking underground, it tapers to
- * nothing; drying out, it thins and turns to dashes.
+ * How a river ends inland, over the end of its last stored segment (at most half of it, and
+ * at most 90 pixels on the screen): sinking underground, it tapers to nothing; drying out, it
+ * thins and turns to dashes.
  */
 export function drawEnd(
   ctx: CanvasRenderingContext2D,
-  line: readonly Point[],
+  whole: readonly Point[],
   how: "sinks" | "dries",
   look: StretchLook,
 ) {
-  if (line.length < 2) return;
+  if (whole.length < 2) return;
+  const length = lengthOf(whole);
+  const tail = Math.min(length / 2, 90);
+  if (tail < 2) return;
+  const line = tailOf(whole, length - tail);
   trace(ctx, line);
   ctx.setLineDash([]);
   ctx.strokeStyle = look.paper;
   ctx.lineWidth = look.casing + 0.5;
+  ctx.lineCap = "butt";
   ctx.stroke();
+  ctx.lineCap = "round";
   ctx.strokeStyle = look.colour;
   if (how === "dries") {
     trace(ctx, line);
@@ -211,16 +229,15 @@ export function drawEnd(
     ctx.lineCap = "round";
     return;
   }
-  const total = lengthOf(line) || 1;
-  let s = 0;
-  for (let i = 1; i < line.length; i++) {
-    const a = line[i - 1]!;
-    const b = line[i]!;
-    s += Math.hypot(b[0] - a[0], b[1] - a[1]);
+  // Tapering: in short pieces, each narrower than the one before.
+  const pieces = Math.max(4, Math.round(tail / 4));
+  for (let k = 0; k < pieces; k++) {
+    const a = along(line, (tail * k) / pieces).p;
+    const b = along(line, (tail * (k + 1)) / pieces).p;
     ctx.beginPath();
     ctx.moveTo(a[0], a[1]);
     ctx.lineTo(b[0], b[1]);
-    ctx.lineWidth = Math.max(0.4, look.width * (1 - s / total));
+    ctx.lineWidth = Math.max(0.4, look.width * (1 - k / pieces));
     ctx.stroke();
   }
 }
