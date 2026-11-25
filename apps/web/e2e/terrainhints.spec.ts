@@ -107,6 +107,19 @@ test("finds hints, rejects one, draws a ridge, builds, uses it, and Find paths r
   await dialog(page).getByRole("button", { name: "Redo" }).click();
   await expect(kinds.getByRole("button", { name: /^Ridges 2 of 2 used/ })).toBeVisible();
 
+  // Dragging a waiting suggestion (the highland round the mountain symbols) accepts it.
+  await expect(
+    kinds.getByRole("button", { name: /^Highlands 0 of 1 used · 1 waiting/ }),
+  ).toBeVisible();
+  await dialog(page).getByRole("button", { name: "Select", exact: true }).click();
+  const from = await onEditor(page, [470, 152]);
+  await page.mouse.move(from.x, from.y);
+  await page.mouse.down();
+  await page.mouse.move(from.x - 15, from.y + 10, { steps: 4 });
+  await page.mouse.move(from.x - 30, from.y + 20, { steps: 4 });
+  await page.mouse.up();
+  await expect(kinds.getByRole("button", { name: /^Highlands 1 of 1 used$/ })).toBeVisible();
+
   // Build: the rivers drain and the coast stays where it is painted.
   await dialog(page).getByRole("tab", { name: "Build" }).click();
   await dialog(page).getByRole("button", { name: "Build height map" }).click();
