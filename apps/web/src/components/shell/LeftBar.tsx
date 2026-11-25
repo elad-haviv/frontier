@@ -1,15 +1,18 @@
 import type { TreeResponse } from "@frontier/schema";
 import {
   CircleDot,
+  Dices,
   FilePlus2,
   FolderPlus,
   GitCompareArrows,
+  House,
   Images,
   Inbox,
   type LucideIcon,
   Map as MapIcon,
   MessagesSquare,
   PanelLeftClose,
+  Pin,
   Plus,
   ScrollText,
   Search,
@@ -17,6 +20,8 @@ import {
 } from "lucide-react";
 import { type ReactNode, useState } from "react";
 import { Link, NavLink } from "react-router-dom";
+import { entryUrl } from "../../api.ts";
+import { usePins } from "../../keepGoing/pins.ts";
 import { useConnection } from "../../sync/connection.ts";
 import type { Async } from "../../useAsync.ts";
 import { ConnectionMark } from "../ConnectionMark.tsx";
@@ -28,6 +33,7 @@ import { Problem } from "../ui/Problem.tsx";
 import { Tip } from "../ui/Tip.tsx";
 import { AppMenu } from "./AppMenu.tsx";
 import "./LeftBar.css";
+import "./KeepGoing.css";
 
 /** The main places, in a fixed order. */
 export const PLACES: { to: string; label: string; icon: LucideIcon }[] = [
@@ -121,6 +127,30 @@ export function WaitingLinks({ rail = false }: { rail?: boolean }) {
   );
 }
 
+/** "Working on": the pinned entries, above the folders. */
+function PinnedList() {
+  const pins = usePins();
+  return (
+    <section className="left-pins" aria-label="Working on">
+      <h2 className="left-heading">Working on</h2>
+      {pins.length === 0 ? (
+        <p className="left-pins-empty muted">Nothing pinned.</p>
+      ) : (
+        <ul>
+          {pins.map((p) => (
+            <li key={p.path}>
+              <NavLink to={entryUrl(p.path)} className="left-pin" title={p.path}>
+                <Icon icon={Pin} size="sm" />
+                <span>{p.title}</span>
+              </NavLink>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
 /** The folder list, or why it could not be read. */
 export function TreeSection({
   tree,
@@ -187,6 +217,7 @@ export function LeftBar({
   onSearch,
   onNewEntry,
   onNewEntryIn,
+  onRandom,
   onKeys,
   onLogout,
   onCollapse,
@@ -200,6 +231,8 @@ export function LeftBar({
   onNewEntry: () => void;
   /** Opens the new-entry dialog in a given folder, from the tree. */
   onNewEntryIn: (folder: string) => void;
+  /** Opens a random entry. */
+  onRandom: () => void;
   onKeys: () => void;
   onLogout: () => void;
   /** Folds the bar to its rail; absent in the drawer. */
@@ -210,6 +243,7 @@ export function LeftBar({
 }) {
   const places = (
     <nav className="left-places" aria-label="Places">
+      <SideLink to="/" end icon={House} label="Home" />
       {PLACES.map((p) => (
         <SideLink key={p.to} to={p.to} icon={p.icon} label={p.label} />
       ))}
@@ -249,10 +283,20 @@ export function LeftBar({
           <Icon icon={Plus} size="sm" />
           New entry
         </button>
+        <IconButton
+          label="Random entry"
+          icon={Dices}
+          showLabel
+          shortcut="app.random"
+          tipSide="right"
+          className="left-random"
+          onClick={onRandom}
+        />
       </div>
       {/* The places stay in reach at the top; the folders fill the rest and scroll on their own. */}
       {places}
       <div className="left-scroll">
+        <PinnedList />
         <TreeSection
           tree={tree}
           current={current}
