@@ -16,6 +16,7 @@ import { Account } from "./Account.tsx";
 import { Backups } from "./Backups.tsx";
 import { Device } from "./Device.tsx";
 import { FolderRun } from "./FolderRun.tsx";
+import { KeepGoing } from "./KeepGoing.tsx";
 import { Models } from "./Models.tsx";
 import { Providers } from "./Providers.tsx";
 import {
@@ -136,6 +137,8 @@ function Open({ section }: { section: Section }) {
       return <FolderRun />;
     case "library/types":
       return <Types />;
+    case "library/keep-going":
+      return <KeepGoing />;
     case "library/backups":
       return <Backups />;
     case "device":

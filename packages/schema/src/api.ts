@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { DraftKind, Id, Origin, ProposalOperation, VaultPath } from "./state.js";
 import { AiProviderView, ModelPrice } from "./ai.js";
+import { KeepGoingSettings } from "./keepGoingSettings.js";
 
 const Ok = z.object({ ok: z.literal(true) });
 
@@ -29,6 +30,8 @@ export const TreeNote = z.object({
   state: EntryState,
   /** Where the entry still is while a rename moves it here: its link opens this path. */
   moved: VaultPath.optional(),
+  /** Words of body text, for the stub mark; sent for published entries. */
+  words: z.number().int().min(0).optional(),
 });
 
 export interface TreeFolder {
@@ -279,6 +282,8 @@ export const ConflictReason = z.enum([
   "map_styles_changed_on_both",
   /** The biomes file changed here and in the library on the same biomes. */
   "biomes_changed_on_both",
+  /** The pins file changed here and in the library on the same pins. */
+  "pins_changed_on_both",
 ]);
 
 export const PlannedConflict = z.object({
@@ -442,7 +447,14 @@ export const SearchQuery = z.object({
 });
 export const SearchResponse = z.object({
   results: z.array(
-    z.object({ path: VaultPath, title: z.string(), snippet: z.string(), draftOnly: z.boolean() }),
+    z.object({
+      path: VaultPath,
+      title: z.string(),
+      snippet: z.string(),
+      draftOnly: z.boolean(),
+      /** Words of body text, for the stub mark; sent for published entries. */
+      words: z.number().int().min(0).optional(),
+    }),
   ),
 });
 export const SwitcherResponse = z.object({
@@ -453,6 +465,8 @@ export const SwitcherResponse = z.object({
       alias: z.string().optional(),
       /** True when another note shares this name, so a link to it must be written with its path. */
       shared: z.boolean().optional(),
+      /** Words of body text, for the stub mark; sent for published entries. */
+      words: z.number().int().min(0).optional(),
     }),
   ),
 });
@@ -602,6 +616,8 @@ export const SettingsResponse = z.object({
     /** How this session logged in. Switching the password off needs a passkey session. */
     method: z.enum(["password", "passkey"]),
   }),
+  /** Stage 25: which needs-love rules are on. */
+  keepGoing: KeepGoingSettings,
 });
 export type SettingsResponse = z.infer<typeof SettingsResponse>;
 

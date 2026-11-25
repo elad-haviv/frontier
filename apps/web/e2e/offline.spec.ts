@@ -26,7 +26,7 @@ import {
 /** Opens the app signed in and waits until its worker is active and the sign-in is noted. */
 async function install(page: Page): Promise<void> {
   await page.goto("/");
-  await expect(page.locator(".entry h1").first()).toBeVisible();
+  await expect(page.locator(".home h1")).toBeVisible();
   await page.evaluate(() => navigator.serviceWorker.ready);
   await expect
     .poll(() =>
@@ -116,6 +116,48 @@ test("the app opens signed in with no connection", async ({ page, context }) => 
   await expect(page.locator(".connection.is-offline")).toHaveCount(0, { timeout: 15_000 });
 });
 
+test("Home with no connection: pins and recents from the device, the queue needs a connection", async ({
+  page,
+  context,
+}) => {
+  const pin = await page.request.post("/api/pins", { data: { path: MIRA } });
+  expect(pin.ok(), await pin.text()).toBe(true);
+  try {
+    await install(page);
+    // The pins were read on this device while online.
+    await expect(page.locator(".home").getByRole("region", { name: "Working on" })).toContainText(
+      "Mira",
+    );
+    await page.evaluate((path) => {
+      localStorage.setItem(
+        "frontier.keepGoing.v1",
+        JSON.stringify({
+          recents: [{ path, title: "Mira", kind: "read", at: Date.now() - 600_000 }],
+          current: { path, title: "Mira" },
+          previous: null,
+          scroll: {},
+          cursor: {},
+        }),
+      );
+    }, MIRA);
+    await reloadOffline(page);
+    const home = page.locator(".home");
+    await expect(home.getByRole("region", { name: "Working on" })).toContainText("Mira");
+    await expect(home.getByRole("region", { name: "Recently" })).toContainText("Mira");
+    await expect(home.getByRole("region", { name: "What to work on next" })).toContainText(
+      "needs a connection",
+    );
+    // The dice asks the server: it stays, and does nothing until the connection is back.
+    await expect(home.getByRole("button", { name: "Roll" })).toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
+  } finally {
+    await context.setOffline(false);
+    await page.request.delete(`/api/pins?path=${encodeURIComponent(MIRA)}`);
+  }
+});
+
 test("Log out needs a connection", async ({ page, context }) => {
   await install(page);
   await reloadOffline(page);
@@ -129,7 +171,7 @@ test("Log out needs a connection", async ({ page, context }) => {
 
 test("the app can be installed: a manifest, icons and an Apple touch icon", async ({ page }) => {
   await page.goto("/");
-  await expect(page.locator(".entry h1").first()).toBeVisible();
+  await expect(page.locator(".home h1")).toBeVisible();
   const links = await page.evaluate(() => ({
     manifest: [...document.querySelectorAll('link[rel="manifest"]')].map((l) =>
       l.getAttribute("href"),
@@ -641,4 +683,49 @@ test("logout removes the worker and its caches, and the login page registers non
   // The login page itself brings no worker back.
   await page.waitForTimeout(1000);
   expect(await page.evaluate(() => navigator.serviceWorker.getRegistrations())).toHaveLength(0);
+});
+
+test("the server's answer for an entry read from the device keeps the reader's place", async ({
+  page,
+  context,
+}) => {
+  const id = "kgreread0001";
+  const path = "03 Things/Keep Going Reread.md";
+  const sections = Array.from(
+    { length: 8 },
+    (_, i) =>
+      `## Section ${i + 1}\n\n` +
+      Array.from({ length: 6 }, () => "Salt and brine and the grey tide. ".repeat(20)).join("\n\n"),
+  ).join("\n\n");
+  const made = await page.request.put("/api/drafts", {
+    data: { id, path, kind: "create", text: `# Keep Going Reread\n\n${sections}\n`, revision: 0 },
+  });
+  expect(made.ok(), await made.text()).toBe(true);
+  const top = () => page.evaluate(() => document.querySelector<HTMLElement>(".content")!.scrollTop);
+  try {
+    await install(page);
+    await read(page, path);
+    await page.evaluate(() => document.querySelector(".content")!.scrollTo({ top: 1800 }));
+    await page.waitForTimeout(700);
+
+    await reloadOffline(page);
+    await expect(page.locator(".resume-line")).toBeVisible();
+    expect(Math.abs((await top()) - 1800)).toBeLessThan(3);
+
+    // The connection returns and the server answers: the page is read again, in place.
+    await context.setOffline(false);
+    await expect(page.locator(".connection.is-offline")).toHaveCount(0, { timeout: 15_000 });
+    await expect(page.locator(".offline-copy")).toHaveCount(0);
+    await page.waitForTimeout(700);
+    // Not at the top again (the offline line going takes a few pixels of height with it).
+    expect(await top()).toBeGreaterThan(1500);
+    const stored = await page.evaluate(
+      (p) => JSON.parse(localStorage.getItem("frontier.keepGoing.v1")!).scroll[p].y as number,
+      path,
+    );
+    expect(stored).toBeGreaterThan(1500);
+  } finally {
+    await context.setOffline(false);
+    await page.request.delete(`/api/drafts/${id}`);
+  }
 });

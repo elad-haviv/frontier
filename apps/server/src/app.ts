@@ -23,6 +23,11 @@ import { Conversations } from "./ai/conversations.js";
 import { EntryDrafter } from "./ai/draftEntry.js";
 import { LoreAsker } from "./ai/lore.js";
 import { entryDraftRoutes } from "./routes/entryDraft.js";
+import { KeepGoingAi } from "./ai/keepGoing.js";
+import { KeepGoingHistory } from "./keepGoing/history.js";
+import { PinStore } from "./keepGoing/pins.js";
+import { KeepGoing } from "./keepGoing/service.js";
+import { keepGoingRoutes } from "./routes/keepGoing.js";
 import { loreRoutes } from "./routes/lore.js";
 import { writingRoutes } from "./routes/writing.js";
 import { commentRoutes } from "./routes/comments.js";
@@ -112,6 +117,11 @@ export interface Services {
   folders: FolderStore;
   lore: LoreAsker;
   drafter: EntryDrafter;
+  /** Stage 25: the work queue, "From here", Link it, random entry and the steps after Publish. */
+  keepGoing: KeepGoing;
+  keepGoingHistory: KeepGoingHistory;
+  keepGoingAi: KeepGoingAi;
+  pins: PinStore;
   writing: WritingHelper;
   review: EditReviewer;
   characters: CharacterTalk;
@@ -340,8 +350,31 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
     settings,
     mayRead: (path) => quarantine.aiMayRead(path) === null,
   });
+  const keepGoingHistory = new KeepGoingHistory({ git, index });
+  const keepGoing = new KeepGoing({
+    index,
+    drafts,
+    comments,
+    settings,
+    folders,
+    changer,
+    status,
+    history: keepGoingHistory,
+  });
+  const keepGoingAi = new KeepGoingAi({
+    index,
+    provider: ai,
+    drafts,
+    drafter,
+    files,
+    stateDir,
+    textOf: (path) => changer.text(path),
+    mayRead: (path) => quarantine.aiMayRead(path) === null,
+  });
+  const pins = new PinStore({ index, drafts, files: libraryFiles });
   await quarantine.load();
-  const reportAi = async () => status.ai(await ai.ready("extraction"), ai.lastError);
+  const reportAi = async () =>
+    status.ai(await ai.ready("extraction"), ai.lastError, await ai.ready("conversation"));
 
   const services: Services = {
     config,
@@ -372,6 +405,10 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
     folders,
     lore,
     drafter,
+    keepGoing,
+    keepGoingHistory,
+    keepGoingAi,
+    pins,
     writing,
     review,
     characters,
@@ -591,6 +628,7 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
   folderRoutes(app, services);
   loreRoutes(app, services);
   entryDraftRoutes(app, services);
+  keepGoingRoutes(app, services);
   writingRoutes(app, services);
   commentRoutes(app, services);
   characterRoutes(app, services);

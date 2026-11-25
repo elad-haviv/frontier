@@ -24,6 +24,8 @@ export const GraphNode = z.object({
   unpublished: z.literal(true).optional(),
   /** The entry's `id` field, when it has one, so a map feature's linked entry can be named. */
   id: z.string().optional(),
+  /** Words of body text; fewer than `STUB_WORDS` makes the entry a stub. */
+  words: z.number().int().min(0).optional(),
   /**
    * A version mark: the first 12 characters of the library file's blob, then "." and the draft's
    * revision when there is a draft ("3f9a0c21be77.4"). The device compares it with what it holds.

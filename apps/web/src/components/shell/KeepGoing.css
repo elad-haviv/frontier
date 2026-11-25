@@ -1,0 +1,65 @@
+/* Stage 25, keep going, in the side bars: the dice, "Working on", and the stub counts. */
+
+/* The dice reads like New entry, but in the accent, as the one control that is only for wandering. */
+.left-random.ui-icon-button {
+  justify-content: flex-start;
+  width: 100%;
+  border: 1px solid var(--accent);
+  background: var(--paper);
+  color: var(--accent);
+}
+.left-random.ui-icon-button:hover {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.left-bar.is-rail .left-random.ui-icon-button {
+  width: auto;
+  border-color: transparent;
+  background: none;
+}
+
+/* The pinned entries, above the library's folders. */
+.left-pins ul {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.left-pins-empty {
+  margin: 0 var(--space-2);
+  font-size: 0.85rem;
+}
+.left-pin {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 2rem;
+  padding: 0.2rem var(--space-2);
+  border-radius: 4px;
+  color: var(--ink-soft);
+  text-decoration: none;
+}
+.left-pin .ui-icon {
+  flex: none;
+  color: var(--accent);
+}
+.left-pin > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.left-pin:hover {
+  background: var(--accent-soft);
+  color: var(--ink);
+}
+.left-pin.active {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+/* A top folder's stub count. */
+.tree-mark.is-stubs {
+  font-variant-numeric: tabular-nums;
+}

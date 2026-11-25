@@ -229,8 +229,9 @@ test("a folder reordered by dragging keeps its place after a reload", async ({
   // Dropped on the top edge of 01 Places, 03 Things goes before it.
   const target = row(page, "01 Places").locator(".tree-row");
   await row(page, "03 Things").dragTo(target, { targetPosition: { x: 60, y: 2 } });
-  await expect.poll(top).toEqual(expect.arrayContaining(["03 Things"]));
-  expect((await top()).slice(0, 3)).toEqual(["03 Things", "01 Places", "02 People"]);
+  await expect
+    .poll(async () => (await top()).slice(0, 3))
+    .toEqual(["03 Things", "01 Places", "02 People"]);
   await sent(page, `"path":"03 Things","order"`);
   await page.reload();
   await expect(row(page, "03 Things")).toBeVisible();

@@ -34,6 +34,7 @@ export const SECTIONS: Section[] = [
   { path: "ai/spending", title: "Spending", group: "AI", offline: false },
   { path: "ai/folder-run", title: "Propose for a folder", group: "AI", offline: false },
   { path: "library/types", title: "Types and dates", group: "Library", offline: false },
+  { path: "library/keep-going", title: "Keep going", group: "Library", offline: false },
   { path: "library/backups", title: "Backups and export", group: "Library", offline: false },
   { path: "device", title: "Offline copy", group: "This device", offline: true },
   { path: "account", title: "Signing in", group: "Account", offline: false },

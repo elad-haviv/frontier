@@ -64,6 +64,7 @@ export const DEVICE_SCHEMA = {
   markerSets: 1,
   schema: 1,
   libraryFile: 1,
+  pins: 1,
 } as const;
 export type Shape = keyof typeof DEVICE_SCHEMA;
 
@@ -90,6 +91,7 @@ export function routeOf(url: string): Route | null {
   if (path === "/api/chronicles") return { kind: "stored", shape: "chronicles" };
   if (path === "/api/marker-sets") return { kind: "stored", shape: "markerSets" };
   if (path === "/api/schema") return { kind: "stored", shape: "schema" };
+  if (path === "/api/pins") return { kind: "stored", shape: "pins" };
   if (/^\/api\/library-files\/[a-z-]+$/.test(path)) return { kind: "stored", shape: "libraryFile" };
   const map = /^\/api\/maps\/([a-z0-9]{8})$/.exec(path);
   if (map) return { kind: "stored", shape: "map", item: `map:${map[1]}` };

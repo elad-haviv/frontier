@@ -156,3 +156,96 @@ describe("asking with the work shown", () => {
     expect(lost.message).toContain("connection was lost");
   });
 });
+
+describe("keep going", () => {
+  /** What the last request was: its method, address and body. */
+  const last = (asked: { url: string; init: RequestInit }[]) => {
+    const { url, init } = asked.at(-1)!;
+    return {
+      method: init.method ?? "GET",
+      url,
+      body: typeof init.body === "string" ? (JSON.parse(init.body) as unknown) : undefined,
+    };
+  };
+
+  it("reads the queue, the week, From here and the question", async () => {
+    const asked = answer(() => json(200, {}));
+    await api.keepGoingQueue();
+    expect(last(asked)).toMatchObject({ method: "GET", url: "/api/keep-going/queue" });
+    await api.keepGoingWeek(120);
+    expect(last(asked).url).toBe("/api/keep-going/week?tz=120");
+    await api.keepGoingWeek();
+    expect(last(asked).url).toMatch(/^\/api\/keep-going\/week\?tz=-?\d+$/);
+    await api.fromHere("01 Places/Old Quay.md");
+    expect(last(asked).url).toBe("/api/keep-going/from-here?path=01%20Places%2FOld%20Quay.md");
+    await api.todaysQuestion(-60);
+    expect(last(asked).url).toBe("/api/keep-going/question?tz=-60");
+    await api.todaysQuestion();
+    expect(last(asked).url).toMatch(/^\/api\/keep-going\/question\?tz=-?\d+$/);
+  });
+
+  it("asks for a random entry of a kind", async () => {
+    const asked = answer(() => json(200, { entry: null }));
+    await api.randomEntry();
+    expect(last(asked).url).toBe("/api/keep-going/random");
+    await api.randomEntry({ kind: "folder", folder: "01 Places", not: "A B.md" });
+    expect(last(asked).url).toBe("/api/keep-going/random?kind=folder&folder=01+Places&not=A+B.md");
+  });
+
+  it("links a mention, takes it back, and asks for the next steps", async () => {
+    const asked = answer(() => json(200, { ok: true }));
+    await api.linkIt("A.md", "B.md");
+    expect(last(asked)).toEqual({
+      method: "POST",
+      url: "/api/keep-going/link-it",
+      body: { path: "A.md", target: "B.md" },
+    });
+    const undo = { token: "abcdefghijklmnopqrstuvwx" };
+    await api.undoLinkIt(undo);
+    expect(last(asked)).toEqual({
+      method: "POST",
+      url: "/api/keep-going/link-it/undo",
+      body: undo,
+    });
+    await api.afterPublish(["A.md"]);
+    expect(last(asked).body).toEqual({ paths: ["A.md"] });
+  });
+
+  it("asks the AI, with a way to stop it", async () => {
+    const asked = answer(() => json(200, {}));
+    const stop = new AbortController();
+    await api.whatsMissing("A.md", stop.signal);
+    expect(last(asked)).toEqual({
+      method: "POST",
+      url: "/api/keep-going/whats-missing",
+      body: { path: "A.md" },
+    });
+    expect(asked.at(-1)!.init.signal).toBe(stop.signal);
+    await api.makeQuestion(true);
+    expect(last(asked).body).toMatchObject({ another: true });
+    await api.makeQuestion();
+    expect(last(asked).body).toMatchObject({ another: false });
+  });
+
+  it("pins, unpins and orders entries, and changes the rules", async () => {
+    const asked = answer(() => json(200, { pins: [] }));
+    await api.pins();
+    expect(last(asked)).toMatchObject({ method: "GET", url: "/api/pins" });
+    await api.pin("A.md");
+    expect(last(asked)).toEqual({ method: "POST", url: "/api/pins", body: { path: "A.md" } });
+    await api.unpin("A B.md");
+    expect(last(asked)).toMatchObject({ method: "DELETE", url: "/api/pins?path=A%20B.md" });
+    await api.reorderPins(["B.md", "A.md"]);
+    expect(last(asked)).toEqual({
+      method: "PUT",
+      url: "/api/pins",
+      body: { paths: ["B.md", "A.md"] },
+    });
+    await api.setKeepGoingSettings({ needsLove: { stub: false } });
+    expect(last(asked)).toEqual({
+      method: "PUT",
+      url: "/api/settings/keep-going",
+      body: { needsLove: { stub: false } },
+    });
+  });
+});

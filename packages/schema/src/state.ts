@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { AiProviderEntry, ModelPrice, qualifyModelId } from "./ai.js";
+import { KeepGoingSettings } from "./keepGoingSettings.js";
 
 /** Ids are 12 characters from lower-case letters and digits. Draft ids are made by the browser. */
 export const Id = z.string().regex(/^[a-z0-9]{12}$/);
@@ -183,6 +184,8 @@ export const Settings = z.object({
   passkeys: z.array(Passkey).default([]),
   /** When true the password no longer logs in; only a passkey does. */
   passwordOff: z.boolean().default(false),
+  /** Stage 25: which needs-love rules are on. */
+  keepGoing: KeepGoingSettings.default({}),
 });
 export type Settings = z.infer<typeof Settings>;
 /** What a caller may pass when writing: the password, and any other part it wants to set. */

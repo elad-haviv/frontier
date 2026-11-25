@@ -1,10 +1,11 @@
-import { FilePlus2, House, PanelLeftOpen, Search } from "lucide-react";
+import { Dices, FilePlus2, House, PanelLeftOpen, Search } from "lucide-react";
 import { ConnectionMark } from "../ConnectionMark.tsx";
 import { Unsent } from "../Unsent.tsx";
 import { IconButton } from "../ui/IconButton.tsx";
 import { AppMenu } from "./AppMenu.tsx";
 import { PLACES, SideLink, WaitingLinks } from "./LeftBar.tsx";
 import "./LeftBar.css";
+import "./KeepGoing.css";
 
 /**
  * The side bar folded to a narrow rail of icons. It keeps everything but the folder list: search,
@@ -14,12 +15,14 @@ export function Rail({
   onExpand,
   onSearch,
   onNewEntry,
+  onRandom,
   onKeys,
   onLogout,
 }: {
   onExpand: () => void;
   onSearch: () => void;
   onNewEntry: () => void;
+  onRandom: () => void;
   onKeys: () => void;
   onLogout: () => void;
 }) {
@@ -45,9 +48,17 @@ export function Rail({
           onClick={onSearch}
         />
         <IconButton label="New entry" icon={FilePlus2} tipSide="right" onClick={onNewEntry} />
+        <IconButton
+          label="Random entry"
+          icon={Dices}
+          shortcut="app.random"
+          tipSide="right"
+          className="left-random"
+          onClick={onRandom}
+        />
       </div>
       <nav className="left-scroll left-places" aria-label="Places">
-        <SideLink to="/" end icon={House} label="Start" rail />
+        <SideLink to="/" end icon={House} label="Home" rail />
         {PLACES.map((p) => (
           <SideLink key={p.to} to={p.to} icon={p.icon} label={p.label} rail />
         ))}

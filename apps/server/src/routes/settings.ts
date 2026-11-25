@@ -92,7 +92,7 @@ export function settingsRoutes(app: FastifyInstance, s: Services): void {
 
   /** Tells the status area whether AI is usable, after anything that can change it. */
   async function report(): Promise<void> {
-    s.status.ai(await s.ai.ready("extraction"), s.ai.lastError);
+    s.status.ai(await s.ai.ready("extraction"), s.ai.lastError, await s.ai.ready("conversation"));
   }
 
   function secretsKey(): Buffer {
@@ -193,6 +193,7 @@ export function settingsRoutes(app: FastifyInstance, s: Services): void {
         passwordOff: settings.passwordOff,
         method: request.session.get("method") ?? "password",
       },
+      keepGoing: settings.keepGoing,
     };
   });
 

@@ -229,7 +229,11 @@ describe("calling the provider", () => {
     const log = (await t.get("/api/ai/log")).json();
     expect(log.totalUsd).toBe(0.002);
     expect(log.calls).toHaveLength(1);
-    expect((await t.get("/api/status")).json().ai).toEqual({ on: true, lastError: null });
+    expect((await t.get("/api/status")).json().ai).toEqual({
+      on: true,
+      conversation: false,
+      lastError: null,
+    });
   });
 
   it("stops at the monthly cap with a message that says how much and where to change it", async () => {

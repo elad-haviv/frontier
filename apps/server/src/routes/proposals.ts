@@ -14,7 +14,7 @@ export function proposalRoutes(app: FastifyInstance, s: Services): void {
     try {
       return { made: await s.fields.propose(path) };
     } finally {
-      s.status.ai(await s.ai.ready("extraction"), s.ai.lastError);
+      s.status.ai(await s.ai.ready("extraction"), s.ai.lastError, await s.ai.ready("conversation"));
     }
   });
 

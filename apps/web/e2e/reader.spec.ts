@@ -20,7 +20,10 @@ test("shows an entry with its links, and follows one", async ({ page }) => {
   await page.locator(".prose a.link-resolved").first().click();
   await expect(page.locator(".entry h1").first()).toHaveText("Harbor");
   await expect(page.locator(".chip").first()).toHaveText("The Port");
-  await expect(page.locator(".backlinks")).toContainText("Old Quay");
+  // Who links here is one line, which opens to the full list.
+  await expect(page.locator(".backlinks")).toContainText(/^Linked from \d+ entries: .+ more/);
+  await page.locator(".backlinks summary").click();
+  await expect(page.locator(".backlinks").getByRole("link", { name: "Old Quay" })).toBeVisible();
   await noSidewaysScroll(page);
 });
 

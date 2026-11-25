@@ -54,6 +54,7 @@ import { useAsync } from "../useAsync.ts";
 import { useDialogs } from "./Dialogs.tsx";
 import { FolderSettings, type FolderStyle } from "./FolderSettings.tsx";
 import { MoveTo } from "./MoveTo.tsx";
+import { stubsIn } from "../keepGoing/homeModel.ts";
 import { useRevealDone, useRevealRequest } from "./shell/panels.tsx";
 import { folderIcon } from "./tree/folderIcons.ts";
 import {
@@ -749,6 +750,21 @@ function RowBody({
         empty
       </span>,
     );
+  // A top folder says how many of its entries are stubs (stage 25), from the words the tree has.
+  if (folder && node.level === 0 && !folder.moved) {
+    const { entries, stubs } = stubsIn(folder);
+    if (stubs > 0) {
+      marks.push(
+        <span
+          key="stubs"
+          className="tree-mark is-stubs"
+          title={`${stubs} of ${entries} ${entries === 1 ? "entry is a stub" : "entries are stubs"}`}
+        >
+          {stubs} {stubs === 1 ? "stub" : "stubs"}
+        </span>,
+      );
+    }
+  }
   const draft = row.note?.state === "unpublished" || !!row.note?.moved || !!folder?.unpublished;
 
   const name = node.isEditing ? (

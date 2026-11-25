@@ -1,0 +1,17 @@
+/* The quick switcher's tags: a stub in the results, read or edited among the recent entries. */
+.switcher-tag {
+  margin-left: 0.5rem;
+  padding: 0 0.3rem;
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  font-size: 0.66rem;
+  font-weight: 400;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  vertical-align: middle;
+}
+.is-current .switcher-tag {
+  border-color: var(--accent);
+  color: var(--accent);
+}

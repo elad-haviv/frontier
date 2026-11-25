@@ -85,7 +85,7 @@ const ordinaryWords = new WeakMap<
   VaultIndex,
   { commit: string | null; words: Map<string, boolean> }
 >();
-function isOrdinaryWord(index: VaultIndex, name: string): boolean {
+export function isOrdinaryWord(index: VaultIndex, name: string): boolean {
   const lower = name.toLowerCase();
   if (!/^\p{L}+$/u.test(lower) || lower === name) return false;
   let cache = ordinaryWords.get(index);

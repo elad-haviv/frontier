@@ -1,0 +1,398 @@
+/* Home (stage 25): two columns of cards on a wide screen, one on a phone. */
+.home {
+  max-width: 72rem;
+  margin: 0 auto;
+  padding: 1.5rem 1.5rem 6rem;
+  padding-left: max(1.5rem, env(safe-area-inset-left));
+  padding-right: max(1.5rem, env(safe-area-inset-right));
+  display: grid;
+  gap: 1.4rem;
+  align-content: start;
+}
+.home-hello h1 {
+  margin: 0;
+  font-family: var(--serif);
+  font-weight: 600;
+  font-size: 1.5rem;
+  line-height: 1.2;
+}
+.home-hello p {
+  margin: 0.15rem 0 0;
+  color: var(--ink-soft);
+}
+
+.home-cols {
+  display: grid;
+  grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr);
+  gap: 1.6rem;
+  align-items: start;
+}
+.home-stack {
+  display: grid;
+  gap: 1.4rem;
+  min-width: 0;
+}
+
+.home-card {
+  display: grid;
+  gap: 0.65rem;
+  min-width: 0;
+  padding: 0.9rem 1rem;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  background: var(--paper-raised);
+}
+.home-card > h2 {
+  display: flex;
+  align-items: center;
+  margin: 0;
+  font-family: var(--serif);
+  font-weight: 600;
+  font-size: 1.02rem;
+}
+.home-card-note {
+  margin-left: auto;
+  font: 400 0.78rem var(--sans);
+  color: var(--ink-faint);
+}
+.home-card.is-pickup {
+  border-color: var(--accent);
+  background: linear-gradient(0deg, var(--accent-soft), var(--accent-soft)), var(--paper-raised);
+}
+.home-pick-title {
+  margin: 0;
+  font-family: var(--serif);
+  font-size: 1.15rem;
+  font-weight: 600;
+}
+.home-meta {
+  margin: 0;
+  font-size: 0.82rem;
+  color: var(--ink-soft);
+}
+.home-empty,
+.home-offline {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--ink-soft);
+}
+.home-ai {
+  margin-left: 0.5rem;
+  padding: 0 0.35rem;
+  border: 1px dashed var(--rule);
+  border-radius: 3px;
+  font: 400 0.68rem var(--sans);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+.home-question {
+  font-family: var(--serif);
+  font-size: 1.08rem;
+  quotes: "\201C" "\201D";
+}
+
+/* Buttons and links: real buttons and links, drawn alike. */
+.home-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.6rem;
+}
+.home-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-height: 2.125rem;
+  padding: 0.35rem 0.8rem;
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  background: var(--paper);
+  color: var(--ink);
+  font-size: 0.88rem;
+  text-decoration: none;
+}
+.home-btn:hover {
+  border-color: var(--accent);
+}
+.home-btn.is-primary {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--paper-raised);
+}
+.home-btn.is-small {
+  min-height: 1.75rem;
+  padding: 0.15rem 0.55rem;
+  font-size: 0.8rem;
+}
+.home-btn.is-dice {
+  border-color: var(--accent);
+  background: var(--paper-raised);
+  color: var(--accent);
+  font-weight: 600;
+}
+.home-btn.is-dice:hover {
+  background: var(--accent-soft);
+}
+.home-btn[aria-disabled="true"],
+.home-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+.home-link {
+  justify-self: start;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font-size: 0.85rem;
+  text-decoration: underline;
+  text-underline-offset: 0.18em;
+}
+
+.home-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+.home-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  min-height: 1.9rem;
+  padding: 0.15rem 0.7rem;
+  border: 1px solid var(--rule);
+  border-radius: 99px;
+  background: var(--paper);
+  color: var(--ink-soft);
+  font-size: 0.82rem;
+}
+.home-chip[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
+}
+.home-chip:hover {
+  border-color: var(--accent);
+}
+
+/* The work queue. */
+.home-queue,
+.home-mini {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.home-queue > li {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.55rem 0;
+  border-top: 1px solid var(--rule);
+}
+.home-queue > li:first-child {
+  border-top: 0;
+}
+.home-who {
+  flex: 1;
+  min-width: 0;
+}
+.home-name {
+  font-family: var(--serif);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.home-name.is-missing {
+  color: var(--warn);
+}
+.home-why {
+  font-size: 0.8rem;
+  color: var(--ink-soft);
+}
+.home-tag {
+  margin-left: 0.4rem;
+  padding: 0 0.3rem;
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  font: 400 0.68rem var(--sans);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  vertical-align: middle;
+}
+
+/* The small lists. */
+.home-mini > li {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  padding: 0.3rem 0;
+  border-top: 1px solid var(--rule);
+}
+.home-mini > li:first-child {
+  border-top: 0;
+}
+.home-mini > li > .home-tag {
+  margin-left: 0;
+}
+.home-lnk {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  text-align: left;
+  text-decoration: none;
+  border-bottom: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  overflow-wrap: anywhere;
+}
+.home-lnk:hover {
+  border-bottom-color: var(--accent);
+}
+.home-when {
+  margin-left: auto;
+  font-size: 0.76rem;
+  color: var(--ink-faint);
+  white-space: nowrap;
+}
+.home-icon-btn {
+  margin-left: auto;
+  display: grid;
+  place-items: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: var(--accent);
+  align-self: center;
+}
+.home-icon-btn:hover {
+  background: var(--accent-soft);
+}
+.home-kbd {
+  padding: 0 0.3rem;
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  background: var(--paper-raised);
+  font: 0.7rem var(--mono);
+  color: var(--ink-faint);
+}
+
+/* A folder's bar: how much of it is more than a stub. */
+.home-bar {
+  display: inline-block;
+  width: 34px;
+  height: 5px;
+  margin-left: 0.4rem;
+  border-radius: 3px;
+  background: var(--rule);
+  overflow: hidden;
+  vertical-align: middle;
+}
+.home-bar > i {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+}
+
+/* The week: one bar a day, today in the accent. */
+.home-week {
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+  height: 46px;
+}
+.home-week > i {
+  flex: 1;
+  border-radius: 2px 2px 0 0;
+  background: var(--rule);
+}
+.home-week > i.is-today {
+  background: var(--accent);
+}
+.home-days {
+  display: flex;
+  gap: 4px;
+  font-size: 0.65rem;
+  color: var(--ink-faint);
+}
+.home-days > span {
+  flex: 1;
+  text-align: center;
+}
+
+/* The round dice on a phone: the page's one big action, above the bottom of the screen. */
+.home-fab {
+  display: none;
+}
+
+@media (max-width: 47.99rem) {
+  .home {
+    padding: 1rem 1rem 6rem;
+    padding-left: max(1rem, env(safe-area-inset-left));
+    padding-right: max(1rem, env(safe-area-inset-right));
+  }
+  .home-cols {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 1.4rem;
+  }
+  .home-chips.is-scroll,
+  .home-card .home-chips {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    padding-bottom: 2px;
+  }
+  .home-chip {
+    flex: none;
+    white-space: nowrap;
+  }
+  .home-fab {
+    position: fixed;
+    right: max(1rem, env(safe-area-inset-right));
+    bottom: max(1rem, env(safe-area-inset-bottom));
+    z-index: var(--layer-sticky);
+    display: grid;
+    place-items: center;
+    width: 3.25rem;
+    height: 3.25rem;
+    padding: 0;
+    border: 1px solid var(--accent);
+    border-radius: 50%;
+    background: var(--paper-raised);
+    color: var(--accent);
+    box-shadow: var(--shadow);
+  }
+  .home-fab[aria-disabled="true"],
+  .home-fab:disabled {
+    opacity: 0.6;
+  }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .home-btn,
+  .home-chip {
+    transition:
+      border-color 0.12s,
+      background 0.12s;
+  }
+}
+
+/* Phone: a comfortable tap size. */
+@media (max-width: 47.99rem) {
+  .home-btn.is-small,
+  .home-chip,
+  .home-link {
+    min-height: 2.5rem;
+  }
+  .home-chip {
+    display: inline-flex;
+    align-items: center;
+  }
+  .home-icon-btn {
+    min-width: 2.5rem;
+    min-height: 2.5rem;
+  }
+}

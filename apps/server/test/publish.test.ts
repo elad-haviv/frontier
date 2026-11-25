@@ -90,7 +90,7 @@ describe("drafts", () => {
     // The published index is untouched: other notes still see the published links.
     expect(t.services.index.note(MIRA)!.text).not.toContain("Saltmother");
     const tree = JSON.stringify(TreeResponse.parse((await t.get("/api/tree")).json()));
-    expect(tree).toContain(`{"path":"${MIRA}","title":"Mira","state":"unpublished"}`);
+    expect(tree).toContain(`{"path":"${MIRA}","title":"Mira","state":"unpublished","words":41}`);
   });
 
   it("creates and deletes notes as drafts", async () => {

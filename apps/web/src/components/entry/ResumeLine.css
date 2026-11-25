@@ -1,0 +1,41 @@
+/* "Back where you stopped": one thin line under the bar at the top of the page. */
+.resume-line {
+  position: sticky;
+  /* Under the entry's bar on a desktop. */
+  top: 2.75rem;
+  z-index: calc(var(--layer-sticky) - 1);
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin: 0;
+  padding: var(--space-1) var(--space-4);
+  border-bottom: 1px solid var(--rule);
+  background: var(--accent-soft);
+  color: var(--ink);
+  font-size: 0.85rem;
+}
+/* A phone's own top line is outside the page area. */
+.is-phone .resume-line {
+  top: 0;
+}
+.resume-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+button.resume-top {
+  flex: none;
+  color: var(--accent);
+  font: inherit;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+/* Phone: a comfortable tap size. */
+@media (max-width: 47.99rem) {
+  button.resume-top {
+    min-height: 2.5rem;
+  }
+}

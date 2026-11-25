@@ -77,6 +77,8 @@ const SCHEMA_FILE = ".frontier/schema.yaml";
 export class VaultIndex {
   /** The commit the index was built from. */
   commit: string | null = null;
+  /** Rises on every build, so what is worked out from the index knows when to be worked out again. */
+  generation = 0;
   files: string[] = [];
   private notes = new Map<string, IndexedNote>();
   private backlinkMap = new Map<string, Backlink[]>();
@@ -145,6 +147,7 @@ export class VaultIndex {
     this.backlinkMap = backlinks;
     this.ids = ids;
     this.commit = commit;
+    this.generation++;
   }
 
   /**

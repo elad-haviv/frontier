@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -308,5 +309,97 @@ describe("errors and the lock", () => {
   it("uses no token when the source returns none", async () => {
     const g = gateway({ token: async () => null });
     expect((await g.fetch()).changed).toEqual([]);
+  });
+});
+
+describe("the log of changes (stage 25)", () => {
+  it("lists the commits that changed Markdown files, with what each did to each file", async () => {
+    repo.pushFromOutside(
+      { "03 Things/Added.md": "# Added\n\nOne two three.\n", "image.png": "x" },
+      "Add one",
+    );
+    repo.pushFromOutside(
+      { "03 Things/Added.md": "# Added\n\nOne two three four five.\n", "02 People/Mira.md": null },
+      "Change one, delete another",
+    );
+    await git.fetch();
+    const log = await git.changeLog({ limit: 2 });
+    expect(log).toHaveLength(2);
+    expect(log[0]!.changes).toEqual(
+      expect.arrayContaining([
+        { status: "M", path: "03 Things/Added.md" },
+        { status: "D", path: "02 People/Mira.md" },
+      ]),
+    );
+    expect(log[1]!.changes).toEqual([{ status: "A", path: "03 Things/Added.md" }]);
+    expect(Date.parse(log[0]!.at)).toBeGreaterThan(0);
+    expect(log[0]!.commit).toMatch(/^[0-9a-f]{40}$/);
+    expect((await git.changeLog()).length).toBeGreaterThan(2);
+  });
+
+  it("follows a rename in the log and in the words, instead of a delete and a new file", async () => {
+    const body = Array.from({ length: 30 }, (_, i) => `w${i}`).join("\n");
+    repo.pushFromOutside({ "03 Things/Old.md": `# Old\n\n${body}\n` }, "Make");
+    repo.pushFromOutside(
+      { "03 Things/Old.md": null, "04 Moved/New.md": `# Old\n\n${body}\n` },
+      "Move",
+    );
+    repo.pushFromOutside(
+      { "04 Moved/New.md": null, "04 Moved/Newer.md": `# Old\n\n${body}\nplus two\n` },
+      "Move and edit",
+    );
+    await git.fetch();
+    const log = await git.changeLog({ limit: 3 });
+    expect(log[1]!.changes).toEqual([
+      { status: "R", path: "04 Moved/New.md", from: "03 Things/Old.md", edited: false },
+    ]);
+    expect(log[0]!.changes).toEqual([
+      { status: "R", path: "04 Moved/Newer.md", from: "04 Moved/New.md", edited: true },
+    ]);
+    const words = await git.wordChanges("2000-01-01");
+    expect(words[1]!.files).toEqual([
+      { path: "04 Moved/New.md", created: false, deleted: false, added: 0, removed: 0 },
+    ]);
+    expect(words[0]!.files).toEqual([
+      { path: "04 Moved/Newer.md", created: false, deleted: false, added: 2, removed: 0 },
+    ]);
+  });
+
+  it("counts the words a commit added and took, and whether it made or deleted the file", async () => {
+    repo.pushFromOutside({ "03 Things/Words.md": "# Words\n\none two three\nfour\n" }, "Make");
+    repo.pushFromOutside(
+      { "03 Things/Words.md": "# Words\n\none two\nfour five six seven\n" },
+      "Edit",
+    );
+    repo.pushFromOutside(
+      { "03 Things/Words.md": null, "03 Things/With Space.md": "# Spaced\n" },
+      "Go",
+    );
+    await git.fetch();
+    const changes = await git.wordChanges("2000-01-01");
+    const byMessage = changes.filter((c) =>
+      c.files.some((f) => f.path.includes("Words") || f.path.includes("Space")),
+    );
+    // Newest first: the delete and the new file, the edit, the make.
+    expect(byMessage[0]!.files).toEqual(
+      expect.arrayContaining([
+        { path: "03 Things/Words.md", created: false, deleted: true, added: 0, removed: 7 },
+        { path: "03 Things/With Space.md", created: true, deleted: false, added: 1, removed: 0 },
+      ]),
+    );
+    expect(byMessage[1]!.files).toEqual([
+      { path: "03 Things/Words.md", created: false, deleted: false, added: 6, removed: 4 },
+    ]);
+    expect(byMessage[2]!.files).toEqual([
+      { path: "03 Things/Words.md", created: true, deleted: false, added: 5, removed: 0 },
+    ]);
+  });
+
+  it("gives nothing for a library with no commit", async () => {
+    const dir = join(repo.root, "empty-work");
+    execFileSync("git", ["init", "--initial-branch=main", dir], { stdio: "ignore" });
+    const g = new GitGateway({ dir, remoteUrl: repo.remote, author: AUTHOR, committer: BOT });
+    expect(await g.changeLog()).toEqual([]);
+    expect(await g.wordChanges("2000-01-01")).toEqual([]);
   });
 });

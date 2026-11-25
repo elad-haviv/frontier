@@ -90,6 +90,35 @@ button.sticky-crumb:hover {
   text-transform: uppercase;
 }
 
+/* "‹ Last: Name": back to the entry viewed before this one. It gives way to the places first. */
+.sticky-last {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 14rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.1rem;
+  padding: 0.15rem 0.6rem 0.15rem 0.3rem;
+  border: 1px solid var(--rule);
+  border-radius: 99px;
+  color: var(--ink-soft);
+  font-size: 0.82rem;
+  text-decoration: none;
+}
+.sticky-last:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.sticky-last .ui-icon {
+  flex: none;
+}
+.sticky-last-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* A phone has its slim top line instead. */
 .is-phone .sticky-holder {
   display: none;

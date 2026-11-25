@@ -53,6 +53,8 @@ export class LibraryFileStore {
   /** The last value read for each file, by what it was read from. */
   private cache = new Map<string, { stamp: string; value: LoadedLibraryFile }>();
   private refreshed = 0;
+  /** Saves and changes run one after another, so two at once cannot undo each other. */
+  private tail: Promise<unknown> = Promise.resolve();
   /** Library files that cannot be read, with the reason. */
   problems: { path: string; message: string }[] = [];
 
@@ -172,11 +174,18 @@ export class LibraryFileStore {
     return parsed.data;
   }
 
+  /** Runs `work` after every earlier save and change has finished. */
+  private serialised<T>(work: () => Promise<T>): Promise<T> {
+    const run = this.tail.then(work);
+    this.tail = run.catch(() => undefined);
+    return run;
+  }
+
   /**
    * Saves the whole file as a draft. A save that started from older text than the draft, or from
    * a library copy that has moved on since, is refused as stale: the device merges and sends again.
    */
-  async save(
+  save(
     name: string,
     input: unknown,
     revision: number,
@@ -185,6 +194,19 @@ export class LibraryFileStore {
       op?: string | undefined;
       clashes?: string[] | undefined;
     } = {},
+  ): Promise<{ file: unknown; revision: number; kept?: string }> {
+    return this.serialised(() => this.saveNow(name, input, revision, sent));
+  }
+
+  private async saveNow(
+    name: string,
+    input: unknown,
+    revision: number,
+    sent: {
+      baseBlob?: string | undefined;
+      op?: string | undefined;
+      clashes?: string[] | undefined;
+    },
   ): Promise<{ file: unknown; revision: number; kept?: string }> {
     const kind = this.kind(name);
     const draft = this.draftOf(kind);
@@ -253,15 +275,21 @@ export class LibraryFileStore {
 
   /**
    * Changes the file from the server side, as when a folder is deleted. The change is given the
-   * file as the author sees it; returning the same value writes nothing.
+   * file as the author sees it, read when its turn comes, after every earlier change; returning
+   * the same value writes nothing, and returning undefined writes nothing even for a file that
+   * exists nowhere yet.
    */
-  async change(name: string, change: (file: unknown) => unknown): Promise<void> {
-    const kind = this.kind(name);
-    const loaded = this.current(name);
-    const next = this.checked(kind, change(loaded.file));
-    const text = serialiseLibraryFile(kind, next);
-    if (loaded.from !== "memory" && text === serialiseLibraryFile(kind, loaded.file)) return;
-    await this.write(kind, this.draftOf(kind), text, loaded.blob);
+  change(name: string, change: (file: unknown) => unknown): Promise<void> {
+    return this.serialised(async () => {
+      const kind = this.kind(name);
+      const loaded = this.current(name);
+      const made = change(loaded.file);
+      if (made === undefined) return;
+      const next = this.checked(kind, made);
+      const text = serialiseLibraryFile(kind, next);
+      if (loaded.from !== "memory" && text === serialiseLibraryFile(kind, loaded.file)) return;
+      await this.write(kind, this.draftOf(kind), text, loaded.blob);
+    });
   }
 
   /** Settles a file that changed here and in the library in ways that cannot be merged. */
