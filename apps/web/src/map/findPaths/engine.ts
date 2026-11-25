@@ -71,6 +71,7 @@ import {
   routeThrough,
   sameWay,
   STEPS,
+  stepCells,
   steepestStep,
   type Terrain,
   TUNNEL,
@@ -868,7 +869,8 @@ export class Engine {
     const byBiome = kmByBiome(
       biomes,
       cells,
-      (a, b) => this.grid.stepLength(a, b) * t.terrain.kmPerCell,
+      // A step may be a knight's move, or a tunnel's jump through the high ground.
+      (a, b) => stepCells(this.grid.w, a, b) * t.terrain.kmPerCell,
     );
     return {
       withoutBiomes: legs ? legs.reduce((h, l) => h + l.hours, 0) * drawnShare : null,
