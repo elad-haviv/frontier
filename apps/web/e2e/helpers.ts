@@ -305,12 +305,21 @@ export async function newMapInForm(
 ): Promise<void> {
   await page.goto("/maps");
   await page.locator(".new-map input[type=text]").fill(title);
-  await page.locator(".new-map select").selectOption(space);
+  await chooseKind(page, space === "sphere" ? "Globe" : "Flat map");
+  if (space === "schematic") await page.getByRole("checkbox", { name: /^Schematic/ }).check();
   await chooseMapImage(page, page.getByRole("button", { name: "Choose an image…" }), image);
   await page.getByRole("button", { name: "Make the map" }).click();
   await expect(page.locator(".map-top")).toBeVisible();
   // The view is written into the address once the map has been laid out.
   await expect(page).toHaveURL(/v=/);
+}
+
+/** Picks a kind of map on the New map form by the name of its card. */
+export async function chooseKind(
+  page: Page,
+  name: "Globe" | "Flat map" | "Star map" | "System model",
+) {
+  await page.getByRole("radio", { name: new RegExp(`^${name}`) }).check();
 }
 
 /**
