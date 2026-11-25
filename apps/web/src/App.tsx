@@ -2,6 +2,7 @@ import { lazy, Suspense, useCallback, useEffect, useState } from "react";
 import { Navigate, Route, Routes, useLocation, useParams } from "react-router-dom";
 import { api } from "./api.ts";
 import { useAsync } from "./useAsync.ts";
+import { noteOpened } from "./map/mapsList.ts";
 import { LoginDialog } from "./components/LoginDialog.tsx";
 import { Shell } from "./components/Shell.tsx";
 import { startDeviceCopy } from "./offline/copy.ts";
@@ -73,6 +74,8 @@ const VersionsPage = lazy(() =>
 /** A different map gets a fresh page: its own view, drawing surface and history. */
 function OneMap() {
   const { id = "" } = useParams();
+  // Kept on this device, for the list of maps' "Recently opened".
+  useEffect(() => noteOpened(id), [id]);
   // A star map and a system model have their own pages; any other map, and one that could not be read, the map page.
   const kind = useAsync(() => api.map(id).then((m) => m.map.space.kind), `map-kind:${id}`);
   if (kind.state === "loading") return <Progress />;

@@ -56,9 +56,7 @@ test("CUJ 18: steps down to a layer under a globe at the same place, and back up
   // The list says so.
   await page.goto("/maps");
   const row = (title: string) =>
-    page
-      .locator(".map-list li")
-      .filter({ has: page.getByRole("link", { name: title, exact: true }) });
+    page.locator(".map-card").filter({ has: page.getByRole("link", { name: title, exact: true }) });
   await expect(row(`Labyrinth ${info.project.name}`)).toContainText(
     `lies under Surface ${info.project.name}`,
   );

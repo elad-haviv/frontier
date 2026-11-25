@@ -1,6 +1,6 @@
 import { type CDPSession, expect, type Page, test } from "@playwright/test";
 import { midpointOn, outline, type Position } from "@frontier/geo";
-import { newMapInForm, pickEntry } from "./helpers.ts";
+import { newMapInForm, openNewMap, pickEntry } from "./helpers.ts";
 
 /**
  * The editing tools of stage 13c: the line to the cursor while drawing, curves, the "+" handles,
@@ -451,6 +451,7 @@ test.describe("with a mouse", () => {
 
   test("the image dialog for a map chooses one image, and the form uses it", async ({ page }) => {
     await page.goto("/maps");
+    await openNewMap(page);
     await page.getByRole("button", { name: "Choose an image…" }).click();
     const dialog = page.getByRole("dialog", { name: "Choose an image" });
     await dialog.getByRole("button", { name: "Choose map one.png", exact: true }).first().click();

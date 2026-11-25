@@ -1,5 +1,5 @@
 import { expect, type Page, test } from "@playwright/test";
-import { chooseKind, rightPanel } from "./helpers.ts";
+import { chooseKind, openNewMap, rightPanel } from "./helpers.ts";
 
 /** Throws the open map away, so the next test finds nothing unpublished. */
 async function discardMap(page: Page) {
@@ -10,6 +10,7 @@ async function discardMap(page: Page) {
 
 async function newStarMap(page: Page, title: string) {
   await page.goto("/maps");
+  await openNewMap(page);
   await page.locator(".new-map input[type=text]").fill(title);
   await chooseKind(page, "Star map");
   // A star map needs no image: Make the map is enough.
@@ -89,6 +90,7 @@ test("the New map form hides the image for a star map and shows it again for a f
   page,
 }) => {
   await page.goto("/maps");
+  await openNewMap(page);
   const image = page.locator(".new-map .field:has(.chosen-image)");
   await expect(image).toBeVisible();
   await chooseKind(page, "Star map");
@@ -159,6 +161,7 @@ test("a star slides level when dragged, rises with its handle, and undo takes ea
 
 test("a star map made in parsecs keeps that unit", async ({ page }, info) => {
   await page.goto("/maps");
+  await openNewMap(page);
   await page.locator(".new-map input[type=text]").fill(`Parsecs ${info.project.name}`);
   await chooseKind(page, "Star map");
   await page.getByLabel("Distances are in").selectOption("pc");

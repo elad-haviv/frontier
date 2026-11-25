@@ -22,6 +22,7 @@ import type {
   InboxResponse,
   LibraryFileName,
   MapFile,
+  MapPreview,
   ChronicleFile,
   SchemaResponse,
   PublishPlan,
@@ -365,6 +366,9 @@ export const api = {
         under: string | null;
         features: number;
         state: string;
+        /** When it last changed, and a small preview for its card (stage 23). */
+        edited?: string | null;
+        preview?: MapPreview | null;
         /** The version mark the device compares (stage 15b). */
         v?: string;
       }[];

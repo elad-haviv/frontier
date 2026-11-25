@@ -1,5 +1,5 @@
 import { expect, type Page, test } from "@playwright/test";
-import { chooseKind, rightPanel } from "./helpers.ts";
+import { chooseKind, openNewMap, rightPanel } from "./helpers.ts";
 
 /** Throws the open map away, so the next test finds nothing unpublished. */
 async function discardMap(page: Page) {
@@ -10,6 +10,7 @@ async function discardMap(page: Page) {
 
 async function newSystem(page: Page, title: string) {
   await page.goto("/maps");
+  await openNewMap(page);
   await page.locator(".new-map input[type=text]").fill(title);
   await chooseKind(page, "System model");
   await page.getByRole("button", { name: "Make the map" }).click();
@@ -111,6 +112,7 @@ test("time plays and the year moves; a world's card says when it is next closest
 
 test("the New map form offers a system model without an image", async ({ page }) => {
   await page.goto("/maps");
+  await openNewMap(page);
   await chooseKind(page, "System model");
   await expect(page.locator(".new-map .field:has(.chosen-image)")).toBeHidden();
   await page.locator(".new-map input[type=text]").fill("Anything");

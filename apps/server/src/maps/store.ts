@@ -3,7 +3,7 @@
  * `main` only through Publish, like a note.
  */
 import { randomBytes } from "node:crypto";
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import {
   type DraftRecord,
@@ -75,6 +75,20 @@ export class MapStore {
 
   private draftOf(id: string): DraftRecord | undefined {
     return this.d.drafts.byPath(mapPath(id));
+  }
+
+  /**
+   * When the map last changed: its draft's last save, or else the time its file was last written
+   * in the vault (when it was last brought up to date from the library). Null when unknown.
+   */
+  editedAt(id: string): string | null {
+    const draft = this.draftOf(id);
+    if (draft) return draft.updatedAt;
+    try {
+      return statSync(join(this.d.vaultDir, mapPath(id))).mtime.toISOString();
+    } catch {
+      return null;
+    }
   }
 
   /** The map as the author sees it: his draft, or else what is published. */
