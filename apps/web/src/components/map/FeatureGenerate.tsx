@@ -40,7 +40,7 @@ export function FeatureGenerate({
     setUsed(null);
     api
       .generateFeatures(mapId, {
-        kind: feature.kind,
+        kind: feature.kind as Exclude<MapFeature["kind"], "route">,
         at: middleOf(feature),
         count: 1,
         prompt,

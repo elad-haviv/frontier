@@ -8,8 +8,9 @@ import type { Services } from "../app.js";
 const IdParam = z.object({ id: z.string().regex(/^[a-z0-9]{8}$/) });
 const Create = z.object({
   title: z.string().trim().min(1).max(120),
-  kind: z.enum(["sphere", "flat"]),
-  image: VaultPath,
+  kind: z.enum(["sphere", "flat", "stars", "system"]),
+  /** A star map and a system model are made without one. */
+  image: VaultPath.optional(),
 });
 const Save = z.object({
   map: MapFile,

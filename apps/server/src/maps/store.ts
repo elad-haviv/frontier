@@ -125,39 +125,97 @@ export class MapStore {
     throw new ApiError("invalid", `There is no image at "${path}".`);
   }
 
-  async create(input: { title: string; kind: "sphere" | "flat"; image: string }): Promise<string> {
-    let size: { width?: number | undefined; height?: number | undefined };
-    try {
-      size = await sharp(await this.imageBytes(input.image)).metadata();
-    } catch (err) {
-      if (err instanceof ApiError) throw err;
-      throw new ApiError("invalid", "This image cannot be read.");
-    }
-    const width = size.width ?? 1000;
-    const height = size.height ?? 1000;
+  async create(input: {
+    title: string;
+    kind: "sphere" | "flat" | "stars" | "system";
+    image?: string | undefined;
+  }): Promise<string> {
     let id = makeEntryId(randomBytes);
     while ((await this.get(id)) !== null) id = makeEntryId(randomBytes);
-    const map: MapFile = {
-      version: 1,
-      id,
-      title: input.title,
-      space:
-        input.kind === "sphere"
-          ? { kind: "sphere", radius: null, unit: "km" }
-          : { kind: "flat", width, height, scale: null, unit: "km" },
-      images: [
-        {
-          id: makeEntryId(randomBytes),
-          name: stem(basename(input.image)),
-          path: input.image,
-          extent: input.kind === "sphere" ? [-180, -90, 180, 90] : [0, 0, width, height],
-          visible: true,
-        },
-      ],
-      markerSets: this.markerSets().map((s) => s.name),
-      layers: [{ id: makeEntryId(randomBytes), name: "Places", visible: true, color: "#9a3b1f" }],
-      features: [],
-    };
+    let map: MapFile;
+    if (input.kind === "stars") {
+      // Open space needs no image: places are given by three numbers.
+      map = {
+        version: 1,
+        id,
+        title: input.title,
+        space: { kind: "stars", unit: "ly" },
+        images: [],
+        markerSets: [],
+        layers: [
+          {
+            id: makeEntryId(randomBytes),
+            name: "Stars",
+            visible: true,
+            color: "#f2d28a",
+            look: "dot",
+          },
+          {
+            id: makeEntryId(randomBytes),
+            name: "Stations and ports",
+            visible: true,
+            color: "#fbf7f0",
+            look: "pin",
+          },
+        ],
+        features: [],
+      };
+    } else if (input.kind === "system") {
+      // A system model begins with its star at the centre; the rest is added around it.
+      map = {
+        version: 1,
+        id,
+        title: input.title,
+        space: { kind: "system", unit: "AU" },
+        images: [],
+        markerSets: [],
+        layers: [{ id: makeEntryId(randomBytes), name: "Bodies", visible: true, color: "#f2d28a" }],
+        features: [],
+      };
+      map.features.push({
+        id: makeEntryId(randomBytes),
+        kind: "marker",
+        layer: map.layers[0]!.id,
+        at: [0, 0],
+        entry: null,
+        label: "The star",
+        icon: null,
+        child: null,
+        body: { type: "star", a: 0, mass: 1 },
+      });
+    } else {
+      if (!input.image) throw new ApiError("invalid", "A map of this kind needs an image.");
+      let size: { width?: number | undefined; height?: number | undefined };
+      try {
+        size = await sharp(await this.imageBytes(input.image)).metadata();
+      } catch (err) {
+        if (err instanceof ApiError) throw err;
+        throw new ApiError("invalid", "This image cannot be read.");
+      }
+      const width = size.width ?? 1000;
+      const height = size.height ?? 1000;
+      map = {
+        version: 1,
+        id,
+        title: input.title,
+        space:
+          input.kind === "sphere"
+            ? { kind: "sphere", radius: null, unit: "km" }
+            : { kind: "flat", width, height, scale: null, unit: "km" },
+        images: [
+          {
+            id: makeEntryId(randomBytes),
+            name: stem(basename(input.image)),
+            path: input.image,
+            extent: input.kind === "sphere" ? [-180, -90, 180, 90] : [0, 0, width, height],
+            visible: true,
+          },
+        ],
+        markerSets: this.markerSets().map((s) => s.name),
+        layers: [{ id: makeEntryId(randomBytes), name: "Places", visible: true, color: "#9a3b1f" }],
+        features: [],
+      };
+    }
     await this.d.drafts.saveFrom({
       id: makeId(randomBytes),
       path: mapPath(id),

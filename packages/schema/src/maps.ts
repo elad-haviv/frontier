@@ -31,6 +31,22 @@ export const MapSpace = z.discriminatedUnion("kind", [
       schematic: z.boolean().optional(),
     })
     .passthrough(),
+  /**
+   * Open space (stage 20): places have three coordinates, in `unit`, and no image is needed.
+   * `speed` is how far ships go in a day, which gives routes a travel time.
+   */
+  z
+    .object({
+      kind: z.literal("stars"),
+      unit: z.string(),
+      speed: z.number().positive().optional(),
+    })
+    .passthrough(),
+  /**
+   * A star and what circles it (stage 20b). Its bodies are markers with a `body`; distances are
+   * in AU, and a moon's in thousands of km. It needs no image.
+   */
+  z.object({ kind: z.literal("system"), unit: z.string() }).passthrough(),
 ]);
 export type MapSpace = z.infer<typeof MapSpace>;
 
@@ -59,6 +75,8 @@ export const MapLayer = z
     parent: ItemId.nullish(),
     /** Its features, and those of its sublayers, cannot be picked on the map; left out: no. */
     locked: z.boolean().optional(),
+    /** On a star map: whether this layer's markers are drawn as light dots or as pins. */
+    look: z.enum(["dot", "pin"]).optional(),
   })
   .passthrough();
 export type MapLayer = z.infer<typeof MapLayer>;
@@ -109,6 +127,41 @@ const style = z
   .regex(/^[a-z0-9]{8}$/)
   .optional();
 
+/**
+ * A body of a system model. `a` is the distance in AU, or thousands of km around a planet; for a
+ * second star, the AU between the two. `parent` is the id of the body it circles; a star has none.
+ * `phase`, `peri` are angles in radians: where it is on day 0, and which way a stretched orbit
+ * points. `mass` is in solar masses, for stars.
+ */
+export const SystemBody = z
+  .object({
+    type: z.enum([
+      "star",
+      "companion",
+      "rocky",
+      "ocean",
+      "gas",
+      "ice",
+      "dwarf",
+      "moon",
+      "station",
+      "belt",
+      "comet",
+    ]),
+    parent: ItemId.optional(),
+    a: z.number().min(0),
+    e: z.number().min(0).max(0.95).optional(),
+    phase: z.number().optional(),
+    peri: z.number().optional(),
+    retro: z.boolean().optional(),
+    mass: z.number().positive().optional(),
+    inner: z.number().min(0).optional(),
+    outer: z.number().min(0).optional(),
+    home: z.boolean().optional(),
+  })
+  .passthrough();
+export type SystemBody = z.infer<typeof SystemBody>;
+
 export const MapFeature = z.discriminatedUnion("kind", [
   z
     .object({
@@ -116,6 +169,31 @@ export const MapFeature = z.discriminatedUnion("kind", [
       kind: z.literal("marker"),
       at: Pair,
       icon: z.object({ set: z.string(), name: z.string() }).nullable(),
+      /** On a star map: the height above (or, below zero, under) the plane. */
+      z: z.number().optional(),
+      /** On a star map: how this marker is drawn, when not as its layer is. */
+      look: z.enum(["dot", "pin"]).optional(),
+      /** On a star map: the colour of its dot. */
+      tone: z
+        .string()
+        .regex(/^#[0-9a-fA-F]{6}$/)
+        .optional(),
+      /** On a star map: 1 small (named on hover), 2 normal, 3 large (always named). */
+      size: z.union([z.literal(1), z.literal(2), z.literal(3)]).optional(),
+      /** In a system model: this marker is a body on an orbit. */
+      body: SystemBody.optional(),
+    })
+    .passthrough(),
+  /**
+   * On a star map: a route that runs through markers, in order. Its length comes from their
+   * places, so it is not stored.
+   */
+  z
+    .object({
+      ...featureBase,
+      kind: z.literal("route"),
+      stops: z.array(ItemId).min(2),
+      lane: z.enum(["jump", "trade", "patrol"]).optional(),
     })
     .passthrough(),
   z
@@ -609,7 +687,19 @@ export function stepLayer<T extends MapLayer>(layers: T[], id: string, by: 1 | -
 
 /** The extent of an image that covers the whole of a map's space. */
 export function wholeExtent(space: MapSpace): MapImage["extent"] {
+  if (space.kind === "stars" || space.kind === "system") return [0, 0, 1, 1];
   return space.kind === "sphere" ? [-180, -90, 180, 90] : [0, 0, space.width, space.height];
+}
+
+/** A space with a picture to lie over: a globe or a flat map. A star map or system has no such space. */
+export type PlanarSpace = Exclude<MapSpace, { kind: "stars" | "system" }>;
+
+/** The space of a map drawn by the globe and flat map page; the star map has its own page. */
+export function planarSpace(space: MapSpace): PlanarSpace {
+  if (space.kind === "stars" || space.kind === "system") {
+    throw new Error("A star map or system model has no flat or globe space.");
+  }
+  return space;
 }
 
 /**

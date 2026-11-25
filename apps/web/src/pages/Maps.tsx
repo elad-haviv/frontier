@@ -22,7 +22,7 @@ export function MapsPage() {
   const refresh = useRefresh();
   const [title, setTitle] = useState("");
   const offline = useNeedsConnection();
-  const [kind, setKind] = useState<"sphere" | "flat" | "schematic">("flat");
+  const [kind, setKind] = useState<"sphere" | "flat" | "schematic" | "stars" | "system">("flat");
   const [image, setImage] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -35,8 +35,14 @@ export function MapsPage() {
     try {
       const { id } = await api.createMap(
         title.trim(),
-        kind === "sphere" ? "sphere" : "flat",
-        image,
+        kind === "sphere"
+          ? "sphere"
+          : kind === "stars"
+            ? "stars"
+            : kind === "system"
+              ? "system"
+              : "flat",
+        kind === "stars" || kind === "system" ? undefined : image,
       );
       if (kind === "schematic") {
         // A schematic map is a flat map with measuring off.
@@ -64,7 +70,8 @@ export function MapsPage() {
       <header className="entry-head">
         <h1>Maps</h1>
         <p className="muted lede">
-          A map is drawn over an image of yours. Its markers, paths and zones point at entries.
+          A map is drawn over an image of yours, or, for a star map, in open space. Its markers,
+          paths and zones point at entries.
         </p>
       </header>
 
@@ -86,9 +93,13 @@ export function MapsPage() {
                   <span className="muted">
                     {m.space.kind === "sphere"
                       ? "globe"
-                      : m.space.schematic
-                        ? "schematic map"
-                        : "flat map"}{" "}
+                      : m.space.kind === "stars"
+                        ? "star map"
+                        : m.space.kind === "system"
+                          ? "system model"
+                          : m.space.schematic
+                            ? "schematic map"
+                            : "flat map"}{" "}
                     · {m.features} {m.features === 1 ? "feature" : "features"}
                     {above ? ` · lies under ${above.title}` : ""}
                     {below > 0 ? ` · ${below} ${below === 1 ? "layer" : "layers"} below` : ""}
@@ -116,28 +127,45 @@ export function MapsPage() {
           <span>Kind</span>
           <select
             value={kind}
-            onChange={(e) => setKind(e.target.value as "sphere" | "flat" | "schematic")}
+            onChange={(e) =>
+              setKind(e.target.value as "sphere" | "flat" | "schematic" | "stars" | "system")
+            }
           >
             <option value="flat">Flat map: a region, a city</option>
             <option value="schematic">Schematic: a diagram, with no measuring</option>
             <option value="sphere">Globe: an image that wraps a whole world</option>
+            <option value="stars">Star map: stars in space, with routes between them</option>
+            <option value="system">System model: a star with its planets and moons, moving</option>
           </select>
         </label>
-        <div className="field">
-          <span>Image</span>
-          <span className="chosen-image">
-            {image && <img src={imageUrl(image, 320)} alt="" />}
-            {image && <span className="chosen-image-name">{image.split("/").pop()}</span>}
-            {/* Choosing works offline from images already here; the dialog says which need a connection. */}
-            <button
-              type="button"
-              onClick={() => setPicking(true)}
-              title={offline && "Uploads need a connection"}
-            >
-              {image ? "Choose another image…" : "Choose an image…"}
-            </button>
-          </span>
-        </div>
+        {kind === "stars" && (
+          <p className="muted">
+            A star map needs no image. Its places have three numbers: across, along and height above
+            a flat plane.
+          </p>
+        )}
+        {kind === "system" && (
+          <p className="muted">
+            A system model needs no image. It begins with its star; add the worlds that circle it.
+          </p>
+        )}
+        {kind !== "stars" && kind !== "system" && (
+          <div className="field">
+            <span>Image</span>
+            <span className="chosen-image">
+              {image && <img src={imageUrl(image, 320)} alt="" />}
+              {image && <span className="chosen-image-name">{image.split("/").pop()}</span>}
+              {/* Choosing works offline from images already here; the dialog says which need a connection. */}
+              <button
+                type="button"
+                onClick={() => setPicking(true)}
+                title={offline && "Uploads need a connection"}
+              >
+                {image ? "Choose another image…" : "Choose an image…"}
+              </button>
+            </span>
+          </div>
+        )}
         {picking && (
           <MapImagePicker
             onClose={() => setPicking(false)}
@@ -158,7 +186,7 @@ export function MapsPage() {
           <ActionButton
             type="submit"
             className="primary"
-            disabled={busy || !title.trim() || !image}
+            disabled={busy || !title.trim() || (kind !== "stars" && kind !== "system" && !image)}
           >
             Make the map
           </ActionButton>

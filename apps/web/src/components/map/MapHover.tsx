@@ -26,6 +26,7 @@ const UNNAMED = {
   path: "Unnamed path",
   zone: "Unnamed zone",
   label: "Label",
+  route: "Route",
 };
 
 /** A box placed beside a point, kept inside the frame. */

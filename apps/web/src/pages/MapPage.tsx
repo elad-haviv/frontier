@@ -13,6 +13,7 @@ import {
   isLined,
   lockedWithin,
   orderFeature,
+  planarSpace,
   reorderFeature,
 } from "@frontier/schema";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
@@ -167,7 +168,7 @@ export function MapPage() {
       // Where a feature is at the year shown: the shape in force then, or its first.
       placeOf: (f) => {
         const drawn = shown.resolved.find((r) => r.feature.id === f.id)?.feature ?? f;
-        return !isLined(drawn) ? drawn.at : drawn.points[0]!;
+        return drawn.kind === "route" ? [0, 0] : !isLined(drawn) ? drawn.at : drawn.points[0]!;
       },
     },
   );
@@ -283,7 +284,7 @@ export function MapPage() {
     change(deleteFeature(now, selected));
     setSelected(null);
   };
-  const whole = () => map && setView(initialView(map.space, size.width, size.height));
+  const whole = () => map && setView(initialView(planarSpace(map.space), size.width, size.height));
   const drawing =
     sketch.length > 0 &&
     (tool === "path" || tool === "zone" || tool === "measure" || tool === "place");
@@ -354,7 +355,10 @@ export function MapPage() {
     [map, selected],
   );
   const measured = useMemo(
-    () => (map && tool === "measure" && sketch.length > 1 ? measure(map.space, sketch) : null),
+    () =>
+      map && tool === "measure" && sketch.length > 1
+        ? measure(planarSpace(map.space), sketch)
+        : null,
     [map, tool, sketch],
   );
   const schematic = map?.space.kind === "flat" && map.space.schematic === true;

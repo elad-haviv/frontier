@@ -246,6 +246,7 @@ export function writeShape(feature: MapFeature, shapeId: string | null, shape: S
 
 /** The shape a feature has on screen, read back from a resolved feature. */
 export function shapeOf(feature: MapFeature): Shape {
+  if (feature.kind === "route") return { points: [] };
   return !isLined(feature) ? { at: feature.at } : { points: feature.points };
 }
 

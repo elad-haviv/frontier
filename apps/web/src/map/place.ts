@@ -84,6 +84,7 @@ export function placeSpots(view: View, marked: Position[], count: number): Posit
 
 /** The middle of a feature's shape, as the place it is asked about. */
 export function middleOf(feature: MapFeature): Position {
+  if (feature.kind === "route") return [0, 0];
   if (!isLined(feature)) return feature.at;
   const n = feature.points.length;
   const [x, y] = feature.points.reduce(([a, b], [c, d]) => [a + c, b + d], [0, 0]);

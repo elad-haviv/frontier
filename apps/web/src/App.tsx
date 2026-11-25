@@ -1,6 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useState } from "react";
 import { Navigate, Route, Routes, useLocation, useParams } from "react-router-dom";
 import { api } from "./api.ts";
+import { useAsync } from "./useAsync.ts";
 import { LoginDialog } from "./components/LoginDialog.tsx";
 import { Shell } from "./components/Shell.tsx";
 import { startDeviceCopy } from "./offline/copy.ts";
@@ -23,6 +24,12 @@ import { Progress } from "./components/ui/Progress.tsx";
 // The map, chronicle and graph pages carry their renderers and geometry; they load when first opened,
 // so the first page of the app comes up sooner.
 const MapPage = lazy(() => import("./pages/MapPage.tsx").then((m) => ({ default: m.MapPage })));
+const StarMapPage = lazy(() =>
+  import("./pages/StarMapPage.tsx").then((m) => ({ default: m.StarMapPage })),
+);
+const SystemMapPage = lazy(() =>
+  import("./pages/SystemMapPage.tsx").then((m) => ({ default: m.SystemMapPage })),
+);
 const ChroniclePage = lazy(() =>
   import("./pages/ChroniclePage.tsx").then((m) => ({ default: m.ChroniclePage })),
 );
@@ -63,9 +70,19 @@ const VersionsPage = lazy(() =>
 /** A different map gets a fresh page: its own view, drawing surface and history. */
 function OneMap() {
   const { id = "" } = useParams();
+  // A star map and a system model have their own pages; any other map, and one that could not be read, the map page.
+  const kind = useAsync(() => api.map(id).then((m) => m.map.space.kind), `map-kind:${id}`);
+  if (kind.state === "loading") return <Progress />;
+  const space = kind.state === "ready" ? kind.value : null;
   return (
     <Suspense fallback={<Progress />}>
-      <MapPage key={id} />
+      {space === "stars" ? (
+        <StarMapPage key={id} />
+      ) : space === "system" ? (
+        <SystemMapPage key={id} />
+      ) : (
+        <MapPage key={id} />
+      )}
     </Suspense>
   );
 }
