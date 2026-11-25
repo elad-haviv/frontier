@@ -25,6 +25,7 @@ import {
   type MapFile,
   type MapLabel,
   type MapStyle,
+  planarSpace,
 } from "@frontier/schema";
 import { geoContains, geoOrthographic, geoPath } from "d3-geo";
 import type { PointerKind } from "./gesture.ts";
@@ -473,7 +474,7 @@ export function drawOverlay(ctx: CanvasRenderingContext2D, input: OverlayInput):
       ctx.fillStyle = was;
     };
     // The closed outline: what is drawn, filled and tapped.
-    const ring = outlineOf(map.space, f).line;
+    const ring = outlineOf(planarSpace(map.space), f).line;
     const drawn = screenLines(view, ring);
     if (view.state.kind === "globe") fillOnGlobe(ctx, view, ring, fillAll);
     if (view.rings && hasInside(ring)) {
@@ -537,7 +538,7 @@ export function drawOverlay(ctx: CanvasRenderingContext2D, input: OverlayInput):
     if (f.kind !== "path") continue;
     const undated = look(f).dashed;
     const paint = paintOf(f, colours.get(f.layer), styles);
-    const drawnLine = outlineOf(map.space, f);
+    const drawnLine = outlineOf(planarSpace(map.space), f);
     for (const line of screenLines(view, drawnLine.line)) {
       ctx.beginPath();
       trace(ctx, line);
@@ -758,7 +759,7 @@ export function drawOverlay(ctx: CanvasRenderingContext2D, input: OverlayInput):
   const locked = lockedWithin(map.layers);
   const chosen = features.find((f) => f.id === input.selected && !locked.has(f.layer));
   if (input.editing && chosen && isLined(chosen) && input.pluses) {
-    for (const h of plusHandles(map.space, view, chosen, input.pluses)) {
+    for (const h of plusHandles(planarSpace(map.space), view, chosen, input.pluses)) {
       for (const shift of view.repeats()) plus(ctx, [h.screen[0] + shift, h.screen[1]]);
     }
   }
@@ -782,7 +783,7 @@ export function drawOverlay(ctx: CanvasRenderingContext2D, input: OverlayInput):
     const { kind, points } = input.sketch;
     ctx.setLineDash(kind === "measure" ? [6, 5] : []);
     const curve = kind !== "measure" && input.sketch.curve === true;
-    for (const line of lines(map.space, view, points, kind === "zone", curve)) {
+    for (const line of lines(planarSpace(map.space), view, points, kind === "zone", curve)) {
       ctx.beginPath();
       trace(ctx, line);
       ctx.strokeStyle = PAPER;

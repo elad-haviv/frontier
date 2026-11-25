@@ -60,7 +60,7 @@ export function snapAt(
   if (targets.markers) {
     // A marker or a label is snapped to at its own place.
     for (const f of drawn) {
-      if (isLined(f) || f.id === skip || !onScreen.has(f.id)) continue;
+      if (isLined(f) || f.kind === "route" || f.id === skip || !onScreen.has(f.id)) continue;
       const s = view.project(f.at);
       if (!s) continue;
       const d = Math.hypot(s[0] - at[0], s[1] - at[1]);

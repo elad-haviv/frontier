@@ -1,3 +1,4 @@
+import { planarSpace } from "@frontier/schema";
 /**
  * Build one from the picture: the Terrain dialog's hints workspace. Frontier looks at the map's
  * picture for what tells height (sea and coast, rivers and the way they flow, mountain symbols,
@@ -172,7 +173,7 @@ export default function TerrainHints(p: {
 }) {
   const { map, picture, phone } = p;
   const ext = picture.extent as Extent;
-  const space = map.space;
+  const space = planarSpace(map.space);
   const pictureUrl = mapImageUrl(picture.path, 4096);
   const online = useConnection().state === "online";
   const kpu = kmPerUnit(space);

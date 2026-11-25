@@ -715,3 +715,122 @@ describe("a label written on the map", () => {
     expect(reorderFeature(m.features, "t1", -1)).toBe(m.features);
   });
 });
+
+describe("a star map", () => {
+  const stars = (): MapFile => ({
+    version: 1,
+    id: "abcd1234",
+    title: "The Near Stars",
+    space: { kind: "stars", unit: "ly", speed: 2 },
+    images: [],
+    markerSets: [],
+    layers: [
+      { id: "l1", name: "Stars", visible: true, color: "#f2d28a", look: "dot" },
+      { id: "l2", name: "Ports", visible: true, color: "#fbf7f0", look: "pin" },
+    ],
+    features: [
+      marker("a", [0, 0], { z: 0, size: 3, tone: "#f2d28a" }),
+      marker("b", [3.1, -3.1], { z: -0.1, look: "pin" }),
+      {
+        id: "r",
+        kind: "route",
+        layer: "l1",
+        entry: null,
+        label: "The Long Road",
+        child: null,
+        stops: ["a", "b"],
+        lane: "trade",
+      } as MapFeature,
+    ],
+  });
+
+  it("is written and read back as it was, with its heights and routes", () => {
+    const text = serialiseMap(stars());
+    const back = parseMap(text);
+    expect(back.ok).toBe(true);
+    if (!back.ok) return;
+    expect(back.map).toEqual(stars());
+    expect(serialiseMap(back.map)).toBe(text);
+  });
+
+  it("needs no image, and has no extent of its own", () => {
+    expect(stars().images).toEqual([]);
+    expect(wholeExtent(stars().space)).toEqual([0, 0, 1, 1]);
+  });
+
+  it("refuses a route with fewer than two stops and a colour that is not one", () => {
+    const route = stars();
+    route.features[2] = { ...route.features[2]!, stops: ["a"] } as MapFeature;
+    expect(parseMap(serialiseMap(route)).ok).toBe(false);
+    const tint = stars();
+    tint.features[0] = { ...tint.features[0]!, tone: "yellow" } as MapFeature;
+    expect(parseMap(serialiseMap(tint)).ok).toBe(false);
+  });
+
+  it("merges edits made on both sides, star by star", () => {
+    const base = stars();
+    const mine = stars();
+    mine.features[0] = { ...mine.features[0]!, z: 4 } as MapFeature;
+    const theirs = stars();
+    theirs.features[1] = { ...theirs.features[1]!, at: [5, 5] } as MapFeature;
+    const merged = mergeMaps(base, mine, theirs).map;
+    expect((merged.features[0] as { z?: number }).z).toBe(4);
+    expect((merged.features[1] as { at: number[] }).at).toEqual([5, 5]);
+  });
+});
+
+describe("a system model and passages", () => {
+  const base = (): MapFile => ({
+    version: 1,
+    id: "abcd1234",
+    title: "Solen system",
+    space: { kind: "system", unit: "AU" },
+    images: [],
+    markerSets: [],
+    layers: [{ id: "l1", name: "Bodies", visible: true, color: "#f2d28a" }],
+    features: [
+      marker("sun", [0, 0], { body: { type: "star", a: 0, mass: 1 } }),
+      marker("tamar", [0, 0], {
+        body: { type: "ocean", parent: "sun", a: 1, e: 0.02, phase: 3.6, home: true },
+      }),
+    ],
+  });
+
+  it("is written and read back with its bodies", () => {
+    const text = serialiseMap(base());
+    const back = parseMap(text);
+    expect(back.ok).toBe(true);
+    if (!back.ok) return;
+    expect(back.map).toEqual(base());
+    expect(serialiseMap(back.map)).toBe(text);
+  });
+
+  it("refuses a body of a kind that does not exist or a stretch beyond reason", () => {
+    const wrongKind = base();
+    wrongKind.features[1] = marker("tamar", [0, 0], { body: { type: "dragon", a: 1 } });
+    expect(parseMap(serialiseMap(wrongKind)).ok).toBe(false);
+    const tooLong = base();
+    tooLong.features[1] = marker("tamar", [0, 0], { body: { type: "comet", a: 9, e: 1.4 } });
+    expect(parseMap(serialiseMap(tooLong)).ok).toBe(false);
+  });
+
+  it("keeps the passages a place holds, and refuses one that names no map", () => {
+    const globe: MapFile = {
+      version: 1,
+      id: "abcd1234",
+      title: "Ezob",
+      space: { kind: "sphere", radius: null, unit: "km" },
+      images: [],
+      markerSets: [],
+      layers: [{ id: "l1", name: "Places", visible: true, color: "#000000" }],
+      features: [marker("dudai", [-30, 10], { passages: [{ map: "wxyz5678", feature: "under" }] })],
+    };
+    const back = parseMap(serialiseMap(globe));
+    expect(back.ok).toBe(true);
+    if (back.ok) expect(back.map).toEqual(globe);
+    globe.features[0] = marker("dudai", [-30, 10], {
+      passages: [{ map: "not a map id", feature: "under" }],
+    });
+    expect(parseMap(serialiseMap(globe)).ok).toBe(false);
+  });
+});

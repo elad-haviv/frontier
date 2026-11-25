@@ -20,7 +20,9 @@ const drawnOf = (features: MapFeature[]): Shape[] =>
   features.map((f) =>
     f.kind === "marker" || f.kind === "label"
       ? { id: f.id, kind: "marker", at: f.at }
-      : { id: f.id, kind: f.kind, points: f.points },
+      : f.kind === "route"
+        ? { id: f.id, kind: "path", points: [] }
+        : { id: f.id, kind: f.kind, points: f.points },
   );
 
 const land = zone("land", [

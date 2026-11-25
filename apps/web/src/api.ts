@@ -371,8 +371,8 @@ export const api = {
       problems: { path: string; message: string }[];
     }>("/api/maps"),
   map: (id: string) => call<LoadedMap>(`/api/maps/${id}`),
-  createMap: (title: string, kind: "sphere" | "flat", image: string) =>
-    post<{ id: string }>("/api/maps", { title, kind, image }),
+  createMap: (title: string, kind: "sphere" | "flat" | "stars" | "system", image?: string) =>
+    post<{ id: string }>("/api/maps", { title, kind, ...(image ? { image } : {}) }),
   /** Pages save through the queue (`sync/queue.ts`), which calls this. */
   saveMap: (
     id: string,

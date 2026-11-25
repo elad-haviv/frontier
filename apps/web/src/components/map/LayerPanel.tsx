@@ -48,7 +48,7 @@ function ExtentForm({
   const whole = wholeExtent(map.space);
   return (
     <div className="extent-form" role="group" aria-label={`Where ${image.name} sits`}>
-      {EXTENT_LABELS[map.space.kind].map((label, i) => (
+      {EXTENT_LABELS[map.space.kind === "sphere" ? "sphere" : "flat"].map((label, i) => (
         <label key={label}>
           <span>{label}</span>
           <input type="text" value={text[i] ?? ""} onChange={(e) => edit(i, e.target.value)} />

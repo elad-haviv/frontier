@@ -3,7 +3,7 @@
  * larger size, drawn in the browser on canvases of its own and saved as a PNG.
  */
 import { makeView, type ViewState } from "@frontier/geo";
-import type { MapFile } from "@frontier/schema";
+import { type MapFile, planarSpace } from "@frontier/schema";
 import { drawLegendCard, type LegendRow } from "./biomeLegend.ts";
 import { drawOverlay, type OverlayInput } from "./overlay.ts";
 import { MapRenderer } from "./renderer.ts";
@@ -60,7 +60,7 @@ export async function mapPicture(input: {
   out.width = top.width;
   out.height = top.height;
   const ctx = out.getContext("2d")!;
-  renderer.draw(input.map.space, state, input.images, w, h, false);
+  renderer.draw(planarSpace(input.map.space), state, input.images, w, h, false);
   // Copied at once, before the browser may clear a canvas it has not been asked to keep.
   ctx.drawImage(glCanvas, 0, 0, out.width, out.height);
   drawOverlay(top.getContext("2d")!, {

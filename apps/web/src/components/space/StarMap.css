@@ -1,0 +1,364 @@
+/* A star map (stage 20). The canvas is dark in both themes, like a map's image; the bar, tools
+   and side bar around it keep the page's own colours. */
+.star-frame {
+  background: #12141c;
+}
+.star-canvas {
+  touch-action: none;
+  cursor: grab;
+}
+.star-tip {
+  position: absolute;
+  z-index: 3;
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  background: var(--ink);
+  color: var(--paper);
+  font-size: 0.82rem;
+  white-space: nowrap;
+  pointer-events: none;
+  font-variant-numeric: tabular-nums;
+}
+.star-empty {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: min(21rem, calc(100% - 2rem));
+  padding: 1rem 1.1rem;
+  text-align: center;
+  background: var(--paper);
+  color: var(--ink);
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+}
+.star-empty h2 {
+  margin: 0 0 0.3rem;
+  font-size: 1.05rem;
+}
+.star-empty p {
+  margin: 0 0 0.8rem;
+  color: var(--ink-soft);
+  font-size: 0.9rem;
+}
+.star-find input {
+  height: 2.2rem;
+  width: 11rem;
+  max-width: 100%;
+  padding: 0 0.6rem;
+  border: 1px solid var(--rule);
+  border-radius: 5px;
+  background: var(--paper-raised);
+  color: var(--ink);
+}
+.star-into {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.85rem;
+}
+.star-into select {
+  height: 2.2rem;
+}
+
+/* The side bar's panels. */
+.star-panel {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1rem;
+  align-content: start;
+  padding: 0.8rem 0.85rem 1.2rem;
+  font-size: 0.92rem;
+}
+.star-panel h2 {
+  margin: 0;
+  font-size: 1.25rem;
+}
+.star-panel h3 {
+  margin: 0 0 0.35rem;
+  font: 600 0.72rem var(--sans);
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+.star-panel p {
+  margin: 0;
+}
+.star-block {
+  display: grid;
+  gap: 0.3rem;
+}
+.star-layers,
+.star-places,
+.star-legend,
+.star-stops {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.15rem;
+}
+.star-stops {
+  list-style: decimal;
+  padding-left: 1.2rem;
+}
+.star-stops.editing li {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+.star-stops .name {
+  flex: 1;
+  min-width: 0;
+}
+.star-layers li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+.star-layers select {
+  height: 1.9rem;
+  font-size: 0.82rem;
+}
+.star-legend li {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+.star-places button {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  min-height: 2rem;
+  padding: 0.2rem 0.4rem;
+  border: 0;
+  border-radius: 5px;
+  background: none;
+  color: var(--ink);
+  text-align: left;
+  font: inherit;
+}
+.star-places button:hover {
+  background: var(--accent-soft);
+}
+.star-places button[aria-current="true"] {
+  background: var(--accent-soft);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+.swatch-dot {
+  width: 0.8rem;
+  height: 0.8rem;
+  border-radius: 50%;
+  flex: none;
+  border: 1px solid rgb(0 0 0 / 0.25);
+}
+.swatch-line {
+  width: 0.9rem;
+  border-top: 2px solid;
+  flex: none;
+}
+.star-facts {
+  margin: 0;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.3rem 0.8rem;
+  font-variant-numeric: tabular-nums;
+}
+.star-facts dt {
+  color: var(--ink-faint);
+}
+.star-facts dd {
+  margin: 0;
+}
+.star-near {
+  display: block;
+}
+.star-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+.star-two {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem;
+}
+.star-three {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.4rem;
+}
+.star-swatches {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+}
+.star-swatches button:not(.plain) {
+  width: 1.9rem;
+  height: 1.9rem;
+  padding: 0;
+  border-radius: 50%;
+  border: 2px solid var(--paper);
+  box-shadow: 0 0 0 1px var(--rule);
+}
+.star-swatches button[aria-pressed="true"] {
+  box-shadow: 0 0 0 2px var(--accent);
+}
+.star-panel .danger {
+  border: 1px solid var(--rule);
+  background: none;
+  color: var(--warn);
+  border-radius: 4px;
+  padding: 0.4rem 0.8rem;
+  font-weight: 600;
+}
+.star-panel input,
+.star-panel select {
+  max-width: 100%;
+}
+.star-panel .field input[type="text"],
+.star-panel .field input[type="number"],
+.star-panel .field select {
+  width: 100%;
+  min-width: 0;
+}
+
+/* On a phone the hint is a smaller card over the top of the map, clear of the buttons. */
+@media (max-width: 47.99rem) {
+  .star-frame .map-hint {
+    top: 0.5rem;
+    width: calc(100% - 4.4rem);
+    max-width: none;
+    left: 0.5rem;
+    transform: none;
+    padding: 0.35rem 0.7rem;
+    border-radius: 12px;
+    font-size: 0.8rem;
+    text-align: left;
+  }
+  .star-into span {
+    display: none;
+  }
+}
+
+/* A system model (stage 20b). */
+.system-outline .kind {
+  margin-left: auto;
+  font-size: 0.78rem;
+  color: var(--ink-faint);
+  white-space: nowrap;
+}
+.swatch-dot.square {
+  border-radius: 2px;
+  transform: rotate(45deg) scale(0.8);
+}
+.system-picker {
+  position: absolute;
+  left: 0.5rem;
+  top: 0.5rem;
+  /* Over the phone's bottom sheet, which would otherwise cover the foot of the list. */
+  z-index: var(--layer-popover);
+  width: 15.5rem;
+  max-height: calc(100% - 1rem);
+  overflow: auto;
+  padding: 0.3rem;
+  background: var(--paper-raised);
+  color: var(--ink);
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+}
+.system-picker h4 {
+  margin: 0.4rem 0.5rem 0.2rem;
+  font: 600 0.72rem var(--sans);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+.system-picker button {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  width: 100%;
+  min-height: 2.4rem;
+  padding: 0.35rem 0.5rem;
+  border: 0;
+  border-radius: 5px;
+  background: none;
+  color: inherit;
+  text-align: left;
+  font: inherit;
+}
+.system-picker button:hover {
+  background: var(--accent-soft);
+}
+.system-picker small {
+  display: block;
+  color: var(--ink-faint);
+  font-size: 0.78rem;
+}
+.system-time .time-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.system-time input[type="range"] {
+  flex: 1;
+  min-width: 0;
+  accent-color: var(--accent);
+}
+.system-time .time-year {
+  white-space: nowrap;
+  min-width: 8.5rem;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.system-time select {
+  height: 2.5rem;
+  min-width: 0;
+}
+.system-time .playing {
+  color: var(--accent);
+}
+@media (max-width: 47.99rem) {
+  .system-time .time-year {
+    min-width: 0;
+  }
+  .map-tools-note {
+    display: none;
+  }
+}
+
+.star-panel .ends {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.76rem;
+  color: var(--ink-faint);
+  text-transform: none;
+  letter-spacing: 0;
+}
+.star-panel input[type="range"] {
+  width: 100%;
+  accent-color: var(--accent);
+}
+.soft-warn {
+  padding: 0.4rem 0.6rem;
+  border-left: 3px solid var(--accent);
+  border-radius: 0 4px 4px 0;
+  background: var(--accent-soft);
+  font-size: 0.84rem;
+}
+.star-panel details summary {
+  cursor: pointer;
+  color: var(--ink-soft);
+  font-weight: 600;
+  font-size: 0.86rem;
+}
+.map-tools-note {
+  font-size: 0.85rem;
+  white-space: nowrap;
+}

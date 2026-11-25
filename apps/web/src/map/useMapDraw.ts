@@ -3,7 +3,7 @@
  * where each feature landed so that a tap can find it.
  */
 import { makeView, type Position, type ViewState } from "@frontier/geo";
-import type { MapFeature, MapFile, MapStyle } from "@frontier/schema";
+import { type MapFeature, type MapFile, type MapStyle, planarSpace } from "@frontier/schema";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { imageUrl, mapImageUrl } from "../api.ts";
 import type { PointerKind } from "./gesture.ts";
@@ -98,7 +98,7 @@ export function useMapDraw(
     const drawn = map.images.filter((i) => shownImages.has(i.id));
     for (const image of drawn) r.load(image.id, mapImageUrl(image.path, wanted));
     const handle = requestAnimationFrame(() => {
-      r.draw(map.space, view, drawn, size.width, size.height, coarse.current);
+      r.draw(planarSpace(map.space), view, drawn, size.width, size.height, coarse.current);
       const canvas = topCanvas.current!;
       const ratio = window.devicePixelRatio || 1;
       if (canvas.width !== Math.round(size.width * ratio))

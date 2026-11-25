@@ -5,6 +5,7 @@ import {
   Clock,
   ImageDown,
   Layers,
+  Layers3,
   Link2,
   Rotate3d,
   Telescope,
@@ -170,6 +171,15 @@ export function MapBar({
               ))}
             </select>
           </Tip>
+        )}
+        {(above || below.length > 0) && (
+          <IconLink
+            to={`/stack/${map.id}`}
+            label="Layers stacked"
+            icon={Layers3}
+            showLabel
+            className="quiet"
+          />
         )}
         {canExplore && !editing && (
           <IconButton

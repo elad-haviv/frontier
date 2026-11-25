@@ -3,7 +3,7 @@
  * which keeps the view and what is shown so that a link opens the map as it was.
  */
 import { centreOn, initialView, type Position, type ViewState, zoomAt } from "@frontier/geo";
-import type { MapFeature, MapFile } from "@frontier/schema";
+import { type MapFeature, type MapFile, planarSpace } from "@frontier/schema";
 import { type RefObject, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { mapUrl } from "../api.ts";
@@ -96,7 +96,7 @@ export function useMapView(
     if (!map || view || size.width === 0) return;
     let state =
       readView(params.get("v"), map.space.kind === "sphere") ??
-      initialView(map.space, size.width, size.height);
+      initialView(planarSpace(map.space), size.width, size.height);
     const wanted = map.features.find((f) => f.id === params.get("f"));
     if (wanted && !params.get("v")) {
       state = centreOn(state, placeOf(wanted));

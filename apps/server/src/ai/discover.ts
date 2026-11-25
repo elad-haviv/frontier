@@ -313,6 +313,7 @@ const KIND_WORDS: Record<MapFeature["kind"], string> = {
   path: "a path",
   zone: "a zone",
   label: "words written on the map",
+  route: "a route",
 };
 
 /** A compass word for the way from one place to another. */
@@ -334,7 +335,7 @@ function farText(map: MapFile, d: number): string {
       ? s.radius
         ? d * rad * s.radius
         : null
-      : !s.schematic && s.scale
+      : s.kind === "flat" && !s.schematic && s.scale
         ? d * s.scale
         : null;
   if (real === null) return "";
@@ -380,7 +381,8 @@ function apart(map: MapFile, a: readonly number[], b: readonly number[]): number
   return Math.acos(Math.max(-1, Math.min(1, c))) / rad;
 }
 
-const shapeOf = (f: MapFeature): number[][] => (isLined(f) ? f.points : [f.at]);
+const shapeOf = (f: MapFeature): number[][] =>
+  isLined(f) ? f.points : f.kind === "route" ? [] : [f.at];
 
 /** The point of a feature's shape nearest a place. */
 function nearestPoint(map: MapFile, at: readonly number[], f: MapFeature): number[] {

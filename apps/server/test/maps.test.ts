@@ -108,6 +108,68 @@ describe("map files", () => {
     expect(bad.statusCode).toBe(400);
   });
 
+  it("makes a star map without an image, and refuses a flat map or a globe without one", async () => {
+    const res = await t.post("/api/maps", { title: "The Near Stars", kind: "stars" });
+    expect(res.statusCode, res.body).toBe(200);
+    const { map, state } = await load(res.json().id);
+    expect(state).toBe("new");
+    expect(map.space).toEqual({ kind: "stars", unit: "ly" });
+    expect(map.images).toEqual([]);
+    expect(map.layers.map((l) => l.name)).toEqual(["Stars", "Stations and ports"]);
+    expect((await t.get("/api/maps")).json().maps[0].space.kind).toBe("stars");
+    for (const kind of ["flat", "sphere"]) {
+      const bad = await t.post("/api/maps", { title: "No image", kind });
+      expect(bad.statusCode).toBe(400);
+    }
+  });
+
+  it("makes a system model with its star at the centre, and no image", async () => {
+    const res = await t.post("/api/maps", { title: "Solen system", kind: "system" });
+    expect(res.statusCode, res.body).toBe(200);
+    const { map } = await load(res.json().id);
+    expect(map.space).toEqual({ kind: "system", unit: "AU" });
+    expect(map.images).toEqual([]);
+    expect(map.features).toHaveLength(1);
+    expect(map.features[0]).toMatchObject({ kind: "marker", body: { type: "star", mass: 1 } });
+  });
+
+  it("keeps the passages a place holds through a save", async () => {
+    const globe = await create("sphere", "Ezob");
+    const under = await create("sphere", "Labyrinth");
+    const { map, revision } = await load(globe);
+    const layer = map.layers[0]!.id;
+    const dudai = {
+      ...marker("dudai", layer, [-30, 10]),
+      passages: [{ map: under, feature: "under" }],
+    };
+    const next = { ...map, features: [dudai] } as MapFile;
+    expect((await save(globe, next, revision)).statusCode).toBe(200);
+    expect((await load(globe)).map.features).toEqual(next.features);
+  });
+
+  it("keeps a star's height and a route's stops through a save", async () => {
+    const res = await t.post("/api/maps", { title: "Stars", kind: "stars" });
+    const id = res.json().id as string;
+    const { map, revision } = await load(id);
+    const layer = map.layers[0]!.id;
+    const a = { ...marker("a", layer, [1, 2]), z: 3.5, size: 3 as const, tone: "#f2d28a" };
+    const b = { ...marker("b", layer, [4, -2]), z: -1 };
+    const route = {
+      id: "r",
+      kind: "route" as const,
+      layer,
+      entry: null,
+      label: "Road",
+      child: null,
+      stops: ["a", "b"],
+      lane: "jump" as const,
+    };
+    const next = { ...map, features: [a, b, route] } as MapFile;
+    expect((await save(id, next, revision)).statusCode).toBe(200);
+    const again = await load(id);
+    expect(again.map.features).toEqual(next.features);
+  });
+
   it("marks each map in the list with its version: the blob, then the draft's revision", async () => {
     const id = await create();
     const v = async () =>

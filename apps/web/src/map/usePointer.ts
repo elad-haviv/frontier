@@ -528,7 +528,11 @@ export function usePointer(p: {
           .filter((r) => r.feature.group === id)
           .map((r) => ({
             resolved: r,
-            points: isLined(r.feature) ? r.feature.points : [r.feature.at],
+            points: isLined(r.feature)
+              ? r.feature.points
+              : r.feature.kind === "route"
+                ? []
+                : [r.feature.at],
           })),
         at: now.groups?.find((g) => g.id === id)?.at ?? null,
       };
