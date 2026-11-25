@@ -71,6 +71,7 @@ import type { Resolved } from "../../map/time.ts";
 import type { FindPointer } from "../../map/usePointer.ts";
 import { usePhone } from "../Shell.tsx";
 import { Tip } from "../ui/Tip.tsx";
+import { hintsChanged } from "../../map/terrainHints/hash.ts";
 import "./FindAreas.css";
 import "./FindPaths.css";
 
@@ -379,9 +380,14 @@ export default function FindPaths(p: {
       false,
     );
   const guessed = terrainReady?.guessed ?? true;
+  // A height map built from hints is the owner's terrain, not a guess; but never mistaken for a
+  // surveyed one (stage 21).
+  const fromHints = !guessed && !!terrain?.generated;
   const terrainNote = guessed
     ? "Terrain guessed from the picture."
-    : "Terrain from the height map.";
+    : fromHints
+      ? "Terrain from hints."
+      : "Terrain from the height map.";
 
   const [proposal, setProposal] = useState<{ key: string; value: Proposal } | null>(null);
   const [busy, setBusy] = useState(false);
@@ -1365,6 +1371,27 @@ export default function FindPaths(p: {
         <button type="button" className="paths-terrain is-guess" onClick={p.onTerrain}>
           <TriangleAlert size={14} aria-hidden />
           <span>Guessing terrain from the picture</span>
+        </button>
+      </Tip>
+    ) : fromHints ? (
+      <Tip
+        label={
+          hintsChanged(map)
+            ? "The hints changed since the height map was built: build it again in Terrain"
+            : "Built from terrain hints: adjust them in Terrain"
+        }
+      >
+        <button
+          type="button"
+          className={`paths-terrain${hintsChanged(map) ? " is-guess" : ""}`}
+          onClick={p.onTerrain}
+        >
+          <Mountain size={14} aria-hidden />
+          <span>
+            {hintsChanged(map)
+              ? "Hints changed since it was built · Build again"
+              : "Terrain from hints (generated)"}
+          </span>
         </button>
       </Tip>
     ) : (
