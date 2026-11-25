@@ -22,6 +22,19 @@ const lastLink = (page: Page, name: string) =>
 /** Waits for what the reader keeps on the device to be written, which is a moment after a scroll. */
 const kept = (page: Page) => page.waitForTimeout(700);
 
+/** The entries either side of one in its folder, as the library has them. */
+async function neighbours(
+  page: Page,
+  path: string,
+): Promise<{
+  previous: { path: string; title: string } | null;
+  next: { path: string; title: string } | null;
+}> {
+  const res = await page.request.get(`/api/keep-going/from-here?path=${encodeURIComponent(path)}`);
+  expect(res.ok(), await res.text()).toBe(true);
+  return res.json();
+}
+
 /** An entry that exists only as a draft, long enough to scroll, with a heading to say where. */
 async function tallDraft(page: Page, id: string): Promise<string> {
   const path = "03 Things/Keep Going Tall.md";
@@ -458,30 +471,41 @@ test.describe("What's missing (AI)", () => {
 
 test.describe("next and previous in the folder", () => {
   test("two links at the foot, and Alt+Up and Alt+Down", async ({ page }) => {
+    // The neighbours are the library's to say, whatever other tests have added to the folder.
+    const { previous, next } = await neighbours(page, SALT_ROAD);
+    expect(previous).not.toBeNull();
+    expect(next).not.toBeNull();
     await page.goto(entry(SALT_ROAD));
     const nav = page.getByRole("navigation", { name: "In 01 Places" });
-    await expect(
-      nav.getByRole("link", { name: /Previous in 01 Places\s*Salt Flats/ }),
-    ).toBeVisible();
-    await expect(nav.getByRole("link", { name: /Next in 01 Places.*Unwritten/ })).toBeVisible();
+    await expect(nav.getByRole("link", { name: /Previous in 01 Places/ })).toContainText(
+      previous!.title,
+    );
+    await expect(nav.getByRole("link", { name: /Next in 01 Places/ })).toContainText(next!.title);
 
     await page.keyboard.press("Alt+ArrowDown");
-    await expect(page.locator(".entry h1").first()).toHaveText("Unwritten");
+    await expect(page.locator(".entry h1").first()).toHaveText(next!.title);
     await page.keyboard.press("Alt+ArrowUp");
     await expect(page.locator(".entry h1").first()).toHaveText("Salt Road");
     await page.keyboard.press("Alt+ArrowUp");
-    await expect(page.locator(".entry h1").first()).toHaveText("Salt Flats");
+    await expect(page.locator(".entry h1").first()).toHaveText(previous!.title);
     await nav.getByRole("link", { name: /Next in 01 Places/ }).click();
     await expect(page.locator(".entry h1").first()).toHaveText("Salt Road");
   });
 
   test("an end of the folder has one link, and its key does nothing", async ({ page }) => {
-    await page.goto(entry("01 Places/Unwritten.md"));
-    await expect(page.locator(".entry h1").first()).toHaveText("Unwritten");
+    // The last entry of the folder, found by following Next.
+    let last = SALT_ROAD;
+    for (let n = await neighbours(page, last); n.next; n = await neighbours(page, last)) {
+      last = n.next.path;
+    }
+    await page.goto(entry(last));
+    await expect(page.locator(".entry h1").first()).toHaveText(
+      (last.split("/").pop() ?? "").replace(/\.md$/, ""),
+    );
     const nav = page.getByRole("navigation", { name: "In 01 Places" });
     await expect(nav.getByRole("link")).toHaveCount(1);
     await page.keyboard.press("Alt+ArrowDown");
-    await expect(page.locator(".entry h1").first()).toHaveText("Unwritten");
+    await expect(page).toHaveURL(entry(last));
   });
 });
 
