@@ -193,16 +193,24 @@ export function workingGrid(
   w: number,
   h: number,
   detail: number,
+  most = CELLS[detail]!,
 ): { w: number; h: number; cell: number } {
-  const cell = Math.max(0.5, Math.sqrt((w * h) / CELLS[detail]!));
+  // Never finer than the picture itself.
+  const cell = Math.max(1, Math.sqrt((w * h) / most));
   return { w: Math.max(4, Math.round(w / cell)), h: Math.max(4, Math.round(h / cell)), cell };
 }
 
 /** Builds heights from the hints in use. `hints` are only those accepted. */
-export function buildHeights(place: BuildPlace, hints: readonly PxHint[], s: BuildSettings): Built {
+export function buildHeights(
+  place: BuildPlace,
+  hints: readonly PxHint[],
+  s: BuildSettings,
+  /** The working grid's cells, when not the detail's own (the tests build small). */
+  most?: number,
+): Built {
   const t0 = performance.now();
   const of = (k: PxHint["kind"]) => hints.filter((x) => x.kind === k);
-  const grid = workingGrid(place.w, place.h, s.detail);
+  const grid = workingGrid(place.w, place.h, s.detail, most);
   const GW = grid.w;
   const GH = grid.h;
   const GN = GW * GH;
