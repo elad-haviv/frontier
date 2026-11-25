@@ -5,6 +5,7 @@ import {
   History,
   type LucideIcon,
   Pencil,
+  Pin,
   TableOfContents,
   TextCursorInput,
   UnfoldHorizontal,
@@ -36,6 +37,15 @@ export interface EntryActionsProps {
   outlineOpen: boolean;
   onGraph: () => void;
   graphOpen: boolean;
+  /** Pin to "Working on"; absent where the entry cannot be pinned. */
+  pin?:
+    | {
+        pinned: boolean;
+        onToggle: () => void;
+        /** Why it cannot be done now, such as having no connection. */
+        blocked?: string | undefined;
+      }
+    | undefined;
   /** Present for an entry that can be changed. */
   changes?:
     | {
@@ -104,6 +114,24 @@ function Item({ action }: { action: Action }) {
   );
 }
 
+/** The pin: an icon that shows whether the entry is pinned. */
+function PinTool({ pin }: { pin: NonNullable<EntryActionsProps["pin"]> }) {
+  return (
+    <IconButton
+      label="Pin to Working on"
+      icon={Pin}
+      size="sm"
+      shortcut="entry.pin"
+      tipSide="bottom"
+      className={`entry-tool entry-tool-pin${pin.pinned ? " is-pinned" : ""}`}
+      disabled={pin.blocked !== undefined}
+      {...(pin.blocked ? { disabledReason: pin.blocked } : {})}
+      aria-pressed={pin.pinned}
+      onClick={pin.onToggle}
+    />
+  );
+}
+
 function EditLink({ href }: { href: string }) {
   return (
     <IconLink
@@ -126,6 +154,7 @@ export function EntryToolbar(p: EntryActionsProps) {
   const { main, rest } = actionsOf(p);
   return (
     <div className="entry-tools" role="toolbar" aria-label="Entry actions">
+      {p.pin && <PinTool pin={p.pin} />}
       {main.map((a) => (
         <Tool key={a.id} action={a} />
       ))}
@@ -158,6 +187,7 @@ export function EntryPhoneActions(p: EntryActionsProps) {
   const { main, rest } = actionsOf(p);
   return (
     <span className="entry-phone-tools">
+      {p.pin && <PinTool pin={p.pin} />}
       <Menu label="More actions">
         {main.map((a) => (
           <Item key={a.id} action={a} />

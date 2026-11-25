@@ -1,6 +1,6 @@
 import { aliasesOf, dirname, splitFrontmatter, stem } from "@frontier/vault";
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
-import { Link, useLocation } from "react-router-dom";
+import { Link, useLocation, useNavigate, useNavigationType } from "react-router-dom";
 import {
   api,
   ApiFailure,
@@ -21,6 +21,7 @@ import {
   scrollPageToTop,
   usePhone,
   useRefresh,
+  useStatus,
   useWords,
 } from "../components/Shell.tsx";
 import {
@@ -35,11 +36,25 @@ import { CustomFields, Fields } from "../components/Fields.tsx";
 import { ProposeFields } from "../components/ProposeFields.tsx";
 import { Markdown } from "../render/Markdown.tsx";
 import { IconButton } from "../components/ui/IconButton.tsx";
-import { FileDown, History, MessageSquare, TableOfContents, Waypoints } from "lucide-react";
+import {
+  ArrowLeft,
+  FileDown,
+  History,
+  MessageSquare,
+  TableOfContents,
+  Waypoints,
+} from "lucide-react";
 import { Problem } from "../components/ui/Problem.tsx";
 import { Progress } from "../components/ui/Progress.tsx";
 import { useToast } from "../components/ui/Toast.tsx";
 import { StickyLine } from "../components/entry/StickyLine.tsx";
+import { BacklinksLine, FolderNeighbours, FromHere } from "../components/entry/FromHere.tsx";
+import { headingAt, ResumeLine } from "../components/entry/ResumeLine.tsx";
+import { IconLink } from "../components/ui/IconButton.tsx";
+import { usePins, togglePin } from "../keepGoing/pins.ts";
+import { recents, useLastEntry } from "../keepGoing/recents.ts";
+import { arrivedByHistory } from "../keepGoing/strip.ts";
+import { useShortcut } from "../keys.ts";
 import { useCurrentHeading } from "../components/entry/useCurrentHeading.ts";
 import { OutlinePanel } from "../components/entry/OutlinePanel.tsx";
 import { HistoryPanel } from "../components/entry/HistoryPanel.tsx";
@@ -95,12 +110,23 @@ const NO_COMMENTS: PassageComment[] = [];
 
 const join = (folder: string, name: string) => `${folder ? folder + "/" : ""}${name}.md`;
 
+/** Whether a dialog or the image viewer is over the page, so the page's own keys keep out. */
+/** How the browser loaded this page: "navigate", "reload" or "back_forward". */
+const loadType = (): string | undefined =>
+  (performance.getEntriesByType("navigation")[0] as PerformanceNavigationTiming | undefined)?.type;
+
+const overlayOpen = () => document.querySelector(".dialog-scrim, .lightbox") !== null;
+
 export function EntryPage() {
   const words = useWords();
   const refresh = useRefresh();
   const toast = useToast();
+  const navigate = useNavigate();
+  const navigation = useNavigationType();
   const { pathname, hash, key } = useLocation();
   const path = currentEntryPath(pathname);
+  /** This showing of the entry: a new one at each visit, as a reload of the same entry is not. */
+  const visit = `${path}@${key}`;
   // Keyed by the visit as well as the path, so coming back from the editor shows the new draft.
   const entry = useAsync(() => api.entry(path), `${path}@${key}`);
   // Opened: kept on this device among the recent entries, to read with no connection.
@@ -110,6 +136,11 @@ export function EntryPage() {
   // Talking with a character is offered once a model for conversations is chosen.
   const ai = useAsync(() => api.conversations(), "conversations-ready");
   const canTalk = ai.state === "ready" && ai.value.ready;
+  // From here: what the library says about this entry. It is not there with no connection or for
+  // an entry that is only a draft, and then the foot of the page is quiet about it.
+  const fromHere = useAsync(() => api.fromHere(path), `from-here:${path}@${key}`);
+  const here = fromHere.state === "ready" && fromHere.value.path === path ? fromHere.value : null;
+  const aiOn = useStatus()?.ai.conversation === true;
   const comments = useAsync(() => api.commentCount(path), `comments:${path}@${key}`);
   const openComments = comments.state === "ready" ? comments.value.open : 0;
   // The comments themselves, for the margin and the Comments tab.
@@ -146,11 +177,33 @@ export function EntryPage() {
     return { text, aliases: aliasesOf(loaded.text) };
   }, [loaded]);
 
+  // Where reading stopped: scrolled back to when the entry is opened again (not for an address
+  // that names a heading, nor on the browser's back and forward), and recorded while reading.
+  const now = useRef({ path, visit, navigation, key });
+  now.current = { path, visit, navigation, key };
+  /** The showing whose opening place is decided; reading is recorded only after that. */
+  const settled = useRef<string | null>(null);
+  const [resumed, setResumed] = useState<{ visit: string; heading: string | null } | null>(null);
+
   // Jump to the heading named in the address, once the text is on the page.
   useEffect(() => {
     if (!view) return;
+    const here = now.current;
+    const fresh = loaded?.path === here.path && settled.current !== here.visit;
+    if (fresh) settled.current = here.visit;
     if (!hash) {
       scrollPageToTop();
+      const area = document.querySelector<HTMLElement>(".content");
+      const stop =
+        fresh && area && !arrivedByHistory(here.navigation, here.key, loadType())
+          ? recents.resumeAt(here.path, area.clientHeight)
+          : null;
+      if (fresh) {
+        if (area && stop !== null) {
+          area.scrollTo({ top: stop, behavior: "instant" });
+          setResumed({ visit: here.visit, heading: headingAt(area) });
+        } else setResumed(null);
+      }
       return;
     }
     const wanted = decodeURIComponent(hash.slice(1)).trim().toLowerCase();
@@ -161,6 +214,18 @@ export function EntryPage() {
     ].find((h) => h.textContent?.trim().toLowerCase() === wanted);
     heading?.scrollIntoView({ block: "start" });
   }, [view, hash]);
+
+  // Reading is recorded as it goes, so the entry opens there again.
+  const shown = loaded?.path ?? null;
+  useEffect(() => {
+    const area = document.querySelector<HTMLElement>(".content");
+    if (!area || shown !== path) return;
+    const record = () => {
+      if (settled.current === visit) recents.setScroll(path, area.scrollTop);
+    };
+    area.addEventListener("scroll", record, { passive: true });
+    return () => area.removeEventListener("scroll", record);
+  }, [shown, path, visit]);
 
   // A rename or move in progress ends with the entry it was started on.
   useEffect(() => {
@@ -177,6 +242,68 @@ export function EntryPage() {
   const editable = !!e && !e.readOnly && e.draft?.kind !== "delete";
   const reached = current >= 0 ? (headings[current]?.text ?? null) : null;
   const relocate = useRelocate(e, entry.retry);
+
+  // Viewed: kept among the entries read lately, and the one read before becomes the last. An
+  // entry that is not there is forgotten, so no list offers it.
+  useEffect(() => {
+    if (shown === path) recents.viewed(path, name, "read");
+  }, [shown, path, name]);
+  const missing = entry.state === "failed" && entry.error.status === 404;
+  useEffect(() => {
+    if (missing) recents.forget(path);
+  }, [missing, path]);
+  const last = useLastEntry(path);
+
+  // Pinned entries are "Working on", kept in the library with the folders.
+  const pins = usePins();
+  const pinned = pins.some((p) => p.path === path);
+  const offlineReason = offline;
+  const pinnable = !!e && e.path === path && e.draft?.kind !== "create" && !offlineAt;
+  async function pinOrUnpin() {
+    try {
+      const on = await togglePin(path);
+      toast({ message: on ? `Pinned “${name}” to Working on.` : `Unpinned “${name}”.` });
+    } catch (err) {
+      toast({
+        message: err instanceof ApiFailure ? err.message : "The pin could not be changed.",
+      });
+    }
+  }
+
+  // Keys: Alt+Left goes back to the last entry, Alt+Up and Alt+Down to the entries either side in
+  // the folder, "p" pins. A key with nothing to do is left to the browser.
+  useShortcut(
+    "entry.back",
+    () => {
+      if (!last || overlayOpen()) return false;
+      navigate(entryUrl(last.path));
+    },
+    !!e,
+  );
+  useShortcut(
+    "entry.previous",
+    () => {
+      if (!here?.previous || overlayOpen()) return false;
+      navigate(entryUrl(here.previous.path));
+    },
+    !!e,
+  );
+  useShortcut(
+    "entry.next",
+    () => {
+      if (!here?.next || overlayOpen()) return false;
+      navigate(entryUrl(here.next.path));
+    },
+    !!e,
+  );
+  useShortcut(
+    "entry.pin",
+    () => {
+      if (!pinnable || offlineReason || overlayOpen()) return false;
+      void pinOrUnpin();
+    },
+    !!e,
+  );
 
   /** Scrolls the page to a comment's passage. */
   function showPassage(c: PassageComment) {
@@ -303,11 +430,26 @@ export function EntryPage() {
       />
     ) : undefined;
 
-  // On a phone, once the title has gone, the slim top line says where the reader is.
-  usePageTitle(
-    titleGone && reached ? `${name} › ${reached}` : name,
-    titleGone ? outlineButton("phone-outline") : undefined,
-  );
+  // On a phone, once the title has gone, the slim top line says where the reader is. Beside it,
+  // a way back to the entry viewed before this one.
+  const phoneExtra =
+    phone && (last || titleGone) ? (
+      <>
+        {last && (
+          <IconLink
+            label={`Back to ${last.title}`}
+            icon={ArrowLeft}
+            size="sm"
+            shortcut="entry.back"
+            tipSide="bottom"
+            to={entryUrl(last.path)}
+            className="phone-last"
+          />
+        )}
+        {titleGone && outlineButton("phone-outline")}
+      </>
+    ) : undefined;
+  usePageTitle(titleGone && reached ? `${name} › ${reached}` : name, phoneExtra);
 
   if (entry.state === "loading") return <p className="center muted">Opening…</p>;
   // A failure to open another entry is not shown over the one before it.
@@ -357,6 +499,9 @@ export function EntryPage() {
     outlineOpen: bar.open === "outline",
     onGraph: toggle("graph"),
     graphOpen: bar.open === "graph",
+    pin: pinnable
+      ? { pinned, onToggle: () => void pinOrUnpin(), blocked: offlineReason }
+      : undefined,
     changes: editable
       ? {
           onRename: startRename,
@@ -382,8 +527,19 @@ export function EntryPage() {
         heading={reached}
         onFolder={revealInTree}
         onTop={scrollPageToTop}
+        last={last}
         actions={<EntryToolbar {...actions} />}
       />
+      {resumed?.visit === visit && (
+        <ResumeLine
+          heading={resumed.heading}
+          onTop={() => {
+            scrollPageToTop();
+            recents.clearScroll(path);
+            setResumed(null);
+          }}
+        />
+      )}
       {phone && (
         <PageAction>
           <EntryPhoneActions {...actions} />
@@ -539,19 +695,10 @@ export function EntryPage() {
 
         <HoverPreview scope=".prose" />
 
-        {ent.backlinks.length > 0 && (
-          <footer className="backlinks">
-            <h2>Mentioned in</h2>
-            <ul>
-              {[...new Map(ent.backlinks.map((b) => [b.path, b])).values()].map((b) => (
-                <li key={b.path}>
-                  <Link to={entryUrl(b.path)}>{b.title}</Link>
-                  <span className="muted"> · {b.path.split("/").slice(0, -1).join(" › ")}</span>
-                </li>
-              ))}
-            </ul>
-          </footer>
-        )}
+        {/* Keyed by the entry, so what was done in one (a Link it, an AI answer) is not carried to the next. */}
+        <FromHere key={path} path={path} title={name} data={here} ai={aiOn} />
+        <FolderNeighbours path={path} data={here} />
+        <BacklinksLine backlinks={ent.backlinks} />
       </article>
     </>
   );

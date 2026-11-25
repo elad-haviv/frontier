@@ -19,6 +19,7 @@ import { useDialogs } from "../components/Dialogs.tsx";
 import { Menu, MenuItem, MenuSeparator } from "../components/ui/Menu.tsx";
 import { SaveStatus, useSaveState } from "../components/ui/SaveStatus.tsx";
 import { useScope, useShortcut } from "../keys.ts";
+import { recents } from "../keepGoing/recents.ts";
 import { type QueueKey, queue } from "../sync/queue.ts";
 import { connection, useNeedsConnection } from "../sync/connection.ts";
 import { OfflineCopy, useReadAgain } from "../components/OfflineCopy.tsx";
@@ -296,6 +297,21 @@ export function EditPage() {
   // Opened: kept on this device among the recent entries.
   useEffect(() => markOpened(`entry:${path}`), [path]);
 
+  // Keep going (stage 25): an entry open in the editor is one edited lately, and the editor
+  // opens with the cursor where it was left, in view.
+  const title = (path.split("/").pop() ?? path).replace(/\.md$/i, "");
+  const opened = initial !== null;
+  useEffect(() => {
+    if (opened) recents.viewed(path, title, "edited");
+  }, [opened, path, title]);
+  useEffect(() => {
+    const v = view.current;
+    const at = recents.cursorAt(path);
+    if (!opened || !v || at === null) return;
+    // The editor made its own start, after the frontmatter; the saved place replaces it.
+    v.dispatch({ selection: { anchor: Math.min(at, v.state.doc.length) }, scrollIntoView: true });
+  }, [opened, path]);
+
   // Opened from the device's copy: once the server answers, and nothing here is unsent, its copy
   // replaces the one opened if they differ. With a record, the record's base decides on the server.
   useReadAgain(offlineAt, entryAddress(path), () => {
@@ -334,6 +350,8 @@ export function EditPage() {
           };
           setMessage(null);
           refresh();
+          // Saved: it is the entry edited last.
+          recents.touch(path, title, "edited");
         } else if (e.type === "stale") {
           // Text typed from now on goes to the same kept copy: revision 0 is never built on.
           draft.current = { ...draft.current, id: e.draftId, revision: 0 };
@@ -341,7 +359,7 @@ export function EditPage() {
           refresh();
         }
       }),
-    [key, refresh],
+    [key, refresh, path, title],
   );
 
   const onChange = useCallback(
@@ -421,7 +439,6 @@ export function EditPage() {
       setMessage("Select some words, or put the cursor in a paragraph, to ask about it.");
       return;
     }
-    const title = path.split("/").pop()!.replace(/\.md$/i, "");
     void queue.sendNow(key);
     navigate("/ask", {
       state: { question: `About this passage of "${title}":\n"""\n${at.text}\n"""\n` },
@@ -602,6 +619,8 @@ export function EditPage() {
     await queue.drop(key);
     if (draft.current.revision > 0) await api.discardDraft(draft.current.id).catch(() => undefined);
     refresh();
+    // A new entry that is discarded was never there: nothing remembers it.
+    if (draft.current.kind === "create") recents.forget(path);
     navigate(draft.current.kind === "create" ? "/" : entryUrl(path));
   }
 
@@ -636,6 +655,8 @@ export function EditPage() {
         }
       }
       refresh();
+      // Marked for deletion: it is no longer one of the entries read or edited lately.
+      recents.forget(path);
       // With no connection the list of unpublished changes cannot be read: the start page instead.
       navigate(connection.state === "online" ? "/unpublished" : "/");
     } catch (err) {
@@ -769,7 +790,11 @@ export function EditPage() {
           path={path}
           onTable={onCursorMoved}
           onProperties={openProperties}
-          onCursor={outline.onCursor}
+          onCursor={(line) => {
+            outline.onCursor(line);
+            const v = view.current;
+            if (v) recents.setCursor(path, v.state.selection.main.head);
+          }}
         />
       </EditorContextMenu>
       {backToFindings && bar.open !== "consult" && (

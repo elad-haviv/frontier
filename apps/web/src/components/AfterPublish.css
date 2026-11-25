@@ -1,0 +1,43 @@
+/* "Published." with its next steps. It takes the banner's frame (an accent border) and sets the
+   steps in rows. */
+.nudge {
+  background: var(--accent-soft);
+  color: var(--ink);
+}
+.nudge-head {
+  margin: 0 0 var(--space-2);
+}
+.nudge-head b {
+  color: var(--accent);
+}
+.nudge-steps {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.nudge-steps li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-2) 0;
+  border-top: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+}
+.nudge-words {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+button.nudge-go {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 0.25rem 0.7rem;
+  background: var(--paper-raised);
+  font-size: 0.85rem;
+}
+.nudge-foot {
+  margin: var(--space-2) 0 0;
+  font-size: 0.8rem;
+}
