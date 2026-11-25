@@ -12,8 +12,16 @@ import {
 } from "../src/index.js";
 
 const marker = (id: string, at: [number, number]): MapFeature =>
-  ({ id, kind: "marker", layer: "l1", at, entry: null, label: id, icon: null, child: null }) as
-    MapFeature;
+  ({
+    id,
+    kind: "marker",
+    layer: "l1",
+    at,
+    entry: null,
+    label: id,
+    icon: null,
+    child: null,
+  }) as MapFeature;
 
 const flat = {
   version: 1,

@@ -82,7 +82,14 @@ describe("measuring a height map against the picture", () => {
     });
     const rough = measure(grainy, WHOLE, water, G, WHOLE, null);
     expect(rough.noisy).toBeGreaterThan(0.015);
-    const smooth = measure(prepared(grainy, { invert: false, smoothing: 3 }), WHOLE, water, G, WHOLE, null);
+    const smooth = measure(
+      prepared(grainy, { invert: false, smoothing: 3 }),
+      WHOLE,
+      water,
+      G,
+      WHOLE,
+      null,
+    );
     expect(smooth.noisy).toBeLessThan(rough.noisy / 3);
     const fine = measure(heights(), WHOLE, water, G, WHOLE, null);
     expect(fine.flat).toBeLessThan(0.05);

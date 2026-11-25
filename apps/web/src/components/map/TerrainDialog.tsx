@@ -270,7 +270,9 @@ export default function TerrainDialog(p: {
       gridExtent[1] + ((e.clientY - box.top) / box.height) * (gridExtent[3] - gridExtent[1]),
     ];
   };
-  const drag = useRef<{ from: [number, number]; extent: Extent; corner: number | null } | null>(null);
+  const drag = useRef<{ from: [number, number]; extent: Extent; corner: number | null } | null>(
+    null,
+  );
   const perPixel = () =>
     (gridExtent[2] - gridExtent[0]) / (canvas.current?.getBoundingClientRect().width ?? 1);
   // On a phone the Line up step is the one in which a finger moves the height map.
@@ -279,11 +281,7 @@ export default function TerrainDialog(p: {
     if (points !== null) {
       const next = [...points, at(e)];
       if (next.length < 4) return setPoints(next);
-      const placed = matchTwoPoints(
-        draft.extent,
-        [next[0]!, next[2]!],
-        [next[1]!, next[3]!],
-      );
+      const placed = matchTwoPoints(draft.extent, [next[0]!, next[2]!], [next[1]!, next[3]!]);
       setPoints(null);
       if (!placed || extentProblem(map.space, placed)) {
         return setNote("Those two places are too close together to tell. Choose two far apart.");
@@ -348,7 +346,12 @@ export default function TerrainDialog(p: {
       const k = e.key === "-" ? 0.995 : 1.005;
       const cx = (x0 + x1) / 2;
       const cy = (y0 + y1) / 2;
-      next = [cx - ((x1 - x0) * k) / 2, cy - ((y1 - y0) * k) / 2, cx + ((x1 - x0) * k) / 2, cy + ((y1 - y0) * k) / 2];
+      next = [
+        cx - ((x1 - x0) * k) / 2,
+        cy - ((y1 - y0) * k) / 2,
+        cx + ((x1 - x0) * k) / 2,
+        cy + ((y1 - y0) * k) / 2,
+      ];
     } else if (e.key === "0") next = whole;
     if (!next) return;
     e.preventDefault();
@@ -407,9 +410,15 @@ export default function TerrainDialog(p: {
   })();
 
   const state = verdict(fit?.match ?? null);
-  const checks: { tone: "good" | "warn" | "bad"; text: string; advice?: string; act?: ReactNode }[] = [];
+  const checks: {
+    tone: "good" | "warn" | "bad";
+    text: string;
+    advice?: string;
+    act?: ReactNode;
+  }[] = [];
   if (fit) {
-    if (state === "good") checks.push({ tone: "good", text: `Lines up with the coast: ${percent(fit.match!)} match` });
+    if (state === "good")
+      checks.push({ tone: "good", text: `Lines up with the coast: ${percent(fit.match!)} match` });
     if (state === "near") {
       checks.push({
         tone: "warn",
@@ -427,7 +436,8 @@ export default function TerrainDialog(p: {
       checks.push({
         tone: "bad",
         text: `Doesn't line up with the coast: ${percent(fit.match!)} match`,
-        advice: "Rivers would cross the painted shore. Let Frontier slide it into place, or move it by hand.",
+        advice:
+          "Rivers would cross the painted shore. Let Frontier slide it into place, or move it by hand.",
         act: (
           <button type="button" onClick={lineUpNow}>
             Line up for me
@@ -490,11 +500,13 @@ export default function TerrainDialog(p: {
       checks.push({
         tone: "warn",
         text: "Real heights not given",
-        advice: "Slopes are relative: fine for rivers and for comparing routes, rough for travelling times.",
+        advice:
+          "Slopes are relative: fine for rivers and for comparing routes, rough for travelling times.",
       });
     }
   }
-  const worst = checks.find((c) => c.tone === "bad") ?? checks.find((c) => c.tone === "warn") ?? checks[0];
+  const worst =
+    checks.find((c) => c.tone === "bad") ?? checks.find((c) => c.tone === "warn") ?? checks[0];
 
   const done = () => {
     if (!draft.image) return p.onCancel();
@@ -502,7 +514,14 @@ export default function TerrainDialog(p: {
       image: draft.image,
       ...(draft.extent.every((v, i) => Math.abs(v - whole[i]!) < 1e-9)
         ? {}
-        : { extent: draft.extent.map((v) => Math.round(v * 1000) / 1000) as [number, number, number, number] }),
+        : {
+            extent: draft.extent.map((v) => Math.round(v * 1000) / 1000) as [
+              number,
+              number,
+              number,
+              number,
+            ],
+          }),
       ...(draft.invert ? { invert: true as const } : {}),
       ...(fit ? { seaLevel: Math.round(fit.seaLevel * 1000) / 1000 } : {}),
       ...(range ? { range, rangeUnit: draft.unit } : {}),
@@ -618,8 +637,8 @@ export default function TerrainDialog(p: {
       <section className="terrain-section">
         <h3>Until then, Find paths guesses</h3>
         <p>
-          The guess is good for routes and for tracing painted lines. Rivers are rough: they run
-          to the nearest coast and miss real valleys.
+          The guess is good for routes and for tracing painted lines. Rivers are rough: they run to
+          the nearest coast and miss real valleys.
         </p>
         {hints.length > 0 ? (
           <ul className="terrain-hints">
@@ -718,7 +737,9 @@ export default function TerrainDialog(p: {
           <p className="muted" role="status">
             {moved}
           </p>
-          {phone && <p className="muted">Drag the height map with a finger; its corners resize it.</p>}
+          {phone && (
+            <p className="muted">Drag the height map with a finger; its corners resize it.</p>
+          )}
           <p className="terrain-actions">
             <button
               type="button"

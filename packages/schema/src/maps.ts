@@ -60,7 +60,10 @@ export const MapTerrain = z
       .string()
       .min(1)
       .max(400)
-      .refine((p) => !p.startsWith("/") && !p.split("/").includes(".."), "Not a path in the vault."),
+      .refine(
+        (p) => !p.startsWith("/") && !p.split("/").includes(".."),
+        "Not a path in the vault.",
+      ),
     /** Where it lies, as an image's extent; left out: over the whole map. */
     extent: Extent.optional(),
     /** Black is high; left out: white is high. */
@@ -499,7 +502,9 @@ export function mergeMaps(base0: MapFile, mine0: MapFile, theirs0: MapFile): Map
   // The same feature must compare as equal whatever order its keys were set in.
   const [base, mine, theirs] = [ordered(base0), ordered(mine0), ordered(theirs0)];
   const clashes: string[] = [];
-  const pick = <K extends "title" | "space" | "markerSets" | "under" | "terrain">(key: K): MapFile[K] => {
+  const pick = <K extends "title" | "space" | "markerSets" | "under" | "terrain">(
+    key: K,
+  ): MapFile[K] => {
     if (same(mine[key], theirs[key]) || same(base[key], theirs[key])) return mine[key];
     if (same(base[key], mine[key])) return theirs[key];
     clashes.push(key);

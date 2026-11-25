@@ -182,3 +182,37 @@ test("a route from the end of a road continues it, or is made a separate path jo
   expect(same(other.points![0]!, [150, 320])).toBe(true);
   await cleanUp(page, [id]);
 });
+
+test("a branch starts on a road: drawn by hand, or from the road's right-click menu", async ({
+  page,
+}) => {
+  const id = await makeMap(page, "Branches", { features: [MAIN], styles: [ROAD_STYLE] });
+  await open(page, id);
+  // By hand: the first point snaps onto the road, and the finished path is joined at its start.
+  await page.getByRole("button", { name: "Path", exact: true }).click();
+  await click(page, [300, 321]);
+  await click(page, [300, 250]);
+  await page.keyboard.press("Enter");
+  await expect.poll(async () => (await paths(page)).length).toBe(2);
+  let all = await paths(page);
+  const first = all.find((f) => f.id !== "mainroad")!;
+  expect(first.startOn).toBe("mainroad");
+  expect(all.find((f) => f.id === "mainroad")!.points).toHaveLength(3);
+
+  // From the menu: the Path tool starts on the road where it was right-clicked.
+  await page.keyboard.press("Escape");
+  const at = await onMap(page, [200, 320]);
+  await page.mouse.click(at.x, at.y, { button: "right" });
+  await page.getByRole("menuitem", { name: "Branch a path from here" }).click();
+  await click(page, [200, 260]);
+  await page.keyboard.press("Enter");
+  await expect.poll(async () => (await paths(page)).length).toBe(3);
+  all = await paths(page);
+  const second = all[2]!;
+  expect(second.startOn).toBe("mainroad");
+  const main = all.find((f) => f.id === "mainroad")!;
+  expect(main.points).toHaveLength(4);
+  expect(main.points!.some((p) => same(p, second.points![0]!))).toBe(true);
+  expect(Math.abs(second.points![0]![1] - 320)).toBeLessThan(0.01);
+  await cleanUp(page, [id]);
+});

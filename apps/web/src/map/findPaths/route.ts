@@ -53,9 +53,7 @@ function scratchFor(n: number): Scratch {
 export function stepHours(t: Terrain, s: Surface, u: number, v: number): number {
   const length = t.grid.stepLength(u, v);
   const slope = ((t.heights[v]! - t.heights[u]!) * t.rise) / length;
-  return (
-    length * t.kmPerCell * 0.5 * (s.inv[u]! + s.inv[v]!) * slopeFactor(s.k, s.off, slope)
-  );
+  return length * t.kmPerCell * 0.5 * (s.inv[u]! + s.inv[v]!) * slopeFactor(s.k, s.off, slope);
 }
 
 /** The hours a run of cells takes, as travelled (Flattest's dislike of slopes is not time). */

@@ -95,12 +95,14 @@ describe("what the picture says of the ground", () => {
     expect(g.cell).toBe(1);
     const at = (x: number, y: number) => y * g.w + x;
     const near = (mask: Uint8Array, x: number, y: number, r = 2) => {
-      for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) if (mask[at(x + dx, y + dy)]) return true;
+      for (let dy = -r; dy <= r; dy++)
+        for (let dx = -r; dx <= r; dx++) if (mask[at(x + dx, y + dy)]) return true;
       return false;
     };
     // The sea is water and the land is not, nearly everywhere.
     let agree = 0;
-    for (let y = 0; y < 200; y++) for (let x = 0; x < 300; x++) agree += (ground.water[at(x, y)] === 1) === x < 89 ? 1 : 0;
+    for (let y = 0; y < 200; y++)
+      for (let x = 0; x < 300; x++) agree += (ground.water[at(x, y)] === 1) === x < 89 ? 1 : 0;
     expect(agree / 60000).toBeGreaterThan(0.97);
     expect(ground.forest[at(170, 60)]).toBe(1);
     expect(ground.forest[at(140, 150)]).toBe(0);
@@ -202,7 +204,15 @@ describe("the cell grid", () => {
   it("thickens a diagonal river so no diagonal step slips through, and draws lines and rings", () => {
     const g = flatGrid(6, 6);
     const river = new Uint8Array(36);
-    drawLine(river, g, [[0, 0], [5, 5]], 1);
+    drawLine(
+      river,
+      g,
+      [
+        [0, 0],
+        [5, 5],
+      ],
+      1,
+    );
     expect(river[14]).toBe(1);
     expect(river[8]).toBe(0);
     const wide = thicken(river, g);
@@ -210,7 +220,17 @@ describe("the cell grid", () => {
     expect(wide[8]).toBe(1);
     expect(wide[13]).toBe(1);
     const zone = new Uint8Array(36);
-    fillRing(zone, g, [[1, 1], [4, 1], [4, 4], [1, 4]], 1);
+    fillRing(
+      zone,
+      g,
+      [
+        [1, 1],
+        [4, 1],
+        [4, 4],
+        [1, 4],
+      ],
+      1,
+    );
     expect(zone[2 * 6 + 2]).toBe(1);
     expect(zone[0]).toBe(0);
     expect(zone[5 * 6 + 5]).toBe(0);

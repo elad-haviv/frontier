@@ -5,6 +5,7 @@ import {
   measure,
   panBy,
   type Position,
+  type Space,
   turnTo,
 } from "@frontier/geo";
 import {
@@ -84,6 +85,7 @@ import {
 import { folderFor } from "../map/featureEntry.ts";
 import { choicesFor, ghostMarker, withProposal } from "../map/place.ts";
 import { useSnapSetting, useSnapTargets } from "../map/snap.ts";
+import { nearestOnPath } from "../map/joins.ts";
 import { useReliefSetting } from "../map/reliefSetting.ts";
 import { useDiscovery } from "../map/useDiscovery.ts";
 import { useMapDraw } from "../map/useMapDraw.ts";
@@ -718,6 +720,13 @@ export function MapPage() {
         startPath: () => {
           chooseTool("path");
           if (menuAt.at) setSketch([menuAt.at]);
+        },
+        branch: (f) => {
+          // From the place on the path nearest the click: finished, it is joined there.
+          if (f.kind !== "path" || !menuAt.at) return;
+          const on = nearestOnPath(map.space as Space, f, menuAt.at).at;
+          chooseTool("path");
+          setSketch([on]);
         },
         startZone: () => {
           chooseTool("zone");

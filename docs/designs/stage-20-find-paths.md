@@ -4,7 +4,7 @@
   tool where I decide on a type of path like rivers, routes, etc? Maybe if I provide height maps you
   could have an easier time making rivers, and by choosing two points on a map you could also infer
   from the graphics/height map the best travelling route."
-- **Status:** proposal, waiting for the owner's approval of the design and the four decisions at the end
+- **Status:** approved; see "Approved decisions" at the end for what the owner chose and what release 20a built
 - **Mockup:** `ux/auto-paths-mockup.html`. A working page, not a picture. It makes a height field,
   paints a fantasy map *from* it (sea, coast, lowland, forest, mountains with symbols, three painted
   rivers with tributaries, a dashed painted road with a bridge, five towns, parchment grain), then
@@ -485,3 +485,88 @@ return an accurate polyline. The places a model could help:
 Then, separately: globes (about 3 days: wrap, cos φ, great-circle heuristic, poles), "Keep this guess
 as a height map" (1 day), per-world travel settings (decision 2b, about 3 days), the optional "Ask
 AI what the colours mean".
+
+## Approved decisions
+
+What the owner decided, in the order it was decided, and where release 20a stands on each. "Built"
+means in the app with tests; "not built yet" means decided and waiting for a later release.
+
+### The first five (the proposal's own)
+
+1. **Approved as proposed:** key D, the kinds River / Route / Trace, the same vocabulary as Find
+   areas. Built.
+2. **The height map is given in a separate Terrain dialog**, not as one of the map's pictures with
+   a "Height map" role. The "Height maps → How the owner gives one" part above is replaced by
+   `stage-20-terrain-dialog.md`. The map file holds one optional `terrain` item. Built.
+3. **First release: all three kinds, flat maps only.** On a globe the tool is off, with "Find paths
+   works on flat maps for now". Built.
+4. **Made rivers and roads count for later routes**, through a "counts as" field on map styles
+   (Water, Forest, Marsh, Mountains, River, Road), one select in the style's form. A usual style
+   added before the field existed counts by its id until the owner says otherwise; a new usual
+   style, Mountains, is added. Built.
+5. **Travelling time:** the map's length and "about n days at 8 hours a day", with built-in speeds
+   shown in each way of travelling's tooltip. Built. The time needs the map's scale in km, m,
+   miles, leagues or feet; a world's own unit gives a length and no time.
+
+### How paths connect
+
+6. **Joins stay attached.** A new path that ends on another path, from Find paths or from the Path
+   tool with snapping on, puts a corner into the other path at the meeting point (the same
+   coordinates; on a curved path, on the curve as drawn) and remembers the join on its own end:
+   `startOn` / `endOn` hold the other path's id. Old files keep their bytes; joins merge with their
+   path; a join to a path that is gone is dropped on reading, on merging and on saving. Moving the
+   shared corner moves both paths; moving or reshaping the other path re-places the joined end;
+   deleting the shared corner, or the joined path's own end point, lets the join go. No path is
+   ever split. Built (`apps/web/src/map/joins.ts`).
+   - A road found across a road gets a crossroads corner in both. Built for Find paths' routes in
+     a style that counts as Road. The crossroads corner is shared by its coordinates only: it is
+     not remembered as a join, so dragging it in one road does not move the other. Not built for
+     the Path tool.
+   - Rivers never cross rivers: a new river stops on the first made river it reaches. Built.
+7. **A route that runs partly along an existing road** offers "Make new stretches" or "Make whole
+   route", and the bar gives the whole journey with how much of it uses the road. **Not built
+   yet:** a route is always made whole.
+8. **Meeting the end of a path of the same kind:** the bar's main button becomes "Continue
+   ‹path›", which makes the two one path; "Make separate path" makes it a path of its own, joined
+   to the other at the end they share. Built for Find paths.
+
+### Snapping and branches
+
+9. **Snapping has targets.** A menu beside the magnet has Paths, Zones and Markers & labels, all on
+   at first, each remembered on the device; S still turns snapping on or off as a whole, and the
+   magnet's tooltip says what it snaps to. With Paths off, a new path neither snaps to nor joins
+   another: no shared corner, no remembered join, no Continue, no crossroads corner. Built.
+10. **Diverging roads.**
+    - By hand: a path started on another path, with snapping to paths on, is joined at its start.
+      Built.
+    - Right-click a path → "Branch a path from here" starts the Path tool on it. Built.
+    - Find paths' Route started on a road leaves it wherever is best (the whole road as the
+      start). **Not built yet:** the route starts where it was clicked, and is joined there.
+    - A branch that leaves a curved path smoothly. **Not built yet.**
+    - Rivers do not branch, except into a delta. Kept: nothing makes a river branch.
+
+### Steep ground
+
+11. **A steepest grade for each way of travelling, with switchbacks; cliffs; "Allow a tunnel" and
+    "Allow steps" when there is no way; a height profile and chevrons on steep stretches.**
+    **Not built yet**, none of it. What 20a has instead is the proposal's own: a slope slows each
+    way of travelling (Tobler's rule on foot, steeper for a horse and a cart), with no hard limit.
+    Without real heights, slopes are scaled so the steepest ground on the map is about a 30% pass.
+
+### Rivers that end inland
+
+12. **Basins, with a lake to accept and five ways for the river to end there; the terrain winning
+    over a painted river's inland end.** **Not built yet.** In 20a a hollow is filled to its lowest
+    rim and the river carries on from there ("Lake drains", without the lake being offered), and a
+    zone in a style that counts as Water ends a river.
+
+### Also in 20a
+
+- **Find areas' gaps.** The proposal's note was right: closing ink's gaps with a square did not
+  close them in a thin slanted dashed line, so a dashed diagonal border did not stop an area. Find
+  areas now also joins pieces of ink within eight pixels of each other by a stroke, whichever way
+  the line runs.
+- **Not in 20a, from the proposal itself:** a note kept on the made path (it is said once, over the
+  map); pulling a route onto a painted road's ink on the full-size picture; a traced line teaching
+  the tool that line's colour; lakes; globes; per-world speeds.
+

@@ -20,14 +20,7 @@ import {
   thicken,
 } from "./grid.ts";
 import { type Course, courseFrom, type Flow, flow, likelyRivers, upstream } from "./hydro.ts";
-import {
-  lineLength,
-  meander,
-  nearestOn,
-  resample,
-  simplifyOpen,
-  smoothOpen,
-} from "./lines.ts";
+import { lineLength, meander, nearestOn, resample, simplifyOpen, smoothOpen } from "./lines.ts";
 import type {
   LikelyReply,
   Mark,
@@ -333,7 +326,10 @@ export class Engine {
     // Smoothed, stepped evenly, wound (more on flat ground), then thinned. The winding is worked
     // out in half cells, so it is the same size on the map whatever the picture's size.
     const unit = grid.cell / 2;
-    const stepped = resample(smoothOpen(pts, 3), grid.cell).map((p): Px => [p[0] / unit, p[1] / unit]);
+    const stepped = resample(smoothOpen(pts, 3), grid.cell).map((p): Px => [
+      p[0] / unit,
+      p[1] / unit,
+    ]);
     const flatness = (p: Px) => {
       const c = pxCell(grid, [p[0] * unit, p[1] * unit]);
       const x = c % grid.w;
@@ -343,7 +339,10 @@ export class Engine {
       const gy = y > 0 && y < grid.h - 1 ? e[c + grid.w]! - e[c - grid.w]! : 0;
       return 1 / (1 + (Math.hypot(gx, gy) * t.terrain.rise * 9) ** 2);
     };
-    const wound = meander(stepped, req.meander, flatness).map((p): Px => [p[0] * unit, p[1] * unit]);
+    const wound = meander(stepped, req.meander, flatness).map((p): Px => [
+      p[0] * unit,
+      p[1] * unit,
+    ]);
     wound[0] = pts[0]!;
     wound[wound.length - 1] = pts[last]!;
     const points = simplifyOpen(wound, req.eps);
@@ -351,7 +350,10 @@ export class Engine {
     for (const c of cells) if (t.flow.raised[c]) onFlat++;
     const fall =
       t.top !== null
-        ? Math.max(0, t.heights[cells[0]!]! - Math.max(t.seaLevel ?? 0, t.heights[cells[cells.length - 1]!]!)) * t.top
+        ? Math.max(
+            0,
+            t.heights[cells[0]!]! - Math.max(t.seaLevel ?? 0, t.heights[cells[cells.length - 1]!]!),
+          ) * t.top
         : null;
     return {
       ok: true,

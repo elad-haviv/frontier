@@ -60,7 +60,9 @@ describe("where water runs", () => {
     const h = 24;
     const g = flatGrid(w, h);
     // A valley that falls to the sea along the bottom row.
-    const heights = field(w, h, (x, y) => (y === h - 1 ? -1 : Math.abs(x - 15) * 0.1 + (h - y) * 0.02));
+    const heights = field(w, h, (x, y) =>
+      y === h - 1 ? -1 : Math.abs(x - 15) * 0.1 + (h - y) * 0.02,
+    );
     const sea = new Uint8Array(w * h);
     for (let i = 0; i < w * h; i++) sea[i] = heights[i]! < 0 ? 1 : 0;
     const f = flow(g, heights, sea);
@@ -95,7 +97,9 @@ describe("where water runs", () => {
     const w = 41;
     const h = 30;
     const g = flatGrid(w, h);
-    const heights = field(w, h, (x, y) => (y === h - 1 ? -1 : Math.abs(x - 20) * 0.1 + (h - y) * 0.02));
+    const heights = field(w, h, (x, y) =>
+      y === h - 1 ? -1 : Math.abs(x - 20) * 0.1 + (h - y) * 0.02,
+    );
     const sea = new Uint8Array(w * h);
     for (let i = 0; i < w * h; i++) sea[i] = heights[i]! < 0 ? 1 : 0;
     const f = flow(g, heights, sea);

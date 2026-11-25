@@ -14,8 +14,16 @@ import {
 
 const space: Space = { kind: "flat", width: 600, height: 400, scale: 1, unit: "km" };
 const path = (id: string, points: Position[], extra: object = {}): PathFeature =>
-  ({ id, kind: "path", layer: "l1", points, entry: null, label: null, child: null, ...extra }) as
-    PathFeature;
+  ({
+    id,
+    kind: "path",
+    layer: "l1",
+    points,
+    entry: null,
+    label: null,
+    child: null,
+    ...extra,
+  }) as PathFeature;
 const mapOf = (...features: MapFeature[]): MapFile =>
   ({
     version: 1,
@@ -123,7 +131,10 @@ describe("keeping joins as the map changes", () => {
 
   it("moves the joined end with the shared corner when the other path's corner is dragged", () => {
     const r = get(start, "river");
-    const dragged = set(start, { ...r, points: r.points.map((p, i) => (i === 1 ? [220, 240] : p)) });
+    const dragged = set(start, {
+      ...r,
+      points: r.points.map((p, i) => (i === 1 ? [220, 240] : p)),
+    });
     const kept = keepJoins(start, dragged, space);
     expect(get(kept, "trib").points[1]).toEqual([220, 240]);
     expect(get(kept, "trib").endOn).toBe("river");
@@ -134,7 +145,13 @@ describe("keeping joins as the map changes", () => {
       [260, 330],
       [200, 200],
     ]);
-    const both = joinEnd({ ...start, features: [...start.features, second] }, space, "second", "end", "river");
+    const both = joinEnd(
+      { ...start, features: [...start.features, second] },
+      space,
+      "second",
+      "end",
+      "river",
+    );
     const t = get(both, "trib");
     const dragged = set(both, { ...t, points: [t.points[0]!, [190, 215]] });
     const kept = keepJoins(both, dragged, space);
@@ -144,7 +161,10 @@ describe("keeping joins as the map changes", () => {
 
   it("keeps the end on its corner when the whole other path is moved, or gains a point", () => {
     const r = get(start, "river");
-    const moved = set(start, { ...r, points: r.points.map(([x, y]): Position => [x + 10, y + 30]) });
+    const moved = set(start, {
+      ...r,
+      points: r.points.map(([x, y]): Position => [x + 10, y + 30]),
+    });
     expect(get(keepJoins(start, moved, space), "trib").points[1]).toEqual([210, 230]);
     const more = set(start, { ...r, points: [r.points[0]!, [150, 180], ...r.points.slice(1)] });
     const kept = keepJoins(start, more, space);
@@ -174,10 +194,23 @@ describe("keeping joins as the map changes", () => {
     expect(get(a, "trib").endOn).toBeUndefined();
     expect(get(a, "trib").points[1]).toEqual([200, 200]);
 
-    const longer = set(start, { ...get(start, "trib"), points: [[200, 50], [200, 120], [200, 200]] });
+    const longer = set(start, {
+      ...get(start, "trib"),
+      points: [
+        [200, 50],
+        [200, 120],
+        [200, 200],
+      ],
+    });
     const stillJoined = keepJoins(start, longer, space);
     expect(get(stillJoined, "trib").endOn).toBe("river");
-    const endGone = set(stillJoined, { ...get(stillJoined, "trib"), points: [[200, 50], [200, 120]] });
+    const endGone = set(stillJoined, {
+      ...get(stillJoined, "trib"),
+      points: [
+        [200, 50],
+        [200, 120],
+      ],
+    });
     const b = keepJoins(stillJoined, endGone, space);
     expect(get(b, "trib").endOn).toBeUndefined();
     expect(get(b, "river").points).toHaveLength(4);
@@ -269,10 +302,14 @@ describe("joins in the map file", () => {
     expect(get(clash.map, "trib").endOn).toBe("river");
     // The other side deleted the river: the join goes with it.
     const withoutRiver = { ...base, features: [tributary] } as MapFile;
-    const mergedGone = mergeMaps(joined, set(joined, { ...get(joined, "trib"), label: "Wyn" } as PathFeature), {
-      ...joined,
-      features: joined.features.filter((f) => f.id !== "river"),
-    });
+    const mergedGone = mergeMaps(
+      joined,
+      set(joined, { ...get(joined, "trib"), label: "Wyn" } as PathFeature),
+      {
+        ...joined,
+        features: joined.features.filter((f) => f.id !== "river"),
+      },
+    );
     expect(mergedGone.map.features.map((f) => f.id)).toEqual(["trib"]);
     expect(get(mergedGone.map, "trib").endOn).toBeUndefined();
     expect(withoutRiver.features).toHaveLength(1);

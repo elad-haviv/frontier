@@ -223,7 +223,12 @@ function dropSpecks(mask: Uint8Array, g: Grid, least: number): void {
       if (count <= least) members.push(i);
       const x = i % w;
       const y = (i / w) | 0;
-      for (const j of [x > 0 ? i - 1 : -1, x < w - 1 ? i + 1 : -1, y > 0 ? i - w : -1, y < h - 1 ? i + w : -1]) {
+      for (const j of [
+        x > 0 ? i - 1 : -1,
+        x < w - 1 ? i + 1 : -1,
+        y > 0 ? i - w : -1,
+        y < h - 1 ? i + w : -1,
+      ]) {
         if (j < 0 || !mask[j] || seen[j]) continue;
         seen[j] = 1;
         stack[sp++] = j;
@@ -265,7 +270,12 @@ export function guessHeights(g: Grid, water: Uint8Array, upland: Float32Array): 
     const x = i % g.w;
     const y = (i / g.w) | 0;
     const next = dist[i]! + 1;
-    for (const j of [x > 0 ? i - 1 : -1, x < g.w - 1 ? i + 1 : -1, y > 0 ? i - g.w : -1, y < g.h - 1 ? i + g.w : -1]) {
+    for (const j of [
+      x > 0 ? i - 1 : -1,
+      x < g.w - 1 ? i + 1 : -1,
+      y > 0 ? i - g.w : -1,
+      y < g.h - 1 ? i + g.w : -1,
+    ]) {
       if (j < 0 || dist[j]! <= next) continue;
       dist[j] = next;
       queue[tail++] = j;
@@ -363,8 +373,12 @@ export function lookAtGround(
   const useBlue = !ordinary(tally.blueLines, tally.blueMarks);
   const useRed = !ordinary(tally.redLines, tally.redMarks);
   // Grown a little, so the dashes of a road join up and a thin river is whole on the grid.
-  const river = useBlue ? pool(morph(blue, w, h, 1, true), w, h, grid, 1) : new Uint8Array(grid.w * grid.h);
-  const road = useRed ? pool(morph(red, w, h, 2, true), w, h, grid, 1) : new Uint8Array(grid.w * grid.h);
+  const river = useBlue
+    ? pool(morph(blue, w, h, 1, true), w, h, grid, 1)
+    : new Uint8Array(grid.w * grid.h);
+  const road = useRed
+    ? pool(morph(red, w, h, 2, true), w, h, grid, 1)
+    : new Uint8Array(grid.w * grid.h);
 
   const half = Math.max(1, Math.ceil((grid.cell * grid.cell) / 2));
   const waterG = pool(water, w, h, grid, Math.max(1, Math.ceil(grid.cell * grid.cell * 0.75)));

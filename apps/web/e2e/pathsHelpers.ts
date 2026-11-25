@@ -127,7 +127,8 @@ export const stored = (page: Page) =>
     const id = location.pathname.split("/").pop();
     return ((await (await fetch(`/api/maps/${id}`)).json()) as { map: Stored }).map;
   });
-export const paths = async (page: Page) => (await stored(page)).features.filter((f) => f.kind === "path");
+export const paths = async (page: Page) =>
+  (await stored(page)).features.filter((f) => f.kind === "path");
 export const saved = (page: Page) => expect(page.locator(".save-saved")).toBeVisible();
 
 export const viewOf = (page: Page) =>
@@ -170,7 +171,9 @@ export function distanceTo(p: Position, line: Position[]): number {
     const [ax, ay] = line[i - 1]!;
     const [bx, by] = line[i]!;
     const l = (bx - ax) ** 2 + (by - ay) ** 2;
-    const t = l ? Math.max(0, Math.min(1, ((p[0] - ax) * (bx - ax) + (p[1] - ay) * (by - ay)) / l)) : 0;
+    const t = l
+      ? Math.max(0, Math.min(1, ((p[0] - ax) * (bx - ax) + (p[1] - ay) * (by - ay)) / l))
+      : 0;
     best = Math.min(best, Math.hypot(p[0] - ax - t * (bx - ax), p[1] - ay - t * (by - ay)));
   }
   return best;
@@ -181,4 +184,3 @@ export const near = (p: Position | undefined, [x, y]: Position) => {
   expect(Math.abs(p![0] - x)).toBeLessThan(1);
   expect(Math.abs(p![1] - y)).toBeLessThan(1);
 };
-

@@ -48,7 +48,9 @@ export function withCounts(style: MapStyle, counts: CountsAs | null): MapStyle {
   const next = { ...style };
   delete next.counts;
   if (counts) return { ...next, counts };
-  return STARTER_STYLES.some((s) => s.id === style.id && s.counts) ? { ...next, counts: "nothing" } : next;
+  return STARTER_STYLES.some((s) => s.id === style.id && s.counts)
+    ? { ...next, counts: "nothing" }
+    : next;
 }
 
 /** Why a name cannot be taken, or null when it can. */

@@ -10,7 +10,13 @@ import { type FullPicture, refineRing } from "../findAreas/refine.ts";
 import { prepared } from "../terrain/fit.ts";
 import { Engine } from "./engine.ts";
 import { flatGrid } from "./grid.ts";
-import type { HeightSource, OpenedPaths, PathsRequest, ReliefReply, TerrainLook } from "./protocol.ts";
+import type {
+  HeightSource,
+  OpenedPaths,
+  PathsRequest,
+  ReliefReply,
+  TerrainLook,
+} from "./protocol.ts";
 import {
   type HeightPicture,
   heightsFromRgba,
@@ -124,7 +130,8 @@ function shrunk(src: HeightPicture, most: number): HeightPicture {
   for (let y = 0; y < h; y++) {
     for (let x = 0; x < w; x++) {
       let s = 0;
-      for (let dy = 0; dy < f; dy++) for (let dx = 0; dx < f; dx++) s += src.data[(y * f + dy) * src.w + x * f + dx]!;
+      for (let dy = 0; dy < f; dy++)
+        for (let dx = 0; dx < f; dx++) s += src.data[(y * f + dy) * src.w + x * f + dx]!;
       data[y * w + x] = s / (f * f);
     }
   }

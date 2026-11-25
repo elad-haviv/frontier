@@ -109,7 +109,12 @@ describe("a route", () => {
         for (let xx = 5; xx <= 35; xx++) x.road[at(xx, row)] = 1;
       });
     const onRoad = (row: number) => {
-      const found = search(flat(), surfaceFor(withRoad(row), "foot", "fast"), at(5, 15), at(35, 15))!;
+      const found = search(
+        flat(),
+        surfaceFor(withRoad(row), "foot", "fast"),
+        at(5, 15),
+        at(35, 15),
+      )!;
       return found.cells.filter((c) => ((c / W) | 0) === row).length;
     };
     // Three cells aside: 5 km/h on the road beats 4 straight across.
@@ -155,7 +160,8 @@ describe("a route", () => {
   it("goes round a hill when asked for the flattest way", () => {
     const heights = new Float32Array(W * H);
     for (let y = 0; y < H; y++) {
-      for (let x = 0; x < W; x++) heights[at(x, y)] = 0.6 * Math.exp(-(((x - 20) / 6) ** 2 + ((y - 15) / 6) ** 2));
+      for (let x = 0; x < W; x++)
+        heights[at(x, y)] = 0.6 * Math.exp(-(((x - 20) / 6) ** 2 + ((y - 15) / 6) ** 2));
     }
     const t = flat(heights, 0.5);
     const g = ground();

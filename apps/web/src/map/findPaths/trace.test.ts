@@ -1,7 +1,15 @@
 import { describe, expect, it } from "vitest";
 import type { Px } from "../findAreas/contour.ts";
 import { inkMasks } from "./classes.ts";
-import { joinLines, lineLength, meander, nearestOn, resample, simplifyOpen, smoothOpen } from "./lines.ts";
+import {
+  joinLines,
+  lineLength,
+  meander,
+  nearestOn,
+  resample,
+  simplifyOpen,
+  smoothOpen,
+} from "./lines.ts";
 import { Painter, rgb } from "./paint.ts";
 import { Tracer } from "./trace.ts";
 

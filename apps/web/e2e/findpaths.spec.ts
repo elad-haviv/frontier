@@ -1,8 +1,6 @@
 import { expect, test } from "@playwright/test";
 import {
   type Feature,
-  type Position,
-  type Stored,
   RIVER_STYLE,
   ROAD_STYLE,
   bar,
@@ -20,7 +18,6 @@ import {
   status,
   stored,
   upload,
-  viewOf,
 } from "./pathsHelpers.ts";
 
 /**
@@ -30,7 +27,6 @@ import {
  * west coast with a tributary from the north, a dashed road down x = 260 that bridges the river,
  * and a height map that matches: a valley along the river, rising east.
  */
-
 
 test.describe.configure({ mode: "serial" });
 
@@ -81,7 +77,9 @@ test("traces a painted river and its branch, and groups the two paths", async ({
   await cleanUp(page, [id]);
 });
 
-test("finds a route on foot and by cart that differ, guessing the terrain", async ({ page }, info) => {
+test("finds a route on foot and by cart that differ, guessing the terrain", async ({
+  page,
+}, info) => {
   test.skip(info.project.name !== "desktop", "Clicks need a mouse");
   const id = await makeMap(page, "Two ways");
   await open(page, id);
@@ -127,7 +125,9 @@ test("says there is no way by land to an island, and offers a ship", async ({ pa
   await click(page, [535, 200]);
   await expect(status(page)).toContainText("No way on foot");
   await expect(bar(page)).not.toHaveAttribute("data-ready", "true");
-  await bar(page).getByRole("button", { name: /Go by ship/ }).click();
+  await bar(page)
+    .getByRole("button", { name: /Go by ship/ })
+    .click();
   await ready(page);
   await expect(status(page)).toContainText("by ship");
   await expect(status(page)).toContainText("part by sea");
@@ -201,9 +201,9 @@ test("takes a road the owner made, by what its style counts as", async ({ page }
   // It leaves the straight line for the road 33 km to the south, and runs along it.
   const onRoad = route.points!.filter((p) => Math.abs(p[1] - 345) < 4);
   expect(onRoad.length).toBeGreaterThanOrEqual(2);
-  expect(Math.max(...onRoad.map((p) => p[0])) - Math.min(...onRoad.map((p) => p[0]))).toBeGreaterThan(
-    150,
-  );
+  expect(
+    Math.max(...onRoad.map((p) => p[0])) - Math.min(...onRoad.map((p) => p[0])),
+  ).toBeGreaterThan(150);
   await cleanUp(page, [id]);
 });
 
@@ -238,7 +238,9 @@ test("on a phone: taps make a route, Options opens, and Make path opens the path
   await expect(bar(page)).toHaveAttribute("data-state", "ready", { timeout: 20_000 });
   await expect(status(page)).toContainText("Tap the start, then the end");
   // The amber warning is an icon in the strip.
-  await expect(bar(page).getByRole("button", { name: "Guessing terrain from the picture" })).toBeVisible();
+  await expect(
+    bar(page).getByRole("button", { name: "Guessing terrain from the picture" }),
+  ).toBeVisible();
   const start = await onMap(page, [160, 120]);
   await page.touchscreen.tap(start.x, start.y);
   await expect(status(page)).toHaveText("Now tap the end");

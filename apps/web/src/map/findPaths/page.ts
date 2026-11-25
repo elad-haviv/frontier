@@ -73,8 +73,10 @@ export function kmPerUnit(space: MapFile["space"]): number | null {
 }
 
 /** Where a map's terrain lies: its own extent, or the whole map. */
-export const terrainExtent = (map: MapFile, terrain: MapTerrain): [number, number, number, number] =>
-  terrain.extent ?? wholeExtent(map.space);
+export const terrainExtent = (
+  map: MapFile,
+  terrain: MapTerrain,
+): [number, number, number, number] => terrain.extent ?? wholeExtent(map.space);
 
 /**
  * The metres between the lowest and the highest grey of a terrain, when its real heights are
@@ -118,9 +120,7 @@ export function makePaths(
         id: newItemId(),
         kind: "path",
         layer,
-        points: p.points.map((q, i) =>
-          p.exactEnd && i === p.points.length - 1 ? q : round(q),
-        ),
+        points: p.points.map((q, i) => (p.exactEnd && i === p.points.length - 1 ? q : round(q))),
         ...(curve ? { curve: "smooth" } : {}),
         ...(style ? { style } : {}),
         entry: null,
@@ -136,7 +136,11 @@ export function makePaths(
  * Add to: the selected path's shape on screen with the proposed line joined to it end to end
  * (whichever ends are nearest meet). Null when the path is gone.
  */
-export function addToPath(map: MapFile, drawn: Resolved, added: readonly Position[]): MapFile | null {
+export function addToPath(
+  map: MapFile,
+  drawn: Resolved,
+  added: readonly Position[],
+): MapFile | null {
   const feature = map.features.find((f) => f.id === drawn.feature.id);
   if (!feature || feature.kind !== "path" || drawn.feature.kind !== "path") return null;
   const points = joinLines(drawn.feature.points, added.map(round)) as Position[];

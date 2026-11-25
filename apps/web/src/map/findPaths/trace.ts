@@ -364,7 +364,10 @@ export class Tracer {
       }
       last = i;
     }
-    const out = pts.map((p, i): Px => [p[0] + normals[i]![0] * shift[i]!, p[1] + normals[i]![1] * shift[i]!]);
+    const out = pts.map((p, i): Px => [
+      p[0] + normals[i]![0] * shift[i]!,
+      p[1] + normals[i]![1] * shift[i]!,
+    ]);
     return smoothOpen(out, 2);
   }
 }

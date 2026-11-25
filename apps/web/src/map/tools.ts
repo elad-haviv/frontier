@@ -22,15 +22,7 @@ import { newItemId } from "./viewUrl.ts";
  * traced lines) from the picture and the map's heights.
  */
 export type Tool =
-  | "select"
-  | "marker"
-  | "path"
-  | "zone"
-  | "measure"
-  | "label"
-  | "place"
-  | "find"
-  | "paths";
+  "select" | "marker" | "path" | "zone" | "measure" | "label" | "place" | "find" | "paths";
 
 /** What a tap changes: each part that is given is set on the page. */
 export interface Step {

@@ -39,9 +39,7 @@ describe("a dashed border", () => {
     ["at a shallow slant", [0, 30], [239, 150]],
     ["at a steep slant", [80, 0], [150, 199]],
   ] as const)("%s splits it too", (_name, from, to) => {
-    const { at } = count(
-      new Painter(240, 200, LAND).line([[...from], [...to]], 2, INK, [8, 5]),
-    );
+    const { at } = count(new Painter(240, 200, LAND).line([[...from], [...to]], 2, INK, [8, 5]));
     // A point well to each side of the line.
     const mx = (from[0] + to[0]) / 2;
     const my = (from[1] + to[1]) / 2;

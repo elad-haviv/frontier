@@ -123,7 +123,7 @@ export function bridgeGaps(mask: Uint8Array, w: number, h: number, gap: number):
   for (let i = 0; i < w * h; i++) {
     const c = comp[i]!;
     if (c < 0) continue;
-    const b = (((i / w) | 0) / gap | 0) * bw + (((i % w) / gap) | 0);
+    const b = ((((i / w) | 0) / gap) | 0) * bw + (((i % w) / gap) | 0);
     if (block[b] === -1) block[b] = c;
     else if (block[b] !== c) block[b] = -2;
   }
@@ -135,7 +135,14 @@ export function bridgeGaps(mask: Uint8Array, w: number, h: number, gap: number):
       if (c < 0) continue;
       // Only the edge of a piece reaches out.
       const inside =
-        x > 0 && x < w - 1 && y > 0 && y < h - 1 && comp[i - 1] === c && comp[i + 1] === c && comp[i - w] === c && comp[i + w] === c;
+        x > 0 &&
+        x < w - 1 &&
+        y > 0 &&
+        y < h - 1 &&
+        comp[i - 1] === c &&
+        comp[i + 1] === c &&
+        comp[i - w] === c &&
+        comp[i + w] === c;
       if (inside) continue;
       const bx = (x / gap) | 0;
       const by = (y / gap) | 0;

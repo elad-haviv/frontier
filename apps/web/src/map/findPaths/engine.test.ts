@@ -236,7 +236,9 @@ describe("the engine: routes", () => {
       [10, 40],
       [110, 40],
     ];
-    expect(e.route({ stops: across, eps: 1, mode: "foot", variant: "fast" })).toEqual({ ok: false });
+    expect(e.route({ stops: across, eps: 1, mode: "foot", variant: "fast" })).toEqual({
+      ok: false,
+    });
     const ship = e.route({ stops: across, eps: 1, mode: "ship", variant: "fast" });
     expect(ship.ok).toBe(true);
     if (!ship.ok) return;

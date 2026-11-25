@@ -2,7 +2,7 @@
 
 - **For:** the owner's choice in Find paths, decision 1: "A separate Terrain dialog: a dedicated
   place to upload and adjust the height map, apart from the map's pictures."
-- **Status:** proposal, waiting for the owner's approval of the design and the four decisions at the end.
+- **Status:** approved; see "Approved decisions" at the end for what the owner chose and what release 20a built.
 - **Mockup:** `ux/terrain-dialog-mockup.html`. A working page. It reuses the generated world of the
   Find paths mockup, so the picture and the height field agree, and it measures the height map
   against the picture the way the real dialog would. Four height maps are in its library: a good
@@ -328,3 +328,39 @@ One optional `terrain` object on the map file (decision 1 of `auto-paths.md` no 
    Phone: steps, drag in Line up, Done. `docs/designs/stage-<n>-terrain.md` from this once approved.
 
 Then, separately: Keep this guess (1 day), 16-bit PNGs, globes with Find paths' own globe work.
+
+## Approved decisions
+
+1. **Approved as proposed**, with the `terrain` data shape above (image, extent, invert, seaLevel,
+   range and rangeUnit, smoothing). `guessed` is kept in the shape for a height picture that
+   Frontier makes itself (the kept guess, or one inferred from marks the owner reviews): such a
+   picture is an ordinary image with that marker. Nothing sets it yet.
+2. **Changes apply on Done**, as one step to undo, with Undo in the toast.
+3. **Without a height map:** terrain hints from zones and paths by their styles' "counts as", now;
+   "Keep this guess as a height map" later.
+4. **Lining up:** all three aids: Line up for me, Move by hand, Match two points.
+5. **Relief** (the designer's recommendation, the owner not having chosen): a view anyone can turn
+   on, editing or viewing, off until asked for, remembered on the device.
+
+### What release 20a built, and what it left
+
+Built: the dialog from the map's ⋯ menu, from Layers → Terrain, from Find paths' terrain line and
+from the chip on the map; the preview (Heights, Relief, Contours, Strength, Show flooding, the coast
+match); choosing and replacing the image through the image dialog; which way up, tried for a new
+image; Line up for me, Move by hand (drag, corners, arrow keys, + and −, 0), Match two points, the
+exact position; the sea level with what it floods and bares; real heights and smoothing; the check
+list and the verdict in the foot; Remove terrain; the empty state with the guess and the hints; the
+phone sheet with its five steps; relief on the map with key H.
+
+Left for later:
+
+- Relief is not drawn in a saved picture.
+- The preview is shown fitted; it does not zoom or pan.
+- The orange line of the height map's own shore is not drawn (the flooding colours show it).
+- The offline states: the device keeper does not store the terrain's image, and nothing says "The
+  height map isn't on this device". Offline, Find paths falls back to guessing without saying why.
+- "The height map is gone from the library" in the Layers row.
+- A colour picture is read by its brightness without the warning.
+- "A click beside the dialog closes it only while nothing has changed": a click beside it always
+  cancels.
+

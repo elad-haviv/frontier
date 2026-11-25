@@ -17,12 +17,18 @@ type Terrain = {
 const terrainOf = (page: Page) =>
   page.evaluate(async () => {
     const id = location.pathname.split("/").pop();
-    const loaded = (await (await fetch(`/api/maps/${id}`)).json()) as { map: { terrain?: Terrain } };
+    const loaded = (await (await fetch(`/api/maps/${id}`)).json()) as {
+      map: { terrain?: Terrain };
+    };
     return loaded.map.terrain ?? null;
   });
 const dialog = (page: Page) => page.getByRole("dialog", { name: "Terrain" });
 const match = async (page: Page) =>
-  Number(/(\d+)%/.exec((await dialog(page).getByRole("status", { name: "Coast match" }).textContent())!)![1]);
+  Number(
+    /(\d+)%/.exec(
+      (await dialog(page).getByRole("status", { name: "Coast match" }).textContent())!,
+    )![1],
+  );
 
 test.describe.configure({ mode: "serial" });
 
@@ -41,21 +47,32 @@ test("chooses a height map from Find paths' amber line, lines it up, sets the se
   await expect(dialog(page).getByText("What Find paths guesses now")).toBeVisible();
   await dialog(page).getByRole("button", { name: "Choose a height map…" }).click();
   const picker = page.getByRole("dialog", { name: "Choose a height map" });
-  await picker.getByRole("button", { name: /^Choose find-paths-heights-shifted/ }).first().click();
+  await picker
+    .getByRole("button", { name: /^Choose find-paths-heights-shifted/ })
+    .first()
+    .click();
   await picker.getByRole("button", { name: "Choose", exact: true }).click();
 
   // It does not line up: the match says so, and so does the check.
   await expect(dialog(page).getByRole("status", { name: "Coast match" })).toBeVisible();
   const before = await match(page);
   expect(before).toBeLessThan(85);
-  await expect(dialog(page).getByText(/(Doesn't line up with|Nearly on) the coast/).first()).toBeVisible();
+  await expect(
+    dialog(page)
+      .getByText(/(Doesn't line up with|Nearly on) the coast/)
+      .first(),
+  ).toBeVisible();
   // Line up for me slides it into place.
   await dialog(page).getByRole("button", { name: "Line up for me" }).first().click();
   await expect(dialog(page).getByText(/Lined up: coast \d+% → \d+%/)).toBeVisible();
   const after = await match(page);
   expect(after).toBeGreaterThan(before);
   expect(after).toBeGreaterThanOrEqual(85);
-  await expect(dialog(page).getByText(/Lines up with the coast/).first()).toBeVisible();
+  await expect(
+    dialog(page)
+      .getByText(/Lines up with the coast/)
+      .first(),
+  ).toBeVisible();
 
   // The sea level floods the land as it rises, and Match brings it back.
   const floods = dialog(page).getByRole("status", { name: "What the sea level does" });
@@ -115,7 +132,9 @@ test("adjusts terrain from the map's menu, shows relief, and removes it with Und
   await expect.poll(() => terrainOf(page)).toBeNull();
   await expect(chip).toHaveCount(0);
   await page.getByRole("button", { name: "Undo" }).first().click();
-  await expect.poll(async () => (await terrainOf(page))?.image ?? "").toContain("find-paths-heights");
+  await expect
+    .poll(async () => (await terrainOf(page))?.image ?? "")
+    .toContain("find-paths-heights");
   await cleanUp(page, [id]);
 });
 
@@ -136,7 +155,11 @@ test("on a phone: the steps one at a time, and Done", async ({ page }, info) => 
   await dialog(page).getByRole("button", { name: "Next" }).click();
   await expect(dialog(page).getByRole("slider", { name: "Sea level" })).toBeVisible();
   await steps.getByRole("tab", { name: "Check" }).click();
-  await expect(dialog(page).getByText(/Lines up with the coast/).first()).toBeVisible();
+  await expect(
+    dialog(page)
+      .getByText(/Lines up with the coast/)
+      .first(),
+  ).toBeVisible();
   await steps.getByRole("tab", { name: "Heights" }).click();
   await dialog(page).getByRole("combobox", { name: "Smoothing" }).selectOption("Light");
   await dialog(page).getByRole("button", { name: "Done" }).click();

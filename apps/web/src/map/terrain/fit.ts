@@ -169,7 +169,11 @@ export function flooding(
  * the same height: a banded or flat picture) and the share that is tiny hollows (lower than all
  * eight neighbours: a noisy one).
  */
-export function detail(heights: Float32Array, sea: Uint8Array, g: Grid): { flat: number; noisy: number } {
+export function detail(
+  heights: Float32Array,
+  sea: Uint8Array,
+  g: Grid,
+): { flat: number; noisy: number } {
   let land = 0;
   let flat = 0;
   let pits = 0;
@@ -198,8 +202,14 @@ export function detail(heights: Float32Array, sea: Uint8Array, g: Grid): { flat:
 
 /** The share of the grid the height picture covers, where it lies. */
 export function cover(srcExtent: Extent, gridExtent: Extent): number {
-  const w = Math.max(0, Math.min(srcExtent[2], gridExtent[2]) - Math.max(srcExtent[0], gridExtent[0]));
-  const h = Math.max(0, Math.min(srcExtent[3], gridExtent[3]) - Math.max(srcExtent[1], gridExtent[1]));
+  const w = Math.max(
+    0,
+    Math.min(srcExtent[2], gridExtent[2]) - Math.max(srcExtent[0], gridExtent[0]),
+  );
+  const h = Math.max(
+    0,
+    Math.min(srcExtent[3], gridExtent[3]) - Math.max(srcExtent[1], gridExtent[1]),
+  );
   return (w * h) / ((gridExtent[2] - gridExtent[0]) * (gridExtent[3] - gridExtent[1]));
 }
 

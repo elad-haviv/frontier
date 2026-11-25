@@ -16,13 +16,7 @@ import {
   type View,
   type ViewState,
 } from "@frontier/geo";
-import {
-  countsAs,
-  layerTree,
-  type MapFile,
-  type MapImage,
-  type MapStyle,
-} from "@frontier/schema";
+import { countsAs, layerTree, type MapFile, type MapImage, type MapStyle } from "@frontier/schema";
 import {
   Mountain,
   PenLine,
@@ -87,7 +81,6 @@ export interface PathsHandle extends FindPointer {
 }
 
 type Kind = "river" | "route" | "trace";
-type Way = Variant | "ship";
 interface Stop {
   at: Position;
   name?: string;
@@ -178,12 +171,6 @@ const remembered = {
   styleFor: {} as Partial<Record<Kind, string>>,
 };
 
-const sameKey = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
-function cssColour(name: string, fallback: string): string {
-  const value = getComputedStyle(document.documentElement).getPropertyValue(name);
-  return value.trim() || fallback;
-}
-
 export default function FindPaths(p: {
   map: MapFile;
   mapRef: RefObject<MapFile | null>;
@@ -233,7 +220,9 @@ export default function FindPaths(p: {
   );
   const terrain = map.terrain ?? null;
 
-  const [kind, setKindNow] = useState<Kind>(schematic || !picture ? (schematic ? "trace" : "river") : remembered.kind);
+  const [kind, setKindNow] = useState<Kind>(
+    schematic || !picture ? (schematic ? "trace" : "river") : remembered.kind,
+  );
   const [from, setFrom] = useState(remembered.from);
   const [meander, setMeander] = useState(remembered.meander);
   const [likely, setLikely] = useState(remembered.likely);
@@ -390,11 +379,25 @@ export default function FindPaths(p: {
       false,
     );
   const guessed = terrainReady?.guessed ?? true;
-  const terrainNote = guessed ? "Terrain guessed from the picture." : "Terrain from the height map.";
+  const terrainNote = guessed
+    ? "Terrain guessed from the picture."
+    : "Terrain from the height map.";
 
   const [proposal, setProposal] = useState<{ key: string; value: Proposal } | null>(null);
   const [busy, setBusy] = useState(false);
-  const proposalKey = JSON.stringify([terrainKey, pend, kind, meander, mode, variant, eps, p.snap, p.joinPaths, p.curve, dragging]);
+  const proposalKey = JSON.stringify([
+    terrainKey,
+    pend,
+    kind,
+    meander,
+    mode,
+    variant,
+    eps,
+    p.snap,
+    p.joinPaths,
+    p.curve,
+    dragging,
+  ]);
   const wanted = useRef("");
   wanted.current = proposalKey;
   /** The names of a route's ends: a marker's, or Start and End. */
@@ -490,7 +493,13 @@ export default function FindPaths(p: {
           return done({
             paths: [],
             ghosts: ship.ok
-              ? [{ key: "ship", points: ship.points.map(pos), label: `By ship${ship.hours !== null ? ` · ${timeOf(ship)}` : ""}` }]
+              ? [
+                  {
+                    key: "ship",
+                    points: ship.points.map(pos),
+                    label: `By ship${ship.hours !== null ? ` · ${timeOf(ship)}` : ""}`,
+                  },
+                ]
               : [],
             marks: ship.ok ? ship.marks.map((m) => ({ at: pos(m.at), kind: m.kind })) : [],
             text: `No way ${by} from ${title}${why}`,
@@ -499,7 +508,11 @@ export default function FindPaths(p: {
             ...(ship.ok ? { ship: { hours: ship.hours } } : {}),
           });
         }
-        const describe = (r: RouteReply & { ok: true }, ways: Proposal["ways"], ghosts: Ghost[]): Proposal => {
+        const describe = (
+          r: RouteReply & { ok: true },
+          ways: Proposal["ways"],
+          ghosts: Ghost[],
+        ): Proposal => {
           const points = r.points.map(pos);
           const bits: string[] = [];
           if (r.bridges) bits.push(plural(r.bridges, "bridge"));
@@ -554,7 +567,7 @@ export default function FindPaths(p: {
       // Trace.
       const ask = (at: Position, end: Position | null) =>
         traceAt({ at: px(at), end: end ? px(end) : null, eps, curved: p.curve, branches: true });
-      let r: TraceReply = await ask(pend.seed, pend.end);
+      const r: TraceReply = await ask(pend.seed, pend.end);
       if (!current()) return;
       if (!r.ok && r.why === "other" && pend.end) {
         // The second click was on another line: that line is followed instead.
@@ -588,11 +601,13 @@ export default function FindPaths(p: {
               : "Painted line";
       const count = paths.reduce((s, q) => s + q.points.length, 0);
       const length = lengthOf(main);
-      const added = paths.length > 1 ? ` · ${plural(paths.length - 1, "branch", "branches")} added` : "";
+      const added =
+        paths.length > 1 ? ` · ${plural(paths.length - 1, "branch", "branches")} added` : "";
       const offered = ghosts.length
         ? ` · ${plural(ghosts.length, "branch", "branches")} in grey: ${phone ? "tap" : "click"} to add`
         : "";
-      const again = pend.end || r.loop ? "" : ` · ${phone ? "tap" : "click"} it again to stop there`;
+      const again =
+        pend.end || r.loop ? "" : ` · ${phone ? "tap" : "click"} it again to stop there`;
       return done({
         paths,
         ghosts,
@@ -640,7 +655,8 @@ export default function FindPaths(p: {
 
   // The path style: the one chosen for this kind, else the usual one for what is being made.
   const pathStyles = p.styles.filter((s) => s.for === "path");
-  const usual = (counts: "river" | "road") => pathStyles.find((s) => countsAs(s) === counts)?.id ?? "";
+  const usual = (counts: "river" | "road") =>
+    pathStyles.find((s) => countsAs(s) === counts)?.id ?? "";
   const tracedAs = shown?.traced;
   const guessedStyle =
     kind === "river"
@@ -654,7 +670,8 @@ export default function FindPaths(p: {
             : "";
   const chosenStyle = styleFor[kind];
   const style =
-    chosenStyle !== undefined && (chosenStyle === "" || pathStyles.some((s) => s.id === chosenStyle))
+    chosenStyle !== undefined &&
+    (chosenStyle === "" || pathStyles.some((s) => s.id === chosenStyle))
       ? chosenStyle
       : guessedStyle;
 
@@ -696,7 +713,11 @@ export default function FindPaths(p: {
       let bd = 14;
       for (const f of drawn) {
         const ends: Position[] =
-          f.kind === "marker" ? [f.at] : f.kind === "path" ? [f.points[0]!, f.points[f.points.length - 1]!] : [];
+          f.kind === "marker"
+            ? [f.at]
+            : f.kind === "path"
+              ? [f.points[0]!, f.points[f.points.length - 1]!]
+              : [];
         for (const e of ends) {
           const s = v.project(e);
           if (!s) continue;
@@ -736,7 +757,9 @@ export default function FindPaths(p: {
     return x >= -0.5 && y >= -0.5 && x < imageFrame.w - 0.5 && y < imageFrame.h - 0.5;
   };
 
-  const [hover, setHover] = useState<{ at: Point; line: Position[] | null; tag: string } | null>(null);
+  const [hover, setHover] = useState<{ at: Point; line: Position[] | null; tag: string } | null>(
+    null,
+  );
   const hovering = useRef<{ busy: boolean; next: Point | null }>({ busy: false, next: null });
   const hoverAt = (at: Point | null) => {
     if (!at || phone || !imageFrame || !terrainReady) return setHover(null);
@@ -745,7 +768,13 @@ export default function FindPaths(p: {
       return setHover({
         at,
         line: null,
-        tag: ghost.blue ? "Click to take this river" : ghost.key === "ship" ? "Click to go by ship" : kind === "trace" ? "Click to add this branch" : "Click to take this way",
+        tag: ghost.blue
+          ? "Click to take this river"
+          : ghost.key === "ship"
+            ? "Click to go by ship"
+            : kind === "trace"
+              ? "Click to add this branch"
+              : "Click to take this way",
       });
     }
     const here = viewNow()?.unproject(at.x, at.y);
@@ -768,16 +797,17 @@ export default function FindPaths(p: {
       }
       const asked =
         kind === "river"
-          ? riverAt({ at: px(where), from, exact: true, meander, eps, snap: p.joinPaths }).then((r) =>
-              r.ok ? { line: r.points.map(pos), tag: "" } : null,
+          ? riverAt({ at: px(where), from, exact: true, meander, eps, snap: p.joinPaths }).then(
+              (r) => (r.ok ? { line: r.points.map(pos), tag: "" } : null),
             )
-          : traceAt({ at: px(where), end: null, eps, curved: p.curve, branches: false }).then((r) =>
-              r.ok
-                ? {
-                    line: r.points.map(pos),
-                    tag: `Click to follow this ${r.kind === "line" ? "line" : r.kind}`,
-                  }
-                : null,
+          : traceAt({ at: px(where), end: null, eps, curved: p.curve, branches: false }).then(
+              (r) =>
+                r.ok
+                  ? {
+                      line: r.points.map(pos),
+                      tag: `Click to follow this ${r.kind === "line" ? "line" : r.kind}`,
+                    }
+                  : null,
             );
       asked
         .then(
@@ -803,12 +833,15 @@ export default function FindPaths(p: {
     if (!here) return;
     const ghost = ghostAt(at, how.kind);
     if (ghost) {
-      if (ghost.blue) return choose({ kind: "river", at: ghost.points[0]!, from: "source", exact: false });
+      if (ghost.blue)
+        return choose({ kind: "river", at: ghost.points[0]!, from: "source", exact: false });
       if (ghost.key === "ship") return setMode("ship");
-      if (pend?.kind === "trace") return choose({ ...pend, branches: [...pend.branches, ghost.key] });
+      if (pend?.kind === "trace")
+        return choose({ ...pend, branches: [...pend.branches, ghost.key] });
       if (WAYS.includes(ghost.key as Variant)) return setVariant(ghost.key as Variant);
     }
-    if (!inPicture(here)) return p.say(picture ? "That is off the picture." : "That is off the height map.");
+    if (!inPicture(here))
+      return p.say(picture ? "That is off the picture." : "That is off the height map.");
     if (kind === "river") return choose({ kind: "river", at: here, from, exact: true });
     if (kind === "trace") {
       if (pend?.kind === "trace" && !pend.end) return choose({ ...pend, end: here });
@@ -931,7 +964,12 @@ export default function FindPaths(p: {
     const ends = [main.points[0]!, main.points[main.points.length - 1]!];
     for (const r of p.resolved) {
       const f = r.feature;
-      if (f.kind !== "path" || p.hidden.has(f.id) || p.hidden.has(f.layer) || p.locked.has(f.layer)) {
+      if (
+        f.kind !== "path" ||
+        p.hidden.has(f.id) ||
+        p.hidden.has(f.layer) ||
+        p.locked.has(f.layer)
+      ) {
         continue;
       }
       const theirs = countsAs(pathStyles.find((s) => s.id === f.style));
@@ -972,7 +1010,9 @@ export default function FindPaths(p: {
       setFrom(next);
       if (pend?.kind === "river" && pend.exact) setPendNow({ ...pend, from: next });
     } else if (kind === "route") {
-      const usable = WAYS.filter((v) => v === variant || (current?.ways?.[v] && !current.ways[v]!.same));
+      const usable = WAYS.filter(
+        (v) => v === variant || (current?.ways?.[v] && !current.ways[v]!.same),
+      );
       setVariant(usable[(usable.indexOf(variant) + 1) % usable.length] ?? "fast");
     } else return false;
   };
@@ -995,7 +1035,10 @@ export default function FindPaths(p: {
   // ---- Drawing ---------------------------------------------------------------------------------
 
   const canvas = useRef<HTMLCanvasElement>(null);
-  const [reliefPicture, setReliefPicture] = useState<{ key: string; canvas: HTMLCanvasElement } | null>(null);
+  const [reliefPicture, setReliefPicture] = useState<{
+    key: string;
+    canvas: HTMLCanvasElement;
+  } | null>(null);
   useEffect(() => {
     if (!p.relief || !terrainReady) return;
     let stale = false;
@@ -1005,7 +1048,11 @@ export default function FindPaths(p: {
         const c = document.createElement("canvas");
         c.width = r.w;
         c.height = r.h;
-        c.getContext("2d")!.putImageData(new ImageData(new Uint8ClampedArray(r.rgba), r.w, r.h), 0, 0);
+        c.getContext("2d")!.putImageData(
+          new ImageData(new Uint8ClampedArray(r.rgba), r.w, r.h),
+          0,
+          0,
+        );
         setReliefPicture({ key: terrainKey, canvas: c });
       },
       () => {},
@@ -1179,7 +1226,8 @@ export default function FindPaths(p: {
       from === "source"
         ? `${phone ? "Tap" : "Click"} where a river rises: it runs downhill to the sea`
         : `${phone ? "Tap" : "Click"} the coast where a river comes out: it is followed up to its source`;
-    if (likelyGhosts.length) status = `${plural(likelyGhosts.length, "likely river")} · ${click} one to take it`;
+    if (likelyGhosts.length)
+      status = `${plural(likelyGhosts.length, "likely river")} · ${click} one to take it`;
   } else if (kind === "route") {
     status = `${phone ? "Tap" : "Click"} the start, then the end · markers are snapped to`;
   } else status = `${phone ? "Tap" : "Click"} a river, road or coast painted in the picture`;
@@ -1226,7 +1274,12 @@ export default function FindPaths(p: {
               ? "A diagram has no terrain: Trace only"
               : null;
         return (
-          <Tip key={k.kind} label={k.hint} keys={shortcutText(k.key)} {...(off ? { note: off } : {})}>
+          <Tip
+            key={k.kind}
+            label={k.hint}
+            keys={shortcutText(k.key)}
+            {...(off ? { note: off } : {})}
+          >
             <button
               type="button"
               aria-pressed={kind === k.kind}
@@ -1331,7 +1384,11 @@ export default function FindPaths(p: {
             from,
             [
               { value: "source", label: "From its source", tip: "Click where the river rises" },
-              { value: "mouth", label: "From its mouth", tip: "Click the coast where it comes out" },
+              {
+                value: "mouth",
+                label: "From its mouth",
+                tip: "Click the coast where it comes out",
+              },
             ],
             (v) => {
               setFrom(v);
@@ -1433,7 +1490,10 @@ export default function FindPaths(p: {
               Height map
             </button>
           </Tip>
-          <Tip label="Draws the terrain in use as light, shade and contour lines" keys={shortcutText("map.relief")}>
+          <Tip
+            label="Draws the terrain in use as light, shade and contour lines"
+            keys={shortcutText("map.relief")}
+          >
             <button
               type="button"
               className="find-chip"
