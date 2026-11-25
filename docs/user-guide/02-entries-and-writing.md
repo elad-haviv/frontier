@@ -6,7 +6,7 @@ them: reading one, changing its name or folder, writing in it, attaching images 
 looking back through its history, exporting it, and seeing how it connects to the rest of your
 world.
 
-If you have never opened the app before, read the first chapter, "Getting started", and come back.
+If you have never opened the app before, read the "Getting started" chapter first and come back.
 This chapter assumes you can find your way around the side bar.
 
 **In this chapter**
@@ -89,8 +89,6 @@ All of the first three open the **New entry** dialog.
 The editor opens on the new entry. It starts with the entry's name as a heading, and if the folder
 has a **type** (for example, everything in the "People" folder is of type "person"), that type is
 written into the entry's properties for you. Nothing is saved as a version until you decide.
-
-> Tip: if you press Cancel or leave the editor without typing anything, no lasting entry is made.
 
 ---
 
@@ -225,8 +223,7 @@ also be "Queen Maren" and "Maren". Add them in the Properties panel under **Othe
 
 ### Backlinks
 
-The **Mentioned in** list at the bottom of the entry shows every entry that links to this one,
-including links through its other names. Use it to see where a person is mentioned, and to decide
+The **Mentioned in** list at the bottom of the entry shows every entry that links to this one. Use it to see where a person is mentioned, and to decide
 whether a rename will affect many entries (it will, and Frontier will tell you how many; see
 below).
 
@@ -564,7 +561,7 @@ table keys work:
 
 Only the cells that change are touched; the rest of the table is left exactly as you wrote it.
 Some limits: the header row and the separator row cannot be deleted as rows, and the last column
-cannot be deleted. Tab at the very last cell does nothing special. A bar you want inside a cell is written `\|`.
+cannot be deleted. A bar you want inside a cell is written `\|`.
 
 ---
 
@@ -651,7 +648,7 @@ Press **Add a property** to keep any extra fact about the entry, such as "Motto"
    | --- | --- |
    | Text | Any words |
    | Number | A quantity |
-   | Date | A calendar date picker |
+   | Date | A date |
    | Checkbox | Yes or no |
    | List of text | Several short items, separated by commas |
    | Link to an entry | Points at another entry, with an entry picker |
@@ -816,7 +813,7 @@ Dictation uses your browser's built-in speech recognition, so it depends on the 
 
 | Problem you may see | What to do |
 | --- | --- |
-| "Dictation is not available in this browser. You can type." | Use a browser that supports it (Chrome, Edge and Safari do), or type. |
+| "Dictation is not available in this browser. You can type." | Dictation depends on the browser (Chrome and Edge usually have it; some browsers do not). Use one that does, or type. |
 | "Microphone access was refused…" | Allow the microphone for this site in the browser's settings. |
 | "No microphone was found." | Connect one. |
 | "Dictation needs a connection in this browser." | Some browsers send speech to an online service. Reconnect, or type. |
@@ -860,7 +857,7 @@ any earlier state of an entry and bring it back.
 
 Press **History** in the Entry actions (or **⋯ → History**). The right-hand side bar lists the
 saved versions that changed this entry, newest first, each with its date and time and the first line
-of its note (for example "Save a version"). Frontier follows the entry through saved renames, so
+of the note saved with it. Frontier follows the entry through saved renames, so
 the history continues under the old name. A rename you have not saved yet is not in it.
 
 If you have never saved a version that touched this entry, the tab says "No saved version yet: it
@@ -978,7 +975,7 @@ Press **Gallery** in the side bar's list of places to see every image in your li
 - **Folders** down the left side (with counts) narrow the grid to one folder. **All folders** resets it.
 - Each **tile** is a thumbnail with its file name. Images used by entries come first. Under it,
   "In (entry), (entry) and N more" lists where it is used, each a link. A small **Unpublished**
-  (or **Unsaved**) mark shows an image that was uploaded but is not in a saved version yet.
+  mark shows an image that was uploaded but is not in a saved version yet.
 - Click a thumbnail to open it in the lightbox, with previous/next arrows across the gallery.
 
 The Gallery is for looking and finding. To add an image to an entry, use the editor's **Add an
@@ -1003,13 +1000,13 @@ Choose **Graph** in the side bar's list of places.
 | Drag the background | Pan |
 | Mouse wheel, or pinch on a touchscreen | Zoom |
 | **Zoom in**, **Zoom out**, **Fit the graph** buttons (bottom right of the picture) | Zoom, or fit everything on screen |
-| Rest the pointer on a dot | A preview card of the entry; the nearby names appear |
+| Rest the pointer on a dot | A preview card with the start of the entry |
 | Click a dot | Select it: a card at the bottom shows its name and folder, and **Open** |
 | Double-click a dot, or press **Open** on the card | Open the entry |
 | Tap a dot on a touchscreen | Select it; tap the selected dot again to open it |
 | Click empty space, or **Clear the selection** (✕) | Clear the selection |
 
-Entries that are not saved yet are marked "unpublished"/"Unsaved" on the card and in the list. Each time you
+Entries that are not in a saved version yet are marked "unpublished" on the card and in the Entries list. Each time you
 come back to the Graph in the same visit, it remembers where you were looking.
 
 **Finding an entry.** The **Find an entry** box at the top left searches names, other names and
@@ -1056,8 +1053,8 @@ and the entries that link to it.
 - **Open in full graph** takes you to the Graph screen with this entry already selected.
 - An entry with no links at all says "No other entry links here, nor is linked from here."
 
-A link between two entries is drawn as soon as one mentions the other, so the Graph is a good way
-to find **orphans** (dots with no lines) that nothing mentions yet.
+The Graph is also a good way to find **orphans**: dots with no lines, which no entry mentions and
+which mention no entry.
 
 ---
 
