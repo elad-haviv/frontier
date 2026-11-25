@@ -1,4 +1,4 @@
-import type { PublishPlan, UnpublishedResponse } from "@frontier/schema";
+import type { AfterPublishStep, PublishPlan, UnpublishedResponse } from "@frontier/schema";
 import { ActionButton } from "../components/ui/ActionButton.tsx";
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
@@ -9,6 +9,9 @@ import { api, ApiFailure, chronicleUrl, editUrl, entryUrl, imageUrl, mapUrl } fr
 import { Diff } from "../components/Diff.tsx";
 import { useRefresh, useWords } from "../components/Shell.tsx";
 import { useDialogs } from "../components/Dialogs.tsx";
+import { AfterPublish } from "../components/AfterPublish.tsx";
+import { recents } from "../keepGoing/recents.ts";
+import { followPublish, publishedEntries } from "../keepGoing/strip.ts";
 import { Problem } from "../components/ui/Problem.tsx";
 import { Progress } from "../components/ui/Progress.tsx";
 
@@ -35,6 +38,28 @@ const REASON: Record<string, string> = {
 const libraryReason = (noun: string) =>
   `The ${noun} were changed here and in the vault in the same places. Keep one of the two.`;
 
+/** How long Publish waits for the next steps before it is quiet about them, in milliseconds. */
+const STEPS_WAIT_MS = 2500;
+
+/**
+ * The next steps after a publish, from what it wrote. None when there are none, or when they are
+ * slow or cannot be had: Publish is not made to wait for them.
+ */
+async function nextSteps(paths: string[]): Promise<AfterPublishStep[]> {
+  if (paths.length === 0) return [];
+  let timer: number | undefined;
+  try {
+    const slow = new Promise<never>((_, no) => {
+      timer = window.setTimeout(() => no(new Error("slow")), STEPS_WAIT_MS);
+    });
+    return (await Promise.race([api.afterPublish(paths), slow])).steps;
+  } catch {
+    return [];
+  } finally {
+    window.clearTimeout(timer);
+  }
+}
+
 export function UnpublishedPage() {
   const dialogs = useDialogs();
   const words = useWords();
@@ -47,6 +72,8 @@ export function UnpublishedPage() {
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<{ kind: "error" | "ok"; text: string } | null>(null);
   const [loading, setLoading] = useState(false);
+  /** The next steps after the last Publish, with the one it was; a new one each time. */
+  const [nudge, setNudge] = useState<{ n: number; steps: AfterPublishStep[] } | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -97,13 +124,34 @@ export function UnpublishedPage() {
     setBusy(true);
     setNotice(null);
     try {
+      // What this publish writes, found before the lists are read again.
+      const deleted = plan.ready.flatMap((id) => {
+        const d = data?.drafts.find((x) => x.id === id);
+        return d?.kind === "delete" ? [d.path] : [];
+      });
+      const written = publishedEntries([
+        ...plan.ready.map(pathOf),
+        ...plan.merges.filter((m) => confirmed.has(m.id)).map((m) => m.path),
+        ...plan.renames.map((r) => r.to),
+      ]).filter((p) => !deleted.includes(p));
       const { commit } = await api.confirm(plan.planId, [...confirmed], message.trim());
+      // The entries read lately follow what was moved and forget what was deleted.
+      followPublish(recents, { renames: plan.renames, deleted });
       setPlan(null);
       setMessage("");
-      setNotice({
-        kind: "ok",
-        text: words.own ? "Saved as a new version." : `Published as commit ${commit.slice(0, 10)}.`,
-      });
+      const steps = await nextSteps(written);
+      if (steps.length > 0) {
+        setNotice(null);
+        setNudge((n) => ({ n: (n?.n ?? 0) + 1, steps }));
+      } else {
+        setNudge(null);
+        setNotice({
+          kind: "ok",
+          text: words.own
+            ? "Saved as a new version."
+            : `Published as commit ${commit.slice(0, 10)}.`,
+        });
+      }
       await load();
       refresh();
     } catch (err) {
@@ -128,6 +176,9 @@ export function UnpublishedPage() {
     const library = libraryFileOf(data?.drafts.find((d) => d.id === id)?.path ?? "");
     if (library) await queue.drop(library.name);
     await api.discardDraft(id).catch(fail);
+    // A new entry that is thrown away was never there.
+    const thrown = data?.drafts.find((d) => d.id === id);
+    if (thrown?.kind === "create") recents.forget(thrown.path);
     if (library) await libraryFileClient(library).reload();
     setPlan(null);
     await load();
@@ -198,6 +249,9 @@ export function UnpublishedPage() {
         </p>
       </header>
 
+      {nudge && (
+        <AfterPublish key={nudge.n} steps={nudge.steps} verb={words.own ? "Saved" : "Published"} />
+      )}
       {notice && (
         <p className={`banner ${notice.kind === "ok" ? "banner-ok" : ""}`} role="status">
           {notice.text}

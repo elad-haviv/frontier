@@ -1,0 +1,247 @@
+/* "From here": the strip at the foot of an entry (stage 25). Two columns where the page is wide
+   enough, one on a phone. */
+.fh {
+  container: fh / inline-size;
+  margin-top: 3rem;
+}
+.fh > h2 {
+  margin: 0 0 var(--space-3);
+  font-family: var(--serif);
+  font-size: 1.15rem;
+}
+.fh-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-3);
+  align-items: start;
+}
+@container fh (min-width: 38rem) {
+  .fh-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+/* An open draft, or a message about one, takes the strip's whole width. */
+.fh-wide {
+  grid-column: 1 / -1;
+}
+
+.fh-card {
+  padding: var(--space-4);
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  background: var(--paper-raised);
+  font-size: 0.92rem;
+}
+.fh-card h3 {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-3);
+  font-family: var(--sans);
+  font-size: 0.92rem;
+  font-weight: 650;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--ink);
+}
+.fh-count {
+  margin-left: auto;
+  color: var(--ink-faint);
+  font-size: 0.8rem;
+  font-weight: 400;
+}
+
+.fh-list {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.fh-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--rule);
+}
+.fh-row:first-child {
+  padding-top: 0;
+  border-top: 0;
+}
+.fh-name {
+  flex: 1 1 6rem;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.fh-when {
+  flex: none;
+  color: var(--ink-faint);
+  font-size: 0.82rem;
+  white-space: nowrap;
+}
+.fh-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+.fh-tag {
+  padding: 0 0.4rem;
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  color: var(--ink-soft);
+  font-size: 0.68rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+/* The small buttons in a card. */
+button.fh-btn {
+  flex: none;
+  padding: 0.25rem 0.7rem;
+  font-size: 0.85rem;
+}
+button.fh-btn[aria-disabled="true"],
+button.fh-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+/* An entry that names this one, or an entry the AI proposes: a small inset card. */
+.fh-mention {
+  display: grid;
+  justify-items: start;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--rule);
+  border-radius: 5px;
+  background: var(--paper);
+}
+.fh-mention-title {
+  font-family: var(--serif);
+  font-weight: 650;
+}
+.fh-sentence {
+  margin: 0;
+  color: var(--ink-soft);
+}
+.fh-at {
+  color: var(--ink);
+  font-weight: 700;
+  text-decoration: underline;
+  text-decoration-color: var(--accent);
+  text-decoration-thickness: 2px;
+  text-underline-offset: 3px;
+}
+.fh-linked {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0.2rem 0.6rem;
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+.fh-refused,
+.fh-note {
+  margin: 0 0 var(--space-3);
+  font-size: 0.85rem;
+}
+.fh-mentions .fh-note {
+  margin: var(--space-2) 0 0;
+}
+button.fh-more {
+  margin-top: var(--space-3);
+  color: var(--accent);
+  font: inherit;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.fh-ai-tag {
+  margin-left: auto;
+  padding: 0 0.4rem;
+  border: 1px dashed var(--ink-faint);
+  border-radius: 3px;
+  color: var(--ink-faint);
+  font-size: 0.68rem;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+}
+.fh-working {
+  margin: var(--space-2) 0 0;
+  font-size: 0.88rem;
+}
+.fh-questions {
+  margin-top: var(--space-3);
+  color: var(--ink-soft);
+}
+.fh-card .ui-problem {
+  margin: 0 0 var(--space-3);
+}
+
+/* The entries either side of this one in its folder. */
+.fh-neighbours {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
+  margin-top: var(--space-4);
+}
+.fh-neighbours a {
+  display: grid;
+  gap: 0.15rem;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  background: var(--paper-raised);
+  color: var(--ink);
+  text-decoration: none;
+}
+.fh-neighbours a:hover {
+  border-color: var(--accent);
+}
+.fh-neighbours small {
+  color: var(--ink-faint);
+  font-size: 0.72rem;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+.fh-neighbours b {
+  font-family: var(--serif);
+  overflow-wrap: anywhere;
+}
+.fh-next {
+  grid-column: 2;
+  text-align: right;
+}
+.fh-prev {
+  grid-column: 1;
+}
+@media (max-width: 30rem) {
+  .fh-neighbours {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .fh-next,
+  .fh-prev {
+    grid-column: 1;
+  }
+}
+
+/* One line for who links here; it opens to the whole list. */
+.backlinks summary {
+  cursor: pointer;
+  color: var(--ink-soft);
+}
+.backlinks p {
+  margin: 0;
+  color: var(--ink-soft);
+}
+.backlinks details ul {
+  margin-top: var(--space-3);
+}

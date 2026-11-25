@@ -284,6 +284,74 @@ describe("the map's keys", () => {
   });
 });
 
+describe("the keys for reading an entry", () => {
+  const reading = () => {
+    const r = createRegistry();
+    r.register(...keys.all().filter((s) => s.scope === "entry"));
+    return r;
+  };
+
+  it("are the design's four, none of them in the editor", () => {
+    expect(
+      keys
+        .all()
+        .filter((s) => s.scope === "entry")
+        .map((s) => [s.id, s.keys]),
+    ).toEqual([
+      ["entry.back", ["Alt-ArrowLeft"]],
+      ["entry.previous", ["Alt-ArrowUp"]],
+      ["entry.next", ["Alt-ArrowDown"]],
+      ["entry.pin", ["p"]],
+    ]);
+  });
+
+  it("run on the page and never inside a text being typed", () => {
+    const r = reading();
+    const log: string[] = [];
+    for (const id of ["entry.back", "entry.next", "entry.pin"]) {
+      r.bind(id, { current: () => void log.push(id) });
+    }
+    expect(r.handle(press("ArrowLeft", { altKey: true }))).toBe(true);
+    expect(r.handle(press("ArrowDown", { altKey: true }))).toBe(true);
+    expect(r.handle(press("p"))).toBe(true);
+    expect(r.handle(press("P", { shiftKey: true }))).toBe(false);
+    expect(log).toEqual(["entry.back", "entry.next", "entry.pin"]);
+    // A cursor moved by word, and a letter typed, are the field's own.
+    for (const target of [input, editable]) {
+      expect(r.handle(press("ArrowLeft", { altKey: true, target }))).toBe(false);
+      expect(r.handle(press("p", { target }))).toBe(false);
+    }
+    expect(log).toHaveLength(3);
+  });
+
+  it("leave the key to the browser when the action has nothing to do", () => {
+    const r = reading();
+    r.bind("entry.back", { current: () => false });
+    const e = press("ArrowLeft", { altKey: true });
+    expect(r.handle(e)).toBe(false);
+    expect(e.prevented).toBe(false);
+  });
+
+  it("show in the sheet only while an entry is open", () => {
+    const r = reading();
+    expect(r.sheet().find((g) => g.scope === "entry")).toBeUndefined();
+    const off = r.bind("entry.pin", { current: () => undefined });
+    expect(r.sheet().find((g) => g.scope === "entry")?.name).toBe("Reading an entry");
+    off();
+  });
+
+  it("take no key the chronicle or the map already binds in its own scope", () => {
+    // They share Alt+Left only with the chronicle, whose scope is inner and so wins there.
+    const r = createRegistry();
+    r.register(...keys.all().filter((s) => s.scope === "entry" || s.scope === "chronicle"));
+    const log: string[] = [];
+    r.bind("entry.back", { current: () => void log.push("entry") });
+    r.bind("chronicle.endEarlier", { current: () => void log.push("chronicle") });
+    r.handle(press("ArrowLeft", { altKey: true }));
+    expect(log).toEqual(["chronicle"]);
+  });
+});
+
 describe("the sheet", () => {
   it("lists the app's keys and the keys menus and dialogs handle, wherever it opens", () => {
     const r = registry();

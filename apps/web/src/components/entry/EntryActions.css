@@ -50,3 +50,11 @@
 .phone-action .entry-phone-tools .edit-link:hover {
   color: var(--ink);
 }
+
+/* A pinned entry's pin is filled in the accent. */
+.entry-tool-pin.is-pinned {
+  color: var(--accent);
+}
+.entry-tool-pin.is-pinned .ui-icon {
+  fill: currentColor;
+}

@@ -28,6 +28,7 @@ import { nextCell, previousCell, tableCommand } from "./components/tableKeys.ts"
  */
 export const SCOPES = [
   "app",
+  "entry",
   "chronicle",
   "map",
   "maps",
@@ -40,6 +41,7 @@ export type Scope = (typeof SCOPES)[number];
 
 export const SCOPE_NAMES: Record<Scope, string> = {
   app: "Everywhere",
+  entry: "Reading an entry",
   chronicle: "Chronicle",
   map: "Map",
   maps: "List of maps",
@@ -345,6 +347,24 @@ keys.register(
     label: "Open the chosen result",
     handledBy: "the switcher",
   },
+
+  // Reading an entry (stage 25). Its own scope, so none of them runs while a text is being typed:
+  // Alt+Left moves the cursor by a word on a Mac, and "p" is a letter. The editor
+  // binds none of them.
+  {
+    id: "entry.back",
+    keys: ["Alt-ArrowLeft"],
+    scope: "entry",
+    label: "Back to the last entry viewed",
+  },
+  {
+    id: "entry.previous",
+    keys: ["Alt-ArrowUp"],
+    scope: "entry",
+    label: "Previous entry in the folder",
+  },
+  { id: "entry.next", keys: ["Alt-ArrowDown"], scope: "entry", label: "Next entry in the folder" },
+  { id: "entry.pin", keys: ["p"], scope: "entry", label: "Pin or unpin the entry" },
 
   // The editor. Bold to Help are run by CodeMirror from editorKeymap() below.
   { id: "editor.bold", keys: ["Mod-b"], scope: "editor", label: "Bold" },

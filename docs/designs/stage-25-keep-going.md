@@ -126,6 +126,13 @@ folder shows its stub count [16]. In the rail (collapsed) the dice and Home are 
 Where one of these clashes with the keys registry, the registry's existing key wins and the nearest
 free key is used and written here.
 
+As built, none clashed. Alt+←, Alt+↑, Alt+↓ and `p` are in their own registry scope, "Reading an
+entry" (`entry.back`, `entry.previous`, `entry.next`, `entry.pin`), bound only while an entry is open
+in the reader. That scope never runs while text is being typed, so Alt+← still moves the cursor by a
+word in a field and `p` is a letter; and the editor binds none of them (leaving the editor is Done).
+Alt+← is also the browser's Back on Windows and Linux: where there is no last entry the key is left to
+the browser. A dialog or the image viewer over the page keeps the keys out.
+
 ## 3. Where things are kept
 
 - **Pins** (decision B): in the library, in `.frontier/pins.json`, so they follow the author between
@@ -304,6 +311,14 @@ from the offline copy's "recent items", which keep entry bodies, not what was re
 - `recents.renamed(from, to, title)`, `recents.forget(path)`, `recents.flush()` (written on
   `pagehide` already), `recents.subscribe(fn)` and `recents.snapshot()` for other stores. Positions
   are kept for the newest `MAX_POSITIONS` (200) entries.
+
+### "Write it": `useWriteIt` (`apps/web/src/components/WriteIt.tsx`)
+
+`const { write, dialog } = useWriteIt()`: `write({ name, folder })` opens the ordinary New entry
+dialog with the name and the folder (a `WantedRow`'s `name` and `folder`, null for none) filled in,
+loading the folder list only while it is open; making the entry opens the editor, as New entry in the
+side bar does. Render `dialog` in the page. The reader's From here strip and the nudge after Publish
+use it; so can Home.
 
 ### For tests and the sample vault
 
