@@ -1,0 +1,100 @@
+/* Feature groups (stage 19): the group's tab, a member's crumb, several picked, and the strip. */
+.group-name-on-map {
+  margin: 0.6rem 0;
+  padding: 0.5rem 0 0;
+  border: 0;
+  border-top: 1px solid var(--rule);
+}
+.group-name-on-map legend {
+  padding: 0;
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-soft, var(--ink));
+}
+.group-note {
+  display: block;
+  margin: 0.2rem 0 0.4rem;
+  font-size: 0.85rem;
+}
+.group-colour {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+.group-colour .is-on {
+  border-color: var(--accent);
+}
+.group-members {
+  margin: 0.2rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+.group-members li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.4rem;
+  min-height: 2rem;
+  border-bottom: 1px solid var(--rule);
+}
+.group-members li > :first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.group-crumb button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  padding: 0.2rem 0;
+  font-weight: 600;
+}
+.group-card h3 {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin: 0 1.6rem 0.2rem 0;
+}
+
+/* "Select several" is for touch: a mouse picks several with Shift or Ctrl/⌘. */
+.map-tools .ui-icon-button.pick-several {
+  display: none;
+}
+@media (max-width: 47.99rem), (pointer: coarse) {
+  .map-tools .ui-icon-button.pick-several {
+    display: inline-flex;
+  }
+}
+
+/* Several picked: a strip above the tools (on a phone) or the foot of the map. */
+.pick-strip {
+  position: absolute;
+  left: 50%;
+  bottom: 0.9rem;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  max-width: calc(100% - 1.2rem);
+  padding: 0.4rem 0.5rem 0.4rem 0.9rem;
+  transform: translateX(-50%);
+  border: 1px solid var(--rule);
+  border-radius: 10px;
+  background: var(--paper);
+  box-shadow: 0 4px 14px rgb(0 0 0 / 0.12);
+  white-space: nowrap;
+}
+.pick-strip > span {
+  flex: 1;
+  margin-right: 0.4rem;
+}
+.pick-strip .primary {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+.pick-strip [aria-disabled="true"] {
+  opacity: 0.55;
+}

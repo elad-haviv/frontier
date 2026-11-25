@@ -2,8 +2,7 @@
  * Snapping: while a point of a path or zone is placed or dragged, it lands on a corner or an edge
  * of another path or zone close by on the screen, so that two borders can share their line. Land
  * is snapped to the same way, as a zone: a coastline traced once as a zone is snapped to after.
- * The map's pictures are not looked at: finding a coast in the pixels would mean analysing the
- * image, which is not done here.
+ * Outlines found in the map's picture snap to zones in findAreas/snapRings.ts.
  */
 import type { Point, Position, Shape, View } from "@frontier/geo";
 import { isLined, type MapFeature } from "@frontier/schema";

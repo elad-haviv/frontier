@@ -5,6 +5,7 @@ import {
   lockedWithin,
   type MapFeature,
   type MapFile,
+  type MapGroup,
   type MapLayer,
   moveLayer,
   stepLayer,
@@ -18,6 +19,7 @@ import {
   Eye,
   EyeOff,
   GripVertical,
+  Group as GroupIcon,
   Lock,
   LockOpen,
   type LucideIcon,
@@ -29,6 +31,7 @@ import {
   Shapes,
   Spline,
   Trash2,
+  Ungroup,
 } from "lucide-react";
 import {
   type Dispatch,
@@ -50,6 +53,7 @@ import {
   type Dragged,
   dropFor,
   featureKey,
+  groupKey,
   FEATURE_LIMIT,
   featuresByLayer,
   heirOf,
@@ -61,6 +65,7 @@ import {
   type Row,
   setLayer,
 } from "../../map/layerRows.ts";
+import { setGroup } from "../../map/groups.ts";
 import { newItemId } from "../../map/viewUrl.ts";
 import { DialogFrame } from "../Dialogs.tsx";
 import { ContextMenu, ContextMenuItem, ContextMenuSeparator } from "../ui/ContextMenu.tsx";
@@ -90,7 +95,22 @@ export interface LayerTreeProps {
   /** Selects a feature on the map, and centres it. */
   onSelect: (id: string) => void;
   titleOf: (feature: MapFeature) => string;
+  /** The words a group goes by: its name, its entry's title, or "Group". */
+  groupTitle?: (group: MapGroup) => string;
+  /** Several picked here with Shift or Ctrl/⌘: the map picks them too. */
+  onPickSeveral?: (ids: string[]) => void;
+  /** Groups these (Ctrl/⌘+G in the tree). */
+  onGroup?: (ids: string[]) => void;
+  onUngroup?: (group: string) => void;
+  /** Deletes a group with its members. */
+  onDeleteGroup?: (group: string) => void;
 }
+
+/** What the Layers tab passes on to the tree for groups. */
+export type GroupTreeProps = Pick<
+  LayerTreeProps,
+  "groupTitle" | "onPickSeveral" | "onGroup" | "onUngroup" | "onDeleteGroup"
+>;
 
 /** One action of a layer's menus, shown both in its right-click menu and its "⋯" menu. */
 interface Action {
@@ -143,7 +163,17 @@ export function LayerTree(props: LayerTreeProps) {
     setPicked((now) => (now.has(selected) ? now : new Set([selected])));
     anchor.current = selected;
     const f = map.features.find((x) => x.id === selected);
+    const g = map.groups?.find((x) => x.id === selected);
+    if (g) {
+      // A group picked on the map: its layer opened to show its row.
+      const up = layerAndAbove(map.layers, g.layer);
+      setCollapsed((now) => (up.some((id) => now.has(id)) ? remove(now, up) : now));
+      setFocusKey(groupKey(g.id));
+      return;
+    }
     if (!f) return;
+    // A member: its group opened too.
+    if (f.group && collapsed.has(f.group)) setCollapsed((now) => remove(now, [f.group!]));
     const above = layerAndAbove(map.layers, f.layer);
     setCollapsed((now) => (above.some((id) => now.has(id)) ? remove(now, above) : now));
     const own = byLayer.get(f.layer) ?? [];
@@ -267,20 +297,94 @@ export function LayerTree(props: LayerTreeProps) {
   // ---- Picking features ---------------------------------------------------------------------
 
   function pickFeature(id: string, how: { shift: boolean; add: boolean }) {
-    const listed = rows.filter((r) => r.type === "feature").map((r) => r.feature.id);
+    const listed = rows.flatMap((r) =>
+      r.type === "feature" ? [r.feature.id] : r.type === "group" ? [r.group.id] : [],
+    );
+    let next: Set<string>;
     if (how.shift && anchor.current && listed.includes(anchor.current)) {
       const a = listed.indexOf(anchor.current);
       const b = listed.indexOf(id);
-      setPicked(new Set(listed.slice(Math.min(a, b), Math.max(a, b) + 1)));
+      next = new Set(listed.slice(Math.min(a, b), Math.max(a, b) + 1));
     } else if (how.add) {
-      setPicked((now) => toggle(now, id));
+      next = toggle(picked, id);
       anchor.current = id;
     } else {
-      setPicked(new Set([id]));
+      next = new Set([id]);
       anchor.current = id;
     }
-    props.onSelect(id);
+    setPicked(next);
+    // Several picked here are picked on the map too, to group or delete them.
+    if (next.size > 1 && props.onPickSeveral) props.onPickSeveral(pickedIds(next));
+    else props.onSelect(next.size === 1 ? [...next][0]! : id);
   }
+  /** The picked ids in the order of the rows, a group's members left to their group. */
+  const pickedIds = (set: ReadonlySet<string>) => {
+    const out = rows.flatMap((r) =>
+      r.type === "feature" && set.has(r.feature.id)
+        ? [r.feature.id]
+        : r.type === "group" && set.has(r.group.id)
+          ? [r.group.id]
+          : [],
+    );
+    const groups = new Set(out.filter((id) => map.groups?.some((g) => g.id === id)));
+    return out.filter((id) => {
+      const g = map.features.find((f) => f.id === id)?.group;
+      return !(g && groups.has(g));
+    });
+  };
+  const groupName = (g: MapGroup) => props.groupTitle?.(g) ?? (g.label || "Group");
+
+  function renameGroup(id: string, name: string) {
+    setRenaming(null);
+    change(setGroup(map, id, { label: name.trim() || null }));
+    focusRow(groupKey(id));
+  }
+
+  const groupActions = (g: MapGroup): Action[] => {
+    const name = groupName(g);
+    const first = map.features.find((f) => f.group === g.id);
+    const off = hidden.has(g.id);
+    return [
+      { label: "Rename", icon: Pencil, keys: "F2", run: () => setRenaming(g.id) },
+      {
+        label: "Go inside",
+        icon: CornerDownRight,
+        run: () => first && props.onSelect(first.id),
+        disabled: !first,
+        reason: "It has no members",
+      },
+      {
+        label: "Ungroup",
+        icon: Ungroup,
+        run: () => props.onUngroup?.(g.id),
+      },
+      {
+        label: off ? `Show ${name}` : `Hide ${name}`,
+        icon: off ? Eye : EyeOff,
+        apart: true,
+        run: () => toggleHidden(g.id),
+      },
+      {
+        label: g.locked ? "Unlock" : "Lock",
+        icon: g.locked ? LockOpen : Lock,
+        run: () =>
+          change(
+            setGroup(
+              map,
+              g.id,
+              (g.locked ? { locked: undefined } : { locked: true }) as Partial<MapGroup>,
+            ),
+          ),
+      },
+      {
+        label: `Delete ${name} with its members`,
+        icon: Trash2,
+        danger: true,
+        apart: true,
+        run: () => props.onDeleteGroup?.(g.id),
+      },
+    ];
+  };
 
   // ---- The keyboard ------------------------------------------------------------------------
 
@@ -300,9 +404,52 @@ export function LayerTree(props: LayerTreeProps) {
     };
     const parentRow = () => {
       for (let i = at - 1; i >= 0; i--) {
-        if (rows[i]!.type === "layer" && rows[i]!.depth < row.depth) return rows[i];
+        const r = rows[i]!;
+        if ((r.type === "layer" || r.type === "group") && r.depth < row.depth) return r;
       }
     };
+    // Ctrl/⌘+G groups what is picked here; with Shift, ungroups the group of this row.
+    if (editing && (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "g") {
+      e.preventDefault();
+      if (e.shiftKey) {
+        const g =
+          row.type === "group" ? row.group.id : row.type === "feature" ? row.feature.group : null;
+        if (g) props.onUngroup?.(g);
+      } else {
+        const own =
+          row.type === "group" ? row.group.id : row.type === "feature" ? row.feature.id : null;
+        const ids = pickedIds(picked.size > 1 ? picked : new Set(own ? [own] : []));
+        props.onGroup?.(ids);
+      }
+      return;
+    }
+    if (row.type === "group") {
+      const gid = row.group.id;
+      switch (e.key) {
+        case "ArrowRight":
+          if (!row.open) {
+            e.preventDefault();
+            return toggleOpen(gid);
+          }
+          return go(rows[at + 1]?.depth === row.depth + 1 ? rows[at + 1] : undefined);
+        case "ArrowLeft":
+          if (row.open) {
+            e.preventDefault();
+            return toggleOpen(gid);
+          }
+          return go(parentRow());
+        case "Enter":
+        case " ":
+          e.preventDefault();
+          return pickFeature(gid, { shift: e.shiftKey, add: e.ctrlKey || e.metaKey });
+        case "F2":
+          if (editing) {
+            e.preventDefault();
+            setRenaming(gid);
+          }
+          return;
+      }
+    }
     switch (e.key) {
       case "ArrowDown":
         return go(rows[at + 1]);
@@ -331,7 +478,7 @@ export function LayerTree(props: LayerTreeProps) {
         else if (row.type === "layer") toggleOpen(row.node.layer.id);
         else if (row.type === "feature")
           pickFeature(row.feature.id, { shift: e.shiftKey, add: e.ctrlKey || e.metaKey });
-        else setShowAll((s) => new Set(s).add(row.layer));
+        else if (row.type === "more") setShowAll((s) => new Set(s).add(row.layer));
         return;
       case "F2":
         if (row.type === "layer" && editing) {
@@ -383,6 +530,9 @@ export function LayerTree(props: LayerTreeProps) {
         : [row.key];
       what = { kind: "features", ids: ids.map((k) => k.slice(2)) };
       label = ids.length > 1 ? `${ids.length} features` : nameOf(row.feature);
+    } else if (row.type === "group") {
+      what = { kind: "group", id: row.group.id };
+      label = groupName(row.group);
     } else return;
     if (fromHandle) e.preventDefault();
     press.current?.off();
@@ -536,7 +686,8 @@ export function LayerTree(props: LayerTreeProps) {
             const f = row.feature;
             const name = nameOf(f);
             const off = hidden.has(f.id);
-            const within = !off && hiddenNow.has(f.layer);
+            const within =
+              !off && (hiddenNow.has(f.layer) || (f.group != null && hidden.has(f.group)));
             const isPicked = picked.has(f.id) || f.id === selected;
             return (
               <div
@@ -563,6 +714,101 @@ export function LayerTree(props: LayerTreeProps) {
                   onClick={() => toggleHidden(f.id)}
                 />
               </div>
+            );
+          }
+          if (row.type === "group") {
+            const g = row.group;
+            const name = groupName(g);
+            const off = hidden.has(g.id);
+            const within = !off && hiddenNow.has(g.layer);
+            const isPicked = picked.has(g.id) || g.id === selected;
+            const lockedHere = g.locked === true;
+            const actions = editing ? groupActions(g) : [];
+            const rowEl = (
+              <div
+                {...rowProps(row, at, name)}
+                aria-expanded={row.open}
+                aria-selected={isPicked}
+                className={`lt-row lt-group${isPicked ? " is-picked" : ""}${off || within ? " is-off" : ""}${lockedHere || locked.has(g.layer) ? " is-locked" : ""}${dropClass(row)}`}
+                onClick={(e) => {
+                  if (dragged.current || outside(e)) return;
+                  if ((e.target as Element).closest("button, input")) return;
+                  pickFeature(g.id, { shift: e.shiftKey, add: e.ctrlKey || e.metaKey });
+                }}
+                onDoubleClick={(e) => {
+                  if (editing && !outside(e) && (e.target as Element).closest(".lt-name")) {
+                    setRenaming(g.id);
+                  }
+                }}
+              >
+                {grip(row)}
+                <IconButton
+                  label={row.open ? `Collapse ${name}` : `Expand ${name}`}
+                  icon={ChevronRight}
+                  size="sm"
+                  tabIndex={-1}
+                  className={`plain lt-twist${row.open ? " is-open" : ""}`}
+                  onClick={() => toggleOpen(g.id)}
+                />
+                <Icon icon={GroupIcon} size="sm" className="lt-kind lt-group-icon" />
+                {renaming === g.id ? (
+                  <RenameBox
+                    name={g.label ?? ""}
+                    label="Group name"
+                    onDone={(n) => renameGroup(g.id, n)}
+                    onCancel={() => {
+                      setRenaming(null);
+                      focusRow(row.key);
+                    }}
+                  />
+                ) : (
+                  <span className="lt-name" title={name}>
+                    {name}
+                  </span>
+                )}
+                <span className="lt-count" title={`${row.count} members`}>
+                  {row.count}
+                </span>
+                {editing && (
+                  <IconButton
+                    label={lockedHere ? `Unlock ${name}` : `Lock ${name}`}
+                    icon={lockedHere ? Lock : LockOpen}
+                    size="sm"
+                    className={`plain lt-lock${lockedHere ? " is-on" : ""}`}
+                    aria-pressed={lockedHere}
+                    onClick={() =>
+                      actions.find((a) => a.icon === Lock || a.icon === LockOpen)?.run()
+                    }
+                  />
+                )}
+                <IconButton
+                  label={off ? `Show ${name}` : `Hide ${name}`}
+                  icon={off || within ? EyeOff : Eye}
+                  size="sm"
+                  className={`plain lt-eye${off ? " is-on" : ""}`}
+                  onClick={() => toggleHidden(g.id)}
+                />
+                {editing && (
+                  <Menu label={`More for ${name}`} className="plain row-more lt-menu">
+                    {actions.map((a) => (
+                      <MenuItemOf key={a.label} action={a} />
+                    ))}
+                  </Menu>
+                )}
+              </div>
+            );
+            return editing ? (
+              <ContextMenu
+                key={row.key}
+                onCloseAutoFocus={(e) => e.preventDefault()}
+                items={actions.map((a) => (
+                  <ContextItemOf key={a.label} action={a} />
+                ))}
+              >
+                {rowEl}
+              </ContextMenu>
+            ) : (
+              <Fragment key={row.key}>{rowEl}</Fragment>
             );
           }
           const { layer, children } = row.node;
@@ -816,10 +1062,12 @@ function RenameBox({
   name,
   onDone,
   onCancel,
+  label = "Layer name",
 }: {
   name: string;
   onDone: (name: string) => void;
   onCancel: () => void;
+  label?: string;
 }) {
   const [text, setText] = useState(name);
   const box = useRef<HTMLInputElement>(null);
@@ -843,7 +1091,7 @@ function RenameBox({
       ref={box}
       type="text"
       className="lt-rename"
-      aria-label="Layer name"
+      aria-label={label}
       value={text}
       onChange={(e) => setText(e.target.value)}
       onKeyDown={(e) => {

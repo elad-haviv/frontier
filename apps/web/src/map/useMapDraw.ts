@@ -36,10 +36,13 @@ export function useMapDraw(
     pressKind: PointerKind;
     /** The library's path and zone styles. */
     styles: readonly MapStyle[];
+    /** Groups: what is picked with the selection, the selected group's box, and their names. */
+    groups: Pick<OverlayInput, "picked" | "groupBox" | "groupNames" | "unpickable">;
   },
 ) {
   const { shownMap, presence, view, size, hidden, shownImages, selected, vertex } = input;
   const { sketch, tool, editing, names, pendingNames, sets, curve, pressKind, styles } = input;
+  const { groups } = input;
   const glCanvas = useRef<HTMLCanvasElement>(null);
   const topCanvas = useRef<HTMLCanvasElement>(null);
   /** The canvas above the features, for what follows the pointer: the hover halo. */
@@ -119,6 +122,7 @@ export function useMapDraw(
               : null,
         editing,
         pluses: editing && tool === "select" ? pressKind : null,
+        ...groups,
       });
     });
     return () => cancelAnimationFrame(handle);
@@ -138,6 +142,7 @@ export function useMapDraw(
     curve,
     pressKind,
     styles,
+    groups,
     redraw,
     iconsLoaded,
     titleOf,
@@ -154,7 +159,15 @@ export function useMapDraw(
     titleOf,
     iconFor,
     /** What a saved picture draws over its images. */
-    overlay: { hidden, presence, styles, iconFor, titleOf },
+    overlay: {
+      hidden,
+      presence,
+      styles,
+      iconFor,
+      titleOf,
+      // The saved picture writes the names as the screen does, with no selection.
+      groupNames: groups.groupNames?.map((g) => ({ ...g, ring: false })) ?? [],
+    },
     /** Draws again, as after a pan with a finger, at the full resolution. */
     redrawNow: () => setRedraw((n) => n + 1),
   };
