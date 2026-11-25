@@ -27,6 +27,7 @@ import { loreRoutes } from "./routes/lore.js";
 import { writingRoutes } from "./routes/writing.js";
 import { commentRoutes } from "./routes/comments.js";
 import { CommentStore } from "./comments/store.js";
+import { ConsultStore } from "./consults/store.js";
 import { characterRoutes } from "./routes/characters.js";
 import { discoverRoutes } from "./routes/discover.js";
 import { exportRoutes } from "./routes/export.js";
@@ -117,6 +118,7 @@ export interface Services {
   discoverer: Discoverer;
   conversations: Conversations;
   comments: CommentStore;
+  consults: ConsultStore;
   backup: Backup;
   search: SearchIndex;
   /** Fetches `main`, resets the working copy and rebuilds the index. */
@@ -267,6 +269,7 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
   const search = new SearchIndex(index);
   const conversations = new Conversations(stateDir, files);
   const comments = new CommentStore(stateDir, files);
+  const consults = new ConsultStore(stateDir, files);
   const chronicles = new ChronicleStore({ vaultDir, git, index, drafts, changer });
   const characters = new CharacterTalk({
     index,
@@ -375,6 +378,7 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
     discoverer,
     conversations,
     comments,
+    consults,
     async sync() {
       const result = await git.fetch();
       status.fetched(result.current);
@@ -425,6 +429,7 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
       await drafts.noteRenamed(from, to);
       await proposals.renamed(from, to);
       await comments.renamed(from, to);
+      await consults.renamed(from, to);
     },
     onPublished: (paths) => {
       // Runs after the publish call has answered; a failure shows in the status area. When the
