@@ -55,7 +55,9 @@
   border-style: solid;
   background: var(--fam);
   color: var(--paper-raised);
-  box-shadow: 0 0 0 3px var(--paper-raised), 0 0 0 5px var(--fam);
+  box-shadow:
+    0 0 0 3px var(--paper-raised),
+    0 0 0 5px var(--fam);
 }
 .spot-pin.is-dim {
   opacity: 0.35;

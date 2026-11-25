@@ -706,7 +706,9 @@ export function MapPage() {
       const box = frame.current?.getBoundingClientRect();
       if (!v || !box) return;
       const top = sheet
-        ? window.innerHeight - parseFloat(getComputedStyle(sheet).bottom || "0") - sheet.offsetHeight
+        ? window.innerHeight -
+          parseFloat(getComputedStyle(sheet).bottom || "0") -
+          sheet.offsetHeight
         : box.bottom;
       const covered = Math.max(0, Math.min(box.bottom - top, box.height));
       const lineId = line ?? explore.along;

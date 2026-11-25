@@ -1072,7 +1072,10 @@ describe("discovering what lies at a place", () => {
       },
     ]);
     t.repo.pushFromOutside({
-      [`.frontier/maps/${MAP_ID}.json`]: serialiseMap({ ...map, features: [...map.features, road] }),
+      [`.frontier/maps/${MAP_ID}.json`]: serialiseMap({
+        ...map,
+        features: [...map.features, road],
+      }),
     });
     await t.services.sync();
     const res = await t.post(`/api/maps/${MAP_ID}/discover`, { spots: [spot(0), spot(1)] });
@@ -1086,7 +1089,7 @@ describe("discovering what lies at a place", () => {
       '=== Place 1: a crossroads, "Crossroads of the Water Road and the Salt Way"',
     );
     expect(sent).toContain("What it might be: an inn, a market, a shrine, a gallows");
-    expect(sent).toContain('=== Place 2: a day\'s travel along a road, "A day\'s ride, 1"');
+    expect(sent).toContain("=== Place 2: a day's travel along a road, \"A day's ride, 1\"");
     expect(sent).toContain("On: the Water Road (road, an entry).");
     expect(sent).toContain("one or two discoveries for each");
     const found = res.json().discoveries;

@@ -24,7 +24,15 @@ const path = (
   points: Position[],
   extra: Partial<{ startOn: string; endOn: string; id: string }> = {},
 ): MapFeature =>
-  ({ ...base, id: extra.id ?? `p${n++}`, kind: "path", label, style, points, ...extra }) as MapFeature;
+  ({
+    ...base,
+    id: extra.id ?? `p${n++}`,
+    kind: "path",
+    label,
+    style,
+    points,
+    ...extra,
+  }) as MapFeature;
 const zone = (label: string, style: string, points: Position[]): MapFeature =>
   ({ ...base, id: `z${n++}`, kind: "zone", label, style, points }) as MapFeature;
 const marker = (label: string, at: Position): MapFeature =>
@@ -125,8 +133,24 @@ describe("points of interest", () => {
       [100, 100],
       [600, 600],
     ]);
-    const north = path("North arm", RIVER, [[600, 600], [700, 620]], { startOn: stem.id });
-    const south = path("South arm", RIVER, [[600, 600], [620, 700]], { startOn: stem.id });
+    const north = path(
+      "North arm",
+      RIVER,
+      [
+        [600, 600],
+        [700, 620],
+      ],
+      { startOn: stem.id },
+    );
+    const south = path(
+      "South arm",
+      RIVER,
+      [
+        [600, 600],
+        [620, 700],
+      ],
+      { startOn: stem.id },
+    );
     const found = spots([stem, north, south], { kmPerUnit: null });
     expect(found.spots.filter((s) => s.kind === "delta")).toHaveLength(1);
     expect(found.spots.some((s) => s.kind === "mouth" && s.paths[0] === stem.id)).toBe(false);

@@ -226,9 +226,7 @@ export function useExplore(o: {
       const reach = how.touch ? 14 : 8;
       let best = reach;
       for (const l of found.lines) {
-        const pts = l.line
-          .map((p) => v.project(p))
-          .filter((p): p is [number, number] => !!p);
+        const pts = l.line.map((p) => v.project(p)).filter((p): p is [number, number] => !!p);
         const q = project([screen.x, screen.y], pts);
         if (q.d < best) {
           best = q.d;
@@ -295,17 +293,10 @@ export function useExplore(o: {
     if (!exploring || asks.length === 0 || !online) return;
     let stale = false;
     const timer = window.setTimeout(() => {
-      api
-        .estimateDiscovery(
-          id,
-          sendable(asks),
-          o.moment.chronicle,
-          o.moment.year,
-        )
-        .then(
-          (r) => !stale && setEstimate({ key: estimateKey, ...r }),
-          () => undefined,
-        );
+      api.estimateDiscovery(id, sendable(asks), o.moment.chronicle, o.moment.year).then(
+        (r) => !stale && setEstimate({ key: estimateKey, ...r }),
+        () => undefined,
+      );
     }, 250);
     return () => {
       stale = true;

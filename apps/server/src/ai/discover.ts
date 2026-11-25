@@ -115,7 +115,8 @@ const PROPOSED: AnswerSchema<z.infer<typeof Proposed>> = {
                   basis: BASIS_JSON,
                   conflicts: {
                     type: "string",
-                    description: "Anything in the entries this might contradict; empty when nothing.",
+                    description:
+                      "Anything in the entries this might contradict; empty when nothing.",
                   },
                 },
               },

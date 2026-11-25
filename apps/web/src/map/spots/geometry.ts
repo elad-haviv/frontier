@@ -96,7 +96,11 @@ function segmentsCross(a: Position, b: Position, c: Position, d: Position): Posi
  * Where two lines cross: one point for each crossing, with crossings closer than `apart` taken
  * as one (two lines that share a corner cross at it on both of its segments).
  */
-export function crossings(A: readonly Position[], B: readonly Position[], apart: number): Position[] {
+export function crossings(
+  A: readonly Position[],
+  B: readonly Position[],
+  apart: number,
+): Position[] {
   const out: Position[] = [];
   for (let i = 1; i < A.length; i++) {
     const a = A[i - 1]!;

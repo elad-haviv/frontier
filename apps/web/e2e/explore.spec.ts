@@ -127,7 +127,10 @@ test("finds points of interest for free, explores along a road, and asks about s
   await expect(pin(page, "River mouth: Mouth of Greywater")).toBeVisible();
   await expect(pin(page, /^Spring: Source of Brenn/)).toBeVisible();
   const days = Number(
-    await bar(page).getByRole("button", { name: /Day's travel/ }).locator("b").textContent(),
+    await bar(page)
+      .getByRole("button", { name: /Day's travel/ })
+      .locator("b")
+      .textContent(),
   );
   expect(days).toBeGreaterThan(0);
 
@@ -152,15 +155,24 @@ test("finds points of interest for free, explores along a road, and asks about s
   await bar(page).getByRole("button", { name: "On foot" }).click();
   await expect
     .poll(async () =>
-      Number(await bar(page).getByRole("button", { name: /Day's travel/ }).locator("b").textContent()),
+      Number(
+        await bar(page)
+          .getByRole("button", { name: /Day's travel/ })
+          .locator("b")
+          .textContent(),
+      ),
     )
     .toBeGreaterThan(days);
   await bar(page).getByRole("button", { name: "Horse" }).click();
 
   // A kind can be hidden, and its pins go.
-  await bar(page).getByRole("button", { name: /^Waters/ }).click();
+  await bar(page)
+    .getByRole("button", { name: /^Waters/ })
+    .click();
   await expect(pin(page, "Confluence: Brenn joins Greywater")).toHaveCount(0);
-  await bar(page).getByRole("button", { name: /^Waters/ }).click();
+  await bar(page)
+    .getByRole("button", { name: /^Waters/ })
+    .click();
 
   // A click on the King's Road explores along it: its spots in order from its start.
   await page.keyboard.press("Escape");
@@ -185,7 +197,9 @@ test("finds points of interest for free, explores along a road, and asks about s
   const chosen = Number(/(\d+) places/.exec((await tray(page).innerText()) ?? "")?.[1]);
   expect(chosen).toBeGreaterThan(2);
   expect(chosen).toBeLessThanOrEqual(6);
-  await expect(tray(page).getByRole("button", { name: `Ask about ${chosen} places` })).toBeVisible();
+  await expect(
+    tray(page).getByRole("button", { name: `Ask about ${chosen} places` }),
+  ).toBeVisible();
   await page.locator(".map-frame").focus();
   await page.keyboard.press("Enter");
   const card = page.locator(".discovery-card");

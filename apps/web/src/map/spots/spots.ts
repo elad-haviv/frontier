@@ -178,13 +178,20 @@ export interface FoundSpots {
 /** A border's look: the usual Border style, or any style named like one. */
 const isBorderStyle = (s: MapStyle | undefined) =>
   !!s && (s.id === "strborde" || /border|frontier|boundary/i.test(s.name));
-const isRealmStyle = (s: MapStyle | undefined) => !!s && (s.id === "strrealm" || /realm/i.test(s.name));
+const isRealmStyle = (s: MapStyle | undefined) =>
+  !!s && (s.id === "strrealm" || /realm/i.test(s.name));
 
 /** The road and river lines, zones and markers of what is drawn. */
 export function readMap(input: SpotsInput): Pick<FoundSpots, "lines" | "zones" | "markers"> & {
   borders: { id: string; name: string; line: Position[]; zone: boolean }[];
 } {
-  const space = { kind: "flat" as const, width: input.width, height: input.height, scale: null, unit: "" };
+  const space = {
+    kind: "flat" as const,
+    width: input.width,
+    height: input.height,
+    scale: null,
+    unit: "",
+  };
   const lines: SpotLine[] = [];
   const zones: SpotZone[] = [];
   const markers: SpotMarker[] = [];
@@ -227,7 +234,8 @@ export function readMap(input: SpotsInput): Pick<FoundSpots, "lines" | "zones" |
           entry: f.entry,
         });
       }
-      if (realm) borders.push({ id: f.id, name: input.nameOf(f), line: [...drawn, drawn[0]!], zone: true });
+      if (realm)
+        borders.push({ id: f.id, name: input.nameOf(f), line: [...drawn, drawn[0]!], zone: true });
     }
   }
   return { lines, zones, markers, borders };
@@ -236,7 +244,8 @@ export function readMap(input: SpotsInput): Pick<FoundSpots, "lines" | "zones" |
 /** "the King's Road", or "a road" when it has no name. */
 export const nameText = (l: { name: string; kind: string }) => l.name || `a ${l.kind}`;
 const Cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
-const metresText = (m: number) => `${Math.round(m / 10) * 10}`.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+const metresText = (m: number) =>
+  `${Math.round(m / 10) * 10}`.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
 
 /** Everything the map's own features say about where something could be. */
 export function findSpots(input: SpotsInput): FoundSpots {
@@ -308,7 +317,9 @@ export function findSpots(input: SpotsInput): FoundSpots {
         put(
           big ? "bridge" : "ford",
           x,
-          big ? `${Cap(nameText(r))} crosses ${nameText(v)}` : `${Cap(nameText(r))} fords ${nameText(v)}`,
+          big
+            ? `${Cap(nameText(r))} crosses ${nameText(v)}`
+            : `${Cap(nameText(r))} fords ${nameText(v)}`,
           big
             ? `A road over a large river (${Math.round(down * 100)}% of the way to its end): a bridge, or a ferry.`
             : `A road over ${v.endOn ? "a tributary" : "the upper river"}: shallow enough to wade.`,
@@ -461,7 +472,9 @@ export function findSpots(input: SpotsInput): FoundSpots {
     for (const b of borders) {
       for (const x of crossings(r.line, b.line, near * 2)) {
         if (atEnd(r, x)) continue;
-        const into = b.zone ? inRing(pointAt(r.line, project(x, r.line).s + near * 3), b.line) : null;
+        const into = b.zone
+          ? inRing(pointAt(r.line, project(x, r.line).s + near * 3), b.line)
+          : null;
         put(
           "border",
           x,
@@ -480,7 +493,10 @@ export function findSpots(input: SpotsInput): FoundSpots {
         if (markers.some((m) => apartOf(m.at, end) < fold)) continue;
         let wet = false;
         for (let a = 0; a < 12 && !wet; a++) {
-          const p: Position = [end[0] + Math.cos(a / 2) * near * 3, end[1] + Math.sin(a / 2) * near * 3];
+          const p: Position = [
+            end[0] + Math.cos(a / 2) * near * 3,
+            end[1] + Math.sin(a / 2) * near * 3,
+          ];
           wet = H(p)?.sea === true;
         }
         if (wet) {
@@ -509,7 +525,8 @@ export function findSpots(input: SpotsInput): FoundSpots {
         const dk = d * km;
         const a = H?.(P[i - 1]!)?.metres ?? null;
         const b = H?.(P[i]!)?.metres ?? null;
-        const slow = a !== null && b !== null && dk > 0 ? slopeFactor(M.k, M.off, (b - a) / (dk * 1000)) : 1;
+        const slow =
+          a !== null && b !== null && dk > 0 ? slopeFactor(M.k, M.off, (b - a) / (dk * 1000)) : 1;
         hours.push(hours[i - 1]! + (dk / D.kmh) * slow);
         s.push(s[i - 1]! + d);
       }
@@ -524,12 +541,16 @@ export function findSpots(input: SpotsInput): FoundSpots {
         { i: P.length - 1, name: null },
       ];
       for (const m of markers) {
-        if (project(m.at, r.line).d < fold) stops.push({ i: index(m.at), name: m.name || "the marker" });
+        if (project(m.at, r.line).d < fold)
+          stops.push({ i: index(m.at), name: m.name || "the marker" });
       }
       for (const x of raw) {
         if (!x.paths.includes(r.id) || (x.kind !== "crossroads" && x.kind !== "junction")) continue;
         if (markers.some((m) => apartOf(m.at, x.at) < fold)) continue;
-        stops.push({ i: index(x.at), name: x.kind === "crossroads" ? "the crossroads" : "the junction" });
+        stops.push({
+          i: index(x.at),
+          name: x.kind === "crossroads" ? "the crossroads" : "the junction",
+        });
       }
       stops.sort((a, b) => a.i - b.i);
       for (let k = 0; k + 1 < stops.length; k++) {
@@ -544,7 +565,9 @@ export function findSpots(input: SpotsInput): FoundSpots {
           const t = i > 0 ? (want - hours[i - 1]!) / (hours[i]! - hours[i - 1]! || 1) : 0;
           const p0 = P[Math.max(0, i - 1)]!;
           const at: Position = [p0[0] + (P[i]![0] - p0[0]) * t, p0[1] + (P[i]![1] - p0[1]) * t];
-          const far = Math.round((s[Math.max(0, i - 1)]! + (s[i]! - s[Math.max(0, i - 1)]!) * t - s[a.i]!) * km);
+          const far = Math.round(
+            (s[Math.max(0, i - 1)]! + (s[i]! - s[Math.max(0, i - 1)]!) * t - s[a.i]!) * km,
+          );
           const word = D.word(n);
           const from = a.name ?? (k === 0 ? null : "the last stop");
           put(
@@ -676,7 +699,10 @@ export function contextOf(
     for (const x of on) features.add(x.line.id);
     lines.push(
       `On: ${on
-        .map((x) => `${nameText(x.line)} (${x.line.kind}${x.line.entry ? ", an entry" : ", a name on the map"})`)
+        .map(
+          (x) =>
+            `${nameText(x.line)} (${x.line.kind}${x.line.entry ? ", an entry" : ", a name on the map"})`,
+        )
         .join(", ")}.`,
     );
   }
@@ -755,7 +781,8 @@ export function alongOf(found: FoundSpots, lineId: string, shown: readonly Spot[
   const items: AlongItem[] = [];
   for (const spot of shown) {
     const q = project(spot.at, line.line);
-    if (spot.paths.includes(line.id) || q.d < found.near * 2.5) items.push({ s: q.s, spot, milestone: null });
+    if (spot.paths.includes(line.id) || q.d < found.near * 2.5)
+      items.push({ s: q.s, spot, milestone: null });
   }
   const ends = [
     { s: 0, at: line.line[0]! },
@@ -764,8 +791,13 @@ export function alongOf(found: FoundSpots, lineId: string, shown: readonly Spot[
   for (const m of found.markers) {
     const q = project(m.at, line.line);
     if (q.d >= found.fold) continue;
-    const reasons = found.folded.filter((f) => f.marker === m.id).map((f) => KINDS[f.kind].label.toLowerCase());
-    const note = reasons.length > 0 ? `also ${[...new Set(reasons)].join(", ")}: not offered again` : "a place already on the map";
+    const reasons = found.folded
+      .filter((f) => f.marker === m.id)
+      .map((f) => KINDS[f.kind].label.toLowerCase());
+    const note =
+      reasons.length > 0
+        ? `also ${[...new Set(reasons)].join(", ")}: not offered again`
+        : "a place already on the map";
     items.push({ s: q.s, spot: null, milestone: { name: m.name || "A marker", note } });
   }
   for (const e of ends) {

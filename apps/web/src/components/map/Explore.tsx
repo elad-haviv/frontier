@@ -33,7 +33,14 @@ import {
 import { type ReactNode, useState } from "react";
 import type { Discovery } from "../../api.ts";
 import { focusIsFree, shortcutText, useShortcut } from "../../keys.ts";
-import { farText, FAMILIES, KINDS, nameText, type Spot, type SpotKind } from "../../map/spots/spots.ts";
+import {
+  farText,
+  FAMILIES,
+  KINDS,
+  nameText,
+  type Spot,
+  type SpotKind,
+} from "../../map/spots/spots.ts";
 import type { Explore } from "../../map/spots/useExplore.ts";
 import { Tip } from "../ui/Tip.tsx";
 // The bar is Find areas' bar, whose look loads with it only when that tool is first chosen.
@@ -73,7 +80,8 @@ const keepFocus = (e: { preventDefault: () => void }) => e.preventDefault();
 
 /** What the explore bar says. */
 function statusOf(x: Explore, phone: boolean): string {
-  if (!x.flat) return "Points of interest work on flat maps for now. Click any place to explore it.";
+  if (!x.flat)
+    return "Points of interest work on flat maps for now. Click any place to explore it.";
   const found = x.found;
   if (!found) return "Looking at the map…";
   const roads = found.lines.filter((l) => l.kind === "road").length;
@@ -81,7 +89,8 @@ function statusOf(x: Explore, phone: boolean): string {
   if (found.lines.length === 0) {
     return "No roads or rivers on this map yet, so there is nothing to look along. Click any place to explore it.";
   }
-  if (!x.prefs.overlay) return "Points of interest hidden. Roads, rivers and places can still be clicked.";
+  if (!x.prefs.overlay)
+    return "Points of interest hidden. Roads, rivers and places can still be clicked.";
   if (x.shown.length === 0 && found.spots.length > 0) {
     return "Every kind is hidden. Roads, rivers and places can still be clicked.";
   }
@@ -132,7 +141,9 @@ export function ExploreBar({
               aria-pressed={on}
               disabled={!x.prefs.overlay}
               onClick={() =>
-                x.setPrefs({ off: on ? [...x.prefs.off, f.id] : x.prefs.off.filter((o) => o !== f.id) })
+                x.setPrefs({
+                  off: on ? [...x.prefs.off, f.id] : x.prefs.off.filter((o) => o !== f.id),
+                })
               }
             >
               <Icon size={14} aria-hidden /> {f.name} <b>{x.counts[f.id]}</b>
@@ -218,7 +229,11 @@ export function SpotPins({
     .map((spot) => ({ spot, at: v.project(spot.at) }))
     .filter(
       (p): p is { spot: Spot; at: [number, number] } =>
-        !!p.at && p.at[0] > -20 && p.at[1] > -20 && p.at[0] < size.width + 20 && p.at[1] < size.height + 20,
+        !!p.at &&
+        p.at[0] > -20 &&
+        p.at[1] > -20 &&
+        p.at[0] < size.width + 20 &&
+        p.at[1] < size.height + 20,
     )
     // Best first, so where pins would cover each other on the screen the best-ranked shows (zoom
     // in, or use the list, for the rest); a pin chosen or at the cursor always shows.
@@ -342,7 +357,8 @@ export function ExploreKeys({
     const list = x.along ? x.alongSpots : x.shown;
     if (list.length === 0) return false;
     const at = list.findIndex((s) => s.id === x.cursor);
-    const next = list[at < 0 ? (by > 0 ? 0 : list.length - 1) : (at + by + list.length) % list.length]!;
+    const next =
+      list[at < 0 ? (by > 0 ? 0 : list.length - 1) : (at + by + list.length) % list.length]!;
     x.setCursor(next.id);
     // Along a path the cursor only moves; else the spot is the choice.
     if (!x.along) x.setChosen([next]);
@@ -420,7 +436,12 @@ export function ExplorePanel({
     const all = spots.length > 0 && spots.every(x.isChosen);
     body = (
       <>
-        <button type="button" className="plain explore-back" onMouseDown={keepFocus} onClick={() => x.setAlong(null)}>
+        <button
+          type="button"
+          className="plain explore-back"
+          onMouseDown={keepFocus}
+          onClick={() => x.setAlong(null)}
+        >
           <ChevronLeft size={15} aria-hidden /> All roads and rivers
         </button>
         <h2 className="explore-title">{nameText(along)}</h2>
@@ -431,13 +452,23 @@ export function ExplorePanel({
         </p>
         {spots.length > 0 ? (
           <p className="explore-all">
-            <Tip label={all ? "Clear them" : "Choose every spot along it"} keys={shortcutText("map.spotAll")}>
-              <button type="button" className="quiet" onMouseDown={keepFocus} onClick={() => x.chooseAll()}>
+            <Tip
+              label={all ? "Clear them" : "Choose every spot along it"}
+              keys={shortcutText("map.spotAll")}
+            >
+              <button
+                type="button"
+                className="quiet"
+                onMouseDown={keepFocus}
+                onClick={() => x.chooseAll()}
+              >
                 {all ? "Clear all" : `Choose all ${spots.length}`}
               </button>
             </Tip>
             {km !== null && (
-              <span className="muted">km from its {along.kind === "river" ? "source" : "start"}</span>
+              <span className="muted">
+                km from its {along.kind === "river" ? "source" : "start"}
+              </span>
             )}
           </p>
         ) : (
@@ -491,9 +522,9 @@ export function ExplorePanel({
   } else if (found.lines.length === 0) {
     body = (
       <p className="muted">
-        The points of interest come from paths in a style that counts as Road or River, and from
-        the joins between them. Draw some with the Path tool, or with Find paths › Trace, while
-        editing. A click anywhere on the map still explores that place.
+        The points of interest come from paths in a style that counts as Road or River, and from the
+        joins between them. Draw some with the Path tool, or with Find paths › Trace, while editing.
+        A click anywhere on the map still explores that place.
       </p>
     );
   } else {
@@ -508,7 +539,12 @@ export function ExplorePanel({
         <ul className="explore-lines">
           {found.lines.map((l) => (
             <li key={l.id}>
-              <button type="button" className="explore-row" onMouseDown={keepFocus} onClick={() => onAlong(l.id)}>
+              <button
+                type="button"
+                className="explore-row"
+                onMouseDown={keepFocus}
+                onClick={() => onAlong(l.id)}
+              >
                 <span className={`explore-swatch is-${l.kind}`} aria-hidden="true" />
                 <span>
                   {nameText(l)}
@@ -572,9 +608,7 @@ export function ExplorePanel({
                     </span>
                     <span>
                       {d.name}
-                      <small>
-                        {[d.role ?? d.kind, d.spot?.title].filter(Boolean).join(" · ")}
-                      </small>
+                      <small>{[d.role ?? d.kind, d.spot?.title].filter(Boolean).join(" · ")}</small>
                     </span>
                   </button>
                 </li>
@@ -623,15 +657,21 @@ function Tray({
   const n = x.chosen.length;
   const calls = Math.ceil(n / 6);
   const entries = new Set<string>();
-  for (const a of x.asks) for (const f of a.features) {
-    const t = entryTitle(f);
-    if (t) entries.add(t);
-  }
+  for (const a of x.asks)
+    for (const f of a.features) {
+      const t = entryTitle(f);
+      if (t) entries.add(t);
+    }
   return (
     <div className="explore-tray" aria-label="Chosen places">
       <p className="explore-tray-head">
         <b>{plural(n, "place")}</b> <span className="muted">chosen</span>
-        <button type="button" className="plain" onMouseDown={keepFocus} onClick={() => x.setChosen([])}>
+        <button
+          type="button"
+          className="plain"
+          onMouseDown={keepFocus}
+          onClick={() => x.setChosen([])}
+        >
           Clear
         </button>
       </p>
