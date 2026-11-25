@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { VaultPath } from "@frontier/schema";
 import { isNote, rankNames, splitFrontmatter, stem } from "@frontier/vault";
 import { z } from "zod";
+import { factsOf } from "../keepGoing/derived.js";
 import { ApiError } from "../errors.js";
 import type { Services } from "../app.js";
 
@@ -14,7 +15,11 @@ export function searchRoutes(app: FastifyInstance, s: Services): void {
   /** Full-text search over the published vault. */
   app.get("/api/search", async (request) => {
     const { q, appendices } = Query.parse(request.query);
-    return { results: s.search.search(q ?? "", appendices === "1") };
+    const results = s.search.search(q ?? "", appendices === "1").map((hit) => {
+      const note = s.index.note(hit.path);
+      return note ? { ...hit, words: factsOf(note).words } : hit;
+    });
+    return { results };
   });
 
   /** The opening of an entry, for the preview shown when a link is hovered. */
@@ -45,6 +50,10 @@ export function searchRoutes(app: FastifyInstance, s: Services): void {
         .map((d) => ({ path: d.path, title: stem(d.path), aliases: [] as string[] })),
     ];
     // The same ranking the device uses offline, from its compact index.
-    return { results: rankNames(notes, q ?? "", appendices === "1") };
+    const results = rankNames(notes, q ?? "", appendices === "1").map((hit) => {
+      const note = s.index.note(hit.path);
+      return note ? { ...hit, words: factsOf(note).words } : hit;
+    });
+    return { results };
   });
 }

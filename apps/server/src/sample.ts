@@ -17,11 +17,83 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { monthsBefore } from "./keepGoing/history.js";
 
 const DEFAULT_SAMPLE = join(
   dirname(fileURLToPath(import.meta.url)),
   "../../../packages/vault/test/fixture-vault",
 );
+
+/**
+ * A few entries on top of the fixture vault, written over the last six months, so Home has
+ * something of each kind to show: a stub that three entries link to (with a to-do mark and an
+ * empty heading), links to entries not yet written, an orphan, a dead end and two entries that
+ * name another without linking to it. They link only to each other, so the fixture's own entries
+ * keep the links they have. The fixture itself is dated a year ago.
+ */
+interface SampleStep {
+  /** How long before the sample is made the version is dated. */
+  ago: { months: number } | { days: number };
+  message: string;
+  files: Record<string, string>;
+}
+
+const SAMPLE_STEPS: SampleStep[] = [
+  {
+    ago: { months: 6 },
+    message: "Write the Salt Crystal",
+    files: {
+      "03 Things/Salt Crystal.md":
+        "# Salt Crystal\n\nA clear crystal the brine leaves on the rim of a vat. It keeps no light and no heat.\n",
+    },
+  },
+  {
+    ago: { months: 1 },
+    message: "Write Ruun",
+    files: {
+      "02 People/Ruun.md":
+        "---\ntype: person\n---\n# Ruun\n\nRuun sings the tide in at [[Salt Flats]] and keeps the count of the barrels at " +
+        "[[Brine Works]]. Her song is older than the road. The [[Tide Singers]] say it was never written down, and " +
+        "that the [[The Sunken Gate]] opens only to it.\n",
+    },
+  },
+  {
+    ago: { days: 3 },
+    message: "Write the Salt Road, the flats and the works",
+    files: {
+      "01 Places/Salt Flats.md":
+        "# Salt Flats\n\nA white crust over the old sea floor. TODO: describe the crust and the light on it.\n\n" +
+        "## Wildlife\n\n## Weather\n\nHot at noon, bitter cold by night.\n",
+      "01 Places/Salt Road.md":
+        "---\ntype: place\n---\n# Salt Road\n\nThe Salt Road runs from the [[Salt Flats]] to the sea, a day's walk for a loaded cart " +
+        "and two for a tired one. Carters leave before dawn so that the heat does not spoil the load, and they " +
+        "stop at [[Brine Works]] to weigh it. Past the works the road turns to packed shell and follows the shore, " +
+        "and the first thing a traveller sees is the Harbor, grey under its own smoke. Few stay. The road is old " +
+        "and the carters say it was laid before the town, by people who wanted salt more than they wanted company. " +
+        "Where it crosses the dry river there are three stones, and each carter leaves a pinch of salt on the " +
+        "middle one for luck. Beyond them, on clear mornings, the roof of the [[The Sunken Gate]] shows above " +
+        "the flats like the back of a whale. Nobody has walked out to it and come back to say what it is, " +
+        "though the [[Tide Singers]] sing of it when the tide is low.\n",
+      "03 Things/Brine Works.md":
+        "---\ntype: thing\n---\n# Brine Works\n\nThe vats where the flats' brine is boiled down. Mira counted the " +
+        "barrels here once and found a sack of [[Salt Crystal]] that nobody had weighed. The works sell to the " +
+        "[[Salt Flats]] carters and buy their silence in salt. The [[Tide Singers]] are paid in barrels, and from the " +
+        "roof of the works the [[The Sunken Gate]] can be seen on clear days.\n",
+    },
+  },
+  {
+    ago: { days: 1 },
+    message: "Brine Works: the boiling",
+    files: {
+      "03 Things/Brine Works.md":
+        "---\ntype: thing\n---\n# Brine Works\n\nThe vats where the flats' brine is boiled down. Mira counted the " +
+        "barrels here once and found a sack of [[Salt Crystal]] that nobody had weighed. The works sell to the " +
+        "[[Salt Flats]] carters and buy their silence in salt. The [[Tide Singers]] are paid in barrels, and from the " +
+        "roof of the works the [[The Sunken Gate]] can be seen on clear days.\n\n" +
+        "The boiling takes three days, and the smell reaches the road.\n",
+    },
+  },
+];
 
 const SAMPLE_WORLD = join(
   dirname(fileURLToPath(import.meta.url)),
@@ -60,7 +132,7 @@ export function ensureSampleRemote(dataDir: string, sampleDir = DEFAULT_SAMPLE):
   if (existsSync(remote)) return remote;
   mkdirSync(dataDir, { recursive: true });
   const work = mkdtempSync(join(tmpdir(), "frontier-sample-"));
-  const git = (cwd: string, ...args: string[]) =>
+  const run = (cwd: string, env: NodeJS.ProcessEnv, ...args: string[]) =>
     execFileSync(
       "git",
       [
@@ -72,8 +144,23 @@ export function ensureSampleRemote(dataDir: string, sampleDir = DEFAULT_SAMPLE):
         "core.autocrlf=false",
         ...args,
       ],
-      { cwd, stdio: "ignore" },
+      { cwd, stdio: "ignore", env: { ...process.env, ...env } },
     );
+  const git = (cwd: string, ...args: string[]) => run(cwd, {}, ...args);
+  // Versions are dated as if the library had been worked on for a year, so "this week", "on this
+  // day" and "untouched for six months" have something to show.
+  const now = new Date();
+  const today = now.toISOString().slice(0, 10);
+  const dayAt = (day: string) => `${day}T12:00:00Z`;
+  const commitOn = (cwd: string, day: string, message: string) => {
+    git(cwd, "add", "-A");
+    const at = dayAt(day);
+    run(cwd, { GIT_AUTHOR_DATE: at, GIT_COMMITTER_DATE: at }, "commit", "-m", message);
+  };
+  const dayOf = (ago: SampleStep["ago"]) =>
+    "months" in ago
+      ? monthsBefore(today, ago.months)
+      : new Date(now.getTime() - ago.days * 86_400_000).toISOString().slice(0, 10);
   try {
     cpSync(sampleDir, work, { recursive: true });
     // A made-up world to look at, and one map drawn over it.
@@ -83,8 +170,14 @@ export function ensureSampleRemote(dataDir: string, sampleDir = DEFAULT_SAMPLE):
       writeFileSync(join(work, ".frontier", "maps", "smplwrld.json"), SAMPLE_MAP);
     }
     git(work, "init", "--initial-branch=main");
-    git(work, "add", "-A");
-    git(work, "commit", "-m", "Sample vault");
+    commitOn(work, monthsBefore(today, 12), "Sample vault");
+    for (const step of SAMPLE_STEPS) {
+      for (const [path, text] of Object.entries(step.files)) {
+        mkdirSync(dirname(join(work, path)), { recursive: true });
+        writeFileSync(join(work, path), text);
+      }
+      commitOn(work, dayOf(step.ago), step.message);
+    }
     // One proposal from a made-up agent, so the inbox has something to show.
     git(work, "checkout", "-b", SAMPLE_BRANCH);
     writeFileSync(

@@ -3,6 +3,7 @@ import { CLIENT_API } from "@frontier/schema";
 import { connection } from "./sync/connection.ts";
 import { randomId } from "./sync/db.ts";
 import type {
+  AfterPublishResponse,
   AttentionResponse,
   CreateRenameResponse,
   DraftKind,
@@ -10,17 +11,27 @@ import type {
   EntryResponse,
   ErrorBody,
   FieldJobState,
+  FromHereResponse,
   GraphResponse,
   ModelsResponse,
   AiLogResponse,
   AiProviderKind,
   AiProviderView,
   AiTaskName,
+  PinsResponse,
   ProviderCheckResponse,
   ProvidersResponse,
+  QueueResponse,
+  QuestionResponse,
+  RandomQuery,
+  RandomResponse,
   SettingsResponse,
   InboxResponse,
+  KeepGoingSettings,
+  KeepGoingSettingsRequest,
   LibraryFileName,
+  LinkItResponse,
+  LinkItUndo,
   MapFile,
   MapPreview,
   ChronicleFile,
@@ -29,6 +40,8 @@ import type {
   StatusSnapshot,
   TreeResponse,
   UnpublishedResponse,
+  WeekResponse,
+  WhatsMissingResponse,
 } from "@frontier/schema";
 
 /** An image of the library, as the gallery and the image dialog show it. */
@@ -314,11 +327,11 @@ export const api = {
   attention: () => call<AttentionResponse>("/api/attention"),
   schema: () => call<SchemaResponse>("/api/schema"),
   names: (query = "") =>
-    call<{ results: { path: string; title: string; alias?: string; shared?: boolean }[] }>(
-      `/api/switcher${query ? `?q=${encodeURIComponent(query)}` : ""}`,
-    ),
+    call<{
+      results: { path: string; title: string; alias?: string; shared?: boolean; words?: number }[];
+    }>(`/api/switcher${query ? `?q=${encodeURIComponent(query)}` : ""}`),
   search: (query: string) =>
-    call<{ results: { path: string; title: string; snippet: string }[] }>(
+    call<{ results: { path: string; title: string; snippet: string; words?: number }[] }>(
       `/api/search?q=${encodeURIComponent(query)}`,
     ),
   preview: (path: string) =>
@@ -761,6 +774,56 @@ export const api = {
   deleteFolder: (path: string, dryRun = false) =>
     post<{ entries: number; folders: number }>("/api/folders/delete", { path, dryRun }),
   applyType: (path: string) => post<{ made: number }>("/api/folders/apply-type", { path }),
+
+  // ---- Keep going (stage 25) -------------------------------------------------------------
+
+  /** Home's work queue: needs love, wanted, orphans, dead ends and folder stub counts. */
+  keepGoingQueue: () => call<QueueResponse>("/api/keep-going/queue"),
+  /** This week's numbers and "on this day"; `tz` is minutes east of UTC. */
+  keepGoingWeek: (tz = -new Date().getTimezoneOffset()) =>
+    call<WeekResponse>(`/api/keep-going/week?tz=${tz}`),
+  /** The "From here" strip at the foot of an entry. */
+  fromHere: (path: string) =>
+    call<FromHereResponse>(`/api/keep-going/from-here?path=${encodeURIComponent(path)}`),
+  /** Links the first unlinked mention in `path` to `target`, as an unpublished draft of `path`. */
+  linkIt: (path: string, target: string) =>
+    post<LinkItResponse>("/api/keep-going/link-it", { path, target }),
+  /** Takes a Link it back, with the `undo` its answer carried. */
+  undoLinkIt: (undo: LinkItUndo) => post<{ ok: true }>("/api/keep-going/link-it/undo", undo),
+  /** A random entry of a kind; `entry` is null when none fits. */
+  randomEntry: (query: RandomQuery = {}) => {
+    const q = new URLSearchParams();
+    if (query.kind) q.set("kind", query.kind);
+    if (query.folder) q.set("folder", query.folder);
+    if (query.not) q.set("not", query.not);
+    const text = q.toString();
+    return call<RandomResponse>(`/api/keep-going/random${text ? `?${text}` : ""}`);
+  },
+  /** Up to three next steps after publishing the entries at `paths`. */
+  afterPublish: (paths: string[]) =>
+    post<AfterPublishResponse>("/api/keep-going/after-publish", { paths }),
+  /** The entries an entry implies and the questions it leaves open (AI; nothing is saved). */
+  whatsMissing: (path: string, signal?: AbortSignal) =>
+    post<WhatsMissingResponse>("/api/keep-going/whats-missing", { path }, signal),
+  /** Today's question if one was made; never makes one (AI). */
+  todaysQuestion: (tz = -new Date().getTimezoneOffset()) =>
+    call<QuestionResponse>(`/api/keep-going/question?tz=${tz}`),
+  /** Makes today's question, or with `another` a different one in its place (AI). */
+  makeQuestion: (another = false, signal?: AbortSignal) =>
+    post<QuestionResponse>(
+      "/api/keep-going/question",
+      { another, tz: -new Date().getTimezoneOffset() },
+      signal,
+    ),
+  /** The pinned entries that still exist, in order; kept on the device for reading offline. */
+  pins: () => call<PinsResponse>("/api/pins"),
+  pin: (path: string) => post<PinsResponse>("/api/pins", { path }),
+  unpin: (path: string) =>
+    send<PinsResponse>("DELETE", `/api/pins?path=${encodeURIComponent(path)}`),
+  reorderPins: (paths: string[]) => send<PinsResponse>("PUT", "/api/pins", { paths }),
+  /** Which needs-love rules are on; the rules left out stay as they are. */
+  setKeepGoingSettings: (change: KeepGoingSettingsRequest) =>
+    send<KeepGoingSettings>("PUT", "/api/settings/keep-going", change),
 };
 
 /** A new draft id: 12 lower-case letters and digits, made in the browser. */

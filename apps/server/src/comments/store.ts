@@ -65,6 +65,13 @@ export class CommentStore {
     return (await this.all()).filter((c) => c.path === path);
   }
 
+  /** How many comments each entry has, for the entries that have any. */
+  async counts(): Promise<Map<string, number>> {
+    const out = new Map<string, number>();
+    for (const c of await this.all()) out.set(c.path, (out.get(c.path) ?? 0) + 1);
+    return out;
+  }
+
   async get(id: string): Promise<Comment | null> {
     return (await this.all()).find((c) => c.id === id) ?? null;
   }

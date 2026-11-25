@@ -99,6 +99,24 @@ function generated(user) {
   };
 }
 
+// "What's missing here?": two entries the text implies, one in the entry's own folder, and two
+// open questions, all named for the entry looked at.
+function whatsMissing(user) {
+  const title = /^Look at this entry: (.*)$/m.exec(user)?.[1] ?? "";
+  const path = /=== Entry: (.*)\n/.exec(user)?.[1] ?? "";
+  return {
+    proposals: [
+      {
+        name: `${title} Keeper`,
+        reason: `${title} implies someone who tends it.`,
+        folder: path.split("/").slice(0, -1).join("/"),
+      },
+      { name: `${title} Festival`, reason: `${title} is surely kept in some way.`, folder: "" },
+    ],
+    questions: [`What is ${title} like at night?`, `Who first settled ${title}?`],
+  };
+}
+
 function character(user) {
   const { path, line } = firstLine(user);
   return {
@@ -370,9 +388,14 @@ const ai = createServer((req, res) => {
           ? discovery(user)
           : user.startsWith("The character:")
             ? character(user)
-            : user.startsWith("Entries:")
-              ? lore(user)
-              : { reply: "ok" };
+            : user.startsWith("Look at this entry:")
+              ? whatsMissing(user)
+              : user.startsWith("A thin entry:")
+                ? // The question of the day, named for the thin entry.
+                  { question: `What does ${/^A thin entry: (.*)$/m.exec(user)?.[1]} smell like?` }
+                : user.startsWith("Entries:")
+                  ? lore(user)
+                  : { reply: "ok" };
     if (asked.stream) {
       void streamAnswer(req, res, JSON.stringify(answer), user);
       return;

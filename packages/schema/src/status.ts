@@ -29,6 +29,11 @@ export const StatusSnapshot = z.object({
   ai: z.object({
     /** A key and a model for proposing fields are set. */
     on: z.boolean(),
+    /**
+     * A key and a model for lore conversations are set, which the AI pieces of Home and "From
+     * here" need (stage 25). Absent from a server that predates it.
+     */
+    conversation: z.boolean().optional(),
     lastError: z.string().nullable(),
   }),
   /** Rises each time the server itself changes a draft, so an open editor can reload it. */

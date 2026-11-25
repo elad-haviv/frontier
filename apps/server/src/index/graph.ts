@@ -23,6 +23,7 @@ import {
 import {
   aliasesOf,
   APPENDIX_ROOT,
+  bodyWords,
   isExcluded,
   isNote,
   type Resolution,
@@ -45,6 +46,17 @@ export interface GraphInput {
   /** The library files' blob hashes by path, for the version marks. */
   blobs?: Map<string, string>;
 }
+
+/** Words of a published note, worked out once for each build of the index. */
+const wordCounts = new WeakMap<object, number>();
+const wordsOf = (note: { text: string }): number => {
+  let n = wordCounts.get(note);
+  if (n === undefined) {
+    n = bodyWords(note.text);
+    wordCounts.set(note, n);
+  }
+  return n;
+};
 
 const topOf = (path: string): string | null => {
   const i = path.indexOf("/");
@@ -70,6 +82,7 @@ export function buildGraph(input: GraphInput): GraphResponse {
         type: typeOf(note.path, note.fields.type),
         ...(note.aliases.length > 0 ? { aliases: note.aliases } : {}),
         ...(note.fields.id ? { id: note.fields.id } : {}),
+        words: wordsOf(note),
         v: versionMark(blobs.get(note.path), revisions.get(note.path)),
       },
       links: note.links,
@@ -91,6 +104,7 @@ export function buildGraph(input: GraphInput): GraphResponse {
         ...(aliases.length > 0 ? { aliases } : {}),
         unpublished: true,
         ...(fields.id ? { id: fields.id } : {}),
+        words: bodyWords(text),
         v: versionMark(blobs.get(draft.path), draft.revision),
       },
       links: index.analyse(draft.path, text, added, removed).links,

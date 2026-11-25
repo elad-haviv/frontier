@@ -9,6 +9,7 @@ import {
 } from "@frontier/schema";
 import { dirname, isImage, isNote, readFields, stem, typeFromFolder } from "@frontier/vault";
 import { z } from "zod";
+import { factsOf } from "../keepGoing/derived.js";
 import { overlay } from "../entries/overlay.js";
 import { ApiError } from "../errors.js";
 import { type IndexedLink, linkKindOf } from "../index/build.js";
@@ -119,6 +120,7 @@ export function entryRoutes(app: FastifyInstance, s: Services): void {
       place({
         path: note.path,
         title: note.title,
+        words: factsOf(note).words,
         state: s.drafts.byPath(note.path)
           ? "unpublished"
           : s.quarantine.waiting(note.path)

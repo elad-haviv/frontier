@@ -77,6 +77,7 @@ const appReads: KeeperReads = {
     fromServer(() => api.tree()),
     fromServer(() => api.markerSets()),
     fromServer(() => api.schema()),
+    fromServer(() => api.pins()),
     ...LIBRARY_FILES.map((k) => fromServer(() => api.libraryFile(k.name as LibraryFileName))),
   ],
   item: (key) => {

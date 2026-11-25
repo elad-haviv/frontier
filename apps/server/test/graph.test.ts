@@ -60,6 +60,7 @@ describe("the graph", () => {
       title: "Harbor",
       type: null,
       aliases: ["The Port", "Greywater"],
+      words: 17,
       v: expect.stringMatching(/^[0-9a-f]{12}$/),
     });
     expect(node(UNWRITTEN)).not.toHaveProperty("aliases");
@@ -105,6 +106,7 @@ describe("the graph", () => {
       type: "person",
       aliases: ["Mi"],
       unpublished: true,
+      words: 6,
       v: expect.stringMatching(/^[0-9a-f]{12}\.1$/),
     });
     expect(into(MIRA).sort()).toEqual([QUAY, HARBOR, SHADE, LEDGER].sort());
@@ -120,6 +122,7 @@ describe("the graph", () => {
       title: "Gull",
       type: null,
       unpublished: true,
+      words: 3,
       // A new file has no blob yet, only its draft's revision.
       v: ".1",
     });

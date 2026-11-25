@@ -103,6 +103,77 @@ function parseNameStatus(out: Buffer): ChangedFile[] {
   return changed;
 }
 
+/** One commit of the log with the Markdown files it added, changed or deleted. */
+export interface LoggedCommit {
+  commit: string;
+  /** The commit's time, ISO 8601. */
+  at: string;
+  changes: { status: "A" | "M" | "D"; path: string }[];
+}
+
+/** What one commit did to the words of each Markdown file it touched. */
+export interface WordCommit {
+  commit: string;
+  at: string;
+  files: { path: string; created: boolean; deleted: boolean; added: number; removed: number }[];
+}
+
+function parseChangeLog(out: string): LoggedCommit[] {
+  return out
+    .split("\u0001")
+    .filter((part) => part.trim() !== "")
+    .map((part) => {
+      const [head = "", ...lines] = part.split("\n");
+      const [commit = "", at = ""] = head.split("\u0002");
+      const changes: LoggedCommit["changes"] = [];
+      for (const line of lines) {
+        const tab = line.indexOf("\t");
+        if (tab === -1) continue;
+        const letter = line.slice(0, tab);
+        changes.push({
+          status: letter === "A" ? "A" : letter === "D" ? "D" : "M",
+          path: line.slice(tab + 1),
+        });
+      }
+      return { commit, at, changes };
+    });
+}
+
+const wordsIn = (line: string): number => line.match(/[\p{L}\p{N}][\p{L}\p{N}'’-]*/gu)?.length ?? 0;
+
+function parseWordChanges(out: string): WordCommit[] {
+  return out
+    .split("\u0001")
+    .filter((part) => part.trim() !== "")
+    .map((part) => {
+      const [head = "", ...lines] = part.split("\n");
+      const [commit = "", at = ""] = head.split("\u0002");
+      const files: WordCommit["files"] = [];
+      let file: WordCommit["files"][number] | null = null;
+      for (const line of lines) {
+        if (line.startsWith("diff --git ")) {
+          // "diff --git a/<path> b/<path>": the two halves are the same path for a plain change.
+          const both = line.slice("diff --git ".length);
+          const half = (both.length - 1) / 2;
+          file = {
+            path: both.slice(half + 3),
+            created: false,
+            deleted: false,
+            added: 0,
+            removed: 0,
+          };
+          files.push(file);
+        } else if (!file) continue;
+        else if (line.startsWith("new file mode")) file.created = true;
+        else if (line.startsWith("deleted file mode")) file.deleted = true;
+        else if (line.startsWith("+++") || line.startsWith("---")) continue;
+        else if (line.startsWith("+")) file.added += wordsIn(line.slice(1));
+        else if (line.startsWith("-")) file.removed += wordsIn(line.slice(1));
+      }
+      return { commit, at, files };
+    });
+}
+
 export class GitGateway {
   private tail: Promise<unknown> = Promise.resolve();
   private readonly lockTimeoutMs: number;
@@ -507,6 +578,53 @@ export class GitGateway {
             paths: (rest ?? "").split("\n").filter((p) => p !== ""),
           };
         });
+    });
+  }
+
+  /**
+   * The commits that changed Markdown files, newest first, each with the files it added, changed
+   * or deleted. `since` is anything Git reads as a time. A merge commit lists nothing.
+   */
+  changeLog(options: { limit?: number; since?: string } = {}): Promise<LoggedCommit[]> {
+    return this.locked(async () => {
+      const r = await this.run(
+        [
+          "log",
+          `-n${options.limit ?? 5000}`,
+          ...(options.since ? [`--since=${options.since}`] : []),
+          "--no-renames",
+          "--name-status",
+          "--format=%x01%H%x02%cI",
+          "--",
+          "*.md",
+        ],
+        // A library with no commit yet has no log.
+        { allow: (c) => c === 128 },
+      );
+      return r.code === 0 ? parseChangeLog(r.stdout.toString("utf8")) : [];
+    });
+  }
+
+  /**
+   * The words each commit since a time added to and took from each Markdown file, and whether it
+   * made the file. Counts the lines of the patch, frontmatter included.
+   */
+  wordChanges(since: string): Promise<WordCommit[]> {
+    return this.locked(async () => {
+      const r = await this.run(
+        [
+          "log",
+          `--since=${since}`,
+          "--no-renames",
+          "-p",
+          "-U0",
+          "--format=%x01%H%x02%cI",
+          "--",
+          "*.md",
+        ],
+        { allow: (c) => c === 128 },
+      );
+      return r.code === 0 ? parseWordChanges(r.stdout.toString("utf8")) : [];
     });
   }
 

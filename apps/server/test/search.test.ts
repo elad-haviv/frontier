@@ -26,10 +26,14 @@ describe("names for the quick switcher and link autocomplete", () => {
 
   it("matches names and aliases, with names that start with the query first", async () => {
     const r = await names("?q=har");
-    expect(r[0]).toEqual({ path: "01 Places/Harbor/Harbor.md", title: "Harbor" });
+    expect(r[0]).toEqual({
+      path: "01 Places/Harbor/Harbor.md",
+      title: "Harbor",
+      words: 17,
+    });
     const port = await names("?q=port");
     expect(port).toEqual([
-      { path: "01 Places/Harbor/Harbor.md", title: "Harbor", alias: "The Port" },
+      { path: "01 Places/Harbor/Harbor.md", title: "Harbor", alias: "The Port", words: 17 },
     ]);
     expect(await names("?q=zzzz")).toEqual([]);
   });
@@ -37,8 +41,8 @@ describe("names for the quick switcher and link autocomplete", () => {
   it("marks names shared by two notes, so a link can be written with its path", async () => {
     const twins = await names("?q=twin");
     expect(twins).toEqual([
-      { path: "02 People/Twin.md", title: "Twin", shared: true },
-      { path: "03 Things/Twin.md", title: "Twin", shared: true },
+      { path: "02 People/Twin.md", title: "Twin", shared: true, words: 5 },
+      { path: "03 Things/Twin.md", title: "Twin", shared: true, words: 5 },
     ]);
     expect((await names("?q=mira"))[0]!.shared).toBeUndefined();
   });

@@ -149,4 +149,171 @@ Only the quiet weekly line. No goals, no streaks.
 
 ## 6. Interfaces
 
-Written by the build, below.
+Everything the pages need from below the UI. Types are in `@frontier/schema`
+(`packages/schema/src/keepGoing.ts`, `keepGoingSettings.ts`); the client calls are on `api` in
+`apps/web/src/api.ts`. All routes need the session. Errors are the usual `{ error: { code, message } }`.
+
+### Numbers and words
+
+- A **stub** is an entry with fewer than `STUB_WORDS` (80) words of body text: `isStub(words)`.
+  Body text is the text after the frontmatter without headings, comments and embedded pictures; a
+  link counts as the words it shows (`bodyWords` in `@frontier/vault`).
+- `words` is on `GraphNode` (every node, drafts included), on `TreeNote` and on the results of
+  `GET /api/search` and `GET /api/switcher` (published entries only; absent otherwise). The device's
+  compact index (`/api/graph`) has it, so the offline switcher can tag stubs from `GraphNode.words`.
+- The README, files outside notes, `.frontier/` and `99 Appendices` are never listed by any
+  queue list, random pick, folder count or question.
+- The queue, From here and the random dice read the **published** index; a draft does not change them
+  (an entry that is only a draft has an empty From here). The week and "on this day" read the library's
+  saved versions.
+
+### Endpoints
+
+| Method and path | Request | Response |
+| --- | --- | --- |
+| `GET /api/keep-going/queue` | none | `QueueResponse` |
+| `GET /api/keep-going/week` | `?tz=` minutes east of UTC, default 0 | `WeekResponse` |
+| `GET /api/keep-going/from-here` | `?path=` | `FromHereResponse` (404 when no such entry) |
+| `POST /api/keep-going/link-it` | `LinkItRequest` `{ path, target }` | `LinkItResponse` |
+| `POST /api/keep-going/link-it/undo` | `LinkItUndo` (the `undo` of the answer, as it was) | `{ ok: true }` |
+| `GET /api/keep-going/random` | `?kind=any\|stub\|folder\|old&folder=&not=` (`RandomQuery`) | `RandomResponse` (`entry` null when nothing fits) |
+| `POST /api/keep-going/after-publish` | `AfterPublishRequest` `{ paths }` | `AfterPublishResponse` (0 to 3 steps) |
+| `POST /api/keep-going/whats-missing` | `WhatsMissingRequest` `{ path }` | `WhatsMissingResponse` (AI) |
+| `GET /api/keep-going/question` | `?tz=` | `QuestionResponse`; never makes one (AI) |
+| `POST /api/keep-going/question` | `MakeQuestionRequest` `{ another?, tz? }` | `QuestionResponse`, `question` always set (AI) |
+| `GET /api/pins` | none | `PinsResponse` |
+| `POST /api/pins` | `PinRequest` `{ path }` | `PinsResponse` |
+| `DELETE /api/pins` | `?path=` | `PinsResponse` |
+| `PUT /api/pins` | `PinOrderRequest` `{ paths }` | `PinsResponse` |
+| `PUT /api/settings/keep-going` | `KeepGoingSettingsRequest` | `KeepGoingSettings` |
+
+Client (`api.`): `keepGoingQueue()`, `keepGoingWeek(tz?)`, `fromHere(path)`, `linkIt(path, target)`,
+`undoLinkIt(undo)`, `randomEntry(query?)`, `afterPublish(paths)`, `whatsMissing(path, signal?)`,
+`todaysQuestion(tz?)`, `makeQuestion(another?, signal?)`, `pins()`, `pin(path)`, `unpin(path)`,
+`reorderPins(paths)`, `setKeepGoingSettings(change)`. `tz` defaults to the browser's own offset. The
+AI calls take an `AbortSignal`; aborting stops the provider call.
+
+What each answer holds:
+
+- **Queue.** Lists carry `total` and at most `QUEUE_ROWS` (200) `rows`. `needsLove` rows are
+  `NeedsLoveRow` (an `EntryRow` plus `reasons: { rule, text }[]`, the text being the words for the
+  row, such as "Stub: 42 words, linked from 5 entries"), ranked by `linkedFrom` then by number of
+  reasons. `wanted` rows are `WantedRow` `{ name, mentions, folder, examples }`, most mentioned
+  first; `folder` is the folder most mentioning entries are in, null when none. `orphans` (nothing
+  links to them, most links out first) and `deadEnds` (link to nothing, most linked first) are
+  `EntryRow`s. `folders` are `FolderStubs` `{ folder, entries, stubs }` for each top folder, in the
+  tree's order. `rules` is the needs-love rules in force. "Write it" opens New entry with `name` and
+  `folder`.
+- **Week.** `week.days` is always 7 days, oldest first, the last being today in the reader's zone.
+  `entriesTouched` counts entries saved in a version in those days; `wordsAdded` is the words added
+  net of words taken, per file and version; `linksFilled` is entries *written* this week that some
+  older entry already linked to. `onThisDay` has up to 4 rows for each of a month, six months and a
+  year ago (`span`), written ("first written that day") before changed.
+- **From here.** `missing` (this entry's links with no entry, with library-wide `mentions`),
+  `unlinked` (up to `MENTION_LIMIT` = 20 other entries that name this entry's title or an alias
+  without linking; one each, with `sentence` and `at` = [from, to) of the name inside it; `unlinkedMore`
+  when there are more), `thin` (up to 10 linked neighbours that trip a rule, `direction` says which
+  way), `related` (up to 6, most shared links, not directly linked), `previous` and `next` (same
+  folder, tree order, null at the ends). Never offered as a mention: code, existing links, headings,
+  comments, web addresses, frontmatter, entries that already link here, appendices, the README. A
+  title that the library also writes in lower case in three or more entries ("Water") is matched
+  only in its own capital; any other name matches in any letter case.
+- **Link it.** Turns the first unlinked mention of `target` in `path` into `[[Title]]`, or
+  `[[Title|words as written]]` when the words differ (an alias, other letter case; `\|` in a table),
+  or the path form when another entry shares the title. It is saved as an ordinary unpublished draft
+  of `path`, on top of the author's own draft when there is one, with a new revision, so a device that
+  started from older text gets `stale_revision` on its next save as for any server change. Refused:
+  404 when the mention is gone or an entry is missing, 403 `not_allowed` for append-only or read-only
+  entries and entries with texts to merge. `before` and `after` are the sentence either side. Keep
+  `undo` and send it to `link-it/undo`: it removes the draft when the entry had none, or puts the
+  draft's earlier text back; refused with 403 `not_allowed` when the draft has changed since (the
+  toast should then say to undo in the editor), 404 when the draft is gone.
+- **Random.** Picks on the server. `old` is untouched for 6 months (`OLD_MONTHS`), by the library's
+  history. `folder` needs `folder` (400 without) and includes sub-folders. `not` is never picked.
+- **After Publish.** `steps`, in this order and each only when there is one: `stub` (a stub a
+  published entry links to, most linked first, with the entry it was found from), `missing` (a link in
+  a published entry with no entry, most mentioned first), `old` (a random entry untouched for 6
+  months, not one just published). Send the paths from the publish plan; entries not there are
+  ignored.
+- **What's missing.** At most 5 `proposals` `{ name, reason, folder }` (names that are entries, drafts
+  or neighbours are removed; `folder` is a folder that exists, else the entry's own, else null) and 2
+  `questions`. Nothing is saved. "Draft this entry" goes through `api.draftEntry(said)`
+  (`POST /api/lore/draft`) with the name and reason in `said`. It reads the entry as the author sees
+  it (draft first) and up to 8 linked entries; an entry held in quarantine is not sent.
+- **Question of the day.** `DayQuestion` `{ day, path, title, question, model, madeAt }`, kept in
+  `/data/state/question.json`. `day` is the reader's day (`tz`); `GET` gives today's or null. `POST`
+  without `another` returns today's kept question without calling the model; with `another` it makes a
+  new one from a different thin entry and replaces it. "Answer it" opens the editor at `path`.
+- **AI errors** (409 `ai_off`, 402 `ai_cap_reached`, 502 `ai_failed` and `ai_bad_answer`, `ai_stopped`,
+  403 `not_allowed`) are the same as for lore conversations; `href` on the failure says where in
+  Settings it is put right.
+- **Is an AI model chosen?** `status.ai.conversation` (boolean, in `GET /api/status` and its events;
+  optional in the type, absent from an older server). Both AI pieces need it; show them only when it
+  is true. (`status.ai.on` is the separate flag for proposing fields.)
+
+### Pins and settings
+
+- `.frontier/pins.json` is a library item file (`LIBRARY_FILES`, name `pins`), like the folder file:
+  saved at once on the server by the routes above, so every device sees it, and part of the next
+  Publish like the folder file is (it shows among the unpublished changes as "Pins").
+  Format, one pin to a line, in the order shown:
+
+  ```json
+  {
+    "version": 1,
+    "pins": [
+      {"path":"01 Places/Harbor/Harbor.md"},
+      {"path":"02 People/Mira.md"}
+    ]
+  }
+  ```
+
+  At most `MAX_PINS` (30), each path an existing `.md` entry, each once. `PinsResponse.pins` is
+  `{ path, title, words }[]` with pins whose entry no longer exists left out (and dropped from the file
+  at the next change). A saved rename of an entry or its folder rewrites the pins in the same version.
+  The generic `GET/PUT /api/library-files/pins` also exists. `GET /api/pins` is kept on the device and
+  answered from it offline; the other keep-going reads are not.
+- Settings: `GET /api/settings` has `keepGoing: { needsLove: { stub, emptyHeadings, noType,
+  noPicture, openComments, todoMarks } }`, all booleans, all `true` by default, stored in
+  `/data/state/settings.json`. `PUT /api/settings/keep-going` takes any of them. `NEEDS_LOVE_RULES`
+  and `NEEDS_LOVE_LABELS` (schema) give the order and the words for the Settings page.
+- Rules, as built: **stub** under 80 words and linked from 3 or more entries; **empty headings** a
+  heading with no text before the next heading of the same or a higher level (text under a sub-heading
+  counts); **no type** no `type` field of its own (a folder's type does not count); **no picture** no
+  image linked or embedded, only from 150 words (`PICTURE_WORDS`); **open comments** the entry has
+  comments; **to-do marks** `TODO`, `TBD` or `??` in the body outside code.
+
+### Device module: `apps/web/src/keepGoing/recents.ts`
+
+Device only (one `localStorage` key, `frontier.keepGoing.v1`); nothing goes to the server. Separate
+from the offline copy's "recent items", which keep entry bodies, not what was read or where.
+
+- `recents` (the shared instance, a `Recents`), `useRecents(): RecentsSnapshot` (`{ recents, current,
+  previous }`, re-renders on change), `useLastEntry(open: string | null): { path, title } | null`.
+- `recents.viewed(path, title, kind = "read")`: call when an entry (or its editor, with `"edited"`)
+  is shown. The entry shown before becomes the last one. `recents.touch(path, title, kind)` only
+  puts it first in the list (use for "edited" on a save).
+- `recents.lastBefore(open)` / `lastEntry(snapshot, open)`: "‹ Last: Name" and Alt+←. From the open
+  entry it is the one before; from anywhere else (Home, switcher) it is the entry that was open.
+- Recent list: `RecentEntry { path, title, kind: "read" | "edited", at }`, newest first, each entry
+  once, at most `MAX_RECENTS` (30). The switcher shows the first 8.
+- Reading position: `recents.setScroll(path, y)` (pixels from the top; written 400 ms later),
+  `recents.resumeAt(path, viewportHeight): number | null` (only when `y` is more than one screen
+  down and less than 30 days old: `shouldResume`), `recents.clearScroll(path)` for "Start from the
+  top". Cursor: `recents.setCursor(path, offset)`, `recents.cursorAt(path): number | null`.
+- `recents.renamed(from, to, title)`, `recents.forget(path)`, `recents.flush()` (written on
+  `pagehide` already), `recents.subscribe(fn)` and `recents.snapshot()` for other stores. Positions
+  are kept for the newest `MAX_POSITIONS` (200) entries.
+
+### For tests and the sample vault
+
+- The sample vault (`FRONTIER_SAMPLE_VAULT=1`) now has, besides the fixture (dated a year ago): a
+  stub linked three times with a to-do mark and an empty heading (`01 Places/Salt Flats`), an orphan
+  of 150+ words with no picture and an unlinked mention of Harbor (`01 Places/Salt Road`), an
+  unlinked mention of Mira (`03 Things/Brine Works`), a dead end (`03 Things/Salt Crystal`), a second
+  orphan (`02 People/Ruun`), wanted names mentioned three times each (`The Sunken Gate`, `Tide
+  Singers`), and versions dated six months, a month, three days and one day ago, so "this week" and
+  "on this day" show something. The fixture's own entries are unchanged.
+- The e2e AI stand-in (`apps/web/e2e/server.mjs`) answers both AI calls: What's missing proposes
+  "<Title> Keeper" (in the entry's folder) and "<Title> Festival" with two questions; the question
+  of the day is "What does <thin entry> smell like?".

@@ -124,6 +124,19 @@ describe("the device copy", () => {
     expect(servedFromDevice(again)).toBe(clock);
   });
 
+  it("keeps the pins for Home to show offline, and not the rest of the keep-going answers", async () => {
+    const PINS = { pins: [{ path: MIRA, title: "Mira", words: 12 }] };
+    answers.set("/api/pins", () => json(PINS));
+    answers.set("/api/keep-going/queue", () => json({ entries: 1 }));
+    await api.pins();
+    await api.keepGoingQueue();
+    await device.settled();
+    answers.set("/api/pins", down);
+    answers.set("/api/keep-going/queue", down);
+    expect(await api.pins()).toEqual(PINS);
+    await expect(api.keepGoingQueue()).rejects.toMatchObject({ status: 0, code: "offline" });
+  });
+
   it("never puts the device's copy over a refusal the server answered with", async () => {
     answers.set("/api/tree", () => json(TREE));
     await api.tree();
