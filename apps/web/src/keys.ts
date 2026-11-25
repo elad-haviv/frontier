@@ -188,8 +188,18 @@ export function displayKey(spec: string, mac = onMac()): string {
   return [mod && "Ctrl", alt && "Alt", shift && "Shift", name].filter(Boolean).join("+");
 }
 
+/** A key made of two presses in a row, such as "g h". */
+const isChord = (spec: string) => spec.length > 1 && spec.includes(" ");
+
+/** How long after the first key of a chord the second still counts. */
+export const CHORD_MS = 1500;
+
+const MODIFIER_KEYS = new Set(["Shift", "Control", "Alt", "Meta", "AltGraph", "CapsLock"]);
+
 export function createRegistry() {
   const shortcuts = new Map<string, Shortcut>();
+  /** The first key of a chord just pressed, and when. */
+  let pending: { key: string; at: number } | null = null;
   const bound = new Map<string, Binding[]>();
   const scopes = new Map<Scope, number>();
   const listeners = new Set<() => void>();
@@ -265,9 +275,29 @@ export function createRegistry() {
      * Finds and runs the shortcut for a key press. In a typing field only app shortcuts that use
      * a modifier run, so typing "?" in a note types a question mark. Answers whether one ran.
      */
-    handle(e: KeyPress): boolean {
+    handle(e: KeyPress, now = Date.now()): boolean {
       if (!isFree(e)) return false;
+      // Holding Shift or Alt for the second key of a chord is not a key of its own.
+      if (MODIFIER_KEYS.has(e.key)) return false;
       const typing = isTyping(e.target);
+
+      // The second key of a chord ("g" then "h"). Chords are for the page, never for typing.
+      const first = pending && now - pending.at < CHORD_MS ? pending.key : null;
+      pending = null;
+      if (first && !typing) {
+        for (const [id, list] of bound) {
+          const top = list[list.length - 1];
+          const s = shortcuts.get(id);
+          if (!top || !s || s.scope !== "app") continue;
+          const chord = s.keys.find((k) => isChord(k) && k.split(" ")[0]!.toLowerCase() === first);
+          if (!chord || !matches(chord.split(" ")[1]!, e)) continue;
+          if (top.action.current() !== false) {
+            e.preventDefault?.();
+            return true;
+          }
+        }
+      }
+
       const candidates: { s: Shortcut; b: Binding }[] = [];
       for (const [id, list] of bound) {
         const top = list[list.length - 1];
@@ -275,7 +305,7 @@ export function createRegistry() {
         if (!top || !s) continue;
         // The editor's own keys are run by CodeMirror, inside the text.
         if (s.scope === "editor" || s.scope === "table") continue;
-        if (!s.keys.some((k) => matches(k, e))) continue;
+        if (!s.keys.some((k) => !isChord(k) && matches(k, e))) continue;
         if (typing && !(s.scope === "app" && (e.ctrlKey || e.metaKey || e.altKey))) continue;
         candidates.push({ s, b: top });
       }
@@ -286,6 +316,20 @@ export function createRegistry() {
         if (b.action.current() !== false) {
           e.preventDefault?.();
           return true;
+        }
+      }
+
+      // Not a key of its own: perhaps the first of a chord. A key some scope uses by itself (the
+      // map's "g") ran above and wins, so a chord never takes a key away from a page.
+      if (!typing && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        for (const [id, list] of bound) {
+          const s = shortcuts.get(id);
+          if (!list.length || !s || s.scope !== "app") continue;
+          const chord = s.keys.find((k) => isChord(k) && matches(k.split(" ")[0]!, e));
+          if (chord) {
+            pending = { key: chord.split(" ")[0]!.toLowerCase(), at: now };
+            break;
+          }
         }
       }
       return false;
@@ -325,6 +369,9 @@ keys.register(
   // Everywhere
   { id: "app.switcher", keys: ["Mod-k"], scope: "app", label: "Go to an entry" },
   { id: "app.keys", keys: ["?"], scope: "app", label: "Show keyboard shortcuts" },
+  // Two presses in a row (stage 25). Where a page uses the first key by itself, the page wins.
+  { id: "app.home", keys: ["g h"], scope: "app", label: "Go to Home" },
+  { id: "app.random", keys: ["g r"], scope: "app", label: "Open a random entry" },
   {
     id: "app.sidebar",
     keys: ["Mod-\\"],

@@ -26,7 +26,7 @@ import {
 /** Opens the app signed in and waits until its worker is active and the sign-in is noted. */
 async function install(page: Page): Promise<void> {
   await page.goto("/");
-  await expect(page.locator(".entry h1").first()).toBeVisible();
+  await expect(page.locator(".home h1")).toBeVisible();
   await page.evaluate(() => navigator.serviceWorker.ready);
   await expect
     .poll(() =>
@@ -116,6 +116,48 @@ test("the app opens signed in with no connection", async ({ page, context }) => 
   await expect(page.locator(".connection.is-offline")).toHaveCount(0, { timeout: 15_000 });
 });
 
+test("Home with no connection: pins and recents from the device, the queue needs a connection", async ({
+  page,
+  context,
+}) => {
+  const pin = await page.request.post("/api/pins", { data: { path: MIRA } });
+  expect(pin.ok(), await pin.text()).toBe(true);
+  try {
+    await install(page);
+    // The pins were read on this device while online.
+    await expect(page.locator(".home").getByRole("region", { name: "Working on" })).toContainText(
+      "Mira",
+    );
+    await page.evaluate((path) => {
+      localStorage.setItem(
+        "frontier.keepGoing.v1",
+        JSON.stringify({
+          recents: [{ path, title: "Mira", kind: "read", at: Date.now() - 600_000 }],
+          current: { path, title: "Mira" },
+          previous: null,
+          scroll: {},
+          cursor: {},
+        }),
+      );
+    }, MIRA);
+    await reloadOffline(page);
+    const home = page.locator(".home");
+    await expect(home.getByRole("region", { name: "Working on" })).toContainText("Mira");
+    await expect(home.getByRole("region", { name: "Recently" })).toContainText("Mira");
+    await expect(home.getByRole("region", { name: "What to work on next" })).toContainText(
+      "needs a connection",
+    );
+    // The dice asks the server: it stays, and does nothing until the connection is back.
+    await expect(home.getByRole("button", { name: "Roll" })).toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
+  } finally {
+    await context.setOffline(false);
+    await page.request.delete(`/api/pins?path=${encodeURIComponent(MIRA)}`);
+  }
+});
+
 test("Log out needs a connection", async ({ page, context }) => {
   await install(page);
   await reloadOffline(page);
@@ -129,7 +171,7 @@ test("Log out needs a connection", async ({ page, context }) => {
 
 test("the app can be installed: a manifest, icons and an Apple touch icon", async ({ page }) => {
   await page.goto("/");
-  await expect(page.locator(".entry h1").first()).toBeVisible();
+  await expect(page.locator(".home h1")).toBeVisible();
   const links = await page.evaluate(() => ({
     manifest: [...document.querySelectorAll('link[rel="manifest"]')].map((l) =>
       l.getAttribute("href"),

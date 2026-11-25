@@ -27,6 +27,8 @@ import { KeySheet } from "./KeySheet.tsx";
 import { NewEntry } from "./NewEntry.tsx";
 import { IconButton } from "./ui/IconButton.tsx";
 import { useKeyListener, useShortcut } from "../keys.ts";
+import { useRandom } from "../keepGoing/useRandom.ts";
+import { currentEntryPath } from "./shell/entryPath.ts";
 import { LeftBar } from "./shell/LeftBar.tsx";
 import { Rail } from "./shell/Rail.tsx";
 import { PhoneBar } from "./shell/PhoneBar.tsx";
@@ -76,25 +78,7 @@ export const useStatus = () => useContext(Status);
 /** Call after a draft or publish changed something, so the tree and the counts are read again. */
 export const useRefresh = () => useContext(Refresh);
 
-export function currentEntryPath(pathname: string): string {
-  const prefix = pathname.startsWith("/e/")
-    ? "/e/"
-    : pathname.startsWith("/edit/")
-      ? "/edit/"
-      : null;
-  if (prefix === null) return "";
-  return pathname
-    .slice(prefix.length)
-    .split("/")
-    .map((s) => {
-      try {
-        return decodeURIComponent(s);
-      } catch {
-        return s;
-      }
-    })
-    .join("/");
-}
+export { currentEntryPath };
 
 /** Scrolls the page area back to its top, as a new page would open. */
 export function scrollPageToTop(): void {
@@ -117,7 +101,7 @@ export function usePhone(): boolean {
 }
 
 const PAGE_NAMES: [RegExp, string][] = [
-  [/^\/$/, "Frontier"],
+  [/^\/$/, "Home"],
   [/^\/maps/, "Maps"],
   [/^\/map\//, "Map"],
   [/^\/chronicles/, "Chronicles"],
@@ -221,6 +205,10 @@ export function Shell({ children }: { children: ReactNode }) {
   useShortcut("app.switcher", () => setSwitching(true));
   useShortcut("app.keys", () => setSheet(true));
   useShortcut("app.sidebar", () => (phone ? setDrawer((o) => !o) : fold(!rail)));
+  // Keep going (stage 25): "g h" and "g r".
+  const roll = useRandom();
+  useShortcut("app.home", () => void navigate("/"));
+  useShortcut("app.random", () => void roll());
 
   // A new page opens at its top, and on a phone the drawer closes.
   useEffect(() => {
@@ -291,6 +279,10 @@ export function Shell({ children }: { children: ReactNode }) {
     onNewEntryIn: (folder: string) => {
       setDrawer(false);
       setMaking(folder);
+    },
+    onRandom: () => {
+      setDrawer(false);
+      void roll();
     },
     onKeys: () => {
       setDrawer(false);

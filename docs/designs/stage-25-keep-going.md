@@ -126,6 +126,11 @@ folder shows its stub count [16]. In the rail (collapsed) the dice and Home are 
 Where one of these clashes with the keys registry, the registry's existing key wins and the nearest
 free key is used and written here.
 
+As built: `g h` and `g r` are two presses in a row (the second within 1.5 seconds, never in a text
+field, never with Ctrl or Alt). The map's editing tools use `g` (Place with AI), `r` and `h` on their
+own, so while a map is being edited `g` is the map's and the two keys do not run there; elsewhere
+nothing clashes, and no key had to change.
+
 ## 3. Where things are kept
 
 - **Pins** (decision B): in the library, in `.frontier/pins.json`, so they follow the author between

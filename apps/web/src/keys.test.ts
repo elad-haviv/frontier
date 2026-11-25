@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  CHORD_MS,
   createRegistry,
   displayKey,
   focusIsFree,
@@ -173,6 +174,73 @@ describe("the registry", () => {
     const r = registry();
     expect(() => r.bind("menu.move", { current: () => undefined })).toThrow(/handled by menus/);
     expect(r.handle(press("ArrowDown"))).toBe(false);
+  });
+});
+
+describe("keys of two presses", () => {
+  const chords = () => {
+    const r = registry();
+    r.register(
+      { id: "app.home", keys: ["g h"], scope: "app", label: "Home" },
+      { id: "app.random", keys: ["g r"], scope: "app", label: "Random" },
+      { id: "map.place", keys: ["g"], scope: "map", label: "Place" },
+    );
+    return r;
+  };
+
+  it("run on the second key, and only that", () => {
+    const r = chords();
+    const log: string[] = [];
+    bind(r, "app.home", log);
+    bind(r, "app.random", log);
+    const first = press("g");
+    expect(r.handle(first, 1000)).toBe(false);
+    expect(first.prevented).toBe(false);
+    const second = press("r");
+    expect(r.handle(second, 1200)).toBe(true);
+    expect(second.prevented).toBe(true);
+    expect(r.handle(press("r"), 1300)).toBe(false);
+    r.handle(press("g"), 2000);
+    r.handle(press("Shift"), 2100);
+    expect(r.handle(press("h"), 2200)).toBe(true);
+    expect(log).toEqual(["app.random", "app.home"]);
+  });
+
+  it("are forgotten after a pause or another key", () => {
+    const r = chords();
+    const log: string[] = [];
+    bind(r, "app.home", log);
+    r.handle(press("g"), 1000);
+    expect(r.handle(press("h"), 1000 + CHORD_MS + 1)).toBe(false);
+    r.handle(press("g"), 5000);
+    r.handle(press("x"), 5100);
+    expect(r.handle(press("h"), 5200)).toBe(false);
+    expect(log).toEqual([]);
+  });
+
+  it("are left to a typing field and to Ctrl or Alt", () => {
+    const r = chords();
+    const log: string[] = [];
+    bind(r, "app.home", log);
+    r.handle(press("g", { target: input }), 1000);
+    expect(r.handle(press("h", { target: input }), 1100)).toBe(false);
+    r.handle(press("g", { altKey: true }), 2000);
+    expect(r.handle(press("h"), 2100)).toBe(false);
+    expect(log).toEqual([]);
+  });
+
+  it("never take from a page a key it uses on its own", () => {
+    const r = chords();
+    const log: string[] = [];
+    bind(r, "app.home", log);
+    bind(r, "map.place", log);
+    expect(r.handle(press("g"), 1000)).toBe(true);
+    expect(r.handle(press("h"), 1100)).toBe(false);
+    expect(log).toEqual(["map.place"]);
+  });
+
+  it("read as words on the sheet", () => {
+    expect(displayKey("g h", false)).toBe("G then H");
   });
 });
 
