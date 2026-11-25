@@ -405,3 +405,24 @@ All four approved as recommended. This replaces "Keep this guess as a height map
    rebuild it** (a). The terrain is marked `generated`, so Find paths' amber "Guessing terrain from
    the picture" line changes to say "Terrain from hints (generated)".
 
+
+## What release 21c built
+
+- **Schema:** `terrainHints` (written last, merged hint by hint, a hint tied to a removed feature
+  dropped on reading and merging) and `terrain.generated` (the settings and the hash of the hints,
+  as the map keeps them). Older readers pass both through.
+- **Finding** (`apps/web/src/map/terrainHints/find.ts`, in Find areas' worker, on Find paths'
+  ground and Trace): sea and coast, lakes (not a river's wide stretch), rivers with their direction
+  and branches, roads (waiting), mountain symbols as a highland with its ridge and peaks, reed
+  marks as marsh, forests listed under "Not used". Hints from the map's own features by "counts
+  as", and markers named Mt./Mount/…Peak, are tied to their feature (page side, `page.ts`).
+- **The builder** (`build.ts`): as in "How it is built", steps 1–9, with Find paths' priority-flood
+  and D8 flow for erosion and the drainage check. Draft, Normal and Fine build on about 80 000,
+  160 000 and 320 000 cells; Fine adds an octave to the saved image. About 0.5 s for Normal.
+- **The workspace** (`TerrainHints.tsx`): as designed, desktop and phone. Use uploads a 16-bit grey
+  PNG (at most 2048 px wide) through the library's upload, then sets `terrain` and `terrainHints`
+  as one change. Offline, Use reads "Keep the hints" and keeps only the hints.
+- **Left for later**, as the plan said: cliffs from hachures, peak names in the picture's lettering,
+  hill symbols, a thin-plate solve. Also not done: moving a feature that a hint is tied to does not
+  mark the built map stale (the hash covers the hints as the map keeps them, without the feature's
+  shape); the toast names Find paths and Relief only (Suggest biomes is not in this release).

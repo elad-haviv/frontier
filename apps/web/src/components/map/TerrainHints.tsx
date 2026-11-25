@@ -277,7 +277,10 @@ export default function TerrainHints(p: {
         if (mode === "over") setHints([...fresh, ...tied]);
         else if (mode === "first" && hints.every((h) => h.by.startsWith("feature:"))) {
           // A found hint where a feature of the map already says it is left out: the map wins.
-          setHints([...tied, ...mergeFound(tied, fresh, near).filter((h) => h.by === "found")]);
+          // What is found first is where the dialog starts from, not a step to undo.
+          live({
+            hints: [...tied, ...mergeFound(tied, fresh, near).filter((h) => h.by === "found")],
+          });
         } else setHints(mergeFound(hints, fresh, near));
         if (mode === "first") setSelected(null);
       },
