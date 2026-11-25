@@ -59,6 +59,8 @@ export type Target =
   | { kind: "group"; feature: string }
   /** The selected group's name on the map, which places it by hand. */
   | { kind: "groupName"; feature: string }
+  /** A stop of the route Find paths proposes, which a drag moves; `feature` is its number. */
+  | { kind: "stop"; feature: string; index: number }
   | { kind: "feature"; feature: string };
 export type DragTarget = Exclude<Target, { kind: "feature" }>;
 
@@ -225,10 +227,11 @@ export function step(state: GestureState, e: GestureEvent, ctx: GestureContext):
         const from = state.at;
         return {
           state: { name: "drag", id: e.id, kind: state.kind, at: e.at, target: state.target, from },
-          effects: [
-            { type: "beginStep" },
-            { type: "dragTo", target: state.target, at: e.at, from },
-          ],
+          // A stop of a proposed route is not on the map yet: moving it is no step of the map's.
+          effects:
+            state.target.kind === "stop"
+              ? [{ type: "dragTo", target: state.target, at: e.at, from }]
+              : [{ type: "beginStep" }, { type: "dragTo", target: state.target, at: e.at, from }],
         };
       }
       const pan: Effect = { type: "pan", dx: e.at.x - state.at.x, dy: e.at.y - state.at.y };
@@ -404,7 +407,7 @@ export type MenuTarget =
 
 /** The context menu's target from what `pick` found: the selected marker or zone is a feature. */
 export function menuTargetOf(target: Target | null): MenuTarget {
-  if (!target) return { kind: "nothing" };
+  if (!target || target.kind === "stop") return { kind: "nothing" };
   if (target.kind === "corner" || target.kind === "insert") return target;
   return { kind: "feature", feature: target.feature };
 }

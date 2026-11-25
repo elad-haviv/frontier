@@ -111,7 +111,7 @@ test("draws a path and a zone, hides a layer, and undoes", async ({ page }, info
   await makeMap(page, `Sketches ${info.project.name}`, "flat");
   const c = await centre(page);
 
-  await page.getByRole("button", { name: "Path" }).click();
+  await page.getByRole("button", { name: "Path", exact: true }).click();
   // The tool is ready for taps once its hint shows; a tap before that would select instead.
   await expect(page.locator(".map-hint", { hasText: "Tap to add points." })).toBeVisible();
   await page.mouse.click(c.x - 60, c.y - 30);

@@ -7,7 +7,9 @@ import {
   reorderFeature,
 } from "@frontier/schema";
 import type { ReactNode } from "react";
+import type { Space } from "@frontier/geo";
 import { takeOut, withFeature } from "../../map/groups.ts";
+import { roadCrossings } from "../../map/joins.ts";
 import { withStyle } from "../../map/mapStyles.ts";
 import { addShape, reasonFor, removeShape, type Resolved, shapeOf, tie } from "../../map/time.ts";
 import { deleteFeature, removePoint, setCurve, type Tool } from "../../map/tools.ts";
@@ -43,7 +45,10 @@ export function FeaturePanel({
   generate,
   onMakeEntry,
   memberTop,
+  joinPaths = false,
 }: {
+  /** Snapping to paths is on: a path given a road's style gets crossroads with roads it crosses. */
+  joinPaths?: boolean;
   /** The library's path and zone styles. */
   styles: MapStyle[];
   /** Opens the Styles tab. */
@@ -94,7 +99,10 @@ export function FeaturePanel({
   }
   // The Marker tool stays on after a marker is placed, and its tab opens to link it; so does
   // Find areas after a zone is made.
-  const stays = tool === feature.kind || (tool === "find" && feature.kind === "zone");
+  const stays =
+    tool === feature.kind ||
+    (tool === "find" && feature.kind === "zone") ||
+    (tool === "paths" && feature.kind === "path");
   if (tool !== "select" && !stays) return null;
   return (
     <FeatureEditor
@@ -107,7 +115,16 @@ export function FeaturePanel({
       {...(onScreen ? { drawn: onScreen.feature } : {})}
       onCurve={(curved) => setFeature(setCurve(feature, curved))}
       styles={styles}
-      onStyle={(style) => setFeature(withStyle(feature, style))}
+      onStyle={(style) => {
+        const now = file.mapRef.current ?? map;
+        const styled = withFeature(now, withStyle(feature, style));
+        // A path made a road crosses the roads it meets at shared corners (snapping to paths on).
+        change(
+          joinPaths && feature.kind === "path"
+            ? roadCrossings(styled, map.space as Space, feature.id, styles)
+            : styled,
+        );
+      }}
       onEditStyles={onEditStyles}
       sets={file.sets}
       otherMaps={file.otherMaps}

@@ -2,6 +2,7 @@
  * The page's side of the Find areas worker. One worker for the session, started the first time
  * the tool is used, so the pictures it has looked at are kept while the app is open.
  */
+import type { PathsRequest } from "../findPaths/protocol.ts";
 import type { AreaRings, FoundAreas, Opened, Outlined, Reply, Request } from "./protocol.ts";
 
 let worker: Worker | null = null;
@@ -28,7 +29,7 @@ function start(): Worker {
   return worker;
 }
 
-function ask<T>(req: Request): Promise<T> {
+export function ask<T>(req: Request | PathsRequest): Promise<T> {
   const w = start();
   const id = next++;
   return new Promise<T>((resolve, reject) => {

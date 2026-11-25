@@ -137,6 +137,7 @@ export function useMapKeys(k: MapKeys) {
   useShortcut("map.label", tool("label"));
   useShortcut("map.place", tool("place"));
   useShortcut("map.find", tool("find"));
+  useShortcut("map.paths", tool("paths"));
   useShortcut("map.snap", () => (editing && free() ? k.toggleSnap() : false));
   useShortcut("map.undo", () => (editing && free() && k.canUndo ? k.undo() : false));
   useShortcut("map.redo", () => (editing && free() && k.canRedo ? k.redo() : false));

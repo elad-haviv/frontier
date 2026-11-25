@@ -48,6 +48,43 @@ export const MapImage = z
   .passthrough();
 export type MapImage = z.infer<typeof MapImage>;
 
+/**
+ * The map's terrain: a height picture the tools read (Find paths, relief), never drawn as one of
+ * the map's pictures. It lies on the map through its own extent, so it need not be the size of the
+ * map's picture. Set in the Terrain dialog (docs/designs/stage-20-terrain-dialog.md).
+ */
+export const MapTerrain = z
+  .object({
+    /** The height picture's path in the vault. */
+    image: z
+      .string()
+      .min(1)
+      .max(400)
+      .refine(
+        (p) => !p.startsWith("/") && !p.split("/").includes(".."),
+        "Not a path in the vault.",
+      ),
+    /** Where it lies, as an image's extent; left out: over the whole map. */
+    extent: Extent.optional(),
+    /** Black is high; left out: white is high. */
+    invert: z.literal(true).optional(),
+    /** The grey, 0 to 1 after inverting, below which it is sea; left out: matched to the picture. */
+    seaLevel: z.number().min(0).max(1).optional(),
+    /** The heights of the lowest and the highest grey; left out: heights are only relative. */
+    range: z
+      .tuple([z.number(), z.number()])
+      .refine(([low, high]) => low < high, "The lowest height comes first.")
+      .optional(),
+    /** The unit of the range: "m", "ft" or the map's own. */
+    rangeUnit: z.string().max(20).optional(),
+    /** How much the picture is smoothed as it is read, 0 (none) to 4; left out: 0. */
+    smoothing: z.number().int().min(0).max(4).optional(),
+    /** A guess kept as a height picture, which stays marked as one. */
+    guessed: z.literal(true).optional(),
+  })
+  .passthrough();
+export type MapTerrain = z.infer<typeof MapTerrain>;
+
 export const MapLayer = z
   .object({
     id: ItemId,
@@ -102,6 +139,17 @@ const featureBase = {
  */
 const curve = z.literal("smooth").optional();
 
+/** A stretch of a path between two of its corners: see `stretches` on a path. */
+export const PathStretch = z
+  .object({
+    kind: z.enum(["tunnel", "steps", "climb"]),
+    from: Pair,
+    to: Pair,
+    grade: z.number().min(-10).max(10).optional(),
+  })
+  .passthrough();
+export type PathStretch = z.infer<typeof PathStretch>;
+
 /**
  * The id of a path or zone style in the map styles file. A style that is not there, or is for the
  * other kind, counts as none, and the id is kept so that the look comes back with the style.
@@ -121,7 +169,32 @@ export const MapFeature = z.discriminatedUnion("kind", [
     })
     .passthrough(),
   z
-    .object({ ...featureBase, kind: z.literal("path"), points: z.array(Pair).min(2), curve, style })
+    .object({
+      ...featureBase,
+      kind: z.literal("path"),
+      points: z.array(Pair).min(2),
+      curve,
+      style,
+      /**
+       * A join: this path's first (`startOn`) or last (`endOn`) point lies on another path, whose id
+       * this is, at a corner the two share. The app keeps the end on that corner as either path
+       * is changed. A join to a path that is gone is dropped on reading and on merging.
+       */
+      startOn: ItemId.nullish(),
+      endOn: ItemId.nullish(),
+      /**
+       * Stretches of the path that are something other than its plain line, each between two of
+       * its corners, given by their coordinates (so a corner put in elsewhere leaves it alone): a
+       * tunnel (drawn dashed), steps, or a climb (`grade`, the steepest grade along it as a
+       * fraction, above 0 when it rises from `from` to `to`; drawn as chevrons pointing uphill).
+       * A stretch whose corners are gone is not drawn. Made by Find paths.
+       */
+      stretches: z.array(PathStretch).max(500).optional(),
+      /** How a river ends inland: it sinks underground (tapers) or dries out (thins, dashed). */
+      endAs: z.enum(["sinks", "dries"]).optional(),
+      /** The chevrons on its climbs are hidden; left out: shown. */
+      steepShown: z.literal(false).optional(),
+    })
     .passthrough(),
   z
     .object({ ...featureBase, kind: z.literal("zone"), points: z.array(Pair).min(3), curve, style })
@@ -213,9 +286,15 @@ export const MapFile = z
     features: z.array(MapFeature),
     /** Features drawn as one place; left out when there are none. */
     groups: z.array(MapGroup).optional(),
+    /** The height picture the tools read; left out when the map has none. */
+    terrain: MapTerrain.nullish(),
   })
   .passthrough()
   .superRefine((map, ctx) => {
+    if (map.terrain?.extent) {
+      const problem = extentProblem(map.space, map.terrain.extent);
+      if (problem) ctx.addIssue({ code: "custom", message: `The terrain's place: ${problem}` });
+    }
     for (const key of ["images", "layers", "features"] as const) {
       if (!unique(map[key])) ctx.addIssue({ code: "custom", message: `Two ${key} share an id.` });
     }
@@ -255,6 +334,8 @@ const TOP = [
   "layers",
   "features",
   "groups",
+  // Added later, so it goes last: a file without it keeps its bytes.
+  "terrain",
 ];
 const ITEM_KEYS: Record<string, string[]> = {
   images: ["id", "name", "path", "extent", "visible"],
@@ -280,6 +361,11 @@ const ITEM_KEYS: Record<string, string[]> = {
     "shapes",
     "orbit",
     "group",
+    "startOn",
+    "endOn",
+    "stretches",
+    "endAs",
+    "steepShown",
   ],
   groups: [
     "id",
@@ -299,6 +385,16 @@ const ITEM_KEYS: Record<string, string[]> = {
 };
 
 const SHAPE_KEYS = ["id", "from", "at", "points"];
+const TERRAIN_KEYS = [
+  "image",
+  "extent",
+  "invert",
+  "seaLevel",
+  "range",
+  "rangeUnit",
+  "smoothing",
+  "guessed",
+];
 
 function inOrder<T extends object>(item: T, keys: string[]): T {
   const from = item as Record<string, unknown>;
@@ -315,13 +411,16 @@ function inOrder<T extends object>(item: T, keys: string[]): T {
  * feature then gives the same bytes, and compares as equal, however it was put together.
  */
 export function orderFeature(feature: MapFeature): MapFeature {
-  const { span, shapes, orbit, group, ...rest } = feature as MapFeature & Record<string, unknown>;
+  const { span, shapes, orbit, group, startOn, endOn, ...rest } = feature as MapFeature &
+    Record<string, unknown>;
   return inOrder(
     {
       ...rest,
       ...(span != null ? { span } : {}),
       ...(orbit != null ? { orbit } : {}),
       ...(group != null ? { group } : {}),
+      ...(startOn != null ? { startOn } : {}),
+      ...(endOn != null ? { endOn } : {}),
       ...(Array.isArray(shapes) && shapes.length > 0
         ? { shapes: shapes.map((h) => inOrder(h as LaterShape, SHAPE_KEYS)) }
         : {}),
@@ -366,14 +465,15 @@ export function orderGroup<T extends MapGroup>(group: T): T {
 }
 
 const ordered = (map: MapFile): MapFile => {
-  // "Lies under nothing" and "no groups" are written by leaving the key out.
-  const { under, groups, ...rest } = map;
+  // "Lies under nothing", "no groups" and "no terrain" are written by leaving the key out.
+  const { under, groups, terrain, ...rest } = map;
   return {
     ...rest,
     ...(under != null ? { under } : {}),
     layers: map.layers.map(orderLayer),
     features: map.features.map(orderFeature),
     ...(groups && groups.length > 0 ? { groups: groups.map(orderGroup) } : {}),
+    ...(terrain != null ? { terrain: inOrder(terrain, TERRAIN_KEYS) } : {}),
   } as MapFile;
 };
 
@@ -408,7 +508,7 @@ export function parseMap(text: string): ParsedMap {
       message: `${issue?.message ?? "It does not have the form of a map."}${where}`,
     };
   }
-  return { ok: true, map: repairGroups(parsed.data) };
+  return { ok: true, map: repairJoins(repairGroups(parsed.data)) };
 }
 
 // ---- Merging ---------------------------------------------------------------------------------
@@ -428,7 +528,9 @@ export function mergeMaps(base0: MapFile, mine0: MapFile, theirs0: MapFile): Map
   // The same feature must compare as equal whatever order its keys were set in.
   const [base, mine, theirs] = [ordered(base0), ordered(mine0), ordered(theirs0)];
   const clashes: string[] = [];
-  const pick = <K extends "title" | "space" | "markerSets" | "under">(key: K): MapFile[K] => {
+  const pick = <K extends "title" | "space" | "markerSets" | "under" | "terrain">(
+    key: K,
+  ): MapFile[K] => {
     if (same(mine[key], theirs[key]) || same(base[key], theirs[key])) return mine[key];
     if (same(base[key], mine[key])) return theirs[key];
     clashes.push(key);
@@ -457,13 +559,40 @@ export function mergeMaps(base0: MapFile, mine0: MapFile, theirs0: MapFile): Map
       : {}),
     space: pick("space"),
     markerSets: pick("markerSets"),
+    // The terrain is one item: set, changed or taken away on one side, it is that side's.
+    ...(mine.terrain != null || theirs.terrain != null || base.terrain != null
+      ? { terrain: pick("terrain") }
+      : {}),
     images: images.items,
     layers: kept,
     features: features.items.map((f) => (layerIds.has(f.layer) ? f : { ...f, layer: fallback })),
     groups: groups.items.map((g) => (layerIds.has(g.layer) ? g : { ...g, layer: fallback })),
   };
   // A member whose group the other side removed, or moved to another layer, is no longer in it.
-  return { map: ordered(repairGroups(map)), clashes };
+  return { map: ordered(repairJoins(repairGroups(map))), clashes };
+}
+
+// ---- Joins -------------------------------------------------------------------------------------
+
+/**
+ * The map with its joins made sound: a path's join to a feature that is not there, is not a path,
+ * or is the path itself, is dropped. The same map comes back when nothing was wrong.
+ */
+export function repairJoins(map: MapFile): MapFile {
+  const paths = new Set(map.features.filter((f) => f.kind === "path").map((f) => f.id));
+  let changed = false;
+  const features = map.features.map((f) => {
+    if (f.kind !== "path") return f;
+    const bad = (on: string | null | undefined) => on != null && (!paths.has(on) || on === f.id);
+    if (!bad(f.startOn) && !bad(f.endOn)) return f;
+    changed = true;
+    return orderFeature({
+      ...f,
+      startOn: bad(f.startOn) ? null : f.startOn,
+      endOn: bad(f.endOn) ? null : f.endOn,
+    });
+  });
+  return changed ? { ...map, features } : map;
 }
 
 // ---- Groups ------------------------------------------------------------------------------------

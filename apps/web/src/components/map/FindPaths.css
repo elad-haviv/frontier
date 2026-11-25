@@ -1,0 +1,114 @@
+/* Find paths (stage 20): its bar shares Find areas' (FindAreas.css); these are its own parts. */
+
+.map-top.tool-paths {
+  cursor: crosshair;
+}
+
+/* No way: the bar says so in the warning colour. */
+.paths-bar.is-failed .find-status {
+  color: var(--warn);
+}
+.paths-bar .find-status .paths-ship {
+  min-height: 0;
+  padding: 0;
+  color: var(--accent);
+  font-weight: 600;
+  text-decoration: underline;
+}
+
+/* A switch of several choices; a choice may carry a small note, such as its time. */
+.paths-switch button small {
+  color: var(--ink-faint);
+  font-size: 0.74rem;
+  font-weight: 400;
+}
+.paths-switch button[aria-disabled="true"] {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Where the terrain comes from: a quiet link into the Terrain dialog, amber when it is a guess. */
+.paths-terrain,
+.paths-terrain-icon {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-height: 1.9rem;
+  padding: 0 0.5rem;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: none;
+  color: var(--ink-soft);
+  font: inherit;
+  white-space: nowrap;
+}
+.paths-terrain:hover {
+  border-color: var(--rule);
+}
+.paths-terrain.is-guess,
+.paths-terrain-icon.is-guess {
+  border-color: #c98a1b;
+  background: #fbf0d6;
+  color: #7a4e00;
+}
+.paths-terrain-icon {
+  flex: none;
+  justify-content: center;
+  min-width: 2.6rem;
+  min-height: 2.6rem;
+  padding: 0;
+}
+
+@media (max-width: 47.99rem) {
+  .paths-bar .find-options {
+    max-height: 55vh;
+    overflow-y: auto;
+  }
+  .paths-switch {
+    align-self: flex-start;
+    max-width: 100%;
+    overflow-x: auto;
+  }
+  .paths-bar .find-main > .primary {
+    padding: 0 0.6rem;
+  }
+}
+
+/* A route's height profile: the heights along the way, its steep parts coloured. */
+.paths-profile {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  margin: 0;
+  max-width: 100%;
+}
+.paths-profile svg {
+  max-width: 100%;
+  height: auto;
+  border-bottom: 1px solid var(--rule);
+}
+.paths-profile polyline {
+  fill: none;
+  stroke-width: 1.6;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+.paths-profile .is-flat {
+  stroke: var(--ink-soft);
+}
+.paths-profile .is-steep {
+  stroke: #c08a1e;
+}
+.paths-profile .is-steeper {
+  stroke: #b3402a;
+}
+.paths-profile figcaption {
+  color: var(--ink-faint);
+  font-size: 0.76rem;
+}
+.paths-heights {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.45rem 0.85rem;
+}

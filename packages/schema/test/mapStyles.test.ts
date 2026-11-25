@@ -135,6 +135,7 @@ describe("the map styles file", () => {
       "zone:Forest",
       "zone:Water",
       "zone:Marsh",
+      "zone:Mountains",
     ]);
     expect(parseMapStyles(JSON.stringify({ version: 1, styles: STARTER_STYLES })).ok).toBe(true);
   });

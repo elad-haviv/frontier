@@ -5,12 +5,14 @@ import {
   measure,
   panBy,
   type Position,
+  type Space,
   turnTo,
 } from "@frontier/geo";
 import {
   Boxes,
   Group as GroupIcon,
   MapPin,
+  Mountain,
   Layers as LayersIcon,
   Palette,
   Sparkles,
@@ -18,6 +20,7 @@ import {
 import {
   hiddenWithin,
   isLined,
+  type MapFile,
   type MapGroup,
   lockedWithin,
   orderFeature,
@@ -39,6 +42,7 @@ import { useDialogs } from "../components/Dialogs.tsx";
 import { OfflineCopy } from "../components/OfflineCopy.tsx";
 import { DiscoveryPins, OpenDiscovery } from "../components/map/DiscoveryPins.tsx";
 import type { FindHandle } from "../components/map/FindAreas.tsx";
+import type { PathsHandle } from "../components/map/FindPaths.tsx";
 import { FeatureEntryDialog } from "../components/map/FeatureEntryDialog.tsx";
 import { FeaturePanel } from "../components/map/FeaturePanel.tsx";
 import { GhostPins, PlacePanel, usePlace } from "../components/map/PlacePanel.tsx";
@@ -56,7 +60,9 @@ import { TimeBar } from "../components/MapTime.tsx";
 import { TurnPanel } from "../components/MapTurn.tsx";
 import { useRefresh } from "../components/Shell.tsx";
 import { usePageTitle, usePanel, useRightBar, useSheetFloor } from "../components/shell/panels.tsx";
+import { Tip } from "../components/ui/Tip.tsx";
 import { useToast } from "../components/ui/Toast.tsx";
+import { shortcutText, useShortcut } from "../keys.ts";
 import { askSize } from "../map/askSize.ts";
 import { useCurveSetting } from "../map/curveSetting.ts";
 import { type MenuTarget, menuTargetOf, type PointerKind } from "../map/gesture.ts";
@@ -78,7 +84,9 @@ import {
 } from "../map/tools.ts";
 import { folderFor } from "../map/featureEntry.ts";
 import { choicesFor, ghostMarker, withProposal } from "../map/place.ts";
-import { useSnapSetting } from "../map/snap.ts";
+import { useSnapSetting, useSnapTargets } from "../map/snap.ts";
+import { nearestOnPath } from "../map/joins.ts";
+import { useReliefSetting } from "../map/reliefSetting.ts";
 import { useDiscovery } from "../map/useDiscovery.ts";
 import { useMapDraw } from "../map/useMapDraw.ts";
 import { useMapFile } from "../map/useMapFile.ts";
@@ -111,6 +119,11 @@ import { queue } from "../sync/queue.ts";
 
 /** Find areas, with the worker that looks at the picture, loads when the tool is first chosen. */
 const FindAreas = lazy(() => import("../components/map/FindAreas.tsx"));
+/** Find paths shares that worker, and loads the same way. */
+const FindPaths = lazy(() => import("../components/map/FindPaths.tsx"));
+/** The Terrain dialog and the relief it sets up load when they are first wanted. */
+const TerrainDialog = lazy(() => import("../components/map/TerrainDialog.tsx"));
+const ReliefLayer = lazy(() => import("../components/map/ReliefLayer.tsx"));
 
 export function MapPage() {
   const dialogs = useDialogs();
@@ -154,6 +167,9 @@ export function MapPage() {
   const [curve, setCurveOn] = useCurveSetting();
   // Points of paths and zones snap to the paths and zones beside them, unless turned off here.
   const [snap, setSnap] = useSnapSetting();
+  // What they snap to: with Paths off, a new path neither snaps to nor joins another.
+  const [snapTargets, setSnapTargets] = useSnapTargets();
+  const joinPaths = snap && snapTargets.paths;
   /** The entry being made for a feature, from its entry list or a generated description. */
   const [makingEntry, setMakingEntry] = useState<{
     feature: string;
@@ -166,6 +182,11 @@ export function MapPage() {
   /** Find areas while it is on: it takes the taps, and its clicks are undone before the map's. */
   const findRef = useRef<FindHandle | null>(null);
   const [findSteps, setFindSteps] = useState({ undo: false, redo: false });
+  /** Find paths, likewise: it also takes the drag of a route's stop. */
+  const pathsRef = useRef<PathsHandle | null>(null);
+  // The terrain in use drawn as relief: a view, remembered on this device.
+  const [relief, setRelief] = useReliefSetting();
+  const [terrainOpen, setTerrainOpen] = useState(false);
   const [pressKind, setPressKind] = useState<PointerKind>(() =>
     window.matchMedia("(pointer: coarse)").matches ? "touch" : "mouse",
   );
@@ -299,10 +320,11 @@ export function MapPage() {
     curve,
     onPressKind: setPressKind,
     snap,
+    snapTargets,
     group: groups.dragGroup,
     pickTap: groups.pickTap,
     haloIds: groups.haloIds,
-    find: findRef,
+    find: tool === "paths" ? pathsRef : findRef,
   });
   const { box, setBox } = pointer;
   useWheelZoom(draw.topCanvas, viewRef, setView, [map === null, draw.glError]);
@@ -332,8 +354,9 @@ export function MapPage() {
   const chooseTool = (next: Tool) => {
     setTool(next);
     setSketch([]);
-    // Find areas keeps the selection: the chosen areas can be added to the selected zone.
-    if (next !== "select" && next !== "find") setSelected(null);
+    // Find areas keeps the selection: the chosen areas can be added to the selected zone; Find
+    // paths keeps it too, to add the proposed path to the selected one.
+    if (next !== "select" && next !== "find" && next !== "paths") setSelected(null);
     if (next !== "select") groups.clearPicks();
     // Proposals not placed are only previews: they go with the tool.
     if (next !== "place") {
@@ -369,11 +392,11 @@ export function MapPage() {
   /** Finishes the path or zone being drawn, when it has the points it needs. */
   const finish = () => {
     if (!map || !canFinish(tool, sketch)) return false;
-    apply(finishSketch(map, tool, sketch, activeLayer, curve));
+    apply(finishSketch(map, tool, sketch, activeLayer, curve, joinPaths));
   };
   /** Curved or straight: the next path or zone while drawing, else the selected one. */
   const toggleCurve = () => {
-    if (tool === "path" || tool === "zone") return setCurveOn(!curve);
+    if (tool === "path" || tool === "zone" || tool === "paths") return setCurveOn(!curve);
     const chosen = file.mapRef.current?.features.find((f) => f.id === selected);
     if (tool !== "select" || !chosen || !isLined(chosen)) return false;
     file.setFeature(setCurve(chosen, (chosen as { curve?: string }).curve !== "smooth"));
@@ -381,10 +404,42 @@ export function MapPage() {
   const schematicMap = map?.space.kind === "flat" && map.space.schematic === true;
   /** Find areas looks at the map's picture: it needs one shown. */
   const hasPicture = !!map?.images.some((i) => shownImages.has(i.id));
+  /** Find paths reads a flat map's picture or its height map; a diagram has only Trace. */
+  const pathsReason =
+    map?.space.kind === "sphere"
+      ? "Find paths works on flat maps for now"
+      : hasPicture || map?.terrain
+        ? schematicMap && !hasPicture
+          ? "Find paths needs a map image"
+          : null
+        : "Find paths needs a map image or a height map";
+  /** Terrain is for flat maps, for now. */
+  const canTerrain = map?.space.kind === "flat" && !schematicMap;
+  /** Done in the Terrain dialog: one change of the map, with Undo in the toast. */
+  const setMapTerrain = (terrain: MapFile["terrain"]) => {
+    setTerrainOpen(false);
+    const now = file.mapRef.current;
+    if (!now) return;
+    const next: MapFile = { ...now };
+    delete next.terrain;
+    if (terrain) next.terrain = terrain;
+    if (JSON.stringify(next.terrain ?? null) === JSON.stringify(now.terrain ?? null)) return;
+    change(next);
+    toast({
+      message: terrain
+        ? "Terrain set: Find paths now uses the height map."
+        : "Terrain removed. The image stays in the library.",
+      action: { label: "Undo", run: file.undo },
+    });
+  };
+  useShortcut("map.relief", () => {
+    if (!map?.terrain && tool !== "paths") return false;
+    setRelief(!relief);
+  });
   const canUndo = findSteps.undo || file.history.past.length > 0;
   const canRedo = findSteps.redo || file.history.future.length > 0;
-  const undo = () => findRef.current?.undo() || file.undo();
-  const redo = () => findRef.current?.redo() || file.redo();
+  const undo = () => findRef.current?.undo() || pathsRef.current?.undo() || file.undo();
+  const redo = () => findRef.current?.redo() || pathsRef.current?.redo() || file.redo();
   useMapKeys({
     editing,
     frame,
@@ -408,6 +463,7 @@ export function MapPage() {
       ...(schematicMap ? [] : ["measure" as const]),
       ...(found.ready ? ["place" as const] : []),
       ...(hasPicture ? ["find" as const] : []),
+      ...(map && pathsReason === null ? ["paths" as const] : []),
     ],
     toggleSnap: () => setSnap(!snap),
     setTool: chooseTool,
@@ -466,7 +522,12 @@ export function MapPage() {
   // The Marker and Label tools stay on: what was just placed opens its tab, to be named at once.
   const showsFeature =
     feature !== null &&
-    (!editing || tool === "select" || tool === "marker" || tool === "label" || tool === "find");
+    (!editing ||
+      tool === "select" ||
+      tool === "marker" ||
+      tool === "label" ||
+      tool === "find" ||
+      tool === "paths");
   // Place with AI has its own tab while the tool is on.
   let placePanel: ReactNode = null;
   usePanel(
@@ -531,7 +592,7 @@ export function MapPage() {
     if (!f) return;
     fromLayers.current = true;
     // Find areas stays on: a zone chosen in Layers is one to add the chosen areas to.
-    if (tool !== "select" && tool !== "find" && editing) chooseTool("select");
+    if (tool !== "select" && tool !== "find" && tool !== "paths" && editing) chooseTool("select");
     groups.clearPicks();
     setSelected(id);
     setVertex(null);
@@ -569,6 +630,9 @@ export function MapPage() {
   if (draw.glError) return <p className="center error">{draw.glError}</p>;
 
   const sphere = map.space.kind === "sphere";
+  const terrainName = map.terrain
+    ? (map.terrain.image.split("/").pop() ?? "").replace(/\.[^.]+$/, "")
+    : "";
 
   // What the mouse is over, as the tooltip and the preview show it.
   const hoveredFeature = pointer.hovered
@@ -657,6 +721,13 @@ export function MapPage() {
           chooseTool("path");
           if (menuAt.at) setSketch([menuAt.at]);
         },
+        branch: (f) => {
+          // From the place on the path nearest the click: finished, it is joined there.
+          if (f.kind !== "path" || !menuAt.at) return;
+          const on = nearestOnPath(map.space as Space, f, menuAt.at).at;
+          chooseTool("path");
+          setSketch([on]);
+        },
         startZone: () => {
           chooseTool("zone");
           if (menuAt.at) setSketch([menuAt.at]);
@@ -676,7 +747,43 @@ export function MapPage() {
     <LayerPanel
       legend={<Legend styles={legend} />}
       timeLine={shown.timeLine}
-      setup={<MapSetup id={id} map={map} otherMaps={file.otherMaps} onChange={change} />}
+      setup={
+        <>
+          <MapSetup id={id} map={map} otherMaps={file.otherMaps} onChange={change} />
+          {canTerrain && (
+            <>
+              <h3>Terrain</h3>
+              <p className="layer-terrain">
+                {map.terrain ? (
+                  <>
+                    <span>{terrainName}</span>
+                    <label>
+                      <input
+                        type="checkbox"
+                        checked={relief}
+                        onChange={(e) => setRelief(e.target.checked)}
+                      />{" "}
+                      Relief
+                    </label>
+                    <button type="button" className="quiet" onClick={() => setTerrainOpen(true)}>
+                      Adjust…
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <span className="muted">
+                      No height map. Find paths guesses the terrain from the picture.
+                    </span>
+                    <button type="button" className="quiet" onClick={() => setTerrainOpen(true)}>
+                      Add a height map…
+                    </button>
+                  </>
+                )}
+              </p>
+            </>
+          )}
+        </>
+      }
       map={map}
       hidden={hidden}
       shownImages={shownImages}
@@ -827,6 +934,7 @@ export function MapPage() {
         onCopyLink={() => copyPlace(feature.id)}
         onEdit={() => startEditing(feature.id)}
         styles={styles}
+        joinPaths={joinPaths}
         onEditStyles={() => bar.show("styles")}
         generate={
           found.ready
@@ -914,6 +1022,7 @@ export function MapPage() {
         onEdit={() => (editing ? stopEditing() : startEditing())}
         onChange={change}
         onRemove={() => void file.removeMap()}
+        onTerrain={canTerrain ? () => setTerrainOpen(true) : undefined}
       />
 
       {editing && (
@@ -922,9 +1031,12 @@ export function MapPage() {
           schematic={schematic}
           canPlace={found.ready}
           findReason={hasPicture ? null : "Find areas needs a map image"}
+          pathsReason={pathsReason}
           onTool={chooseTool}
           snap={snap}
           onSnap={setSnap}
+          snapTargets={snapTargets}
+          onSnapTargets={setSnapTargets}
           canUndo={canUndo}
           canRedo={canRedo}
           onUndo={undo}
@@ -1005,6 +1117,39 @@ export function MapPage() {
           />
         </MapContextMenu>
         <canvas ref={draw.liveCanvas} className="map-canvas map-live" aria-hidden="true" />
+        {relief && map.terrain && tool !== "paths" && (
+          <Suspense fallback={null}>
+            <ReliefLayer map={map} view={view} size={size} />
+          </Suspense>
+        )}
+        {map.terrain && (
+          <span className="terrain-chip" role="group" aria-label="Terrain">
+            {editing && (
+              <Tip label="Adjust the height map in Terrain">
+                <button type="button" onClick={() => setTerrainOpen(true)}>
+                  <Mountain size={14} aria-hidden /> Terrain · {terrainName}
+                </button>
+              </Tip>
+            )}
+            <Tip label="Draws the terrain as light and shade" keys={shortcutText("map.relief")}>
+              <button type="button" aria-pressed={relief} onClick={() => setRelief(!relief)}>
+                Relief
+              </button>
+            </Tip>
+          </span>
+        )}
+        {terrainOpen && canTerrain && (
+          <Suspense fallback={null}>
+            <TerrainDialog
+              map={map}
+              picture={[...map.images].reverse().find((i) => shownImages.has(i.id)) ?? null}
+              drawn={shown.resolved.map((r) => r.feature)}
+              styles={styles}
+              onDone={setMapTerrain}
+              onCancel={() => setTerrainOpen(false)}
+            />
+          </Suspense>
+        )}
         <MapHover hovered={menuOpen ? null : hovered} editing={editing} frame={size} />
         {view && placing && (
           <GhostPins
@@ -1110,6 +1255,44 @@ export function MapPage() {
               handle={findRef}
               onSteps={setFindSteps}
               say={say}
+            />
+          </Suspense>
+        )}
+
+        {editing && tool === "paths" && pathsReason === null && (
+          <Suspense fallback={null}>
+            <FindPaths
+              map={map}
+              mapRef={file.mapRef}
+              change={change}
+              view={view}
+              size={size}
+              frame={frame}
+              shownImages={shownImages}
+              resolved={shown.resolved}
+              hidden={hiddenNow}
+              locked={locked}
+              activeLayer={activeLayer}
+              onActiveLayer={setActiveLayer}
+              selected={selected}
+              onSelect={setSelected}
+              onSelectSeveral={(ids) => {
+                setSelected(null);
+                groups.setPicks(ids);
+              }}
+              onGroup={(ids) => groups.group(ids)}
+              snap={snap}
+              joinPaths={joinPaths}
+              curve={curve}
+              onCurve={setCurveOn}
+              styles={styles}
+              titleOf={titleOf}
+              handle={pathsRef}
+              onSteps={setFindSteps}
+              say={say}
+              relief={relief}
+              onRelief={setRelief}
+              onTerrain={() => setTerrainOpen(true)}
             />
           </Suspense>
         )}
