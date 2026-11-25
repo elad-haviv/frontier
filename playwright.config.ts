@@ -43,7 +43,7 @@ export default defineConfig({
       use: { viewport: { width: 1280, height: 800 }, storageState: AUTH, serviceWorkers: "block" },
       dependencies: ["setup"],
       testMatch:
-        /(reader|voice|chronicle|mapstime|mapviews|mapgestures|mapsread|mapsedit|mapstyles|maplayers|maptools|findareas|findpaths|terrain|mapjoins|mapgroups|editor|shell|tree|graph|writing|properties|margin|settings)\.spec\.ts/,
+        /(reader|voice|chronicle|mapstime|mapviews|mapgestures|mapsread|mapsedit|mapstyles|maplayers|maptools|findareas|findpaths|terrain|explore|mapjoins|mapgroups|editor|shell|tree|graph|writing|properties|margin|settings)\.spec\.ts/,
     },
     // The installed app: the service worker the build ships, with the connection cut.
     {

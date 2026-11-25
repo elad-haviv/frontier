@@ -88,7 +88,12 @@ export function usePointer(p: {
   focusing: boolean;
   setFocusing: (focusing: boolean) => void;
   exploring: boolean;
-  explore: (position: Position | null) => void;
+  /** A click while exploring: where on the map and on the screen, and how. */
+  explore: (
+    position: Position | null,
+    screen: Point,
+    how: { shift: boolean; kind: PointerKind },
+  ) => void;
   setFeature: (next: MapFeature, remember?: boolean) => void;
   beginStep: () => void;
   apply: (step: Step) => void;
@@ -329,7 +334,7 @@ export function usePointer(p: {
     const position = v.unproject(x, y);
 
     if (p.exploring && !editing) {
-      p.explore(position);
+      p.explore(position, { x, y }, { shift: shiftHeld.current, kind });
       return;
     }
 

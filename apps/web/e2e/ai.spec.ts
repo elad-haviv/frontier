@@ -386,9 +386,11 @@ test("CUJ 13: explores a map, makes concept art when asked, and keeps a discover
   await expect(page.locator(".save-saved")).toBeVisible();
   await page.getByRole("button", { name: "Done" }).click();
 
-  // Explore: a tap on the empty coast nearby proposes a discovery, shown as a provisional pin.
+  // Explore: a tap on the empty coast nearby chooses it; Ask proposes a discovery, shown as a
+  // provisional pin.
   await page.getByRole("button", { name: "Explore" }).click();
   await page.mouse.click(c.x + 40, c.y - 30);
+  await page.getByRole("button", { name: "Ask what is there" }).click();
   const card = page.locator(".discovery-card");
   await expect(card.locator("h2")).toHaveText("Test Hollow");
   await expect(card).toContainText("not in the lore");

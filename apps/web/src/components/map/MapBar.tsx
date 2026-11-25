@@ -175,6 +175,7 @@ export function MapBar({
           <IconButton
             label="Explore"
             icon={Telescope}
+            shortcut="map.explore"
             showLabel
             className="quiet"
             aria-pressed={exploring}
