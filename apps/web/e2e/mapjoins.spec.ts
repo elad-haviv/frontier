@@ -216,3 +216,32 @@ test("a branch starts on a road: drawn by hand, or from the road's right-click m
   expect(Math.abs(second.points![0]![1] - 320)).toBeLessThan(0.01);
   await cleanUp(page, [id]);
 });
+
+test("a path drawn by hand across a road gets crossroads corners when it is made a road", async ({
+  page,
+}) => {
+  const id = await makeMap(page, "Hand crossroads", { features: [MAIN], styles: [ROAD_STYLE] });
+  await open(page, id);
+  await page.getByRole("button", { name: "Path", exact: true }).click();
+  await click(page, [280, 260]);
+  await click(page, [280, 380]);
+  await page.keyboard.press("Enter");
+  await expect.poll(async () => (await paths(page)).length).toBe(2);
+  // Not a road yet: nothing happens to King's Road.
+  expect((await paths(page)).find((f) => f.id === "mainroad")!.points).toHaveLength(2);
+  // Given the Road style in its tab, the two share a corner where they cross.
+  const panel = page.locator(".feature-editor");
+  await panel.getByRole("combobox", { name: "Path style" }).click();
+  await page.getByPlaceholder("Find a style").fill("Road");
+  await page.getByRole("option", { name: "Road", exact: true }).click();
+  await expect
+    .poll(async () => (await paths(page)).find((f) => f.id === "mainroad")!.points!.length)
+    .toBe(3);
+  const all = await paths(page);
+  const main = all.find((f) => f.id === "mainroad")!;
+  const drawn = all.find((f) => f.id !== "mainroad")!;
+  expect(drawn.style).toBe("strroad1");
+  expect(drawn.points!.some((p) => same(p, main.points![1]!))).toBe(true);
+  expect(main.points![1]![0]).toBeCloseTo(280, 0);
+  await cleanUp(page, [id]);
+});

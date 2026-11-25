@@ -20,6 +20,9 @@ export type Feature = {
   group?: string;
   startOn?: string;
   endOn?: string;
+  stretches?: { kind: string; from: Position; to: Position; grade?: number }[];
+  endAs?: string;
+  steepShown?: boolean;
 };
 export type Stored = { features: Feature[]; groups?: { id: string }[] };
 
@@ -42,6 +45,17 @@ export const ROAD_STYLE = {
   counts: "road",
 };
 
+export const WATER_STYLE = {
+  id: "strwater",
+  name: "Water",
+  for: "zone",
+  color: "#2f6f9f",
+  width: 1,
+  dash: "solid",
+  fill: 0.35,
+  counts: "water",
+};
+
 export async function upload(page: Page, picture: string): Promise<string> {
   const bytes = readFileSync(join(here, "fixtures", picture)).toString("base64");
   return page.evaluate(
@@ -58,18 +72,30 @@ export async function upload(page: Page, picture: string): Promise<string> {
 
 /**
  * Makes a flat map of the fixture picture, one kilometre a pixel. With `heights`, the map's
- * terrain is its height map; `features` are added, and `styles` put in the library.
+ * terrain is its height map; `features` are added, and `styles` put in the library. Another of
+ * the fixtures (`picture`, and its heights, with their own `terrain` settings) and another scale
+ * can be asked for.
  */
 export async function makeMap(
   page: Page,
   title: string,
-  o: { heights?: boolean; features?: object[]; styles?: object[] } = {},
+  o: {
+    heights?: boolean;
+    features?: object[];
+    styles?: object[];
+    picture?: string;
+    heightsPicture?: string;
+    scale?: number;
+    terrain?: object;
+  } = {},
 ) {
   if (!page.url().startsWith("http")) await page.goto("/maps");
-  const image = await upload(page, "find-paths.png");
-  const heights = o.heights ? await upload(page, "find-paths-heights.png") : null;
+  const image = await upload(page, o.picture ?? "find-paths.png");
+  const heights = o.heights
+    ? await upload(page, o.heightsPicture ?? "find-paths-heights.png")
+    : null;
   return page.evaluate(
-    async ({ title, image, heights, features, styles }) => {
+    async ({ title, image, heights, features, styles, scale, terrain }) => {
       const json = { "content-type": "application/json" };
       if (styles.length > 0) {
         const lib = await (await fetch("/api/library-files/map-styles")).json();
@@ -92,9 +118,9 @@ export async function makeMap(
       const { id } = (await made.json()) as { id: string };
       const loaded = await (await fetch(`/api/maps/${id}`)).json();
       const map = loaded.map;
-      map.space = { ...map.space, scale: 1, unit: "km" };
+      map.space = { ...map.space, scale, unit: "km" };
       if (heights) {
-        map.terrain = { image: heights, range: [0, 2550], rangeUnit: "m" };
+        map.terrain = { image: heights, range: [0, 2550], rangeUnit: "m", ...terrain };
       }
       map.features = features.map((f: object) => ({
         layer: map.layers[0].id,
@@ -111,7 +137,15 @@ export async function makeMap(
       if (!saved.ok) throw new Error(await saved.text());
       return id;
     },
-    { title, image, heights, features: o.features ?? [], styles: o.styles ?? [] },
+    {
+      title,
+      image,
+      heights,
+      features: o.features ?? [],
+      styles: o.styles ?? [],
+      scale: o.scale ?? 1,
+      terrain: o.terrain ?? {},
+    },
   );
 }
 

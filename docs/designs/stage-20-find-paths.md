@@ -4,7 +4,7 @@
   tool where I decide on a type of path like rivers, routes, etc? Maybe if I provide height maps you
   could have an easier time making rivers, and by choosing two points on a map you could also infer
   from the graphics/height map the best travelling route."
-- **Status:** approved; see "Approved decisions" at the end for what the owner chose and what release 20a built
+- **Status:** approved and built; see "Approved decisions" at the end for what the owner chose and how release 20 built it
 - **Mockup:** `ux/auto-paths-mockup.html`. A working page, not a picture. It makes a height field,
   paints a fantasy map *from* it (sea, coast, lowland, forest, mountains with symbols, three painted
   rivers with tributaries, a dashed painted road with a bridge, five towns, parchment grain), then
@@ -488,8 +488,9 @@ AI what the colours mean".
 
 ## Approved decisions
 
-What the owner decided, in the order it was decided, and where release 20a stands on each. "Built"
-means in the app with tests; "not built yet" means decided and waiting for a later release.
+What the owner decided, in the order it was decided, and how release 20 built each. "Built" means
+in the app with unit and browser tests. Items 1–6, 8, 9 were built in 20a; 7, 10, 11 and 12, and
+the Path tool's crossroads, in 20b.
 
 ### The first five (the proposal's own)
 
@@ -520,12 +521,22 @@ means in the app with tests; "not built yet" means decided and waiting for a lat
    ever split. Built (`apps/web/src/map/joins.ts`).
    - A road found across a road gets a crossroads corner in both. Built for Find paths' routes in
      a style that counts as Road. The crossroads corner is shared by its coordinates only: it is
-     not remembered as a join, so dragging it in one road does not move the other. Not built for
-     the Path tool.
+     not remembered as a join, so dragging it in one road does not move the other. Built for the
+     Path tool too: a path drawn by hand has no style while it is drawn, so it becomes a road
+     when its path style is set to one that counts as Road, and at that moment (snapping to paths
+     on) it and every road it crosses get the shared corner (`roadCrossings` in `joins.ts`).
    - Rivers never cross rivers: a new river stops on the first made river it reaches. Built.
-7. **A route that runs partly along an existing road** offers "Make new stretches" or "Make whole
-   route", and the bar gives the whole journey with how much of it uses the road. **Not built
-   yet:** a route is always made whole.
+7. **A route that runs partly along an existing road** (a made path that counts as Road, or a
+   road painted in the picture, with Follow drawn lines on) asks each time: the bar's main
+   button becomes two, **Make new stretches** (Enter) and **Make whole route**. New stretches are
+   the parts of the route off the road, each a path of its own whose ends lie exactly on the
+   made road (at the curve as drawn), so each is joined to it at both ends and the shared part is
+   not drawn twice; on a painted road the ends are where the route meets its line. The bar always
+   gives the whole journey: "Start → End · 300 km · about 16 days by cart · 1 bridge · uses
+   82 km of King's Road · 218 km new". Built. How: the engine notes which road each cell of the
+   way is on, evens out crossings (a run along a road shorter than 8 cells, or 3% of the way, is a
+   crossing, not a way along it) and makes each run into points by itself, so where the route
+   joins and leaves a road is a point of the path.
 8. **Meeting the end of a path of the same kind:** the bar's main button becomes "Continue
    ‹path›", which makes the two one path; "Make separate path" makes it a path of its own, joined
    to the other at the end they share. Built for Find paths.
@@ -540,25 +551,97 @@ means in the app with tests; "not built yet" means decided and waiting for a lat
     - By hand: a path started on another path, with snapping to paths on, is joined at its start.
       Built.
     - Right-click a path → "Branch a path from here" starts the Path tool on it. Built.
-    - Find paths' Route started on a road leaves it wherever is best (the whole road as the
-      start). **Not built yet:** the route starts where it was clicked, and is joined there.
-    - A branch that leaves a curved path smoothly. **Not built yet.**
+    - Find paths' Route started (or ended) on a made road, with snapping to paths on, leaves it
+      wherever is best: the search starts from every cell of the road at no cost (a multi-source
+      A\*; an end on a road is a set of targets). The bar says "branches from King's Road at
+      Millford" (a marker or label near the branch point) or "… 140 km along it", and the route
+      is joined to the road there, at an exact point of its curve. Built.
+    - A branch leaves a road (or joins one) smoothly: its second point follows the road's
+      direction for a short way before turning off, so there is no hard 90° spur on a curved road.
+      Built for Find paths' branches; a branch drawn by hand goes where it is drawn.
     - Rivers do not branch, except into a delta. Kept: nothing makes a river branch.
 
 ### Steep ground
 
 11. **A steepest grade for each way of travelling, with switchbacks; cliffs; "Allow a tunnel" and
-    "Allow steps" when there is no way; a height profile and chevrons on steep stretches.**
-    **Not built yet**, none of it. What 20a has instead is the proposal's own: a slope slows each
-    way of travelling (Tobler's rule on foot, steeper for a horse and a cart), with no hard limit.
-    Without real heights, slopes are scaled so the steepest ground on the map is about a 30% pass.
+    "Allow steps" when there is no way; a height profile and chevrons on steep stretches.** Built.
+    - **Steepest grade:** cart 12%, horse 20%, on foot (and a ship's walk to the coast) 35%,
+      changed in the route options ("Steepest", 5–60%, remembered per way of travelling while the
+      app is open). A step steeper than that is closed; the slope still slows each step as before
+      (Tobler's rule on foot). The grade is measured along the step, so going across a slope is
+      gentle (anisotropic).
+    - **Switchbacks:** the search has sixteen ways out of a cell (the eight neighbours and the
+      eight knight's moves), so a climb too steep to take straight winds across the slope at
+      gentle angles. A knight's move is judged by its two halves through the height at its middle,
+      so no ridge is stepped over. Smoothing and thinning keep the limit: a point is smoothed only
+      where both pieces it then makes are within it (else it stays where it was found), and
+      Douglas–Peucker splits any straight piece that would be too steep, so a switchback keeps its
+      corners. The grade of every piece is measured again after smoothing, a cell at a time.
+    - **Cliffs** are impassable: in the heights, a drop steeper than 120% between two cells; in
+      the picture, ink crowded over half of a neighbourhood a hundredth of the picture across, in
+      pieces of some size (cliff marks, dense hatching), never on water or a road.
+    - **No way within the limit:** the same search is run again with any grade short of a cliff;
+      when it finds a way, the bar says where it is steepest, by the name of a marker or label
+      near it: "No way by cart: Grey Pass is 19% at its steepest" ("the climb is 19%" when no
+      name is near), with the grade marked on the map. It offers only **Allow a tunnel** and, on
+      foot, **Allow steps**; when no way is found even then, water is in the way and the ship is
+      offered as before.
+    - **Tunnels** (a "Tunnel" toggle in the route options, off by default, with "Longest tunnel"
+      1–20 km, 5 km at first): from where the ground ahead is too steep, straight through high
+      ground (both mouths well below what is above them, never under the sea) to where the way
+      on is within the limit. A tunnel costs the search 20 hours a km, so it is taken only where
+      there is no way over or round; once there it is travelled at 4 km an hour. Its two mouths
+      are points of the path, the stretch is stored on the made path as a `tunnel` stretch and
+      drawn dashed, and the bar says "a tunnel of 3.2 km".
+    - **Steps** (on foot only, a "Steps" toggle, off by default): steeper steps up to 80%, for at
+      most about 300 m in a row, three times slower; stored as a `steps` stretch and drawn with
+      short bars across the line.
+    - **Height profile:** below the route options while a route is proposed: the heights along
+      the way, the parts from 12% amber and from 20% red, and "Climbs 1,240 m · highest 1,690 m
+      · steepest 18%". Without real heights (none given, the map has no scale, or the terrain is
+      guessed or a kept guess) the metres are left out and grades say "about … (grades
+      approximate: no real heights)".
+    - **Chevrons** on climbs, pointing uphill: › from 12% to 20%, ›› above. A climb is a run of
+      the line steeper than 12% the same way up, measured a cell at a time; a point is put in
+      where one starts or ends, and it is stored as a `climb` stretch with its steepest grade.
+      **Show steepness** beside the profile (on by default) decides whether a route made by Find
+      paths shows them; the path's Edit feature tab has the same checkbox afterwards.
+    - In the map file, a path's `stretches` hold each tunnel, flight of steps and climb between two
+      of its corners by their coordinates (a corner put in elsewhere leaves them alone; dragging
+      one of their corners moves them with it; deleting one lets the stretch go), and
+      `steepShown: false` hides the chevrons. Older files keep their bytes.
 
 ### Rivers that end inland
 
 12. **Basins, with a lake to accept and five ways for the river to end there; the terrain winning
-    over a painted river's inland end.** **Not built yet.** In 20a a hollow is filled to its lowest
-    rim and the river carries on from there ("Lake drains", without the lake being offered), and a
-    zone in a style that counts as Water ends a river.
+    over a painted river's inland end.** Built.
+    - A river that reaches a hollow of meaningful size, at least a 2,500th of the map (25 cells at
+      the least) and deeper than 1% of the land's relief below where it spills, meets a basin.
+      Smaller hollows, a noisy height map's pits, are still filled and crossed without a word. The
+      basin is the hollow filled to its spill level (the cells the flood raised, measured against
+      the heights before rivers were drawn into them, so a painted river's trench is no hollow).
+    - The bar's River options then show **How it ends in the basin**: Lake drains · Lake keeps
+      the water · Marsh · Sinks underground · Dries out, each shown at once:
+      - *Lake drains*: the lake fills and the river carries on from its lowest rim.
+      - *Lake keeps the water*: the river ends at the shore.
+      - *Marsh / inland delta*: the river ends at the shore and three channels fan out into the
+        basin, each fading (made as paths that taper); the basin is offered as a ghost Marsh zone.
+      - *Sinks underground*: the river runs on to the hollow's lowest place and tapers away; the
+        made path stores `endAs: "sinks"`.
+      - *Dries out*: it runs half way there, and its last stretch thins and turns dashed
+        (`endAs: "dries"`).
+    - **The rule for the default** ("usual" on the switch): the lake **drains** when the land
+      draining into the basin (besides the lake itself) is at least twenty times the lake's area,
+      enough water to fill it to its rim; otherwise it **keeps the water**. Twenty is about where
+      real lakes with no outlet sit in a dry climate; the map has no climate, so the owner's choice
+      wins.
+    - The lake (for Lake drains and Lake keeps the water) or marsh is drawn as a ghost outline
+      with a pale wash; a click in it, or "Make the lake too" / "Make the marsh too", takes it, and
+      Make path then also makes a zone in the current layer in the usual zone style that counts as
+      Water (or Marsh), snapped to the zones beside it as Find areas' zones are. There is no
+      separate "click where it ends" control.
+    - A painted river that ends inland: the terrain wins, and a river followed down it carries on
+      past its end to the sea. Trace still follows the painted line exactly.
 
 ### Also in 20a
 
@@ -566,7 +649,11 @@ means in the app with tests; "not built yet" means decided and waiting for a lat
   close them in a thin slanted dashed line, so a dashed diagonal border did not stop an area. Find
   areas now also joins pieces of ink within eight pixels of each other by a stroke, whichever way
   the line runs.
-- **Not in 20a, from the proposal itself:** a note kept on the made path (it is said once, over the
+- **Room for a made height picture.** The map's `terrain` keeps `guessed: true` for a height
+  picture that was made rather than given (the proposal's "Keep this guess as a height map", or a
+  height map inferred from the picture later). Nothing makes one yet; a terrain so marked has its
+  grades called approximate.
+- **Not built, from the proposal itself:** a note kept on the made path (it is said once, over the
   map); pulling a route onto a painted road's ink on the full-size picture; a traced line teaching
-  the tool that line's colour; lakes; globes; per-world speeds.
+  the tool that line's colour; globes; per-world speeds.
 

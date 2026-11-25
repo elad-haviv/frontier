@@ -18,6 +18,7 @@ import {
   status,
   stored,
   upload,
+  WATER_STYLE,
 } from "./pathsHelpers.ts";
 
 /**
@@ -102,7 +103,9 @@ test("finds a route on foot and by cart that differ, guessing the terrain", asyn
   await expect(status(page)).toContainText("1 bridge");
   await ready(page);
   expect(await status(page).textContent()).not.toBe(onFoot);
-  await bar(page).getByRole("button", { name: "Make path" }).click();
+  // Most of the way is along the painted road: the bar asks whether to make it whole.
+  await expect(status(page)).toContainText(/uses [\d.]+ km of the painted road · [\d.]+ km new/);
+  await bar(page).getByRole("button", { name: "Make whole route" }).click();
   await expect.poll(async () => (await paths(page)).length).toBe(1);
   const [route] = await paths(page);
   near(route!.points![0], [160, 120]);
@@ -195,7 +198,8 @@ test("takes a road the owner made, by what its style counts as", async ({ page }
   await click(page, [125, 312]);
   await click(page, [395, 312]);
   await ready(page);
-  await bar(page).getByRole("button", { name: "Make path" }).click();
+  // It runs along the made road, so the bar asks how to make it: whole, here.
+  await bar(page).getByRole("button", { name: "Make whole route" }).click();
   await expect.poll(async () => (await paths(page)).length).toBe(2);
   const route = (await paths(page)).find((f) => f.id !== "madeRoad")!;
   // It leaves the straight line for the road 33 km to the south, and runs along it.
@@ -258,5 +262,233 @@ test("on a phone: taps make a route, Options opens, and Make path opens the path
   await expect(page.locator(".feature-editor")).toBeVisible();
   await saved(page);
   expect(await paths(page)).toHaveLength(1);
+  await cleanUp(page, [id]);
+});
+
+// ---- Steep ground, rivers that end inland, roads already there (stage 20, decisions 7, 10–12) --
+
+/** King's Road, made by the owner, east to west north of the painted river. */
+const KINGS = {
+  id: "kingsrd1",
+  kind: "path",
+  label: "King's Road",
+  style: "strroad1",
+  points: [
+    [120, 150],
+    [420, 150],
+  ],
+};
+
+test("asks whether a route along a road is made whole or as its new stretches only", async ({
+  page,
+}, info) => {
+  test.skip(info.project.name !== "desktop", "Clicks need a mouse");
+  const id = await makeMap(page, "Along the road", { features: [KINGS], styles: [ROAD_STYLE] });
+  await open(page, id);
+  await findPaths(page, "Route");
+  await bar(page).getByRole("button", { name: "Cart" }).click();
+  await click(page, [140, 120]);
+  await click(page, [410, 120]);
+  await ready(page);
+  // The whole journey, and how much of it is along King's Road.
+  await expect(status(page)).toContainText(/uses [\d.]+ km of King's Road · [\d.]+ km new/);
+  await expect(bar(page).getByRole("button", { name: "Make whole route" })).toBeVisible();
+  await bar(page).getByRole("button", { name: "Make new stretches" }).click();
+  await expect.poll(async () => (await paths(page)).length).toBe(3);
+  const made = (await paths(page)).filter((f) => f.id !== "kingsrd1");
+  // Each new stretch is joined to the road at the end it shares with it; the shared part is not
+  // made again.
+  const [from, to] = made.sort((a, b) => a.points![0]![0] - b.points![0]![0]) as [Feature, Feature];
+  expect(from.endOn).toBe("kingsrd1");
+  expect(to.startOn).toBe("kingsrd1");
+  const road = (await paths(page)).find((f) => f.id === "kingsrd1")!;
+  expect(road.points!.length).toBeGreaterThanOrEqual(4);
+  for (const f of made) {
+    const length = f
+      .points!.slice(1)
+      .reduce((t, q, i) => t + Math.hypot(q[0] - f.points![i]![0], q[1] - f.points![i]![1]), 0);
+    expect(length).toBeLessThan(120);
+  }
+  await cleanUp(page, [id]);
+});
+
+test("a route started on a road branches from it wherever is best, joined there", async ({
+  page,
+}, info) => {
+  test.skip(info.project.name !== "desktop", "Clicks need a mouse");
+  const id = await makeMap(page, "Branching", { features: [KINGS], styles: [ROAD_STYLE] });
+  await open(page, id);
+  await findPaths(page, "Route");
+  await bar(page).getByRole("button", { name: "Cart" }).click();
+  // Clicked on King's Road at its west end; the end is south of the river.
+  await click(page, [160, 150]);
+  await click(page, [200, 330]);
+  await ready(page);
+  await expect(status(page)).toContainText("branches from King's Road");
+  await bar(page)
+    .getByRole("button", { name: /^(Make path|Make whole route)$/ })
+    .click();
+  await expect.poll(async () => (await paths(page)).length).toBe(2);
+  const all = await paths(page);
+  const branch = all.find((f) => f.id !== "kingsrd1")!;
+  const road = all.find((f) => f.id === "kingsrd1")!;
+  expect(branch.startOn).toBe("kingsrd1");
+  const start = branch.points![0]!;
+  // Not where it was clicked: east, where the way south over the bridge at x = 260 begins.
+  expect(start[0]).toBeGreaterThan(200);
+  expect(start[1]).toBeCloseTo(150, 1);
+  expect(road.points!.some((p) => p[0] === start[0] && p[1] === start[1])).toBe(true);
+  await cleanUp(page, [id]);
+});
+
+test("steep ground: no way by cart over the pass, a tunnel through it, and the climb on foot", async ({
+  page,
+}, info) => {
+  test.skip(info.project.name !== "desktop", "Clicks need a mouse");
+  const pass = {
+    id: "greypass",
+    kind: "label",
+    label: "Grey Pass",
+    at: [300, 180],
+  };
+  const id = await makeMap(page, "Grey Peaks", {
+    picture: "find-paths-steep.png",
+    heights: true,
+    heightsPicture: "find-paths-steep-heights.png",
+    scale: 0.2,
+    terrain: { range: [0, 2000], smoothing: 1 },
+    features: [pass],
+    styles: [ROAD_STYLE],
+  });
+  await open(page, id);
+  await findPaths(page, "Route");
+  await bar(page).getByRole("button", { name: "Cart" }).click();
+  await click(page, [150, 300]);
+  await click(page, [450, 300]);
+  // Too steep for a cart even winding: the bar says where, and offers a tunnel.
+  await expect(status(page)).toContainText(/No way by cart: Grey Pass is \d+% at its steepest/, {
+    timeout: 20_000,
+  });
+  await expect(status(page).getByRole("button", { name: "Allow steps" })).toHaveCount(0);
+  await status(page).getByRole("button", { name: "Allow a tunnel" }).click();
+  await ready(page);
+  await expect(status(page)).toContainText(/a tunnel of [\d.]+ km/);
+  await expect(bar(page).getByRole("button", { name: "Tunnel", exact: true })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  await bar(page)
+    .getByRole("button", { name: /^(Make path|Make whole route)$/ })
+    .click();
+  await expect.poll(async () => (await paths(page)).length).toBe(1);
+  const [route] = await paths(page);
+  const tunnel = route!.stretches!.find((s) => s.kind === "tunnel")!;
+  expect(tunnel).toBeDefined();
+  expect(Math.min(tunnel.from[0], tunnel.to[0])).toBeLessThan(300);
+  expect(Math.max(tunnel.from[0], tunnel.to[0])).toBeGreaterThan(300);
+  // Under 5 km (25 pixels at 200 m a pixel).
+  expect(Math.hypot(tunnel.to[0] - tunnel.from[0], tunnel.to[1] - tunnel.from[1])).toBeLessThan(25);
+
+  // On foot the pass is climbed: the profile, and chevrons on its climbs. (Undo first: the
+  // road just made would be followed, through its tunnel.)
+  await page.getByRole("button", { name: "Undo" }).click();
+  await expect.poll(async () => (await paths(page)).length).toBe(0);
+  await bar(page).getByRole("button", { name: "Tunnel", exact: true }).click();
+  await bar(page).getByRole("button", { name: "On foot" }).click();
+  await click(page, [150, 300]);
+  await click(page, [450, 300]);
+  await ready(page);
+  await expect(
+    bar(page).getByRole("figure", {
+      name: /Height profile: Climbs [\d,]+ m · highest [\d,]+ m · steepest \d+%/,
+    }),
+  ).toBeVisible();
+  await expect(bar(page).getByRole("button", { name: "Show steepness" })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  await bar(page)
+    .getByRole("button", { name: /^(Make path|Make whole route)$/ })
+    .click();
+  await expect.poll(async () => (await paths(page)).length).toBe(1);
+  const [walked] = (await paths(page)) as [Feature];
+  const climbs = walked.stretches!.filter((s) => s.kind === "climb");
+  expect(climbs.some((c) => c.grade! > 0.12)).toBe(true);
+  expect(climbs.some((c) => c.grade! < -0.12)).toBe(true);
+  expect(walked.steepShown).toBeUndefined();
+  // The path's tab can hide its chevrons.
+  const steepness = page
+    .locator(".feature-editor")
+    .getByRole("checkbox", { name: /Show steepness/ });
+  await expect(steepness).toBeChecked();
+  await steepness.uncheck();
+  await expect
+    .poll(async () => (await paths(page)).find((f) => f.id === walked.id)!.steepShown)
+    .toBe(false);
+  await cleanUp(page, [id]);
+});
+
+test("a river that runs into a basin: a lake to make, and how the river ends there", async ({
+  page,
+}, info) => {
+  test.skip(info.project.name !== "desktop", "Clicks need a mouse");
+  const id = await makeMap(page, "Inland sea", {
+    picture: "find-paths-basin.png",
+    heights: true,
+    heightsPicture: "find-paths-basin-heights.png",
+    styles: [RIVER_STYLE, WATER_STYLE],
+  });
+  await open(page, id);
+  await findPaths(page, "River");
+  await click(page, [560, 200]);
+  await ready(page);
+  // By the rule the lake keeps its water: the river ends at its shore.
+  await expect(status(page)).toContainText(/ends in a lake \([\d,]+ km²\)/);
+  const ends = bar(page).getByRole("group", { name: "How it ends in the basin" });
+  await expect(ends.getByRole("button", { name: /Lake keeps the water/ })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  // Each end is shown at once.
+  await ends.getByRole("button", { name: "Lake drains" }).click();
+  await expect(status(page)).toContainText("fills a lake");
+  await expect(status(page)).toContainText("reaches the sea");
+  await ends.getByRole("button", { name: "Marsh" }).click();
+  await expect(status(page)).toContainText("spreads into a marsh");
+  await ends.getByRole("button", { name: /Lake keeps the water/ }).click();
+  await ready(page);
+  // A click in the lake takes it too.
+  await click(page, [370, 200]);
+  await expect(bar(page).getByRole("button", { name: "Make the lake too" })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  await bar(page).getByRole("button", { name: "Make path" }).click();
+  await expect.poll(async () => (await stored(page)).features.length).toBe(2);
+  const features = (await stored(page)).features;
+  const lake = features.find((f) => f.kind === "zone")!;
+  expect(lake.style).toBe("strwater");
+  const river = features.find((f) => f.kind === "path")!;
+  const xs = lake.points!.map((p) => p[0]);
+  // The river ends at the lake's shore, on its east side.
+  const end = river.points![river.points!.length - 1]!;
+  expect(end[0]).toBeGreaterThan(Math.max(...xs) - 12);
+
+  // Sinking underground: it runs on into the hollow and tapers, as its end says. (Undo first:
+  // the river just made would be met at once, and the lake would end the next one.)
+  await page.getByRole("button", { name: "Undo" }).click();
+  await expect.poll(async () => (await stored(page)).features.length).toBe(0);
+  await click(page, [560, 200]);
+  await ready(page);
+  await bar(page)
+    .getByRole("group", { name: "How it ends in the basin" })
+    .getByRole("button", { name: "Sinks underground" })
+    .click();
+  await expect(status(page)).toContainText("sinks underground");
+  await ready(page);
+  await bar(page).getByRole("button", { name: "Make path" }).click();
+  await expect.poll(async () => (await paths(page)).length).toBe(1);
+  const [sinks] = await paths(page);
+  expect(sinks!.endAs).toBe("sinks");
   await cleanUp(page, [id]);
 });
