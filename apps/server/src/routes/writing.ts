@@ -3,6 +3,7 @@ import { VaultPath } from "@frontier/schema";
 import { isNote } from "@frontier/vault";
 import { z } from "zod";
 import { ApiError } from "../errors.js";
+import { LIMITS, LOOKS } from "../ai/review.js";
 import type { Services } from "../app.js";
 
 /** Suggestions made before, so another one is different: a few, each about a passage long. */
@@ -22,6 +23,27 @@ const Rewrite = z.object({
       how: z.string().trim().min(1).max(400),
     })
     .optional(),
+});
+
+const Consult = z.object({
+  path: VaultPath,
+  /** The entry as it is in the editor, unsaved changes included. */
+  text: z.string().max(60_000),
+  focus: z.enum(["edits", "content"]).default("edits"),
+  passage: z.string().max(6000).optional(),
+  looks: z.array(z.enum(LOOKS)).max(LOOKS.length).optional(),
+  how: z.string().trim().max(400).optional(),
+});
+
+const ConsultAsk = z.object({
+  path: VaultPath,
+  text: z.string().max(60_000),
+  question: z.string().trim().min(1).max(LIMITS.question),
+  finding: z.object({
+    kind: z.string().max(40),
+    anchor: z.string().max(6000),
+    comment: z.string().max(2000),
+  }),
 });
 
 /**
@@ -45,5 +67,23 @@ export function writingRoutes(app: FastifyInstance, s: Services): void {
     const held = s.quarantine.aiMayRead(input.path);
     if (held !== null) throw new ApiError("not_allowed", held);
     return { text: await s.writing.rewrite({ ...input, signal: whileAsked(reply) }) };
+  });
+
+  /** An opinion of the entry in the editor: of its unsaved changes, or of the whole. Advice only. */
+  app.post("/api/write/review", async (request, reply) => {
+    const input = Consult.parse(request.body);
+    if (!isNote(input.path)) throw new ApiError("invalid", "Only an entry can be reviewed.");
+    const held = s.quarantine.aiMayRead(input.path);
+    if (held !== null) throw new ApiError("not_allowed", held);
+    return s.review.review({ ...input, signal: whileAsked(reply) });
+  });
+
+  /** A follow-up about one finding of a review. */
+  app.post("/api/write/review/ask", async (request, reply) => {
+    const input = ConsultAsk.parse(request.body);
+    if (!isNote(input.path)) throw new ApiError("invalid", "Only an entry can be reviewed.");
+    const held = s.quarantine.aiMayRead(input.path);
+    if (held !== null) throw new ApiError("not_allowed", held);
+    return s.review.ask({ ...input, signal: whileAsked(reply) });
   });
 }

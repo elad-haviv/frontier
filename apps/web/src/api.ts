@@ -522,6 +522,33 @@ export const api = {
     },
     signal?: AbortSignal,
   ) => post<{ text: string }>("/api/write/rewrite", body, signal),
+  /** An opinion of the entry in the editor (stage 24); nothing is saved or changed. */
+  consult: (
+    body: {
+      path: string;
+      text: string;
+      focus: "edits" | "content";
+      passage?: string;
+      looks?: string[];
+      how?: string;
+    },
+    signal?: AbortSignal,
+  ) => post<ConsultResult>("/api/write/review", body, signal),
+  /** A follow-up about one finding of a consultation. */
+  consultAsk: (
+    body: {
+      path: string;
+      text: string;
+      question: string;
+      finding: { kind: string; anchor: string; comment: string };
+    },
+    signal?: AbortSignal,
+  ) =>
+    post<{ text: string; sources: { path: string; title: string; quote: string }[] }>(
+      "/api/write/review/ask",
+      body,
+      signal,
+    ),
   /** A new entry drafted from what the author said; nothing is saved. `signal` stops it. */
   draftEntry: (said: string, signal?: AbortSignal) =>
     post<{ draft: EntryProposal }>("/api/lore/draft", { said }, signal),
@@ -984,4 +1011,36 @@ export async function downloadExport(kind: ExportKind, pick: ExportPick): Promis
   a.click();
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 10_000);
+}
+
+/** What a consultation gives back (stage 24). */
+export interface ConsultFinding {
+  id: string;
+  kind: "contradiction" | "rule" | "dependency" | "clarity" | "gap" | "voice" | "structure";
+  severity: "note" | "concern" | "problem";
+  /** Checked: a quote was found in another entry. Opinion: taste. Unverified: a claim without one. */
+  certainty: "checked" | "opinion" | "unverified";
+  anchor: string;
+  comment: string;
+  suggestion: string;
+  sources: { path: string; title: string; quote: string }[];
+}
+
+export interface ConsultResult {
+  focus: "edits" | "content";
+  summary: string;
+  overall: "no_issues" | "minor" | "needs_attention";
+  edits: {
+    hunk: string;
+    verdict: "better" | "neutral" | "worse" | "risky";
+    reason: string;
+    after: string;
+  }[];
+  findings: ConsultFinding[];
+  given: { path: string; title: string }[];
+  changed: number;
+  typos: number;
+  partial: boolean;
+  droppedFindings: number;
+  droppedQuotes: number;
 }

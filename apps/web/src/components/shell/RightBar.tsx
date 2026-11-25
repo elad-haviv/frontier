@@ -1,5 +1,5 @@
 import { ChevronDown, PanelRightClose } from "lucide-react";
-import { type CSSProperties, type KeyboardEvent, useRef } from "react";
+import { type CSSProperties, type KeyboardEvent, useEffect, useRef } from "react";
 import { Icon } from "../ui/Icon.tsx";
 import { IconButton } from "../ui/IconButton.tsx";
 import { type PanelSpec, useShellStore } from "./panels.tsx";
@@ -10,6 +10,12 @@ import "./RightBar.css";
 function Tabs({ panels, open }: { panels: PanelSpec[]; open: string }) {
   const store = useShellStore();
   const list = useRef<HTMLDivElement>(null);
+  // With several tabs the row scrolls; the open one is always in view, not cut off at the edge.
+  useEffect(() => {
+    list.current
+      ?.querySelector<HTMLElement>('[aria-selected="true"]')
+      ?.scrollIntoView?.({ inline: "nearest", block: "nearest" });
+  }, [open]);
   function onKey(e: KeyboardEvent) {
     const at = panels.findIndex((p) => p.id === open);
     const step =

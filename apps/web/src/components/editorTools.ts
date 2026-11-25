@@ -23,6 +23,7 @@ import {
   Minus,
   Pilcrow,
   Redo2,
+  Scale,
   Sparkles,
   SquareCode,
   Strikethrough,
@@ -47,6 +48,8 @@ export interface ToolHandlers {
   onComment?: (() => void) | undefined;
   /** Writing help on the selection or the cursor's paragraph; shown even with no model chosen. */
   onHelp?: (() => void) | undefined;
+  /** The AI's opinion of the entry (stage 24), in the side bar. */
+  onConsult?: (() => void) | undefined;
   /** Asks the lore about the selection or the cursor's paragraph, on the Ask page. */
   onAsk?: (() => void) | undefined;
 }
@@ -217,6 +220,18 @@ export function tools(h: ToolHandlers): Tool[] {
       group: "assist",
       pinned: true,
       act: h.onHelp,
+    });
+  }
+  if (h.onConsult) {
+    // Not marked online: with no connection it still opens, to say so.
+    list.push({
+      id: "consult",
+      label: "Consult",
+      menuLabel: "Consult on this…",
+      icon: Scale,
+      shortcut: "editor.consult",
+      group: "assist",
+      act: h.onConsult,
     });
   }
   if (h.onAsk) {

@@ -141,6 +141,47 @@ function lore(user) {
       ],
     };
   }
+  if (user.includes("=== Entry text")) {
+    // Consult: one opinion on the first line of text, one verdict for each changed passage, and
+    // a claim about the lore that is checked against the first entry given, if there is one.
+    const body = (/=== Entry text\n([\s\S]*?)\n=== End of entry text/.exec(user)?.[1] ?? "")
+      .split("\n")
+      .find((l) => l.trim() !== "" && !l.startsWith("#") && !l.startsWith("---"));
+    const anchor = (body ?? "").split(/\s+/).slice(0, 2).join(" ");
+    const given = /=== Entry: (.*?)(?: \(.*\))?\n([\s\S]*?)\n=== End/.exec(user);
+    const quote = (given?.[2] ?? "").split("\n").find((l) => l.split(/\s+/).length >= 4) ?? "";
+    return {
+      summary: "A stand-in opinion.",
+      overall: "needs_attention",
+      edits: [...user.matchAll(/--- Passage (h\d+)/g)].map((m) => ({
+        hunk: m[1],
+        verdict: "neutral",
+        reason: "Harmless.",
+      })),
+      findings: [
+        {
+          id: "f1",
+          kind: "clarity",
+          severity: "concern",
+          basis: "craft",
+          anchor,
+          comment: "I find this opening unclear.",
+          suggestion: "A clearer opening.",
+          sources: [],
+        },
+        {
+          id: "f2",
+          kind: "contradiction",
+          severity: "problem",
+          basis: "lore",
+          anchor,
+          comment: "This conflicts with another entry.",
+          suggestion: "",
+          sources: given && quote ? [{ path: given[1], quote }] : [],
+        },
+      ],
+    };
+  }
   if (user.includes("=== Passage")) {
     // Writing help: the request's first words, and which try it is when asked again.
     const request = /Request: (.*)$/.exec(user)?.[1] ?? "";
