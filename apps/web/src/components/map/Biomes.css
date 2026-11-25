@@ -318,6 +318,11 @@
 .suggest-panel li.is-hot {
   background: var(--accent-soft);
 }
+.lt-note {
+  color: var(--ink-faint);
+  font-size: 0.78rem;
+  font-weight: 400;
+}
 .find-into-biomes {
   color: var(--ink-soft);
 }

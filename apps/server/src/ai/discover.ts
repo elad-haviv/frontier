@@ -7,7 +7,16 @@
 import { randomBytes } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { isLined, type MapFeature, type MapFile, type MapGroup, makeId } from "@frontier/schema";
+import {
+  biomeById,
+  type CustomBiome,
+  isLined,
+  type MapFeature,
+  type MapFile,
+  type MapGroup,
+  makeId,
+  RIVER_WORDS,
+} from "@frontier/schema";
 import {
   isExcluded,
   isInAppendix,
@@ -250,6 +259,8 @@ export interface DiscoverDeps {
   settings: SettingsStore;
   uploadFolder: string;
   mayRead: (path: string) => boolean;
+  /** The owner's own biomes, from the library's biomes file; none when left out. */
+  biomes?: () => readonly CustomBiome[];
 }
 
 /** Whether a point lies inside a ring, by counting crossings; the ring's coordinates as stored. */
@@ -299,14 +310,49 @@ export function groupsAt(
   return (map.groups ?? []).filter((g) => holding.has(g.id));
 }
 
+/** The area of a ring, by the shoelace formula, in the square of the map's units. */
+function ringArea(ring: readonly (readonly number[])[]): number {
+  let a = 0;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    a += ring[j]![0]! * ring[i]![1]! - ring[i]![0]! * ring[j]![1]!;
+  }
+  return Math.abs(a) / 2;
+}
+
+/**
+ * The land a place lies in, as the model is told it: the biome of the smallest biome zone that
+ * holds it (an oasis in a desert), with the zone's name when it has one, and what rivers do
+ * there. Biome zones count even unnamed. It is map context, never an entry, and never quoted.
+ */
+export function landAt(
+  at: readonly number[],
+  features: readonly MapFeature[],
+  custom: readonly CustomBiome[] = [],
+): string | null {
+  let best: { f: MapFeature; area: number } | null = null;
+  for (const f of features) {
+    if (f.kind !== "zone" || !biomeById(f.biome, custom)) continue;
+    if (!pointInPolygon(at, f.points)) continue;
+    const area = ringArea(f.points);
+    if (!best || area < best.area) best = { f, area };
+  }
+  if (!best || best.f.kind !== "zone") return null;
+  const biome = biomeById(best.f.biome, custom)!;
+  const name = best.f.label?.trim().replace(/\s+/g, " ").slice(0, 120);
+  return `The land here: ${biome.explore}${name ? ` (${name})` : ""}; ${RIVER_WORDS[biome.rivers]}.`;
+}
+
 export interface Around {
   given: Given[];
   names: string[];
+  /** The land the place lies in, from biome zones; null when none holds it. */
+  land?: string | null;
 }
 
 /** The context of a place, as the model reads it. */
-function contextText({ given, names }: Around): string {
+function contextText({ given, names, land }: Around): string {
   return [
+    ...(land ? [`${land} (This is what the map says of the ground, not an entry.)`, ""] : []),
     given.length > 0
       ? "Entries about what is near and around the place (these may be quoted):\n" +
         given.map((g) => `=== Entry: ${g.path}\n${g.body.trim()}\n=== End`).join("\n\n")
@@ -412,7 +458,7 @@ export class Discoverer {
           return `- "${nameOf(f)}": ${KIND_WORDS[f.kind]}, ${where}`;
         }),
     ];
-    return { given, names };
+    return { given, names, land: landAt(at, present, this.d.biomes?.() ?? []) };
   }
 
   /** The entries of features, and the entries those link to, as the model is given them. */

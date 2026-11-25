@@ -420,8 +420,8 @@ The owner approved the design with these choices. Where they differ from the pro
    - The field lives on the zone in `packages/schema/src/maps.ts` (additive: old files keep their bytes,
      merged per item, checked by the server), and the biome kinds and their defaults table live in
      `packages/schema`, shared with the server for Explore. Custom biomes (the owner's own, such as the
-     Blightlands) are kept on the map file and behave like one of the built-in kinds with their own
-     numbers and words.
+     Blightlands) are kept once for the library, as styles are, in `.frontier/biomes.json`, and behave
+     like one of the built-in kinds with their own numbers and words.
 3. **Overlaps are allowed; the smallest containing zone wins** (an oasis in a desert).
 4. **Travel: no separate route card.** Find paths' Route bar gains "+6½ days from biomes" and the km
    crossed in each biome; the hover tag gives each biome's multipliers.
