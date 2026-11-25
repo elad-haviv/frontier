@@ -128,6 +128,9 @@ export function surfaceFor(ground: Ground, mode: Mode, variant: Variant): Surfac
   const dry = variant === "dry";
   const n = ground.sea.length;
   const inv = new Float32Array(n);
+  // A biome may be quicker than open ground (a custom one up to three times), so the estimate
+  // of what is left takes the fastest cell there is.
+  let vmax = Math.max(m.road, m.sea, m.open);
   for (let i = 0; i < n; i++) {
     let v: number;
     if (ground.cliff?.[i]) v = 0;
@@ -140,13 +143,14 @@ export function surfaceFor(ground: Ground, mode: Mode, variant: Variant): Surfac
       else v = ground.marsh[i] ? m.marsh : ground.forest[i] ? m.forest : m.open;
       v *= 1 - (1 - m.upland) * ground.upland[i]!;
     }
+    if (v > vmax) vmax = v;
     inv[i] = v > 0 ? 1 / v : Infinity;
   }
   return {
     inv,
     k: m.k,
     off: m.off,
-    vmax: Math.max(m.road, m.sea, m.open),
+    vmax,
     flat: variant === "flat" ? FLAT_WEIGHT : 0,
     sea: ground.sea,
   };
