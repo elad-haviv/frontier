@@ -245,3 +245,11 @@ button.fh-more {
 .backlinks details ul {
   margin-top: var(--space-3);
 }
+
+/* Phone: a comfortable tap size. */
+@media (max-width: 47.99rem) {
+  button.fh-btn,
+  button.fh-more {
+    min-height: 2.5rem;
+  }
+}

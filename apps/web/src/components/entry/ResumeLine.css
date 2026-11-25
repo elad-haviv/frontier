@@ -32,3 +32,10 @@ button.resume-top {
   text-decoration: underline;
   text-underline-offset: 3px;
 }
+
+/* Phone: a comfortable tap size. */
+@media (max-width: 47.99rem) {
+  button.resume-top {
+    min-height: 2.5rem;
+  }
+}

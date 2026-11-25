@@ -92,6 +92,25 @@ test.describe("back to last", () => {
   });
 });
 
+test("g h and g r keep out while the key sheet is open", async ({ page }) => {
+  await page.goto(entry(HARBOR));
+  await expect(page.locator(".entry h1").first()).toHaveText("Harbor");
+  await page.keyboard.press("?");
+  const sheet = page.getByRole("dialog", { name: "Keyboard shortcuts" });
+  await expect(sheet).toBeVisible();
+  for (const second of ["h", "r"]) {
+    await page.keyboard.press("g");
+    await page.keyboard.press(second);
+  }
+  await expect(sheet).toBeVisible();
+  await expect(page).toHaveURL(new RegExp(`${encodeURIComponent("Harbor")}`));
+  await page.keyboard.press("Escape");
+  await expect(sheet).toHaveCount(0);
+  await page.keyboard.press("g");
+  await page.keyboard.press("h");
+  await expect(page.locator(".home h1")).toBeVisible();
+});
+
 test.describe("where reading stopped", () => {
   test("opens there, says so, and starts from the top on request", async ({ page }) => {
     const id = "kgresume0001";
@@ -213,6 +232,50 @@ test("pins the entry from the bar, the phone's top line, and the p key", async (
     "aria-pressed",
     "false",
   );
+});
+
+test("p twice quickly makes one change, and a pin made elsewhere shows when the page returns", async ({
+  page,
+}) => {
+  const asked: string[] = [];
+  page.on("request", (r) => {
+    if (r.method() !== "GET" && r.url().includes("/api/pins")) asked.push(r.method());
+  });
+  const clean = async () => {
+    await page.request.delete(`/api/pins?path=${encodeURIComponent(HARBOR)}`);
+    const { drafts } = (await (await page.request.get("/api/unpublished")).json()) as {
+      drafts: { id: string; path: string }[];
+    };
+    for (const d of drafts.filter((d) => d.path === ".frontier/pins.json")) {
+      await page.request.delete(`/api/drafts/${d.id}`);
+    }
+  };
+  try {
+    await page.goto(entry(HARBOR));
+    const pin = page.getByRole("button", { name: "Pin to Working on" });
+    await expect(pin).toHaveAttribute("aria-pressed", "false");
+    await page.keyboard.press("p");
+    await page.keyboard.press("p");
+    await expect(pin).toHaveAttribute("aria-pressed", "true");
+    await page.waitForTimeout(300);
+    expect(asked).toEqual(["POST"]);
+    await page.request.delete(`/api/pins?path=${encodeURIComponent(HARBOR)}`);
+
+    // Another device unpinned it; this page hears of it when it is shown again after a while.
+    await page.clock.install();
+    await page.evaluate(() => {
+      Object.defineProperty(document, "visibilityState", { value: "hidden", configurable: true });
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+    await page.clock.fastForward(90_000);
+    await page.evaluate(() => {
+      Object.defineProperty(document, "visibilityState", { value: "visible", configurable: true });
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+    await expect(pin).toHaveAttribute("aria-pressed", "false");
+  } finally {
+    await clean();
+  }
 });
 
 test.describe("From here", () => {
@@ -607,6 +670,34 @@ test.describe("after Publish", () => {
       await expect(page.locator(".nudge")).toBeVisible();
       await page.clock.fastForward(2_000);
       await expect(page.locator(".nudge")).toHaveCount(0);
+    } finally {
+      await page.request.delete(`/api/drafts/${id}`);
+    }
+  });
+
+  test("waits while the focus is on it, and leaves the plain notice when it goes", async ({
+    page,
+  }) => {
+    const id = "kgnudge00004";
+    await draftToPublish(page, id);
+    await page.clock.install();
+    try {
+      await publish(page);
+      const nudge = page.locator(".nudge");
+      await expect(nudge).toBeVisible();
+      // The pointer may rest where the box appeared; it is moved off, so only the focus holds it.
+      await page.mouse.move(0, 0);
+      // The focus in the box stops the clock: well past ten seconds it is still there.
+      await nudge.getByRole("button").first().focus();
+      await page.clock.fastForward(25_000);
+      await expect(nudge).toBeVisible();
+      // Out of the box, the ten seconds start over; then the notice stays in its place.
+      await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+      await page.clock.fastForward(9_000);
+      await expect(nudge).toBeVisible();
+      await page.clock.fastForward(2_000);
+      await expect(nudge).toHaveCount(0);
+      await expect(page.locator(".banner-ok")).toContainText("Published as commit 0123456789");
     } finally {
       await page.request.delete(`/api/drafts/${id}`);
     }

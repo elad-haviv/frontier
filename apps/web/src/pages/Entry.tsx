@@ -35,6 +35,7 @@ import {
 import { CustomFields, Fields } from "../components/Fields.tsx";
 import { ProposeFields } from "../components/ProposeFields.tsx";
 import { Markdown } from "../render/Markdown.tsx";
+import { overlayOpen } from "../components/overlay.ts";
 import { IconButton } from "../components/ui/IconButton.tsx";
 import {
   ArrowLeft,
@@ -110,12 +111,9 @@ const NO_COMMENTS: PassageComment[] = [];
 
 const join = (folder: string, name: string) => `${folder ? folder + "/" : ""}${name}.md`;
 
-/** Whether a dialog or the image viewer is over the page, so the page's own keys keep out. */
 /** How the browser loaded this page: "navigate", "reload" or "back_forward". */
 const loadType = (): string | undefined =>
   (performance.getEntriesByType("navigation")[0] as PerformanceNavigationTiming | undefined)?.type;
-
-const overlayOpen = () => document.querySelector(".dialog-scrim, .lightbox") !== null;
 
 export function EntryPage() {
   const words = useWords();
@@ -183,6 +181,10 @@ export function EntryPage() {
   now.current = { path, visit, navigation, key };
   /** The showing whose opening place is decided; reading is recorded only after that. */
   const settled = useRef<string | null>(null);
+  /** The visit and address last acted on, so the server's answer for the same visit does not scroll again. */
+  const acted = useRef<string | null>(null);
+  /** True from the page's own scroll (a jump or a resume) until it has been drawn: not the reader's. */
+  const own = useRef(false);
   const [resumed, setResumed] = useState<{ visit: string; heading: string | null } | null>(null);
 
   // Jump to the heading named in the address, once the text is on the page.
@@ -191,6 +193,14 @@ export function EntryPage() {
     const here = now.current;
     const fresh = loaded?.path === here.path && settled.current !== here.visit;
     if (fresh) settled.current = here.visit;
+    // The same visit read again (the server answered after the device copy): the reader is
+    // already where they are, so nothing scrolls and nothing is recorded.
+    const address = `${here.visit}|${hash}`;
+    if (!fresh && acted.current === address) return;
+    acted.current = address;
+    // The scroll events of what follows are the page's own; they come before the second frame.
+    own.current = true;
+    requestAnimationFrame(() => requestAnimationFrame(() => (own.current = false)));
     if (!hash) {
       scrollPageToTop();
       const area = document.querySelector<HTMLElement>(".content");
@@ -221,7 +231,9 @@ export function EntryPage() {
     const area = document.querySelector<HTMLElement>(".content");
     if (!area || shown !== path) return;
     const record = () => {
-      if (settled.current === visit) recents.setScroll(path, area.scrollTop);
+      if (settled.current === visit && !own.current) {
+        recents.setScroll(path, area.scrollTop);
+      }
     };
     area.addEventListener("scroll", record, { passive: true });
     return () => area.removeEventListener("scroll", record);
@@ -262,6 +274,7 @@ export function EntryPage() {
   async function pinOrUnpin() {
     try {
       const on = await togglePin(path);
+      if (on === null) return;
       toast({ message: on ? `Pinned “${name}” to Working on.` : `Unpinned “${name}”.` });
     } catch (err) {
       toast({

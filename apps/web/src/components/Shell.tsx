@@ -22,6 +22,7 @@ import { queue } from "../sync/queue.ts";
 import { useAsync } from "../useAsync.ts";
 import { useDialogs } from "./Dialogs.tsx";
 import { useToast } from "./ui/Toast.tsx";
+import { overlayOpen } from "./overlay.ts";
 import { Switcher } from "./Switcher.tsx";
 import { KeySheet } from "./KeySheet.tsx";
 import { NewEntry } from "./NewEntry.tsx";
@@ -207,8 +208,14 @@ export function Shell({ children }: { children: ReactNode }) {
   useShortcut("app.sidebar", () => (phone ? setDrawer((o) => !o) : fold(!rail)));
   // Keep going (stage 25): "g h" and "g r".
   const roll = useRandom();
-  useShortcut("app.home", () => void navigate("/"));
-  useShortcut("app.random", () => void roll());
+  useShortcut("app.home", () => {
+    if (overlayOpen()) return false;
+    void navigate("/");
+  });
+  useShortcut("app.random", () => {
+    if (overlayOpen()) return false;
+    void roll();
+  });
 
   // A new page opens at its top, and on a phone the drawer closes.
   useEffect(() => {

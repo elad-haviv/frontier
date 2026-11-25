@@ -30,7 +30,8 @@ import {
   dayLetter,
   dayName,
   entriesWord,
-  folderOf,
+  diceFolder,
+  NO_DICE_FOLDER,
   lastRead,
   mentionsText,
   newestDraft,
@@ -412,7 +413,7 @@ function useDice(lastFolder: string | null, lastPath: string | null) {
   const [busy, setBusy] = useState(false);
   async function go() {
     if (kind === "folder" && lastFolder === null) {
-      toast({ message: "Read an entry first: this picks from the folder of the last one." });
+      toast({ message: NO_DICE_FOLDER });
       return;
     }
     setBusy(true);
@@ -451,8 +452,8 @@ function DiceCard({ dice, lastFolder }: { dice: Dice; lastFolder: string | null 
         <span className="home-meta" aria-live="polite">
           {dice.kind === "folder"
             ? lastFolder === null
-              ? "No entry read yet, so no folder to pick from."
-              : `In ${lastFolder || "the top of the library"}`
+              ? "No entry in a folder read yet, so no folder to pick from."
+              : `In ${lastFolder}`
             : RANDOM_KINDS.find((k) => k.kind === dice.kind)?.label}
         </span>
       </div>
@@ -479,8 +480,9 @@ function Pins({ pins }: { pins: readonly Pin[] }) {
   const toast = useToast();
   async function unpin(pin: Pin) {
     try {
-      await togglePin(pin.path);
-      toast({ message: `Unpinned ${pin.title}.` });
+      const on = await togglePin(pin.path);
+      if (on === null) return;
+      toast({ message: on ? `Pinned ${pin.title}.` : `Unpinned ${pin.title}.` });
     } catch (err) {
       toast({
         message: `Could not unpin: ${err instanceof ApiFailure ? err.message : "something went wrong."}`,
@@ -659,7 +661,7 @@ export function Home() {
   const queue = useAsync(() => api.keepGoingQueue(), `home-queue:${!!offline}`);
   const [writing, setWriting] = useState<{ name: string; folder: string } | null>(null);
   const read = lastRead(recents);
-  const lastFolder = read ? folderOf(read.path) : null;
+  const lastFolder = diceFolder(read?.path ?? null);
   const dice = useDice(lastFolder, read?.path ?? null);
   const brandNew = queue.state === "ready" && queue.value.entries === 0;
   const first = recents[0];

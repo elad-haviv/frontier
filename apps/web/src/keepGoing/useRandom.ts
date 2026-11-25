@@ -5,6 +5,7 @@ import { ApiFailure } from "../api.ts";
 import { currentEntryPath } from "../components/shell/entryPath.ts";
 import { useToast } from "../components/ui/Toast.tsx";
 import { useNeedsConnection } from "../sync/connection.ts";
+import { NO_DICE_FOLDER } from "./homeModel.ts";
 import { openRandom, type RandomKind } from "./random.ts";
 
 /** What to say when the dice finds nothing, for each kind. */
@@ -30,6 +31,10 @@ export function useRandom(): (query?: RandomQuery) => Promise<boolean> {
     async (query: RandomQuery = {}) => {
       if (offline) {
         toast({ message: `${offline}: the dice asks the server.` });
+        return false;
+      }
+      if (query.kind === "folder" && !query.folder) {
+        toast({ message: NO_DICE_FOLDER });
         return false;
       }
       try {

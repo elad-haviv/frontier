@@ -4,6 +4,7 @@ import {
   ago,
   barHeights,
   dayLetter,
+  diceFolder,
   type Draft,
   entriesWord,
   folderOf,
@@ -86,6 +87,10 @@ describe("small helpers", () => {
     expect(folderOf("01 Places/Harbor/Harbor.md")).toBe("01 Places/Harbor");
     expect(folderOf("README.md")).toBe("");
     expect(stemOf("01 Places/Harbor.md")).toBe("Harbor");
+    // The dice has no folder to pick from at the library top, nor before any entry was read.
+    expect(diceFolder("01 Places/Harbor.md")).toBe("01 Places");
+    expect(diceFolder("README.md")).toBeNull();
+    expect(diceFolder(null)).toBeNull();
   });
 
   it("scales the week's bars to the busiest day, with a mark for a quiet one", () => {

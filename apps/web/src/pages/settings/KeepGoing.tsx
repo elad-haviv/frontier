@@ -12,7 +12,7 @@ export function KeepGoing() {
   const { settings, reload } = useSettingsData();
   const offline = useNeedsConnection();
   const saving = useAutoSave();
-  const stored = settings?.keepGoing.needsLove;
+  const stored = settings?.keepGoing?.needsLove;
   const [rules, setRules] = useState(stored);
   useEffect(() => setRules(stored), [stored]);
   if (!settings || !rules) return null;

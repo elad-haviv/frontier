@@ -1,6 +1,6 @@
 import type { AfterPublishStep } from "@frontier/schema";
 import { Dices } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { entryUrl } from "../api.ts";
 import { openRandom } from "../keepGoing/random.ts";
@@ -25,29 +25,39 @@ const QUIET_KEYS = new Set(["Tab", "Shift", "Control", "Alt", "Meta"]);
 export function AfterPublish({
   steps,
   verb,
+  fallback,
 }: {
   steps: readonly AfterPublishStep[];
   /** "Published" in a shared library; "Saved" in one of Frontier's own. */
   verb: string;
+  /** Shown in the nudge's place once it has gone: the plain notice that the publish worked. */
+  fallback?: ReactNode;
 }) {
   const navigate = useNavigate();
   const toast = useToast();
   const { write, dialog } = useWriteIt();
   const [shown, setShown] = useState(true);
   const box = useRef<HTMLDivElement>(null);
+  // The timer stops while the focus or the pointer is in the box, and starts over when both leave.
+  const [held, setHeld] = useState(false);
+  const focusIn = useRef(false);
+  const pointerIn = useRef(false);
+  const hold = () => setHeld(focusIn.current || pointerIn.current);
+
+  useEffect(() => {
+    if (!shown || held) return;
+    const timer = window.setTimeout(() => setShown(false), NUDGE_MS);
+    return () => window.clearTimeout(timer);
+  }, [shown, held]);
 
   useEffect(() => {
     const away = () => setShown(false);
-    const timer = window.setTimeout(away, NUDGE_MS);
     const onKey = (e: KeyboardEvent) => {
       if (QUIET_KEYS.has(e.key) || box.current?.contains(e.target as Node)) return;
       away();
     };
     document.addEventListener("keydown", onKey);
-    return () => {
-      window.clearTimeout(timer);
-      document.removeEventListener("keydown", onKey);
-    };
+    return () => document.removeEventListener("keydown", onKey);
   }, []);
 
   async function roll() {
@@ -62,7 +72,28 @@ export function AfterPublish({
   return (
     <>
       {shown && (
-        <div className="banner banner-ok nudge" role="status" ref={box}>
+        <div
+          className="banner banner-ok nudge"
+          role="status"
+          ref={box}
+          onFocus={() => {
+            focusIn.current = true;
+            hold();
+          }}
+          onBlur={(e) => {
+            if (e.currentTarget.contains(e.relatedTarget as Node | null)) return;
+            focusIn.current = false;
+            hold();
+          }}
+          onPointerEnter={() => {
+            pointerIn.current = true;
+            hold();
+          }}
+          onPointerLeave={() => {
+            pointerIn.current = false;
+            hold();
+          }}
+        >
           <p className="nudge-head">
             <b>{verb}.</b> Keep going?
           </p>
@@ -108,9 +139,12 @@ export function AfterPublish({
               );
             })}
           </ul>
-          <p className="muted nudge-foot">Shown for 10 seconds, or until you start typing.</p>
+          <p className="muted nudge-foot">
+            Shown for 10 seconds, or until you start typing. It stays while you are on it.
+          </p>
         </div>
       )}
+      {!shown && fallback}
       {dialog}
     </>
   );

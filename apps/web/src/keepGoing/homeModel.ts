@@ -15,6 +15,13 @@ import type { RecentEntry } from "./recents.ts";
 export const folderOf = (path: string): string =>
   path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
 
+/** The folder the dice can pick from for the entry last read: null at the library top or none read. */
+export const diceFolder = (lastPath: string | null): string | null =>
+  (lastPath ? folderOf(lastPath) : "") || null;
+
+export const NO_DICE_FOLDER =
+  "Read an entry in a folder first: this picks from the folder of the last one.";
+
 export const stemOf = (path: string): string =>
   (path.split("/").pop() ?? path).replace(/\.md$/i, "");
 

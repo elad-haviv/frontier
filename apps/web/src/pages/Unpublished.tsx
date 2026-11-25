@@ -11,6 +11,7 @@ import { useRefresh, useWords } from "../components/Shell.tsx";
 import { useDialogs } from "../components/Dialogs.tsx";
 import { AfterPublish } from "../components/AfterPublish.tsx";
 import { recents } from "../keepGoing/recents.ts";
+import { loadPins } from "../keepGoing/pins.ts";
 import { followPublish, publishedEntries } from "../keepGoing/strip.ts";
 import { Problem } from "../components/ui/Problem.tsx";
 import { Progress } from "../components/ui/Progress.tsx";
@@ -137,21 +138,18 @@ export function UnpublishedPage() {
       const { commit } = await api.confirm(plan.planId, [...confirmed], message.trim());
       // The entries read lately follow what was moved and forget what was deleted.
       followPublish(recents, { renames: plan.renames, deleted });
+      // Renames and deletions rewrite the pins on the server.
+      void loadPins(true);
       setPlan(null);
       setMessage("");
       const steps = await nextSteps(written);
-      if (steps.length > 0) {
-        setNotice(null);
-        setNudge((n) => ({ n: (n?.n ?? 0) + 1, steps }));
-      } else {
-        setNudge(null);
-        setNotice({
-          kind: "ok",
-          text: words.own
-            ? "Saved as a new version."
-            : `Published as commit ${commit.slice(0, 10)}.`,
-        });
-      }
+      // The notice is always set; while the nudge shows it stands in for the notice, and when the
+      // nudge goes the notice is what is left.
+      setNotice({
+        kind: "ok",
+        text: words.own ? "Saved as a new version." : `Published as commit ${commit.slice(0, 10)}.`,
+      });
+      setNudge(steps.length > 0 ? (n) => ({ n: (n?.n ?? 0) + 1, steps }) : null);
       await load();
       refresh();
     } catch (err) {
@@ -237,6 +235,12 @@ export function UnpublishedPage() {
     : 0;
   const pathOf = (id: string) => data.drafts.find((d) => d.id === id)?.path ?? id;
 
+  const noticeLine = notice && (
+    <p className={`banner ${notice.kind === "ok" ? "banner-ok" : ""}`} role="status">
+      {notice.text}
+    </p>
+  );
+
   return (
     <article className="entry wide">
       {loading && <Progress />}
@@ -249,13 +253,15 @@ export function UnpublishedPage() {
         </p>
       </header>
 
-      {nudge && (
-        <AfterPublish key={nudge.n} steps={nudge.steps} verb={words.own ? "Saved" : "Published"} />
-      )}
-      {notice && (
-        <p className={`banner ${notice.kind === "ok" ? "banner-ok" : ""}`} role="status">
-          {notice.text}
-        </p>
+      {nudge ? (
+        <AfterPublish
+          key={nudge.n}
+          steps={nudge.steps}
+          verb={words.own ? "Saved" : "Published"}
+          fallback={noticeLine}
+        />
+      ) : (
+        noticeLine
       )}
       {empty && (
         <p className="muted">

@@ -379,3 +379,20 @@
       background 0.12s;
   }
 }
+
+/* Phone: a comfortable tap size. */
+@media (max-width: 47.99rem) {
+  .home-btn.is-small,
+  .home-chip,
+  .home-link {
+    min-height: 2.5rem;
+  }
+  .home-chip {
+    display: inline-flex;
+    align-items: center;
+  }
+  .home-icon-btn {
+    min-width: 2.5rem;
+    min-height: 2.5rem;
+  }
+}

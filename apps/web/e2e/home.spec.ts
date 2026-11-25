@@ -142,9 +142,9 @@ test("the dice: a kind, then Roll, and it says so when nothing fits", async ({ p
   await dice.getByRole("button", { name: "Roll" }).click();
   await expect(page).toHaveURL(/\/e\//);
   await expect(page.locator(".entry h1").first()).toBeVisible();
-
-  // In this folder: the folder of the last entry read (Salt Flats, in 01 Places).
-  await page.goto("/");
+  // In this folder: the folder of the last entry read. The recents are put back as seeded, since
+  // the stub just opened is now the last one read, and it may be in any folder.
+  await seedRecents(page);
   await dice.getByRole("button", { name: "In this folder" }).click();
   await expect(dice).toContainText("In 01 Places");
   await dice.getByRole("button", { name: "Roll" }).click();
@@ -168,10 +168,38 @@ test('"In this folder" says plainly when no entry has been read', async ({ page 
   await page.reload();
   const dice = card(page, "Random entry");
   await dice.getByRole("button", { name: "In this folder" }).click();
-  await expect(dice).toContainText("No entry read yet");
+  await expect(dice).toContainText("No entry in a folder read yet");
   await dice.getByRole("button", { name: "Roll" }).click();
-  await expect(page.locator(".ui-toasts")).toContainText("Read an entry first");
+  await expect(page.locator(".ui-toasts")).toContainText("Read an entry in a folder first");
   await expect(page.locator(".home h1")).toBeVisible();
+});
+
+test('"In this folder" after reading a top-level entry says so and sends no request', async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page.evaluate(() =>
+    localStorage.setItem(
+      "frontier.keepGoing.v1",
+      JSON.stringify({
+        recents: [{ path: "Top.md", title: "Top", kind: "read", at: Date.now() }],
+        current: null,
+        previous: null,
+        scroll: {},
+        cursor: {},
+      }),
+    ),
+  );
+  await page.reload();
+  const asked: string[] = [];
+  page.on("request", (r) => {
+    if (r.url().includes("/api/keep-going/random")) asked.push(r.url());
+  });
+  const dice = card(page, "Random entry");
+  await dice.getByRole("button", { name: "In this folder" }).click();
+  await dice.getByRole("button", { name: "Roll" }).click();
+  await expect(page.locator(".ui-toasts")).toContainText("Read an entry in a folder first");
+  expect(asked).toEqual([]);
 });
 
 test("on a phone the dice is a round button; on a desktop it is not", async ({ page }, info) => {

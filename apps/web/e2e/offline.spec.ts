@@ -684,3 +684,48 @@ test("logout removes the worker and its caches, and the login page registers non
   await page.waitForTimeout(1000);
   expect(await page.evaluate(() => navigator.serviceWorker.getRegistrations())).toHaveLength(0);
 });
+
+test("the server's answer for an entry read from the device keeps the reader's place", async ({
+  page,
+  context,
+}) => {
+  const id = "kgreread0001";
+  const path = "03 Things/Keep Going Reread.md";
+  const sections = Array.from(
+    { length: 8 },
+    (_, i) =>
+      `## Section ${i + 1}\n\n` +
+      Array.from({ length: 6 }, () => "Salt and brine and the grey tide. ".repeat(20)).join("\n\n"),
+  ).join("\n\n");
+  const made = await page.request.put("/api/drafts", {
+    data: { id, path, kind: "create", text: `# Keep Going Reread\n\n${sections}\n`, revision: 0 },
+  });
+  expect(made.ok(), await made.text()).toBe(true);
+  const top = () => page.evaluate(() => document.querySelector<HTMLElement>(".content")!.scrollTop);
+  try {
+    await install(page);
+    await read(page, path);
+    await page.evaluate(() => document.querySelector(".content")!.scrollTo({ top: 1800 }));
+    await page.waitForTimeout(700);
+
+    await reloadOffline(page);
+    await expect(page.locator(".resume-line")).toBeVisible();
+    expect(Math.abs((await top()) - 1800)).toBeLessThan(3);
+
+    // The connection returns and the server answers: the page is read again, in place.
+    await context.setOffline(false);
+    await expect(page.locator(".connection.is-offline")).toHaveCount(0, { timeout: 15_000 });
+    await expect(page.locator(".offline-copy")).toHaveCount(0);
+    await page.waitForTimeout(700);
+    // Not at the top again (the offline line going takes a few pixels of height with it).
+    expect(await top()).toBeGreaterThan(1500);
+    const stored = await page.evaluate(
+      (p) => JSON.parse(localStorage.getItem("frontier.keepGoing.v1")!).scroll[p].y as number,
+      path,
+    );
+    expect(stored).toBeGreaterThan(1500);
+  } finally {
+    await context.setOffline(false);
+    await page.request.delete(`/api/drafts/${id}`);
+  }
+});
