@@ -48,7 +48,16 @@ const terrain = (over: Partial<TerrainRequest> = {}): TerrainRequest => ({
   kmPerPx: 1,
   ...over,
 });
-const river = { from: "source" as const, exact: true, meander: 0, eps: 1, snap: true };
+const river = {
+  from: "source" as const,
+  exact: true,
+  meander: 0,
+  eps: 1,
+  snap: true,
+  basin: "auto" as const,
+};
+/** A route asked for with its way of travelling's own limit, and nothing else allowed. */
+const way = { steepest: 0.35, steps: false, tunnelKm: null, startOn: null, endOn: null };
 
 function engine(withHeights = true): Engine {
   const { pic, ink } = picture().looked();
@@ -167,7 +176,7 @@ describe("the engine: routes", () => {
     [100, 40],
     [100, 120],
   ];
-  const ask = { stops, eps: 1, variant: "fast" as const };
+  const ask = { ...way, stops, eps: 1, variant: "fast" as const };
 
   it("fords the painted river on foot, and counts the ford", () => {
     const e = engine();
@@ -236,10 +245,11 @@ describe("the engine: routes", () => {
       [10, 40],
       [110, 40],
     ];
-    expect(e.route({ stops: across, eps: 1, mode: "foot", variant: "fast" })).toEqual({
+    expect(e.route({ ...way, stops: across, eps: 1, mode: "foot", variant: "fast" })).toEqual({
       ok: false,
+      why: "water",
     });
-    const ship = e.route({ stops: across, eps: 1, mode: "ship", variant: "fast" });
+    const ship = e.route({ ...way, stops: across, eps: 1, mode: "ship", variant: "fast" });
     expect(ship.ok).toBe(true);
     if (!ship.ok) return;
     expect(ship.marks.map((m) => m.kind)).toEqual(["sail", "land"]);
@@ -250,6 +260,7 @@ describe("the engine: routes", () => {
     const e = new Engine(null, null, { w: 120, h: 80 });
     e.setTerrain(terrain({ useHeights: false, kmPerPx: null }));
     const r = e.route({
+      ...way,
       stops: [
         [10, 10],
         [60, 70],
@@ -280,6 +291,7 @@ describe("the engine: routes", () => {
       const e = new Engine(null, null, { w: 120, h: 80 });
       e.setTerrain(terrain({ useHeights: false, features }));
       const r = e.route({
+        ...way,
         stops: [
           [10, 40],
           [110, 40],

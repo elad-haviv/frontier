@@ -62,6 +62,8 @@ export interface TerrainRequest {
 }
 
 export interface TerrainInfo {
+  /** Metres for a height of 1, when the heights say. */
+  top: number | null;
   /** The terrain is guessed from the picture, not read from heights. */
   guessed: boolean;
   /** The sea level in use, 0 to 1, with heights. */
@@ -83,13 +85,37 @@ export interface RiverRequest {
   eps: number;
   /** A tributary ends exactly on a river already on the map. */
   snap: boolean;
+  /** How the river ends in a basin it reaches: "auto" for the rule's choice. */
+  basin: BasinEnd | "auto";
+}
+
+/**
+ * How a river that reaches a basin ends there: the lake fills and drains over its lowest rim
+ * (the river carries on), the lake keeps the water (it ends at the shore), it spreads into a
+ * marsh, it sinks underground, or it dries out.
+ */
+export type BasinEnd = "drains" | "keeps" | "marsh" | "sinks" | "dries";
+
+export interface BasinFound {
+  /** The basin filled to where it spills: the lake's (or the marsh's) outline, closed. */
+  ring: Px[];
+  /** Its area in km², when the map has a scale. */
+  km2: number | null;
+  /** How the river ends in it, as asked or as the rule chose. */
+  end: BasinEnd;
+  /** The rule's choice: a lake drains when the land draining into it is large beside it. */
+  auto: "drains" | "keeps";
+  /** A marsh's channels, fading out into it, each from where the river reaches it. */
+  channels: Px[][];
 }
 
 export type RiverReply =
   | {
       ok: true;
       points: Px[];
-      end: "sea" | "river" | "edge";
+      end: "sea" | "river" | "edge" | "basin";
+      /** The first basin large enough to be a lake that it reaches, and how it ends there. */
+      basin: BasinFound | null;
       /** The id of the river it joins. */
       joined: string | null;
       /** The share of its course over filled hollows and flats, where the course is a guess. */
@@ -109,6 +135,47 @@ export interface RouteRequest {
   mode: Mode;
   variant: Variant;
   eps: number;
+  /** The steepest grade the way may have, as a fraction. */
+  steepest: number;
+  /** Steps on stretches too steep for the limit, up to `STEPS_GRADE` and `stepsKm` long (on foot). */
+  steps: boolean;
+  /** A tunnel through high ground where there is no way over, at most this many km long; null: none. */
+  tunnelKm: number | null;
+  /** The route sets out from anywhere along this line (a road it branches from), not its first stop. */
+  startOn: Px[] | null;
+  /** It arrives anywhere along this line, not at its last stop. */
+  endOn: Px[] | null;
+}
+
+/** A stretch of a route between two of its points (indices into `points`). */
+export interface RouteStretch {
+  kind: "tunnel" | "steps" | "climb";
+  from: number;
+  to: number;
+  /** A climb's steepest grade, above 0 when it rises from `from` to `to`. */
+  grade?: number;
+}
+
+/** A stretch of a route along a road already there: a made one (its id) or one painted (null). */
+export interface RouteAlong {
+  from: number;
+  to: number;
+  road: string | null;
+}
+
+/** The heights along a route, for its profile. */
+export interface Profile {
+  /** Distances along the line as drawn, in pixels, and the heights there (as given or guessed). */
+  d: number[];
+  h: number[];
+  /** The grade from each sample to the next, as a fraction. */
+  grade: number[];
+  /** The total of every climb, in the heights' unit. */
+  climb: number;
+  /** The highest height along it. */
+  high: number;
+  /** The steepest grade along it. */
+  steepest: number;
 }
 
 export interface Mark {
@@ -129,8 +196,13 @@ export type RouteReply =
       seaShare: number;
       /** The same way as the fastest, for the owner's purposes. */
       same: boolean;
+      stretches: RouteStretch[];
+      along: RouteAlong[];
+      profile: Profile;
     }
-  | { ok: false };
+  /** No way: water is in the way, or the ground is too steep (its steepest step, and where). */
+  | { ok: false; why: "water" }
+  | { ok: false; why: "steep"; at: Px; grade: number };
 
 export interface TraceRequest {
   at: Px;

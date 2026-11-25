@@ -37,7 +37,12 @@ export interface PictureGround {
   road: Uint8Array;
   /** Heights guessed from the picture alone: below 0 is water. */
   guess: Float32Array;
+  /** Cliffs: where the picture is crowded with ink, as cliff marks and dense hatching are. */
+  cliff: Uint8Array;
 }
+
+/** The share of a neighbourhood that is ink, at and above which the picture paints a cliff. */
+export const CLIFF_INK = 0.5;
 
 /** A hue in degrees, 0 to 360, of a colour seen from a middle. */
 const hueOf = (a: number, b: number) => ((Math.atan2(b, a) * 180) / Math.PI + 360) % 360;
@@ -417,6 +422,21 @@ export function lookAtGround(
     upland[i] = Math.max(m, tintSoft[i]!);
   }
 
+  // Cliffs: ink crowded far more densely than lines, letters or mountain symbols are, over a
+  // neighbourhood a hundredth of the picture across, in pieces of some size.
+  const dense = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    if ((ink.mark[i] || ink.line[i]) && !blue[i] && !red[i] && !water[i]) dense[i] = 1;
+  }
+  const rc = Math.max(4, Math.round(0.01 * Math.max(w, h)));
+  const crowd = boxMean(dense, w, h, rc);
+  const cliffPx = new Uint8Array(n);
+  for (let i = 0; i < n; i++) if (crowd[i]! >= CLIFF_INK) cliffPx[i] = 1;
+  const cliff = pool(cliffPx, w, h, grid, half);
+  // A town's dot or a bold letter is crowded only in a small spot; a cliff runs on.
+  dropSpecks(cliff, grid, Math.max(6, Math.round(((1.5 * rc) / grid.cell) ** 2)));
+  for (let i = 0; i < cliff.length; i++) if (waterG[i]) cliff[i] = 0;
+
   return {
     looked: { ink: faint, ref },
     ground: {
@@ -427,6 +447,7 @@ export function lookAtGround(
       river,
       road,
       guess: guessHeights(grid, waterG, upland),
+      cliff,
     },
   };
 }

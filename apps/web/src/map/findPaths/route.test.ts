@@ -99,8 +99,9 @@ describe("a route", () => {
     });
     const found = search(flat(), surfaceFor(g, "foot", "fast"), at(5, 5), at(35, 5))!;
     expect(found.cells).toContain(at(20, 25));
-    // The least time: fifteen diagonal steps and five straight ones each side of the gap.
-    expect(found.hours).toBeCloseTo((2 * (15 * Math.SQRT2 + 5)) / 4, 5);
+    // The least time, with sixteen ways out of a cell: five knight's moves and ten diagonal
+    // steps each side of the gap (eight ways would take fifteen diagonal and five straight).
+    expect(found.hours).toBeCloseTo((2 * (5 * Math.sqrt(5) + 10 * Math.SQRT2)) / 4, 5);
   });
 
   it("takes a road when the detour is small, and not when it is large", () => {

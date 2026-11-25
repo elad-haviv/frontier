@@ -165,3 +165,113 @@ export function joinLines(first: readonly Px[], added: readonly Px[]): Px[] {
   const joined = best.line();
   return joined.filter((q, i) => i === 0 || d(q, joined[i - 1]!) > 1e-9);
 }
+
+/**
+ * Whether a straight piece between two points may be part of the line: a route's grade along it
+ * within its limit. What smoothing and thinning may not break.
+ */
+export type PieceOk = (a: Px, b: Px) => boolean;
+
+/**
+ * Smoothing that keeps a limit: as `smoothOpen`, but a point is moved only where both pieces it
+ * then makes are still allowed; elsewhere it stays where it was found. A switchback's corners
+ * are kept, since cutting them would make the climb steeper than the way can take.
+ */
+export function smoothWithin(p: readonly Px[], passes: number, ok: PieceOk): Px[] {
+  let a = [...p];
+  for (let k = 0; k < passes; k++) {
+    const n = a.length;
+    const b = new Array<Px>(n);
+    for (let i = 0; i < n; i++) {
+      if (i === 0 || i === n - 1) {
+        b[i] = a[i]!;
+        continue;
+      }
+      const moved: Px = [
+        (a[i - 1]![0] + 2 * a[i]![0] + a[i + 1]![0]) / 4,
+        (a[i - 1]![1] + 2 * a[i]![1] + a[i + 1]![1]) / 4,
+      ];
+      // The piece before is checked against where the last point ended up; the piece after
+      // against the next point as it stands, which is checked again when that point moves.
+      b[i] = ok(b[i - 1]!, moved) && ok(moved, a[i + 1]!) ? moved : a[i]!;
+    }
+    a = b;
+  }
+  return a;
+}
+
+/**
+ * Douglas–Peucker that keeps a limit: a stretch is replaced by one straight piece only when that
+ * piece is within `eps` of every point it stands for and is itself allowed. Otherwise the stretch
+ * is split, at its farthest point, or at its middle when only the limit failed.
+ */
+export function simplifyWithin(p: readonly Px[], eps: number, ok: PieceOk): Px[] {
+  const n = p.length;
+  if (n < 3) return [...p];
+  const keep = new Uint8Array(n);
+  keep[0] = keep[n - 1] = 1;
+  const stack: [number, number][] = [[0, n - 1]];
+  while (stack.length) {
+    const [a, b] = stack.pop()!;
+    if (b - a < 2) continue;
+    let far = -1;
+    let most = eps;
+    for (let i = a + 1; i < b; i++) {
+      const d = segmentDistance(p[i]!, p[a]!, p[b]!);
+      if (d > most) {
+        most = d;
+        far = i;
+      }
+    }
+    if (far < 0 && !ok(p[a]!, p[b]!)) far = (a + b) >> 1;
+    if (far >= 0) {
+      keep[far] = 1;
+      stack.push([a, far], [far, b]);
+    }
+  }
+  const out: Px[] = [];
+  for (let i = 0; i < n; i++) if (keep[i]) out.push(p[i]!);
+  return out;
+}
+
+/**
+ * A way that branches from a line (a road), made to leave it smoothly: its first point stays on
+ * the line, and the next follows the line's direction for `lead` before turning away, so the
+ * branch does not stand out of the road as a hard spur. Points of the way within twice `lead` of
+ * the branch point are let go for the lead-in.
+ */
+export function smoothBranch(way: readonly Px[], line: readonly Px[], lead: number): Px[] {
+  if (way.length < 2 || line.length < 2 || lead <= 0) return [...way];
+  const b = way[0]!;
+  // The line's direction where the way leaves it.
+  let best = 1;
+  let bd = Infinity;
+  for (let i = 1; i < line.length; i++) {
+    const d = segmentDistance(b, line[i - 1]!, line[i]!);
+    if (d < bd) {
+      bd = d;
+      best = i;
+    }
+  }
+  const a0 = line[best - 1]!;
+  const a1 = line[best]!;
+  const l = Math.hypot(a1[0] - a0[0], a1[1] - a0[1]);
+  if (!l) return [...way];
+  let tx = (a1[0] - a0[0]) / l;
+  let ty = (a1[1] - a0[1]) / l;
+  const rest = way.findIndex((q) => Math.hypot(q[0] - b[0], q[1] - b[1]) >= 2 * lead);
+  if (rest < 0) return [...way];
+  const towards = way[rest]!;
+  const ax = towards[0] - b[0];
+  const ay = towards[1] - b[1];
+  // Along the line the way it heads, and out to the side it leaves by.
+  if (ax * tx + ay * ty < 0) {
+    tx = -tx;
+    ty = -ty;
+  }
+  const side = Math.sign(ax * -ty + ay * tx) || 1;
+  const nx = -ty * side;
+  const ny = tx * side;
+  const lean: Px = [b[0] + tx * lead + nx * lead * 0.35, b[1] + ty * lead + ny * lead * 0.35];
+  return [b, lean, ...way.slice(rest)];
+}

@@ -211,3 +211,72 @@ export function likelyRivers(
   }
   return out;
 }
+
+/** A hollow a river runs into that is large enough to be a lake: see `basinOn`. */
+export interface Basin {
+  /** The hollow's cells: those the flood filled, the hollow filled to where it spills. */
+  cells: number[];
+  /** The height it spills at: its lowest rim. */
+  spill: number;
+  /** Its lowest cell, where water that stays in it gathers. */
+  deepest: number;
+  /** How deep it is at its deepest, below the spill. */
+  depth: number;
+  /** The index in the course of its first cell in the hollow (its shore), and of its first cell out. */
+  inlet: number;
+  outlet: number;
+}
+
+/**
+ * The first hollow along a river's course that is large enough to be a lake: at least `area`
+ * cells, and at least `depth` deep below where it spills. Smaller hollows (the pits of a noisy
+ * height map) are filled and crossed without a word, as the flood already does. `heights` are the
+ * heights before rivers were drawn into them, so the trench of a painted river is no hollow.
+ */
+export function basinOn(
+  g: Grid,
+  f: Flow,
+  heights: Float32Array,
+  sea: Uint8Array,
+  course: readonly number[],
+  area: number,
+  depth: number,
+): Basin | null {
+  const n = g.w * g.h;
+  const tiny = depth * 0.1;
+  const deep = (c: number) => !sea[c] && f.filled[c]! - heights[c]! > tiny;
+  const seen = new Uint8Array(n);
+  const near = new Int32Array(8);
+  for (let i = 0; i < course.length; i++) {
+    const start = course[i]!;
+    if (seen[start] || !deep(start)) continue;
+    const cells = [start];
+    seen[start] = 1;
+    let spill = -Infinity;
+    let deepest = start;
+    let most = 0;
+    for (let q = 0; q < cells.length; q++) {
+      const c = cells[q]!;
+      spill = Math.max(spill, f.filled[c]!);
+      const d = f.filled[c]! - heights[c]!;
+      if (d > most) {
+        most = d;
+        deepest = c;
+      }
+      const k = g.neighbours(c, near);
+      for (let j = 0; j < k; j++) {
+        const v = near[j]!;
+        if (!seen[v] && deep(v)) {
+          seen[v] = 1;
+          cells.push(v);
+        }
+      }
+    }
+    if (cells.length < area || most < depth) continue;
+    const inside = new Set(cells);
+    let outlet = i + 1;
+    while (outlet < course.length && inside.has(course[outlet]!)) outlet++;
+    return { cells, spill, deepest, depth: most, inlet: i, outlet };
+  }
+  return null;
+}

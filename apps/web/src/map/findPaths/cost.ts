@@ -25,6 +25,8 @@ export interface ModeSpeeds {
   k: number;
   /** The slope it is quickest on, as a (negative) offset: walking is quickest a little downhill. */
   off: number;
+  /** The steepest grade it can climb or go down at all, as a fraction; the owner can change it. */
+  steepest: number;
 }
 
 /**
@@ -43,6 +45,7 @@ export const MODES: Record<Mode, ModeSpeeds> = {
     upland: 0.55,
     k: 3.5,
     off: 0.05,
+    steepest: 0.35,
   },
   horse: {
     name: "on horseback",
@@ -55,6 +58,7 @@ export const MODES: Record<Mode, ModeSpeeds> = {
     upland: 0.45,
     k: 6,
     off: 0,
+    steepest: 0.2,
   },
   cart: {
     name: "by cart",
@@ -67,6 +71,7 @@ export const MODES: Record<Mode, ModeSpeeds> = {
     upland: 0.3,
     k: 11,
     off: 0,
+    steepest: 0.12,
   },
   ship: {
     name: "by ship",
@@ -79,6 +84,7 @@ export const MODES: Record<Mode, ModeSpeeds> = {
     upland: 0.55,
     k: 3.5,
     off: 0.05,
+    steepest: 0.35,
   },
 };
 
@@ -94,6 +100,8 @@ export interface Ground {
   river: Uint8Array;
   /** The river made closed to four-way steps, so no diagonal step slips through it. */
   riverWide: Uint8Array;
+  /** Cliffs: nothing passes. Left out: none. */
+  cliff?: Uint8Array;
 }
 
 export interface Surface {
@@ -105,6 +113,8 @@ export interface Surface {
   vmax: number;
   /** Flattest: each step also costs (1 + flat·|slope|), in the search only. */
   flat: number;
+  /** The sea, which no tunnel goes under. */
+  sea?: Uint8Array;
 }
 
 /** How much Flattest dislikes a slope. */
@@ -117,7 +127,8 @@ export function surfaceFor(ground: Ground, mode: Mode, variant: Variant): Surfac
   const inv = new Float32Array(n);
   for (let i = 0; i < n; i++) {
     let v: number;
-    if (ground.sea[i]) v = dry ? 0 : m.sea;
+    if (ground.cliff?.[i]) v = 0;
+    else if (ground.sea[i]) v = dry ? 0 : m.sea;
     else if (ground.road[i]) v = m.road;
     else if (ground.riverWide[i]) v = dry ? 0 : m.ford;
     else {
@@ -132,6 +143,7 @@ export function surfaceFor(ground: Ground, mode: Mode, variant: Variant): Surfac
     off: m.off,
     vmax: Math.max(m.road, m.sea, m.open),
     flat: variant === "flat" ? FLAT_WEIGHT : 0,
+    sea: ground.sea,
   };
 }
 
