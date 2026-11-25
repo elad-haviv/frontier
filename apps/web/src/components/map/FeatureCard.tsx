@@ -1,9 +1,11 @@
-import type { MapFeature } from "@frontier/schema";
+import { biomeById, type MapFeature } from "@frontier/schema";
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, ApiFailure, entryUrl, mapUrl } from "../../api.ts";
 import { NEEDS_CONNECTION } from "../../sync/connection.ts";
 import type { Names } from "../../map/useMapFile.ts";
+import { useBiomes } from "../../map/useBiomes.ts";
+import { biomeMeaning } from "./BiomeFields.tsx";
 
 /** What a tap on a feature shows while reading: its name, the start of its entry, where it leads. */
 export function FeatureCard({
@@ -32,6 +34,8 @@ export function FeatureCard({
   onClose: () => void;
 }) {
   const entry = feature.entry ? names[feature.entry] : undefined;
+  const { custom } = useBiomes();
+  const biome = feature.kind === "zone" ? biomeById(feature.biome, custom) : null;
   const [text, setText] = useState<string | null>(null);
   useEffect(() => {
     setText(null);
@@ -55,6 +59,11 @@ export function FeatureCard({
       </button>
       <h2>{title || "Unnamed"}</h2>
       {reason && <p className="card-reason muted">{reason}</p>}
+      {biome && (
+        <p className="card-biome">
+          <strong>{biome.name}</strong> <span className="muted">{biomeMeaning(biome)}</span>
+        </p>
+      )}
       {text && <p className="card-text">{text}</p>}
       {feature.entry && !entry && <p className="muted">Its entry could not be found.</p>}
       <p className="change-actions">

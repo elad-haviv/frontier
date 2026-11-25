@@ -5,6 +5,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useId,
   useRef,
   useState,
 } from "react";
@@ -78,6 +79,8 @@ export function DialogFrame({
   children: ReactNode;
 }) {
   const form = useRef<HTMLFormElement>(null);
+  // Its own id: one dialog may open over another (the image dialog over Terrain).
+  const titleId = useId();
   const before = useRef<Element | null>(document.activeElement);
 
   useEffect(() => {
@@ -122,13 +125,13 @@ export function DialogFrame({
         className={`dialog${className ? ` ${className}` : ""}`}
         role="dialog"
         aria-modal="true"
-        aria-labelledby="dialog-title"
+        aria-labelledby={titleId}
         onSubmit={(e: FormEvent) => {
           e.preventDefault();
           onSubmit();
         }}
       >
-        <h2 id="dialog-title">{title}</h2>
+        <h2 id={titleId}>{title}</h2>
         {body && <p className="dialog-body">{body}</p>}
         {children}
       </form>

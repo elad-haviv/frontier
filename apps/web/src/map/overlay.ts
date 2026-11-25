@@ -15,6 +15,8 @@ import {
   zonePolygon,
 } from "@frontier/geo";
 import {
+  biomeById,
+  type CustomBiome,
   isLined,
   LABEL_LOOK,
   layerTree,
@@ -27,7 +29,17 @@ import {
 import { geoContains, geoOrthographic, geoPath } from "d3-geo";
 import type { PointerKind } from "./gesture.ts";
 import { autoAnchor, boxOf, clearOfMarkers, nameFits } from "./groupLabel.ts";
+import { ringArea } from "./biomes.ts";
 import { outlineOf, PLUS_SIZE, plusHandles } from "./handles.ts";
+import { patternFor } from "./patterns.ts";
+import {
+  drawChevrons,
+  drawEnd,
+  drawSteps,
+  drawTunnel,
+  type StretchLook,
+  stretchSpan,
+} from "./stretches.ts";
 import {
   casingOf,
   dashOf,
@@ -73,6 +85,11 @@ export interface OverlayInput {
   groupNames?: readonly GroupName[];
   /** Features and group names that cannot be picked on the map: those of locked groups. */
   unpickable?: ReadonlySet<string>;
+  /**
+   * Biome zones: the owner's own biomes, whether their patterns are drawn over their fills (a
+   * view setting; a zone can also turn its own off), and Soft edges, which blurs their fills.
+   */
+  biomes?: { custom: readonly CustomBiome[]; patterns: boolean; soft: boolean };
 }
 
 /** A group's name as the overlay writes it. */
@@ -179,7 +196,12 @@ export function lines(
  * A zone on the ball, filled by d3 so that it is cut cleanly at the edge of the disc. `ring` is
  * the zone's closed outline.
  */
-function fillOnGlobe(ctx: CanvasRenderingContext2D, view: View, ring: Position[]): void {
+function fillOnGlobe(
+  ctx: CanvasRenderingContext2D,
+  view: View,
+  ring: Position[],
+  fill: () => void = () => ctx.fill(),
+): void {
   if (view.state.kind !== "globe" || !hasInside(ring)) return;
   const projection = geoOrthographic()
     .rotate([-view.state.lon, -view.state.lat])
@@ -188,7 +210,7 @@ function fillOnGlobe(ctx: CanvasRenderingContext2D, view: View, ring: Position[]
     .clipAngle(90);
   ctx.beginPath();
   geoPath(projection, ctx)(zonePolygon(ring));
-  ctx.fill();
+  fill();
 }
 
 /**
@@ -391,9 +413,27 @@ export function drawOverlay(ctx: CanvasRenderingContext2D, input: OverlayInput):
   const colours = new Map(map.layers.map((l) => [l.id, l.color]));
   // Layers are drawn in the order of their tree: a layer, then its sublayers over it.
   const order = new Map(layerTree(map.layers).map((n, i) => [n.layer.id, i]));
+  // Within a layer, biome zones lie under its other zones, the largest first, so that a smaller
+  // one (an oasis) lies over a larger (its desert): what is seen is what counts.
+  const biomeOf = (f: MapFeature) =>
+    f.kind === "zone" && f.biome ? biomeById(f.biome, input.biomes?.custom ?? []) : null;
+  const areaOf = new Map<string, number>();
+  for (const f of map.features)
+    if (biomeOf(f)) areaOf.set(f.id, ringArea((f as { points: Position[] }).points));
   const features = map.features
     .filter((f) => !input.hidden.has(f.layer) && !input.hidden.has(f.id))
-    .sort((a, b) => (order.get(a.layer) ?? 0) - (order.get(b.layer) ?? 0));
+    .map((f, i) => ({ f, i }))
+    .sort(
+      (a, b) =>
+        (order.get(a.f.layer) ?? 0) - (order.get(b.f.layer) ?? 0) ||
+        (areaOf.has(a.f.id) ? 0 : 1) - (areaOf.has(b.f.id) ? 0 : 1) ||
+        (areaOf.get(b.f.id) ?? 0) - (areaOf.get(a.f.id) ?? 0) ||
+        a.i - b.i,
+    )
+    .map((x) => x.f);
+  // Patterns are anchored to the map, so they move with it as it is panned.
+  const patternOrigin: [number, number] =
+    view.state.kind === "flat" ? view.projectClamped([0, 0]).point : [0, 0];
 
   /** Sets the strength for one feature, and says whether it is undated; `plain` puts it back. */
   const look = (f: MapFeature): { opacity: number; dashed: boolean } => {
@@ -415,10 +455,27 @@ export function drawOverlay(ctx: CanvasRenderingContext2D, input: OverlayInput):
     const colour = paint.colour;
     const picked = isPicked(f.id);
     ctx.fillStyle = colour + fillAlpha(paint.fill, picked);
+    // A biome zone: its fill, softened at the edge with Soft edges, then its pattern over it.
+    const biome = biomeOf(f);
+    const pattern =
+      biome?.pattern && input.biomes?.patterns !== false && f.kind === "zone" && f.pattern !== false
+        ? patternFor(ctx, biome.pattern, colour, ratio, patternOrigin)
+        : null;
+    const soft = biome !== null && input.biomes?.soft === true;
+    const fillAll = () => {
+      if (soft) ctx.filter = "blur(5px)";
+      ctx.fill();
+      if (soft) ctx.filter = "none";
+      if (!pattern) return;
+      const was = ctx.fillStyle;
+      ctx.fillStyle = pattern;
+      ctx.fill();
+      ctx.fillStyle = was;
+    };
     // The closed outline: what is drawn, filled and tapped.
     const ring = outlineOf(map.space, f).line;
     const drawn = screenLines(view, ring);
-    if (view.state.kind === "globe") fillOnGlobe(ctx, view, ring);
+    if (view.state.kind === "globe") fillOnGlobe(ctx, view, ring, fillAll);
     if (view.rings && hasInside(ring)) {
       // In a projection the zone is filled as the pieces it is cut into, and tapped by them too.
       ctx.beginPath();
@@ -427,7 +484,7 @@ export function drawOverlay(ctx: CanvasRenderingContext2D, input: OverlayInput):
         ctx.closePath();
         shapes.push({ id: f.id, kind: "zone", points: piece, width: paint.width });
       }
-      ctx.fill();
+      fillAll();
     }
     if (view.state.kind === "plate") {
       // On a globe laid flat the inside is not simply the closed outline: a zone may be cut by
@@ -443,15 +500,17 @@ export function drawOverlay(ctx: CanvasRenderingContext2D, input: OverlayInput):
           ctx.closePath();
           shapes.push({ id: f.id, kind: "zone", points: moved, width: paint.width });
         }
-        ctx.fill();
+        fillAll();
       }
     }
     const inside = view.state.kind === "globe" ? insideOnGlobe(view, ring) : undefined;
     for (const line of drawn) {
-      if (view.state.kind === "flat" && hasInside(ring)) {
+      // On a flat map the inside is measured flat: a position is not a longitude and latitude
+      // there, and a large zone of a picture's pixels is no shape on a globe.
+      if (view.state.kind === "flat" && ring.length >= 4 && ringArea(ring) > 1e-9) {
         ctx.beginPath();
         trace(ctx, line);
-        ctx.fill();
+        fillAll();
       }
       ctx.beginPath();
       trace(ctx, line);
@@ -478,7 +537,8 @@ export function drawOverlay(ctx: CanvasRenderingContext2D, input: OverlayInput):
     if (f.kind !== "path") continue;
     const undated = look(f).dashed;
     const paint = paintOf(f, colours.get(f.layer), styles);
-    for (const line of screenLines(view, outlineOf(map.space, f).line)) {
+    const drawnLine = outlineOf(map.space, f);
+    for (const line of screenLines(view, drawnLine.line)) {
       ctx.beginPath();
       trace(ctx, line);
       if (isPicked(f.id)) {
@@ -493,6 +553,37 @@ export function drawOverlay(ctx: CanvasRenderingContext2D, input: OverlayInput):
       stroke(ctx, paint.colour, paint);
       if (undated) perforate(ctx, paint.width);
       shapes.push({ id: f.id, kind: "path", points: line, width: paint.width });
+    }
+    // Tunnels, steps and climbs (Find paths), and a river's end inland, over the line.
+    if (f.stretches?.length || f.endAs) {
+      const look: StretchLook = {
+        colour: paint.colour,
+        width: paint.width,
+        casing: casingOf(paint.width),
+        paper: PAPER,
+        ink: INK,
+      };
+      const { line, spans } = drawnLine;
+      const part = (i: number, j: number) =>
+        line.slice(spans[i] ?? 0, (j < spans.length ? spans[j]! : line.length - 1) + 1);
+      for (const s of f.stretches ?? []) {
+        const span = stretchSpan(f.points, s);
+        if (!span) continue;
+        if (s.kind === "climb" && (f.steepShown === false || !s.grade)) continue;
+        // A climb's grade is for the way from `from` to `to`; the drawn piece runs first to last.
+        const forward = f.points[span[0]]![0] === s.from[0] && f.points[span[0]]![1] === s.from[1];
+        for (const piece of screenLines(view, part(span[0], span[1]))) {
+          if (s.kind === "tunnel") drawTunnel(ctx, piece, look);
+          else if (s.kind === "steps") drawSteps(ctx, piece, look);
+          else drawChevrons(ctx, piece, forward ? s.grade! : -s.grade!, look);
+        }
+      }
+      if (f.endAs && f.points.length >= 2) {
+        for (const piece of screenLines(view, part(f.points.length - 2, f.points.length - 1))) {
+          drawEnd(ctx, piece, f.endAs, look);
+        }
+      }
+      ctx.setLineDash([]);
     }
   }
 

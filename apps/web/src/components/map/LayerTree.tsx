@@ -877,6 +877,9 @@ export function LayerTree(props: LayerTreeProps) {
               ) : (
                 <span className="lt-name" title={layer.name}>
                   {layer.name}
+                  {layer.name === "Biomes" && layer.parent == null && map.layers[0]?.id === id && (
+                    <em className="lt-note"> drawn under the rest</em>
+                  )}
                 </span>
               )}
               <span

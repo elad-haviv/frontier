@@ -168,6 +168,14 @@ export class AiProvider {
     return { spentUsd: await this.d.log.spent(monthOf(this.now())), capUsd };
   }
 
+  /** The prices of the model chosen for a task, to estimate a call before it is made. */
+  async priceForTask(task: AiTask): Promise<ModelPrice | null> {
+    const chosen = (await this.d.settings.read())?.ai.models[task];
+    if (!chosen) return null;
+    const { provider, model } = splitModelId(chosen);
+    return this.priceOf(`${provider}:${model}`);
+  }
+
   /** Whether a task can run: a model is chosen and its provider is connected. */
   async ready(task: AiTask): Promise<boolean> {
     const id = (await this.d.settings.read())?.ai.models[task];

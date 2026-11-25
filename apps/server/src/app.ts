@@ -6,6 +6,7 @@ import rateLimit from "@fastify/rate-limit";
 import secureSession from "@fastify/secure-session";
 import Fastify, { type FastifyInstance } from "fastify";
 import { ZodError } from "zod";
+import type { BiomesFile } from "@frontier/schema";
 import { FieldProposer } from "./ai/fields.js";
 import { FieldJob } from "./ai/job.js";
 import { AiLog } from "./ai/log.js";
@@ -298,6 +299,13 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
     settings,
     uploadFolder: config.uploadFolder,
     mayRead: (path) => quarantine.aiMayRead(path) === null,
+    biomes: () => {
+      try {
+        return (libraryFiles.current("biomes").file as BiomesFile).biomes;
+      } catch {
+        return [];
+      }
+    },
   });
   const writing = new WritingHelper({
     index,

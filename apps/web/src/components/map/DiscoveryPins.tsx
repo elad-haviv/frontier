@@ -1,7 +1,9 @@
 import { makeView, type ViewState } from "@frontier/geo";
 import type { Discovery } from "../../api.ts";
 import type { useDiscovery } from "../../map/useDiscovery.ts";
+import type { SpotKind } from "../../map/spots/spots.ts";
 import { DiscoveryCard } from "../DiscoveryCard.tsx";
+import { SPOT_ICONS } from "./Explore.tsx";
 
 /** The "?" pins of what discovery proposed, where they are on the screen. */
 export function DiscoveryPins({
@@ -50,12 +52,22 @@ export function OpenDiscovery({
   onKept: (path: string) => void;
 }) {
   const { found, setFound, openFound, setOpenFound } = discovery;
-  if (!openFound || !found.items.some((d) => d.id === openFound)) return null;
+  const index = found.items.findIndex((d) => d.id === openFound);
+  if (!openFound || index < 0) return null;
+  const d = found.items[index]!;
+  const Icon = d.spot && d.spot.kind in SPOT_ICONS ? SPOT_ICONS[d.spot.kind as SpotKind] : null;
   return (
     <DiscoveryCard
       key={openFound}
       map={map}
-      discovery={found.items.find((d) => d.id === openFound)!}
+      discovery={d}
+      step={{
+        index,
+        count: found.items.length,
+        go: (by) =>
+          setOpenFound(found.items[(index + by + found.items.length) % found.items.length]!.id),
+      }}
+      whereIcon={Icon ? <Icon size={14} aria-hidden /> : null}
       canArt={found.art}
       folders={found.folders}
       onChanged={(d) =>

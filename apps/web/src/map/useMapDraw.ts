@@ -38,11 +38,13 @@ export function useMapDraw(
     styles: readonly MapStyle[];
     /** Groups: what is picked with the selection, the selected group's box, and their names. */
     groups: Pick<OverlayInput, "picked" | "groupBox" | "groupNames" | "unpickable">;
+    /** Biome zones: the owner's biomes, and whether patterns and Soft edges are on. */
+    biomes: NonNullable<OverlayInput["biomes"]>;
   },
 ) {
   const { shownMap, presence, view, size, hidden, shownImages, selected, vertex } = input;
   const { sketch, tool, editing, names, pendingNames, sets, curve, pressKind, styles } = input;
-  const { groups } = input;
+  const { groups, biomes } = input;
   const glCanvas = useRef<HTMLCanvasElement>(null);
   const topCanvas = useRef<HTMLCanvasElement>(null);
   /** The canvas above the features, for what follows the pointer: the hover halo. */
@@ -123,6 +125,7 @@ export function useMapDraw(
         editing,
         pluses: editing && tool === "select" ? pressKind : null,
         ...groups,
+        biomes,
       });
     });
     return () => cancelAnimationFrame(handle);
@@ -143,6 +146,7 @@ export function useMapDraw(
     pressKind,
     styles,
     groups,
+    biomes,
     redraw,
     iconsLoaded,
     titleOf,
@@ -165,6 +169,7 @@ export function useMapDraw(
       styles,
       iconFor,
       titleOf,
+      biomes,
       // The saved picture writes the names as the screen does, with no selection.
       groupNames: groups.groupNames?.map((g) => ({ ...g, ring: false })) ?? [],
     },

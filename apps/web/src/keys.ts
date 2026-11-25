@@ -166,7 +166,7 @@ const KEY_NAMES: Record<string, string> = {
 /** A key as people read it: "Ctrl+Shift+Z", or "⇧⌘Z" on a Mac. */
 export function displayKey(spec: string, mac = onMac()): string {
   // Several keys in a row, such as "Escape Tab", read as "Esc then Tab".
-  if (spec.includes(" ")) {
+  if (spec.includes(" ") && spec !== " ") {
     return spec
       .split(" ")
       .map((s) => displayKey(s, mac))
@@ -442,6 +442,149 @@ keys.register(
     label: "Find areas: clear the chosen areas, then the selection",
     when: "editing",
   },
+  { id: "map.paths", keys: ["d"], scope: "map", label: "Find paths tool", when: "editing" },
+  {
+    id: "map.pathsRiver",
+    keys: ["1"],
+    scope: "map",
+    label: "Find paths: a river",
+    when: "editing",
+  },
+  {
+    id: "map.pathsRoute",
+    keys: ["2"],
+    scope: "map",
+    label: "Find paths: a route",
+    when: "editing",
+  },
+  {
+    id: "map.pathsTrace",
+    keys: ["3"],
+    scope: "map",
+    label: "Find paths: trace a painted line",
+    when: "editing",
+  },
+  {
+    id: "map.pathsSwitch",
+    keys: ["x"],
+    scope: "map",
+    label: "Find paths: a river from its source or its mouth; a route's next way",
+    when: "editing",
+  },
+  {
+    id: "map.pathsMake",
+    keys: ["Enter"],
+    scope: "map",
+    label: "Find paths: make the path",
+    when: "editing",
+  },
+  {
+    id: "map.pathsClear",
+    keys: ["Escape"],
+    scope: "map",
+    label: "Find paths: clear what is proposed, then the selection",
+    when: "editing",
+  },
+  {
+    id: "map.explore",
+    keys: ["x"],
+    scope: "map",
+    label: "Explore: points of interest along roads and rivers, on or off",
+    when: "viewing",
+  },
+  {
+    id: "map.spots",
+    keys: ["i"],
+    scope: "map",
+    label: "Explore: show or hide the points of interest",
+    when: "viewing",
+  },
+  {
+    id: "map.spotNext",
+    keys: ["]"],
+    scope: "map",
+    label: "Explore: the next point of interest (along the path explored, else all)",
+    when: "viewing",
+  },
+  {
+    id: "map.spotPrevious",
+    keys: ["["],
+    scope: "map",
+    label: "Explore: the previous point of interest",
+    when: "viewing",
+  },
+  {
+    id: "map.spotToggle",
+    keys: [" "],
+    scope: "map",
+    label: "Explore: add or take out the point of interest at the cursor",
+    when: "viewing",
+  },
+  {
+    id: "map.spotAll",
+    keys: ["a"],
+    scope: "map",
+    label: "Explore: choose every spot along the path (again: clear them)",
+    when: "viewing",
+  },
+  {
+    id: "map.spotAsk",
+    keys: ["Enter"],
+    scope: "map",
+    label: "Explore: ask what is at the places chosen",
+    when: "viewing",
+  },
+  {
+    id: "map.spotBack",
+    keys: ["Escape"],
+    scope: "map",
+    label: "Explore: close the card, then clear the choice, then leave the path",
+    when: "viewing",
+  },
+  { id: "map.biomes", keys: ["b"], scope: "map", label: "Suggest biomes tool", when: "editing" },
+  {
+    id: "map.biomesShow",
+    keys: ["1"],
+    scope: "map",
+    label: "Suggest biomes: show the biomes",
+    when: "editing",
+  },
+  {
+    id: "map.biomesTemp",
+    keys: ["2"],
+    scope: "map",
+    label: "Suggest biomes: show the temperature",
+    when: "editing",
+  },
+  {
+    id: "map.biomesRain",
+    keys: ["3"],
+    scope: "map",
+    label: "Suggest biomes: show the rainfall",
+    when: "editing",
+  },
+  {
+    id: "map.biomesAccept",
+    keys: ["Enter"],
+    scope: "map",
+    label: "Suggest biomes: accept the suggestion under the pointer",
+    when: "editing",
+  },
+  {
+    id: "map.biomesAcceptAll",
+    keys: ["Shift-Enter"],
+    scope: "map",
+    label: "Suggest biomes: accept all",
+    when: "editing",
+  },
+  {
+    id: "map.biomesSkip",
+    keys: ["Delete", "Backspace"],
+    scope: "map",
+    label: "Suggest biomes: skip the suggestion under the pointer",
+    when: "editing",
+  },
+  { id: "map.relief", keys: ["h"], scope: "map", label: "Show or hide the relief of the terrain" },
   {
     id: "map.snap",
     keys: ["s"],

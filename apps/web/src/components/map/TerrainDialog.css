@@ -1,0 +1,288 @@
+/* Terrain (stage 20): the dialog for a map's height map. The chip on the map is in styles.css. */
+
+.dialog.terrain-dialog {
+  display: flex;
+  flex-direction: column;
+  width: min(71rem, 100%);
+  max-height: calc(100vh - 2rem);
+}
+.terrain-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(17rem, 1fr);
+  gap: 1rem;
+  min-height: 0;
+  overflow: auto;
+}
+.terrain-preview {
+  position: relative;
+  align-self: start;
+}
+.terrain-preview canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  touch-action: none;
+}
+.terrain-preview canvas.is-moving {
+  cursor: move;
+}
+.terrain-preview canvas.is-picking {
+  cursor: crosshair;
+}
+.terrain-match {
+  position: absolute;
+  top: 0.5rem;
+  left: 0.5rem;
+  padding: 0.15rem 0.55rem;
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  background: var(--paper);
+  font-size: 0.82rem;
+  font-variant-numeric: tabular-nums;
+}
+.terrain-match.is-near,
+.terrain-verdict.is-warn {
+  border-color: #c98a1b;
+  color: #7a4e00;
+}
+.terrain-match.is-off,
+.terrain-verdict.is-bad {
+  border-color: var(--warn);
+  color: var(--warn);
+}
+.terrain-banner {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  left: 0.5rem;
+  margin: 0;
+  padding: 0.4rem 0.7rem;
+  border-radius: 6px;
+  background: var(--ink);
+  color: var(--paper);
+  font-size: 0.86rem;
+}
+.terrain-banner .plain {
+  color: inherit;
+  text-decoration: underline;
+}
+.terrain-views {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem 0.9rem;
+  margin-top: 0.5rem;
+  font-size: 0.84rem;
+  color: var(--ink-soft);
+}
+.terrain-views label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+.terrain-views input[type="range"] {
+  width: 6rem;
+  accent-color: var(--accent);
+}
+.terrain-caption {
+  margin: 0.4rem 0 0;
+  font-size: 0.84rem;
+}
+.terrain-settings,
+.terrain-empty {
+  display: grid;
+  align-content: start;
+  gap: 0.7rem;
+  font-size: 0.88rem;
+}
+.terrain-section h3 {
+  margin: 0 0 0.3rem;
+  font-size: 0.82rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+.terrain-section p {
+  margin: 0.3rem 0;
+}
+.terrain-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+.terrain-actions button[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.terrain-section button[aria-disabled="true"] {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.terrain-slider {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+.terrain-slider input {
+  flex: 1;
+  accent-color: var(--accent);
+}
+.terrain-slider small {
+  color: var(--ink-faint);
+}
+.terrain-slider output {
+  min-width: 4.5rem;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.terrain-range,
+.terrain-extent {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.terrain-range label,
+.terrain-extent label {
+  display: grid;
+  gap: 0.15rem;
+  color: var(--ink-soft);
+  font-size: 0.8rem;
+}
+.terrain-range input,
+.terrain-extent input {
+  width: 5.5rem;
+}
+.terrain-range input,
+.terrain-range select,
+.terrain-extent input,
+.terrain-smoothing select {
+  padding: 0.3rem 0.4rem;
+  border: 1px solid var(--rule);
+  border-radius: 5px;
+  background: var(--paper-raised);
+  color: var(--ink);
+  font: inherit;
+}
+.terrain-smoothing {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+.terrain-checks,
+.terrain-hints {
+  display: grid;
+  gap: 0.35rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.terrain-checks li {
+  padding-left: 0.6rem;
+  border-left: 3px solid #5f8a4a;
+}
+.terrain-checks li.is-warn {
+  border-left-color: #c98a1b;
+}
+.terrain-checks li.is-bad {
+  border-left-color: var(--warn);
+}
+.terrain-note {
+  margin: 0;
+  padding: 0.4rem 0.6rem;
+  border-radius: 6px;
+  background: var(--accent-soft);
+}
+.terrain-foot {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.8rem;
+}
+.terrain-foot button {
+  min-height: 2.2rem;
+  padding: 0 0.9rem;
+}
+.terrain-foot button[aria-disabled="true"] {
+  opacity: 0.5;
+}
+.terrain-verdict {
+  flex: 1;
+  min-width: 0;
+  color: var(--ink-soft);
+  font-size: 0.86rem;
+}
+
+/* On a phone: a full-height sheet, the preview above, one step's controls below. */
+@media (max-width: 47.99rem) {
+  .dialog-scrim:has(> .terrain-dialog) {
+    place-items: stretch;
+    padding: 0;
+  }
+  .dialog.terrain-dialog {
+    box-sizing: border-box;
+    width: 100%;
+    min-height: 0;
+    max-height: 100dvh;
+    border: 0;
+    border-radius: 0;
+    overflow: hidden;
+  }
+  .terrain-verdict {
+    order: -1;
+    flex-basis: 100%;
+  }
+  .terrain-body {
+    grid-template-columns: 1fr;
+    flex: 1;
+  }
+  .terrain-preview canvas {
+    width: auto;
+    max-width: 100%;
+    max-height: 42vh;
+    margin: 0 auto;
+  }
+  .terrain-steps {
+    display: flex;
+    overflow: hidden;
+    border: 1px solid var(--rule);
+    border-radius: 6px;
+  }
+  .terrain-steps button {
+    position: relative;
+    flex: 1;
+    min-height: 2.5rem;
+    padding: 0 0.2rem;
+    border: 0;
+    border-radius: 0;
+    background: var(--paper-raised);
+    font: inherit;
+    font-size: 0.8rem;
+  }
+  .terrain-steps button[aria-selected="true"] {
+    background: var(--accent-soft);
+    color: var(--accent);
+    font-weight: 600;
+  }
+  .terrain-dot {
+    position: absolute;
+    top: 0.3rem;
+    right: 0.3rem;
+    width: 0.5rem;
+    height: 0.5rem;
+    border-radius: 50%;
+    background: #c98a1b;
+  }
+  .terrain-dot.is-bad {
+    background: var(--warn);
+  }
+  .terrain-foot {
+    flex-wrap: wrap;
+  }
+  .terrain-foot button {
+    min-height: 2.6rem;
+    padding: 0 0.7rem;
+  }
+}

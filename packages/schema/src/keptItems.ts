@@ -26,8 +26,8 @@ const byId = (item: unknown): string => String((item as { id?: unknown } | null)
 
 const MAP: ItemShape = {
   kind: "map",
-  lists: ["images", "layers", "features"],
-  tops: ["title", "space", "markerSets", "under"],
+  lists: ["images", "layers", "features", "terrainHints"],
+  tops: ["title", "space", "markerSets", "under", "terrain"],
   keyOf: byId,
   parse: (text) => {
     const parsed = parseMap(text);

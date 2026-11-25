@@ -1,5 +1,5 @@
 import { ActionButton } from "./ui/ActionButton.tsx";
-import { useState } from "react";
+import { type ReactNode, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, ApiFailure, type Discovery, discoveryArtUrl, entryUrl } from "../api.ts";
 
@@ -15,6 +15,10 @@ export function DiscoveryCard(p: {
   onKept: (path: string) => void;
   onDropped: () => void;
   onClose: () => void;
+  /** Its place among the discoveries waiting: "‹ 1 of 4 found ›". */
+  step?: { index: number; count: number; go: (by: 1 | -1) => void };
+  /** The look of the point of interest it was found at. */
+  whereIcon?: ReactNode;
 }) {
   const d = p.discovery;
   // The folder of the first entry it grew from is the likely home; any folder can be chosen.
@@ -43,8 +47,38 @@ export function DiscoveryCard(p: {
       <button type="button" className="plain card-close" aria-label="Close" onClick={p.onClose}>
         ✕
       </button>
-      <p className="muted discovery-kind">Proposed {d.kind} · not in the lore</p>
+      {p.step && p.step.count > 1 && (
+        <p className="discovery-step">
+          <button
+            type="button"
+            className="plain"
+            aria-label="The previous one found"
+            onClick={() => p.step!.go(-1)}
+          >
+            ‹
+          </button>
+          {p.step.index + 1} of {p.step.count} found
+          <button
+            type="button"
+            className="plain"
+            aria-label="The next one found"
+            onClick={() => p.step!.go(1)}
+          >
+            ›
+          </button>
+        </p>
+      )}
+      <p className="muted discovery-kind">
+        Proposed {d.kind}
+        {d.role ? ` · ${d.role}` : ""} · not in the lore
+      </p>
       <h2>{d.name}</h2>
+      {d.spot && (
+        <p className="discovery-where">
+          {p.whereIcon}
+          {d.spot.title}
+        </p>
+      )}
       {d.art && (
         <img
           className="discovery-art"

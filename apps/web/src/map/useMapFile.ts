@@ -12,6 +12,9 @@ import { useDialogs } from "../components/Dialogs.tsx";
 import { useRefresh } from "../components/Shell.tsx";
 import { useSaveState } from "../components/ui/SaveStatus.tsx";
 import { type Known, type LinkItem, type QueueKey, queue } from "../sync/queue.ts";
+import type { Space } from "@frontier/geo";
+import { keepJoins } from "./joins.ts";
+import { keepStretches } from "./stretches.ts";
 import type { OtherMap } from "./layersBeneath.ts";
 import type { TimeState } from "./useMapTime.ts";
 
@@ -206,9 +209,11 @@ export function useMapFile(
         if (yearRef.current !== null) stamps.current.set(before, yearRef.current);
         setHistory((h) => ({ past: [...h.past.slice(-99), before], future: [] }));
       }
-      mapRef.current = next;
-      setMap(next);
-      store(next, link);
+      // A path joined onto another stays on it, whatever was changed.
+      const kept = keepStretches(before, keepJoins(before, next, next.space as Space));
+      mapRef.current = kept;
+      setMap(kept);
+      store(kept, link);
     },
     [store],
   );

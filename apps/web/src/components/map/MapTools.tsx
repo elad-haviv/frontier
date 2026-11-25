@@ -1,11 +1,14 @@
 import {
   type LucideIcon,
+  ChevronDown,
   LayoutGrid,
+  Leaf,
   Magnet,
   MapPin,
   MousePointer2,
   Pentagon,
   Redo2,
+  Route,
   Ruler,
   Sparkles,
   Spline,
@@ -13,8 +16,10 @@ import {
   Undo2,
   WandSparkles,
 } from "lucide-react";
+import { type SnapTargets, TARGET_LABELS, targetsText } from "../../map/snap.ts";
 import type { Tool } from "../../map/tools.ts";
 import { IconButton } from "../ui/IconButton.tsx";
+import { Menu, MenuItem } from "../ui/Menu.tsx";
 
 const TOOLS: { tool: Tool; label: string; icon: LucideIcon; shortcut: string }[] = [
   { tool: "select", label: "Select", icon: MousePointer2, shortcut: "map.select" },
@@ -22,6 +27,8 @@ const TOOLS: { tool: Tool; label: string; icon: LucideIcon; shortcut: string }[]
   { tool: "path", label: "Path", icon: Spline, shortcut: "map.path" },
   { tool: "zone", label: "Zone", icon: Pentagon, shortcut: "map.zone" },
   { tool: "find", label: "Find areas", icon: WandSparkles, shortcut: "map.find" },
+  { tool: "paths", label: "Find paths", icon: Route, shortcut: "map.paths" },
+  { tool: "biomes", label: "Suggest biomes", icon: Leaf, shortcut: "map.biomes" },
   { tool: "label", label: "Label", icon: Type, shortcut: "map.label" },
   { tool: "measure", label: "Measure", icon: Ruler, shortcut: "map.measure" },
   { tool: "place", label: "Place with AI", icon: Sparkles, shortcut: "map.place" },
@@ -36,9 +43,13 @@ export function MapTools({
   schematic,
   canPlace,
   findReason,
+  pathsReason,
+  biomesReason = null,
   onTool,
   snap,
   onSnap,
+  snapTargets,
+  onSnapTargets,
   canUndo,
   canRedo,
   onUndo,
@@ -51,10 +62,17 @@ export function MapTools({
   canPlace: boolean;
   /** Why Find areas cannot be used, or null when it can. */
   findReason: string | null;
+  /** Why Find paths cannot be used, or null when it can. */
+  pathsReason: string | null;
+  /** Why Suggest biomes cannot be used, or null when it can. */
+  biomesReason?: string | null;
   onTool: (tool: Tool) => void;
   /** Points of paths and zones snap to others near them. */
   snap: boolean;
   onSnap: (on: boolean) => void;
+  /** What snapping snaps to: paths, zones, markers and labels. */
+  snapTargets: SnapTargets;
+  onSnapTargets: (next: SnapTargets) => void;
   canUndo: boolean;
   canRedo: boolean;
   onUndo: () => void;
@@ -78,6 +96,12 @@ export function MapTools({
           {...(t.tool === "find" && findReason
             ? { disabled: true, disabledReason: findReason }
             : {})}
+          {...(t.tool === "paths" && pathsReason
+            ? { disabled: true, disabledReason: pathsReason }
+            : {})}
+          {...(t.tool === "biomes" && biomesReason
+            ? { disabled: true, disabledReason: biomesReason }
+            : {})}
           onClick={() => onTool(t.tool)}
         />
       ))}
@@ -87,8 +111,21 @@ export function MapTools({
         icon={Magnet}
         shortcut="map.snap"
         aria-pressed={snap}
+        note={targetsText(snap, snapTargets)}
         onClick={() => onSnap(!snap)}
       />
+      <Menu label="Snap to" icon={ChevronDown} className="snap-targets">
+        {(Object.keys(TARGET_LABELS) as (keyof SnapTargets)[]).map((k) => (
+          <MenuItem
+            key={k}
+            checked={snapTargets[k]}
+            onSelect={() => onSnapTargets({ ...snapTargets, [k]: !snapTargets[k] })}
+          >
+            {snapTargets[k] ? "✓ " : ""}
+            {TARGET_LABELS[k]}
+          </MenuItem>
+        ))}
+      </Menu>
       {onPicking && (
         <IconButton
           label="Select several"
