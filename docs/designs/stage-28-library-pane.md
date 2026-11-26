@@ -1,0 +1,44 @@
+# Stage 28: the library as a pane on desktop
+
+Approved by Elad on 2026-11-26, with all recommendations. Mockup:
+https://claude.ai/artifact/35xA9YyjD2oKe5qxdT3g8y (docked pane, the folded sidebar, and the floating pane on
+a narrower window; the first frame is live). The phone keeps stage 26 (a full-drawer panel).
+
+## What's wrong today
+
+The desktop sidebar stacks search, New entry, Random entry, six places, Working on, then the Library tree,
+then the footer. The tree gets what is left, about 6 to 10 rows at 800 px high, and scrolls inside that box.
+Folders are the main way to browse and they are the cramped part.
+
+## The design
+
+- The tree leaves the sidebar. A **Library** row joins the places (after Ask), with the entry count. It is a
+  toggle button (`aria-pressed`). The sidebar gets shorter; Working on and the footer stay in it (decision C).
+- Clicking it opens the **Library pane** immediately to the right of the sidebar: full window height, 17 rem
+  wide, with the title "Library", the new entry and new folder buttons and a **close (×)** button. The page
+  content moves right and narrows to make room (docked, decision A).
+- The pane stays open while reading, so entries can be clicked through. It closes with × or by clicking the
+  Library row again. Open or closed is remembered on this device (decision B: open the first time).
+- The tree works as now: open and close folders, drag to move or reorder, F2 to rename, the context menu,
+  arrow keys, stub counts. The entry being read is highlighted and kept in view.
+- In the folded sidebar (the rail) a Library icon opens the same pane.
+- Under about 1100 px wide the pane floats over the page (with a shadow, the page dimmed a little) and closes
+  when an entry is picked, so the reading area is never squeezed too narrow. Esc closes a floating pane.
+- The pane sits to the right of the sidebar, since a pane cannot sit to the left of a sidebar at the left
+  edge (decision D).
+- On a phone nothing changes.
+
+## Empty states and keys
+
+An empty library shows "No entries yet" and a New entry button in the pane. Offline or a failed tree shows
+today's messages inside the pane. New key: **g l** toggles the Library pane (a chord, like `g h` and
+`g r`); where it clashes the existing key wins and the nearest free one is used. The Library row is a real
+button; focus moves into the pane when it opens by keyboard and back to the row when it closes. Motion
+respects reduced motion.
+
+## Decisions (as approved)
+
+- **A.** Docked pane that pushes the page on wide windows; floating on narrow ones.
+- **B.** Open the first time, then as left, per device.
+- **C.** Working on (pins) stays in the sidebar.
+- **D.** The pane sits immediately to the right of the sidebar.
