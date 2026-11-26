@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { TreeResponse } from "@frontier/schema";
 import {
   eachFolder,
+  entriesIn,
   entriesUnder,
   findFolder,
   foldersUnder,
@@ -62,6 +63,10 @@ describe("the tree's rows", () => {
     const places = findFolder(tree, "01 Places")!;
     expect(entriesUnder(places)).toBe(4);
     expect(foldersUnder(places)).toBe(2);
+    expect(entriesIn(tree)).toBe(
+      tree.notes.length + tree.folders.reduce((n, f) => n + entriesUnder(f), 0),
+    );
+    expect(entriesIn({ folders: [], notes: [] })).toBe(0);
     expect(findFolder(tree, "01 Places/Marsh")?.path).toBe("01 Places/Marsh");
     expect(findFolder(tree, "Nowhere")).toBeUndefined();
     expect(eachFolder(tree).map((f) => f.path)).toEqual([

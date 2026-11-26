@@ -1,5 +1,5 @@
 import { expect, type Locator, type Page, test } from "@playwright/test";
-import { entry, noSidewaysScroll, openSideBar, setUpAi } from "./helpers.ts";
+import { entry, noSidewaysScroll, openLibrary, openSideBar, setUpAi } from "./helpers.ts";
 
 // Home and the rest of "keep going" in the shell (stage 25). Pins and the settings are one per
 // server, so these take turns and put back what they change.
@@ -371,18 +371,21 @@ test("g h goes Home and g r opens a random entry; both are on the key sheet", as
 
 test("the left bar: Home, Random entry under New entry, and stub counts on the top folders", async ({
   page,
+  isMobile,
 }) => {
   await page.goto(entry(SALT_FLATS));
-  await openSideBar(page);
+  await openLibrary(page);
+  // 01 Places holds stubs: Salt Flats, Harbor, Old Quay. (On a phone the folders are in the
+  // library panel, and Escape goes back to the menu.)
+  const places = page.locator('.tree-row[data-path="01 Places"]');
+  await expect(places.locator(".tree-mark.is-stubs")).toHaveText(/^\d+ stubs?$/);
+  await expect(places.locator(".tree-mark.is-stubs")).toHaveAttribute("title", /of \d+ entries/);
+  if (isMobile) await page.keyboard.press("Escape");
   const bar = page.locator(".left-bar");
   const actions = bar.locator(".left-actions");
   await expect(actions.locator("button").nth(0)).toContainText(/New entry|Search/);
   await expect(actions.getByRole("button", { name: "Random entry" })).toBeVisible();
   await expect(bar.getByRole("link", { name: "Home" })).toBeVisible();
-  // 01 Places holds stubs: Salt Flats, Harbor, Old Quay.
-  const places = bar.locator('.tree-row[data-path="01 Places"]');
-  await expect(places.locator(".tree-mark.is-stubs")).toHaveText(/^\d+ stubs?$/);
-  await expect(places.locator(".tree-mark.is-stubs")).toHaveAttribute("title", /of \d+ entries/);
 
   await actions.getByRole("button", { name: "Random entry" }).click();
   await expect(page).toHaveURL(/\/e\//);

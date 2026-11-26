@@ -130,9 +130,18 @@ function pageName(pathname: string, entry: string, waitingTitle: string): string
 }
 
 /** The phone's drawer: the left side bar over a dimmed page, holding the focus while open. */
-function Drawer({ onClose, children }: { onClose: () => void; children: ReactNode }) {
+function Drawer({
+  onClose,
+  onEscape,
+  children,
+}: {
+  onClose: () => void;
+  /** What Escape does: close the library panel back to the menu, or the drawer itself. */
+  onEscape: () => void;
+  children: ReactNode;
+}) {
   const box = useRef<HTMLDivElement>(null);
-  useFocusTrap(box, true, onClose);
+  useFocusTrap(box, true, onEscape);
   return (
     <>
       <div className="scrim" aria-hidden="true" onClick={onClose} />
@@ -151,6 +160,13 @@ export function Shell({ children }: { children: ReactNode }) {
   const store = useMemo(() => new ShellStore(), []);
   useSyncExternalStore(store.subscribe, store.snapshot);
   const [drawer, setDrawer] = useState(false);
+  /** The phone's library panel, over the drawer's menu. */
+  const [library, setLibrary] = useState(false);
+  /**
+   * Whether a history entry stands for the open library panel, so the browser's Back closes the
+   * panel and not the page. It is pushed when the panel opens and popped when it closes.
+   */
+  const libraryEntry = useRef(false);
   const [rail, setRail] = useState(() => readPrefs(kind).rail);
   const [version, setVersion] = useState(0);
   const [switching, setSwitching] = useState(false);
@@ -171,6 +187,38 @@ export function Shell({ children }: { children: ReactNode }) {
   // The status comes from the server's stream, through the connection service.
   const { snapshot: status } = useConnection();
   const current = currentEntryPath(pathname);
+
+  const openLibrary = useCallback(() => {
+    if (!libraryEntry.current) {
+      // The same page and the router's own state, so the router sees nothing move.
+      window.history.pushState(window.history.state, "");
+      libraryEntry.current = true;
+    }
+    setLibrary(true);
+  }, []);
+  /** Back to the menu: ‹ Menu, Escape and a swipe all end here, and take the entry away. */
+  const closeLibrary = useCallback(() => {
+    setLibrary(false);
+    if (libraryEntry.current) {
+      libraryEntry.current = false;
+      window.history.back();
+    }
+  }, []);
+  /** Closes the drawer and the library with it, so it opens on the menu next time. */
+  const closeDrawer = useCallback(() => {
+    setDrawer(false);
+    closeLibrary();
+  }, [closeLibrary]);
+  // The browser's Back, with the library open, goes back to the menu.
+  useEffect(() => {
+    const popped = () => {
+      if (!libraryEntry.current) return;
+      libraryEntry.current = false;
+      setLibrary(false);
+    };
+    window.addEventListener("popstate", popped);
+    return () => window.removeEventListener("popstate", popped);
+  }, []);
 
   // Each kind of screen keeps its own side bars: the rail on a map, the panel last open, its width.
   useLayoutEffect(() => store.enter(kind, phone), [store, kind, phone]);
@@ -205,7 +253,11 @@ export function Shell({ children }: { children: ReactNode }) {
   useKeyListener();
   useShortcut("app.switcher", () => setSwitching(true));
   useShortcut("app.keys", () => setSheet(true));
-  useShortcut("app.sidebar", () => (phone ? setDrawer((o) => !o) : fold(!rail)));
+  useShortcut("app.sidebar", () => {
+    if (!phone) return fold(!rail);
+    if (drawer) closeDrawer();
+    else setDrawer(true);
+  });
   // Keep going (stage 25): "g h" and "g r".
   const roll = useRandom();
   useShortcut("app.home", () => {
@@ -220,18 +272,23 @@ export function Shell({ children }: { children: ReactNode }) {
   // A new page opens at its top, and on a phone the drawer closes.
   useEffect(() => {
     setDrawer(false);
+    setLibrary(false);
+    // A page opened from the library replaced its entry; the entry is gone with the panel.
+    libraryEntry.current = false;
     scrollPageToTop();
   }, [pathname]);
   useEffect(() => {
-    if (!phone) setDrawer(false);
-  }, [phone]);
+    if (!phone && drawer) closeDrawer();
+  }, [phone, drawer, closeDrawer]);
   // A page asked to see a folder in the tree: the side bar unfolds, or on a phone the drawer
   // opens; the tree then opens the folder (Tree).
   const reveal = store.reveal?.n;
   useEffect(() => {
     if (reveal === undefined) return;
-    if (phone) setDrawer(true);
-    else fold(false);
+    if (phone) {
+      setDrawer(true);
+      openLibrary();
+    } else fold(false);
     // Only a new ask opens the bar.
   }, [reveal]);
 
@@ -280,19 +337,19 @@ export function Shell({ children }: { children: ReactNode }) {
   const actions = {
     onSearch: () => setSwitching(true),
     onNewEntry: () => {
-      setDrawer(false);
+      closeDrawer();
       setMaking(folderInView);
     },
     onNewEntryIn: (folder: string) => {
-      setDrawer(false);
+      closeDrawer();
       setMaking(folder);
     },
     onRandom: () => {
-      setDrawer(false);
+      closeDrawer();
       void roll();
     },
     onKeys: () => {
-      setDrawer(false);
+      closeDrawer();
       setSheet(true);
     },
     onLogout: () => void logout(),
@@ -399,18 +456,20 @@ export function Shell({ children }: { children: ReactNode }) {
                 )}
               </Group>
               {phone && drawer && (
-                <Drawer onClose={() => setDrawer(false)}>
+                <Drawer onClose={closeDrawer} onEscape={library ? closeLibrary : closeDrawer}>
                   <LeftBar
                     tree={tree}
                     current={current}
                     onRetryTree={refresh}
                     drawer
+                    library={library}
+                    onLibrary={(open) => (open ? openLibrary() : closeLibrary())}
                     top={
                       <IconButton
                         label="Close the side bar"
                         icon={X}
                         className="drawer-close"
-                        onClick={() => setDrawer(false)}
+                        onClick={closeDrawer}
                       />
                     }
                     {...actions}

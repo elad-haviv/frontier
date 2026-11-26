@@ -1,0 +1,131 @@
+/* Stage 26: the library as a menu item on the phone. The drawer holds two panes side by side: the
+   menu, and the library sliding in over it. */
+.drawer-panes {
+  position: relative;
+  height: 100%;
+  overflow: hidden;
+}
+.drawer-pane {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--paper-raised);
+  transition:
+    transform 200ms ease,
+    visibility 0s;
+}
+/* The menu eases a little to the left as the library covers it, and drops out of reach after. */
+.drawer-panes.on-library .drawer-pane.is-menu {
+  transform: translateX(-30%);
+  visibility: hidden;
+  transition:
+    transform 200ms ease,
+    visibility 0s 200ms;
+}
+.drawer-pane.is-library {
+  transform: translateX(100%);
+  visibility: hidden;
+  transition:
+    transform 200ms ease,
+    visibility 0s 200ms;
+}
+.drawer-panes.on-library .drawer-pane.is-library {
+  transform: none;
+  visibility: visible;
+  transition:
+    transform 200ms ease,
+    visibility 0s;
+}
+@media (prefers-reduced-motion: reduce) {
+  .drawer-pane,
+  .drawer-panes.on-library .drawer-pane.is-menu,
+  .drawer-pane.is-library,
+  .drawer-panes.on-library .drawer-pane.is-library {
+    transition: none;
+  }
+}
+
+/* The Library row in the menu: a place that opens a panel, outlined like Random entry. */
+button.side-link.library-row {
+  width: 100%;
+  min-height: 2.5rem;
+  border: 1px solid var(--accent);
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+button.side-link.library-row:hover {
+  background: var(--accent-soft);
+}
+.library-row > .ui-icon:first-child {
+  color: var(--accent);
+}
+.library-count {
+  font-size: 0.82rem;
+  color: var(--ink-faint);
+}
+.library-row > .ui-icon:last-child {
+  color: var(--ink-faint);
+}
+
+/* The panel: a top bar, then the folders filling the rest and scrolling inside. */
+.library-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-height: 3.25rem;
+  padding: var(--space-1) var(--space-2) var(--space-1) var(--space-1);
+  border-bottom: 1px solid var(--rule);
+}
+.library-back {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-height: 2.5rem;
+  padding: 0 var(--space-2) 0 var(--space-1);
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--accent);
+  font-size: 0.95rem;
+  cursor: pointer;
+}
+.library-back:hover {
+  background: var(--accent-soft);
+}
+.library-title {
+  flex: 1;
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 600;
+  text-align: center;
+}
+.library-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: var(--space-2) var(--space-2) var(--space-5);
+  padding-bottom: max(var(--space-5), env(safe-area-inset-bottom));
+}
+.library-empty {
+  display: grid;
+  gap: var(--space-3);
+  justify-items: center;
+  padding: var(--space-6) var(--space-4);
+  color: var(--ink-soft);
+  text-align: center;
+}
+.library-empty p {
+  margin: 0;
+}
+.library-empty .new-entry {
+  width: auto;
+  min-height: 2.5rem;
+  padding: 0.55rem var(--space-4);
+}

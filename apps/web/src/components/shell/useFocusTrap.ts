@@ -6,7 +6,8 @@ const FOCUSABLE =
 
 function focusables(root: HTMLElement): HTMLElement[] {
   return [...root.querySelectorAll<HTMLElement>(FOCUSABLE)].filter(
-    (el) => !el.hasAttribute("disabled") && el.getClientRects().length > 0,
+    (el) =>
+      !el.hasAttribute("disabled") && el.getClientRects().length > 0 && !el.closest("[inert]"),
   );
 }
 

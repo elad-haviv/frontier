@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { edit, entry, noSidewaysScroll, openMenu, openSideBar, pushToMain } from "./helpers.ts";
+import { edit, entry, noSidewaysScroll, openLibrary, openMenu, pushToMain } from "./helpers.ts";
 
 test("refuses the wrong password", async ({ browser }) => {
   // A fresh browser with no session.
@@ -162,7 +162,7 @@ test("lists what needs attention on the status page", async ({ page }) => {
 
 test("opens the folder list and finds an entry in it", async ({ page }) => {
   await page.goto(entry("README.md"));
-  await openSideBar(page);
+  await openLibrary(page);
   await page
     .getByRole("treeitem", { name: "Harbor", exact: true })
     .getByRole("link", { name: "Harbor", exact: true })

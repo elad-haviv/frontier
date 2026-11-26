@@ -162,6 +162,7 @@ export function Tree({
   onNewEntry,
   onChanged,
   newFolderAsked = 0,
+  replaceNav = false,
 }: {
   tree: TreeResponse;
   /** The entry in view, by its path in the library. */
@@ -172,6 +173,8 @@ export function Tree({
   onChanged: () => void;
   /** Rises each time the author asks for a new folder at the top of the library. */
   newFolderAsked?: number;
+  /** Opening an entry replaces the page in the history, as the phone's library panel needs. */
+  replaceNav?: boolean;
 }) {
   const navigate = useNavigate();
   const toast = useToast();
@@ -525,8 +528,9 @@ export function Tree({
     if (e.key === "Enter") {
       e.preventDefault();
       e.stopPropagation();
-      if (row.kind === "note") navigate(entryUrl(row.note!.moved ?? row.note!.path));
-      else if (row.own) navigate(entryUrl(row.own.moved ?? row.own.path));
+      if (row.kind === "note")
+        navigate(entryUrl(row.note!.moved ?? row.note!.path), { replace: replaceNav });
+      else if (row.own) navigate(entryUrl(row.own.moved ?? row.own.path), { replace: replaceNav });
       else node.toggle();
     } else if (e.key === "F2" && row.kind === "folder") {
       e.preventDefault();
@@ -605,6 +609,7 @@ export function Tree({
         dragHandle={props.dragHandle}
         current={current}
         touch={touch}
+        replace={replaceNav}
         menuOpen={menuFor === node.data.path}
         onMenu={(open) => setMenuFor(open ? node.data.path : null)}
         actions={node.data.kind === "folder" ? actionsFor(node.data) : []}
@@ -710,6 +715,7 @@ function RowBody({
   dragHandle,
   current,
   touch,
+  replace,
   menuOpen,
   onMenu,
   actions,
@@ -721,6 +727,7 @@ function RowBody({
   dragHandle?: ((el: HTMLDivElement | null) => void) | undefined;
   current: string;
   touch: boolean;
+  replace: boolean;
   menuOpen: boolean;
   onMenu: (open: boolean) => void;
   actions: Action[];
@@ -787,6 +794,7 @@ function RowBody({
   ) : row.kind === "note" ? (
     <Link
       to={entryUrl(row.note!.moved ?? row.note!.path)}
+      replace={replace}
       tabIndex={-1}
       className={`tree-note${draft ? " is-draft" : ""}${row.note!.state === "quarantined" ? " is-quarantined" : ""}${current === (row.note!.moved ?? row.note!.path) ? " active" : ""}`}
     >
@@ -795,6 +803,7 @@ function RowBody({
   ) : row.own ? (
     <Link
       to={entryUrl(row.own.moved ?? row.own.path)}
+      replace={replace}
       tabIndex={-1}
       className={`tree-folder${draft ? " is-draft" : ""}${current === (row.own.moved ?? row.own.path) ? " active" : ""}`}
       onClick={() => node.open()}

@@ -1,5 +1,5 @@
 import { expect, type Locator, type Page, test } from "@playwright/test";
-import { entry, onMain, openEditor, openSideBar, publish, review, saved } from "./helpers.ts";
+import { entry, onMain, openEditor, openLibrary, publish, review, saved } from "./helpers.ts";
 
 /** The tree's row for a folder or an entry, by its name. */
 const row = (page: Page, name: string): Locator =>
@@ -19,7 +19,7 @@ async function openTree(page: Page, path = "README.md"): Promise<void> {
   await roomForTree(page);
   await page.goto(entry(path));
   await expect(page.locator(".entry h1").first()).toBeVisible();
-  await openSideBar(page);
+  await openLibrary(page);
   await expect(page.getByRole("tree")).toBeVisible();
   await treeSettled(page);
 }
@@ -111,7 +111,7 @@ test("CUJ 1: makes a folder, styles it, fills it, and saves it as a version", as
   // It is still there after a reload.
   await page.reload();
   await expect(page.locator(".entry h1").first()).toBeVisible();
-  await openSideBar(page);
+  await openLibrary(page);
   await expect(row(page, name).locator(".tree-icon")).toHaveClass(/folder-tint-sea/);
   await expect(row(page, name).locator(".tree-mark")).toHaveText("empty");
 
@@ -261,7 +261,7 @@ test("CUJ 7: a folder with an unpublished change is not deleted; then it is, unt
   await discardAll(page);
   await page.reload();
   await expect(page.locator(".entry h1").first()).toBeVisible();
-  await openSideBar(page);
+  await openLibrary(page);
   await (
     await folderMenu(page, "02 People", isMobile)
   )
@@ -283,7 +283,7 @@ test("CUJ 7: a folder with an unpublished change is not deleted; then it is, unt
   await discardAll(page);
   await page.reload();
   await expect(page.locator(".entry h1").first()).toBeVisible();
-  await openSideBar(page);
+  await openLibrary(page);
   await expect(row(page, "02 People")).toBeVisible();
 });
 
@@ -360,7 +360,11 @@ test("New entry beside New folder starts an entry at the top of the library", as
 }) => {
   // In view is an entry in a folder; the side bar's own New entry would start there.
   await openTree(page, "01 Places/Harbor/Harbor.md");
-  const button = page.locator(".left-tree").getByRole("button", { name: "New entry", exact: true });
+  // Beside the library's heading in the side bar; in the library panel's top bar on a phone.
+  const library = isMobile
+    ? page.getByRole("region", { name: "Library" })
+    : page.locator(".left-tree");
+  const button = library.getByRole("button", { name: "New entry", exact: true });
   if (!isMobile) {
     await button.hover();
     await expect(page.getByRole("tooltip")).toHaveText("New entry");

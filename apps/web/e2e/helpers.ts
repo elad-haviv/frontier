@@ -170,6 +170,20 @@ export async function openSideBar(page: Page): Promise<void> {
   }
 }
 
+/**
+ * Shows the library's folders: the side bar's own on a desktop; on a phone the drawer opens and
+ * its Library row opens the panel with the tree.
+ */
+export async function openLibrary(page: Page): Promise<void> {
+  const drawer = page.getByRole("dialog", { name: "Side bar" });
+  if (!(await drawer.isVisible())) await openSideBar(page);
+  const row = drawer.getByRole("button", { name: /^Library/ });
+  if (await row.isVisible()) {
+    await row.click();
+    await expect(page.getByRole("region", { name: "Library" })).toBeVisible();
+  }
+}
+
 /** Goes to one of the side bar's places, such as "Maps" or "Inbox", as the author would. */
 export async function goTo(page: Page, place: string): Promise<void> {
   await openSideBar(page);
