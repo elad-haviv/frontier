@@ -243,6 +243,9 @@ the ideas inbox, wait for a later part.
 
 ## 8c Character chat
 
+> The page was redesigned in [stage 27](stage-27-talk-with-a-character.md): the profile is grouped
+> by kind and stays beside the conversation, and conversations are saved.
+
 Built on 2026-11-21 following CUJ 12 of the parent, with these choices, which the author can
 overrule:
 

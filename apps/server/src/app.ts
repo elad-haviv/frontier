@@ -20,6 +20,7 @@ import { LibraryFileStore } from "./library/files.js";
 import { folderRoutes } from "./routes/folders.js";
 import { libraryFileRoutes } from "./routes/libraryFiles.js";
 import { Conversations } from "./ai/conversations.js";
+import { Talks } from "./ai/talks.js";
 import { EntryDrafter } from "./ai/draftEntry.js";
 import { LoreAsker } from "./ai/lore.js";
 import { entryDraftRoutes } from "./routes/entryDraft.js";
@@ -127,6 +128,7 @@ export interface Services {
   characters: CharacterTalk;
   discoverer: Discoverer;
   conversations: Conversations;
+  talks: Talks;
   comments: CommentStore;
   consults: ConsultStore;
   backup: Backup;
@@ -278,6 +280,7 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
   });
   const search = new SearchIndex(index);
   const conversations = new Conversations(stateDir, files);
+  const talks = new Talks(stateDir, files);
   const comments = new CommentStore(stateDir, files);
   const consults = new ConsultStore(stateDir, files);
   const chronicles = new ChronicleStore({ vaultDir, git, index, drafts, changer });
@@ -414,6 +417,7 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
     characters,
     discoverer,
     conversations,
+    talks,
     comments,
     consults,
     async sync() {
