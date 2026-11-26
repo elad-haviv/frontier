@@ -220,10 +220,12 @@ describe("the question of the day", () => {
   it("is a new day's question after midnight in the reader's time zone", async () => {
     await start([{ question: "First?" }, { question: "Tomorrow's?" }]);
     const first = await ask({ tz: 0 });
-    // Far enough ahead that it is already the next day there.
-    const hours = 24 - new Date().getUTCHours();
-    expect(await today(hours * 60)).toBeNull();
-    const next = await ask({ tz: hours * 60 });
+    // A zone where the date is another one than in UTC, whatever the hour is now: ahead of UTC when
+    // that reaches the next day (zones go up to +14 h), otherwise behind it, into the day before.
+    const utcHour = new Date().getUTCHours();
+    const tz = utcHour >= 10 ? (24 - utcHour) * 60 : -(utcHour + 1) * 60;
+    expect(await today(tz)).toBeNull();
+    const next = await ask({ tz });
     expect(next.day).not.toBe(first.day);
     expect(next.question).toBe("Tomorrow's?");
   });
