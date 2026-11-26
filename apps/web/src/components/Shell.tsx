@@ -129,10 +129,22 @@ function pageName(pathname: string, entry: string, waitingTitle: string): string
   return PAGE_NAMES.find(([re]) => re.test(pathname))?.[1] ?? "Frontier";
 }
 
+/** The key in a history entry's state that marks the entry standing for the library panel. */
+const LIBRARY_MARK = "frontierLibrary";
+
 /** The phone's drawer: the left side bar over a dimmed page, holding the focus while open. */
-function Drawer({ onClose, children }: { onClose: () => void; children: ReactNode }) {
+function Drawer({
+  onClose,
+  onEscape,
+  children,
+}: {
+  onClose: () => void;
+  /** What Escape does: close the library panel back to the menu, or the drawer itself. */
+  onEscape: () => void;
+  children: ReactNode;
+}) {
   const box = useRef<HTMLDivElement>(null);
-  useFocusTrap(box, true, onClose);
+  useFocusTrap(box, true, onEscape);
   return (
     <>
       <div className="scrim" aria-hidden="true" onClick={onClose} />
@@ -151,6 +163,20 @@ export function Shell({ children }: { children: ReactNode }) {
   const store = useMemo(() => new ShellStore(), []);
   useSyncExternalStore(store.subscribe, store.snapshot);
   const [drawer, setDrawer] = useState(false);
+  /** The phone's library panel, over the drawer's menu. */
+  const [library, setLibrary] = useState(false);
+  /**
+   * Whether the history entry we stand on is the library panel's, so the browser's Back closes the
+   * panel and not the page. The entry is pushed when the panel opens (the same address, marked in
+   * its state) and popped when it closes.
+   */
+  const libraryEntry = useRef(false);
+  /** Our own history.back() has been asked for and its popstate has not arrived yet. */
+  const backing = useRef(false);
+  /** The panel was opened while that was so: it takes a new entry when the popstate lands. */
+  const reopen = useRef(false);
+  /** When the browser's own Back or swipe last closed the panel, so we do not close it twice. */
+  const lastPop = useRef(0);
   const [rail, setRail] = useState(() => readPrefs(kind).rail);
   const [version, setVersion] = useState(0);
   const [switching, setSwitching] = useState(false);
@@ -171,6 +197,63 @@ export function Shell({ children }: { children: ReactNode }) {
   // The status comes from the server's stream, through the connection service.
   const { snapshot: status } = useConnection();
   const current = currentEntryPath(pathname);
+
+  const phoneNow = useRef(phone);
+  phoneNow.current = phone;
+  const pushLibraryEntry = useCallback(() => {
+    // The same page and the router's own state, plus a mark. The router reads only its own keys,
+    // so it sees nothing move; the mark lets Back, Forward and a reload find the panel again.
+    window.history.pushState({ ...window.history.state, [LIBRARY_MARK]: true }, "");
+    libraryEntry.current = true;
+  }, []);
+  const openLibrary = useCallback(() => {
+    lastPop.current = 0;
+    if (backing.current) reopen.current = true;
+    else if (!libraryEntry.current) pushLibraryEntry();
+    setLibrary(true);
+  }, [pushLibraryEntry]);
+  /** Back to the menu: ‹ Menu, Escape and a swipe all end here, and take the entry away. */
+  const closeLibrary = useCallback(() => {
+    setLibrary(false);
+    reopen.current = false;
+    if (!libraryEntry.current) return;
+    libraryEntry.current = false;
+    // The browser's own swipe back has just taken the entry away: do not go back a second time.
+    if (Date.now() - lastPop.current < 300) return;
+    backing.current = true;
+    window.history.back();
+  }, []);
+  /** Closes the drawer and the library with it, so it opens on the menu next time. */
+  const closeDrawer = useCallback(() => {
+    setDrawer(false);
+    closeLibrary();
+  }, [closeLibrary]);
+  // The browser's Back and Forward: Back from the panel's entry closes the panel; arriving on one
+  // (Forward, or Back from a page opened over it) opens it again.
+  useEffect(() => {
+    const popped = () => {
+      if (backing.current) {
+        backing.current = false;
+        if (reopen.current) {
+          reopen.current = false;
+          pushLibraryEntry();
+        }
+        return;
+      }
+      const marked = window.history.state?.[LIBRARY_MARK] === true;
+      if (libraryEntry.current && !marked) {
+        libraryEntry.current = false;
+        lastPop.current = Date.now();
+        setLibrary(false);
+      } else if (!libraryEntry.current && marked && phoneNow.current) {
+        libraryEntry.current = true;
+        setDrawer(true);
+        setLibrary(true);
+      }
+    };
+    window.addEventListener("popstate", popped);
+    return () => window.removeEventListener("popstate", popped);
+  }, [pushLibraryEntry]);
 
   // Each kind of screen keeps its own side bars: the rail on a map, the panel last open, its width.
   useLayoutEffect(() => store.enter(kind, phone), [store, kind, phone]);
@@ -205,7 +288,11 @@ export function Shell({ children }: { children: ReactNode }) {
   useKeyListener();
   useShortcut("app.switcher", () => setSwitching(true));
   useShortcut("app.keys", () => setSheet(true));
-  useShortcut("app.sidebar", () => (phone ? setDrawer((o) => !o) : fold(!rail)));
+  useShortcut("app.sidebar", () => {
+    if (!phone) return fold(!rail);
+    if (drawer) closeDrawer();
+    else setDrawer(true);
+  });
   // Keep going (stage 25): "g h" and "g r".
   const roll = useRandom();
   useShortcut("app.home", () => {
@@ -217,21 +304,33 @@ export function Shell({ children }: { children: ReactNode }) {
     void roll();
   });
 
-  // A new page opens at its top, and on a phone the drawer closes.
+  // A new page opens at its top, and on a phone the drawer closes. An entry marked as the
+  // library's (a reload, or Back from a page opened over it) opens the panel instead; any other
+  // entry is not the panel's, whatever it replaced or was pushed over.
   useEffect(() => {
-    setDrawer(false);
+    if (window.history.state?.[LIBRARY_MARK] === true && phoneNow.current) {
+      libraryEntry.current = true;
+      setDrawer(true);
+      setLibrary(true);
+    } else {
+      libraryEntry.current = false;
+      setDrawer(false);
+      setLibrary(false);
+    }
     scrollPageToTop();
   }, [pathname]);
   useEffect(() => {
-    if (!phone) setDrawer(false);
-  }, [phone]);
+    if (!phone && drawer) closeDrawer();
+  }, [phone, drawer, closeDrawer]);
   // A page asked to see a folder in the tree: the side bar unfolds, or on a phone the drawer
   // opens; the tree then opens the folder (Tree).
   const reveal = store.reveal?.n;
   useEffect(() => {
     if (reveal === undefined) return;
-    if (phone) setDrawer(true);
-    else fold(false);
+    if (phone) {
+      setDrawer(true);
+      openLibrary();
+    } else fold(false);
     // Only a new ask opens the bar.
   }, [reveal]);
 
@@ -280,19 +379,19 @@ export function Shell({ children }: { children: ReactNode }) {
   const actions = {
     onSearch: () => setSwitching(true),
     onNewEntry: () => {
-      setDrawer(false);
+      closeDrawer();
       setMaking(folderInView);
     },
     onNewEntryIn: (folder: string) => {
-      setDrawer(false);
+      closeDrawer();
       setMaking(folder);
     },
     onRandom: () => {
-      setDrawer(false);
+      closeDrawer();
       void roll();
     },
     onKeys: () => {
-      setDrawer(false);
+      closeDrawer();
       setSheet(true);
     },
     onLogout: () => void logout(),
@@ -399,18 +498,21 @@ export function Shell({ children }: { children: ReactNode }) {
                 )}
               </Group>
               {phone && drawer && (
-                <Drawer onClose={() => setDrawer(false)}>
+                <Drawer onClose={closeDrawer} onEscape={library ? closeLibrary : closeDrawer}>
                   <LeftBar
                     tree={tree}
                     current={current}
                     onRetryTree={refresh}
                     drawer
+                    library={library}
+                    onLibrary={(open) => (open ? openLibrary() : closeLibrary())}
+                    onClose={closeDrawer}
                     top={
                       <IconButton
                         label="Close the side bar"
                         icon={X}
                         className="drawer-close"
-                        onClick={() => setDrawer(false)}
+                        onClick={closeDrawer}
                       />
                     }
                     {...actions}

@@ -182,6 +182,11 @@ export function entriesUnder(f: TreeFolder): number {
   return f.notes.length + f.folders.reduce((n, c) => n + entriesUnder(c), 0);
 }
 
+/** The entries in the whole library: the top level's and every folder's. */
+export function entriesIn(tree: TreeResponse): number {
+  return tree.notes.length + tree.folders.reduce((n, f) => n + entriesUnder(f), 0);
+}
+
 /** The folders under a folder, itself not counted. */
 export function foldersUnder(f: TreeFolder): number {
   return f.folders.reduce((n, c) => n + 1 + foldersUnder(c), 0);

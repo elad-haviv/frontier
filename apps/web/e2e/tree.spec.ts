@@ -1,5 +1,5 @@
 import { expect, type Locator, type Page, test } from "@playwright/test";
-import { entry, onMain, openEditor, openSideBar, publish, review, saved } from "./helpers.ts";
+import { entry, onMain, openEditor, openLibrary, publish, review, saved } from "./helpers.ts";
 
 /** The tree's row for a folder or an entry, by its name. */
 const row = (page: Page, name: string): Locator =>
@@ -19,7 +19,7 @@ async function openTree(page: Page, path = "README.md"): Promise<void> {
   await roomForTree(page);
   await page.goto(entry(path));
   await expect(page.locator(".entry h1").first()).toBeVisible();
-  await openSideBar(page);
+  await openLibrary(page);
   await expect(page.getByRole("tree")).toBeVisible();
   await treeSettled(page);
 }
@@ -111,7 +111,7 @@ test("CUJ 1: makes a folder, styles it, fills it, and saves it as a version", as
   // It is still there after a reload.
   await page.reload();
   await expect(page.locator(".entry h1").first()).toBeVisible();
-  await openSideBar(page);
+  await openLibrary(page);
   await expect(row(page, name).locator(".tree-icon")).toHaveClass(/folder-tint-sea/);
   await expect(row(page, name).locator(".tree-mark")).toHaveText("empty");
 
@@ -226,6 +226,15 @@ test("a folder reordered by dragging keeps its place after a reload", async ({
       .locator('[role="treeitem"][aria-level="1"]')
       .evaluateAll((els) => els.map((e) => e.getAttribute("aria-label")));
   expect((await top()).slice(0, 3)).toEqual(["01 Places", "02 People", "03 Things"]);
+  // The library grows as the other tests run, so with the folders open the two rows can be too far
+  // apart to be in sight together. Folded, the three sit one under the other.
+  for (const name of ["01 Places", "02 People", "03 Things"]) {
+    const folder = row(page, name);
+    if ((await folder.getAttribute("aria-expanded")) === "true") {
+      await folder.locator(".twist").first().click();
+    }
+  }
+  await expect(row(page, "01 Places")).toHaveAttribute("aria-expanded", "false");
   // Dropped on the top edge of 01 Places, 03 Things goes before it.
   const target = row(page, "01 Places").locator(".tree-row");
   await row(page, "03 Things").dragTo(target, { targetPosition: { x: 60, y: 2 } });
@@ -261,7 +270,7 @@ test("CUJ 7: a folder with an unpublished change is not deleted; then it is, unt
   await discardAll(page);
   await page.reload();
   await expect(page.locator(".entry h1").first()).toBeVisible();
-  await openSideBar(page);
+  await openLibrary(page);
   await (
     await folderMenu(page, "02 People", isMobile)
   )
@@ -283,7 +292,7 @@ test("CUJ 7: a folder with an unpublished change is not deleted; then it is, unt
   await discardAll(page);
   await page.reload();
   await expect(page.locator(".entry h1").first()).toBeVisible();
-  await openSideBar(page);
+  await openLibrary(page);
   await expect(row(page, "02 People")).toBeVisible();
 });
 
@@ -360,7 +369,11 @@ test("New entry beside New folder starts an entry at the top of the library", as
 }) => {
   // In view is an entry in a folder; the side bar's own New entry would start there.
   await openTree(page, "01 Places/Harbor/Harbor.md");
-  const button = page.locator(".left-tree").getByRole("button", { name: "New entry", exact: true });
+  // Beside the library's heading in the side bar; in the library panel's top bar on a phone.
+  const library = isMobile
+    ? page.getByRole("region", { name: "Library" })
+    : page.locator(".left-tree");
+  const button = library.getByRole("button", { name: "New entry", exact: true });
   if (!isMobile) {
     await button.hover();
     await expect(page.getByRole("tooltip")).toHaveText("New entry");

@@ -6,7 +6,8 @@ const FOCUSABLE =
 
 function focusables(root: HTMLElement): HTMLElement[] {
   return [...root.querySelectorAll<HTMLElement>(FOCUSABLE)].filter(
-    (el) => !el.hasAttribute("disabled") && el.getClientRects().length > 0,
+    (el) =>
+      !el.hasAttribute("disabled") && el.getClientRects().length > 0 && !el.closest("[inert]"),
   );
 }
 
@@ -34,6 +35,8 @@ export function useFocusTrap(
       // A key a tooltip used on the way (Escape closing it) still closes the trap.
       if (!isFree(e)) return;
       if (e.key === "Escape") {
+        // A field that ends its own edit with Escape (a rename) keeps the key to itself.
+        if ((e.target as Element | null)?.closest?.("[data-own-escape]")) return;
         e.preventDefault();
         escape.current();
         return;

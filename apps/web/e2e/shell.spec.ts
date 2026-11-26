@@ -176,9 +176,9 @@ test("on a phone the drawer opens with the places first, keeps the focus, and cl
   await menu.click();
   const drawer = page.getByRole("dialog", { name: "Side bar" });
   await expect(drawer).toBeVisible();
-  // The places come before the folders, so they are found without scrolling.
+  // The places come first, and the library is a row after them (its folders are in its panel).
   const maps = (await drawer.getByRole("link", { name: /^Maps/ }).boundingBox())!;
-  const library = (await drawer.getByRole("heading", { name: "Library" }).boundingBox())!;
+  const library = (await drawer.getByRole("button", { name: /^Library/ }).boundingBox())!;
   expect(maps.y).toBeLessThan(library.y);
   await expect(drawer.getByRole("link", { name: /^Inbox/ })).toBeVisible();
   await expect(drawer.getByRole("button", { name: "App menu" })).toBeVisible();
