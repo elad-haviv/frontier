@@ -1,0 +1,23 @@
+/* A person's initials in a round mark, in the accent's soft colour. */
+.ui-avatar {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-family: var(--sans);
+  font-weight: 600;
+  line-height: 1;
+  user-select: none;
+}
+.ui-avatar-md {
+  width: 2rem;
+  height: 2rem;
+  font-size: 0.8rem;
+}
+.ui-avatar-sm {
+  width: 1.5rem;
+  height: 1.5rem;
+  font-size: 0.65rem;
+}

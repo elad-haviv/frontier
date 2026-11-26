@@ -178,7 +178,11 @@ export const Passkey = z.object({
 export type Passkey = z.infer<typeof Passkey>;
 
 export const Settings = z.object({
-  /** Empty when no password is set. */
+  /**
+   * The password, passkeys and switch below belong to the one account that existed before stage
+   * 27a. At the first start after it they are copied into the people store (`people.json`) and
+   * are no longer read; the file keeps them as they were.
+   */
   passwordHash: z.string(),
   ai: AiSettings.default({}),
   passkeys: z.array(Passkey).default([]),

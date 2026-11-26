@@ -7,13 +7,16 @@ import { loadConfig } from "../../src/config.js";
 import { makeTestRepo, type TestRepo } from "./repo.js";
 
 export const PASSWORD = "correct horse battery";
+/** The test account's email and name: the same as the commit author's, so saved versions read as before. */
+export const EMAIL = "author@example.com";
+export const NAME = "The Author";
 
 export interface TestApp extends App {
   repo: TestRepo;
   gitCommands: string[][];
   /** The session cookie after a successful login. */
   cookie: string;
-  login(password?: string): Promise<LightMyRequestResponse>;
+  login(password?: string, email?: string): Promise<LightMyRequestResponse>;
   get(url: string): Promise<LightMyRequestResponse>;
   put(url: string, body: unknown): Promise<LightMyRequestResponse>;
   del(url: string): Promise<LightMyRequestResponse>;
@@ -45,6 +48,21 @@ export function testEnv(
 
 let cachedHash: Promise<string> | null = null;
 
+/** Makes the first account (the admin), with the settings file the rest of the server expects. */
+export async function seedAccount(
+  services: App["services"],
+  password = PASSWORD,
+  extra: { email?: string; name?: string } = {},
+) {
+  if (password === PASSWORD) cachedHash ??= hashPassword(PASSWORD);
+  if (!(await services.settings.read())) await services.settings.write({ passwordHash: "" });
+  return services.people.create({
+    name: extra.name ?? NAME,
+    email: extra.email ?? EMAIL,
+    passwordHash: password === PASSWORD ? await cachedHash! : await hashPassword(password),
+  });
+}
+
 /** A server on a fresh copy of the fixture vault, cloned and indexed, with a password set. */
 export async function makeTestApp(
   extraEnv: Record<string, string> = {},
@@ -60,19 +78,18 @@ export async function makeTestApp(
   });
   await built.services.git.ensureClone();
   await built.services.sync();
-  cachedHash ??= hashPassword(PASSWORD);
-  await built.services.settings.write({ passwordHash: await cachedHash });
+  await seedAccount(built.services);
 
   const t: TestApp = {
     ...built,
     repo,
     gitCommands,
     cookie: "",
-    async login(password = PASSWORD) {
+    async login(password = PASSWORD, email = EMAIL) {
       const res = await built.app.inject({
         method: "POST",
         url: "/api/login",
-        payload: { password },
+        payload: { email, password },
       });
       const set = res.headers["set-cookie"];
       const first = Array.isArray(set) ? set[0] : set;

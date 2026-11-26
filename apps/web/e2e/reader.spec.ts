@@ -1,15 +1,26 @@
 import { expect, test } from "@playwright/test";
-import { edit, entry, noSidewaysScroll, openLibrary, openMenu, pushToMain } from "./helpers.ts";
+import {
+  EMAIL,
+  edit,
+  entry,
+  noSidewaysScroll,
+  openLibrary,
+  openMenu,
+  pushToMain,
+} from "./helpers.ts";
 
-test("refuses the wrong password", async ({ browser }) => {
+test("refuses a wrong password, in words that do not say which part was wrong", async ({
+  browser,
+}) => {
   // A fresh browser with no session.
   const page = await (
     await browser.newContext({ storageState: { cookies: [], origins: [] } })
   ).newPage();
   await page.goto("/");
+  await page.fill("#email", EMAIL);
   await page.fill("#password", "not the password");
   await page.click("button[type=submit]");
-  await expect(page.locator(".login-card .error")).toHaveText("Wrong password.");
+  await expect(page.locator(".login-card .error")).toHaveText("Wrong email or password.");
 });
 
 test("shows an entry with its links, and follows one", async ({ page }) => {

@@ -17,6 +17,8 @@ Object.assign(process.env, {
   PUBLIC_URL: `http://localhost:${process.env.PORT}`,
   SESSION_KEY: Buffer.alloc(32, 9).toString("base64"),
   FRONTIER_INITIAL_PASSWORD: "browser-test-password",
+  FRONTIER_INITIAL_EMAIL: "owner@example.com",
+  FRONTIER_INITIAL_NAME: "Olive Owner",
   ICON_FOLDER: "99 Appendices/Icons",
   // The image dialog's web address is tried against the picture server below, on loopback.
   IMAGE_FETCH_ALLOW_LOOPBACK: "1",

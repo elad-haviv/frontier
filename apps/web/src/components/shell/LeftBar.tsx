@@ -35,7 +35,7 @@ import { Icon } from "../ui/Icon.tsx";
 import { IconButton } from "../ui/IconButton.tsx";
 import { Problem } from "../ui/Problem.tsx";
 import { Tip } from "../ui/Tip.tsx";
-import { AppMenu } from "./AppMenu.tsx";
+import { PersonRow } from "./PersonRow.tsx";
 import { isSwipeBack, type Point } from "./swipe.ts";
 import "./LeftBar.css";
 import "./DrawerLibrary.css";
@@ -521,9 +521,8 @@ export function LeftBar({
         <div className="left-status">
           <ConnectionMark words tipSide="top" />
           <Unsent />
-          <span className="left-status-gap" />
-          <AppMenu onKeys={onKeys} onLogout={onLogout} />
         </div>
+        <PersonRow onKeys={onKeys} onLogout={onLogout} />
       </div>
     </div>
   );

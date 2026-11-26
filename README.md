@@ -54,9 +54,16 @@ export PUBLIC_URL=http://localhost:3000 DATA_DIR=/tmp/frontier-data \
   SESSION_KEY=$(openssl rand -base64 32) \
   COMMIT_AUTHOR_NAME="Your Name" COMMIT_AUTHOR_EMAIL=you@example.com \
   COMMIT_BOT_NAME=frontier COMMIT_BOT_EMAIL=frontier@example.com
-npm run set-password -w apps/server   # once
+npm run set-password -w apps/server   # once: asks for the first account's name, email and password
 npm start -w apps/server
 ```
+
+Logging in takes an email and a password. A server that has no account yet makes the first one (the
+admin) from `FRONTIER_INITIAL_PASSWORD`, with `FRONTIER_INITIAL_EMAIL` and `FRONTIER_INITIAL_NAME`,
+or from the set-password command. A server from before accounts turns its one password and its
+passkeys into the first account at the next start, leaving the old settings file as it was. The
+accounts are kept in `/data/state/people.json`, which the backup includes. To set another
+account's password: `npm run set-password -w apps/server -- someone@example.com`.
 
 `.env.example` lists every variable, including the ones for GitHub and the bucket.
 

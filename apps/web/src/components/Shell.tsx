@@ -15,6 +15,7 @@ import { Group, Panel, Separator } from "react-resizable-panels";
 import { X } from "lucide-react";
 import type { StatusSnapshot } from "@frontier/schema";
 import { api, ApiFailure, editUrl } from "../api.ts";
+import { clearMe } from "../me.ts";
 import { updates } from "../offline/updates.ts";
 import { wipeDevice } from "../offline/wipe.ts";
 import { connection, useConnection } from "../sync/connection.ts";
@@ -358,6 +359,7 @@ export function Shell({ children }: { children: ReactNode }) {
     // A borrowed device keeps nothing: the queue and this device's id go, then the app's caches
     // and its service worker. The other tabs hear it and reload too.
     await queue.clear();
+    clearMe();
     await wipeDevice({
       store: queue,
       caches: typeof caches === "undefined" ? undefined : caches,

@@ -2,7 +2,7 @@ import { createHmac } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { hashPassword, verifyPassword } from "../src/auth/password.js";
 import { validSignature } from "../src/routes/webhook.js";
-import { makeTestApp, type TestApp } from "./helpers/app.js";
+import { EMAIL, makeTestApp, NAME, PASSWORD, type TestApp } from "./helpers/app.js";
 
 let t: TestApp;
 beforeEach(async () => {
@@ -44,7 +44,7 @@ describe("session", () => {
   it("logs in with the right password and out again", async () => {
     const wrong = await t.login("wrong password");
     expect(wrong.statusCode).toBe(401);
-    expect(wrong.json().error.message).toBe("Wrong password.");
+    expect(wrong.json().error.message).toBe("Wrong email or password.");
     expect(t.cookie).toBe("");
 
     const ok = await t.login();
@@ -62,6 +62,42 @@ describe("session", () => {
     expect((await t.get("/api/tree")).statusCode).toBe(401);
   });
 
+  it("says the same for a wrong email as for a wrong password", async () => {
+    const wrongEmail = await t.login(PASSWORD, "someone@example.com");
+    const wrongPassword = await t.login("not the password");
+    expect(wrongEmail.statusCode).toBe(401);
+    expect(wrongEmail.json()).toEqual(wrongPassword.json());
+    // An empty email matches only an account that has none.
+    expect((await t.login(PASSWORD, "")).statusCode).toBe(401);
+  });
+
+  it("takes the email in any case and with spaces around it", async () => {
+    expect((await t.login(PASSWORD, `  ${EMAIL.toUpperCase()} `)).statusCode).toBe(200);
+  });
+
+  it("treats a session from before accounts, which said author, as logged out", async () => {
+    const old = t.app.createSecureSession({ user: "author", method: "password" });
+    t.cookie = `frontier_session=${encodeURIComponent(t.app.encodeSecureSession(old))}`;
+    const res = await t.get("/api/tree");
+    expect(res.statusCode).toBe(401);
+    expect((await t.get("/api/session")).json()).toMatchObject({ loggedIn: false, person: null });
+    // Logging in again makes it a session of the person.
+    await t.login();
+    expect((await t.get("/api/session")).json()).toMatchObject({
+      loggedIn: true,
+      person: { name: NAME, email: EMAIL },
+    });
+  });
+
+  it("ends the session of a person who is no longer there", async () => {
+    await t.login();
+    const [person] = await t.services.people.all();
+    await t.services.files.remove(`${t.services.config.dataDir}/state/people.json`);
+    await t.services.people.create({ name: "Someone else", email: "else@example.com" });
+    expect(person!.id).not.toBe((await t.services.people.all())[0]!.id);
+    expect((await t.get("/api/tree")).statusCode).toBe(401);
+  });
+
   it("rejects a tampered cookie", async () => {
     await t.login();
     t.cookie = t.cookie.slice(0, -6) + "AAAAAA";
@@ -69,10 +105,10 @@ describe("session", () => {
   });
 
   it("refuses a login with no password set, and a malformed body", async () => {
-    await t.services.files.remove(`${t.services.config.dataDir}/state/settings.json`);
+    await t.services.files.remove(`${t.services.config.dataDir}/state/people.json`);
     const none = await t.login();
     expect(none.statusCode).toBe(401);
-    expect(none.json().error.message).toMatch(/No password has been set/);
+    expect(none.json().error.message).toMatch(/No account has been made/);
     const bad = await t.post("/api/login", { pass: "x" });
     expect(bad.statusCode).toBe(400);
     expect(bad.json().error.code).toBe("invalid");

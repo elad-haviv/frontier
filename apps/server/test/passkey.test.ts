@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { SessionResponse, SettingsResponse } from "@frontier/schema";
+import { MeResponse, SessionResponse } from "@frontier/schema";
 import { makeTestApp, PASSWORD, type TestApp } from "./helpers/app.js";
 
 let t: TestApp;
@@ -16,13 +16,22 @@ const KEY = {
   name: "Phone",
   addedAt: "2026-11-21T10:00:00Z",
 };
-const withKey = (passwordOff = false) =>
-  t.services.settings.update((s) => ({ ...s, passkeys: [KEY], passwordOff }));
+const withKey = async (passwordOff = false) => {
+  const [person] = await t.services.people.all();
+  await t.services.people.update(person!.id, (p) => ({ ...p, passkeys: [KEY], passwordOff }));
+};
+const me = async () => MeResponse.parse((await t.get("/api/me")).json());
 const session = async () => SessionResponse.parse((await t.get("/api/session")).json());
 
 describe("passkeys", () => {
   it("offers a passkey on the login page only when one exists", async () => {
-    expect(await session()).toEqual({ loggedIn: false, passkeys: false, password: true });
+    expect(await session()).toEqual({
+      loggedIn: false,
+      person: null,
+      emailless: false,
+      passkeys: false,
+      password: true,
+    });
     expect((await t.post("/api/passkeys/login/options")).statusCode).toBe(404);
     await withKey();
     expect(await session()).toMatchObject({ passkeys: true, password: true });
@@ -48,8 +57,7 @@ describe("passkeys", () => {
       response: { id: "x" },
     });
     expect(bad.statusCode).toBe(400);
-    const settings = SettingsResponse.parse((await t.get("/api/settings")).json());
-    expect(settings.signIn).toEqual({ passkeys: [], passwordOff: false, method: "password" });
+    expect(await me()).toMatchObject({ passkeys: [], passwordOff: false, method: "password" });
   });
 
   it("refuses a login response without a challenge or from an unknown passkey", async () => {
@@ -98,8 +106,7 @@ describe("passkeys", () => {
     expect((await t.del(`/api/passkeys/${KEY.id}`)).statusCode).toBe(200);
     expect((await session()).passkeys).toBe(false);
     // The AI settings and the password are untouched by all of this.
-    const stored = await t.services.settings.read();
-    expect(stored!.passwordHash).toMatch(/^\$argon2/);
-    expect(stored!.ai.monthlyCapUsd).toBe(10);
+    expect((await t.services.people.all())[0]!.passwordHash).toMatch(/^\$argon2/);
+    expect((await t.services.settings.read())!.ai.monthlyCapUsd).toBe(10);
   });
 });

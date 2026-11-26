@@ -22,6 +22,7 @@ import {
 } from "@frontier/vault";
 import sharp from "sharp";
 import yauzl from "yauzl";
+import { authorOf, personOf } from "../auth/session.js";
 import { ApiError } from "../errors.js";
 import type { Services } from "../app.js";
 
@@ -211,7 +212,11 @@ export function importRoutes(app: FastifyInstance, s: Services): void {
       }
       let made;
       try {
-        made = await s.git.commitFolder(root, message || "Import a vault");
+        made = await s.git.commitFolder(
+          root,
+          message || "Import a vault",
+          authorOf(personOf(request), s.config.commitAuthor),
+        );
       } catch (err) {
         throw new ApiError("invalid", err instanceof Error ? err.message : "Nothing was imported.");
       }

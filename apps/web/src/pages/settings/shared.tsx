@@ -22,12 +22,12 @@ import { Icon } from "../../components/ui/Icon.tsx";
 export interface Section {
   path: string;
   title: string;
-  group: "AI" | "Library" | "This device" | "Account";
+  group: "AI" | "Library" | "This device" | "You";
   /** Whether it shows with no connection. */
   offline: boolean;
 }
 
-/** Most used first; the device and the account last, as in most apps. */
+/** Most used first; the device and you last, as in most apps. */
 export const SECTIONS: Section[] = [
   { path: "ai/providers", title: "Providers", group: "AI", offline: false },
   { path: "ai/models", title: "Models", group: "AI", offline: false },
@@ -37,7 +37,8 @@ export const SECTIONS: Section[] = [
   { path: "library/keep-going", title: "Keep going", group: "Library", offline: false },
   { path: "library/backups", title: "Backups and export", group: "Library", offline: false },
   { path: "device", title: "Offline copy", group: "This device", offline: true },
-  { path: "account", title: "Signing in", group: "Account", offline: false },
+  { path: "profile", title: "Profile", group: "You", offline: false },
+  { path: "account", title: "Signing in", group: "You", offline: false },
 ];
 
 export const TASKS: { task: AiTaskName; title: string; about: string }[] = [

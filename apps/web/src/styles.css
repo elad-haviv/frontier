@@ -203,6 +203,52 @@ button.plain {
   font-size: 0.9rem;
 }
 
+.login-form {
+  display: grid;
+  gap: 0.6rem;
+}
+
+/* The passkey is the first way in, so it is the filled button; the password form is the second. */
+.login-card button.login-passkey {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  margin-top: 0;
+}
+.login-card button.secondary {
+  border: 1px solid var(--rule);
+  background: transparent;
+  color: var(--ink);
+}
+.login-or {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin: 0.4rem 0 0;
+  color: var(--ink-faint);
+  font-size: 0.85rem;
+}
+.login-or::before,
+.login-or::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--rule);
+}
+.login-hint {
+  margin: -0.2rem 0 0;
+  color: var(--ink-faint);
+  font-size: 0.85rem;
+}
+.login-card .login-note {
+  margin: 0.8rem 0 0;
+  font-family: var(--sans);
+  font-size: 0.85rem;
+  font-style: normal;
+  text-align: center;
+}
+
 /* ---- Shell -------------------------------------------------------------------------------- */
 
 .preview-tag {

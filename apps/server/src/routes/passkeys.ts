@@ -1,6 +1,7 @@
 /**
- * Passkey login (WebAuthn). The server keeps only the public half of each passkey. The challenge
- * of a ceremony lives in the signed session cookie for five minutes.
+ * Passkey login (WebAuthn). The server keeps only the public half of each passkey, with the
+ * person it belongs to; a login finds the person from the credential. The challenge of a
+ * ceremony lives in the signed session cookie for five minutes.
  */
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import {
@@ -10,11 +11,12 @@ import {
   verifyRegistrationResponse,
 } from "@simplewebauthn/server";
 import { z } from "zod";
+import { personOf, startSession } from "../auth/session.js";
 import { ApiError } from "../errors.js";
 import type { Services } from "../app.js";
+import { passwordWorks, waysIn } from "./auth.js";
 
 const FIVE_MINUTES = 5 * 60 * 1000;
-const USER_ID = new TextEncoder().encode("frontier-author");
 
 const b64 = (bytes: Uint8Array) => Buffer.from(bytes).toString("base64url");
 const unb64 = (text: string) => new Uint8Array(Buffer.from(text, "base64url"));
@@ -43,15 +45,15 @@ export function passkeyRoutes(app: FastifyInstance, s: Services): void {
   }
 
   app.post("/api/passkeys/register/options", async (request) => {
-    const settings = (await s.settings.read())!;
+    const person = personOf(request);
     const options = await generateRegistrationOptions({
       rpName: "Frontier",
       rpID,
-      userID: USER_ID,
-      userName: "author",
-      userDisplayName: "Author",
+      userID: new TextEncoder().encode(person.id),
+      userName: person.email || person.name || "frontier",
+      userDisplayName: person.name || person.email || "Frontier",
       attestationType: "none",
-      excludeCredentials: settings.passkeys.map((p) => ({
+      excludeCredentials: person.passkeys.map((p) => ({
         id: p.id,
         transports: p.transports as Transport[],
       })),
@@ -80,7 +82,12 @@ export function passkeyRoutes(app: FastifyInstance, s: Services): void {
       throw new ApiError("invalid", "The passkey could not be checked. Try again.");
     }
     const { credential } = result.registrationInfo;
-    await s.settings.update((now) => ({
+    // A credential id belongs to one account: it is not taken from another.
+    const owner = await s.people.byPasskey(credential.id);
+    if (owner && owner.id !== personOf(request).id) {
+      throw new ApiError("invalid", "The passkey could not be checked. Try again.");
+    }
+    await s.people.update(personOf(request).id, (now) => ({
       ...now,
       passkeys: [
         ...now.passkeys.filter((p) => p.id !== credential.id),
@@ -98,14 +105,15 @@ export function passkeyRoutes(app: FastifyInstance, s: Services): void {
   });
 
   app.post("/api/passkeys/login/options", async (request) => {
-    const settings = await s.settings.read();
-    if (!settings || settings.passkeys.length === 0) {
+    // Nobody has said who they are yet, so every passkey is offered to the device.
+    const keys = (await s.people.all()).flatMap((p) => p.passkeys);
+    if (keys.length === 0) {
       throw new ApiError("not_found", "No passkey is registered.");
     }
     const options = await generateAuthenticationOptions({
       rpID,
       userVerification: "required",
-      allowCredentials: settings.passkeys.map((p) => ({
+      allowCredentials: keys.map((p) => ({
         id: p.id,
         transports: p.transports as Transport[],
       })),
@@ -118,10 +126,10 @@ export function passkeyRoutes(app: FastifyInstance, s: Services): void {
     s.loginLimit.attempt(request.ip);
     const { response } = LoginVerify.parse(request.body);
     const expectedChallenge = take(request);
-    const settings = await s.settings.read();
-    const passkey = settings?.passkeys.find((p) => p.id === response.id);
+    const person = await s.people.byPasskey(response.id);
+    const passkey = person?.passkeys.find((p) => p.id === response.id);
     const refused = new ApiError("unauthenticated", "This passkey was not accepted.");
-    if (!passkey) throw refused;
+    if (!person || !passkey) throw refused;
     let result;
     try {
       result = await verifyAuthenticationResponse({
@@ -144,25 +152,30 @@ export function passkeyRoutes(app: FastifyInstance, s: Services): void {
     }
     if (!result.verified) throw refused;
     const counter = result.authenticationInfo.newCounter;
-    await s.settings.update((now) => ({
-      ...now,
-      passkeys: now.passkeys.map((p) => (p.id === passkey.id ? { ...p, counter } : p)),
+    const now = await s.people.update(person.id, (p) => ({
+      ...p,
+      passkeys: p.passkeys.map((k) => (k.id === passkey.id ? { ...k, counter } : k)),
     }));
-    request.session.set("user", "author");
-    request.session.set("method", "passkey");
+    startSession(request, now, "passkey");
     return { ok: true as const };
   });
 
   app.delete("/api/passkeys/:id", async (request) => {
     const { id } = z.object({ id: z.string() }).parse(request.params);
-    const settings = (await s.settings.read())!;
-    if (settings.passwordOff && settings.passkeys.filter((p) => p.id !== id).length === 0) {
+    const person = personOf(request);
+    if (!person.passkeys.some((p) => p.id === id)) {
+      throw new ApiError("not_found", "There is no such passkey.");
+    }
+    // The last way of logging in stays.
+    if (!passwordWorks(person) && waysIn(person) <= 1) {
       throw new ApiError(
         "not_allowed",
-        "This is your only passkey and the password is switched off. Switch the password on first.",
+        person.passwordHash === ""
+          ? "This is your only way to log in. Set a password first."
+          : "This is your only passkey and the password is switched off. Switch the password on first.",
       );
     }
-    await s.settings.update((now) => ({
+    await s.people.update(person.id, (now) => ({
       ...now,
       passkeys: now.passkeys.filter((p) => p.id !== id),
     }));
@@ -177,7 +190,17 @@ export function passkeyRoutes(app: FastifyInstance, s: Services): void {
         "Log in with a passkey first. That shows the passkey works before the password stops working.",
       );
     }
-    await s.settings.update((now) => ({ ...now, passwordOff: off }));
+    const person = personOf(request);
+    if (off && person.passkeys.length === 0) {
+      throw new ApiError(
+        "not_allowed",
+        "Add a passkey first: it would be your only way to log in.",
+      );
+    }
+    if (!off && person.passwordHash === "") {
+      throw new ApiError("not_allowed", "There is no password to switch on. Set one first.");
+    }
+    await s.people.update(person.id, (now) => ({ ...now, passwordOff: off }));
     return { ok: true as const };
   });
 }

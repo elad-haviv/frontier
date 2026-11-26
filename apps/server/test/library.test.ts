@@ -6,9 +6,9 @@ import sharp from "sharp";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { PublishPlan, UnpublishedResponse } from "@frontier/schema";
 import { type App, buildApp } from "../src/app.js";
-import { hashPassword } from "../src/auth/password.js";
 import { loadConfig } from "../src/config.js";
 import { applyLibraryMode } from "../src/sample.js";
+import { EMAIL, seedAccount } from "./helpers/app.js";
 
 let dir: string;
 let built: App;
@@ -27,13 +27,13 @@ async function start() {
   built = await buildApp(config, {});
   await built.services.git.ensureClone();
   await built.services.sync();
-  if (!(await built.services.settings.read())) {
-    await built.services.settings.write({ passwordHash: await hashPassword("a long password") });
+  if ((await built.services.people.all()).length === 0) {
+    await seedAccount(built.services, "a long password");
   }
   const res = await built.app.inject({
     method: "POST",
     url: "/api/login",
-    payload: { password: "a long password" },
+    payload: { email: EMAIL, password: "a long password" },
   });
   cookie = String(res.headers["set-cookie"]).split(";")[0]!;
   return config;

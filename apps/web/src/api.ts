@@ -26,6 +26,8 @@ import type {
   RandomQuery,
   RandomResponse,
   SettingsResponse,
+  SessionResponse,
+  MeResponse,
   InboxResponse,
   KeepGoingSettings,
   KeepGoingSettingsRequest,
@@ -298,7 +300,14 @@ const post = <T>(url: string, body?: unknown, signal?: AbortSignal) =>
   });
 
 export const api = {
-  session: () => call<{ loggedIn: boolean; passkeys: boolean; password: boolean }>("/api/session"),
+  session: () => call<SessionResponse>("/api/session"),
+  /** The person logged in, with the ways their account signs in. */
+  me: () => call<MeResponse>("/api/me"),
+  saveProfile: (profile: { name: string; email: string }) =>
+    send<MeResponse>("PUT", "/api/me", profile),
+  /** `current` is needed when the account already has a password. */
+  setPassword: (password: string, current?: string) =>
+    send<{ ok: true }>("PUT", "/api/me/password", { password, ...(current ? { current } : {}) }),
   /** Registers a passkey on this device, under a name the author gives it. */
   addPasskey: async (name: string) => {
     const optionsJSON = await post<Parameters<typeof startRegistration>[0]["optionsJSON"]>(
@@ -317,7 +326,7 @@ export const api = {
   removePasskey: (id: string) =>
     send<{ ok: true }>("DELETE", `/api/passkeys/${encodeURIComponent(id)}`),
   passwordOff: (off: boolean) => send<{ ok: true }>("PUT", "/api/settings/password-off", { off }),
-  login: (password: string) => post<{ ok: true }>("/api/login", { password }),
+  login: (email: string, password: string) => post<{ ok: true }>("/api/login", { email, password }),
   logout: () => post<{ ok: true }>("/api/logout"),
   tree: () => call<TreeResponse>("/api/tree"),
   /** Every entry and every link between two entries, with the top-level folders' colours. */

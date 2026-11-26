@@ -1,9 +1,12 @@
 import { useEffect, useRef, useState } from "react";
+import { Fingerprint } from "lucide-react";
 import { api, ApiFailure } from "../api.ts";
+import { loadMe, useMe } from "../me.ts";
 import { noteSignedIn } from "../offline/start.ts";
 import { connection, useConnection } from "../sync/connection.ts";
 import { queue } from "../sync/queue.ts";
 import { DialogFrame } from "./Dialogs.tsx";
+import { Icon } from "./ui/Icon.tsx";
 import "./LoginDialog.css";
 
 const asked = new EventTarget();
@@ -20,6 +23,10 @@ export function askToLogIn(): void {
 export function LoginDialog() {
   const { state } = useConnection();
   const [closed, setClosed] = useState(false);
+  // The person who was logged in is the one logging in again: their email is already here.
+  const known = useMe();
+  const [typed, setTyped] = useState<string | null>(null);
+  const email = typed ?? known?.email ?? "";
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -53,6 +60,7 @@ export function LoginDialog() {
       await how();
       setPassword("");
       void noteSignedIn(queue);
+      void loadMe();
       await connection.loggedIn();
     } catch (err) {
       setError(err instanceof ApiFailure ? err.message : "That did not work. Try again.");
@@ -68,10 +76,21 @@ export function LoginDialog() {
       className="login-dialog"
       onCancel={() => setClosed(true)}
       onSubmit={() => {
-        if (ways.password && password) void enter(() => api.login(password));
+        if (ways.password && password) void enter(() => api.login(email, password));
       }}
       initialFocus={field}
     >
+      {ways.password && (
+        <label className="dialog-field">
+          <span>Email</span>
+          <input
+            type="email"
+            autoComplete="username"
+            value={email}
+            onChange={(e) => setTyped(e.target.value)}
+          />
+        </label>
+      )}
       {ways.password && (
         <label className="dialog-field">
           <span>Password</span>
@@ -100,7 +119,7 @@ export function LoginDialog() {
             disabled={busy}
             onClick={() => void enter(() => api.loginWithPasskey())}
           >
-            Use a passkey
+            <Icon icon={Fingerprint} size="sm" /> Use a passkey
           </button>
         )}
         {ways.password && (

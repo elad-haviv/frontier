@@ -482,9 +482,10 @@ export class GitGateway {
 
   /**
    * Builds a commit on top of the fetched `main` without changing the working copy.
-   * Returns the new commit's hash. The commit is not on any branch until it is pushed.
+   * Returns the new commit's hash. The commit is not on any branch until it is pushed. It is
+   * made by `author` when given, else by the configured author.
    */
-  commit(changes: CommitChanges, message: string): Promise<string> {
+  commit(changes: CommitChanges, message: string, author?: Identity): Promise<string> {
     return this.locked(async () => {
       if (changes.writes.length === 0 && changes.deletes.length === 0) {
         throw new GitError("git_failed", "There is nothing to commit.");
@@ -508,8 +509,8 @@ export class GitGateway {
         const tree = await this.text(["write-tree"], { env });
         return await this.text(["commit-tree", tree, "-p", parent, "-m", message], {
           env: {
-            GIT_AUTHOR_NAME: this.opts.author.name,
-            GIT_AUTHOR_EMAIL: this.opts.author.email,
+            GIT_AUTHOR_NAME: (author ?? this.opts.author).name,
+            GIT_AUTHOR_EMAIL: (author ?? this.opts.author).email,
             GIT_COMMITTER_NAME: this.opts.committer.name,
             GIT_COMMITTER_EMAIL: this.opts.committer.email,
           },
@@ -524,7 +525,11 @@ export class GitGateway {
    * Builds a commit that adds every file of a folder to `main`: new files are added, files that
    * exist are replaced, and nothing is removed. Returns the commit and how many files it changed.
    */
-  commitFolder(folder: string, message: string): Promise<{ commit: string; files: number }> {
+  commitFolder(
+    folder: string,
+    message: string,
+    author?: Identity,
+  ): Promise<{ commit: string; files: number }> {
     return this.locked(async () => {
       const scratch = await mkdtemp(join(tmpdir(), "frontier-index-"));
       const env = { GIT_INDEX_FILE: join(scratch, "index") };
@@ -556,8 +561,8 @@ export class GitGateway {
         }
         const commit = await this.text(["commit-tree", tree, "-p", parent, "-m", message], {
           env: {
-            GIT_AUTHOR_NAME: this.opts.author.name,
-            GIT_AUTHOR_EMAIL: this.opts.author.email,
+            GIT_AUTHOR_NAME: (author ?? this.opts.author).name,
+            GIT_AUTHOR_EMAIL: (author ?? this.opts.author).email,
             GIT_COMMITTER_NAME: this.opts.committer.name,
             GIT_COMMITTER_EMAIL: this.opts.committer.email,
           },

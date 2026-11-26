@@ -2,7 +2,7 @@ import { Dices, FilePlus2, House, PanelLeftOpen, Search } from "lucide-react";
 import { ConnectionMark } from "../ConnectionMark.tsx";
 import { Unsent } from "../Unsent.tsx";
 import { IconButton } from "../ui/IconButton.tsx";
-import { AppMenu } from "./AppMenu.tsx";
+import { PersonRow } from "./PersonRow.tsx";
 import { PLACES, SideLink, WaitingLinks } from "./LeftBar.tsx";
 import "./LeftBar.css";
 import "./KeepGoing.css";
@@ -70,8 +70,8 @@ export function Rail({
         <div className="left-status">
           <ConnectionMark compact tipSide="right" />
           <Unsent compact />
-          <AppMenu onKeys={onKeys} onLogout={onLogout} />
         </div>
+        <PersonRow rail onKeys={onKeys} onLogout={onLogout} />
       </div>
     </div>
   );

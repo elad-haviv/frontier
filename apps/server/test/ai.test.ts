@@ -134,7 +134,8 @@ describe("settings and the provider key", () => {
     expect(await settings()).toMatchObject({ keySet: true, keyFrom: "settings", keyLast4: "1234" });
     const stored = readFileSync(join(t.services.config.dataDir, "state", "settings.json"), "utf8");
     expect(stored).not.toContain("sk-or-test-key");
-    expect(JSON.parse(stored).passwordHash).toMatch(/^\$argon2/);
+    // Passwords are the people store's, never the settings file's.
+    expect(JSON.parse(stored).passwordHash).toBe("");
 
     await t.put("/api/settings/ai", { key: null, monthlyCapUsd: 3 });
     expect(await settings()).toMatchObject({ keySet: false, monthlyCapUsd: 3 });

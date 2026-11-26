@@ -192,6 +192,11 @@ export function MenuLink({
   );
 }
 
+/** Words at the top of a menu that are not an action, such as who is logged in. */
+export function MenuHeading({ children }: { children: ReactNode }) {
+  return <Dropdown.Label className="ui-menu-heading">{children}</Dropdown.Label>;
+}
+
 export function MenuSeparator() {
   return <Dropdown.Separator className="ui-menu-separator" />;
 }

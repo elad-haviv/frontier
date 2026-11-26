@@ -173,19 +173,73 @@
 .left-status-gap {
   flex: 1;
 }
+/* You: avatar and name on the left, the app menu on the right. */
+.left-person {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 2.5rem;
+  min-width: 0;
+}
+.left-person-link {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: 0 1 auto;
+  min-width: 0;
+  min-height: 2.5rem;
+  padding: 0 var(--space-2);
+  border-radius: 6px;
+  color: var(--ink);
+  text-decoration: none;
+}
+.left-person-link:hover {
+  background: var(--accent-soft);
+}
+.left-person-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.left-nudge {
+  padding: 0 var(--space-2);
+  color: var(--accent);
+  font-size: 0.85rem;
+}
+/* In the rail the avatar carries a dot while the account still lacks a name or an email. */
+.left-person-link.needs-profile {
+  position: relative;
+}
+.left-person-link.needs-profile::after {
+  content: "";
+  position: absolute;
+  top: 0.35rem;
+  right: 0.1rem;
+  width: 0.55rem;
+  height: 0.55rem;
+  border: 2px solid var(--paper);
+  border-radius: 50%;
+  background: var(--warn);
+}
 .left-bar.is-rail .left-foot {
   justify-items: center;
   padding: var(--space-2) 0;
 }
 .left-bar.is-rail .left-waiting,
+.left-bar.is-rail .left-person,
 .left-bar.is-rail .left-status {
   flex-direction: column;
   justify-items: center;
   gap: var(--space-1);
   padding: 0;
 }
-.left-bar.is-rail .left-status {
+.left-bar.is-rail .left-status,
+.left-bar.is-rail .left-person {
   display: flex;
+}
+.left-bar.is-rail .left-person-link {
+  justify-content: center;
+  padding: 0;
 }
 
 /* In the rail the unsent count is an icon with its number on the corner. */

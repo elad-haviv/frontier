@@ -2,7 +2,7 @@ import { mkdir } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { buildApp } from "./app.js";
-import { hashPassword } from "./auth/password.js";
+import { startAccounts } from "./auth/accounts.js";
 import { ConfigError, loadConfig } from "./config.js";
 import { startPolling } from "./git/poll.js";
 import { applyLibraryMode } from "./sample.js";
@@ -15,12 +15,14 @@ async function main(): Promise<void> {
     process.env["WEB_DIR"] ?? join(dirname(fileURLToPath(import.meta.url)), "../../web/dist");
   const { app, services } = await buildApp(config, { logger: true, webDir });
 
-  // A first password can be given through the environment. It is used only while none is stored.
-  const initial = process.env["FRONTIER_INITIAL_PASSWORD"]?.trim();
-  if (initial && (await services.settings.read()) === null) {
-    await services.settings.write({ passwordHash: await hashPassword(initial) });
-    app.log.info("Stored the initial password from FRONTIER_INITIAL_PASSWORD.");
-  }
+  // The first account: moved from the one password and passkeys of earlier versions, or made
+  // from FRONTIER_INITIAL_PASSWORD. Only while there is no account.
+  await startAccounts({
+    people: services.people,
+    settings: services.settings,
+    env: process.env,
+    say: (message) => app.log.info(message),
+  });
 
   await services.git.ensureClone();
   await services.sync();

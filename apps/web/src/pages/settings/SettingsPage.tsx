@@ -4,7 +4,7 @@
  * on its own with "Settings" to go back. Only Offline copy works without a connection; the rest
  * say so and open by themselves when the connection comes back.
  */
-import type { SettingsResponse } from "@frontier/schema";
+import type { MeResponse, SettingsResponse } from "@frontier/schema";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { Link, Navigate, useLocation } from "react-router-dom";
@@ -12,12 +12,14 @@ import { api, ApiFailure } from "../../api.ts";
 import { Icon } from "../../components/ui/Icon.tsx";
 import { Problem } from "../../components/ui/Problem.tsx";
 import { useNeedsConnection } from "../../sync/connection.ts";
+import { useMe } from "../../me.ts";
 import { Account } from "./Account.tsx";
 import { Backups } from "./Backups.tsx";
 import { Device } from "./Device.tsx";
 import { FolderRun } from "./FolderRun.tsx";
 import { KeepGoing } from "./KeepGoing.tsx";
 import { Models } from "./Models.tsx";
+import { Profile } from "./Profile.tsx";
 import { Providers } from "./Providers.tsx";
 import {
   NeedsConnection,
@@ -35,8 +37,10 @@ function stateOf(
   section: Section,
   settings: SettingsResponse | null,
   offline: boolean,
+  me: MeResponse | null,
 ): { text: string; problem?: boolean } | null {
   if (!section.offline && offline && !settings) return { text: "Needs a connection" };
+  if (section.group === "You") return youStateOf(section, me);
   if (!settings) return null;
   const ai = settings.ai;
   switch (section.path) {
@@ -54,17 +58,35 @@ function stateOf(
     }
     case "ai/spending":
       return { text: `$${ai.spentUsd.toFixed(2)} of $${ai.monthlyCapUsd.toFixed(0)}` };
-    case "account": {
-      const n = settings.signIn.passkeys.length;
-      return { text: n === 0 ? "Password" : n === 1 ? "1 passkey" : `${n} passkeys` };
-    }
     default:
       return null;
   }
 }
 
+/** The state of the sections about you, which come from the account and not the settings. */
+function youStateOf(
+  section: Section,
+  me: MeResponse | null,
+): { text: string; problem?: boolean } | null {
+  if (!me) return null;
+  if (section.path === "profile") {
+    return me.needsProfile
+      ? { text: "Add your name and email", problem: true }
+      : { text: me.email };
+  }
+  if (section.path === "account") {
+    const n = me.passkeys.length;
+    const password = me.passwordSet && !me.passwordOff;
+    if (n === 0) return { text: "Password" };
+    return { text: `${password ? "Password and " : ""}${n === 1 ? "1 passkey" : `${n} passkeys`}` };
+  }
+  return null;
+}
+
 /** The section to open at `/settings` on a wide screen: the first that needs attention. */
-function firstSection(settings: SettingsResponse | null): string {
+function firstSection(settings: SettingsResponse | null, me: MeResponse | null): string {
+  // Logging in needs the email, and saved versions the name: asking comes first.
+  if (me?.needsProfile) return "profile";
   if (!settings) return "ai/providers";
   const ai = settings.ai;
   const providersBad =
@@ -88,6 +110,7 @@ function Menu({
   list: boolean;
 }) {
   const groups = [...new Set(SECTIONS.map((s) => s.group))];
+  const me = useMe();
   return (
     <nav className={list ? "settings-list" : "settings-rail"} aria-label="Settings">
       {!list && <h1>Settings</h1>}
@@ -96,7 +119,7 @@ function Menu({
           <h2 className="settings-group-name">{g}</h2>
           <ul>
             {SECTIONS.filter((s) => s.group === g).map((s) => {
-              const state = stateOf(s, settings, offline);
+              const state = stateOf(s, settings, offline, me);
               const on = current === s.path;
               return (
                 <li key={s.path}>
@@ -143,6 +166,8 @@ function Open({ section }: { section: Section }) {
       return <Backups />;
     case "device":
       return <Device />;
+    case "profile":
+      return <Profile />;
     default:
       return <Account />;
   }
@@ -168,11 +193,13 @@ export function SettingsPage() {
     if (!offline && error) void reload();
   }, [offline, error, reload]);
 
+  const me = useMe();
   const rest = pathname.replace(/^\/settings\/?/, "").replace(/\/+$/, "");
   const section = SECTIONS.find((s) => rest === s.path || rest.startsWith(`${s.path}/`)) ?? null;
 
   if (rest !== "" && !section) return <Navigate to="/settings" replace />;
-  if (rest === "" && wide) return <Navigate to={`/settings/${firstSection(settings)}`} replace />;
+  if (rest === "" && wide)
+    return <Navigate to={`/settings/${firstSection(settings, me)}`} replace />;
 
   const body = !section ? null : section.offline || settings ? (
     <Open section={section} />

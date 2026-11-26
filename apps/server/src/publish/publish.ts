@@ -538,7 +538,13 @@ export class Publisher {
     return plan;
   }
 
-  async confirm(planId: string, confirmedMergeIds: string[], message: string): Promise<string> {
+  /** Saves the plan as one commit by `author`, or by the configured author when none is given. */
+  async confirm(
+    planId: string,
+    confirmedMergeIds: string[],
+    message: string,
+    author?: { name: string; email: string },
+  ): Promise<string> {
     const stored = this.plans.get(planId);
     if (!stored || this.now() - stored.createdAt > PLAN_LIFETIME_MS) {
       this.plans.delete(planId);
@@ -642,6 +648,7 @@ export class Publisher {
     const commit = await this.d.git.commit(
       { writes: result.writes, deletes: result.deletes },
       message + trailers(publishing.map((p) => p.draft)),
+      author,
     );
     try {
       await this.d.git.push(commit);

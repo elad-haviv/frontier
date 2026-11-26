@@ -30,6 +30,12 @@ import {
   statusOf,
   TreeResponse,
   VaultPath,
+  PasswordRequest,
+  PeopleFile,
+  Person,
+  ProfileRequest,
+  LoginRequest,
+  emailKey,
 } from "../src/index.js";
 
 /** The worked example from the design document. */
@@ -370,7 +376,9 @@ describe("errors", () => {
     expect(statusOf("has_images")).toBe(409);
     expect(statusOf("image_fetch_failed")).toBe(422);
     expect(statusOf("ai_stopped")).toBe(409);
-    expect(Object.keys(ERROR_STATUS)).toHaveLength(24);
+    // Stage 27a added email_taken.
+    expect(statusOf("email_taken")).toBe(409);
+    expect(Object.keys(ERROR_STATUS)).toHaveLength(25);
   });
 
   it("takes a web address of at most 2,048 characters for an image", () => {
@@ -384,6 +392,44 @@ describe("errors", () => {
       ErrorBody.parse({ error: { code: "stale_revision", message: "older", id: "k3f9x2ab7qpd" } }),
     ).toBeTruthy();
     expect(ErrorBody.safeParse({ error: { code: "nope", message: "x" } }).success).toBe(false);
+  });
+});
+
+describe("accounts", () => {
+  it("reads a person from a file that holds little, and keeps room for more", () => {
+    const person = Person.parse({ id: "p1", createdAt: "2026-11-26T10:00:00Z" });
+    expect(person).toEqual({
+      id: "p1",
+      name: "",
+      email: "",
+      passwordHash: "",
+      passwordOff: false,
+      passkeys: [],
+      identities: [],
+      createdAt: "2026-11-26T10:00:00Z",
+      admin: false,
+    });
+    expect(PeopleFile.parse({})).toEqual({ version: 1, people: [] });
+  });
+
+  it("takes the email in any case, and an empty one at login", () => {
+    expect(emailKey("  Elad@Example.COM ")).toBe("elad@example.com");
+    expect(LoginRequest.parse({ password: "x" })).toEqual({ email: "", password: "x" });
+    expect(LoginRequest.parse({ email: " a@b.co ", password: "x" }).email).toBe("a@b.co");
+    expect(LoginRequest.safeParse({ email: "a@b.co", password: "" }).success).toBe(false);
+  });
+
+  it("checks a profile and a new password", () => {
+    expect(ProfileRequest.parse({ name: " Elad ", email: " e@x.co " })).toEqual({
+      name: "Elad",
+      email: "e@x.co",
+    });
+    expect(ProfileRequest.safeParse({ name: "", email: "e@x.co" }).success).toBe(false);
+    expect(ProfileRequest.safeParse({ name: "E", email: "nope" }).success).toBe(false);
+    expect(PasswordRequest.safeParse({ password: "short" }).success).toBe(false);
+    expect(PasswordRequest.parse({ password: "long enough pass" }).password).toBe(
+      "long enough pass",
+    );
   });
 });
 

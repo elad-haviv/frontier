@@ -11,6 +11,9 @@ const here = dirname(fileURLToPath(import.meta.url));
 export const REMOTE = join(here, "..", "..", "..", ".e2e-data", "sample-remote.git");
 
 export const PASSWORD = "browser-test-password";
+/** The first account of the e2e server (`server.mjs`). */
+export const EMAIL = "owner@example.com";
+export const NAME = "Olive Owner";
 
 /** Where the shared login session is kept between tests. */
 export const AUTH_FILE = join(here, "..", "..", "..", "test-results", ".auth.json");

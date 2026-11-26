@@ -7,16 +7,28 @@ const Ok = z.object({ ok: z.literal(true) });
 
 // ---- Session -------------------------------------------------------------------------------
 
-export const LoginRequest = z.object({ password: z.string().min(1) });
+/** The email may be empty only for the one account that has none yet (stage 27a). */
+export const LoginRequest = z.object({
+  email: z.string().trim().max(200).default(""),
+  password: z.string().min(1),
+});
 export const LoginResponse = Ok;
 export const LogoutResponse = Ok;
 export const SessionResponse = z.object({
   loggedIn: z.boolean(),
+  /** Who is logged in; null when nobody is. */
+  person: z
+    .object({ id: z.string(), name: z.string(), email: z.string() })
+    .nullable()
+    .default(null),
+  /** True while the only account has no email, so the login page can say to leave it empty. */
+  emailless: z.boolean().default(false),
   /** Whether a passkey exists, so the login page can offer it. */
   passkeys: z.boolean(),
   /** False when the password is switched off. */
   password: z.boolean(),
 });
+export type SessionResponse = z.infer<typeof SessionResponse>;
 
 // ---- Tree and entries ----------------------------------------------------------------------
 
@@ -586,6 +598,37 @@ export const OperationDecision = z.object({
   type: z.string().min(1).optional(),
 });
 
+/** `GET /api/me`: the logged-in person, and the ways their account signs in. No secret in it. */
+export const MeResponse = z.object({
+  id: z.string(),
+  name: z.string(),
+  email: z.string(),
+  admin: z.boolean(),
+  /** The name or the email is still missing, so the app asks for them. */
+  needsProfile: z.boolean(),
+  passkeys: z.array(z.object({ id: z.string(), name: z.string(), addedAt: z.string() })),
+  /** Whether the account has a password at all. */
+  passwordSet: z.boolean(),
+  passwordOff: z.boolean(),
+  /** How this session logged in. Switching the password off needs a passkey session. */
+  method: z.enum(["password", "passkey"]),
+});
+export type MeResponse = z.infer<typeof MeResponse>;
+
+/** `PUT /api/me` */
+export const ProfileRequest = z.object({
+  name: z.string().trim().min(1, "Give a name.").max(80, "Use 80 characters or fewer."),
+  email: z.string().trim().min(1, "Give an email.").max(200).email("This is not an email address."),
+});
+export type ProfileRequest = z.infer<typeof ProfileRequest>;
+
+/** `PUT /api/me/password`. `current` is needed when the account already has a password. */
+export const PasswordRequest = z.object({
+  current: z.string().optional(),
+  password: z.string().min(12, "Use at least 12 characters.").max(500),
+});
+export type PasswordRequest = z.infer<typeof PasswordRequest>;
+
 /** `GET /api/settings`. No secret is ever part of it. */
 export const SettingsResponse = z.object({
   ai: z.object({
@@ -609,12 +652,6 @@ export const SettingsResponse = z.object({
     monthlyCapUsd: z.number(),
     proposeOnPublish: z.boolean(),
     spentUsd: z.number(),
-  }),
-  signIn: z.object({
-    passkeys: z.array(z.object({ id: z.string(), name: z.string(), addedAt: z.string() })),
-    passwordOff: z.boolean(),
-    /** How this session logged in. Switching the password off needs a passkey session. */
-    method: z.enum(["password", "passkey"]),
   }),
   /** Stage 25: which needs-love rules are on. */
   keepGoing: KeepGoingSettings,

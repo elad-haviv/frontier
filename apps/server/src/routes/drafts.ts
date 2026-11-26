@@ -13,6 +13,7 @@ import {
 } from "@frontier/schema";
 import { extension, isEditable, isExcluded, isNote, stem } from "@frontier/vault";
 import { z } from "zod";
+import { authorOf, personOf } from "../auth/session.js";
 import { ApiError } from "../errors.js";
 import { movedPath } from "../publish/publish.js";
 import { type Device, SERVER_SLOT, UNKNOWN_DEVICE } from "../state/drafts.js";
@@ -342,7 +343,8 @@ export function draftRoutes(app: FastifyInstance, s: Services): void {
 
   app.post("/api/publish/confirm", async (request) => {
     const { planId, confirmedMergeIds, message } = PublishConfirmRequest.parse(request.body);
-    return { commit: await s.publisher.confirm(planId, confirmedMergeIds, message) };
+    const author = authorOf(personOf(request), s.config.commitAuthor);
+    return { commit: await s.publisher.confirm(planId, confirmedMergeIds, message, author) };
   });
 
   /**

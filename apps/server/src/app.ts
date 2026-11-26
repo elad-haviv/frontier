@@ -74,14 +74,17 @@ import { searchRoutes } from "./routes/search.js";
 import { statusRoutes } from "./routes/status.js";
 import { webhookRoutes } from "./routes/webhook.js";
 import { StateFiles } from "./state/files.js";
+import { PeopleStore } from "./state/people.js";
 import { SettingsStore } from "./state/settings.js";
+import { requirePerson } from "./auth/session.js";
 import { StatusService } from "./status/status.js";
 import { readBuild, webRoutes } from "./web.js";
 
 declare module "@fastify/secure-session" {
   interface SessionData {
+    /** The id of the person logged in. Sessions from before accounts said "author"; see `auth/session.ts`. */
     user: string;
-    /** How the author logged in. */
+    /** How the person logged in. */
     method: "password" | "passkey";
     /** The challenge of a passkey ceremony in progress, and when it ends. */
     challenge: { value: string; until: number };
@@ -95,6 +98,8 @@ export interface Services {
   status: StatusService;
   files: StateFiles;
   settings: SettingsStore;
+  /** Everyone who has an account (stage 27a). */
+  people: PeopleStore;
   images: ImageServer;
   /** Takes images from web addresses, with the safeguards that keep the server's network safe. */
   imageFetcher: ImageFetcher;
@@ -218,6 +223,7 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
   });
   const files = new StateFiles();
   const settings = new SettingsStore(stateDir, files);
+  const people = new PeopleStore(stateDir, files);
   const images = new ImageServer(vaultDir, config.dataDir);
   const imageFetcher = new ImageFetcher({
     publicUrl: config.publicUrl,
@@ -383,6 +389,7 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
     status,
     files,
     settings,
+    people,
     images,
     imageFetcher,
     drafts,
@@ -523,12 +530,11 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
 
   app.addHook("onClose", async () => backup.stop());
 
+  app.decorateRequest("person", null);
   app.addHook("onRequest", async (request) => {
     const path = request.url.split("?")[0] ?? "";
     if (OPEN.has(path) || !path.startsWith("/api/")) return;
-    if (request.session.get("user") !== "author") {
-      throw new ApiError("unauthenticated", "Log in first.");
-    }
+    await requirePerson(request, people);
   });
 
   // Which build this server carries, for reading logs and the browser's network panel.

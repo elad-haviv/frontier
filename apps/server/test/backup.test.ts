@@ -6,7 +6,7 @@ import { buildApp } from "../src/app.js";
 import { Backup, msUntilHour, restore } from "../src/backup/backup.js";
 import { type BackupTarget, FolderTarget } from "../src/backup/targets.js";
 import { loadConfig } from "../src/config.js";
-import { testEnv } from "./helpers/app.js";
+import { EMAIL, seedAccount, testEnv } from "./helpers/app.js";
 import { makeTestRepo } from "./helpers/repo.js";
 
 let root: string;
@@ -244,19 +244,16 @@ describe("in the server", () => {
   it("backs up a draft shortly after it is saved, shows it in the status, and restores it into a new server", async () => {
     const repo = makeTestRepo();
     const env = testEnv(repo);
-    const { hashPassword } = await import("../src/auth/password.js");
     const config = loadConfig(env);
     mkdirSync(join(config.dataDir, "state"), { recursive: true });
     const first = await buildApp(config, { backupDelayMs: 30 });
     await first.services.git.ensureClone();
     await first.services.sync();
-    await first.services.settings.write({
-      passwordHash: await hashPassword("a password for the test"),
-    });
+    await seedAccount(first.services, "a password for the test");
     const login = await first.app.inject({
       method: "POST",
       url: "/api/login",
-      payload: { password: "a password for the test" },
+      payload: { email: EMAIL, password: "a password for the test" },
     });
     const cookie = String(login.headers["set-cookie"]).split(";")[0]!;
     await first.app.inject({
@@ -292,6 +289,8 @@ describe("in the server", () => {
     await second.services.git.ensureClone();
     await second.services.sync();
     expect(second.services.drafts.list().map((d) => d.id)).toEqual(["backupdraft1"]);
+    // The accounts are in the backup too: the same person can log in on the new disk.
+    expect((await second.services.people.all()).map((p) => p.email)).toEqual([EMAIL]);
     expect(await second.services.drafts.text("backupdraft1")).toBe("# Mira\n\nBacked up.\n");
     // The time of the last backup is read from disk at start when it exists.
     await second.services.backup.runNow();

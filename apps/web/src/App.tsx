@@ -1,6 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useState } from "react";
 import { Navigate, Route, Routes, useLocation, useParams } from "react-router-dom";
 import { api } from "./api.ts";
+import { clearMe, loadMe } from "./me.ts";
 import { useAsync } from "./useAsync.ts";
 import { noteOpened } from "./map/mapsList.ts";
 import { LoginDialog } from "./components/LoginDialog.tsx";
@@ -117,7 +118,10 @@ export function App() {
   // after taking in what the browser buffer of an earlier build still holds. The service worker
   // is registered only now, so a browser that is logged out never gets one back.
   useEffect(() => {
+    // Who is logged in, for the left bar; forgotten when the login page is what shows.
+    if (loggedIn === false) clearMe();
     if (!loggedIn) return;
+    void loadMe();
     connection.start();
     void queue.start();
     void updates.register();
