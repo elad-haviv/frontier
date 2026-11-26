@@ -4,9 +4,7 @@ import {
   ChevronRight,
   CircleDot,
   Dices,
-  FilePlus2,
   Folder,
-  FolderPlus,
   GitCompareArrows,
   House,
   Images,
@@ -24,18 +22,18 @@ import {
 import { type ReactNode, type Ref, type TouchEvent, useEffect, useRef, useState } from "react";
 import { Link, NavLink } from "react-router-dom";
 import { entryUrl } from "../../api.ts";
+import { shortcutText } from "../../keys.ts";
 import { usePins } from "../../keepGoing/pins.ts";
 import { useConnection } from "../../sync/connection.ts";
 import type { Async } from "../../useAsync.ts";
 import { ConnectionMark } from "../ConnectionMark.tsx";
-import { Tree } from "../Tree.tsx";
 import { entriesIn } from "../tree/model.ts";
 import { Unsent } from "../Unsent.tsx";
 import { Icon } from "../ui/Icon.tsx";
 import { IconButton } from "../ui/IconButton.tsx";
-import { Problem } from "../ui/Problem.tsx";
 import { Tip } from "../ui/Tip.tsx";
 import { AppMenu } from "./AppMenu.tsx";
+import { LibraryBody, LibraryTools } from "./LibraryBody.tsx";
 import { isSwipeBack, type Point } from "./swipe.ts";
 import "./LeftBar.css";
 import "./DrawerLibrary.css";
@@ -133,7 +131,47 @@ export function WaitingLinks({ rail = false }: { rail?: boolean }) {
   );
 }
 
-/** "Working on": the pinned entries, above the folders. */
+/** How many entries the library holds, or null until it has been read. */
+export function useEntryCount(tree: Async<TreeResponse>): number | null {
+  return tree.state === "ready" ? entriesIn(tree.value) : null;
+}
+
+/** The Library's name for assistive technology, with its count once it is known. */
+const libraryName = (count: number | null) =>
+  count === null ? "Library" : `Library, ${count} ${count === 1 ? "entry" : "entries"}`;
+
+/**
+ * The Library place on a desktop: a toggle for the pane beside the side bar, with the number of
+ * entries. The pane gives the focus back to it (it is marked for that) when it closes.
+ */
+function LibraryToggle({
+  open,
+  count,
+  onToggle,
+}: {
+  open: boolean;
+  count: number | null;
+  onToggle: () => void;
+}) {
+  return (
+    <Tip label="Library" keys={shortcutText("app.library")} side="right">
+      <button
+        type="button"
+        className="side-link library-toggle"
+        data-library-toggle=""
+        aria-pressed={open}
+        aria-label={libraryName(count)}
+        onClick={onToggle}
+      >
+        <Icon icon={Folder} />
+        <span className="side-link-label">Library</span>
+        {count !== null && <span className="library-count">{count}</span>}
+      </button>
+    </Tip>
+  );
+}
+
+/** "Working on": the pinned entries. */
 function PinnedList() {
   const pins = usePins();
   return (
@@ -154,89 +192,6 @@ function PinnedList() {
         </ul>
       )}
     </section>
-  );
-}
-
-/** The folder list, or why it could not be read. */
-export function TreeSection({
-  tree,
-  current,
-  onRetry,
-  onNewEntryIn,
-}: {
-  tree: Async<TreeResponse>;
-  current: string;
-  onRetry: () => void;
-  onNewEntryIn: (folder: string) => void;
-}) {
-  const [asked, setAsked] = useState(0);
-  return (
-    <section className="left-tree" aria-label="Library">
-      <div className="left-heading-row">
-        <h2 className="left-heading">Library</h2>
-        {tree.state === "ready" && (
-          <span className="left-heading-actions">
-            {/* A new entry at the top of the library, whatever entry is in view. */}
-            <IconButton
-              label="New entry"
-              icon={FilePlus2}
-              size="sm"
-              tipSide="right"
-              className="left-new-entry"
-              onClick={() => onNewEntryIn("")}
-            />
-            <IconButton
-              label="New folder"
-              icon={FolderPlus}
-              size="sm"
-              tipSide="right"
-              className="left-new-folder"
-              onClick={() => setAsked((n) => n + 1)}
-            />
-          </span>
-        )}
-      </div>
-      <TreeBody
-        tree={tree}
-        current={current}
-        onRetry={onRetry}
-        onNewEntryIn={onNewEntryIn}
-        asked={asked}
-      />
-    </section>
-  );
-}
-
-/** The folders, or why they cannot be shown yet. */
-function TreeBody({
-  tree,
-  current,
-  onRetry,
-  onNewEntryIn,
-  asked,
-  replaceNav = false,
-  onOpenCurrent,
-}: {
-  tree: Async<TreeResponse>;
-  current: string;
-  onRetry: () => void;
-  onNewEntryIn: (folder: string) => void;
-  asked: number;
-  replaceNav?: boolean;
-  onOpenCurrent?: () => void;
-}) {
-  if (tree.state === "loading") return <p className="muted pad">Loading…</p>;
-  if (tree.state === "failed") return <Problem reason={tree.error.message} onRetry={onRetry} />;
-  return (
-    <Tree
-      tree={tree.value}
-      current={current}
-      onNewEntry={onNewEntryIn}
-      onChanged={onRetry}
-      newFolderAsked={asked}
-      replaceNav={replaceNav}
-      {...(onOpenCurrent ? { onOpenCurrent } : {})}
-    />
   );
 }
 
@@ -279,27 +234,7 @@ function LibraryPanel({
 }) {
   const [asked, setAsked] = useState(0);
   const drawn = useLingering(open, 250);
-  const body = useRef<HTMLDivElement>(null);
   const swipe = useRef<Point | null>(null);
-  const empty =
-    tree.state === "ready" && entriesIn(tree.value) === 0 && tree.value.folders.length === 0;
-
-  // On opening, the entry in view comes into sight, once the tree has drawn its row.
-  const ready = tree.state === "ready";
-  useEffect(() => {
-    if (!open || !ready) return;
-    let tries = 0;
-    let frame = 0;
-    const show = () => {
-      const row = body.current?.querySelector<HTMLElement>(
-        ".tree-note.active, .tree-folder.active",
-      );
-      if (row) row.scrollIntoView({ block: "center" });
-      else if (++tries < 30) frame = requestAnimationFrame(show);
-    };
-    frame = requestAnimationFrame(show);
-    return () => cancelAnimationFrame(frame);
-  }, [open, ready]);
 
   /** A touch's place, from the panel's left edge and top. */
   const at = (e: TouchEvent<HTMLElement>, t: { clientX: number; clientY: number }): Point => {
@@ -330,55 +265,32 @@ function LibraryPanel({
           Menu
         </button>
         <h2 className="library-title">Library</h2>
-        {ready && !empty && (
-          <IconButton
-            label="New entry"
-            icon={FilePlus2}
-            tipSide="bottom"
-            className="left-new-entry"
-            onClick={() => onNewEntryIn("")}
-          />
-        )}
-        {ready && !empty && (
-          <IconButton
-            label="New folder"
-            icon={FolderPlus}
-            tipSide="bottom"
-            className="left-new-folder"
-            onClick={() => setAsked((n) => n + 1)}
-          />
-        )}
+        <LibraryTools
+          tree={tree}
+          onNewEntryIn={onNewEntryIn}
+          onNewFolder={() => setAsked((n) => n + 1)}
+          tipSide="bottom"
+        />
       </div>
-      <div ref={body} className="library-body">
-        {drawn &&
-          (empty ? (
-            <div className="library-empty">
-              <p>No entries yet.</p>
-              <button type="button" className="new-entry" onClick={() => onNewEntryIn("")}>
-                <Icon icon={Plus} size="sm" />
-                New entry
-              </button>
-            </div>
-          ) : (
-            <TreeBody
-              tree={tree}
-              current={current}
-              onRetry={onRetry}
-              onNewEntryIn={onNewEntryIn}
-              asked={asked}
-              replaceNav
-              onOpenCurrent={onClose}
-            />
-          ))}
-      </div>
+      <LibraryBody
+        tree={tree}
+        current={current}
+        active={open}
+        drawn={drawn}
+        asked={asked}
+        onRetry={onRetry}
+        onNewEntryIn={onNewEntryIn}
+        replaceNav
+        onOpenCurrent={onClose}
+      />
     </section>
   );
 }
 
 /**
- * The left side bar: search, New entry, the main places, the library's folders, and a footer
- * with the connection, what waits, and the app menu. The places come before the folders, so they
- * are found without scrolling past every folder; the folders scroll in the room left.
+ * The left side bar: search, New entry, the main places (the Library among them: on a desktop it
+ * shows the library pane beside the bar, on a phone it opens a panel over the menu), what is
+ * pinned, and a footer with the connection, what waits, and the app menu.
  */
 export function LeftBar({
   tree,
@@ -395,6 +307,8 @@ export function LeftBar({
   library = false,
   onLibrary,
   onClose,
+  libraryOpen = false,
+  onLibraryToggle,
   top,
 }: {
   tree: Async<TreeResponse>;
@@ -417,6 +331,9 @@ export function LeftBar({
   onLibrary?: (open: boolean) => void;
   /** In the drawer: closes it. */
   onClose?: () => void;
+  /** On a desktop: whether the library pane is open, and opens or closes it. */
+  libraryOpen?: boolean;
+  onLibraryToggle?: () => void;
   /** A control for the top of the bar, such as the drawer's Close. */
   top?: ReactNode;
 }) {
@@ -431,22 +348,24 @@ export function LeftBar({
     else if (!library && wasOpen.current) libraryRow.current?.focus();
     wasOpen.current = library;
   }, [library]);
-  const notes = tree.state === "ready" ? entriesIn(tree.value) : null;
+  const notes = useEntryCount(tree);
   const places = (
     <nav className="left-places" aria-label="Places">
       <SideLink to="/" end icon={House} label="Home" />
       {PLACES.map((p) => (
         <SideLink key={p.to} to={p.to} icon={p.icon} label={p.label} />
       ))}
+      {!drawer && onLibraryToggle && (
+        /* On a desktop the library is a place that shows or hides its pane beside the side bar. */
+        <LibraryToggle open={libraryOpen} count={notes} onToggle={onLibraryToggle} />
+      )}
       {drawer && (
         /* On a phone the library is a place of its own: a panel over the menu. */
         <button
           ref={libraryRow}
           type="button"
           className="side-link library-row"
-          aria-label={
-            notes === null ? "Library" : `Library, ${notes} ${notes === 1 ? "entry" : "entries"}`
-          }
+          aria-label={libraryName(notes)}
           onClick={() => onLibrary?.(true)}
         >
           <Icon icon={Folder} />
@@ -501,18 +420,10 @@ export function LeftBar({
           onClick={onRandom}
         />
       </div>
-      {/* The places stay in reach at the top; the folders fill the rest and scroll on their own. */}
+      {/* The places stay in reach at the top; what is pinned takes the room left. */}
       {places}
       <div className="left-scroll">
         <PinnedList />
-        {!drawer && (
-          <TreeSection
-            tree={tree}
-            current={current}
-            onRetry={onRetryTree}
-            onNewEntryIn={onNewEntryIn}
-          />
-        )}
       </div>
       <div className="left-foot">
         <nav className="left-waiting" aria-label="Waiting for you">

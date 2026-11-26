@@ -42,3 +42,18 @@ respects reduced motion.
 - **B.** Open the first time, then as left, per device.
 - **C.** Working on (pins) stays in the sidebar.
 - **D.** The pane sits immediately to the right of the sidebar.
+
+## As built
+
+- **Key.** `g l` was free in the app scope, so it is the key. (On the map page, where `g` alone places with
+  AI while editing, the page's `g` wins, as for `g h` and `g r`.)
+- **Where it lives.** The pane is drawn inside the page area, to the right of the side bar's splitter (and
+  of the rail), so the side bar's width is still the device's and the pane never counts in it.
+- **Open or closed** is kept per device (`frontier.shell.library`) and is open the first time. It is kept only
+  from a docked window: on a floating one it starts closed on every visit, and closing it by picking an
+  entry, Esc or a click on the dimmed page is not remembered, so the choice made on a wide window stays.
+- **1100 px** is one constant, `LIBRARY_DOCK_MIN` in `shell/libraryState.ts`; the shell reads it through
+  `useLibraryFloating()` and puts `is-floating` on the pane, so CSS has no second copy of the number.
+- **Focus.** Opening by click or key puts the focus on the entry in view in the tree (the first row, or the
+  first button when the library is empty or unread); closing by ×, the Library place or `g l` puts it back on
+  the place (or the rail's icon). Opening to show a folder (from Home) lets the tree focus that folder.

@@ -31,8 +31,16 @@
 .shell-right {
   height: 100%;
 }
-/* The page, with the update bar above it when a new version waits. */
+/* The library pane (when docked) beside the page; the page, with the update bar above it when a
+   new version waits. The floating pane and its scrim are placed against this box, which is
+   the room right of the side bar. */
 .shell-main {
+  position: relative;
+  display: flex;
+}
+.shell-page {
+  flex: 1;
+  min-width: 0;
   display: flex;
   flex-direction: column;
 }

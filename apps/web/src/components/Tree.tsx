@@ -164,10 +164,13 @@ export function Tree({
   newFolderAsked = 0,
   replaceNav = false,
   onOpenCurrent,
+  focusCurrent = false,
 }: {
   tree: TreeResponse;
   /** The entry in view, by its path in the library. */
   current: string;
+  /** Takes the focus as it is drawn: the row of the entry in view, else the first row. */
+  focusCurrent?: boolean;
   /** Opens the new-entry dialog in a folder. */
   onNewEntry: (folder: string) => void;
   /** Reads the tree again after a change the server made. */
@@ -592,6 +595,33 @@ export function Tree({
     recount();
   }, [current, data, recount]);
 
+  // The library pane, opened by the author, gives the tree the focus: on the row of the entry in
+  // view once it is drawn, else on the first row.
+  const box = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const t = arborist.current;
+    if (!t || !focusCurrent) return;
+    let tries = 0;
+    let frame = 0;
+    const take = () => {
+      const rows = [...(box.current?.querySelectorAll<HTMLElement>(".tree-row[data-path]") ?? [])];
+      // The entry's row comes a moment after the folders above it open; without one, the first.
+      const row =
+        rows.find((r) => r.querySelector(".tree-note.active, .tree-folder.active")) ??
+        (tries >= 10 || !current ? rows[0] : null);
+      if (!row) {
+        if (++tries < 30) frame = requestAnimationFrame(take);
+        return;
+      }
+      const node = t.visibleNodes.find((n) => n.data.path === row.dataset.path);
+      if (node) t.focus(node.id);
+      row.closest<HTMLElement>("[role=treeitem]")?.focus();
+    };
+    frame = requestAnimationFrame(take);
+    return () => cancelAnimationFrame(frame);
+    // Only the opening gives the focus, not each move to another entry.
+  }, [focusCurrent]);
+
   // A page asked to see a folder: it opens, with the folders above it, and comes into view
   // with the focus on it, once its row is drawn.
   const reveal = useRevealRequest();
@@ -648,7 +678,7 @@ export function Tree({
 
   return (
     <Draw.Provider value={draw}>
-      <div className="tree" onKeyDownCapture={onKeyDownCapture}>
+      <div ref={box} className="tree" onKeyDownCapture={onKeyDownCapture}>
         <Arborist<Row>
           ref={arborist}
           data={data}

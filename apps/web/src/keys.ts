@@ -374,6 +374,8 @@ keys.register(
   // Two presses in a row (stage 25). Where a page uses the first key by itself, the page wins.
   { id: "app.home", keys: ["g h"], scope: "app", label: "Go to Home" },
   { id: "app.random", keys: ["g r"], scope: "app", label: "Open a random entry" },
+  // Stage 28: the library pane on a desktop (on a phone the Library is a panel in the drawer).
+  { id: "app.library", keys: ["g l"], scope: "app", label: "Show or hide the Library" },
   {
     id: "app.sidebar",
     keys: ["Mod-\\"],
