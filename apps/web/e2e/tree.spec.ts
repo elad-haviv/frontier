@@ -226,6 +226,15 @@ test("a folder reordered by dragging keeps its place after a reload", async ({
       .locator('[role="treeitem"][aria-level="1"]')
       .evaluateAll((els) => els.map((e) => e.getAttribute("aria-label")));
   expect((await top()).slice(0, 3)).toEqual(["01 Places", "02 People", "03 Things"]);
+  // The library grows as the other tests run, so with the folders open the two rows can be too far
+  // apart to be in sight together. Folded, the three sit one under the other.
+  for (const name of ["01 Places", "02 People", "03 Things"]) {
+    const folder = row(page, name);
+    if ((await folder.getAttribute("aria-expanded")) === "true") {
+      await folder.locator(".twist").first().click();
+    }
+  }
+  await expect(row(page, "01 Places")).toHaveAttribute("aria-expanded", "false");
   // Dropped on the top edge of 01 Places, 03 Things goes before it.
   const target = row(page, "01 Places").locator(".tree-row");
   await row(page, "03 Things").dragTo(target, { targetPosition: { x: 60, y: 2 } });
