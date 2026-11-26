@@ -215,6 +215,7 @@ function TreeBody({
   onNewEntryIn,
   asked,
   replaceNav = false,
+  onOpenCurrent,
 }: {
   tree: Async<TreeResponse>;
   current: string;
@@ -222,6 +223,7 @@ function TreeBody({
   onNewEntryIn: (folder: string) => void;
   asked: number;
   replaceNav?: boolean;
+  onOpenCurrent?: () => void;
 }) {
   if (tree.state === "loading") return <p className="muted pad">Loading…</p>;
   if (tree.state === "failed") return <Problem reason={tree.error.message} onRetry={onRetry} />;
@@ -233,6 +235,7 @@ function TreeBody({
       onChanged={onRetry}
       newFolderAsked={asked}
       replaceNav={replaceNav}
+      {...(onOpenCurrent ? { onOpenCurrent } : {})}
     />
   );
 }
@@ -261,6 +264,7 @@ function LibraryPanel({
   onBack,
   onRetry,
   onNewEntryIn,
+  onClose,
   backRef,
 }: {
   open: boolean;
@@ -269,6 +273,8 @@ function LibraryPanel({
   onBack: () => void;
   onRetry: () => void;
   onNewEntryIn: (folder: string) => void;
+  /** Closes the whole drawer: what opening the entry already in view does. */
+  onClose: () => void;
   backRef: Ref<HTMLButtonElement>;
 }) {
   const [asked, setAsked] = useState(0);
@@ -361,6 +367,7 @@ function LibraryPanel({
               onNewEntryIn={onNewEntryIn}
               asked={asked}
               replaceNav
+              onOpenCurrent={onClose}
             />
           ))}
       </div>
@@ -387,6 +394,7 @@ export function LeftBar({
   drawer = false,
   library = false,
   onLibrary,
+  onClose,
   top,
 }: {
   tree: Async<TreeResponse>;
@@ -407,16 +415,20 @@ export function LeftBar({
   library?: boolean;
   /** In the drawer: opens or closes the library panel. */
   onLibrary?: (open: boolean) => void;
+  /** In the drawer: closes it. */
+  onClose?: () => void;
   /** A control for the top of the bar, such as the drawer's Close. */
   top?: ReactNode;
 }) {
   const libraryRow = useRef<HTMLButtonElement>(null);
   const libraryBack = useRef<HTMLButtonElement>(null);
-  const wasOpen = useRef(false);
-  // The focus goes to the panel's Back button as it opens, and back to the Library row as it closes.
+  const wasOpen = useRef(library);
+  // The focus goes to the panel's Back button as it opens, and back to the Library row as it
+  // closes. A drawer that opens on the panel is left to the focus trap, which takes the first
+  // control and remembers what had the focus before, to give it back.
   useEffect(() => {
-    if (library) libraryBack.current?.focus();
-    else if (wasOpen.current) libraryRow.current?.focus();
+    if (library && !wasOpen.current) libraryBack.current?.focus();
+    else if (!library && wasOpen.current) libraryRow.current?.focus();
     wasOpen.current = library;
   }, [library]);
   const notes = tree.state === "ready" ? entriesIn(tree.value) : null;
@@ -529,6 +541,7 @@ export function LeftBar({
         onBack={() => onLibrary?.(false)}
         onRetry={onRetryTree}
         onNewEntryIn={onNewEntryIn}
+        onClose={() => onClose?.()}
         backRef={libraryBack}
       />
     </div>

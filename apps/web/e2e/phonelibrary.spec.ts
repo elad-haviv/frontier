@@ -241,11 +241,15 @@ test("a swipe right from the panel's left edge goes back to the menu; scrolling 
   await touch("touchstart", 150, 300);
   await touch("touchend", 260, 305);
   await expect(panel(page)).toBeVisible();
-  await touch("touchstart", 8, 300);
-  await touch("touchend", 60, 500);
+  await touch("touchstart", 24, 300);
+  await touch("touchend", 76, 500);
   await expect(panel(page)).toBeVisible();
-  // From the edge, to the right, it goes back.
+  // From the screen's own edge (the browser's swipe back) it does nothing.
   await touch("touchstart", 8, 300);
+  await touch("touchend", 140, 310);
+  await expect(panel(page)).toBeVisible();
+  // From just inside the edge, to the right, it goes back.
+  await touch("touchstart", 24, 300);
   await touch("touchend", 140, 310);
   await expect(panel(page)).toBeHidden();
   await expect(drawer(page)).toBeVisible();
@@ -301,4 +305,243 @@ test("on a desktop the left bar is as before: no Library row, the folders and th
   await expect(bar.getByRole("button", { name: "New entry", exact: true })).toHaveCount(2);
   await expect(bar.getByRole("button", { name: "New folder", exact: true })).toBeVisible();
   await expect(page.locator(".drawer-panes")).toHaveCount(0);
+});
+
+// ---- History: the panel's entry stays consistent through every way in and out -------------------
+
+const historyLength = (page: Page) => page.evaluate(() => window.history.length);
+
+/** Two pages in the history, the second with its drawer open on the library panel. */
+async function openPanelOverSecondPage(page: Page): Promise<void> {
+  await page.goto(entry("README.md"));
+  await expect(page.locator(".entry h1").first()).toBeVisible();
+  await openPanel(page);
+}
+
+test("tapping the entry already open closes the drawer and adds nothing to the history", async ({
+  page,
+  isMobile,
+}) => {
+  test.skip(!isMobile, "The drawer is the phone's side bar.");
+  await openPanelOverSecondPage(page);
+  const active = panel(page).locator(".tree-note.active, .tree-folder.active");
+  await expect(active).toBeVisible();
+  await active.click();
+  await expect(drawer(page)).toHaveCount(0);
+  await expect(page).toHaveURL(new RegExp(`${encodeURIComponent("Harbor.md")}$`));
+  // The panel's entry went with it: one Back is the page before.
+  await page.goBack();
+  await expect(page).toHaveURL(/README\.md$/);
+});
+
+test("clicking the entry already open on a desktop does not add a history entry", async ({
+  page,
+  isMobile,
+}) => {
+  test.skip(isMobile, "This is the desktop's side bar.");
+  await page.goto(entry(HARBOR));
+  const active = page.locator(".left-bar .tree-note.active, .left-bar .tree-folder.active");
+  await expect(active).toBeVisible();
+  const before = await historyLength(page);
+  await active.click();
+  await page.waitForTimeout(300);
+  expect(await historyLength(page)).toBe(before);
+});
+
+for (const how of ["g h", "the switcher"]) {
+  test(`going elsewhere with ${how} over the panel, then Back, returns to the panel`, async ({
+    page,
+    isMobile,
+  }) => {
+    test.skip(!isMobile, "The drawer is the phone's side bar.");
+    await openPanelOverSecondPage(page);
+    if (how === "g h") {
+      await page.keyboard.press("g");
+      await page.keyboard.press("h");
+      await expect(page).toHaveURL(/\/$/);
+    } else {
+      await page.keyboard.press("Control+k");
+      await page.locator(".switcher input").fill("mira");
+      await expect(page.locator(".switcher li button").first()).toContainText("Mira");
+      await page.keyboard.press("Enter");
+      await expect(page).toHaveURL(/Mira\.md$/);
+    }
+    await expect(drawer(page)).toHaveCount(0);
+    // Back comes to the library it left, open; Back again closes the panel (the same page); and
+    // the one after that is the page before: no entry is wasted.
+    await page.goBack();
+    await expect(page).toHaveURL(new RegExp(`${encodeURIComponent("Harbor.md")}$`));
+    await expect(panel(page)).toBeVisible();
+    await page.goBack();
+    await expect(panel(page)).toBeHidden();
+    await expect(page).toHaveURL(new RegExp(`${encodeURIComponent("Harbor.md")}$`));
+    await page.goBack();
+    await expect(page).toHaveURL(/README\.md$/);
+    // Forward twice lands on the library again.
+    await page.goForward();
+    await page.goForward();
+    await expect(panel(page)).toBeVisible();
+  });
+}
+
+test("Forward after the panel closed opens the panel again", async ({ page, isMobile }) => {
+  test.skip(!isMobile, "The drawer is the phone's side bar.");
+  await openPanelOverSecondPage(page);
+  await page.keyboard.press("Escape");
+  await expect(panel(page)).toBeHidden();
+  await page.goForward();
+  await expect(drawer(page)).toBeVisible();
+  await expect(panel(page)).toBeVisible();
+  // Closing it again takes the entry away once more.
+  await page.keyboard.press("Escape");
+  await page.keyboard.press("Escape");
+  await expect(drawer(page)).toHaveCount(0);
+  await page.goBack();
+  await expect(page).toHaveURL(/README\.md$/);
+});
+
+test("a reload with the panel open opens it again, with the stack as it was", async ({
+  page,
+  isMobile,
+}) => {
+  test.skip(!isMobile, "The drawer is the phone's side bar.");
+  await openPanelOverSecondPage(page);
+  const before = await historyLength(page);
+  await page.reload();
+  await expect(drawer(page)).toBeVisible();
+  await expect(panel(page)).toBeVisible();
+  expect(await historyLength(page)).toBe(before);
+  // Back closes the panel (the page stays), and a second Back leaves for the page before.
+  await page.goBack();
+  await expect(panel(page)).toBeHidden();
+  await expect(page).toHaveURL(new RegExp(`${encodeURIComponent("Harbor.md")}$`));
+  await page.keyboard.press("Escape");
+  await expect(drawer(page)).toHaveCount(0);
+  await page.goBack();
+  await expect(page).toHaveURL(/README\.md$/);
+});
+
+test("closing and opening the panel in quick succession leaves one entry for it", async ({
+  page,
+  isMobile,
+}) => {
+  test.skip(!isMobile, "The drawer is the phone's side bar.");
+  await openPanelOverSecondPage(page);
+  // Close and reopen in the same breath, before the browser has finished going back; five times.
+  for (let i = 0; i < 5; i++) {
+    await page.evaluate(() => {
+      document.querySelector<HTMLElement>(".library-back")!.click();
+      document.querySelector<HTMLElement>("button.library-row")!.click();
+    });
+  }
+  await page.waitForTimeout(600);
+  await expect(panel(page)).toBeVisible();
+  // One entry stands for the panel: Back closes it, and the next Back is the page before.
+  await page.goBack();
+  await expect(panel(page)).toBeHidden();
+  await expect(drawer(page)).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(drawer(page)).toHaveCount(0);
+  await page.goBack();
+  await expect(page).toHaveURL(/README\.md$/);
+});
+
+test("Escape, then Enter on the Library row at once, keeps the panel open", async ({
+  page,
+  isMobile,
+}) => {
+  test.skip(!isMobile, "The drawer is the phone's side bar.");
+  await openPanelOverSecondPage(page);
+  await page.keyboard.press("Escape");
+  await libraryRow(page).press("Enter");
+  await page.waitForTimeout(600);
+  await expect(panel(page)).toBeVisible();
+  await page.goBack();
+  await expect(panel(page)).toBeHidden();
+  await page.keyboard.press("Escape");
+  await page.goBack();
+  await expect(page).toHaveURL(/README\.md$/);
+});
+
+test("revealing a folder from Home and closing the drawer gives the focus back", async ({
+  page,
+  isMobile,
+}) => {
+  test.skip(!isMobile, "The drawer is the phone's side bar.");
+  await page.goto("/");
+  const folder = page.getByRole("button", { name: "01 Places", exact: true });
+  await folder.click();
+  await expect(panel(page)).toBeVisible();
+  await expect(panel(page).locator('.tree-row[data-path="01 Places"]')).toBeVisible();
+  await page.keyboard.press("Escape");
+  await page.keyboard.press("Escape");
+  await expect(drawer(page)).toHaveCount(0);
+  await expect(folder).toBeFocused();
+});
+
+test("the folders opened and closed stay so, through Menu and Library and a closed drawer", async ({
+  page,
+  isMobile,
+}) => {
+  test.skip(!isMobile, "The drawer is the phone's side bar.");
+  await page.goto(entry("README.md"));
+  await expect(page.locator(".entry h1").first()).toBeVisible();
+  await openSideBar(page);
+  await libraryRow(page).click();
+  const items = () => panel(page).getByRole("treeitem").count();
+  const people = panel(page).getByRole("treeitem", { name: "02 People", exact: true });
+  await expect(people).toHaveAttribute("aria-expanded", "true");
+  const open = await items();
+  // Close a folder, and open one that starts closed (a folder inside another).
+  await people.getByText("02 People", { exact: true }).click();
+  await expect(people).toHaveAttribute("aria-expanded", "false");
+  expect(await items()).toBeLessThan(open);
+  const first = panel(page)
+    .locator('[role="treeitem"][aria-expanded="false"]:not([aria-label="02 People"]):not(:has(a))')
+    .first();
+  const innerName = (await first.getAttribute("aria-label"))!;
+  const inner = panel(page).getByRole("treeitem", { name: innerName, exact: true });
+  await inner.getByText(innerName, { exact: true }).click();
+  await expect(inner).toHaveAttribute("aria-expanded", "true");
+  const shown = await items();
+
+  const kept = async () => {
+    await expect(people).toHaveAttribute("aria-expanded", "false");
+    await expect(
+      panel(page).getByRole("treeitem", { name: innerName, exact: true }),
+    ).toHaveAttribute("aria-expanded", "true");
+    expect(await items()).toBe(shown);
+  };
+  // To the menu and back in.
+  await panel(page).getByRole("button", { name: "Menu" }).click();
+  await expect(panel(page)).toBeHidden();
+  await page.waitForTimeout(400);
+  await libraryRow(page).click();
+  await kept();
+  // Closing the drawer and opening it again.
+  await page.keyboard.press("Escape");
+  await page.keyboard.press("Escape");
+  await expect(drawer(page)).toHaveCount(0);
+  await openSideBar(page);
+  await libraryRow(page).click();
+  await kept();
+});
+
+test("Escape in a folder's rename field cancels the rename and leaves the panel open", async ({
+  page,
+  isMobile,
+}) => {
+  test.skip(!isMobile, "The drawer is the phone's side bar.");
+  await openPanelOverSecondPage(page);
+  await panel(page)
+    .getByRole("treeitem", { name: "03 Things", exact: true })
+    .locator(".tree-icon")
+    .click();
+  await page.keyboard.press("F2");
+  const field = page.getByRole("textbox", { name: "New name for 03 Things" });
+  await expect(field).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(field).toHaveCount(0);
+  await expect(panel(page)).toBeVisible();
+  await expect(drawer(page)).toBeVisible();
 });

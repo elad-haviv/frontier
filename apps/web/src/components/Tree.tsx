@@ -55,7 +55,7 @@ import { useDialogs } from "./Dialogs.tsx";
 import { FolderSettings, type FolderStyle } from "./FolderSettings.tsx";
 import { MoveTo } from "./MoveTo.tsx";
 import { stubsIn } from "../keepGoing/homeModel.ts";
-import { useRevealDone, useRevealRequest } from "./shell/panels.tsx";
+import { useOpenFolders, useRevealDone, useRevealRequest } from "./shell/panels.tsx";
 import { folderIcon } from "./tree/folderIcons.ts";
 import {
   entriesUnder,
@@ -163,6 +163,7 @@ export function Tree({
   onChanged,
   newFolderAsked = 0,
   replaceNav = false,
+  onOpenCurrent,
 }: {
   tree: TreeResponse;
   /** The entry in view, by its path in the library. */
@@ -175,6 +176,11 @@ export function Tree({
   newFolderAsked?: number;
   /** Opening an entry replaces the page in the history, as the phone's library panel needs. */
   replaceNav?: boolean;
+  /**
+   * Asked for when the entry already in view is opened again, instead of a navigation to the same
+   * address: the phone's library panel closes the drawer.
+   */
+  onOpenCurrent?: () => void;
 }) {
   const navigate = useNavigate();
   const toast = useToast();
@@ -528,10 +534,15 @@ export function Tree({
     if (e.key === "Enter") {
       e.preventDefault();
       e.stopPropagation();
-      if (row.kind === "note")
-        navigate(entryUrl(row.note!.moved ?? row.note!.path), { replace: replaceNav });
-      else if (row.own) navigate(entryUrl(row.own.moved ?? row.own.path), { replace: replaceNav });
-      else node.toggle();
+      const target =
+        row.kind === "note"
+          ? (row.note!.moved ?? row.note!.path)
+          : row.own
+            ? (row.own.moved ?? row.own.path)
+            : null;
+      if (target === null) node.toggle();
+      else if (target === current && onOpenCurrent) onOpenCurrent();
+      else navigate(entryUrl(target), replaceNav ? { replace: true } : {});
     } else if (e.key === "F2" && row.kind === "folder") {
       e.preventDefault();
       e.stopPropagation();
@@ -549,7 +560,11 @@ export function Tree({
 
   // ---- Open folders and the height of the list ---------------------------------------------
 
+  // The folders open as the author last left them, kept in the shell so that the phone's panel,
+  // which is drawn anew each time it opens, shows them again; the top folders on a first visit.
+  const memory = useOpenFolders();
   const initialOpen = useMemo(() => {
+    if (memory?.openFolders) return memory.openFolders;
     const open: Record<string, boolean> = {};
     for (const f of tree.folders) open[`f:${f.path}`] = true;
     return open;
@@ -560,6 +575,10 @@ export function Tree({
     requestAnimationFrame(() => setRowCount(arborist.current?.visibleNodes.length ?? 0));
   }, []);
   useLayoutEffect(recount, [data, recount]);
+  const toggled = useCallback(() => {
+    if (memory && arborist.current) memory.openFolders = { ...arborist.current.openState };
+    recount();
+  }, [memory, recount]);
 
   // The folders holding the entry in view open, and its row is marked.
   useEffect(() => {
@@ -610,6 +629,7 @@ export function Tree({
         current={current}
         touch={touch}
         replace={replaceNav}
+        onOpenCurrent={onOpenCurrent}
         menuOpen={menuFor === node.data.path}
         onMenu={(open) => setMenuFor(open ? node.data.path : null)}
         actions={node.data.kind === "folder" ? actionsFor(node.data) : []}
@@ -648,7 +668,7 @@ export function Tree({
           disableDrop={({ parentNode }) => !parentNode.isRoot && parentNode.data.kind !== "folder"}
           onMove={onMove}
           onRename={({ node, name }) => void rename(node.data, name)}
-          onToggle={recount}
+          onToggle={toggled}
           renderRow={RowFrame}
           renderCursor={DropLine}
           aria-label="Folders and entries"
@@ -716,6 +736,7 @@ function RowBody({
   current,
   touch,
   replace,
+  onOpenCurrent,
   menuOpen,
   onMenu,
   actions,
@@ -728,6 +749,7 @@ function RowBody({
   current: string;
   touch: boolean;
   replace: boolean;
+  onOpenCurrent: (() => void) | undefined;
   menuOpen: boolean;
   onMenu: (open: boolean) => void;
   actions: Action[];
@@ -777,6 +799,7 @@ function RowBody({
   const name = node.isEditing ? (
     <input
       className="tree-rename"
+      data-own-escape=""
       aria-label={`New name for ${row.name}`}
       defaultValue={row.name}
       autoFocus
@@ -794,7 +817,13 @@ function RowBody({
   ) : row.kind === "note" ? (
     <Link
       to={entryUrl(row.note!.moved ?? row.note!.path)}
-      replace={replace}
+      {...(replace ? { replace: true } : {})}
+      onClick={(e) => {
+        if (onOpenCurrent && current === (row.note!.moved ?? row.note!.path)) {
+          e.preventDefault();
+          onOpenCurrent();
+        }
+      }}
       tabIndex={-1}
       className={`tree-note${draft ? " is-draft" : ""}${row.note!.state === "quarantined" ? " is-quarantined" : ""}${current === (row.note!.moved ?? row.note!.path) ? " active" : ""}`}
     >
@@ -803,10 +832,16 @@ function RowBody({
   ) : row.own ? (
     <Link
       to={entryUrl(row.own.moved ?? row.own.path)}
-      replace={replace}
+      {...(replace ? { replace: true } : {})}
       tabIndex={-1}
       className={`tree-folder${draft ? " is-draft" : ""}${current === (row.own.moved ?? row.own.path) ? " active" : ""}`}
-      onClick={() => node.open()}
+      onClick={(e) => {
+        node.open();
+        if (onOpenCurrent && current === (row.own!.moved ?? row.own!.path)) {
+          e.preventDefault();
+          onOpenCurrent();
+        }
+      }}
     >
       {row.name}
     </Link>

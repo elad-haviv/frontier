@@ -36,3 +36,20 @@ is about one row, so the folders cannot be browsed.
 An empty library says "No entries yet" with a New entry button. A failed or offline tree shows today's
 message inside the panel. The Library row is a real button; focus moves to the panel's Back button when
 it opens and returns to the Library row when it closes; Esc goes back. Motion respects reduced motion.
+
+## How it behaves (after review)
+
+- **History.** Opening the panel pushes one entry with the same address, marked in its state. Closing
+  the panel (‹ Menu, Escape, a swipe, closing the drawer) goes back over it; the browser's Back does the
+  same. An entry carrying the mark opens the drawer and the panel when it is arrived at (Forward, Back
+  from a page opened over the panel, a reload), so the stack stays consistent whichever way it is walked.
+  Opening the panel while our own going back is still under way waits for it, then pushes a fresh entry.
+- **Tapping the entry already open** closes the drawer. Tapping any other entry replaces the panel's
+  entry with that page. On a desktop, a click on the open entry replaces the same address as before.
+- **Folders opened or closed** are remembered for the visit (in the shell, shared with the desktop's
+  tree), so ‹ Menu then Library, or closing and reopening the drawer, shows them as left. A first visit
+  opens the top folders, and the folders above the entry in view always open.
+- **Escape** in a folder's rename field only cancels the rename.
+- **Swipe back** ignores a start within 20 px of the screen's edge, where the browser's own swipe back
+  begins, and the panel does not go back twice when the browser already has.
+- The panel's title is in the serif face, as in the mockup.

@@ -139,6 +139,12 @@ export class ShellStore {
    */
   reveal: { path: string; n: number } | null = null;
   private asked = 0;
+  /**
+   * Which folders of the library tree are open, by row id, as the author left them; null until a
+   * folder has been opened or closed. It outlives the tree, so the phone's library panel (which is
+   * drawn anew each time it opens) shows the folders as they were.
+   */
+  openFolders: Record<string, boolean> | null = null;
 
   subscribe = (listener: () => void): (() => void) => {
     this.listeners.add(listener);
@@ -281,6 +287,11 @@ export const ShellStoreProvider = Store.Provider;
 
 function useStore(): ShellStore | null {
   return useContext(Store);
+}
+
+/** The tree's memory of its open folders; none (and no memory) outside the shell. */
+export function useOpenFolders(): ShellStore | null {
+  return useStore();
 }
 
 /** For the shell's own parts: re-renders on every change of the store, and gives it. */
