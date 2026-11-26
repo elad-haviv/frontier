@@ -618,10 +618,30 @@ export const api = {
       traits,
       moment,
     }),
-  say: (path: string, message: string, history: { who: "author" | "character"; text: string }[]) =>
-    post<{ lines: CharacterLine[] }>("/api/characters/say", { path, message, history }),
-  keepLine: (path: string, text: string) =>
-    post<{ draft: string | null }>("/api/characters/line", { path, text }),
+  /** Says something to the character; the conversation is saved, and started when `talk` is null. */
+  say: (path: string, message: string, talk: string | null) =>
+    post<{ talk: CharacterTalk; lines: CharacterLine[] }>("/api/characters/say", {
+      path,
+      message,
+      talk,
+    }),
+  keepLine: (path: string, text: string, talk: string | null, line: number) =>
+    post<{ draft: string | null; talk: CharacterTalk | null }>("/api/characters/line", {
+      path,
+      text,
+      talk,
+      line,
+    }),
+  /** Which of the entries read for the profile a year of the main chronicle keeps from them. */
+  characterMoment: (path: string, year: string) =>
+    call<{ read: number; withheld: { path: string; title: string }[] }>(
+      `/api/characters/moment?path=${encodeURIComponent(path)}&year=${encodeURIComponent(year)}`,
+    ),
+  talks: (path: string) =>
+    call<{ talks: TalkSummary[] }>(`/api/characters/talks?path=${encodeURIComponent(path)}`),
+  talk: (id: string) => call<{ talk: CharacterTalk }>(`/api/characters/talks/${id}`),
+  deleteTalk: (id: string) =>
+    call<{ ok: true }>(`/api/characters/talks/${id}`, { method: "DELETE" }),
   discoveries: (map: string) =>
     call<{ discoveries: Discovery[]; ready: boolean; art: boolean; folders: string[] }>(
       `/api/maps/${map}/discoveries`,
@@ -985,6 +1005,26 @@ export interface CharacterLine {
   sources: string[];
   quotes: { path: string; text: string }[];
   improvised: boolean;
+}
+export type TalkLine =
+  { who: "author"; text: string } | ({ who: "character"; kept: boolean } & CharacterLine);
+/** A saved conversation with a character (stage 27). */
+export interface CharacterTalk {
+  id: string;
+  entry: string;
+  at: string;
+  updatedAt: string;
+  moment: { words: string; year: number | null };
+  lines: TalkLine[];
+}
+export interface TalkSummary {
+  id: string;
+  at: string;
+  updatedAt: string;
+  moment: { words: string; year: number | null };
+  title: string;
+  lines: number;
+  kept: number;
 }
 export const talkUrl = (path: string): string =>
   "/talk/" + path.split("/").map(encodeURIComponent).join("/");
