@@ -4,6 +4,7 @@ import {
   AiProviderKind,
   AiSettingsRequest,
   AiTestRequest,
+  artLibrary,
   KeepGoingSettingsRequest,
   NeedsLoveRules,
   ModelPricesRequest,
@@ -103,11 +104,14 @@ export function settingsRoutes(app: FastifyInstance, s: Server): void {
     // Models, prices, art style, propose-on-publish and Keep going are the person's own.
     const settings = await s.settings.ofPerson(personOf(request).id);
     const { spentUsd } = await s.ai.spending(viewerOf(request));
+    const library = artLibrary(settings.ai);
     return {
       ai: {
         modelPrices: settings.ai.modelPrices,
         models: settings.ai.models,
-        artStyle: settings.ai.artStyle,
+        artStyle: library.styles.find((x) => x.id === library.usual)!.text,
+        artStyles: library.styles,
+        usualArtStyle: library.usual,
         proposeOnPublish: settings.ai.proposeOnPublish,
         spentUsd,
       },
@@ -161,12 +165,15 @@ export function settingsRoutes(app: FastifyInstance, s: Server): void {
               },
             }
           : {}),
-        ...(input.artStyle === undefined ? {} : { artStyle: input.artStyle }),
         ...(input.proposeOnPublish === undefined
           ? {}
           : { proposeOnPublish: input.proposeOnPublish }),
       },
     }));
+    // The art styles are a library (stage 34): these two change its usual style.
+    const me = personOf(request).id;
+    if (input.usualArtStyle !== undefined) await s.artStyles.makeUsual(me, input.usualArtStyle);
+    if (input.artStyle !== undefined) await s.artStyles.sayUsual(me, input.artStyle);
     return { ok: true as const };
   });
 

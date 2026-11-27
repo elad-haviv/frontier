@@ -66,7 +66,7 @@ at the bottom. There is no right-click menu on a phone, so the command is in the
 
 ## Not in this stage
 
-Editing a picture with a second prompt, a library image as a reference, several named art styles, and
+Editing a picture with a second prompt, a library image as a reference, several named art styles (stage 34), and
 generating from the reading page.
 
 ## As built

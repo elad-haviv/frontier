@@ -51,32 +51,6 @@
   text-decoration: underline;
   cursor: pointer;
 }
-.generate-style {
-  min-width: 0;
-  padding: 0.45rem 0.6rem;
-  border: 1px solid var(--rule);
-  border-radius: 6px;
-  background: var(--paper-raised);
-  font-size: 0.85rem;
-  color: var(--ink-soft);
-}
-.generate-style summary {
-  cursor: pointer;
-  color: var(--ink);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.generate-style summary span {
-  color: var(--ink-soft);
-}
-.generate-style label {
-  display: block;
-  margin: 0.5rem 0 0.25rem;
-}
-.generate-style textarea {
-  font-size: 0.9rem;
-}
 .generate-shapes {
   display: flex;
   flex-wrap: wrap;

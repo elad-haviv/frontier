@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { DraftKind, Id, Origin, ProposalOperation, VaultPath } from "./state.js";
+import { ArtStyle, DraftKind, Id, Origin, ProposalOperation, VaultPath } from "./state.js";
 import { ModelPrice } from "./ai.js";
 import { EmailInfo } from "./email.js";
 import { AccountEmail } from "./people.js";
@@ -882,7 +882,11 @@ export const SettingsResponse = z.object({
       conversation: z.string().nullable(),
       art: z.string().nullable(),
     }),
+    /** What the usual art style says; devices on an earlier build read only this. */
     artStyle: z.string(),
+    /** Stage 34: the person's art styles, and the id of the usual one. */
+    artStyles: z.array(ArtStyle),
+    usualArtStyle: z.string(),
     proposeOnPublish: z.boolean(),
     spentUsd: z.number(),
   }),
@@ -909,9 +913,41 @@ export const AiSettingsRequest = z.object({
       art: z.string().min(1).nullable().optional(),
     })
     .optional(),
+  /** Changes what the usual art style says. */
   artStyle: z.string().trim().min(1).max(600).optional(),
+  /** Makes another style of the library the usual one. */
+  usualArtStyle: z.string().optional(),
   proposeOnPublish: z.boolean().optional(),
 });
+
+// ---- Art styles (stage 34) -------------------------------------------------------------------
+
+/** What every change to the library answers: the library as it now is. */
+export const ArtStylesResponse = z.object({ styles: z.array(ArtStyle), usual: z.string() });
+export type ArtStylesResponse = z.infer<typeof ArtStylesResponse>;
+
+/**
+ * `POST /api/settings/art-styles`: a new style. `id` and `at` put a deleted one back where it was
+ * (Undo); `usual` makes it the usual one.
+ */
+export const NewArtStyleRequest = ArtStyle.pick({ name: true, text: true }).extend({
+  sample: ArtStyle.shape.sample.optional(),
+  id: ArtStyle.shape.id.optional(),
+  at: z.number().int().min(0).optional(),
+  usual: z.boolean().optional(),
+});
+export type NewArtStyleRequest = z.infer<typeof NewArtStyleRequest>;
+
+/** `PUT /api/settings/art-styles/:id`. */
+export const ArtStyleChange = z.object({
+  name: ArtStyle.shape.name.optional(),
+  text: ArtStyle.shape.text.optional(),
+  sample: ArtStyle.shape.sample.optional(),
+});
+export type ArtStyleChange = z.infer<typeof ArtStyleChange>;
+
+/** `POST /api/settings/art-styles/sample`: draws the sample scene in a style's words. */
+export const ArtSampleRequest = z.object({ text: ArtStyle.shape.text });
 
 // ---- Pictures for entries (stage 29) ---------------------------------------------------------
 
@@ -925,6 +961,8 @@ export const PictureTry = z.object({
   entry: z.string(),
   prompt: z.string(),
   style: z.string(),
+  /** The name of the library style it was made in, when one was picked (stage 34). */
+  styleName: z.string().max(60).optional(),
   shape: PictureShape,
   /** The file extension the picture is kept with, from its bytes: png, jpg or webp. */
   ext: z.enum(["png", "jpg", "webp"]),
@@ -938,6 +976,9 @@ export const PicturesResponse = z.object({
   off: z.object({ message: z.string(), href: z.string().nullable() }).nullable(),
   /** The art style from the settings, added to every prompt unless changed for one picture. */
   style: z.string(),
+  /** Stage 34: the styles to pick from, and the id of the usual one. */
+  styles: z.array(ArtStyle).default([]),
+  usualStyle: z.string().default(""),
   /** What one picture has cost lately with the chosen model, when known. */
   perPictureUsd: z.number().nullable(),
   tries: z.array(PictureTry),
@@ -949,6 +990,8 @@ export const MakePictureRequest = z.object({
   entry: z.string().min(1).max(1000),
   prompt: z.string().trim().min(1, "Describe the picture first.").max(4000),
   style: z.string().max(2000).default(""),
+  /** The library style picked, to say on the try; "name, changed" when its words were edited. */
+  styleName: z.string().trim().max(60).optional(),
   shape: PictureShape.default("square"),
 });
 export type MakePictureRequest = z.infer<typeof MakePictureRequest>;

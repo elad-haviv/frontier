@@ -23,6 +23,7 @@ import type {
   AiTaskName,
   PictureShape,
   PictureTry,
+  ArtStylesResponse,
   PicturesResponse,
   PinsResponse,
   QueueResponse,
@@ -142,7 +143,7 @@ const OPEN =
  * needs no key, which is nearly everything, sends none.
  */
 const AI_REQUEST =
-  /^\/api\/(lore|write|characters|pictures|keep-going\/(?:whats-missing|question)|ai\/models|settings\/ai\/test|proposals\/(fields|job)|maps\/[^/?]+\/(discover|generate|discoveries\/[^/?]+\/art)|comments\/[^/?]+\/work)(?:[/?]|$)/;
+  /^\/api\/(lore|write|characters|pictures|keep-going\/(?:whats-missing|question)|ai\/models|settings\/ai\/test|settings\/art-styles\/sample|proposals\/(fields|job)|maps\/[^/?]+\/(discover|generate|discoveries\/[^/?]+\/art)|comments\/[^/?]+\/work)(?:[/?]|$)/;
 
 export const needsAiKeys = (url: string): boolean => AI_REQUEST.test(bareUrl(url));
 
@@ -219,6 +220,7 @@ export function featureOf(address: string): string {
   if (/^\/api\/comments\//.test(url)) return "Work on it";
   if (/^\/api\/proposals/.test(url)) return "Proposing fields";
   if (/^\/api\/settings\/ai\/test/.test(url)) return "Trying a model";
+  if (/^\/api\/settings\/art-styles\/sample/.test(url)) return "A style's sample";
   return "AI help";
 }
 
@@ -589,8 +591,32 @@ const serverApi = {
   saveAi: (body: {
     models?: { extraction?: string | null; conversation?: string | null; art?: string | null };
     artStyle?: string;
+    usualArtStyle?: string;
     proposeOnPublish?: boolean;
   }) => baseSend<{ ok: true }>("PUT", "/api/settings/ai", body),
+  /** Stage 34: the person's library of art styles. Every change answers the library as it then is. */
+  addArtStyle: (style: {
+    name: string;
+    text: string;
+    sample?: string | null;
+    /** With `at`, puts a deleted style back where it was. */
+    id?: string;
+    at?: number;
+    usual?: boolean;
+  }) => basePost<ArtStylesResponse>("/api/settings/art-styles", style),
+  editArtStyle: (id: string, change: { name?: string; text?: string; sample?: string | null }) =>
+    baseSend<ArtStylesResponse>(
+      "PUT",
+      `/api/settings/art-styles/${encodeURIComponent(id)}`,
+      change,
+    ),
+  removeArtStyle: (id: string) =>
+    baseSend<ArtStylesResponse>("DELETE", `/api/settings/art-styles/${encodeURIComponent(id)}`),
+  starterArtStyles: () =>
+    basePost<ArtStylesResponse & { added: number }>("/api/settings/art-styles/starters"),
+  /** Draws the sample scene in a style's words, with this device's key; a picture's cost. */
+  artSample: (text: string) =>
+    basePost<{ sample: string; costUsd: number }>("/api/settings/art-styles/sample", { text }),
   testAi: (body: { task?: AiTaskName; model?: string } = {}) =>
     basePost<{ ok: boolean; costUsd: number; message: string; image?: string }>(
       "/api/settings/ai/test",
@@ -749,8 +775,13 @@ function projectCalls(slugOf: () => string) {
     pictures: (entry: string) =>
       call<PicturesResponse>(`/pictures?entry=${encodeURIComponent(entry)}`),
     /** Makes one picture with this person's own key; it is kept as a try until inserted or a week has passed. */
-    makePicture: (input: { entry: string; prompt: string; style: string; shape: PictureShape }) =>
-      post<{ try: PictureTry }>("/pictures", input),
+    makePicture: (input: {
+      entry: string;
+      prompt: string;
+      style: string;
+      styleName?: string;
+      shape: PictureShape;
+    }) => post<{ try: PictureTry }>("/pictures", input),
     /** Keeps a try as an unpublished image, as an upload. */
     insertPicture: (id: string, name: string) =>
       post<{ path: string; embed: string }>(`/pictures/${id}/insert`, { name }),
@@ -1325,6 +1356,9 @@ export function entryUrl(path: string, heading?: string | null): string {
 export function imageUrl(path: string, width?: 320 | 640 | 1280, slug?: string): string {
   return projectUrl(`/images?path=${encodeURIComponent(path)}${width ? `&w=${width}` : ""}`, slug);
 }
+
+/** The address of a sample picture of one of the person's art styles (stage 34). */
+export const artSampleUrl = (token: string): string => `/api/settings/art-styles/sample/${token}`;
 
 /** The address of a picture made for an entry and not yet inserted (stage 29); the maker's own. */
 export function pictureUrl(id: string, width?: number, slug?: string): string {
