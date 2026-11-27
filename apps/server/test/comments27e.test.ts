@@ -72,6 +72,7 @@ const patch = (who: Who, url: string, payload: unknown) =>
 
 const path = encodeURIComponent(ROAD);
 type Shown = {
+  quote: string;
   id: string;
   text: string;
   for: string;
