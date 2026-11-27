@@ -16,6 +16,8 @@ import { Progress } from "../components/ui/Progress.tsx";
 import { failureOf, useAsync } from "../useAsync.ts";
 import { projectWork } from "../projectWork.ts";
 import { useCanWrite } from "../components/projectContext.ts";
+import { byText } from "../people/model.ts";
+import "../people/People.css";
 
 const when = (at: string) =>
   new Date(at).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
@@ -100,6 +102,7 @@ function VersionRow({
     <li ref={row}>
       <p className="change-head">
         <span className="version-when">{when(version.at)}</span>
+        {byText(version.by) && <span className="people-by">{byText(version.by)}</span>}
         <span className="change-path">{version.message}</span>
       </p>
       {then !== current && <p className="muted">Then named {then}.</p>}
@@ -196,6 +199,7 @@ export function LibraryHistoryPage() {
             <li key={v.commit}>
               <p className="change-head">
                 <span className="version-when">{when(v.at)}</span>
+                {byText(v.by) && <span className="people-by">{byText(v.by)}</span>}
                 <span className="change-path">{v.message}</span>
               </p>
               <details>

@@ -43,7 +43,7 @@ export function StatusPage() {
           {when(s.lastBackupAt)}
           {s.backupError && <span className="error"> · {s.backupError}</span>}
         </dd>
-        <dt>Unpublished changes</dt>
+        <dt>{s.library === "own" ? "Your unsaved changes" : "Your unpublished changes"}</dt>
         <dd>{s.unpublished}</dd>
       </dl>
 

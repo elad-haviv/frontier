@@ -76,6 +76,9 @@ import { useToast } from "./ui/Toast.tsx";
 import "./FolderSettings.css";
 import "./Tree.css";
 import { projectWork } from "../projectWork.ts";
+import { othersAt, useOthersLookup } from "../people/live.ts";
+import { joinNames } from "../people/model.ts";
+import "../people/People.css";
 
 const SAVE_FIRST = "Save a version first";
 const WAIT = "Wait until your changes are sent";
@@ -629,9 +632,12 @@ export function Tree({
     requestAnimationFrame(show);
   }, [reveal, revealDone, recount]);
 
+  // Someone else's unsaved changes to an entry (stage 27d): a dot, from the stream, never text.
+  const othersLookup = useOthersLookup();
   /** How each row is drawn now; rows read it through a context, so they are never remounted. */
   const draw = (props: NodeRendererProps<Row>) => {
     const { node } = props;
+    const note = node.data.kind === "note" ? node.data.note : node.data.own;
     return (
       <RowBody
         node={node}
@@ -645,6 +651,7 @@ export function Tree({
         onMenu={(open) => setMenuFor(open ? node.data.path : null)}
         actions={canWrite && node.data.kind === "folder" ? actionsFor(node.data) : []}
         canWrite={canWrite}
+        others={note ? othersAt(othersLookup, note.path, note.othersUnsaved) : null}
         onNewEntry={onNewEntry}
         onRename={(name) => void rename(node.data, name)}
       />
@@ -755,6 +762,7 @@ function RowBody({
   onMenu,
   actions,
   canWrite,
+  others,
   onNewEntry,
   onRename,
 }: {
@@ -770,6 +778,8 @@ function RowBody({
   actions: Action[];
   /** Whether the person may change the folders: a reader has no buttons and no menu on a row. */
   canWrite: boolean;
+  /** Who else has unsaved changes to this entry: names, true when only a flag says so, or null. */
+  others: { name: string }[] | true | null;
   onNewEntry: (folder: string) => void;
   onRename: (name: string) => void;
 }) {
@@ -810,6 +820,13 @@ function RowBody({
         </span>,
       );
     }
+  }
+  if (others) {
+    const who = others === true ? "Someone else" : joinNames(others.map((o) => o.name));
+    const label = `${who} ${others !== true && others.length > 1 ? "have" : "has"} unsaved changes to this entry`;
+    marks.push(
+      <span key="others" className="tree-others" role="img" aria-label={label} title={label} />,
+    );
   }
   const draft = row.note?.state === "unpublished" || !!row.note?.moved || !!folder?.unpublished;
 

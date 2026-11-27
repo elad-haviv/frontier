@@ -8,6 +8,7 @@ import type {
   AfterPublishResponse,
   AttentionResponse,
   CreateRenameResponse,
+  DraftCompareResponse,
   DraftKind,
   DraftVersionsResponse,
   EntryResponse,
@@ -47,7 +48,9 @@ import type {
   MapPreview,
   ChronicleFile,
   SchemaResponse,
+  PublishConfirmResponse,
   PublishPlan,
+  RemoveMemberResponse,
   StatusSnapshot,
   TreeResponse,
   UnpublishedResponse,
@@ -619,8 +622,8 @@ function projectCalls(slugOf: () => string) {
     changeRole: (id: string, role: ProjectRole) =>
       send<{ ok: true }>("PUT", `/members/${encodeURIComponent(id)}`, { role }),
     removeMember: (id: string) =>
-      send<{ ok: true }>("DELETE", `/members/${encodeURIComponent(id)}`),
-    leaveProject: () => post<{ ok: true }>("/members/leave"),
+      send<RemoveMemberResponse>("DELETE", `/members/${encodeURIComponent(id)}`),
+    leaveProject: () => post<RemoveMemberResponse>("/members/leave"),
     invites: () => call<InvitesResponse>("/invites"),
     createInvite: (role: ProjectRole) => post<CreateInviteResponse>("/invites", { role }),
     cancelInvite: (id: string) =>
@@ -679,8 +682,18 @@ function projectCalls(slugOf: () => string) {
     dismissKept: (id: string) => send<{ ok: true }>("DELETE", `/drafts/${id}/versions/server`),
     mergeVersions: (id: string, text: string) =>
       post<{ id: string; revision: number }>(`/drafts/${id}/merge-versions`, { text }),
-    resolve: (id: string, text: string) =>
-      post<{ id: string; revision: number }>(`/drafts/${id}/resolve`, { text }),
+    /**
+     * Settles a clash: the person's text goes on top of the saved version they compared, which
+     * `theirsBlob` names (`null`: there was no file). A 409 `saved_by_other` says someone saved
+     * again meanwhile; the page then compares again (`compare`).
+     */
+    resolve: (id: string, text: string, theirsBlob?: string | null) =>
+      post<{ id: string; revision: number }>(`/drafts/${id}/resolve`, {
+        text,
+        ...(theirsBlob !== undefined ? { theirsBlob } : {}),
+      }),
+    /** What saving this unsaved change now would do, with both texts when they differ (stage 27d). */
+    compare: (id: string) => call<DraftCompareResponse>(`/drafts/${id}/compare`),
     unpublished: () => call<UnpublishedResponse>("/unpublished"),
     maps: () =>
       call<{
@@ -1019,7 +1032,7 @@ function projectCalls(slugOf: () => string) {
       post<{ id: string; draftId?: string }>("/quarantine", { path, commit, decision }),
     withdrawDecision: (id: string) => send<{ ok: true }>("DELETE", `/quarantine/${id}`),
     confirm: (planId: string, confirmedMergeIds: string[], message: string) =>
-      post<{ commit: string; published: string[] }>("/publish/confirm", {
+      post<PublishConfirmResponse>("/publish/confirm", {
         planId,
         confirmedMergeIds,
         message,
@@ -1207,6 +1220,8 @@ export interface Version {
   at: string;
   message: string;
   paths: string[];
+  /** Who saved it (stage 27d). Absent from a server that does not say. */
+  by?: { id: string | null; name: string };
 }
 
 export interface ImportResult {

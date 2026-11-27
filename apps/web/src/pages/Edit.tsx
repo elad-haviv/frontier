@@ -34,6 +34,8 @@ import { useEditorOutline } from "../components/entry/EditorOutline.tsx";
 import { WideMenuItem } from "../components/entry/WideMenuItem.tsx";
 import { useWide } from "../width.ts";
 import { useProjectWork } from "../projectWork.ts";
+import { useOthersUnsaved } from "../people/live.ts";
+import { OthersNotice } from "../people/OthersNotice.tsx";
 
 /** A phone, where the right bar is a sheet over the text. */
 const PHONE = "(max-width: 47.99rem)";
@@ -91,6 +93,8 @@ export function EditPage() {
   const view = useRef<EditorView | null>(null);
   /** When the text was opened from this device's copy, the time that copy was stored. */
   const [offlineAt, setOfflineAt] = useState<number | null>(null);
+  // Someone else's unsaved changes to this entry: whoever saves second compares (stage 27d).
+  const others = useOthersUnsaved(path, undefined, offlineAt !== null);
   /** The server's copy the text was opened from, to see whether a later read differs. */
   const openedFrom = useRef({ id: "", revision: 0, blob: "" });
   // The panels beside the text: Properties and Comments. Writing help opens in the text itself.
@@ -771,6 +775,7 @@ export function EditPage() {
         </span>
       </div>
       <OfflineCopy at={offlineAt} className="editor-offline" />
+      <OthersNotice people={others} editing />
       {stale && (
         <p className="banner" role="alert">
           This entry was changed on another device after this text was started. Both texts are kept.{" "}

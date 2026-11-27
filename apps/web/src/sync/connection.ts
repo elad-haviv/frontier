@@ -10,6 +10,7 @@
 import { useSyncExternalStore } from "react";
 import type { StatusSnapshot } from "@frontier/schema";
 import { currentSlug } from "../project.ts";
+import { TAB_CLIENT } from "./tab.ts";
 
 export type ConnectionState = "online" | "offline" | "signed-out";
 
@@ -22,10 +23,16 @@ export interface ConnectionDeps {
   maxDelayMs?: number;
   /** The address of the project the app has open, or null outside any project. */
   project: () => string | null;
+  /**
+   * A name for this tab (stage 27d): sent as `?client=` so the server knows which "who is
+   * reading" announcement a closing stream took away. Left out, the stream names no tab.
+   */
+  client?: string;
 }
 
 /** The status and its stream are a project's (stage 27b); outside one, `/api/me` says who is in. */
-const streamOf = (slug: string) => `/api/p/${encodeURIComponent(slug)}/status/events`;
+const streamOf = (slug: string, client?: string) =>
+  `/api/p/${encodeURIComponent(slug)}/status/events${client ? `?client=${encodeURIComponent(client)}` : ""}`;
 const statusOf = (slug: string | null) =>
   slug === null ? "/api/me" : `/api/p/${encodeURIComponent(slug)}/status`;
 
@@ -125,7 +132,7 @@ export class Connection {
     const slug = this.d.project();
     // Outside a project there is nothing to listen to; the first project that opens starts it.
     if (!this.d.EventSource || !this.started || slug === null) return;
-    const source = new this.d.EventSource(streamOf(slug));
+    const source = new this.d.EventSource(streamOf(slug, this.d.client));
     if (this.openedFor !== slug) this.streamOpenedBefore = false;
     this.openedFor = slug;
     this.source = source;
@@ -248,6 +255,7 @@ export const connection = new Connection({
   EventSource: typeof EventSource === "undefined" ? undefined : EventSource,
   ...(typeof window === "undefined" ? {} : { events: window }),
   project: currentSlug,
+  client: TAB_CLIENT,
 });
 
 /** The connection state and the latest status snapshot, for any component. */

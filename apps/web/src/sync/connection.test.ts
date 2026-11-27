@@ -49,6 +49,30 @@ function make(fetch: typeof globalThis.fetch) {
   return { c, events };
 }
 
+describe("the status stream names its tab (stage 27d)", () => {
+  it("opens the stream with ?client=, the name the announcements of who is reading carry", () => {
+    FakeSource.made = [];
+    slug = "avalymia";
+    const c = new Connection({
+      fetch: vi.fn(),
+      EventSource: FakeSource as unknown as typeof EventSource,
+      maxDelayMs: 10,
+      project: () => slug,
+      client: "tab_1-x",
+    });
+    c.start();
+    expect(FakeSource.made[0]!.url).toBe("/api/p/avalymia/status/events?client=tab_1-x");
+    c.stop();
+  });
+
+  it("names no tab when none is given", () => {
+    const { c } = make(vi.fn());
+    c.start();
+    expect(FakeSource.made[0]!.url).toBe("/api/p/avalymia/status/events");
+    c.stop();
+  });
+});
+
 describe("the connection service", () => {
   it("takes the status from the stream and says online", () => {
     const { c } = make(vi.fn());

@@ -73,6 +73,11 @@ import {
 } from "../components/entry/RenameField.tsx";
 import { useNeedsConnection } from "../sync/connection.ts";
 import { useCanWrite } from "../components/projectContext.ts";
+import { useOthersUnsaved, useReaders } from "../people/live.ts";
+import { lastVersionText } from "../people/model.ts";
+import { OthersNotice } from "../people/OthersNotice.tsx";
+import { presence } from "../people/presence.ts";
+import { ReadingNow } from "../people/ReadingNow.tsx";
 import { NotOnDevice } from "../components/NotOnDevice.tsx";
 import { OfflineCopy, useReadAgain } from "../components/OfflineCopy.tsx";
 import {
@@ -169,6 +174,24 @@ export function EntryPage() {
   // The entry as loaded, which keeps its identity until another arrives; `entry` itself is new
   // at every render.
   const loaded = entry.state === "ready" ? entry.value : null;
+
+  // Who else has unsaved changes to this entry and who is reading it are live: the stream says,
+  // and nothing is shown from the device's copy or while the server cannot be reached.
+  const shownEntry = loaded && loaded.path === path ? loaded : null;
+  const fromDevice = offlineAt !== null;
+  const others = useOthersUnsaved(path, shownEntry?.othersUnsaved, fromDevice);
+  const readers = useReaders(path, fromDevice);
+  // This tab says which published entry it reads (readers too, so writers can see them). An entry
+  // that is only the person's own unsaved new one is never announced.
+  const announce =
+    shownEntry !== null &&
+    !fromDevice &&
+    shownEntry.blob !== "" &&
+    shownEntry.draft?.kind !== "create";
+  useEffect(() => {
+    presence.set(announce ? path : null);
+  }, [announce, path]);
+  useEffect(() => () => presence.set(null), []);
   const view = useMemo(() => {
     if (!loaded) return null;
     const { body } = splitFrontmatter(loaded.text);
@@ -535,6 +558,7 @@ export function EntryPage() {
       : undefined,
   };
 
+  const byline = lastVersionText(ent.lastVersion);
   const moved = ent.rename !== null && dirname(ent.rename.to) !== dirname(ent.path);
   const renamed = ent.rename !== null && stem(ent.rename.to) !== stem(ent.path);
 
@@ -662,6 +686,22 @@ export function EntryPage() {
               )}
             </p>
           )}
+          {byline && (
+            <p className="people-byline" data-testid="last-version">
+              {byline}
+              {fromDevice && <span> (as of this copy)</span>}
+              {editable && (
+                <>
+                  {" "}
+                  <button type="button" className="draft-undo" onClick={() => openPanel("history")}>
+                    History
+                  </button>
+                </>
+              )}
+            </p>
+          )}
+          <ReadingNow people={readers} />
+          <OthersNotice people={others} />
           <Fields fields={ent.fields} />
           <CustomFields text={ent.text} links={ent.links} />
           {canTalk && (ent.fields.type === "person" || ent.fields.type === "deity") && (

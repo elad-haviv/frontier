@@ -3,6 +3,7 @@ import { api, historyUrl } from "../../api.ts";
 import { failureOf, useAsync } from "../../useAsync.ts";
 import { Problem } from "../ui/Problem.tsx";
 import { useWords } from "../Shell.tsx";
+import { byText } from "../../people/model.ts";
 import "./HistoryPanel.css";
 
 const when = (at: string) =>
@@ -33,7 +34,10 @@ export function HistoryPanel({ path }: { path: string }) {
           {history.value.versions.map((v) => (
             <li key={v.commit}>
               <Link className="history-item" to={`${historyUrl(path)}?v=${v.commit}`}>
-                <span className="history-when">{when(v.at)}</span>
+                <span className="history-when">
+                  {when(v.at)}
+                  {byText(v.by) && <span className="history-by"> {byText(v.by)}</span>}
+                </span>
                 <span className="history-what">{v.message.split("\n")[0]}</span>
               </Link>
             </li>

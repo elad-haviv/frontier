@@ -21,6 +21,7 @@ import { useToast } from "../../components/ui/Toast.tsx";
 import { useNavigate } from "../../nav.tsx";
 import { forgetProjectCopy } from "../../offline/copy.ts";
 import { loadProjects } from "../../projects.ts";
+import { keptText } from "../../people/model.ts";
 import { connection, useNeedsConnection } from "../../sync/connection.ts";
 import {
   isOnlyOwner,
@@ -208,9 +209,13 @@ function Row({
   async function take() {
     setBusy(true);
     try {
-      await api.removeMember(member.id);
+      const kept = await api.removeMember(member.id);
       setAsking(false);
-      await onChanged(`${member.name} was removed. What they wrote stays, under their name.`, true);
+      const note = keptText(kept, "their");
+      await onChanged(
+        `${member.name} was removed. What they wrote stays, under their name.${note ? ` Their ${note}` : ""}`,
+        true,
+      );
     } catch (err) {
       keepThem();
       onProblem(said(err));
@@ -321,8 +326,9 @@ function Leave({ members }: { members: MemberRow[] }) {
     if (!ok) return;
     const { slug, name, id } = project;
     markLeaving(slug);
+    let kept: Awaited<ReturnType<typeof api.leaveProject>> | undefined;
     try {
-      await api.leaveProject();
+      kept = await api.leaveProject();
     } catch (err) {
       if (isLeaving(slug)) unmarkLeaving(slug);
       setProblem(said(err));
@@ -330,7 +336,8 @@ function Leave({ members }: { members: MemberRow[] }) {
     }
     clearAccessNotice();
     await loadProjects();
-    toast({ message: `You left ${name}.` });
+    const note = keptText(kept, "your");
+    toast({ message: `You left ${name}.${note ? ` Your ${note}` : ""}` });
     void navigate("/projects", { replace: true });
     // The project's page unmarks the leaving when it goes, so that a loss reported while it is
     // still on the screen is not worded as one. Its copy on this device goes too; the changes not
