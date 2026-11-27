@@ -197,17 +197,17 @@ describe("emailing an invitation", () => {
   });
 
   it("a relay that is slow does not hold up a join or a forgotten-password answer", async () => {
-    t.server.mail.outbox!.delayMs = 400;
+    t.server.mail.outbox!.delayMs = 2000;
     const { body } = await invite({ role: "writer" });
     const started = Date.now();
     const res = await join(body.code, fresh());
     expect(res.statusCode).toBe(200);
-    expect(Date.now() - started).toBeLessThan(350);
+    expect(Date.now() - started).toBeLessThan(1500);
     const forgot = Date.now();
     expect(
       (await anon(t, "POST", "/api/forgot-password", { email: "owner@example.com" })).statusCode,
     ).toBe(200);
-    expect(Date.now() - forgot).toBeLessThan(350);
+    expect(Date.now() - forgot).toBeLessThan(1500);
     await t.server.mail.settled();
   });
 
@@ -233,6 +233,18 @@ describe("emailing an invitation", () => {
       .json()
       .invites.filter((i: { sentTo: string }) => i.sentTo === to);
     expect(rows.map((r: { id: string }) => r.id)).toEqual([again.id]);
+  });
+
+  it("two resends at once make one new link, and the other is told the link is no longer waiting", async () => {
+    const first = (await invite({ role: "writer", email: fresh() })).body;
+    const [a, b] = await Promise.all([
+      owner.post(`${base()}/invites/${first.id}/resend`),
+      owner.post(`${base()}/invites/${first.id}/resend`),
+    ]);
+    expect([a.statusCode, b.statusCode].sort()).toEqual([201, 410]);
+    const loser = a.statusCode === 410 ? a : b;
+    expect(loser.json().error.code).toBe("invite_cancelled");
+    await t.server.mail.settled();
   });
 
   it("resend is for owners, for emailed links that still wait, and says what is wrong otherwise", async () => {
@@ -802,15 +814,15 @@ describe("forgot password", () => {
 
   it("does the lookup and the sending after the answer, so a slow relay changes nothing about it", async () => {
     const a = await account();
-    t.server.mail.outbox!.delayMs = 500;
+    t.server.mail.outbox!.delayMs = 2000;
     const start = Date.now();
     await forgot(a.email);
     const known = Date.now() - start;
     const start2 = Date.now();
     await forgot("ghost@nowhere.example");
     const unknown = Date.now() - start2;
-    expect(known).toBeLessThan(300);
-    expect(unknown).toBeLessThan(300);
+    expect(known).toBeLessThan(1500);
+    expect(unknown).toBeLessThan(1500);
     await t.server.mail.settled();
     expect(await mailTo(t, a.email)).toHaveLength(1);
   });

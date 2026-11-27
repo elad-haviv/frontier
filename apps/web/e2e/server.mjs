@@ -26,6 +26,11 @@ Object.assign(process.env, {
   LOGIN_ATTEMPTS: "100",
 });
 
+// Mail is off, as on a server with no relay, unless E2E_MAIL=1 (stage 28): then the messages are
+// kept in memory and the specs read them at GET /api/test/mail (DELETE clears them). That route
+// exists only with this transport, which the server refuses in production.
+if (process.env.E2E_MAIL === "1") process.env.MAIL_TEST_TRANSPORT = "memory";
+
 // A stand-in for a site on the web with one picture, at the server's port plus 100, so the
 // browser tests know where it is.
 const PICTURE = Buffer.from(

@@ -44,11 +44,12 @@ export function mailable(address: string): boolean {
 
 /** A subject on one line, with no control characters, and not unreasonably long. */
 export function oneLine(text: string, max = 150): string {
-  // eslint-disable-next-line no-control-regex
-  return text
-    .replace(/[\u0000-\u001f\u007f\u0085\u2028\u2029]+/g, " ")
-    .trim()
-    .slice(0, max);
+  const line = text.replace(
+    // eslint-disable-next-line no-control-regex
+    /[\u0000-\u001f\u007f\u0085\u2028\u2029]+/g,
+    " ",
+  );
+  return line.trim().slice(0, max);
 }
 
 const SEND_TIMEOUT_MS = 20_000;
