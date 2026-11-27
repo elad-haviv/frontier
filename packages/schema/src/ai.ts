@@ -1,6 +1,7 @@
 /**
- * The AI providers Frontier can call, and the shapes the server and the settings page share about
- * them. Keys never travel in any of these shapes towards the browser: only a masked hint does.
+ * The AI providers Frontier can call, and the shapes the server and the web app share about them.
+ * Keys are kept only in the browser, on each device (stage 27f). They travel to the server in one
+ * request header, `AI_KEYS_HEADER`, and never come back in any shape here.
  */
 import { z } from "zod";
 
@@ -13,7 +14,6 @@ export const AiProviderKind = z.enum([
   "mistral",
   "deepseek",
   "groq",
-  "custom",
 ]);
 export type AiProviderKind = z.infer<typeof AiProviderKind>;
 
@@ -21,18 +21,12 @@ export interface AiProviderKindInfo {
   label: string;
   /** One sentence on what it is and where its keys are made. */
   blurb: string;
-  /** Only an OpenAI-compatible endpoint needs its address given. */
-  needsBaseUrl: boolean;
-  /** A local endpoint may answer without a key. */
-  keyRequired: boolean;
   /** What a key usually starts with; shown as the placeholder and checked as a warning only. */
   keyPrefix: string;
   /** Where to set a hard spending limit with the provider. */
   billingUrl: string | null;
   /** Whether the provider says what each call cost. Without it the cost is estimated. */
   reportsCost: boolean;
-  /** Whether more than one can be added. */
-  many: boolean;
 }
 
 /** Every kind, in the order the settings page offers them. */
@@ -41,97 +35,103 @@ export const AI_PROVIDER_KINDS: Record<AiProviderKind, AiProviderKindInfo> = {
     label: "OpenRouter",
     blurb:
       "One key, hundreds of models from every maker. The easiest start. Keys at openrouter.ai/keys.",
-    needsBaseUrl: false,
-    keyRequired: true,
     keyPrefix: "sk-or-",
     billingUrl: "https://openrouter.ai/settings/keys",
     reportsCost: true,
-    many: false,
   },
   anthropic: {
     label: "Anthropic",
     blurb: "Claude, directly. Keys at console.anthropic.com.",
-    needsBaseUrl: false,
-    keyRequired: true,
     keyPrefix: "sk-ant-",
     billingUrl: "https://console.anthropic.com/settings/limits",
     reportsCost: false,
-    many: false,
   },
   openai: {
     label: "OpenAI",
     blurb: "GPT and image models, directly. Keys at platform.openai.com.",
-    needsBaseUrl: false,
-    keyRequired: true,
     keyPrefix: "sk-",
     billingUrl: "https://platform.openai.com/settings/organization/limits",
     reportsCost: false,
-    many: false,
   },
   google: {
     label: "Google AI Studio",
     blurb: "Gemini, directly. Keys at aistudio.google.com.",
-    needsBaseUrl: false,
-    keyRequired: true,
     keyPrefix: "AIza",
     billingUrl: "https://aistudio.google.com/usage",
     reportsCost: false,
-    many: false,
   },
   xai: {
     label: "xAI",
     blurb: "Grok, directly. Keys at console.x.ai.",
-    needsBaseUrl: false,
-    keyRequired: true,
     keyPrefix: "xai-",
     billingUrl: "https://console.x.ai",
     reportsCost: false,
-    many: false,
   },
   mistral: {
     label: "Mistral",
     blurb: "Mistral's models, directly. Keys at console.mistral.ai.",
-    needsBaseUrl: false,
-    keyRequired: true,
     keyPrefix: "",
     billingUrl: "https://console.mistral.ai/usage",
     reportsCost: false,
-    many: false,
   },
   deepseek: {
     label: "DeepSeek",
     blurb: "DeepSeek's models, directly. Keys at platform.deepseek.com.",
-    needsBaseUrl: false,
-    keyRequired: true,
     keyPrefix: "sk-",
     billingUrl: "https://platform.deepseek.com/usage",
     reportsCost: false,
-    many: false,
   },
   groq: {
     label: "Groq",
     blurb: "Fast open models. Keys at console.groq.com.",
-    needsBaseUrl: false,
-    keyRequired: true,
     keyPrefix: "gsk_",
     billingUrl: "https://console.groq.com/settings/billing",
     reportsCost: false,
-    many: false,
-  },
-  custom: {
-    label: "Other, OpenAI-compatible",
-    blurb: "Any server that speaks OpenAI's chat format, such as a local one. Give its address.",
-    needsBaseUrl: true,
-    keyRequired: false,
-    keyPrefix: "",
-    billingUrl: null,
-    reportsCost: false,
-    many: true,
   },
 };
 
-/** A provider id: the kind for the built-in ones, `custom`, `custom-2`… for endpoints. */
-export const AiProviderId = z.string().regex(/^[a-z][a-z0-9-]{0,31}$/);
+/** The header that carries this device's AI keys with a request. */
+export const AI_KEYS_HEADER = "frontier-ai-keys";
+
+/** The keys one device holds, by provider kind. */
+export type DeviceKeys = Partial<Record<AiProviderKind, string>>;
+
+/** Printable ASCII only: a key is sent in a header, and no real key is anything else. */
+const KEY_TEXT = /^[\x21-\x7e]{1,2000}$/;
+
+/** The header's value for a set of keys: base64 of a small JSON map of kind to key. */
+export function encodeDeviceKeys(keys: DeviceKeys): string {
+  return btoa(JSON.stringify(keys));
+}
+
+/**
+ * The keys a header value holds. Anything wrong with it (not base64, not JSON, an unknown
+ * provider, a value that cannot be a key) is left out rather than failing the request.
+ */
+export function decodeDeviceKeys(value: string | undefined): DeviceKeys {
+  if (!value) return {};
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(atob(value));
+  } catch {
+    return {};
+  }
+  const out: DeviceKeys = {};
+  if (typeof parsed !== "object" || parsed === null) return out;
+  for (const kind of AiProviderKind.options) {
+    const key = (parsed as Record<string, unknown>)[kind];
+    if (typeof key === "string" && KEY_TEXT.test(key)) out[kind] = key;
+  }
+  return out;
+}
+
+/** A key shown without giving it away: its usual prefix and its last four characters. */
+export function maskKey(key: string): string {
+  const k = key.trim();
+  if (k.length < 12) return "…" + k.slice(-2);
+  const prefix = /^[A-Za-z]{2,4}[-_]/.exec(k)?.[0] ?? "";
+  return `${prefix}…${k.slice(-4)}`;
+}
 
 const PREFIX = /^([a-z][a-z0-9-]{0,31}):(.+)$/;
 const KINDS = new Set<string>(AiProviderKind.options);
@@ -143,9 +143,7 @@ const KINDS = new Set<string>(AiProviderKind.options);
  */
 export function splitModelId(id: string): { provider: string; model: string } {
   const m = PREFIX.exec(id.trim());
-  if (m && (KINDS.has(m[1]!) || /^custom-\d+$/.test(m[1]!))) {
-    return { provider: m[1]!, model: m[2]! };
-  }
+  if (m && KINDS.has(m[1]!)) return { provider: m[1]!, model: m[2]! };
   return { provider: "openrouter", model: id.trim() };
 }
 
@@ -154,30 +152,6 @@ export const qualifyModelId = (id: string): string => {
   const { provider, model } = splitModelId(id);
   return `${provider}:${model}`;
 };
-
-/** The last check of a provider's key: a free call listing its models. */
-export const ProviderCheck = z.object({
-  at: z.string(),
-  ok: z.boolean(),
-  /** The provider's words when it refused, with anything like a key taken out. */
-  message: z.string().nullable(),
-});
-export type ProviderCheck = z.infer<typeof ProviderCheck>;
-
-/** A provider connection as stored in settings. The key is encrypted with SECRETS_KEY. */
-export const AiProviderEntry = z.object({
-  id: AiProviderId,
-  kind: AiProviderKind,
-  /** A name the author gave it; the kind's label when null. */
-  name: z.string().max(80).nullable().default(null),
-  key: z.object({ iv: z.string(), data: z.string(), tag: z.string() }).nullable().default(null),
-  /** Required for `custom`; for the others an override of the usual address. */
-  baseUrl: z.string().url().nullable().default(null),
-  enabled: z.boolean().default(true),
-  addedAt: z.string().nullable().default(null),
-  check: ProviderCheck.nullable().default(null),
-});
-export type AiProviderEntry = z.infer<typeof AiProviderEntry>;
 
 /** Prices the author entered for a model whose price is not known otherwise. */
 export const ModelPrice = z.object({
@@ -189,36 +163,6 @@ export type ModelPrice = z.infer<typeof ModelPrice>;
 
 export const AiTaskName = z.enum(["extraction", "conversation", "art"]);
 export type AiTaskName = z.infer<typeof AiTaskName>;
-
-/** A provider as the settings page sees it. */
-export const AiProviderView = z.object({
-  id: z.string(),
-  kind: AiProviderKind,
-  name: z.string(),
-  baseUrl: z.string().nullable(),
-  enabled: z.boolean(),
-  keySet: z.boolean(),
-  /** Where the key in use comes from. */
-  keyFrom: z.enum(["settings", "environment", "none"]),
-  /** The key masked, as "sk-…a1b2". */
-  keyHint: z.string().nullable(),
-  /** A stored key that cannot be read, because SECRETS_KEY changed: it must be entered again. */
-  keyUnreadable: z.boolean(),
-  /** Whether the entry is stored in settings; one known only from the environment is not. */
-  stored: z.boolean(),
-  check: ProviderCheck.nullable(),
-  /** The tasks whose chosen model is this provider's. */
-  usedFor: z.array(AiTaskName),
-});
-export type AiProviderView = z.infer<typeof AiProviderView>;
-
-/** `GET /api/ai/providers` */
-export const ProvidersResponse = z.object({
-  providers: z.array(AiProviderView),
-  /** False when SECRETS_KEY is not set, so no key can be stored. */
-  canStoreKey: z.boolean(),
-});
-export type ProvidersResponse = z.infer<typeof ProvidersResponse>;
 
 /** Yes, no, or not known: some providers do not say what a model can do. */
 export const Ability = z.boolean().nullable();
@@ -302,44 +246,19 @@ export const ModelsResponse = z.object({
 });
 export type ModelsResponse = z.infer<typeof ModelsResponse>;
 
-/** `POST /api/ai/providers`: the key is checked with the provider before anything is stored. */
-export const AddProviderRequest = z.object({
-  kind: AiProviderKind,
-  key: z.string().trim().min(1).max(2000).optional(),
-  baseUrl: z.string().trim().url().optional(),
-  name: z.string().trim().min(1).max(80).optional(),
-  /** Store it even though the provider could not be reached (not when it refused the key). */
-  saveAnyway: z.boolean().optional(),
-});
-export type AddProviderRequest = z.infer<typeof AddProviderRequest>;
-
-/** `PUT /api/ai/providers/:id/key`: checked like an added one. `null` removes the stored key. */
-export const ProviderKeyRequest = z.object({
-  key: z.string().trim().min(1).max(2000).nullable(),
-  saveAnyway: z.boolean().optional(),
-});
-
-/** `PATCH /api/ai/providers/:id` */
-export const UpdateProviderRequest = z.object({
-  baseUrl: z.string().trim().url().nullable().optional(),
-  name: z.string().trim().min(1).max(80).nullable().optional(),
-  enabled: z.boolean().optional(),
-});
-export type UpdateProviderRequest = z.infer<typeof UpdateProviderRequest>;
-
-/** What a check, an add or a key change answers. */
-export const ProviderCheckResponse = z.object({
+/**
+ * `POST /api/ai/keys/:kind/check`: a free call with the key in the request, listing the
+ * provider's models. Nothing is stored on the server, whatever the answer.
+ */
+export const KeyCheckResponse = z.object({
   ok: z.boolean(),
-  /** Whether it was stored. */
-  saved: z.boolean(),
-  /** The provider refused the key, as opposed to not answering. "Save anyway" is offered only then not. */
+  /** The provider refused the key, as opposed to not answering. */
   refused: z.boolean(),
   message: z.string(),
   /** How many models the key can use, when the list came back. */
   models: z.number().nullable(),
-  provider: AiProviderView.nullable(),
 });
-export type ProviderCheckResponse = z.infer<typeof ProviderCheckResponse>;
+export type KeyCheckResponse = z.infer<typeof KeyCheckResponse>;
 
 /** `PUT /api/settings/ai/prices`. Null removes the author's price for that model. */
 export const ModelPricesRequest = z.object({
@@ -361,7 +280,6 @@ export type CostKind = z.infer<typeof CostKind>;
 export const AiLogResponse = z.object({
   month: z.string(),
   totalUsd: z.number(),
-  capUsd: z.number(),
   byProvider: z.array(
     z.object({
       provider: z.string(),

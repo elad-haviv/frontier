@@ -22,22 +22,37 @@ import { Icon } from "../../components/ui/Icon.tsx";
 export interface Section {
   path: string;
   title: string;
-  group: "AI" | "Library" | "This device" | "Account";
+  group: "You" | "Library" | "This device";
   /** Whether it shows with no connection. */
   offline: boolean;
 }
 
-/** Most used first; the device and the account last, as in most apps. */
+/**
+ * The AI sections follow the people-and-projects design (stage 27f): what is yours (which models,
+ * what you spent) is under "You", and what only this device holds (the keys, the offline copy) is
+ * under "This device". The sections of the library keep their place.
+ */
 export const SECTIONS: Section[] = [
-  { path: "ai/providers", title: "Providers", group: "AI", offline: false },
-  { path: "ai/models", title: "Models", group: "AI", offline: false },
-  { path: "ai/spending", title: "Spending", group: "AI", offline: false },
-  { path: "ai/folder-run", title: "Propose for a folder", group: "AI", offline: false },
+  { path: "you/ai-models", title: "AI models", group: "You", offline: false },
+  { path: "you/ai-spending", title: "Your AI spending", group: "You", offline: false },
+  { path: "you/folder-run", title: "Propose for a folder", group: "You", offline: false },
+  { path: "account", title: "Signing in", group: "You", offline: false },
   { path: "library/types", title: "Types and dates", group: "Library", offline: false },
   { path: "library/backups", title: "Backups and export", group: "Library", offline: false },
-  { path: "device", title: "Offline copy", group: "This device", offline: true },
-  { path: "account", title: "Signing in", group: "Account", offline: false },
+  { path: "device/ai-keys", title: "AI keys", group: "This device", offline: true },
+  { path: "device/offline", title: "Offline copy", group: "This device", offline: true },
 ];
+
+/** Addresses of sections that moved, to where they are now (old bookmarks and links still work). */
+export function movedSection(rest: string): string | null {
+  if (rest === "ai/providers") return "device/ai-keys";
+  if (rest === "ai/spending") return "you/ai-spending";
+  if (rest === "ai/folder-run") return "you/folder-run";
+  if (rest === "device") return "device/offline";
+  const models = /^ai\/models(\/(?:extraction|conversation|art))?$/.exec(rest);
+  if (models) return `you/ai-models${models[1] ?? ""}`;
+  return null;
+}
 
 export const TASKS: { task: AiTaskName; title: string; about: string }[] = [
   {
@@ -101,7 +116,6 @@ const MARKS: Record<AiProviderKind, string> = {
   mistral: "Mi",
   deepseek: "DS",
   groq: "Gq",
-  custom: "··",
 };
 
 export function ProviderMark({ kind, size = "md" }: { kind: AiProviderKind; size?: "sm" | "md" }) {

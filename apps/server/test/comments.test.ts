@@ -5,7 +5,8 @@ import { makeTestApp, type TestApp } from "./helpers/app.js";
 let t: TestApp;
 afterEach(() => t.close());
 
-const SECRETS = { SECRETS_KEY: Buffer.alloc(32, 3).toString("base64") };
+/** The key this test's "device" holds; it reaches the server only in the keys header. */
+const KEY = "sk-or-test-key-1234";
 const ROAD = "03 Places/Long Road.md";
 const PASSAGE = "The toll on the Long Road is paid in salt.";
 
@@ -25,15 +26,13 @@ function provider(text: string) {
 
 async function start(model: string | null = "test/talker") {
   const p = provider("The toll is salt.");
-  t = await makeTestApp(SECRETS, { fetch: p.fake, settleMs: 0 });
+  t = await makeTestApp({}, { fetch: p.fake, settleMs: 0 });
   await t.login();
   t.repo.pushFromOutside({ [ROAD]: `# Long Road\n\nA road.\n\n${PASSAGE}\n` });
   await t.services.sync();
+  t.keys = { openrouter: KEY };
   if (model) {
-    await t.put("/api/settings/ai", {
-      key: "sk-or-test-key-1234",
-      models: { conversation: model },
-    });
+    await t.put("/api/settings/ai", { models: { conversation: model } });
   }
   return p;
 }

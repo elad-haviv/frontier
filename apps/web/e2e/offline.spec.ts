@@ -11,6 +11,7 @@ import {
   discardDraft,
   edit,
   entry,
+  giveDeviceKeys,
   newEntry,
   newMapInForm,
   openMenu,
@@ -590,17 +591,29 @@ test("Offline copy shows in Settings with no connection, and the rest say they n
 }) => {
   await install(page);
   await read(page, HARBOR);
+  // A key is on this device already.
+  await giveDeviceKeys(page);
   await reloadOffline(page);
   await page.goto("/settings");
   // Every section is listed; those that need the server say so.
   const list = page.getByRole("navigation", { name: "Settings" });
-  await expect(list.getByRole("link", { name: /Providers/ })).toContainText("Needs a connection");
+  await expect(list.getByRole("link", { name: /AI models/ })).toContainText("Needs a connection");
   await expect(list.getByRole("link", { name: /Offline copy/ })).not.toContainText(
     "Needs a connection",
   );
+  await expect(list.getByRole("link", { name: /AI keys/ })).toContainText("1 key in this browser");
   await expect(page.locator(".settings-offline-banner")).toBeVisible();
-  // Opening one says why it is empty.
-  await list.getByRole("link", { name: /Models/ }).click();
+  // The keys are device state: their section opens with no connection, and only Test waits.
+  await list.getByRole("link", { name: /AI keys/ }).click();
+  await expect(page.getByRole("note")).toContainText("Your keys stay in this browser.");
+  const key = page.locator(".provider-row", { hasText: "OpenRouter" });
+  await expect(key).toContainText("key sk-…-key");
+  await expect(key.getByRole("button", { name: "Test", exact: true })).toBeDisabled();
+  await key.getByRole("button", { name: "Replace key" }).click();
+  await expect(key.getByRole("button", { name: "Test and keep on this device" })).toBeDisabled();
+  await page.goBack();
+  // Opening one that needs the server says why it is empty.
+  await list.getByRole("link", { name: /AI models/ }).click();
   await expect(page.locator(".settings-offline-card")).toContainText("Needs a connection");
   await page.locator(".settings-offline-card").getByRole("link", { name: "Offline copy" }).click();
   const block = page.locator(".on-this-device");

@@ -6,6 +6,7 @@ import { chronicleIdOf, type LibraryFileName, libraryFileOf, mapIdOf } from "@fr
 import { queue } from "../sync/queue.ts";
 import { libraryFileClient } from "../sync/libraryFile.ts";
 import { api, ApiFailure, chronicleUrl, editUrl, entryUrl, imageUrl, mapUrl } from "../api.ts";
+import { proposeAfterPublish } from "../proposeAfterPublish.ts";
 import { Diff } from "../components/Diff.tsx";
 import { useRefresh, useWords } from "../components/Shell.tsx";
 import { useDialogs } from "../components/Dialogs.tsx";
@@ -97,7 +98,9 @@ export function UnpublishedPage() {
     setBusy(true);
     setNotice(null);
     try {
-      const { commit } = await api.confirm(plan.planId, [...confirmed], message.trim());
+      const { commit, published } = await api.confirm(plan.planId, [...confirmed], message.trim());
+      // The server has no AI key of its own: this browser asks for the field proposals, with its.
+      void proposeAfterPublish(published).then((made) => made > 0 && refresh());
       setPlan(null);
       setMessage("");
       setNotice({

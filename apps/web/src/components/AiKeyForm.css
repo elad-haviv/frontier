@@ -1,0 +1,52 @@
+/* The field that puts an AI key on this device, in Settings and in the dialog (stage 27f). */
+.ai-key-form,
+.ai-key-dialog {
+  font-size: 0.95rem;
+}
+.ai-key-explain p {
+  margin: 0 0 0.6rem;
+  color: var(--ink-soft);
+}
+.ai-key-fields {
+  display: grid;
+  gap: 0.3rem;
+  margin: 0.8rem 0 0.9rem;
+}
+.ai-key-fields label {
+  font-size: 0.85rem;
+  color: var(--ink-soft);
+}
+.ai-key-fields select,
+.ai-key-row input {
+  padding: 0.5rem 0.6rem;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  background: var(--paper-raised);
+  color: var(--ink);
+  font: inherit;
+  min-width: 0;
+}
+.ai-key-row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+.ai-key-row input {
+  flex: 1;
+}
+.ai-key-hint {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--ink-faint);
+}
+.ai-key-error {
+  margin: 0.2rem 0 0;
+  font-size: 0.9rem;
+  color: var(--warn);
+}
+.ai-key-actions {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  margin: 0;
+}

@@ -1,6 +1,8 @@
 import { lazy, Suspense, useCallback, useEffect, useState } from "react";
 import { Navigate, Route, Routes, useLocation, useParams } from "react-router-dom";
 import { api } from "./api.ts";
+import { AiKeyPromptHost } from "./components/AiKeyPrompt.tsx";
+import { KeysRemovedNotice } from "./components/KeysRemovedNotice.tsx";
 import { LoginDialog } from "./components/LoginDialog.tsx";
 import { Shell } from "./components/Shell.tsx";
 import { startDeviceCopy } from "./offline/copy.ts";
@@ -176,6 +178,8 @@ export function App() {
         </Routes>
       </Suspense>
       <LoginDialog />
+      <AiKeyPromptHost />
+      <KeysRemovedNotice />
     </Shell>
   );
 }

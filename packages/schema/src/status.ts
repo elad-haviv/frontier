@@ -26,10 +26,10 @@ export const StatusSnapshot = z.object({
     /** Notes that arrived unreviewed and wait for a decision. */
     quarantined: z.number().int().min(0),
   }),
-  ai: z.object({
-    /** A key and a model for proposing fields are set. */
-    on: z.boolean(),
-    lastError: z.string().nullable(),
+  /** One-time notices the web app shows and then clears. */
+  notices: z.object({
+    /** AI keys that were stored on the server were deleted at start (stage 27f). */
+    keysRemoved: z.object({ at: z.string(), providers: z.array(z.string()) }).nullable(),
   }),
   /** Rises each time the server itself changes a draft, so an open editor can reload it. */
   serverDraftChanges: z.number().int().min(0),

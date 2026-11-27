@@ -336,7 +336,7 @@ describe("API shapes", () => {
       lastBackupAt: null,
       backupError: "bucket unreachable",
       inbox: { branches: 1, operations: 2, quarantined: 0 },
-      ai: { on: false, lastError: null },
+      notices: { keysRemoved: null },
       serverDraftChanges: 0,
       drafts: 7,
       problems: [],
@@ -370,7 +370,8 @@ describe("errors", () => {
     expect(statusOf("has_images")).toBe(409);
     expect(statusOf("image_fetch_failed")).toBe(422);
     expect(statusOf("ai_stopped")).toBe(409);
-    expect(Object.keys(ERROR_STATUS)).toHaveLength(24);
+    expect(statusOf("ai_key_missing")).toBe(409);
+    expect(Object.keys(ERROR_STATUS)).toHaveLength(23);
   });
 
   it("takes a web address of at most 2,048 characters for an image", () => {

@@ -33,7 +33,6 @@ export async function send(
   try {
     return await f(url, init);
   } catch (err) {
-    // The address guard of a typed endpoint says why itself.
     throw err instanceof ProviderError ? err : unreachable(err);
   }
 }

@@ -66,7 +66,7 @@ interface Flavour {
 
 export type CompatKind = Extract<
   AiProviderKind,
-  "openrouter" | "openai" | "xai" | "mistral" | "deepseek" | "groq" | "custom"
+  "openrouter" | "openai" | "xai" | "mistral" | "deepseek" | "groq"
 >;
 
 /** A provider that follows OpenAI's format and asks for nothing special. */
@@ -132,17 +132,6 @@ const FLAVOURS: Record<CompatKind, Flavour> = {
   // DeepSeek's chat API takes `json_object` only.
   deepseek: { ...plain(), json: "object" },
   groq: plain(),
-  custom: {
-    // An unknown server may refuse fields it does not know, so nothing is sent.
-    reasoning: () => ({}),
-    maxTokensField: "max_tokens",
-    askStreamUsage: false,
-    imagePath: "/images/generations",
-    imageBody: () => ({ response_format: "b64_json" }),
-    modelsPath: "/models",
-    known: unknownModel,
-    json: "schema",
-  },
 };
 
 interface Message {

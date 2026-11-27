@@ -17,8 +17,7 @@ export class StatusService {
   private operations = 0;
   private quarantined = 0;
   private fileProblems: string[] = [];
-  private aiOn = false;
-  private aiError: string | null = null;
+  private keysRemoved: { at: string; providers: string[] } | null = null;
   private serverDraftChanges = 0;
   private listeners = new Set<Listener>();
 
@@ -53,7 +52,7 @@ export class StatusService {
         operations: this.operations,
         quarantined: this.quarantined,
       },
-      ai: { on: this.aiOn, lastError: this.aiError },
+      notices: { keysRemoved: this.keysRemoved },
       serverDraftChanges: this.serverDraftChanges,
       drafts: this.facts.draftChanges?.() ?? 0,
       problems: [
@@ -144,10 +143,10 @@ export class StatusService {
     this.changed();
   }
 
-  ai(on: boolean, lastError: string | null): void {
-    if (this.aiOn === on && this.aiError === lastError) return;
-    this.aiOn = on;
-    this.aiError = lastError;
+  /** The notice that keys stored on the server were deleted, or null once it has been seen. */
+  keysWereRemoved(notice: { at: string; providers: string[] } | null): void {
+    if (this.keysRemoved?.at === notice?.at) return;
+    this.keysRemoved = notice;
     this.changed();
   }
 

@@ -63,7 +63,7 @@ export function discoverRoutes(app: FastifyInstance, s: Services): void {
     const settings = await s.settings.read();
     return {
       discoveries: await s.discoverer.list(id),
-      ready: await s.ai.ready("conversation"),
+      ready: await s.ai.modelChosen("conversation"),
       art: Boolean(settings?.ai.models.art),
       folders,
     };

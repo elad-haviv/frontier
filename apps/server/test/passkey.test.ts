@@ -100,6 +100,6 @@ describe("passkeys", () => {
     // The AI settings and the password are untouched by all of this.
     const stored = await t.services.settings.read();
     expect(stored!.passwordHash).toMatch(/^\$argon2/);
-    expect(stored!.ai.monthlyCapUsd).toBe(10);
+    expect(stored!.ai.proposeOnPublish).toBe(false);
   });
 });
