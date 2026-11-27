@@ -1,5 +1,6 @@
 import { Link } from "../../nav.tsx";
 import { api, libraryZipUrl } from "../../api.ts";
+import { useCanWrite } from "../../components/projectContext.ts";
 import { Problem } from "../../components/ui/Problem.tsx";
 import { useAsync } from "../../useAsync.ts";
 
@@ -11,6 +12,7 @@ const when = (iso: string | null) =>
 /** The last backup and its warning (the same as Status shows), with Export and Import. */
 export function Backups() {
   const status = useAsync(() => api.status(), "settings-backups");
+  const canWrite = useCanWrite();
   if (status.state === "loading") return <p className="muted">Loading…</p>;
   if (status.state === "failed")
     return <Problem reason={status.error.message} onRetry={status.retry} />;
@@ -39,10 +41,12 @@ export function Backups() {
           <a href={libraryZipUrl()}>Download the whole library</a>
           <span className="muted"> as a zip of the vault.</span>
         </li>
-        <li>
-          <Link to="/import">Import</Link>
-          <span className="muted"> notes and pictures into the library.</span>
-        </li>
+        {canWrite && (
+          <li>
+            <Link to="/import">Import</Link>
+            <span className="muted"> notes and pictures into the library.</span>
+          </li>
+        )}
       </ul>
     </section>
   );

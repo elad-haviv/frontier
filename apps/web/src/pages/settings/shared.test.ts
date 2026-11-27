@@ -11,8 +11,9 @@ describe("the settings sections", () => {
     expect(at("you/ai-spending")).toMatchObject({ title: "Your AI spending", group: "You" });
     expect(at("you/folder-run")).toMatchObject({ title: "Propose for a folder", group: "You" });
     expect(at("you/keep-going")).toMatchObject({ title: "Keep going", group: "You" });
-    // The project's own sections: General, Types and dates, Backups and export.
+    // The project's own sections: Members (27c), General, Types and dates, Backups and export.
     expect(SECTIONS.filter((s) => s.group === "This project").map((s) => s.title)).toEqual([
+      "Members",
       "General",
       "Types and dates",
       "Backups and export",

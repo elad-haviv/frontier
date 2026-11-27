@@ -1,0 +1,141 @@
+/* Settings → Members (stage 27c). */
+.members .people {
+  list-style: none;
+  margin: var(--space-3) 0 0;
+  padding: 0;
+  border-top: 1px solid var(--rule);
+}
+.member-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) 0;
+  border-bottom: 1px solid var(--rule);
+}
+.member-who {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 0.1rem;
+}
+.member-who small {
+  color: var(--ink-faint);
+  font-size: 0.8rem;
+  overflow-wrap: anywhere;
+}
+.member-you {
+  margin-left: var(--space-2);
+}
+.member-controls,
+.member-ask {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: none;
+}
+.member-ask {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.member-role {
+  padding: 0.4rem 0.5rem;
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  background: var(--paper-raised);
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.9rem;
+}
+.member-role:disabled {
+  color: var(--ink-faint);
+}
+.member-only {
+  font-size: 0.78rem;
+  white-space: nowrap;
+}
+.member-gap {
+  width: 1.75rem;
+}
+.member-remove {
+  padding: 0.35rem;
+}
+.members .said {
+  min-height: 1.4rem;
+  margin: var(--space-2) 0;
+  font-size: 0.9rem;
+  color: var(--ink-soft);
+}
+.member-leave {
+  margin-top: var(--space-3);
+}
+.invite-box {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  background: var(--paper-raised);
+}
+.invite-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+}
+.invite-made {
+  display: grid;
+  gap: var(--space-2);
+}
+.linkbox {
+  flex: 1 1 14rem;
+  min-width: 0;
+  padding: 0.5rem 0.65rem;
+  border: 1px dashed var(--rule);
+  border-radius: 4px;
+  background: var(--paper);
+  font-family: var(--mono);
+  font-size: 0.82rem;
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+.invite-once {
+  margin: 0;
+  font-size: 0.85rem;
+}
+.roles-key {
+  margin: 0;
+  display: grid;
+  gap: var(--space-2);
+  font-size: 0.85rem;
+}
+.roles-key div {
+  display: grid;
+  grid-template-columns: 5rem 1fr;
+  gap: var(--space-3);
+}
+.roles-key dt {
+  font-weight: 600;
+}
+.roles-key dd {
+  margin: 0;
+  color: var(--ink-soft);
+}
+@media (max-width: 47.99rem) {
+  .member-row {
+    flex-wrap: wrap;
+  }
+  .member-controls,
+  .member-ask,
+  .member-row > .project-role {
+    margin-left: calc(2rem + var(--space-3));
+    flex: 1 1 100%;
+  }
+  .roles-key div {
+    grid-template-columns: 1fr;
+    gap: 0;
+  }
+}
+.member-ask .danger-solid {
+  border-color: #8a2c14;
+  background: #8a2c14;
+}

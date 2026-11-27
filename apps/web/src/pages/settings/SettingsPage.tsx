@@ -18,10 +18,11 @@ import { Account } from "./Account.tsx";
 import { AiKeys } from "./AiKeys.tsx";
 import { Backups } from "./Backups.tsx";
 import { General } from "./General.tsx";
-import { useProjectOrNull } from "../../components/projectContext.ts";
+import { useCanWriteOrNot, useProjectOrNull } from "../../components/projectContext.ts";
 import { Device } from "./Device.tsx";
 import { FolderRun } from "./FolderRun.tsx";
 import { KeepGoing } from "./KeepGoing.tsx";
+import { Members } from "./Members.tsx";
 import { Models } from "./Models.tsx";
 import { Profile } from "./Profile.tsx";
 import {
@@ -49,7 +50,11 @@ function stateOf(
   offline: boolean,
   me: MeResponse | null,
   keys: KeyState,
+  people: number | null,
 ): { text: string; problem?: boolean } | null {
+  if (section.path === "members") {
+    return people === null ? null : { text: people === 1 ? "Only you" : `${people} people` };
+  }
   // The AI keys are read from the device, so they have a state with no connection too.
   if (section.path === "device/ai-keys") {
     if (keys.failing > 0) {
@@ -127,6 +132,7 @@ function Menu({
   const groups = [...new Set(sections.map((s) => s.group))];
   const me = useMe();
   const project = useProjectOrNull();
+  const people = project?.record?.members.length ?? null;
   return (
     <nav className={list ? "settings-list" : "settings-rail"} aria-label="Settings">
       {!list && <h1>Settings</h1>}
@@ -139,7 +145,7 @@ function Menu({
             {sections
               .filter((s) => s.group === g)
               .map((s) => {
-                const state = stateOf(s, settings, offline, me, keys);
+                const state = stateOf(s, settings, offline, me, keys, people);
                 const on = current === s.path;
                 return (
                   <li key={s.path}>
@@ -180,6 +186,8 @@ function Open({ section }: { section: Section }) {
       return <AiKeys />;
     case "general":
       return <General />;
+    case "members":
+      return <Members />;
     case "types":
       return <Types />;
     case "you/keep-going":
@@ -196,10 +204,12 @@ function Open({ section }: { section: Section }) {
 }
 
 export function SettingsPage() {
-  const { pathname } = useLocation();
+  const location = useLocation();
+  const { pathname } = location;
   const wide = useWide();
   const project = useProjectOrNull();
-  const sections = sectionsFor(project !== null);
+  const canWrite = useCanWriteOrNot();
+  const sections = sectionsFor(project !== null, project === null || canWrite);
   const offline = useNeedsConnection() !== undefined;
   const [settings, setSettings] = useState<SettingsResponse | null>(null);
   const [error, setError] = useState<ApiFailure | null>(null);
@@ -230,7 +240,10 @@ export function SettingsPage() {
 
   // Sections that moved keep working at their old addresses.
   const moved = movedSection(rest);
-  if (moved) return <Navigate to={`/settings/${moved}`} replace />;
+  // The query is kept: a Google trip says what went wrong in it.
+  if (moved) {
+    return <Navigate to={{ pathname: `/settings/${moved}`, search: location.search }} replace />;
+  }
   if (rest !== "" && !section) return <Navigate to="/settings" replace />;
   if (rest === "" && wide) {
     return <Navigate to={`/settings/${firstSection(settings, me, keys)}`} replace />;

@@ -87,10 +87,12 @@ function StrandedChanges() {
     }
   }
 
-  async function discard(projectId: string, record: QueueRecord) {
+  async function discard(projectId: string, record: QueueRecord, refused: boolean) {
     const ok = await dialogs.confirm({
       title: `Throw away the change to ${nameOf(record)}?`,
-      body: "It exists only on this device, and the project it belongs to cannot be opened.",
+      body: refused
+        ? "It exists only on this device. The project keeps what it has."
+        : "It exists only on this device, and the project it belongs to cannot be opened.",
       action: "Discard",
       danger: true,
     });
@@ -103,13 +105,18 @@ function StrandedChanges() {
     <section className="stranded" aria-labelledby={heading}>
       <h2 id={heading}>Changes that cannot be saved</h2>
       <p className="muted">
-        These were made on this device in projects you can no longer open: the project was deleted,
-        or you were taken out of it. They exist only here. Copy the text if you want to keep it,
-        then discard it.
+        These were made on this device and cannot be sent: the project was deleted, you were taken
+        out of it, or your role in it no longer lets you change it. They exist only here. Copy the
+        text if you want to keep it, then discard it.
       </p>
       {stranded.map((p) => (
         <div key={p.id} className="stranded-project">
           <h3>{p.name}</h3>
+          {p.refused && (
+            <p className="muted">
+              You can still read this project, but your role no longer lets you change it.
+            </p>
+          )}
           <ul className="unsent-list">
             {p.records.map((r) => (
               <li key={r.key} className="unsent-row">
@@ -124,7 +131,7 @@ function StrandedChanges() {
                   <button
                     type="button"
                     className="quiet danger"
-                    onClick={() => void discard(p.id, r)}
+                    onClick={() => void discard(p.id, r, p.refused === true)}
                   >
                     Discard
                   </button>

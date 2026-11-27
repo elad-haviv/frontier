@@ -1,7 +1,7 @@
 import { useEffect, useId, useState } from "react";
 import { api, ApiFailure } from "../../api.ts";
 import { ROLE_NAMES, useProject, useRole } from "../../components/projectContext.ts";
-import { useNavigate } from "../../nav.tsx";
+import { Link, useNavigate } from "../../nav.tsx";
 import { OLD_SLUG_DAYS } from "@frontier/schema";
 import { projectRoot } from "../../project.ts";
 import { dropDeviceCopyOf } from "../../offline/copy.ts";
@@ -211,6 +211,11 @@ export function General() {
         ) : (
           <p className="muted">Loading…</p>
         )}
+        <p>
+          <Link to="/settings/members">
+            {owner ? "Manage the members and invite links" : "See everyone in Members"}
+          </Link>
+        </p>
       </section>
       {owner && (
         <DeleteArea reason={cannotDelete} name={project.name} id={project.id} slug={project.slug} />

@@ -50,6 +50,11 @@ export interface QueueRecord {
   state: "waiting" | "sending" | "attention";
   /** Why the last send failed, in words. */
   error?: string;
+  /**
+   * The server refused it because the person's role no longer allows changes (stage 27c). It is
+   * not sent again; it is offered to copy out or discard, as a change in a project that is gone.
+   */
+  refused?: "role_too_low";
   tries: number;
   /** When it may be sent next, in milliseconds since 1970. */
   nextTry: number;

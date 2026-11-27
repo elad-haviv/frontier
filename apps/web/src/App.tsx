@@ -35,6 +35,7 @@ import { Home } from "./pages/Home.tsx";
 import { ChroniclesPage } from "./pages/Chronicles.tsx";
 import { MapsPage } from "./pages/Maps.tsx";
 import { Login } from "./pages/Login.tsx";
+import { JoinPage } from "./pages/Join.tsx";
 const SettingsPage = lazy(() =>
   import("./pages/settings/SettingsPage.tsx").then((m) => ({ default: m.SettingsPage })),
 );
@@ -89,6 +90,12 @@ const ConflictPage = lazy(() =>
 const VersionsPage = lazy(() =>
   import("./pages/Versions.tsx").then((m) => ({ default: m.VersionsPage })),
 );
+
+/** `/join/<code>`: the page an invite link opens, for someone logged in or not. */
+function JoinRoute({ onSignedIn }: { onSignedIn?: () => void }) {
+  const { code = "" } = useParams();
+  return <JoinPage key={code} code={code} onSignedIn={onSignedIn} />;
+}
 
 /** A different map gets a fresh page: its own view, drawing surface and history. */
 function OneMap() {
@@ -325,24 +332,21 @@ export function App() {
     };
   }, [loggedIn]);
 
+  // A session was started here (the login page, or joining a project): the app opens as logged in.
+  const enter = () => {
+    void noteSignedIn(queue);
+    // Reads are kept on this device, and answered from it when the server cannot be reached.
+    startDeviceCopy();
+    setLoggedIn(true);
+  };
+
   if (loggedIn === null) return <p className="center muted">Opening Frontier…</p>;
 
   if (!loggedIn) {
     return (
       <Routes>
-        <Route
-          path="/login"
-          element={
-            <Login
-              onLoggedIn={() => {
-                void noteSignedIn(queue);
-                // Reads are kept on this device, and answered from it when the server cannot be reached.
-                startDeviceCopy();
-                setLoggedIn(true);
-              }}
-            />
-          }
-        />
+        <Route path="/login" element={<Login onLoggedIn={enter} />} />
+        <Route path="/join/:code" element={<JoinRoute onSignedIn={enter} />} />
         <Route
           path="*"
           element={
@@ -362,6 +366,7 @@ export function App() {
   return (
     <>
       <Routes>
+        <Route path="/join/:code" element={<JoinRoute />} />
         <Route
           path="/projects"
           element={

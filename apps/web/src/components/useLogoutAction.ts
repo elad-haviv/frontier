@@ -9,9 +9,10 @@ import { useToast } from "./ui/Toast.tsx";
 
 /**
  * Logs out, after warning about changes not sent yet (in every project: they are all kept only
- * on this device). Used by the app menu in a project and by the account menu outside one.
+ * on this device). Used by the app menu in a project and by the account menu outside one. `after` is
+ * where the page goes once logged out: the login page, or an invite link to join with another account.
  */
-export function useLogoutAction(): () => void {
+export function useLogoutAction(after = "/login"): () => void {
   const dialogs = useDialogs();
   const toast = useToast();
   return useCallback(() => {
@@ -47,7 +48,7 @@ export function useLogoutAction(): () => void {
         caches: typeof caches === "undefined" ? undefined : caches,
         container: navigator.serviceWorker,
       });
-      window.location.assign("/login");
+      window.location.assign(after);
     })();
-  }, [dialogs, toast]);
+  }, [dialogs, toast, after]);
 }

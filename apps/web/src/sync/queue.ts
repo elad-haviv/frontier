@@ -816,6 +816,15 @@ export class Queue {
     } else if (failure.code === "stale_revision") {
       record = await this.merge(sent);
       if (!record) return;
+    } else if (failure.code === "role_too_low") {
+      // The person was made a reader while this waited: it can never be sent, so it stops here
+      // and is offered to copy out or throw away (not retried).
+      record = await keep(() => ({
+        state: "attention",
+        refused: "role_too_low" as const,
+        error:
+          "Your role in this project no longer lets you change it, so this was not saved. Copy the text if you want to keep it, then discard it.",
+      }));
     } else {
       // The server said no to this value: it waits for Retry or Discard in the unsent list.
       record = await keep(() => ({ state: "attention", error: failure.message }));
@@ -1026,6 +1035,8 @@ export interface StrandedProject {
   id: string;
   name: string;
   records: QueueRecord[];
+  /** The person can still open the project but may no longer change it: the server refused these. */
+  refused?: boolean;
 }
 
 /** Whose data this device's storage is for, decided once for the signed-in person. */
@@ -1328,6 +1339,21 @@ export class QueueHub {
       if (records.length > 0)
         out.push({ id, name: names[id] ?? "A project that is gone", records });
     }
+    // Changes the server refused for want of a role (stage 27c): in a project the person is still
+    // in, which they may read but no longer change.
+    const databases = await this.ownDatabases(s);
+    for (const ref of this.d.known()) {
+      const isMain = s.legacy === ref.id;
+      const name = databases.get(ref.id);
+      if (!isMain && !name) continue;
+      const store = isMain ? main : await this.d.openProject(name!).catch(() => null);
+      const records = ((await store?.all().catch(() => [])) ?? []).filter(
+        (r) => r.refused === "role_too_low",
+      );
+      if (records.length > 0) {
+        out.push({ id: ref.id, name: names[ref.id] ?? ref.slug, records, refused: true });
+      }
+    }
     return out;
   }
 
@@ -1335,8 +1361,9 @@ export class QueueHub {
   async discardStranded(id: string, key?: QueueKey): Promise<void> {
     const s = await this.scope();
     const name = (await this.ownDatabases(s)).get(id);
-    if (!name) return;
-    const store = await this.d.openProject(name);
+    const store =
+      s.legacy === id ? await this.main() : name ? await this.d.openProject(name) : null;
+    if (!store) return;
     if (key) await store.update(key, () => null);
     else await store.clear();
     // Dropping a queue still held for it, so what it kept in memory is not shown again.

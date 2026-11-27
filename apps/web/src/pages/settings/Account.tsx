@@ -1,10 +1,12 @@
-import { type FormEvent, useState } from "react";
-import { api, ApiFailure } from "../../api.ts";
+import { type FormEvent, useEffect, useRef, useState } from "react";
+import { api, ApiFailure, googleStartUrl } from "../../api.ts";
 import { useDialogs } from "../../components/Dialogs.tsx";
-import { withRecentLogin } from "../../components/LoginDialog.tsx";
+import { askForRecentLogin, withRecentLogin } from "../../components/LoginDialog.tsx";
 import { useLogout } from "../../components/Shell.tsx";
 import { ActionButton } from "../../components/ui/ActionButton.tsx";
 import { loadMe, useMe } from "../../me.ts";
+import { useLocation, useNavigate } from "../../nav.tsx";
+import { googleProblem } from "../joinModel.ts";
 import { NoMe } from "./NoMe.tsx";
 import { useNeedsConnection } from "../../sync/connection.ts";
 
@@ -13,7 +15,14 @@ type Notice = { kind: "ok" | "error"; text: string } | null;
 /** The shortest password the server takes. */
 const MIN_PASSWORD = 12;
 
-/** Passkeys, the password, the switch that turns it off, and Log out. */
+/** Why Google cannot be unlinked while it is the only way in, in plain words. */
+export const GOOGLE_LAST_WAY =
+  "Google is the only way this account logs in. Add a password or a passkey first, then Google can be unlinked.";
+
+/** The address the Google trip comes back to: this section, opened with no project. */
+const BACK_HERE = "/settings/account";
+
+/** Passkeys, Google, the password, the switch that turns it off, and Log out. */
 export function Account() {
   const me = useMe();
   const dialogs = useDialogs();
@@ -29,7 +38,37 @@ export function Account() {
     text: string;
   } | null>(null);
   const offline = useNeedsConnection();
+  const location = useLocation();
+  const navigate = useNavigate();
+  const problem = new URLSearchParams(location.search).get("problem");
+  const handled = useRef<string | null>(null);
+
+  // Back from a Google trip that did not work, or one that asked for a recent login: said in
+  // words, and the address cleaned. A recent login is asked for here, as when adding a passkey,
+  // and the link goes ahead once it is made.
+  useEffect(() => {
+    if (!problem || handled.current === problem) return;
+    handled.current = problem;
+    void navigate({ pathname: location.pathname, search: "" }, { replace: true });
+    if (problem === "recent_login_needed") {
+      setNotice({
+        kind: "error",
+        text: "Linking Google asks for a login from the last few minutes. Log in again and it goes ahead.",
+      });
+      void askForRecentLogin().then((ok) => {
+        if (ok) window.location.assign(googleStartUrl({ link: true, returnTo: BACK_HERE }));
+      });
+      return;
+    }
+    const words = googleProblem(problem);
+    if (words) setNotice({ kind: "error", text: words });
+  }, [problem]);
   if (!me) return <NoMe />;
+  const google = me.signingIn?.google ?? null;
+  const googleAvailable = me.signingIn?.googleAvailable ?? false;
+  // How many other ways in there are besides Google: a password that works, and passkeys.
+  const otherWays = (me.passwordSet && !me.passwordOff ? 1 : 0) + me.passkeys.length;
+  const googleIsLast = google !== null && googleAvailable && otherWays === 0;
 
   async function run(work: () => Promise<unknown>, done: string, failed: string) {
     setBusy(true);
@@ -80,18 +119,93 @@ export function Account() {
     }
   }
 
+  async function unlinkGoogle() {
+    const ok = await dialogs.confirm({
+      title: "Unlink Google?",
+      body: "You will not be able to log in with Google any more. Your other ways of logging in stay as they are, and other devices are logged out.",
+      action: "Unlink",
+      danger: true,
+    });
+    if (!ok) return;
+    setBusy(true);
+    setNotice(null);
+    try {
+      await api.unlinkGoogle();
+      setNotice({ kind: "ok", text: "Google was unlinked." });
+      await loadMe();
+    } catch (err) {
+      setNotice({
+        kind: "error",
+        text:
+          err instanceof ApiFailure && err.code === "not_allowed"
+            ? GOOGLE_LAST_WAY
+            : err instanceof ApiFailure
+              ? err.message
+              : "Google was not unlinked. Try again.",
+      });
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <section className="settings-block">
+      {notice && (
+        <p
+          className={`banner ${notice.kind === "ok" ? "banner-ok" : ""}`}
+          role={notice.kind === "error" ? "alert" : "status"}
+        >
+          {notice.text}
+        </p>
+      )}
+      {(googleAvailable || google) && (
+        <>
+          <h2>Google</h2>
+          {google ? (
+            <>
+              <p>
+                Linked: <b>{google.email}</b>{" "}
+                <em className="muted">added {new Date(google.addedAt).toLocaleDateString()}</em>
+              </p>
+              {googleIsLast && <p className="muted">{GOOGLE_LAST_WAY}</p>}
+              <p className="change-actions">
+                <ActionButton
+                  type="button"
+                  className="quiet danger"
+                  disabled={busy || googleIsLast}
+                  onClick={() => void unlinkGoogle()}
+                >
+                  Unlink Google
+                </ActionButton>
+              </p>
+            </>
+          ) : (
+            <>
+              <p className="muted">
+                Link a Google account to log in with “Continue with Google”. It only says who you
+                are: it does not give anyone else a way in.
+              </p>
+              <p className="change-actions">
+                <ActionButton
+                  type="button"
+                  className="primary"
+                  disabled={busy}
+                  onClick={() =>
+                    window.location.assign(googleStartUrl({ link: true, returnTo: BACK_HERE }))
+                  }
+                >
+                  Link a Google account
+                </ActionButton>
+              </p>
+            </>
+          )}
+        </>
+      )}
       <h2>Passkeys</h2>
       <p className="muted">
         A passkey logs you in with this device's fingerprint, face or screen lock instead of the
         password. Once one works you can switch the password off.
       </p>
-      {notice && (
-        <p className={`banner ${notice.kind === "ok" ? "banner-ok" : ""}`} role="status">
-          {notice.text}
-        </p>
-      )}
       {me.passkeys.length > 0 && (
         <ul className="passkeys">
           {me.passkeys.map((p) => (
@@ -228,8 +342,8 @@ export function Account() {
           />
           <span>
             Switch the password off
-            {me.method !== "passkey" && !me.passwordOff && (
-              <em className="muted"> (log in with a passkey first)</em>
+            {me.method === "password" && !me.passwordOff && (
+              <em className="muted"> (log in with a passkey or Google first)</em>
             )}
           </span>
         </label>

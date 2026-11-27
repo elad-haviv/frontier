@@ -35,6 +35,7 @@ export interface Section {
  * "This device" open with or without a project, at `/settings/...` and at `/p/<slug>/settings/...`.
  */
 export const SECTIONS: Section[] = [
+  { path: "members", title: "Members", group: "This project", offline: false },
   { path: "general", title: "General", group: "This project", offline: false },
   { path: "types", title: "Types and dates", group: "This project", offline: false },
   { path: "backups", title: "Backups and export", group: "This project", offline: false },
@@ -48,9 +49,14 @@ export const SECTIONS: Section[] = [
   { path: "device/offline", title: "Offline copy", group: "This device", offline: true },
 ];
 
-/** The sections that can open: those of the project only where a project is open. */
-export const sectionsFor = (inProject: boolean): Section[] =>
-  SECTIONS.filter((s) => inProject || s.group !== "This project");
+/**
+ * The sections that can open: those of the project only where a project is open, and not the one
+ * that asks the AI to propose fields for a folder (it changes the project) for a reader.
+ */
+export const sectionsFor = (inProject: boolean, canWrite = true): Section[] =>
+  SECTIONS.filter(
+    (s) => (inProject || s.group !== "This project") && (canWrite || s.path !== "you/folder-run"),
+  );
 
 /** Addresses of sections that moved, to where they are now (old bookmarks and links still work). */
 export function movedSection(rest: string): string | null {
@@ -58,6 +64,8 @@ export function movedSection(rest: string): string | null {
   if (rest === "ai/spending") return "you/ai-spending";
   if (rest === "ai/folder-run") return "you/folder-run";
   if (rest === "device") return "device/offline";
+  // The server's own address for this section, where its Google trips come back (stage 27c).
+  if (rest === "you/signing-in") return "account";
   // The library's sections became the project's, and Keep going is yours (stage 27b).
   if (rest === "library/types") return "types";
   if (rest === "library/backups") return "backups";

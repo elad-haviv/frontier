@@ -10,7 +10,9 @@ import {
   subject,
   useUnsent,
 } from "../sync/queue.ts";
+import { textOfChange } from "../pages/projects/AllProjects.tsx";
 import { useDialogs } from "./Dialogs.tsx";
+import { useToast } from "./ui/Toast.tsx";
 import { Icon } from "./ui/Icon.tsx";
 import "./Unsent.css";
 import { useProjectWork } from "../projectWork.ts";
@@ -34,6 +36,7 @@ function age(since: number): string {
 
 function Row({ record }: { record: QueueRecord }) {
   const dialogs = useDialogs();
+  const toast = useToast();
   // This row is a record of the project the list was drawn for.
   const work = useProjectWork();
   const href = pageOf(record.key);
@@ -47,6 +50,14 @@ function Row({ record }: { record: QueueRecord }) {
     });
     if (ok) await work.queue.drop(record.key);
   }
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(textOfChange(record));
+      toast({ message: `Copied the text of ${name}.` });
+    } catch {
+      toast({ message: "The text could not be copied. Select it in the browser and try again." });
+    }
+  }
   return (
     <li className={`unsent-row${record.state === "attention" ? " needs-attention" : ""}`}>
       <p className="unsent-name">
@@ -57,9 +68,20 @@ function Row({ record }: { record: QueueRecord }) {
       {record.error && <p className="unsent-error">{record.error}</p>}
       {record.state === "attention" && (
         <p className="unsent-actions">
-          <button type="button" className="quiet" onClick={() => void work.queue.retry(record.key)}>
-            Retry
-          </button>
+          {record.refused ? (
+            // Refused for want of a role: sending it again would only be refused again.
+            <button type="button" className="quiet" onClick={() => void copy()}>
+              Copy the text
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="quiet"
+              onClick={() => void work.queue.retry(record.key)}
+            >
+              Retry
+            </button>
+          )}
           <button type="button" className="quiet danger" onClick={() => void discard()}>
             Discard
           </button>

@@ -240,6 +240,25 @@ button.plain {
   background: transparent;
   color: var(--ink);
 }
+.login-card button.login-google {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  margin-top: 0;
+}
+/* A plain "G" mark for "Continue with Google": no logo is fetched from anywhere. */
+.gm {
+  display: inline-grid;
+  place-items: center;
+  width: 1.2rem;
+  height: 1.2rem;
+  border-radius: 50%;
+  border: 1px solid var(--rule);
+  background: var(--paper-raised);
+  color: #3a7bd5;
+  font: 700 0.75rem var(--sans);
+}
 .login-or {
   display: flex;
   align-items: center;
