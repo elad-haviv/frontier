@@ -360,7 +360,7 @@ for (const how of ["g h", "the switcher"]) {
     if (how === "g h") {
       await page.keyboard.press("g");
       await page.keyboard.press("h");
-      await expect(page).toHaveURL(/\/$/);
+      await expect(page).toHaveURL(/\/p\/sample$/);
     } else {
       await page.keyboard.press("Control+k");
       await page.locator(".switcher input").fill("mira");

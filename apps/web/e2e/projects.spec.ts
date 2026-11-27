@@ -283,6 +283,14 @@ test("old addresses open the same page in the project last used, keeping the que
   await page.goto("/projects");
   await page.getByRole("link", { name: "Salt Coast, Owner" }).click();
   await expect(page).toHaveURL(/\/p\/salt-coast$/);
+  // Opened, and the server has been told: the old addresses go there from now on.
+  await expect(page.locator(".home h1")).toBeVisible();
+  await expect
+    .poll(
+      async () =>
+        ((await (await page.request.get("/api/projects")).json()) as { last: string }).last,
+    )
+    .toBe("salt-coast");
   await page.goto("/gallery");
   await expect(page).toHaveURL(/\/p\/salt-coast\/gallery$/);
   await page.goto("/");

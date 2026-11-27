@@ -376,12 +376,12 @@ test("g h goes Home and g r opens a random entry; both are on the key sheet", as
   await expect(page.locator(".entry h1").first()).toBeVisible();
   await page.keyboard.press("g");
   await page.keyboard.press("h");
-  await expect(page).toHaveURL(/\/$/);
+  await expect(page).toHaveURL(/\/p\/sample$/);
   await expect(page.locator(".home h1")).toBeVisible();
 
   // A key alone does nothing, and typing in a field is left alone.
   await page.keyboard.press("h");
-  await expect(page).toHaveURL(/\/$/);
+  await expect(page).toHaveURL(/\/p\/sample$/);
   await page.keyboard.press("?");
   const sheet = page.getByRole("dialog");
   await expect(sheet).toContainText("Go to Home");
