@@ -50,6 +50,17 @@ export const EmailCode = z.object({
 });
 export type EmailCode = z.infer<typeof EmailCode>;
 
+/**
+ * A confirm link that was used, kept (its hash only) until the day it would have run out anyway,
+ * so opening it a second time, or a second request arriving at once, is answered "already
+ * confirmed" and not as a dead link.
+ */
+export const EmailUsed = z.object({
+  codeHash: z.string().regex(/^[0-9a-f]{64}$/),
+  expiresAt: z.string().datetime(),
+});
+export type EmailUsed = z.infer<typeof EmailUsed>;
+
 /** A change of address that waits for its link to be opened. The old address stays in force. */
 export const EmailPending = z.object({ address: z.string(), requestedAt: z.string().datetime() });
 export type EmailPending = z.infer<typeof EmailPending>;

@@ -435,6 +435,9 @@ describe("accounts", () => {
       emailPending: null,
       resetCode: null,
       emailDisplaced: false,
+      emailSetBySelf: false,
+      emailLinkSentUntil: null,
+      emailUsed: null,
     });
     expect(PeopleFile.parse({})).toEqual({ version: 1, people: [] });
   });

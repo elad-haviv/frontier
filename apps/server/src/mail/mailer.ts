@@ -5,6 +5,7 @@
  * Nothing here logs a message, its links or its codes. A failure is reported by kind and error
  * code only (an SMTP error text can quote the recipient).
  */
+import { emailKey } from "@frontier/schema";
 import { createTransport } from "nodemailer";
 import type { MailConfig, MailSender } from "../config.js";
 
@@ -33,13 +34,27 @@ export interface Transport {
 
 /**
  * An address that is safe to hand to a relay: one plain `local@domain`, with nothing that could
- * end a header line or start another recipient.
+ * end a header line or start another recipient. An apostrophe is fine in the local part
+ * (`o'brien@example.com`); it ends nothing in an envelope address.
  */
 export function mailable(address: string): boolean {
   return (
     address.length <= 254 &&
-    /^[^\s<>,;"'\\()[\]:@]+@[^\s<>,;"'\\()[\]:@]+\.[^\s<>,;"'\\()[\]:@]+$/.test(address)
+    /^[^\s<>,;"\\()[\]:@]+@[^\s<>,;"'\\()[\]:@]+\.[^\s<>,;"'\\()[\]:@]+$/.test(address)
   );
+}
+
+/**
+ * What a recipient is counted under in the mail allowances: the address in lower case with any
+ * `+tag` taken out of the local part, so `a+1@x.org`, `a+2@x.org` and `a@x.org` are one mailbox.
+ */
+export function recipientKey(address: string): string {
+  const key = emailKey(address);
+  const at = key.lastIndexOf("@");
+  if (at < 1) return key;
+  const local = key.slice(0, at);
+  const plain = local.replace(/\+.*$/, "");
+  return `${plain === "" ? local : plain}${key.slice(at)}`;
 }
 
 /** A subject on one line, with no control characters, and not unreasonably long. */

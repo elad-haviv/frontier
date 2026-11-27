@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { ConfirmedBy, EmailCode, EmailPending, ResetCode } from "./email.js";
+import { ConfirmedBy, EmailCode, EmailPending, EmailUsed, ResetCode } from "./email.js";
 import { Passkey } from "./state.js";
 
 /**
@@ -63,6 +63,20 @@ export const Person = z.object({
    * to add another. Such an account never counts as "the account with no email" at login.
    */
   emailDisplaced: z.boolean().default(false),
+  /**
+   * The account itself set its current address after stage 28 (Change address, or the profile
+   * form), as against giving it when it joined. Until such an address is confirmed no reset link
+   * is sent to it.
+   */
+  emailSetBySelf: z.boolean().default(false),
+  /**
+   * When the latest confirm link Frontier successfully sent to the current address runs (or ran)
+   * out; null when none was ever sent. An unconfirmed address whose link lapsed unopened may be
+   * given up to a Google-verified person; one never sent a link never is.
+   */
+  emailLinkSentUntil: z.string().datetime().nullable().default(null),
+  /** The confirm link used last, so opening it again says "already confirmed". */
+  emailUsed: EmailUsed.nullable().default(null),
 });
 export type Person = z.infer<typeof Person>;
 

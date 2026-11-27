@@ -90,6 +90,16 @@ export function maskAddress(address: string): string {
   return `${Array.from(address.slice(0, at))[0] ?? ""}•••${address.slice(at)}`;
 }
 
+/**
+ * How to name the inviter where the email says to ask them: the first name when the name has
+ * several words and the first is a real name (not an initial), otherwise the whole name.
+ */
+export function askName(name: string): string {
+  const words = name.trim().split(/\s+/);
+  const first = words[0] ?? "";
+  return words.length > 1 && first.length > 1 && !/[.@]/.test(first) ? first : name.trim();
+}
+
 export function inviteMail(d: {
   from: MailSender;
   inviter: string;
@@ -117,7 +127,7 @@ export function inviteMail(d: {
       "If you were not expecting this, ignore this email. Nothing happens unless the link is opened.",
       sentBy(d.from, ` because ${d.inviter} typed your address`).replace(
         "Replies to this address are not read.",
-        `Replies to this address are not read; ask ${d.inviter} directly.`,
+        `Replies to this address are not read; ask ${askName(d.inviter)} directly.`,
       ),
     ],
   );

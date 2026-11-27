@@ -41,6 +41,8 @@ export interface Server {
   mailLimit: LoginLimiter;
   /** Resends of the confirm link, per account. */
   resendLimit: LoginLimiter;
+  /** Emailed invitations (new and resent) a person may send, per person. */
+  inviteMailLimit: LoginLimiter;
   /** "Forgot password" requests, per network address and per typed address. */
   forgotIpLimit: LoginLimiter;
   forgotAddressLimit: LoginLimiter;
@@ -73,15 +75,28 @@ export interface ServerOptions {
 }
 
 const HOUR = 60 * 60 * 1000;
-/** An allowance per hour whose refusal reads the same for every address. */
-const mailLimiter = (max: number) =>
+/**
+ * An allowance per hour whose refusal reads the same for every address. Like the join allowance it
+ * grows with `LOGIN_ATTEMPTS`, which only a test server can change (production is fixed at 5),
+ * so browser tests that send a lot of mail from one machine do not run into it.
+ */
+const mailLimiter = (max: number, config: Config) =>
   new LoginLimiter(
-    max,
+    Math.max(max, Math.round((max * config.loginAttempts) / 5)),
     HOUR,
     Date.now,
     undefined,
-    "Too many requests. Try again in a few minutes.",
+    "Too many requests. Try again later.",
   );
+
+/** The mail allowances of a configuration (see `mailLimiter`). */
+export const mailLimiters = (config: Config) => ({
+  mailLimit: mailLimiter(6, config),
+  resendLimit: mailLimiter(5, config),
+  inviteMailLimit: mailLimiter(20, config),
+  forgotIpLimit: mailLimiter(10, config),
+  forgotAddressLimit: mailLimiter(3, config),
+});
 
 /** Makes what is the server's. `registry` is set by the caller, which knows how a project is built. */
 export function makeServer(config: Config, options: ServerOptions = {}): Server {
@@ -117,10 +132,7 @@ export function makeServer(config: Config, options: ServerOptions = {}): Server 
     invites: new InviteStore(stateDir, files),
     joins: new Turn(),
     mail: Mail.from(config.mail),
-    mailLimit: mailLimiter(6),
-    resendLimit: mailLimiter(5),
-    forgotIpLimit: mailLimiter(10),
-    forgotAddressLimit: mailLimiter(3),
+    ...mailLimiters(config),
     joinLimit: new LoginLimiter(config.loginAttempts * 6),
     live: new LiveRequests(),
     settings,

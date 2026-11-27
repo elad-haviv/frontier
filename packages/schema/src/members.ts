@@ -113,8 +113,9 @@ export const JoinInfo = z.object({
   /** The person asking is logged in and already in this project (the link is then not needed). */
   alreadyMember: z.boolean(),
   /**
-   * Stage 28: the address the invitation was emailed to, or null. The page fills it in and says
-   * so; joining with exactly this address counts as confirmed. (Whoever holds the link sees it.)
+   * Stage 28: the address the invitation was emailed to, or null. Given only when the request
+   * carries the proof from the emailed link (`?m=`); anyone else, the owner included, gets null.
+   * The page fills it in and says so; joining with it and the proof counts as confirmed.
    */
   email: z.string().nullable().default(null),
 });
@@ -165,6 +166,14 @@ export const InviteRecord = z.object({
   /** Stage 28: the address the link was emailed to, and whether the relay took the mail. */
   email: z.string().optional(),
   mail: InviteMailState.optional(),
+  /**
+   * SHA-256 of a second random proof that is put only in the emailed link (`?m=`). Joining with
+   * the right proof and the emailed address counts as confirmed; it is never in any answer.
+   */
+  proofHash: z
+    .string()
+    .regex(/^[0-9a-f]{64}$/)
+    .optional(),
 });
 export type InviteRecord = z.infer<typeof InviteRecord>;
 
