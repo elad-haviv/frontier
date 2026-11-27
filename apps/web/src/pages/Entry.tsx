@@ -537,6 +537,8 @@ export function EntryPage() {
     outlineOpen: bar.open === "outline",
     onGraph: toggle("graph"),
     graphOpen: bar.open === "graph",
+    onRelations: toggle("relations"),
+    relationsOpen: bar.open === "relations",
     pin: pinnable
       ? { pinned, onToggle: () => void pinOrUnpin(), blocked: offlineReason }
       : undefined,

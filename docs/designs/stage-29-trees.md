@@ -141,3 +141,52 @@ children"). One at a time is the list version of the tree. All of it is in the "
 
 Labelled relation lines on the Graph; an hourglass view; twins and succession; export as an image;
 trees against the chronicle's years; AI proposing relations from the prose (first of these).
+
+## As built
+
+- **Where things are kept.**
+  - Relations are the `relations:` list on each entry, read and written by `readRelations` and
+    `setRelations` (`packages/vault/src/relations.ts`) in the standard form described above.
+  - The trees are one library item file, `.frontier/trees.json`, with one tree per line. It is the
+    fifth entry in the table of library files (`TREES` in `packages/schema/src/relations.ts`), so
+    saving through the device's queue, merging tree by tree, offline sends and following renames
+    all come from the table, not new code.
+  - The same file holds the kinds the author makes (`kinds`) and the checks marked "It's right"
+    (`fine`, as `check|entry|other entry`).
+  - The built-in kinds are in `BUILT_IN_KINDS`. The schema file is not read for kinds, since
+    Frontier does not write the schema file (stage 3).
+- **The server.**
+  - `GET /api/relations` reads every entry, drafts included, and merges a fact written on both
+    sides into one fact with two sources (`apps/server/src/relations/collect.ts`).
+  - It says when the sources disagree on `how` or `when`, or when only one gives a `how`.
+  - A name with no entry is the key `?Name`. Words that are not a kind are listed under `unknown`.
+  - Years for the cards come from the first number in the entry's `born` and `died` dates, or its
+    beginning and ending dates.
+  - `POST /api/relations` adds one item to one entry through the entry changer (into its draft).
+    With `create` it also makes the new entry in that entry's folder.
+  - `POST /api/relations/remove` takes an item off, only if it is still the one shown.
+  - An entry whose `relations` cannot be read is not written to. It is listed under "fields that
+    cannot be read".
+- **The browser.**
+  - `apps/web/src/trees/model.ts` holds the layout, kinship words, checks and read-out text, all
+    pure functions with tests.
+  - The drawing is SVG (`components/trees/TreeDrawing.tsx`): it pans by drag, zooms by wheel or
+    pinch, and has arrow keys and a live region for screen readers. It opens at no less than real
+    size divided by 1.08, centred on the last selection kept on the device.
+  - Generations start at All.
+  - The phone opens on One at a time; the choice is kept on the device (`frontier.trees.phoneView`).
+- **Entries.** A Relations button sits in the entry's top row and a Relations tab in the right bar.
+  The tab has the rows as written, + Add a relation with "+ A new kind…" (asks for the word and
+  its other way round), and a remove button on each row.
+- **Keys.**
+  - Everywhere: `g t` goes to Trees.
+  - On the Trees page: `n` makes a tree.
+  - In a tree: `/`, `a`, `c`, `f`, `=` and `-`.
+  - Arrows, Enter and Esc belong to the drawing while it has the focus.
+- **Not built yet.**
+  - Someone who appears twice is drawn once, where the tree first reaches them; the linked copy
+    is not drawn.
+  - "↑ 2 more" names the parents not drawn but does not open them.
+  - `how` and `when` of an existing relation are changed in the text, not in a form.
+  - The tree needs a connection to read the relations. The trees file itself is kept on the
+    device like the other library files.
