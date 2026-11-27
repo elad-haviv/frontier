@@ -1,5 +1,5 @@
-import { expect, type Locator, type Page, test } from "@playwright/test";
-import { edit, entry, openEditor, openSideBar, rightPanel, saved } from "./helpers.ts";
+import { expect, type Locator, type Page, test } from "./test.ts";
+import { api, edit, entry, openEditor, openSideBar, proj, rightPanel, saved } from "./helpers.ts";
 
 // Stage 28: on a desktop the library is a pane beside the side bar, opened from a Library place in
 // the side bar (or the rail), docked on a wide window and floating over the page on a narrow one.
@@ -10,7 +10,7 @@ type Folder = { notes: { path: string }[]; folders: Folder[] };
 
 /** How many entries the library holds, from the server's tree. */
 async function entryCount(page: Page): Promise<number> {
-  const tree = (await (await page.request.get("/api/tree")).json()) as Folder;
+  const tree = (await (await page.request.get(api("/tree"))).json()) as Folder;
   const walk = (f: Folder): number => f.notes.length + f.folders.reduce((n, g) => n + walk(g), 0);
   return walk(tree);
 }
@@ -30,9 +30,9 @@ async function open(page: Page, path = HARBOR): Promise<void> {
 
 /** Throws away every unpublished change, so the next test starts from the library. */
 async function discardAll(page: Page): Promise<void> {
-  const un = await (await page.request.get("/api/unpublished")).json();
-  for (const r of un.renames) await page.request.delete(`/api/renames/${r.id}`);
-  for (const d of un.drafts) await page.request.delete(`/api/drafts/${d.id}`);
+  const un = await (await page.request.get(api("/unpublished"))).json();
+  for (const r of un.renames) await page.request.delete(api(`/renames/${r.id}`));
+  for (const d of un.drafts) await page.request.delete(api(`/drafts/${d.id}`));
 }
 
 test.beforeEach(({ isMobile }, info) => {
@@ -133,7 +133,7 @@ test("open or closed is remembered on the device, and an entry picked keeps a do
   await expect(toggle(page)).toHaveAttribute("aria-pressed", "false");
   await expect(pane(page)).toHaveCount(0);
   // Closed, it stays closed through a move to another page.
-  await page.goto("/maps");
+  await page.goto(proj("/maps"));
   await expect(side(page)).toBeVisible();
   await expect(pane(page)).toHaveCount(0);
   await toggle(page).click();
@@ -268,7 +268,9 @@ test("g l toggles the pane, moving the focus into the tree and back to the Libra
 });
 
 test("an empty library says so in the pane, with a New entry button", async ({ page }) => {
-  await page.route("**/api/tree", (route) => route.fulfill({ json: { folders: [], notes: [] } }));
+  await page.route("**/api/p/*/tree", (route) =>
+    route.fulfill({ json: { folders: [], notes: [] } }),
+  );
   await open(page);
   await expect(pane(page).getByText("No entries yet.")).toBeVisible();
   await expect(pane(page).getByRole("button", { name: "New entry", exact: true })).toHaveCount(1);
@@ -281,7 +283,7 @@ test("an empty library says so in the pane, with a New entry button", async ({ p
 test("a library that cannot be read shows the problem and a retry in the pane", async ({
   page,
 }) => {
-  await page.route("**/api/tree", (route) =>
+  await page.route("**/api/p/*/tree", (route) =>
     route.fulfill({ status: 500, json: { error: "The library could not be read." } }),
   );
   await open(page);
@@ -303,7 +305,7 @@ test("showing a folder from Home opens a closed pane at that folder", async ({ p
   await open(page);
   await toggle(page).click();
   await expect(pane(page)).toHaveCount(0);
-  await page.goto("/");
+  await page.goto(proj("/"));
   await expect(page.locator(".home h1")).toBeVisible();
   await expect(pane(page)).toHaveCount(0);
   await page
@@ -340,7 +342,7 @@ test("a tree that comes back after a failure does not take the focus from the ed
   page,
 }) => {
   let failing = true;
-  await page.route("**/api/tree", (route) =>
+  await page.route("**/api/p/*/tree", (route) =>
     failing
       ? route.fulfill({ status: 500, json: { error: "The library could not be read." } })
       : route.fallback(),
@@ -370,7 +372,7 @@ test("the first entry saved in an empty library does not take the focus from the
   page,
 }) => {
   let empty = true;
-  await page.route("**/api/tree", (route) =>
+  await page.route("**/api/p/*/tree", (route) =>
     empty ? route.fulfill({ json: { folders: [], notes: [] } }) : route.fallback(),
   );
   await page.goto(edit(HARBOR));
@@ -464,25 +466,25 @@ test("the pane switches between docked and floating as the side bar is resized, 
 test("the pane is not open on a first visit to a map, a chronicle or the graph, and keeps its own choice for each kind", async ({
   page,
 }) => {
-  await page.goto("/graph");
+  await page.goto(proj("/graph"));
   await expect(toggle(page)).toBeVisible();
   await expect(pane(page)).toHaveCount(0);
-  await page.goto("/map/nosuchmap");
+  await page.goto(proj("/map/nosuchmap"));
   await expect(toggle(page)).toBeVisible();
   await expect(pane(page)).toHaveCount(0);
-  await page.goto("/chronicle/nosuchchronicle");
+  await page.goto(proj("/chronicle/nosuchchronicle"));
   await expect(toggle(page)).toBeVisible();
   await expect(pane(page)).toHaveCount(0);
   // Entries still start with it open.
   await open(page);
   await expect(pane(page)).toBeVisible();
   // Opening it on the graph is remembered for the graph only.
-  await page.goto("/graph");
+  await page.goto(proj("/graph"));
   await toggle(page).click();
   await expect(pane(page)).toBeVisible();
   await page.reload();
   await expect(pane(page)).toBeVisible();
-  await page.goto("/map/nosuchmap");
+  await page.goto(proj("/map/nosuchmap"));
   await expect(toggle(page)).toBeVisible();
   await expect(pane(page)).toHaveCount(0);
   await open(page);
@@ -490,7 +492,7 @@ test("the pane is not open on a first visit to a map, a chronicle or the graph, 
   // Closing it on an entry leaves the graph's choice alone.
   await toggle(page).click();
   await expect(pane(page)).toHaveCount(0);
-  await page.goto("/graph");
+  await page.goto(proj("/graph"));
   await expect(pane(page)).toBeVisible();
 });
 

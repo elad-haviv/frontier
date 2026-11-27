@@ -6,6 +6,7 @@ import {
   openLibrary,
   openSideBar,
   proj,
+  rightPanel,
   tidyPeople,
 } from "./helpers.ts";
 
@@ -223,4 +224,42 @@ test("a writer sees everything but the owner's settings", async ({ page, browser
   await expect(w.getByLabel("Role of Olive Owner")).toHaveCount(0);
   await writer.context.close();
   await takeOut(page, "Walt Writer");
+});
+
+test("a reader opens Trees and an entry's relations and talks to a character, and changes nothing", async ({
+  page,
+  browser,
+}) => {
+  const reader = await person(browser, page, "reader", "Rhea Reader");
+  const r = reader.page;
+  const seen = watch(r);
+
+  // Trees: the list, with no way to make a tree.
+  await r.goto(proj("/trees"));
+  await expect(r.getByRole("heading", { name: "Trees", level: 1 })).toBeVisible();
+  await expect(r.getByRole("button", { name: /New tree/ })).toHaveCount(0);
+  await expect(r.getByRole("button", { name: "New tree", exact: true })).toHaveCount(0);
+
+  // An entry's Relations tab: what is written, and none of the controls that write it.
+  await r.goto(entry(OLD_QUAY));
+  const relations = await rightPanel(r, "Relations");
+  await expect(relations.getByText("As written in this entry")).toBeVisible();
+  await expect(relations.locator(".tr-add-row")).toHaveCount(0);
+  await expect(relations.getByRole("button", { name: /^Remove/ })).toHaveCount(0);
+
+  // Talking with a character: an entry with no profile has no one to talk with, and a reader
+  // cannot draft one.
+  await r.goto(proj(`/talk/${OLD_QUAY.split("/").map(encodeURIComponent).join("/")}`));
+  await expect(r.getByText("has no profile yet")).toBeVisible();
+  await expect(r.getByRole("button", { name: /Draft a profile/ })).toHaveCount(0);
+
+  // The same pages, called as a reader, never ask for what only a writer may.
+  expect(seen.refused).toEqual([]);
+  expect(seen.asked.some((a) => a.startsWith("GET /relations"))).toBe(true);
+  // The only thing it sends is which entry it has open, for the writers to see (stage 31d).
+  expect(seen.asked.filter((a) => /^(POST|PUT|DELETE) /.test(a) && !/presence/.test(a))).toEqual(
+    [],
+  );
+  await reader.context.close();
+  await takeOut(page, "Rhea Reader");
 });

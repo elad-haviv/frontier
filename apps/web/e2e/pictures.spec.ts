@@ -1,5 +1,5 @@
-import { expect, test } from "@playwright/test";
-import { openEditor, saved, setUpAi } from "./helpers.ts";
+import { expect, test } from "./test.ts";
+import { api, openEditor, saved, setUpAi } from "./helpers.ts";
 
 // An entry of the test's own: other tests rename and publish the sample ones before this runs.
 const LAMP = "03 Things/Harbor Lamp.md";
@@ -9,7 +9,7 @@ test("CUJ 29: generates pictures for an entry and inserts the one chosen", async
 }, info) => {
   test.skip(info.project.name !== "desktop", "The AI settings are one per server.");
   await setUpAi(page, { art: "sample/painter" });
-  const made = await page.request.put("/api/drafts", {
+  const made = await page.request.put(api("/drafts"), {
     data: {
       id: "picturelamp1",
       path: LAMP,
@@ -78,13 +78,13 @@ test("CUJ 29: generates pictures for an entry and inserts the one chosen", async
 
   // Leave the vault as it was for the tests after this one: the entry and the picture go.
   await page.evaluate(async () => {
-    const { drafts } = (await (await fetch("/api/unpublished")).json()) as {
+    const { drafts } = (await (await fetch(`${API}/unpublished`)).json()) as {
       drafts: { id: string; path: string }[];
     };
     for (const d of drafts.filter(
       (x) => x.path.endsWith("Lamp at dusk.png") || x.path.endsWith("Harbor Lamp.md"),
     )) {
-      await fetch(`/api/drafts/${d.id}`, { method: "DELETE" });
+      await fetch(`${API}/drafts/${d.id}`, { method: "DELETE" });
     }
   });
 });
