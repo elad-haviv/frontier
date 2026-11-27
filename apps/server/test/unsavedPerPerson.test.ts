@@ -378,6 +378,34 @@ describe("what other people may know of someone's work in progress", () => {
     ]);
   });
 
+  it("does not tell the path of someone's unsaved new entry", async () => {
+    const res = await wren.put(`${base}/drafts`, {
+      id: newId(),
+      path: "Wren's Secret Idea.md",
+      kind: "create",
+      text: "# Idea\n",
+      revision: 0,
+      baseBlob: "",
+    });
+    expect(res.statusCode, res.body).toBe(200);
+    expect(JSON.stringify(await status(rex))).not.toContain("Secret Idea");
+    expect((await rex.get(`${base}/tree`)).body).not.toContain("Secret Idea");
+    // Someone who writes the same new entry is told: the path is theirs.
+    const mine = await rex.put(`${base}/drafts`, {
+      id: newId(),
+      path: "Wren's Secret Idea.md",
+      kind: "create",
+      text: "# Idea\n\nMine.\n",
+      revision: 0,
+      baseBlob: "",
+    });
+    expect(mine.statusCode).toBe(200);
+    expect((await status(rex)).othersUnsaved!.map((o) => o.path)).toEqual([
+      "Wren's Secret Idea.md",
+    ]);
+    expect((await entry(rex, "Wren's Secret Idea.md")).othersUnsaved).toHaveLength(1);
+  });
+
   it("stops telling when the person is demoted or has gone, and tells again when they are back", async () => {
     await edit(wren, MIRA, "# Mira\n\nWren's text.\n");
     expect((await entry(rex, MIRA)).othersUnsaved).toHaveLength(1);

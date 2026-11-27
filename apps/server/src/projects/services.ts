@@ -239,7 +239,11 @@ export async function buildServices(
         drafts: drafts.changes,
         serverDraftChanges: drafts.serverChanges(),
         keptCopies: drafts.keptCount(),
-        othersUnsaved: [...drafts.othersUnsaved()].map(([path, people]) => ({ path, people })),
+        // Only entries the person can see: published ones, and ones they have a draft of. The path
+        // of someone's unsaved new entry is theirs to tell.
+        othersUnsaved: [...drafts.othersUnsaved()]
+          .filter(([path]) => index.hasFile(path) || drafts.byPath(path) !== undefined)
+          .map(([path, people]) => ({ path, people })),
         presence: presence.readingFor(personId),
       })),
   });
