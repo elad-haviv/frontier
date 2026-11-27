@@ -625,7 +625,7 @@ export const MeResponse = z.object({
    */
   suggestedEmail: z.string().default(""),
   /** The address of the project the person used last, if they are still in it; null before they used one. */
-  lastProject: z.string().nullable().default(null),
+  lastProject: z.string().nullable().optional(),
 });
 export type MeResponse = z.infer<typeof MeResponse>;
 
