@@ -4,6 +4,20 @@ import { outsideSavedView } from "../projects/view.js";
 
 type Listener = (snapshot: StatusSnapshot) => void;
 
+/**
+ * What the snapshot says about one person (stage 27d): their own unsaved changes, and what they
+ * may know of other people's work in progress. A snapshot is the project's; each person's stream
+ * lays this over it.
+ */
+export type PersonalStatus = Pick<
+  StatusSnapshot,
+  "unpublished" | "conflicts" | "drafts" | "serverDraftChanges"
+> & {
+  keptCopies: number;
+  othersUnsaved: NonNullable<StatusSnapshot["othersUnsaved"]>;
+  presence: NonNullable<StatusSnapshot["presence"]>;
+};
+
 /** Holds the facts shown in the status area and tells listeners when one changes. */
 export class StatusService {
   private lastFetchAt: string | null = null;
@@ -31,6 +45,8 @@ export class StatusService {
       keptCopies?: () => number;
       /** The draft store's count of draft writes and discards. */
       draftChanges?: () => number;
+      /** What the snapshot says of one person's own work, and of other people's (stage 27d). */
+      person?: (personId: string) => PersonalStatus;
     } = { library: "github", backupOutside: true },
   ) {}
 
@@ -72,6 +88,24 @@ export class StatusService {
         keptCopies: this.facts.keptCopies?.() ?? 0,
       },
     };
+  }
+
+  /**
+   * The snapshot as one person gets it: the project's, with their own unsaved changes in place of
+   * whatever the last change left in the project's. A reader has none and sees nobody's: the caller
+   * zeroes the lot (`routes/status.ts`).
+   */
+  snapshotFor(personId: string): StatusSnapshot {
+    const base = this.snapshot();
+    const mine = this.facts.person?.(personId);
+    if (!mine) return base;
+    const { keptCopies, ...rest } = mine;
+    return { ...base, ...rest, attention: { ...base.attention, keptCopies } };
+  }
+
+  /** Who is reading what changed. */
+  presenceChanged(): void {
+    this.changed();
   }
 
   health(): Health {

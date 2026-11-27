@@ -1,4 +1,6 @@
 import { z } from "zod";
+import { OtherUnsaved, Reading } from "./api.js";
+import { VaultPath } from "./state.js";
 
 /** `GET /api/status`, and the data of each `status` server-sent event. */
 export const StatusSnapshot = z.object({
@@ -57,6 +59,17 @@ export const StatusSnapshot = z.object({
     /** Drafts with texts kept from other devices, waiting to be merged. */
     keptCopies: z.number().int().min(0),
   }),
+  /**
+   * Stage 27d. `unpublished`, `conflicts`, `drafts`, `serverDraftChanges` and `attention.keptCopies`
+   * above are the caller's own. These two are about other people, and only writers and owners get
+   * them: for a reader both are empty.
+   *
+   * `othersUnsaved`: the entries someone else in the project has unsaved changes to, and who (the
+   * names and the time, never the text), for the "has unsaved changes" notice and the tree's dot.
+   * `presence`: who is reading which entry now, apart from the caller.
+   */
+  othersUnsaved: z.array(z.object({ path: VaultPath, people: z.array(OtherUnsaved) })).optional(),
+  presence: z.array(Reading).optional(),
 });
 export type StatusSnapshot = z.infer<typeof StatusSnapshot>;
 

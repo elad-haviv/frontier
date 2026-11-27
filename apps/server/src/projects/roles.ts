@@ -56,6 +56,9 @@ export const ROUTE_ROLES: Record<string, ProjectRole> = {
   "GET /history/version": "reader",
   "GET /status": "reader",
   "GET /status/events": "reader",
+  // Announce the entry this device has open (stage 27d); a reader reads, so a reader announces too.
+  "PUT /presence": "reader",
+  "POST /presence/leave": "reader",
   "GET /attention": "reader",
   "GET /library-files/:name": "reader",
   "GET /maps": "reader",
@@ -108,6 +111,7 @@ export const ROUTE_ROLES: Record<string, ProjectRole> = {
   "DELETE /drafts/:id/versions/server": "writer",
   "POST /drafts/:id/merge-versions": "writer",
   "POST /drafts/:id/resolve": "writer",
+  "GET /drafts/:id/compare": "writer",
   "GET /unpublished": "writer",
   "POST /publish/plan": "writer",
   "POST /publish/confirm": "writer",

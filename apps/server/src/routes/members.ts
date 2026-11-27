@@ -4,6 +4,8 @@ import {
   type CreateInviteResponse,
   type InvitesResponse,
   type MembersResponse,
+  AWAY_KEEP_DAYS,
+  type RemoveMemberResponse,
 } from "@frontier/schema";
 import { z } from "zod";
 import { personOf } from "../auth/session.js";
@@ -64,19 +66,23 @@ export function memberRoutes(app: RouteApp, s: Services): void {
     return { ok: true };
   });
 
-  app.delete("/api/members/:id", async (request): Promise<{ ok: true }> => {
+  app.delete("/api/members/:id", async (request): Promise<RemoveMemberResponse> => {
     const project = here(request);
     const { id } = PersonParam.parse(request.params);
+    // How many unsaved changes they leave, told to the owner who removes them: counted before, so
+    // the answer is right whatever the watchers then do. They are kept for 30 days.
+    const unsavedKept = s.drafts.unsavedOf(id);
     // What the person wrote stays: versions are the library's, and nothing here touches them.
     await s.server.projects.removeMember(project.record.id, id);
-    return { ok: true };
+    return { ok: true, unsavedKept, keptDays: AWAY_KEEP_DAYS };
   });
 
   /** Any member leaves for themselves; the last owner cannot. */
-  app.post("/api/members/leave", async (request): Promise<{ ok: true }> => {
+  app.post("/api/members/leave", async (request): Promise<RemoveMemberResponse> => {
     const project = here(request);
+    const unsavedKept = s.drafts.unsavedOf(personOf(request).id);
     await s.server.projects.removeMember(project.record.id, personOf(request).id);
-    return { ok: true };
+    return { ok: true, unsavedKept, keptDays: AWAY_KEEP_DAYS };
   });
 
   app.get("/api/invites", async (request): Promise<InvitesResponse> => {

@@ -97,7 +97,10 @@ describe("the role table", () => {
         "POST /lore/stream",
         "POST /members/leave",
         "POST /pins",
+        // Stage 27d: a reader reads, and says which entry they have open for the writers to see.
+        "POST /presence/leave",
         "PUT /pins",
+        "PUT /presence",
       ].sort(),
     );
     // Only an owner changes the project itself, its members and its invitation links.

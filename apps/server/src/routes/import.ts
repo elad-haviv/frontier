@@ -221,6 +221,8 @@ export function importRoutes(app: RouteApp, s: Services): void {
         throw new ApiError("invalid", err instanceof Error ? err.message : "Nothing was imported.");
       }
       await s.git.push(made.commit);
+      // Ours: a save planned before it is not refused only because the import came first.
+      s.publisher.noteOwnCommit(made.commit);
       await s.sync();
       return made;
     } finally {

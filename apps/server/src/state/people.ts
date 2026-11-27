@@ -62,6 +62,11 @@ export class PeopleStore {
     return this.held?.people.find((p) => p.admin)?.id ?? null;
   }
 
+  /** A person from what is held in memory, without reading the file; null when not known (yet). */
+  getSync(id: string): Person | null {
+    return this.held?.people.find((p) => p.id === id) ?? null;
+  }
+
   async get(id: string): Promise<Person | null> {
     return (await this.all()).find((p) => p.id === id) ?? null;
   }

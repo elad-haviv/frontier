@@ -59,6 +59,8 @@ export interface Version {
   at: string;
   message: string;
   paths: string[];
+  /** Who Git says made it (the commit's author). Never sent to the browser as it is: see `publish/authors.ts`. */
+  author: Identity;
 }
 
 export interface CommitChanges {
@@ -598,7 +600,7 @@ export class GitGateway {
           "log",
           `-n${limit}`,
           "--name-only",
-          "--format=%x01%H%x02%cI%x02%s%x02",
+          "--format=%x01%H%x02%cI%x02%s%x02%an%x02%ae%x02",
           ...(path ? ["--follow", "--", path] : ["--no-renames"]),
         ])
       ).stdout.toString("utf8");
@@ -606,14 +608,30 @@ export class GitGateway {
         .split("\u0001")
         .filter((part) => part.trim() !== "")
         .map((part) => {
-          const [commit, at, message, rest] = part.split("\u0002");
+          const [commit, at, message, name, email, rest] = part.split("\u0002");
           return {
             commit: commit!,
             at: at!,
             message: message!,
+            author: { name: name ?? "", email: email ?? "" },
             paths: (rest ?? "").split("\n").filter((p) => p !== ""),
           };
         });
+    });
+  }
+
+  /**
+   * The last saved version that touched a file, newest first, even when it is gone since (the
+   * version that deleted it is that). Null for a path no version ever touched.
+   */
+  lastChange(path: string): Promise<{ commit: string; at: string; author: Identity } | null> {
+    return this.locked(async () => {
+      const r = await this.run(["log", "-n1", "--format=%H%x02%cI%x02%an%x02%ae", "--", path], {
+        allow: (c) => c === 128,
+      });
+      if (r.code !== 0) return null;
+      const [commit, at, name, email] = r.stdout.toString("utf8").trim().split("\u0002");
+      return commit ? { commit, at: at ?? "", author: { name: name ?? "", email: email ?? "" } } : null;
     });
   }
 

@@ -48,7 +48,7 @@ import { proposalRoutes } from "./routes/proposals.js";
 import { quarantineRoutes } from "./routes/quarantine.js";
 import { searchRoutes } from "./routes/search.js";
 import { settingsRoutes } from "./routes/settings.js";
-import { healthRoute, statusRoutes } from "./routes/status.js";
+import { healthRoute, presenceRoutes, statusRoutes } from "./routes/status.js";
 import { webhookRoutes } from "./routes/webhook.js";
 import { writingRoutes } from "./routes/writing.js";
 import { makeServer, type Server } from "./server.js";
@@ -219,6 +219,18 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
   // invitation links waiting.
   server.projects.watchMembers(async (projectId, personId) => {
     server.live.cut(projectId, personId);
+    // Their unsaved changes are kept for 30 days if they left, and nobody is told they are reading.
+    // (A project that is not open has no clock to start: its next opening starts it.)
+    const open = await server.registry.peek(projectId);
+    if (open) {
+      const role = server.projects.roleOfSync(projectId, personId);
+      if (role === null) open.presence.forget(personId);
+      await open.drafts
+        .memberChanged(personId, role)
+        .catch((err: unknown) => app.log.error({ err }, "Could not note a change of member"));
+      // What others are told about them (a notice, a dot, who is reading) follows their role.
+      open.status.presenceChanged();
+    }
     if (server.projects.roleOfSync(projectId, personId) === "owner") return;
     try {
       await server.invites.cancelBy(projectId, personId);
@@ -409,6 +421,7 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
   historyRoutes(forProject, s);
   searchRoutes(forProject, s);
   statusRoutes(forProject, s);
+  presenceRoutes(forProject, s);
   // The project's own routes have no alias: `DELETE /api/project` must not exist.
   projectRoutes(projectApp(app, book, { aliases: false }), s);
   memberRoutes(projectApp(app, book, { aliases: false }), s);

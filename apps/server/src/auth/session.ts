@@ -86,16 +86,25 @@ export function personOf(request: FastifyRequest): Person {
   return request.person;
 }
 
+/** The domain of the email a person with none is given on their saved versions: it cannot receive mail. */
+export const STAND_IN_DOMAIN = "people.frontier.invalid";
+
 /**
- * Who a saved version is by: the person's own name and email where they have them, and the
- * configured author for what they have not given.
+ * Who a saved version is by (stage 27d: every one made through the app, in both modes of library):
+ * the person's own name and email. For what they have not given, a name from the part of the email
+ * before the "@", and an email that stands in for it (`<id>@people.frontier.invalid`, which can
+ * be traced back to the person and receives nothing). Someone with neither (the single author
+ * of a library from before people) is the configured author, as before.
  */
 export function authorOf(
   person: Person,
   configured: { name: string; email: string },
 ): { name: string; email: string } {
+  const name = person.name.trim();
+  const email = person.email.trim();
+  if (name === "" && email === "") return configured;
   return {
-    name: person.name.trim() || configured.name,
-    email: person.email.trim() || configured.email,
+    name: name || email.split("@")[0]!,
+    email: email || `${person.id}@${STAND_IN_DOMAIN}`,
   };
 }

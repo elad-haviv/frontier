@@ -38,6 +38,21 @@ export const MembersResponse = z.object({
 });
 export type MembersResponse = z.infer<typeof MembersResponse>;
 
+/** How many days a person's unsaved changes are kept in a project they have left or were removed from (stage 27d). */
+export const AWAY_KEEP_DAYS = 30;
+
+/**
+ * `DELETE /api/p/:project/members/:id` and `POST /api/p/:project/members/leave` (stage 27d): how
+ * many unsaved changes (entries, renames and the like) the person leaves in the project. They are
+ * kept for `keptDays` days, restored if the person rejoins within them, and then removed.
+ */
+export const RemoveMemberResponse = z.object({
+  ok: z.literal(true),
+  unsavedKept: z.number().int().min(0),
+  keptDays: z.number().int().min(0),
+});
+export type RemoveMemberResponse = z.infer<typeof RemoveMemberResponse>;
+
 /** `PUT /api/p/:project/members/:id` */
 export const ChangeRoleRequest = z.object({ role: ProjectRole });
 export type ChangeRoleRequest = z.infer<typeof ChangeRoleRequest>;

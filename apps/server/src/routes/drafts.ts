@@ -4,6 +4,7 @@ import type { RouteApp } from "../projects/facade.js";
 import {
   CreateRenameRequest,
   type CreateRenameResponse,
+  type DraftCompareResponse,
   DraftTextRequest,
   Id,
   makeId,
@@ -305,6 +306,23 @@ export function draftRoutes(app: RouteApp, s: Services): void {
     return { id: record.id, revision: record.revision };
   });
 
+  /**
+   * What a compare screen shows for one unsaved change (stage 27d): the person's text, the saved
+   * text, the text it started from, and who saved the saved version and when. Without making a plan;
+   * the answer is what saving it now would do.
+   */
+  app.get("/api/drafts/:id/compare", async (request): Promise<DraftCompareResponse> => {
+    const { id } = IdParam.parse(request.params);
+    const { outcome, c, draft } = await s.publisher.compare(id);
+    return {
+      draftId: draft.id,
+      path: draft.path,
+      outcome,
+      ...(c?.conflict ? { conflict: c.conflict } : {}),
+      ...(c?.merge ? { merge: c.merge } : {}),
+    };
+  });
+
   app.get("/api/unpublished", async (): Promise<UnpublishedResponse> => {
     const drafts = await Promise.all(
       s.drafts.list().map(async (d) => ({
@@ -328,7 +346,11 @@ export function draftRoutes(app: RouteApp, s: Services): void {
       renames.push({ id: intent.id, from: intent.from, to: intent.to, affected });
     }
     await s.quarantine.prune();
-    const decisions = s.quarantine.pendingDecisions().map((d) => ({
+    // A revert is saved by the person who decided it: its unsaved text is theirs alone.
+    const decisions = s.quarantine
+      .pendingDecisions()
+      .filter((d) => !d.draftId || !s.drafts.existsAny(d.draftId) || s.drafts.get(d.draftId))
+      .map((d) => ({
       id: d.id,
       path: d.path,
       decision: d.decision,
@@ -346,7 +368,7 @@ export function draftRoutes(app: RouteApp, s: Services): void {
     const { planId, confirmedMergeIds, message } = PublishConfirmRequest.parse(request.body);
     const author = authorOf(personOf(request), s.config.commitAuthor);
     let published: string[] = [];
-    const commit = await s.publisher.confirm(
+    const { commit, conflicts } = await s.publisher.confirm(
       planId,
       confirmedMergeIds,
       message,
@@ -356,7 +378,8 @@ export function draftRoutes(app: RouteApp, s: Services): void {
       },
     );
     // `published` lists the notes whose own text went out, for the browser to propose fields for.
-    return { commit, published };
+    // `conflicts` lists entries left out because someone else saved a newer version since the plan.
+    return { commit, published, conflicts };
   });
 
   /**

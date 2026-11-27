@@ -431,7 +431,10 @@ describe("two projects and two people kept apart", () => {
     ).toBe(404);
     // The unsaved entry is the second project's draft only.
     expect(t.services.drafts.list()).toEqual([]);
-    expect(opened!.drafts.list().map((d) => d.id)).toEqual(["northdraft01"]);
+    // (Stage 27d: unsaved changes are each person's own, so it is read as the person who made it.)
+    expect(opened!.drafts.as(other.id, () => opened!.drafts.list().map((d) => d.id))).toEqual([
+      "northdraft01",
+    ]);
   });
 
   it("backs each project up under its own prefix, with none of the other's files", async () => {

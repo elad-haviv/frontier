@@ -99,7 +99,8 @@ describe("a change a person makes to themselves is answered over a real connecti
     await reading.read();
     const left = await send(writer, "POST", `${base}/members/leave`);
     expect(left.status).toBe(200);
-    expect(await left.json()).toEqual({ ok: true });
+    // Stage 27d: leaving also says how many unsaved changes stay behind, kept for 30 days.
+    expect(await left.json()).toEqual({ ok: true, unsavedKept: 0, keptDays: 30 });
     const ended = await Promise.race([
       reading.read().then(
         (r) => r.done,
@@ -115,7 +116,7 @@ describe("a change a person makes to themselves is answered over a real connecti
     // An owner removes themselves with a body-less DELETE.
     const removed = await send(second, "DELETE", `${base}/members/${second.id}`);
     expect(removed.status).toBe(200);
-    expect(await removed.json()).toEqual({ ok: true });
+    expect(await removed.json()).toEqual({ ok: true, unsavedKept: 0, keptDays: 30 });
     expect((await t.server.projects.get(pid))!.members.map((m) => m.role)).toEqual(["owner"]);
 
     // Deleting the project is answered too.

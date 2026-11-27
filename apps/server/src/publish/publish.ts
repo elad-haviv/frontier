@@ -10,6 +10,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   type AnyLibraryFile,
+  type AuthorRef,
   chronicleIdOf,
   type DraftRecord,
   LIBRARY_FILES,
@@ -41,6 +42,7 @@ import { GitError, type GitGateway } from "../git/gateway.js";
 import type { VaultIndex } from "../index/build.js";
 import type { DraftStore } from "../state/drafts.js";
 import type { StatusService } from "../status/status.js";
+import type { Authors } from "./authors.js";
 
 type Plan = PublishPlan;
 type Conflict = Plan["conflicts"][number];
@@ -58,6 +60,8 @@ interface Classified {
 
 interface StoredPlan {
   plan: Plan;
+  /** Whose plan it is: nobody else can confirm it, or even know it is there. */
+  person: string;
   createdAt: number;
   classified: Map<string, Classified>;
   renameIds: string[];
@@ -100,7 +104,12 @@ export interface PublisherDeps {
   onRenamed?: (from: string, to: string) => Promise<void>;
   /** What a library item file reads as while it exists neither as a draft nor in the library. */
   libraryFiles?: { missing(name: string): unknown };
+  /** Tells who made a saved version, for the compare screen (stage 27d). */
+  authors?: Authors;
 }
+
+/** How many of its own commits the publisher remembers, to tell its own from outside pushes. */
+const OWN_COMMITS_KEPT = 500;
 
 /** The library files whose items name paths, and so follow a rename. */
 const FOLLOWING = LIBRARY_FILES.filter((k) => k.follow !== undefined);
@@ -108,9 +117,26 @@ const FOLLOWING = LIBRARY_FILES.filter((k) => k.follow !== undefined);
 export class Publisher {
   private plans = new Map<string, StoredPlan>();
   private readonly now: () => number;
+  /** The commits this server made (saved versions, imports): `main` moving by these is not an outside push. */
+  private readonly own = new Set<string>();
+  /** Plans and saves go one after another: two people saving at once is two turns, not a race. */
+  private turn: Promise<unknown> = Promise.resolve();
 
   constructor(private readonly d: PublisherDeps) {
     this.now = d.now ?? Date.now;
+  }
+
+  /** Runs `work` when every earlier plan and save is done. A failure does not hold up the next. */
+  private serial<T>(work: () => Promise<T>): Promise<T> {
+    const run = this.turn.then(work, work);
+    this.turn = run.catch(() => undefined);
+    return run;
+  }
+
+  /** Notes a commit made by this server, such as an import, so a plan made before it is not refused for it. */
+  noteOwnCommit(commit: string): void {
+    this.own.add(commit);
+    if (this.own.size > OWN_COMMITS_KEPT) this.own.delete(this.own.values().next().value!);
   }
 
   // ---- Clearing finished work ------------------------------------------------------------------
@@ -122,48 +148,84 @@ export class Publisher {
    */
   async clearPublished(): Promise<void> {
     // Renames first: once a rename is on `main`, a draft of a file it moved belongs at the new path.
+    // This is for everyone's work, not one person's (stage 27d): a rename one person saved moves the
+    // drafts other people have of the file, so what they wrote follows it and is never lost.
     const has = (p: string) => this.d.index.files.some((f) => f === p || f.startsWith(p + "/"));
-    for (const intent of this.d.drafts.listRenames()) {
-      if (has(intent.from) || !has(intent.to)) continue;
-      for (const draft of this.d.drafts.list()) {
-        const moved = movedPath(draft.path, intent.from, intent.to);
-        if (moved !== null) await this.d.drafts.movePath(draft.id, moved);
+    const applied: { intent: RenameIntent; owner: string }[] = [];
+    await this.d.drafts.eachPerson(async (owner) => {
+      for (const intent of this.d.drafts.listRenames()) {
+        if (has(intent.from) || !has(intent.to)) continue;
+        applied.push({ intent, owner });
       }
-      // A file that names paths, such as the folder file, names the new ones from now on.
-      for (const kind of FOLLOWING) {
-        const draft = this.d.drafts.byPath(kind.path);
-        if (!draft || draft.kind === "delete") continue;
-        const text = await this.d.drafts.text(draft.id);
-        const followed = follow(kind, text, intent.from, intent.to);
-        if (followed !== null && followed !== text) {
-          await this.d.drafts.serverChange(draft.id, followed);
+    });
+    if (applied.length > 0) {
+      await this.d.drafts.eachPerson(async () => {
+        for (const { intent } of applied) {
+          for (const draft of this.d.drafts.list()) {
+            const moved = movedPath(draft.path, intent.from, intent.to);
+            if (moved !== null) await this.d.drafts.movePath(draft.id, moved);
+          }
+          // A file that names paths, such as the folder file, names the new ones from now on.
+          for (const kind of FOLLOWING) {
+            const draft = this.d.drafts.byPath(kind.path);
+            if (!draft || draft.kind === "delete") continue;
+            const text = await this.d.drafts.text(draft.id);
+            const followed = follow(kind, text, intent.from, intent.to);
+            if (followed !== null && followed !== text) {
+              await this.d.drafts.serverChange(draft.id, followed);
+            }
+          }
+        }
+      });
+      for (const { intent, owner } of applied) {
+        await this.d.onRenamed?.(intent.from, intent.to);
+        await this.d.drafts.as(owner, () => this.d.drafts.removeRename(intent.id));
+      }
+    }
+    await this.d.drafts.eachPerson(async () => {
+      for (const draft of this.d.drafts.list()) {
+        const file = join(this.d.vaultDir, draft.path);
+        const onMain = existsSync(file) ? readFileSync(file) : null;
+        if (draft.kind === "delete") {
+          if (onMain === null) await this.d.drafts.discard(draft.id);
+          continue;
+        }
+        if (onMain === null) continue;
+        const bytes = draft.binary
+          ? await this.d.drafts.bytes(draft.id)
+          : Buffer.from(restoreLineEndings(await this.d.drafts.text(draft.id), draft.lineEnding));
+        if (bytes.equals(onMain) && !this.d.drafts.hasDeviceCopies(draft.id)) {
+          await this.d.drafts.discard(draft.id);
         }
       }
-      await this.d.onRenamed?.(intent.from, intent.to);
-      await this.d.drafts.removeRename(intent.id);
-    }
-    for (const draft of this.d.drafts.list()) {
-      const file = join(this.d.vaultDir, draft.path);
-      const onMain = existsSync(file) ? readFileSync(file) : null;
-      if (draft.kind === "delete") {
-        if (onMain === null) await this.d.drafts.discard(draft.id);
-        continue;
-      }
-      if (onMain === null) continue;
-      const bytes = draft.binary
-        ? await this.d.drafts.bytes(draft.id)
-        : Buffer.from(restoreLineEndings(await this.d.drafts.text(draft.id), draft.lineEnding));
-      if (bytes.equals(onMain) && !this.d.drafts.hasDeviceCopies(draft.id)) {
-        await this.d.drafts.discard(draft.id);
-      }
-    }
+    });
     this.d.status.drafts(this.d.drafts.count(), 0);
   }
 
   // ---- Sorting one draft ---------------------------------------------------------------------
 
+  /**
+   * Who saved the version of a file that is on `main` now, and when: the last version that touched
+   * it, as the compare screen says "Wren saved this at ...". Null parts when that cannot be told.
+   */
+  private async savedBy(path: string): Promise<{ by: AuthorRef | null; at: string | null }> {
+    const last = await this.d.git.lastChange(path).catch(() => null);
+    if (!last) return { by: null, at: null };
+    const by = this.d.authors
+      ? await this.d.authors.resolve(last.author)
+      : { id: null, name: last.author.name };
+    return { by, at: last.at };
+  }
+
   private async classify(draft: DraftRecord): Promise<Classified | null> {
     const { git } = this.d;
+    /** Who saved `main`'s version, asked at most once and only when there is a clash to explain. */
+    let saved: ReturnType<Publisher["savedBy"]> | undefined;
+    const who = async () => {
+      saved ??= this.savedBy(draft.path);
+      const { by, at } = await saved;
+      return { theirsBy: by, theirsAt: at };
+    };
     if (draft.binary) {
       // A new image: ready unless a file took its name meanwhile.
       const existing = await git.readFile(draft.path);
@@ -181,6 +243,7 @@ export class Publisher {
           mine: "",
           theirs: null,
           base: null,
+          ...(await who()),
         },
       };
     }
@@ -188,12 +251,20 @@ export class Publisher {
     const mainBlob = await git.blobHash(draft.path);
     const mainBytes = mainBlob === null ? null : await git.readFile(draft.path);
     const mainText = mainBytes === null ? null : normaliseLineEndings(mainBytes.toString("utf8"));
-    const conflict = (reason: Conflict["reason"], base: string | null): Classified => ({
+    const conflict = async (reason: Conflict["reason"], base: string | null): Promise<Classified> => ({
       draft,
       text,
       outcome: "conflict",
       mainBlob,
-      conflict: { draftId: draft.id, path: draft.path, reason, mine: text, theirs: mainText, base },
+      conflict: {
+        draftId: draft.id,
+        path: draft.path,
+        reason,
+        mine: text,
+        theirs: mainText,
+        base,
+        ...(await who()),
+      },
     });
     const baseText = async () => {
       const bytes = draft.baseBlob === "" ? null : await git.readBlob(draft.baseBlob);
@@ -217,6 +288,16 @@ export class Publisher {
     if (mainBlob === draft.baseBlob) return { draft, text, outcome: "ready", mainBlob };
 
     const base = await baseText();
+    // Decision C: when someone else in the project saved the version this entry was changed from,
+    // this change is not folded into theirs behind their back, clean or not: both are shown to the
+    // person saving second, to compare. (A version from outside, or by this person on another
+    // device, is merged as before.)
+    if (isNote(draft.path)) {
+      const saver = (await who()).theirsBy;
+      if (saver?.id && saver.id !== this.d.drafts.personId()) {
+        return conflict("saved_by_other", base);
+      }
+    }
     if (base === null) return conflict("overlap", null);
     // A structured file is merged item by item; a note line by line.
     const kind = fileKindOf(draft.path);
@@ -237,6 +318,7 @@ export class Publisher {
         mergedText: merged.text,
         mainText,
         baseText: base,
+        ...(await who()),
       },
     };
   }
@@ -428,7 +510,32 @@ export class Publisher {
 
   // ---- The two calls -------------------------------------------------------------------------
 
-  async plan(draftIds: string[], renameIds: string[], decisionIds: string[] = []): Promise<Plan> {
+  plan(draftIds: string[], renameIds: string[], decisionIds: string[] = []): Promise<Plan> {
+    return this.serial(() => this.makePlan(draftIds, renameIds, decisionIds));
+  }
+
+  /**
+   * What saving one unsaved change would do now, for a compare screen: `ready`, a `merge` to confirm,
+   * a `conflict` with the other version, who saved it and when, or `none`.
+   */
+  compare(draftId: string): Promise<{ outcome: "ready" | "merge" | "conflict" | "none"; c: Classified | null; draft: DraftRecord }> {
+    return this.serial(async () => {
+      const draft = this.d.drafts.get(draftId);
+      if (!draft) throw new ApiError("not_found", "There is no such draft.");
+      await this.d.sync();
+      // A draft cleared by the fetch is on `main` already: nothing differs.
+      const now = this.d.drafts.get(draftId);
+      if (!now) return { outcome: "none" as const, c: null, draft };
+      const c = await this.classify(now);
+      return { outcome: c === null ? ("none" as const) : c.outcome, c, draft: now };
+    });
+  }
+
+  private async makePlan(
+    draftIds: string[],
+    renameIds: string[],
+    decisionIds: string[],
+  ): Promise<Plan> {
     await this.d.sync();
     const mainCommit = this.d.index.commit;
     /* c8 ignore next */
@@ -500,8 +607,11 @@ export class Publisher {
       for (const intent of intents) groups.push([intent.id, draft.id]);
     }
     // A revert and the draft that undoes the note are one change.
-    const decisions = (this.d.reviews?.pendingDecisions() ?? []).filter((d) =>
-      decisionIds.includes(d.id),
+    // A revert that makes a draft is the unsaved change of whoever decided it: it is saved by them.
+    const decisions = (this.d.reviews?.pendingDecisions() ?? []).filter(
+      (d) =>
+        decisionIds.includes(d.id) &&
+        (!d.draftId || !this.d.drafts.existsAny(d.draftId) || this.d.drafts.get(d.draftId)),
     );
     for (const d of decisions) if (d.draftId) groups.push([d.id, d.draftId]);
 
@@ -527,17 +637,24 @@ export class Publisher {
     }
     this.plans.set(plan.planId, {
       plan,
+      person: this.d.drafts.personId(),
       createdAt: this.now(),
       classified,
       renameIds: intents.map((r) => r.id),
       decisionIds: decisions.map((d) => d.id),
     });
+    this.d.drafts.noteConflicts(plan.conflicts.length);
     this.d.status.drafts(this.d.drafts.count(), plan.conflicts.length);
     return plan;
   }
 
-  /** Saves the plan as one commit by `author`, or by the configured author when none is given. */
-  async confirm(
+  /**
+   * Saves the plan as one commit by `author`, or by the configured author when none is given. Plans
+   * and saves go one after another, and a save is the person's own: someone else's plan is as good
+   * as unknown. Entries someone else saved a newer version of since the plan was made are left out
+   * (and reported); everything else in the save goes in.
+   */
+  confirm(
     planId: string,
     confirmedMergeIds: string[],
     message: string,
@@ -547,10 +664,25 @@ export class Publisher {
      * which asks for field proposals with its own AI key: the server has none (stage 27f).
      */
     onPublished?: (paths: string[]) => void,
-  ): Promise<string> {
+  ): Promise<{ commit: string; conflicts: Conflict[] }> {
+    return this.serial(() => this.save(planId, confirmedMergeIds, message, author, onPublished));
+  }
+
+  private async save(
+    planId: string,
+    confirmedMergeIds: string[],
+    message: string,
+    author?: { name: string; email: string },
+    onPublished?: (paths: string[]) => void,
+  ): Promise<{ commit: string; conflicts: Conflict[] }> {
     const stored = this.plans.get(planId);
-    if (!stored || this.now() - stored.createdAt > PLAN_LIFETIME_MS) {
-      this.plans.delete(planId);
+    if (
+      !stored ||
+      stored.person !== this.d.drafts.personId() ||
+      this.now() - stored.createdAt > PLAN_LIFETIME_MS
+    ) {
+      // Another person's plan is answered as one that is not there.
+      if (stored && stored.person === this.d.drafts.personId()) this.plans.delete(planId);
       throw new ApiError(
         "plan_expired",
         "This publish plan is more than 15 minutes old. Start again.",
@@ -558,7 +690,12 @@ export class Publisher {
     }
 
     await this.d.sync();
-    if (this.d.index.commit !== stored.plan.mainCommit) {
+    // `main` moved since the plan. When only saves made here moved it (another person's, in a library
+    // several people write to), the plan is still good for every file those saves did not touch:
+    // each is checked below, and only a file that changed is held back. A push from outside is not
+    // that: the author reviews again, as before.
+    const moved = this.d.index.commit !== stored.plan.mainCommit;
+    if (moved && !(await this.movedByUs(stored.plan.mainCommit))) {
       this.plans.delete(planId);
       throw new ApiError(
         "main_moved",
@@ -570,14 +707,37 @@ export class Publisher {
     const usable = (c: Classified) =>
       c.outcome === "ready" || (c.outcome === "merge" && confirmed.has(c.merge!.id));
     // A draft may have been edited or discarded since the plan was made; such drafts are left out.
-    const current = [...stored.classified.values()].filter((c) => {
+    let current = [...stored.classified.values()].filter((c) => {
       const now = this.d.drafts.get(c.draft.id);
       return now !== undefined && now.revision === c.draft.revision;
     });
+    // Entries whose saved version is no longer the one the plan looked at are refused and reported.
+    const refused: Conflict[] = [];
+    if (moved) {
+      const stillGood: Classified[] = [];
+      for (const c of current) {
+        const blob = await this.d.git.blobHash(c.draft.path);
+        if (blob === c.mainBlob) {
+          stillGood.push(c);
+          continue;
+        }
+        const again = await this.classify(c.draft);
+        // Nothing differs any more: it is on `main` already, and goes away with the next sync.
+        if (again === null) continue;
+        if (again.outcome === "ready") {
+          stored.classified.set(c.draft.id, again);
+          stillGood.push(again);
+          continue;
+        }
+        refused.push(refusal(again));
+      }
+      current = stillGood;
+    }
     const held = new Set<string>([
       ...[...stored.classified.values()]
         .filter((c) => !current.includes(c) || !usable(c))
         .map((c) => c.draft.id),
+      ...refused.map((r) => r.draftId),
       ...stored.plan.conflicts.filter((c) => c.reason === "rename_blocked").map((c) => c.draftId),
     ]);
     // A group member that was not selected for this plan holds its group back.
@@ -610,6 +770,15 @@ export class Publisher {
       (d) => stored.decisionIds.includes(d.id) && !held.has(d.id),
     );
     if (included.length === 0 && intents.length === 0 && decided.length === 0) {
+      const first = refused[0];
+      if (first) {
+        this.plans.delete(planId);
+        const who = first.theirsBy?.name ?? "Someone";
+        throw new ApiError(
+          "saved_by_other",
+          `${who} saved a newer version of "${first.path}"${refused.length > 1 ? ` and ${refused.length - 1} more` : ""} while you were looking. Nothing was saved: compare and save again.`,
+        );
+      }
       throw new ApiError("invalid", "Nothing in this plan can be published yet.");
     }
 
@@ -659,6 +828,7 @@ export class Publisher {
       if (err instanceof GitError) this.d.status.pushFailed(err.message);
       throw err;
     }
+    this.noteOwnCommit(commit);
     await this.d.onPushed?.(commit);
     this.d.status.pushed(new Date(this.now()));
     this.plans.delete(planId);
@@ -670,8 +840,30 @@ export class Publisher {
           intents.reduce((path, r) => movedPath(path, r.from, r.to) ?? path, p.draft.path),
         ),
     );
-    return commit;
+    return { commit, conflicts: refused };
   }
+
+  /** Whether every save since `from` was made by this server: `main` moved by us and nobody else. */
+  private async movedByUs(from: string): Promise<boolean> {
+    const between = await this.d.git.commitsBetween(from, this.d.index.commit ?? "HEAD").catch(() => null);
+    return between !== null && between.length > 0 && between.every((c) => this.own.has(c.commit));
+  }
+}
+
+/** A plan's classification of one draft as the conflict shape the person is shown. */
+function refusal(c: Classified): Conflict {
+  if (c.conflict) return c.conflict;
+  const m = c.merge!;
+  return {
+    draftId: m.draftId,
+    path: m.path,
+    reason: "overlap",
+    mine: c.text,
+    theirs: m.mainText,
+    base: m.baseText,
+    ...(m.theirsBy !== undefined ? { theirsBy: m.theirsBy } : {}),
+    ...(m.theirsAt !== undefined ? { theirsAt: m.theirsAt } : {}),
+  };
 }
 
 /**

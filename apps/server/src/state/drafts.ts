@@ -9,6 +9,17 @@
  *   drafts/<id>/versions/server.json    library item file, which a device's merged save replaced
  *   drafts/renames/<id>.json            a rename or move, stored as an intent
  *   drafts/renamed.json                 the renames and moves that reached the library, the last 500
+ *   drafts/away.json                    when each person who left the project (or was removed) was
+ *                                       last seen leaving, by person id, for the 30 days their
+ *                                       unsaved changes are kept
+ *
+ * Whose they are (stage 27d): every draft's `record.json` and every rename intent carries the id of
+ * the person it belongs to (`person`). Each person has their own: this store answers for the person
+ * set by `asPerson` (`projects/view.ts`) and for nobody else, so a person cannot read, change or
+ * discard another's draft by its id, by its path or by listing. A record with no `person` (made
+ * before 27d, by the only author there was) belongs to the project's first owner; the first start
+ * with 27d writes that into each file, one at a time (`stampOwners`), so a start cut off halfway is
+ * finished by the next, and the files read the same way before they are stamped.
  *
  * Before kept copies there was one spare slot, `content.v2` with `record.v2.json`. One still
  * found is read as the copy of an earlier device.
@@ -17,8 +28,11 @@ import { randomBytes } from "node:crypto";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { savedViewOnly } from "../projects/view.js";
+import { asPerson, currentPersonId, outsideSavedView, savedViewOnly } from "../projects/view.js";
 import {
+  AWAY_KEEP_DAYS,
+  type OtherUnsaved,
+  type ProjectRole,
   combineKept,
   DraftRecord,
   type DraftKind,
@@ -117,6 +131,25 @@ function withoutOp(record: DraftRecord): DraftRecord {
   return copy;
 }
 
+/** What the store asks of the project and the server to know people: kept apart so the store can be tested alone. */
+export interface DraftPeople {
+  /**
+   * The person a record or rename without an owner belongs to, and whom a call made outside any
+   * request speaks for: the project's first owner. Null when there is none yet.
+   */
+  legacyOwner?: () => string | null;
+  /** A person's role in the project as it is now; null when they are not a member. */
+  roleOf?: (personId: string) => ProjectRole | null;
+  /** The name shown for a person. */
+  nameOf?: (personId: string) => string;
+}
+
+/** The owner of nobody: used where there is no first owner to name. */
+const NOBODY = "";
+
+/** How many days a person's unsaved changes are kept after they leave the project. */
+const AWAY_MS = AWAY_KEEP_DAYS * 24 * 60 * 60 * 1000;
+
 export class DraftStore {
   private records = new Map<string, DraftRecord>();
   private renames = new Map<string, RenameIntent>();
@@ -128,16 +161,110 @@ export class DraftStore {
   private renamed: RenamedLog = [];
   private readonly dir: string;
   /**
-   * Rises on every write of a draft and every discard, whoever made it, for the status snapshot:
-   * a device keeping copies for offline reading reads them again when it changes.
+   * Rises on every write of a draft and every discard, for the status snapshot: a device keeping
+   * copies for offline reading reads them again when it changes. One count for each person (the
+   * getter below is the one of the person being served), since each has their own drafts.
    */
-  changes = 0;
+  private changeCounts = new Map<string, number>();
+  /** How many conflicts each person's last plan found, until their next change. */
+  private conflictCounts = new Map<string, number>();
+  /** How many times the server changed a draft of each person itself (a proposal accepted into it). */
+  private serverChangeCounts = new Map<string, number>();
+  /** When each person who is no longer in the project was seen leaving it, by person id. */
+  private away: Record<string, string> = {};
 
   constructor(
     stateDir: string,
     private readonly files: StateFiles,
+    private readonly people: DraftPeople = {},
   ) {
     this.dir = join(stateDir, "drafts");
+  }
+
+  // ---- Whose ---------------------------------------------------------------------------------
+
+  /** The person a record belongs to. */
+  private ownerOf(r: { person?: string | undefined }): string {
+    return r.person ?? this.people.legacyOwner?.() ?? NOBODY;
+  }
+
+  /** The person being served: the request's, or the project's first owner outside any request. */
+  private me(): string {
+    return currentPersonId() ?? this.people.legacyOwner?.() ?? NOBODY;
+  }
+
+  /** The id of the person being served (empty for nobody: a library from before people with no owner yet). */
+  personId(): string {
+    return this.me();
+  }
+
+  private isMine(r: { person?: string | undefined }): boolean {
+    return this.ownerOf(r) === this.me();
+  }
+
+  /** The person's stamp for a new record: nothing for nobody, so a file stays as it was made. */
+  private stamp(): { person?: string } {
+    const me = this.me();
+    return me === NOBODY ? {} : { person: me };
+  }
+
+  private bump(owner = this.me()): void {
+    this.changeCounts.set(owner, (this.changeCounts.get(owner) ?? 0) + 1);
+    this.conflictCounts.delete(owner);
+  }
+
+  /** Rises on every change to the drafts of the person being served. */
+  get changes(): number {
+    return this.changeCounts.get(this.me()) ?? 0;
+  }
+
+  /** The conflicts the person's last plan found, until they change something. */
+  conflictCount(): number {
+    return this.conflictCounts.get(this.me()) ?? 0;
+  }
+
+  noteConflicts(n: number): void {
+    if (n > 0) this.conflictCounts.set(this.me(), n);
+    else this.conflictCounts.delete(this.me());
+  }
+
+  /** Notes that the server itself changed a draft of the person being served. */
+  noteServerChange(): void {
+    this.serverChangeCounts.set(this.me(), (this.serverChangeCounts.get(this.me()) ?? 0) + 1);
+  }
+
+  serverChanges(): number {
+    return this.serverChangeCounts.get(this.me()) ?? 0;
+  }
+
+  /** A person's own record by id; another's is "not found", as if it were not there. */
+  private owned(id: string): DraftRecord | undefined {
+    const record = this.records.get(id);
+    return record && this.isMine(record) ? record : undefined;
+  }
+
+  /**
+   * Runs `work` once for each person who has anything unsaved here, as that person and outside the
+   * saved view, for what must reach everyone's work: clearing what is already in the library, and
+   * the sweep of people who left. Never use it to show one person another's.
+   */
+  async eachPerson(work: (person: string) => Promise<void>): Promise<void> {
+    const owners = new Set<string>();
+    for (const r of this.records.values()) owners.add(this.ownerOf(r));
+    for (const r of this.renames.values()) owners.add(this.ownerOf(r));
+    for (const owner of owners) {
+      await outsideSavedView(() => asPerson(owner, () => work(owner)));
+    }
+  }
+
+  /** Whether any person has a draft with this id. For the few callers that follow an id across people. */
+  existsAny(id: string): boolean {
+    return this.records.has(id);
+  }
+
+  /** Runs `work` as a person, outside the saved view: for the status stream, which speaks to one person at a time. */
+  as<T>(personId: string, work: () => T): T {
+    return outsideSavedView(() => asPerson(personId, work));
   }
 
   private folder(id: string): string {
@@ -151,9 +278,11 @@ export class DraftStore {
     this.kept.clear();
     this.serverKept.clear();
     this.renamed = [];
+    this.away = {};
     if (!existsSync(this.dir)) return;
     this.renamed =
       (await this.files.readJson(this.renamedFile(), RenamedLog).catch(() => null)) ?? [];
+    this.away = await this.readAway();
     for (const name of await readdir(this.dir)) {
       if (name === "renames" || name.endsWith(".json")) continue;
       const record = await this.files
@@ -175,35 +304,70 @@ export class DraftStore {
         if (intent) this.renames.set(intent.id, intent);
       }
     }
+    await this.stampOwners();
   }
 
+  /**
+   * The move to unsaved changes per person: writes the first owner's id into every record and rename
+   * intent that has none. Each file is rewritten whole and renamed into place by itself, so a stop
+   * halfway leaves some stamped and some not, which read alike (`ownerOf`), and the next start finishes
+   * it; run again with everything stamped it writes nothing. Without a first owner to name it waits.
+   * Returns how many files it stamped.
+   */
+  async stampOwners(): Promise<number> {
+    const owner = this.people.legacyOwner?.() ?? null;
+    if (owner === null) return 0;
+    let stamped = 0;
+    for (const [id, record] of [...this.records]) {
+      if (record.person !== undefined) continue;
+      const next = { ...record, person: owner };
+      await this.files.writeJson(join(this.folder(id), "record.json"), next);
+      this.records.set(id, next);
+      stamped++;
+    }
+    for (const [id, intent] of [...this.renames]) {
+      if (intent.person !== undefined) continue;
+      const next = { ...intent, person: owner };
+      await this.files.writeJson(join(this.dir, "renames", `${id}.json`), next);
+      this.renames.set(id, next);
+      stamped++;
+    }
+    return stamped;
+  }
+
+  /** The unsaved changes of the person being served, by path. A reader has none. */
   list(): DraftRecord[] {
     if (savedViewOnly()) return [];
-    return [...this.records.values()].sort((a, b) => a.path.localeCompare(b.path));
+    return [...this.records.values()]
+      .filter((r) => this.isMine(r))
+      .sort((a, b) => a.path.localeCompare(b.path));
   }
 
   get(id: string): DraftRecord | undefined {
     if (savedViewOnly()) return undefined;
-    return this.records.get(id);
+    return this.owned(id);
   }
 
   byPath(path: string): DraftRecord | undefined {
     if (savedViewOnly()) return undefined;
-    for (const r of this.records.values()) if (r.path === path) return r;
+    for (const r of this.records.values()) if (r.path === path && this.isMine(r)) return r;
     return undefined;
   }
 
   async text(id: string): Promise<string> {
+    this.require(id);
     return readFile(join(this.folder(id), "content"), "utf8");
   }
 
   /** As `text`, read at once; for the few readers that cannot wait, such as the schema. */
   textNow(id: string): string {
+    this.require(id);
     return readFileSync(join(this.folder(id), "content"), "utf8");
   }
 
   /** The stored content as bytes. For an image draft this is the image itself. */
   async bytes(id: string): Promise<Buffer> {
+    this.require(id);
     return readFile(join(this.folder(id), "content"));
   }
 
@@ -214,6 +378,7 @@ export class DraftStore {
     content: Buffer,
     now = new Date(),
   ): Promise<DraftRecord> {
+    this.assertFree(id);
     const record: DraftRecord = {
       id,
       revision: 1,
@@ -224,11 +389,13 @@ export class DraftStore {
       binary: true,
       origins: [],
       updatedAt: now.toISOString(),
+      startedAt: now.toISOString(),
+      ...this.stamp(),
     };
     await this.files.write(join(this.folder(id), "content"), content);
     await this.files.writeJson(join(this.folder(id), "record.json"), record);
     this.records.set(id, record);
-    this.changes++;
+    this.bump();
     return record;
   }
 
@@ -256,6 +423,7 @@ export class DraftStore {
     if (existing) {
       throw new ApiError("not_allowed", "You have an unpublished change to this file already.");
     }
+    this.assertFree(input.id);
     const record: DraftRecord = {
       id: input.id,
       revision: 1,
@@ -265,13 +433,15 @@ export class DraftStore {
       lineEnding: input.lineEnding,
       binary: typeof input.content !== "string",
       updatedAt: now.toISOString(),
+      startedAt: now.toISOString(),
       origins: input.origin ? [input.origin] : [],
       ...(input.op !== undefined ? { lastOp: input.op } : {}),
+      ...this.stamp(),
     };
     await this.files.write(join(this.folder(record.id), "content"), input.content);
     await this.files.writeJson(join(this.folder(record.id), "record.json"), record);
     this.records.set(record.id, record);
-    this.changes++;
+    this.bump();
     return record;
   }
 
@@ -286,7 +456,7 @@ export class DraftStore {
     extra: { origin?: Origin | undefined; op?: string | undefined } = {},
     now = new Date(),
   ): Promise<DraftRecord> {
-    const existing = this.records.get(id);
+    const existing = this.owned(id);
     if (!existing) throw new ApiError("not_found", "This draft no longer exists.");
     const { origin, op } = extra;
     if (op !== undefined && existing.lastOp === op) return existing;
@@ -321,12 +491,12 @@ export class DraftStore {
   }
 
   hasKeptCopies(id: string): boolean {
-    return this.kept.has(id);
+    return this.owned(id) !== undefined && this.kept.has(id);
   }
 
   /** Whether the draft keeps the other side of an item clash. */
   hasServerCopy(id: string): boolean {
-    return this.serverKept.has(id);
+    return this.owned(id) !== undefined && this.serverKept.has(id);
   }
 
   /**
@@ -334,7 +504,10 @@ export class DraftStore {
    * item clash is only shown, so it holds nothing back: saving the draft as a version clears it.
    */
   hasDeviceCopies(id: string): boolean {
-    return (this.kept.get(id) ?? 0) > (this.serverKept.has(id) ? 1 : 0);
+    return (
+      this.owned(id) !== undefined &&
+      (this.kept.get(id) ?? 0) > (this.serverKept.has(id) ? 1 : 0)
+    );
   }
 
   /** The drafts that have kept copies, and how many each has. */
@@ -344,14 +517,14 @@ export class DraftStore {
       .map((r) => ({ draftId: r.id, path: r.path, count: this.kept.get(r.id)! }));
   }
 
-  /** How many drafts have kept copies, for the attention count. */
+  /** How many of the person's drafts have kept copies, for the attention count. */
   keptCount(): number {
-    if (savedViewOnly()) return 0;
-    return this.kept.size;
+    return this.list().filter((r) => this.kept.has(r.id)).length;
   }
 
   /** Keeps a device's text beside a draft. A second copy from the same device replaces the first. */
   private async keep(id: string, device: Device, text: string, now: Date): Promise<void> {
+    this.require(id);
     // The route lets only an id through; this guards the file name all the same.
     const name =
       DEVICE_NAME.test(device.id) && device.id !== EARLIER && device.id !== SERVER_SLOT
@@ -366,6 +539,7 @@ export class DraftStore {
 
   /** Every kept copy of a draft, oldest first. */
   async keptCopies(id: string): Promise<KeptCopyText[]> {
+    this.require(id);
     const out: KeptCopyText[] = [];
     const old = join(this.folder(id), "content.v2");
     if (existsSync(old)) {
@@ -455,12 +629,29 @@ export class DraftStore {
     this.countKept(id);
   }
 
-  private async put(record: DraftRecord, text: string): Promise<void> {
+  private async put(made: DraftRecord, text: string): Promise<void> {
+    const had = this.records.get(made.id);
+    if (!had) this.assertFree(made.id);
+    // A record is the person's who first made it (never moved to whoever changes it later), and
+    // knows when their change to the file began.
+    const record: DraftRecord = {
+      ...made,
+      ...(made.person === undefined ? this.stamp() : {}),
+      ...(made.startedAt === undefined && !had ? { startedAt: made.updatedAt } : {}),
+    };
     // Content first: a record must never point at content that is not there yet.
     await this.files.write(join(this.folder(record.id), "content"), text);
     await this.files.writeJson(join(this.folder(record.id), "record.json"), record);
     this.records.set(record.id, record);
-    this.changes++;
+    this.bump();
+  }
+
+  /**
+   * A new draft takes an id nobody else's draft has: the id names its folder, and a person must
+   * not be able to write into, or find out about, another's by choosing the same one.
+   */
+  private assertFree(id: string): void {
+    if (this.records.has(id)) throw new ApiError("not_found", "There is no such draft.");
   }
 
   /**
@@ -477,7 +668,11 @@ export class DraftStore {
     device: Device = UNKNOWN_DEVICE,
     now = new Date(),
   ): Promise<DraftRecord> {
-    const existing = this.records.get(input.id) ?? this.byPath(input.path);
+    // Another person's draft with this id is none of this person's business: the same answer as for
+    // an id nobody has. (A new draft with such an id is refused by `put`, in the same words.)
+    const taken = this.records.get(input.id);
+    if (taken && !this.isMine(taken)) throw new ApiError("not_found", "There is no such draft.");
+    const existing = taken ?? this.byPath(input.path);
     if (existing && input.op !== undefined && existing.lastOp === input.op) return existing;
     const op = input.op !== undefined ? { lastOp: input.op } : {};
     if (!existing) {
@@ -645,20 +840,21 @@ export class DraftStore {
     const next = { ...record, path };
     await this.files.writeJson(join(this.folder(id), "record.json"), next);
     this.records.set(id, next);
-    this.changes++;
+    this.bump();
     return next;
   }
 
   async discard(id: string): Promise<void> {
     this.require(id);
     this.records.delete(id);
-    this.changes++;
+    this.bump();
     this.kept.delete(id);
+    this.serverKept.delete(id);
     await this.files.remove(this.folder(id));
   }
 
   private require(id: string): DraftRecord {
-    const record = this.records.get(id);
+    const record = this.owned(id);
     if (!record) throw new ApiError("not_found", "There is no such draft.");
     return record;
   }
@@ -667,22 +863,34 @@ export class DraftStore {
 
   listRenames(): RenameIntent[] {
     if (savedViewOnly()) return [];
-    return [...this.renames.values()].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+    return [...this.renames.values()]
+      .filter((r) => this.isMine(r))
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   }
 
   getRename(id: string): RenameIntent | undefined {
     if (savedViewOnly()) return undefined;
-    return this.renames.get(id);
+    const intent = this.renames.get(id);
+    return intent && this.isMine(intent) ? intent : undefined;
   }
 
-  async addRename(intent: RenameIntent): Promise<void> {
+  async addRename(made: RenameIntent): Promise<void> {
+    const taken = this.renames.get(made.id);
+    if (taken) throw new ApiError("not_found", "There is no such rename.");
+    const intent: RenameIntent = { ...made, ...(made.person === undefined ? this.stamp() : {}) };
     await this.files.writeJson(join(this.dir, "renames", `${intent.id}.json`), intent);
     this.renames.set(intent.id, intent);
+    this.conflictCounts.delete(this.me());
   }
 
   async removeRename(id: string): Promise<void> {
-    if (!this.renames.delete(id)) throw new ApiError("not_found", "There is no such rename.");
+    const intent = this.renames.get(id);
+    if (!intent || !this.isMine(intent)) {
+      throw new ApiError("not_found", "There is no such rename.");
+    }
+    this.renames.delete(id);
     await this.files.remove(join(this.dir, "renames", `${id}.json`));
+    this.conflictCounts.delete(this.me());
   }
 
   private renamedFile(): string {
@@ -700,9 +908,158 @@ export class DraftStore {
     return this.renamed;
   }
 
-  /** How many unpublished changes there are, for the status area. */
+  /** How many unpublished changes the person being served has, for the status area. */
   count(): number {
-    if (savedViewOnly()) return 0;
-    return this.records.size + this.renames.size;
+    return this.list().length + this.listRenames().length;
+  }
+
+  // ---- Other people's work in progress (never their text) -----------------------------------
+
+  /**
+   * Who else in the project has unsaved changes to which entry: a draft of it, or a rename of it.
+   * Only people who are writers or owners of the project now count (someone demoted or gone keeps
+   * their changes, but they are hidden), and the answer is the person being served's to see only
+   * when they are a writer or owner themselves: a reader gets nothing, as they see no drafts.
+   * Names and times, never text.
+   */
+  othersUnsaved(): Map<string, OtherUnsaved[]> {
+    const out = new Map<string, OtherUnsaved[]>();
+    if (savedViewOnly()) return out;
+    const me = this.me();
+    const add = (owner: string, path: string, since: string) => {
+      if (owner === me || owner === NOBODY || !this.isActive(owner)) return;
+      const list = out.get(path) ?? [];
+      const known = list.find((p) => p.id === owner);
+      if (known) {
+        if (since < known.since) known.since = since;
+      } else {
+        list.push({ id: owner, name: this.people.nameOf?.(owner) ?? "Someone", since });
+      }
+      out.set(path, list);
+    };
+    for (const r of this.records.values()) {
+      if (r.binary) continue;
+      add(this.ownerOf(r), r.path, r.startedAt ?? r.updatedAt);
+    }
+    for (const r of this.renames.values()) add(this.ownerOf(r), r.from, r.createdAt);
+    for (const list of out.values()) list.sort((a, b) => a.since.localeCompare(b.since));
+    return out;
+  }
+
+  /** Whether a person may write in the project now: their unsaved changes are shown to others only then. */
+  private isActive(personId: string): boolean {
+    const role = this.people.roleOf?.(personId);
+    return role === undefined || role === "owner" || role === "writer";
+  }
+
+  // ---- People who leave --------------------------------------------------------------------
+
+  /** How many unsaved changes (drafts and renames) a person has here, whoever is being served. */
+  unsavedOf(personId: string): number {
+    let n = 0;
+    for (const r of this.records.values()) if (this.ownerOf(r) === personId) n++;
+    for (const r of this.renames.values()) if (this.ownerOf(r) === personId) n++;
+    return n;
+  }
+
+  private awayFile(): string {
+    return join(this.dir, "away.json");
+  }
+
+  private async readAway(): Promise<Record<string, string>> {
+    try {
+      const raw = JSON.parse(await readFile(this.awayFile(), "utf8")) as unknown;
+      if (raw === null || typeof raw !== "object" || Array.isArray(raw)) return {};
+      return Object.fromEntries(
+        Object.entries(raw).filter(
+          (e): e is [string, string] => typeof e[1] === "string" && !Number.isNaN(Date.parse(e[1])),
+        ),
+      );
+    } catch {
+      return {};
+    }
+  }
+
+  private async writeAway(): Promise<void> {
+    if (Object.keys(this.away).length === 0) await this.files.remove(this.awayFile());
+    else await this.files.writeJson(this.awayFile(), this.away);
+  }
+
+  /**
+   * Told when a person's place in the project changed. Left or removed (`role` null): their unsaved
+   * changes are kept for 30 days from now. In again, whatever the role: the clock stops and
+   * everything is where it was (a reader's stay hidden until they write again, as a reader sees
+   * only the saved view). A person with nothing unsaved is not noted.
+   */
+  async memberChanged(personId: string, role: ProjectRole | null, now = new Date()): Promise<void> {
+    if (role !== null) {
+      if (personId in this.away) {
+        delete this.away[personId];
+        await this.writeAway();
+      }
+      return;
+    }
+    if (this.unsavedOf(personId) === 0) return;
+    this.away[personId] = now.toISOString();
+    await this.writeAway();
+  }
+
+  /**
+   * The sweep: makes sure everyone who has unsaved changes here and is not a member is on the clock
+   * (a leaving that was never told of, such as the project not being open then, starts counting
+   * now), takes anyone who is a member again off it, and removes the unsaved changes of whoever has
+   * been away more than 30 days. Returns how many people it cleared.
+   */
+  async tidyAway(isMember: (personId: string) => boolean, now = new Date()): Promise<number> {
+    const owners = new Set<string>();
+    for (const r of this.records.values()) owners.add(this.ownerOf(r));
+    for (const r of this.renames.values()) owners.add(this.ownerOf(r));
+    owners.delete(NOBODY);
+    let changed = false;
+    let cleared = 0;
+    for (const id of Object.keys(this.away)) {
+      if (!owners.has(id) || isMember(id)) {
+        delete this.away[id];
+        changed = true;
+      }
+    }
+    for (const id of owners) {
+      if (isMember(id)) continue;
+      const since = this.away[id];
+      if (since === undefined) {
+        this.away[id] = now.toISOString();
+        changed = true;
+        continue;
+      }
+      if (now.getTime() - Date.parse(since) < AWAY_MS) continue;
+      await this.removeAllOf(id);
+      delete this.away[id];
+      changed = true;
+      cleared++;
+    }
+    if (changed) await this.writeAway();
+    return cleared;
+  }
+
+  /** Removes everything one person has unsaved here: their drafts with their kept copies, and their renames. */
+  private async removeAllOf(personId: string): Promise<void> {
+    for (const [id, r] of [...this.records]) {
+      if (this.ownerOf(r) !== personId) continue;
+      this.records.delete(id);
+      this.kept.delete(id);
+      this.serverKept.delete(id);
+      await this.files.remove(this.folder(id));
+      this.bump(personId);
+    }
+    for (const [id, r] of [...this.renames]) {
+      if (this.ownerOf(r) !== personId) continue;
+      this.renames.delete(id);
+      await this.files.remove(join(this.dir, "renames", `${id}.json`));
+    }
+  }
+
+  /** When a person who is away was seen leaving, or null. */
+  awaySince(personId: string): string | null {
+    return this.away[personId] ?? null;
   }
 }

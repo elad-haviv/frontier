@@ -82,6 +82,11 @@ export class ProjectStore {
     );
   }
 
+  /** A project's members as held in memory right now; empty when it is not known. */
+  membersSync(projectId: string): ProjectRecord["members"] {
+    return this.held?.projects.find((p) => p.id === projectId)?.members ?? [];
+  }
+
   async exists(): Promise<boolean> {
     return (await this.stamp()) !== null;
   }

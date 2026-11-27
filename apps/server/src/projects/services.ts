@@ -48,11 +48,14 @@ import { appTokenSource } from "../git/appAuth.js";
 import { ImageServer } from "../images/serve.js";
 import { BranchInbox } from "../inbox/branches.js";
 import { Publisher } from "../publish/publish.js";
+import { Authors } from "../publish/authors.js";
 import { DraftStore } from "../state/drafts.js";
 import { VaultIndex } from "../index/build.js";
 import { SearchIndex } from "../index/search.js";
 import { StatusService } from "../status/status.js";
 import { SummaryWriter } from "./summary.js";
+import { displayName } from "../members/names.js";
+import { Presence } from "./presence.js";
 
 export interface Services {
   config: Config;
@@ -71,6 +74,8 @@ export interface Services {
   /** Takes images from web addresses, with the safeguards that keep the server's network safe. */
   imageFetcher: ImageFetcher;
   drafts: DraftStore;
+  /** Who is reading which entry now; in memory only (stage 27d). */
+  presence: Presence;
   publisher: Publisher;
   branches: BranchInbox;
   ai: AiProvider;
@@ -218,17 +223,47 @@ export async function buildServices(
     ...(options.onGitCommand ? { onCommand: options.onGitCommand } : {}),
   });
   const index = new VaultIndex(vaultDir);
+  const roleOf = (personId: string) => server.projects.roleOfSync(record.id, personId);
+  const nameOf = (personId: string) => displayName(server.people.getSync(personId));
   const status = new StatusService(index, {
     library: config.library,
     backupOutside: config.backup.kind === "s3",
     // Read only when a snapshot is made, after the draft store below exists.
     keptCopies: () => drafts.keptCount(),
     draftChanges: () => drafts.changes,
+    // Each person's stream is told their own unsaved changes, and what others have in progress.
+    person: (personId) =>
+      drafts.as(personId, () => ({
+        unpublished: drafts.count(),
+        conflicts: drafts.conflictCount(),
+        drafts: drafts.changes,
+        serverDraftChanges: drafts.serverChanges(),
+        keptCopies: drafts.keptCount(),
+        othersUnsaved: [...drafts.othersUnsaved()].map(([path, people]) => ({ path, people })),
+        presence: presence.readingFor(personId),
+      })),
   });
+  const presence = new Presence({ roleOf, nameOf, onChange: () => status.presenceChanged() });
   const files = new StateFiles();
   const { settings, ai, aiLog, models, imageFetcher } = server;
   const images = new ImageServer(vaultDir, paths.root);
-  const drafts = new DraftStore(stateDir, files);
+  // The accounts are read before anything asks who the first owner is (see `firstOwner`).
+  await server.people.all();
+  /**
+   * Whose a draft or rename without an owner is, and whom a call outside any request speaks for: the
+   * server's first account when it is in the project, else the project's first owner. A project with
+   * no member at all (before the first request claims it) is the first account's.
+   */
+  const firstOwner = (): string | null => {
+    const members = server.projects.membersSync(record.id);
+    const admin = server.people.adminIdSync();
+    if (admin && (members.length === 0 || members.some((m) => m.personId === admin))) return admin;
+    const owners = members
+      .filter((m) => m.role === "owner")
+      .sort((a, b) => a.addedAt.localeCompare(b.addedAt));
+    return owners[0]?.personId ?? null;
+  };
+  const drafts = new DraftStore(stateDir, files, { legacyOwner: firstOwner, roleOf, nameOf });
   await drafts.load();
   const plan = backupPlan(dataDir, record, kind === "own");
   const backup = new Backup({
@@ -379,6 +414,10 @@ export async function buildServices(
   const summary = new SummaryWriter(stateDir);
   let brought: Promise<void> | undefined;
   let stopPolling: () => void = () => undefined;
+  let sweep: NodeJS.Timeout | null = null;
+  const isMember = (personId: string) => roleOf(personId) !== null;
+  const tidyAway = () =>
+    drafts.tidyAway(isMember).catch((err: unknown) => console.error("Sweep of unsaved changes failed", err));
   const services: Services = {
     config,
     git,
@@ -392,6 +431,7 @@ export async function buildServices(
     images,
     imageFetcher,
     drafts,
+    presence,
     backup,
     search,
     publisher: undefined as unknown as Publisher,
@@ -424,6 +464,10 @@ export async function buildServices(
       brought ??= (async () => {
         await git.ensureClone();
         await services.sync();
+        // The unsaved changes of people who left more than 30 days ago go now and every few hours.
+        await tidyAway();
+        sweep = setInterval(() => void tidyAway(), 6 * 60 * 60 * 1000);
+        sweep.unref();
         backup.startNightly();
         // Only a library that others write to has anything new to fetch.
         if (config.library === "github") {
@@ -440,6 +484,8 @@ export async function buildServices(
       images.close();
       backup.retire();
       stopPolling();
+      if (sweep) clearInterval(sweep);
+      presence.close();
       unwatchServer();
       summary.close();
     },
@@ -483,6 +529,7 @@ export async function buildServices(
     drafts,
     status,
     libraryFiles,
+    authors: new Authors(server.people),
     sync: () => services.sync(),
     reviews: {
       pendingDecisions: () => quarantine.pendingDecisions(),
