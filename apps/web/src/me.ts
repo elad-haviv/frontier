@@ -85,6 +85,16 @@ const subscribe = (changed: () => void) => {
   return () => listeners.delete(changed);
 };
 
+/**
+ * Whether this server sends mail, as the person's own profile says; null while that is not known
+ * (nobody read yet, or a profile from before mail existed). Every email screen waits for a
+ * known yes: nothing about email is drawn on a guess.
+ */
+export function useMailOn(): boolean | null {
+  const me = useMe();
+  return me?.emailInfo ? me.emailInfo.mailOn : null;
+}
+
 export function useMe(): MeResponse | null {
   return useSyncExternalStore(
     subscribe,

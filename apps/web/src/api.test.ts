@@ -121,6 +121,71 @@ describe("api", () => {
   });
 });
 
+describe("the email calls (stage 28)", () => {
+  it("never open the login dialog when the server says no session, and never count against the connection", async () => {
+    const unauthorised = vi.spyOn(connection, "unauthorised").mockImplementation(() => undefined);
+    const reached = vi.spyOn(connection, "reached").mockImplementation(() => undefined);
+    answer(() => json(401, { error: { code: "unauthorised", message: "Log in." } }));
+    for (const call of [
+      () => api.confirmEmail("abc"),
+      () => api.checkReset("abc"),
+      () => api.resetPassword("abc", "a long enough password"),
+      () => api.forgotPassword("a@b.co"),
+      () => api.joinInfo("abc", "proof"),
+    ]) {
+      expect((await failureOf(call())).status).toBe(401);
+    }
+    expect(unauthorised).not.toHaveBeenCalled();
+    expect(reached).not.toHaveBeenCalled();
+    // The settings calls are the person's own: a 401 there is a session that ended.
+    expect((await failureOf(api.resendEmail())).status).toBe(401);
+    expect(unauthorised).toHaveBeenCalledTimes(1);
+  });
+
+  it("carry the proof of an emailed link, and the code only in the address", async () => {
+    const asked = answer(() => json(200, { ok: true, project: "a", role: "writer" }));
+    await api.joinInfo("abc", "p r/oof");
+    await api.joinWithPassword(
+      "abc",
+      { name: "A", email: "a@b.co", password: "x".repeat(12) },
+      "pr",
+    );
+    await api.acceptInvite("abc", "pr");
+    await api.joinInfo("abc");
+    await api.acceptInvite("abc", null);
+    expect(asked.map((a) => a.url)).toEqual([
+      "/api/join/abc?m=p%20r%2Foof",
+      "/api/join/abc?m=pr",
+      "/api/join/abc/accept?m=pr",
+      "/api/join/abc",
+      "/api/join/abc/accept",
+    ]);
+  });
+
+  it("send a reset check with no caching, and a password only in the body", async () => {
+    const asked = answer(() => json(200, { ok: true }));
+    await api.checkReset("abc");
+    await api.resetPassword("abc", "a long enough password");
+    expect(asked[0]!.init.cache).toBe("no-store");
+    expect(asked[1]!.url).toBe("/api/reset/abc");
+    expect(JSON.parse(asked[1]!.init.body as string)).toEqual({
+      password: "a long enough password",
+    });
+  });
+
+  it("make invitations with an address, and send them again, as the project's", async () => {
+    const asked = answer(() => json(201, {}));
+    await api.createInvite("writer", "a@b.co");
+    await api.createInvite("reader");
+    await api.resendInvite("i/1");
+    expect(asked.map((a) => [a.url, a.init.body])).toEqual([
+      ["/api/p/avalymia/invites", JSON.stringify({ role: "writer", email: "a@b.co" })],
+      ["/api/p/avalymia/invites", JSON.stringify({ role: "reader" })],
+      ["/api/p/avalymia/invites/i%2F1/resend", undefined],
+    ]);
+  });
+});
+
 describe("asking with the work shown", () => {
   it("splits server-sent events, skipping keep-alives and keeping an unfinished one", () => {
     const { events, rest } = eventsIn(

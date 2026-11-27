@@ -38,6 +38,10 @@ describe("addresses in a project", () => {
     expect(inProject("/projects?new=1", avalymia)).toBe("/projects?new=1");
     expect(inProject("/login", avalymia)).toBe("/login");
     expect(inProject("/join/abc", avalymia)).toBe("/join/abc");
+    // The pages of the links in emails (stage 28) are no project's either.
+    for (const to of ["/confirm/abc", "/reset/abc", "/forgot-password"]) {
+      expect(inProject(to, avalymia), to).toBe(to);
+    }
     expect(inProject("?edit=1", avalymia)).toBe("?edit=1");
     expect(inProject("#heading", avalymia)).toBe("#heading");
     expect(inProject("https://example.com/x", avalymia)).toBe("https://example.com/x");
@@ -81,7 +85,15 @@ describe("addresses in a project", () => {
   });
 
   it("knows which addresses belong to no project", () => {
-    for (const path of ["/projects", "/settings/profile", "/login", "/join/x"]) {
+    for (const path of [
+      "/projects",
+      "/settings/profile",
+      "/login",
+      "/join/x",
+      "/confirm/x",
+      "/reset/x",
+      "/forgot-password",
+    ]) {
       expect(isOutsideProject(path), path).toBe(true);
     }
     for (const path of ["/e/A.md", "/maps", "/", "/p/x/maps", "/projects-list"]) {

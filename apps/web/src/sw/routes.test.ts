@@ -37,6 +37,34 @@ describe("what the service worker answers", () => {
     expect(at("/api/join/abcdefghijklmnopqrstuvwx/accept", "POST")).toBe("none");
   });
 
+  it("answers the pages of the links in emails with the app, and never stores or answers one stale", () => {
+    // `/confirm/<code>` and `/reset/<code>` are app routes like `/login` (stage 28): the page
+    // opens with the app, and the code is read from the address by the page alone.
+    for (const path of [
+      "/confirm/Zr3h8WqNabcdefghijklmnopqrstuvw",
+      "/reset/c9LpV2xEabcdefghijklmnopqrstuvw",
+      "/forgot-password",
+    ]) {
+      expect(page(path), path).toBe("shell");
+    }
+    // What those pages ask of the server goes to the network every time: not cached, not
+    // answered from the device, not stored, whether it is read or written.
+    for (const path of [
+      "/api/confirm/Zr3h8WqNabcdefghijklmnopqrstuvw",
+      "/api/reset/c9LpV2xEabcdefghijklmnopqrstuvw",
+      "/api/forgot-password",
+      "/api/me/email",
+      "/api/me/email/resend",
+      "/api/join/abcdefghijklmnopqrstuvwx?m=Zr3h8WqN",
+    ]) {
+      expect(at(path), path).toBe("none");
+      expect(page(path), path).toBe("none");
+    }
+    for (const path of ["/api/confirm/x", "/api/reset/x", "/api/forgot-password"]) {
+      expect(at(path, "POST"), path).toBe("none");
+    }
+  });
+
   it("answers the built files from the precache", () => {
     expect(at("/assets/a-1.js", "GET", "no-cors")).toBe("precache");
     expect(at("/assets/index-x7ZW9OJt.css")).toBe("precache");
