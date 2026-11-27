@@ -23,6 +23,7 @@ const INFO: JoinInfo = {
   role: "writer",
   google: false,
   alreadyMember: false,
+  email: null,
 };
 const OUT = {
   loggedIn: false,

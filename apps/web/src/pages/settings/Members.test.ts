@@ -28,6 +28,7 @@ const row = (id: string, name: string, role: "owner" | "writer" | "reader", you 
   addedAt: NOW,
   lastActiveAt: NOW,
   you,
+  unconfirmed: false,
 });
 const OWNERS: MembersResponse = {
   canManage: true,
