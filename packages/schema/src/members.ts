@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { EmailAddress, InviteMailState } from "./email.js";
 import { ProjectRole } from "./projects.js";
 
 /**
@@ -27,6 +28,11 @@ export const MemberRow = z.object({
   lastActiveAt: z.string().nullable(),
   /** This row is the person asking. */
   you: z.boolean(),
+  /**
+   * Stage 28: the person's address has not been confirmed. Told to owners only (null for anyone
+   * else) and only while the server sends mail (false when it does not).
+   */
+  unconfirmed: z.boolean().nullable().default(null),
 });
 export type MemberRow = z.infer<typeof MemberRow>;
 
@@ -45,7 +51,11 @@ export type ChangeRoleRequest = z.infer<typeof ChangeRoleRequest>;
 // ---- Invitations (owner) ---------------------------------------------------------------------
 
 /** `POST /api/p/:project/invites` */
-export const CreateInviteRequest = z.object({ role: ProjectRole });
+export const CreateInviteRequest = z.object({
+  role: ProjectRole,
+  /** Stage 28: email the link to this address. Refused with `mail_off` when the server cannot send mail. */
+  email: EmailAddress.optional(),
+});
 export type CreateInviteRequest = z.infer<typeof CreateInviteRequest>;
 
 /** The answer to making a link: the only time the code is ever given. */
@@ -59,6 +69,10 @@ export const CreateInviteResponse = z.object({
   url: z.string(),
   role: ProjectRole,
   expiresAt: z.string(),
+  /** Stage 28: the address it was emailed to, or null when no address was given. */
+  sentTo: z.string().nullable().default(null),
+  /** `sent` or `failed` when an address was given (the link is shown either way); null otherwise. */
+  mail: InviteMailState.nullable().default(null),
 });
 export type CreateInviteResponse = z.infer<typeof CreateInviteResponse>;
 
@@ -71,6 +85,9 @@ export const InviteSummary = z.object({
   expiresAt: z.string(),
   /** Whole seconds left on the server's clock. */
   secondsLeft: z.number().int(),
+  /** Stage 28: where it was emailed, and whether the mail went; null for a link made without an address. */
+  sentTo: z.string().nullable().default(null),
+  mail: InviteMailState.nullable().default(null),
 });
 export type InviteSummary = z.infer<typeof InviteSummary>;
 
@@ -95,6 +112,11 @@ export const JoinInfo = z.object({
   google: z.boolean(),
   /** The person asking is logged in and already in this project (the link is then not needed). */
   alreadyMember: z.boolean(),
+  /**
+   * Stage 28: the address the invitation was emailed to, or null. The page fills it in and says
+   * so; joining with exactly this address counts as confirmed. (Whoever holds the link sees it.)
+   */
+  email: z.string().nullable().default(null),
 });
 export type JoinInfo = z.infer<typeof JoinInfo>;
 
@@ -140,6 +162,9 @@ export const InviteRecord = z.object({
   usedAt: z.string().datetime().optional(),
   usedBy: z.string().optional(),
   cancelledAt: z.string().datetime().optional(),
+  /** Stage 28: the address the link was emailed to, and whether the relay took the mail. */
+  email: z.string().optional(),
+  mail: InviteMailState.optional(),
 });
 export type InviteRecord = z.infer<typeof InviteRecord>;
 

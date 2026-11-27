@@ -57,6 +57,15 @@ export const ERROR_STATUS = {
   already_member: 409,
   // The email belongs to an account already: the page says to log in and join with it.
   account_exists: 409,
+  // Stage 28. A confirm or reset link that does not work: unknown, used, expired and replaced links
+  // all answer alike, so a link says nothing about any account.
+  link_invalid: 410,
+  // The server has no mail relay, so what was asked (an emailed invitation, a resend) cannot be done.
+  mail_off: 409,
+  // The address is already confirmed, so there is nothing to send.
+  already_confirmed: 409,
+  // With mail on, a different address goes through Change address, which confirms it first.
+  use_change_address: 409,
   // An image could not be taken from a web address; the server log says why.
   image_fetch_failed: 422,
 } as const;

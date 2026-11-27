@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { DraftKind, Id, Origin, ProposalOperation, VaultPath } from "./state.js";
 import { ModelPrice } from "./ai.js";
+import { EmailInfo } from "./email.js";
 import { KeepGoingSettings } from "./keepGoingSettings.js";
 
 const Ok = z.object({ ok: z.literal(true) });
@@ -18,7 +19,13 @@ export const SessionResponse = z.object({
   loggedIn: z.boolean(),
   /** Who is logged in; null when nobody is. */
   person: z
-    .object({ id: z.string(), name: z.string(), email: z.string() })
+    .object({
+      id: z.string(),
+      name: z.string(),
+      email: z.string(),
+      /** Stage 28: what the banner needs. */
+      emailInfo: EmailInfo.optional(),
+    })
     .nullable()
     .default(null),
   /** True while the only account has no email, so the login page can say to leave it empty. */
@@ -29,6 +36,8 @@ export const SessionResponse = z.object({
   password: z.boolean(),
   /** Whether this server offers "Continue with Google" (stage 27c); the app hides the button when false. */
   google: z.boolean().default(false),
+  /** Stage 28: whether this server sends mail. False hides every email feature (Forgot password, the banner, the invite field). */
+  mail: z.boolean().default(false),
 });
 export type SessionResponse = z.infer<typeof SessionResponse>;
 
@@ -637,6 +646,8 @@ export const MeResponse = z.object({
    * is usually the same person. Only a suggestion; nothing is saved until the person saves.
    */
   suggestedEmail: z.string().default(""),
+  /** Stage 28: the state of the address, for the banner and Settings → You → Signing in. */
+  emailInfo: EmailInfo.optional(),
   /** The address of the project the person used last, if they are still in it; null before they used one. */
   lastProject: z.string().nullable().optional(),
 });

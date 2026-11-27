@@ -31,6 +31,32 @@ export interface S3Config {
   pathStyle: boolean;
 }
 
+/** How the connection to the mail relay is secured. See `.env.example`. */
+export type SmtpSecurity = "starttls" | "required" | "tls" | "none";
+
+/** Who mail is from: `Frontier <noreply@haviv.pro>`. */
+export interface MailSender {
+  name: string;
+  address: string;
+}
+
+/**
+ * Mail (stage 28). Absent when `SMTP_HOST` and `MAIL_FROM` are not both given, which turns every
+ * email feature off. `memory` keeps the messages in the process, for tests only (`MAIL_TEST_TRANSPORT`;
+ * refused in production).
+ */
+export type MailConfig =
+  | {
+      kind: "smtp";
+      host: string;
+      port: number;
+      security: SmtpSecurity;
+      user: string | null;
+      password: string | null;
+      from: MailSender;
+    }
+  | { kind: "memory"; from: MailSender };
+
 export interface Config {
   publicUrl: string;
   dataDir: string;
@@ -86,6 +112,8 @@ export interface Config {
    * point it at a stand-in provider (`GOOGLE_ISSUER`; refused in production).
    */
   google: { clientId: string; clientSecret: string; issuer: string } | null;
+  /** Where mail goes through, or null when the server sends none (stage 28). */
+  mail: MailConfig | null;
   /**
    * False when `FRONTIER_SERVICE_WORKER=off`: `/sw.js` then answers the kill worker, which removes
    * the app's service worker from every browser that has it.
@@ -94,6 +122,65 @@ export interface Config {
 }
 
 type Env = Record<string, string | undefined>;
+
+/** `Frontier <noreply@haviv.pro>` or a bare address. Nothing that could end a header line. */
+export function parseSender(text: string): MailSender | null {
+  // eslint-disable-next-line no-control-regex
+  if (/[\u0000-\u001f\u007f]/.test(text)) return null;
+  const named = /^\s*([^<>]*?)\s*<([^<>\s,;"]+@[^<>\s,;"]+)>\s*$/.exec(text);
+  const bare = /^\s*([^<>\s,;"]+@[^<>\s,;"]+)\s*$/.exec(text);
+  const address = named?.[2] ?? bare?.[1];
+  if (!address || address.length > 254) return null;
+  const name = (named?.[1] ?? "").replace(/^"(.*)"$/, "$1").replace(/["\\]/g, "");
+  return { name: name || "Frontier", address };
+}
+
+function loadMail(
+  optional: (name: string) => string | null,
+  production: boolean,
+): MailConfig | null {
+  const test = optional("MAIL_TEST_TRANSPORT");
+  const host = optional("SMTP_HOST");
+  const fromText = optional("MAIL_FROM");
+  if (test !== null) {
+    if (test !== "memory") throw new ConfigError('MAIL_TEST_TRANSPORT can only be "memory".');
+    if (production) {
+      throw new ConfigError("MAIL_TEST_TRANSPORT is for tests and cannot be set in production.");
+    }
+    return {
+      kind: "memory",
+      from: parseSender(fromText ?? "Frontier <noreply@frontier.test>") ?? {
+        name: "Frontier",
+        address: "noreply@frontier.test",
+      },
+    };
+  }
+  // Mail is on only when both are given; with one of them the server says what is missing, so a
+  // half-made setting does not quietly leave every email feature off.
+  if (host === null && fromText === null) return null;
+  if (host === null || fromText === null) {
+    throw new ConfigError("Mail needs both SMTP_HOST and MAIL_FROM. Remove both to send no mail.");
+  }
+  const from = parseSender(fromText);
+  if (!from) {
+    throw new ConfigError("MAIL_FROM must look like: Frontier <noreply@example.com>");
+  }
+  if (/[\s/]/.test(host)) throw new ConfigError("SMTP_HOST must be a host name, such as smtp.");
+  const port = Number(optional("SMTP_PORT") ?? 587);
+  if (!Number.isInteger(port) || port < 1 || port > 65535) {
+    throw new ConfigError("SMTP_PORT must be a port number.");
+  }
+  const security = (optional("SMTP_SECURE") ?? "starttls").toLowerCase();
+  if (!["starttls", "required", "tls", "none"].includes(security)) {
+    throw new ConfigError("SMTP_SECURE must be starttls, required, tls or none.");
+  }
+  const user = optional("SMTP_USER");
+  const password = optional("SMTP_PASSWORD");
+  if ((user === null) !== (password === null)) {
+    throw new ConfigError("SMTP_USER and SMTP_PASSWORD go together: give both or neither.");
+  }
+  return { kind: "smtp", host, port, security: security as SmtpSecurity, user, password, from };
+}
 
 export function loadConfig(env: Env = process.env): Config {
   const missing: string[] = [];
@@ -197,6 +284,8 @@ export function loadConfig(env: Env = process.env): Config {
     throw new ConfigError("GOOGLE_ISSUER is for tests and cannot be set in production.");
   }
 
+  const mail = loadMail(optional, optional("NODE_ENV") === "production");
+
   const urlOf = (name: string) => optional(name)?.replace(/\/+$/, "") ?? null;
   const openrouterUrl = urlOf("OPENROUTER_BASE_URL") ?? DEFAULT_OPENROUTER_URL;
   const providerUrls: Config["providerUrls"] = { openrouter: openrouterUrl };
@@ -251,6 +340,7 @@ export function loadConfig(env: Env = process.env): Config {
       googleId !== null && googleSecret !== null
         ? { clientId: googleId, clientSecret: googleSecret, issuer: googleIssuer }
         : null,
+    mail,
     serviceWorker: optional("FRONTIER_SERVICE_WORKER")?.toLowerCase() !== "off",
     commitAuthor,
     commitBot,

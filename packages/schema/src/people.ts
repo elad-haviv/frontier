@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { ConfirmedBy, EmailCode, EmailPending, ResetCode } from "./email.js";
 import { Passkey } from "./state.js";
 
 /**
@@ -44,6 +45,24 @@ export const Person = z.object({
   admin: z.boolean().default(false),
   /** The id of the project the person used last (stage 27b), so the app opens it after a login. */
   lastProject: z.string().nullable().default(null),
+  /**
+   * Stage 28. When the address was confirmed (a link opened, Google's own check, or an emailed
+   * invitation joined with that address). Null for an address nobody has checked, which is every
+   * account from before stage 28 and every address typed on a server without mail.
+   */
+  emailConfirmedAt: z.string().datetime().nullable().default(null),
+  emailConfirmedBy: ConfirmedBy.nullable().default(null),
+  /** The confirm link waiting to be opened (hash only), for the address it names. */
+  emailCode: EmailCode.nullable().default(null),
+  /** A new address waiting for its confirm link; the old one stays in force until then. */
+  emailPending: EmailPending.nullable().default(null),
+  /** The reset link waiting to be opened (hash only). */
+  resetCode: ResetCode.nullable().default(null),
+  /**
+   * The address was taken away because a Google sign-in verified the same one: the person is asked
+   * to add another. Such an account never counts as "the account with no email" at login.
+   */
+  emailDisplaced: z.boolean().default(false),
 });
 export type Person = z.infer<typeof Person>;
 
