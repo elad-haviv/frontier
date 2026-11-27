@@ -21,6 +21,7 @@ import { connection, useConnection } from "../sync/connection.ts";
 import { Link } from "../nav.tsx";
 import { OutsideShell } from "./OutsideShell.tsx";
 import { ProjectContext, type ProjectInfo } from "./projectContext.ts";
+import { rememberRole, resolveRole } from "./projectRole.ts";
 import { Shell } from "./Shell.tsx";
 import { Problem } from "./ui/Problem.tsx";
 import { Progress } from "./ui/Progress.tsx";
@@ -146,6 +147,14 @@ export function ProjectScope({ children }: { children: ReactNode }) {
   }, [connectionState]);
 
   const summary = known ?? (ref ? projectAt(ref.slug) : undefined);
+  // Not "reader" for a role that has not arrived: the record, else the list, else what this device
+  // knew last time, else unknown.
+  const role = ref ? resolveRole(ref.id, { record: record?.role, summary: summary?.role }) : null;
+  useEffect(() => {
+    // What the server said is remembered, so the shell is right the next time, offline too.
+    const said = record?.role ?? summary?.role;
+    if (ref && said) rememberRole(ref.id, said);
+  }, [ref?.id, record?.role, summary?.role]);
   const info: ProjectInfo | null = useMemo(() => {
     if (!ref) return null;
     const base = record ?? summary;
@@ -156,11 +165,11 @@ export function ProjectScope({ children }: { children: ReactNode }) {
       name: base.name,
       description: base.description,
       colour: base.colour,
-      role: record?.role ?? summary?.role ?? "reader",
+      role,
       record,
       reload,
     };
-  }, [ref?.id, ref?.slug, record, summary, reload]);
+  }, [ref?.id, ref?.slug, record, summary, role, reload]);
 
   if (!ref) {
     if (error?.code === "no_project") return <NoProject />;

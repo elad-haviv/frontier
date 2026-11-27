@@ -1,6 +1,6 @@
 import { useEffect, useId, useState } from "react";
 import { api, ApiFailure } from "../../api.ts";
-import { ROLE_NAMES, useProject } from "../../components/projectContext.ts";
+import { ROLE_NAMES, useProject, useRole } from "../../components/projectContext.ts";
 import { useNavigate } from "../../nav.tsx";
 import { OLD_SLUG_DAYS } from "@frontier/schema";
 import { projectRoot } from "../../project.ts";
@@ -27,7 +27,7 @@ export function General() {
   const navigate = useNavigate();
   const { list } = useProjects();
   const offline = useNeedsConnection();
-  const owner = project.role === "owner";
+  const { isOwner: owner } = useRole();
   const record = project.record;
   const [name, setName] = useState(project.name);
   const [slug, setSlug] = useState(project.slug);
@@ -54,7 +54,8 @@ export function General() {
     name.trim() !== project.name ||
     slug !== project.slug ||
     description.trim() !== project.description;
-  const slugOk = check.state === "same" || check.state === "free";
+  // An address that could not be checked is still sent: the server refuses a taken one.
+  const slugOk = check.state === "same" || check.state === "free" || check.state === "unknown";
   const canSave = owner && changed && name.trim() !== "" && slugOk && !saving && !offline;
 
   async function save() {
@@ -134,6 +135,14 @@ export function General() {
             >
               {window.location.origin}
               {projectRoot(slug || project.slug)} · {check.words}
+              {check.state === "unknown" && (
+                <>
+                  {" "}
+                  <button type="button" className="link" onClick={check.retry}>
+                    Try again
+                  </button>
+                </>
+              )}
             </p>
             {slug !== project.slug && check.state !== "bad" && (
               <p className="banner" role="note">

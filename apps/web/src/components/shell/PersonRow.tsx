@@ -57,7 +57,7 @@ export function PersonRow({
                 <span className="left-person-name">{shown}</span>
                 {/* What you may do in this project, in words. */}
                 <span id="left-person-role" className="left-person-role">
-                  {ROLE_NAMES[project.role]} here
+                  {project.role ? `${ROLE_NAMES[project.role]} here` : "\u00a0"}
                 </span>
               </span>
             </Link>

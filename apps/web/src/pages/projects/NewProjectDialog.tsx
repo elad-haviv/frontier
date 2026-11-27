@@ -58,8 +58,9 @@ export function NewProjectDialog({ onClose }: { onClose: () => void }) {
     if (!edited) setSlug(/[a-z0-9]/i.test(value) ? slugFromName(value) : "");
   }
 
-  const ready =
-    name.trim() !== "" && slugState === "free" && (start !== "zip" || zip !== null) && !working;
+  // An address that could not be checked is still sent: the server refuses a taken one.
+  const addressOk = slugState === "free" || slugState === "unknown";
+  const ready = name.trim() !== "" && addressOk && (start !== "zip" || zip !== null) && !working;
 
   async function send(target: string, file: File): Promise<boolean> {
     setSent(0);
@@ -193,6 +194,11 @@ export function NewProjectDialog({ onClose }: { onClose: () => void }) {
           </span>
         )}
         <span>{slugWords}</span>
+        {slugState === "unknown" && (
+          <button type="button" className="link" onClick={check.retry}>
+            Try again
+          </button>
+        )}
       </p>
       <fieldset className="new-project-start" disabled={working}>
         <legend>Start with</legend>
