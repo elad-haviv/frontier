@@ -85,10 +85,17 @@ export function JoinPage({
   }, [code, attempt]);
 
   /** In: the project opens. A session started here is told to the app first. */
-  async function done(slug: string, role: string, project: string, started: boolean) {
+  async function done(
+    slug: string,
+    role: string,
+    project: string,
+    started: boolean,
+    already = false,
+  ) {
     if (started) onSignedIn?.();
     else void loadProjects();
-    toast({ message: `You joined ${project} as ${withArticle(role)}.` });
+    // Someone who was in the project already is simply taken to it.
+    if (!already) toast({ message: `You joined ${project} as ${withArticle(role)}.` });
     void navigate(`/p/${encodeURIComponent(slug)}`, { replace: true });
   }
 
@@ -150,7 +157,13 @@ function Invitation({
   info: JoinInfo;
   person: { name: string; email: string } | null;
   problem: string | null;
-  onJoined: (slug: string, role: string, project: string, started: boolean) => Promise<void>;
+  onJoined: (
+    slug: string,
+    role: string,
+    project: string,
+    started: boolean,
+    already?: boolean,
+  ) => Promise<void>;
 }) {
   const name = info.project.name;
   const role = info.role;
@@ -190,7 +203,7 @@ function Invitation({
     } catch (err) {
       if (err instanceof ApiFailure && err.code === "already_member" && err.project) {
         void loadProjects();
-        await onJoined(err.project, role, name, false).catch(() => undefined);
+        await onJoined(err.project, role, name, false, true).catch(() => undefined);
         return;
       }
       setBusy(null);
@@ -221,7 +234,7 @@ function Invitation({
       return;
     }
     if (err instanceof ApiFailure && err.code === "already_member" && err.project) {
-      void onJoined(err.project, role, name, false);
+      void onJoined(err.project, role, name, false, true);
       return;
     }
     if (err instanceof ApiFailure && deadLink(err.code, err.inviter)) {
@@ -276,7 +289,7 @@ function Invitation({
       await onJoined(joined.project, joined.role, name, true);
     } catch (err) {
       if (err instanceof ApiFailure && err.code === "already_member" && err.project) {
-        await onJoined(err.project, role, name, true);
+        await onJoined(err.project, role, name, true, true);
         return;
       }
       setBusy(null);

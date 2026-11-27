@@ -184,8 +184,10 @@ function Row({
     <li className="member-row" data-member={member.id}>
       <Avatar name={member.name} email={member.email ?? ""} />
       <span className="member-who">
-        <b>{member.name}</b>
-        {member.you && <span className="tag member-you">You</span>}
+        <span className="member-name">
+          <b>{member.name}</b>
+          {member.you && <span className="tag member-you">You</span>}
+        </span>
         <small>{[member.email, lastActive(member.lastActiveAt)].filter(Boolean).join(" · ")}</small>
       </span>
       {owner ? (
@@ -279,6 +281,8 @@ function Leave({ members }: { members: MemberRow[] }) {
     await loadProjects();
     toast({ message: `You left ${name}.` });
     void navigate("/projects", { replace: true });
+    // Out of the project: if they join it again and are removed later, that is a loss to report.
+    unmarkLeaving(slug);
   }
 
   return (
