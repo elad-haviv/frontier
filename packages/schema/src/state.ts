@@ -121,6 +121,104 @@ const ModelChoice = z
   // Ids written before there was more than one provider are OpenRouter's.
   .transform((id) => (id === null || id.trim() === "" ? null : qualifyModelId(id)));
 
+/** How many art styles one person's library holds. */
+export const ART_STYLES_MAX = 24;
+
+/**
+ * One art style of a person's library (stage 34): a name, the words put before a picture's
+ * description, and a sample picture. `sample` is the token of a picture kept on the server, or
+ * `starter-<look>` for the drawing the web app ships with a starter style, or null.
+ */
+export const ArtStyle = z.object({
+  id: z.string().regex(/^[a-z0-9-]{1,40}$/),
+  name: z.string().trim().min(1).max(40),
+  text: z.string().trim().min(1).max(600),
+  sample: z
+    .string()
+    .regex(/^([a-z0-9]{12}|starter-[a-z]+)$/)
+    .nullable()
+    .default(null),
+});
+export type ArtStyle = z.infer<typeof ArtStyle>;
+
+/** The style every library began as, before there were several. */
+export const DEFAULT_ART_STYLE =
+  "Pencil and ink sketch on aged paper: hand-drawn, fine linework, light sepia washes, like a page of an explorer's field notebook.";
+
+/** The styles a library starts with. They are the person's own from then on: edited or deleted. */
+export const STARTER_ART_STYLES: readonly ArtStyle[] = [
+  {
+    id: "field-notebook",
+    name: "Field notebook",
+    text: DEFAULT_ART_STYLE,
+    sample: "starter-notebook",
+  },
+  {
+    id: "watercolour-wash",
+    name: "Watercolour wash",
+    text: "Loose watercolour on cold-pressed paper: soft edges, colours bleeding into each other, bare paper left for the light.",
+    sample: "starter-water",
+  },
+  {
+    id: "woodcut-print",
+    name: "Woodcut print",
+    text: "Black-and-white woodcut print: bold carved lines, strong contrast, hatching for shadow, no grey tones.",
+    sample: "starter-woodcut",
+  },
+  {
+    id: "oil-on-canvas",
+    name: "Oil on canvas",
+    text: "Oil painting with visible brushwork: deep shadows, warm light at dusk, rich colour, like a nineteenth-century landscape.",
+    sample: "starter-oil",
+  },
+  {
+    id: "atlas-engraving",
+    name: "Atlas engraving",
+    text: "Fine copperplate engraving as in an old atlas: thin parallel lines, cross-hatching, one ink colour on cream paper.",
+    sample: "starter-engrave",
+  },
+  {
+    id: "gouache-poster",
+    name: "Gouache poster",
+    text: "Flat gouache shapes in a limited palette: clean silhouettes, no outlines, like a mid-century travel poster.",
+    sample: "starter-gouache",
+  },
+];
+
+/**
+ * A person's library of art styles and the one used unless another is picked. Before the library
+ * was first changed it is worked out: the starter styles, with the one style the person had
+ * (when they had written their own) first and usual.
+ */
+export function artLibrary(ai: {
+  artStyle: string;
+  artStyles?: ArtStyle[] | null | undefined;
+  usualArtStyle?: string | null | undefined;
+}): { styles: ArtStyle[]; usual: string } {
+  if (ai.artStyles && ai.artStyles.length > 0) {
+    const usual = ai.artStyles.find((s) => s.id === ai.usualArtStyle) ?? ai.artStyles[0]!;
+    return { styles: ai.artStyles, usual: usual.id };
+  }
+  const starters = STARTER_ART_STYLES.map((s) => ({ ...s }));
+  const own = ai.artStyle.trim().slice(0, 600);
+  const same = starters.find((s) => s.text === own);
+  if (!own || same) return { styles: starters, usual: (same ?? starters[0]!).id };
+  return {
+    styles: [{ id: "my-style", name: "My style", text: own, sample: null }, ...starters],
+    usual: "my-style",
+  };
+}
+
+/** The settings with a library put in: the old single style stays the usual one's words. */
+export function withArtLibrary<T extends { artStyle: string }>(
+  ai: T,
+  styles: ArtStyle[],
+  usual: string,
+): T & { artStyles: ArtStyle[]; usualArtStyle: string } {
+  const chosen = styles.find((s) => s.id === usual) ?? styles[0]!;
+  return { ...ai, artStyles: styles, usualArtStyle: chosen.id, artStyle: chosen.text };
+}
+
 export const AiSettings = z.object({
   /**
    * One provider-qualified model id per task ("anthropic:claude-…"). Null until the author picks
@@ -135,12 +233,16 @@ export const AiSettings = z.object({
     .default({}),
   /** Prices the author entered for models whose provider does not publish them, by model id. */
   modelPrices: z.record(z.string(), ModelPrice).default({}),
-  /** The look given to concept art, added to every picture's description. */
-  artStyle: z
-    .string()
-    .default(
-      "Pencil and ink sketch on aged paper: hand-drawn, fine linework, light sepia washes, like a page of an explorer's field notebook.",
-    ),
+  /**
+   * The words of the usual art style, put before every picture's description. Since stage 34 the
+   * styles are `artStyles`; this stays what the usual one says, for the code and the devices that
+   * read one style.
+   */
+  artStyle: z.string().default(DEFAULT_ART_STYLE),
+  /** The person's art styles; null until the library is first changed (see `artLibrary`). */
+  artStyles: z.array(ArtStyle).max(ART_STYLES_MAX).nullable().default(null),
+  /** The id of the style used unless another is picked. */
+  usualArtStyle: z.string().nullable().default(null),
   /** Propose fields for the notes of each Publish. */
   proposeOnPublish: z.boolean().default(false),
   /**
@@ -209,6 +311,8 @@ export const PersonSettings = z.object({
     models: true,
     modelPrices: true,
     artStyle: true,
+    artStyles: true,
+    usualArtStyle: true,
     proposeOnPublish: true,
   }).default({}),
   keepGoing: KeepGoingSettings.default({}),

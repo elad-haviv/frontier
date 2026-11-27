@@ -1,0 +1,385 @@
+/* Art styles (stage 34): the sample picture, the cards of the settings, the strip of the picture
+   dialog, and the dialog that edits one style. */
+.style-sample {
+  display: block;
+  aspect-ratio: 3 / 2;
+  background: var(--paper-raised);
+  overflow: hidden;
+}
+.style-sample svg,
+.style-sample img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.style-sample.none {
+  display: grid;
+  place-items: center;
+  padding: 0 0.2rem;
+  text-align: center;
+  font-size: 0.8rem;
+  color: var(--ink-faint);
+  background: repeating-linear-gradient(
+    135deg,
+    transparent 0 9px,
+    color-mix(in srgb, var(--rule) 45%, transparent) 9px 10px
+  );
+}
+
+/* The settings: a card for each style. */
+.task-styles {
+  grid-column: 1 / -1;
+  min-width: 0;
+  padding-top: 0.9rem;
+  border-top: 1px dashed var(--rule);
+}
+.art-styles-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.3rem 1rem;
+  margin-bottom: 0.7rem;
+}
+.art-styles-head h4 {
+  margin: 0;
+  font-family: var(--sans);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+.art-styles-head h4 .saved-mark {
+  letter-spacing: 0;
+  text-transform: none;
+}
+.art-style-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr));
+  gap: 0.75rem;
+}
+.art-style-card {
+  display: grid;
+  grid-template-rows: 1fr auto;
+  min-width: 0;
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  background: var(--paper);
+  overflow: hidden;
+}
+.art-style-card.is-usual {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+button.art-style-pick {
+  display: grid;
+  align-content: start;
+  gap: 0.3rem;
+  min-width: 0;
+  padding: 0 0 0.5rem;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+button.art-style-pick:focus-visible {
+  outline-offset: -2px;
+}
+.art-style-picture {
+  position: relative;
+  display: block;
+  border-bottom: 1px solid var(--rule);
+}
+.art-style-dot {
+  position: absolute;
+  top: 0.45rem;
+  left: 0.45rem;
+  width: 1.15rem;
+  height: 1.15rem;
+  border: 2px solid var(--paper-raised);
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--ink) 35%, transparent);
+  box-shadow: 0 0 0 1px var(--ink-soft);
+}
+.is-usual .art-style-dot {
+  background: radial-gradient(var(--paper-raised) 0 32%, var(--accent) 36%);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+.art-style-name {
+  padding: 0 0.65rem;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.art-style-text {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  margin: 0 0.65rem;
+  overflow: hidden;
+  font-size: 0.82rem;
+  line-height: 1.4;
+  color: var(--ink-soft);
+}
+.art-style-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  min-height: 2.2rem;
+  padding: 0.3rem 0.65rem 0.45rem;
+  border-top: 1px solid var(--rule);
+  font-size: 0.82rem;
+}
+.art-style-usual {
+  font-weight: 600;
+  color: var(--accent);
+}
+.task-styles button.plain,
+.art-style-actions button.plain,
+.generate-panel button.plain {
+  color: var(--accent);
+  font: inherit;
+  text-decoration: none;
+}
+.art-style-actions button.plain.danger {
+  color: var(--warn);
+}
+button.art-style-new {
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 0.2rem;
+  min-height: 9rem;
+  border: 1.5px dashed var(--rule);
+  border-radius: 8px;
+  background: none;
+  color: var(--accent);
+  font-weight: 600;
+}
+.art-style-new span {
+  font-size: 1.5rem;
+  font-weight: 400;
+  line-height: 1;
+}
+.art-styles-note {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.3rem 1rem;
+  margin: 0.7rem 0 0;
+  font-size: 0.8rem;
+}
+
+/* The dialog of one style. */
+.dialog.art-style-editor {
+  width: min(34rem, 100%);
+  max-height: 100%;
+  overflow-y: auto;
+}
+.art-style-editor textarea {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  background: var(--paper-raised);
+  color: var(--ink);
+  font: inherit;
+  font-size: 1rem;
+  line-height: 1.45;
+  resize: vertical;
+}
+.art-style-editor .dialog-field em {
+  font-style: normal;
+}
+.art-style-sample {
+  display: grid;
+  grid-template-columns: 9rem minmax(0, 1fr);
+  align-items: center;
+  gap: 0.8rem;
+  margin-bottom: 0.9rem;
+}
+.art-style-sample-picture {
+  position: relative;
+  display: block;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  overflow: hidden;
+}
+.art-style-drawing {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: color-mix(in srgb, var(--paper-raised) 75%, transparent);
+  font-size: 0.85rem;
+  color: var(--ink-soft);
+}
+.art-style-sample p {
+  margin: 0.35rem 0 0;
+  font-size: 0.8rem;
+}
+.art-style-actions {
+  flex-wrap: wrap;
+  align-items: center;
+}
+.art-style-actions button.plain {
+  min-width: 0;
+  padding: 0.5rem 0.2rem;
+}
+.art-style-actions button.quiet {
+  margin-left: auto;
+}
+
+/* The picture dialog: a strip of the styles. */
+.generate-style-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.3rem;
+}
+.generate-style-head a {
+  font-size: 0.8rem;
+}
+.generate-styles {
+  display: flex;
+  gap: 0.45rem;
+  margin: -3px;
+  padding: 3px 3px 0.4rem;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+.generate-styles button {
+  flex: 0 0 5.4rem;
+  display: grid;
+  align-content: start;
+  gap: 0.2rem;
+  padding: 0;
+  border: 1px solid var(--rule);
+  border-radius: 7px;
+  background: var(--paper);
+  overflow: hidden;
+  text-align: left;
+}
+.generate-styles .style-sample {
+  border-bottom: 1px solid var(--rule);
+  font-size: 0.7rem;
+}
+.generate-styles b {
+  padding: 0 0.35rem 0.35rem;
+  font-size: 0.74rem;
+  font-weight: 500;
+  line-height: 1.25;
+  color: var(--ink-soft);
+  overflow-wrap: anywhere;
+}
+.generate-styles button[aria-checked="true"] {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent);
+}
+.generate-styles button[aria-checked="true"] b {
+  font-weight: 600;
+  color: var(--accent);
+}
+.generate-style-now {
+  margin: 0.35rem 0 0;
+  font-size: 0.82rem;
+  line-height: 1.4;
+  color: var(--ink-soft);
+}
+.generate-style-own {
+  display: grid;
+  gap: 0.3rem;
+  margin-top: 0.4rem;
+}
+.generate-style-own label {
+  font-size: 0.85rem;
+  color: var(--ink-soft);
+}
+.generate-panel .generate-style-own textarea {
+  font-size: 0.9rem;
+}
+.generate-style-own div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.2rem 0.9rem;
+  font-size: 0.82rem;
+}
+.generate-made {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  margin: 0;
+  font-size: 0.8rem;
+}
+
+@media (max-width: 40rem) {
+  /* A phone: the cards are rows, the picture at the left. */
+  .art-style-grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.5rem;
+  }
+  .art-style-card {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-rows: auto;
+  }
+  button.art-style-pick {
+    grid-template-columns: 5.5rem minmax(0, 1fr);
+    column-gap: 0.1rem;
+    padding: 0;
+  }
+  .art-style-picture {
+    grid-row: 1 / span 2;
+    height: 100%;
+    min-height: 4.4rem;
+    border-bottom: 0;
+    border-right: 1px solid var(--rule);
+  }
+  .art-style-picture .style-sample {
+    height: 100%;
+    aspect-ratio: auto;
+  }
+  .art-style-name {
+    padding-top: 0.45rem;
+  }
+  .art-style-text {
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    margin-bottom: 0.45rem;
+  }
+  .art-style-foot {
+    flex-direction: column;
+    align-items: flex-end;
+    justify-content: center;
+    min-width: 3.6rem;
+    padding: 0.3rem 0.6rem;
+    border-top: 0;
+    border-left: 1px solid var(--rule);
+  }
+  .art-style-foot button {
+    min-height: 2.2rem;
+  }
+  button.art-style-new {
+    grid-auto-flow: column;
+    align-items: center;
+    gap: 0.5rem;
+    min-height: 3.2rem;
+  }
+  .art-style-sample {
+    grid-template-columns: 7rem minmax(0, 1fr);
+  }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .art-style-card,
+  .generate-styles button {
+    transition:
+      box-shadow 0.12s,
+      border-color 0.12s;
+  }
+}

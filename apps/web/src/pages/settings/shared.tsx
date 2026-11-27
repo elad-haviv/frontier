@@ -86,7 +86,11 @@ export const TASKS: { task: AiTaskName; title: string; about: string }[] = [
     title: "Lore conversations",
     about: "Ask, writing help, talking to characters, exploring a map, and comments.",
   },
-  { task: "art", title: "Concept art", about: "Pictures for discoveries, made when you ask." },
+  {
+    task: "art",
+    title: "Concept art",
+    about: "Pictures for entries and discoveries, made when you ask.",
+  },
 ];
 
 export const taskTitle = (task: string) => TASKS.find((t) => t.task === task)?.title ?? task;
