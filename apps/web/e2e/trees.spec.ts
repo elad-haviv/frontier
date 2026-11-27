@@ -7,7 +7,8 @@ const family = (project: string) => {
     a: `Arlen ${s}`,
     b: `Brisa ${s}`,
     c: `Cato ${s}`,
-    path: (name: string) => `02 People/${name}.md`,
+    // Its own folder, last in the library, so the folder tree's tests do not meet these entries.
+    path: (name: string) => `Zz Trees ${s}/${name}.md`,
   };
 };
 
@@ -16,8 +17,18 @@ async function seed(page: Page, f: ReturnType<typeof family>) {
     const res = await page.request.post("/api/relations", { data });
     expect(res.ok(), await res.text()).toBe(true);
   };
-  // Arlen is written first, as an existing entry the relations hang from.
-  await add({ path: "02 People/Mira.md", what: "rival", who: f.a, create: true });
+  // Arlen is made first, as an entry the others are made beside.
+  const made = await page.request.put("/api/drafts", {
+    data: {
+      id: `trees${Date.now().toString(36)}`.slice(0, 12).padEnd(12, "0"),
+      path: f.path(f.a),
+      kind: "create",
+      text: `# ${f.a}\n\n`,
+      revision: 0,
+      baseBlob: "",
+    },
+  });
+  expect(made.ok(), await made.text()).toBe(true);
   await add({ path: f.path(f.a), what: "partner", who: f.b, create: true });
   await add({ path: f.path(f.a), what: "child", who: f.c, with: f.path(f.b), create: true });
 }
