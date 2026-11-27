@@ -49,6 +49,12 @@ talk with characters with their own AI key; a writer has everything but the owne
 pages for this are `/p/<project>/settings/members`, `/join/<code>` (open to someone not logged in),
 and `/settings/account` (Signing in), where Google is linked and unlinked.
 
+Comments between people (stage 27e): on an entry's page everyone, a reader too, can comment on a
+selected passage or on the whole entry, reply, and edit or delete their own; the thread's author, a
+writer or an owner resolves it, and an owner can delete anyone's. Comments carry the writer's name and
+show up live for the others reading the entry. They are always on saved text. A comment for the AI
+stays private to the writer who made it.
+
 Two people in one project (stage 27d, web): each has their own unsaved changes, and the app says so
 ("Your unsaved changes"). An entry shows "Last version by <name>", and every saved version in its
 history carries its author. A writer sees a quiet notice, and a dot in the tree, when someone else

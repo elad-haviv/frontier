@@ -977,11 +977,19 @@ function projectCalls(slugOf: () => string) {
       call<{ comments: PassageComment[] }>(`/comments?path=${encodeURIComponent(path)}`),
     commentCount: (path: string) =>
       call<{ open: number }>(`/comments/count?path=${encodeURIComponent(path)}`),
-    addComment: (body: Omit<PassageComment, "id" | "at">) =>
-      post<{ comment: PassageComment }>("/comments", body),
+    addComment: (body: NewComment) => post<{ comment: PassageComment }>("/comments", body),
     changeComment: (id: string, change: { text?: string; for?: "me" | "ai" }) =>
       send<{ comment: PassageComment }>("PATCH", `/comments/${id}`, change),
     removeComment: (id: string) => send<{ ok: true }>("DELETE", `/comments/${id}`),
+    /** Resolves a thread, or opens it again. */
+    resolveComment: (id: string, resolved: boolean) =>
+      post<{ comment: PassageComment }>(`/comments/${id}/${resolved ? "resolve" : "reopen"}`, {}),
+    replyToComment: (id: string, text: string) =>
+      post<{ comment: PassageComment }>(`/comments/${id}/replies`, { text }),
+    changeReply: (id: string, reply: string, text: string) =>
+      send<{ comment: PassageComment }>("PATCH", `/comments/${id}/replies/${reply}`, { text }),
+    removeReply: (id: string, reply: string) =>
+      send<{ comment: PassageComment }>("DELETE", `/comments/${id}/replies/${reply}`),
     workOnComment: (
       id: string,
       around: { before: string; after: string; previous?: string[] },
@@ -1437,15 +1445,49 @@ export const discoveryArtUrl = (map: string, id: string): string =>
 /** The whole library as a zip of the vault. */
 export const libraryZipUrl = (): string => projectUrl("/export/library.zip");
 
+/** Who wrote a comment, a reply or a resolve: the name, and the role they have now (null once they left). */
+export interface CommentPerson {
+  id: string;
+  name: string;
+  role: ProjectRole | null;
+}
+
+export interface CommentReply {
+  id: string;
+  text: string;
+  at: string;
+  editedAt: string | null;
+  author: CommentPerson;
+  /** What the person asking may do to it, as the server decides. */
+  can: { edit: boolean; delete: boolean };
+}
+
+/** A comment thread on an entry (stage 27e): a comment on a passage or the whole entry, with replies. */
 export interface PassageComment {
   id: string;
+  path: string;
+  /** The passage; empty for a comment on the whole entry. */
+  quote: string;
+  prefix: string;
+  suffix: string;
+  text: string;
+  /** "me": shared with the project; "ai": its writer's own, for the writing help. */
+  for: "me" | "ai";
+  at: string;
+  editedAt: string | null;
+  author: CommentPerson;
+  resolved: { by: CommentPerson; at: string } | null;
+  replies: CommentReply[];
+  can: { edit: boolean; delete: boolean; resolve: boolean; hand: boolean };
+}
+
+export interface NewComment {
   path: string;
   quote: string;
   prefix: string;
   suffix: string;
   text: string;
   for: "me" | "ai";
-  at: string;
 }
 
 export type ExportKind = "site" | "docx" | "pdf" | "markdown" | "json" | "slides";

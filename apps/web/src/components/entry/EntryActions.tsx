@@ -4,6 +4,7 @@ import {
   FolderInput,
   History,
   type LucideIcon,
+  MessageSquare,
   Pencil,
   Pin,
   TableOfContents,
@@ -15,6 +16,7 @@ import { useWide } from "../../width.ts";
 import { IconButton, IconLink } from "../ui/IconButton.tsx";
 import { Menu, MenuItem, MenuSeparator } from "../ui/Menu.tsx";
 import { WideMenuItem } from "./WideMenuItem.tsx";
+import { commentsLabel } from "../comments/model.ts";
 import "./EntryActions.css";
 
 /** One of the entry's actions, drawn as an icon in the bar and as an item in its "⋯". */
@@ -27,6 +29,8 @@ interface Action {
   blocked?: string | undefined;
   /** Whether its panel is the one open. */
   pressed?: boolean;
+  /** A count shown on the icon, such as the open comments. */
+  badge?: number;
 }
 
 export interface EntryActionsProps {
@@ -37,6 +41,10 @@ export interface EntryActionsProps {
   outlineOpen: boolean;
   onGraph: () => void;
   graphOpen: boolean;
+  /** Opens or closes the Comments tab (every role); `open` threads wait for an answer. */
+  onComments?: (() => void) | undefined;
+  commentsOpen?: boolean;
+  openComments?: number;
   /** Pin to "Working on"; absent where the entry cannot be pinned. */
   pin?:
     | {
@@ -72,6 +80,16 @@ function actionsOf(p: EntryActionsProps): { main: Action[]; rest: Action[] } {
     });
   }
   main.push({ id: "graph", label: "Graph", icon: Waypoints, run: p.onGraph, pressed: p.graphOpen });
+  if (p.onComments) {
+    main.push({
+      id: "comments",
+      label: commentsLabel(p.openComments ?? 0),
+      icon: MessageSquare,
+      run: p.onComments,
+      pressed: p.commentsOpen ?? false,
+      badge: p.openComments ?? 0,
+    });
+  }
   const rest: Action[] = [];
   if (p.changes) {
     const c = p.changes;
@@ -96,6 +114,19 @@ function actionsOf(p: EntryActionsProps): { main: Action[]; rest: Action[] } {
 }
 
 function Tool({ action }: { action: Action }) {
+  return (
+    <span className="entry-tool-wrap">
+      <ToolButton action={action} />
+      {action.badge ? (
+        <span className="badge entry-tool-badge" aria-hidden="true">
+          {action.badge}
+        </span>
+      ) : null}
+    </span>
+  );
+}
+
+function ToolButton({ action }: { action: Action }) {
   return (
     <IconButton
       label={action.label}

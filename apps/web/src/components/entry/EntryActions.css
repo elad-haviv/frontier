@@ -58,3 +58,15 @@
 .entry-tool-pin.is-pinned .ui-icon {
   fill: currentColor;
 }
+
+/* The open comments, as a small number on the Comments icon. */
+.entry-tool-wrap {
+  position: relative;
+  display: inline-flex;
+}
+.entry-tool-badge {
+  position: absolute;
+  top: -0.2rem;
+  right: -0.2rem;
+  pointer-events: none;
+}

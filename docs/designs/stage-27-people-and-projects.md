@@ -1327,3 +1327,85 @@ screen's choices, resolve bodies, the 409 and compare again, the older screen), 
 `sync/queue.test.ts` (text kept on a 404 and other refusals, re-homed ids), `sync/connection.test.ts`
 (`?client=`) and `offline/keeper.test.ts` (no thrash). Playwright: `e2e/people.spec.ts`, with two or
 three people in separate browser contexts.
+
+## 13. How it was built: 27e comments
+
+Comments are now between people, on the entry page, for all three roles. Server in
+`apps/server/src/comments/{store,rules}.ts` and `routes/comments.ts`; web in
+`components/CommentsPanel.tsx` and `components/comments/{Thread,SelectionComment,useComments,model}`.
+
+### Data and migration
+
+`comments.json` keeps, for each comment: `person` (id) and `name` (as written, for the day the account
+is gone; never an email), `editedAt`, `resolved` (`person`, `name`, `at`) and `replies` (each with
+`person`, `name`, `text`, `at`, `editedAt`). A comment from before has no author: it is read as the
+project's first owner's (the same rule as drafts: the admin when an owner, else the earliest owner),
+and `CommentStore.load()` writes that into the file when an owner can be named. It writes only what is
+still unstamped, so running it again changes nothing. A comment may now be on the whole entry (empty
+`quote`).
+
+### Rules (`comments/rules.ts`, checked in the route; the role table says `reader` for all of them)
+
+| | Reader | Writer | Owner |
+| --- | --- | --- | --- |
+| Read comments of saved entries, comment, reply | yes | yes | yes |
+| Edit the words | own | own | own |
+| Delete | own | own | anyone's |
+| Resolve / reopen | own thread | any | any |
+| For the AI (private to its writer), give to or take from the AI | no | own | own |
+
+A refusal is `role_too_low`. A comment for the AI is invisible to everyone else (`not_found`). The role
+table's reader-writes list gained the ten comment routes; `POST /comments/:id/work` stays a writer's.
+Routes: `GET /comments?path=`, `GET /comments/count`, `POST /comments`, `PATCH|DELETE /comments/:id`,
+`POST /comments/:id/{resolve,reopen,replies}`, `PATCH|DELETE /comments/:id/replies/:rid`. Every comment
+answers with `author {id,name,role|null}`, `resolved`, `replies` and `can {edit,delete,resolve,hand}`,
+so the web draws exactly what the server allows. Names: the person's name; an email only to an owner of
+the project, and only when there is no name. A member who left keeps their comments, shown with their
+name and no role. Limits: 2000 characters, 300 comments per entry, 100 replies per comment, 40 new
+comments or replies a minute per person (`429 rate_limited`). Text is plain; the panel never renders HTML.
+
+### Nothing about unsaved changes
+
+A shared comment must anchor to saved text: the quote has to be in the entry as saved (Markdown marks
+and spacing ignored), and the entry has to be saved. Otherwise the same 400 as for text that is nowhere,
+for readers and writers alike, so a reader cannot tell a draft from nothing. A writer's note on their
+own unsaved text is a comment for the AI, which is theirs alone.
+
+### Live and counts
+
+The status snapshot has `comments: {changes, path}`; it rises, after the change is kept, when a shared
+comment changes (not for a private one). No text, no author. Open pages read the entry's comments again.
+The keep-going queue counts open shared comments for every role (the reader's saved-view hiding is gone;
+resolved and private ones are not counted).
+
+### Web
+
+The panel: author avatar, name, role tag, time, "edited", replies, a reply box, Resolve and Reopen,
+Edit and Delete as `can` says, resolved threads under "Show resolved (n)", an empty state. On the entry
+page a Comment button appears beside selected words (the selection is mapped back to the Markdown), and
+"Comment on the whole entry" is in the panel; on a phone the panel is the bottom sheet. Ctrl or Cmd+Enter
+sends and Escape leaves a box (the Ask box's convention). The Comments tab shows the open count.
+The reader line in the left bar, the join page, Members and the role-change toast now say "read,
+comment and ask".
+
+### Decisions where the design was silent
+
+- Offline: writing is disabled with "Needs a connection" (`ActionButton`) rather than queued; the
+  comments are not in the device copy today, so they are not readable offline either.
+- "Unread" is not tracked: the count is open threads. The design's left-bar count of comments opened
+  since you last looked is not built.
+- Delete of a thread with replies asks first; resolving is the gentle way.
+- Existing "for me" notes became shared, with the first owner as author.
+
+### Changed expectations
+
+`projectRoles.test.ts` (reader-writes list gains the comment routes), `readerView.test.ts` (`GET
+/comments` is no longer closed to a reader; `POST /comments/:id/work` takes its place in that list),
+`readerrole.spec.ts` (a reader's app may call comments; the reader line), `joinModel`, `membersModel`
+and `ProjectScope` tests (wording).
+
+### Tests
+
+`apps/server/test/comments27e.test.ts` (each role by each action, migration and re-run, no draft
+leakage, names, members who left, the stream, queue counts); `components/CommentsPanel.test.ts`,
+`comments/model.test.ts`; `e2e/comments.spec.ts` (a reader and a writer in two browsers).

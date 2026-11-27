@@ -42,7 +42,7 @@ describe("when a person was last here", () => {
 describe("roles in words", () => {
   it("puts the safe role first, and says what each may do", () => {
     expect(ROLE_ORDER).toEqual(["reader", "writer", "owner"]);
-    expect(ROLE_MAY.reader).toContain("Cannot change anything");
+    expect(ROLE_MAY.reader).toContain("Cannot change the text");
     expect(ROLE_MAY.writer).toContain("saves versions");
     expect(ROLE_MAY.owner).toContain("deleting the project");
     expect(withArticle("Owner")).toBe("an Owner");

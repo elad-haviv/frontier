@@ -31,7 +31,6 @@ import { fromHereParts } from "./fromHere.js";
 import type { KeepGoingHistory } from "./history.js";
 import { linkFirstMention, unlinkedMentions } from "./mentions.js";
 import { buildQueue, wantedRow } from "./queue.js";
-import { savedViewOnly } from "../projects/view.js";
 
 export interface KeepGoingDeps {
   index: VaultIndex;
@@ -78,12 +77,9 @@ export class KeepGoing {
     return (await this.d.settings.current()).keepGoing.needsLove;
   }
 
-  /**
-   * Open comments per entry. Comments are writers' (stage 27e makes them shared), so a reader,
-   * whose requests run in the saved view, is told there are none: not even their number.
-   */
-  private async commentCounts(): Promise<ReadonlyMap<string, number>> {
-    return savedViewOnly() ? new Map<string, number>() : this.d.comments.counts();
+  /** Open shared comments per entry: everyone in the project may know their number (stage 27e). */
+  private commentCounts(): Promise<ReadonlyMap<string, number>> {
+    return this.d.comments.counts();
   }
 
   async queue(): Promise<QueueResponse> {

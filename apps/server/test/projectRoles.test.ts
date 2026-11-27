@@ -81,6 +81,16 @@ describe("the role table", () => {
       .sort();
     expect(readerWrites).toEqual(
       [
+        // Stage 27e: a reader comments and replies, and changes or deletes their own; the rules
+        // that are more than the role (own, owner, writer) are in the route, tried in comments27e.
+        "DELETE /comments/:id",
+        "DELETE /comments/:id/replies/:rid",
+        "PATCH /comments/:id",
+        "PATCH /comments/:id/replies/:rid",
+        "POST /comments",
+        "POST /comments/:id/reopen",
+        "POST /comments/:id/replies",
+        "POST /comments/:id/resolve",
         "DELETE /lore/:id",
         "DELETE /pins",
         "POST /characters/say",

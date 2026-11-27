@@ -85,7 +85,7 @@ export const ROLE_ALLOWS: Record<ProjectRole, string> = {
     "As an owner you can do everything a writer can, and change members, invite links and settings, and delete the project.",
   writer: "As a writer you can read and change entries, maps and chronicles, and save versions.",
   reader:
-    "As a reader you can read everything, search, ask the lore and talk with characters. You cannot change anything.",
+    "As a reader you can read everything, search, comment on passages, ask the lore and talk with characters. You cannot change the text.",
 };
 
 /** The counts under the project's name: "214 entries · 6 maps · 3 people", leaving out what is not counted. */

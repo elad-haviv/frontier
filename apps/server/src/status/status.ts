@@ -33,6 +33,8 @@ export class StatusService {
   private fileProblems: string[] = [];
   private keysRemoved: { at: string; providers: string[]; environment: string[] } | null = null;
   private serverDraftChanges = 0;
+  private commentChanges = 0;
+  private commentPath: string | null = null;
   private listeners = new Set<Listener>();
 
   constructor(
@@ -97,6 +99,7 @@ export class StatusService {
       },
       notices: { keysRemoved: this.keysRemoved },
       serverDraftChanges: this.serverDraftChanges,
+      comments: { changes: this.commentChanges, path: this.commentPath },
       drafts: this.facts.draftChanges?.() ?? 0,
       problems: [
         ...(this.index.schemaProblem ? [this.index.schemaProblem] : []),
@@ -243,6 +246,13 @@ export class StatusService {
   /** The server changed a draft itself, such as by accepting a proposed field into it. */
   serverChangedDraft(): void {
     this.serverDraftChanges++;
+    this.changed();
+  }
+
+  /** An entry's shared comments changed: open pages read them again. The event says where, never what. */
+  commentsChanged(path: string): void {
+    this.commentChanges++;
+    this.commentPath = path;
     this.changed();
   }
 

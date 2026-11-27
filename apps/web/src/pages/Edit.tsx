@@ -10,11 +10,12 @@ import { LinkToEntry } from "../components/LinkToEntry.tsx";
 import { closeHelp, openHelp, passageOf, startHelp } from "../components/writing/helpCard.ts";
 import { WritingHelp } from "../components/writing/WritingHelp.tsx";
 import { CommentsPanel } from "../components/CommentsPanel.tsx";
+import { openCount } from "../components/comments/model.ts";
 import { CommentBubbles, useMargin } from "../components/comments/CommentBubbles.tsx";
 import { type Anchor, anchorAt, locate, MIN_QUOTE } from "../components/anchor.ts";
 import { setCommentMarks } from "../components/commentMarks.ts";
 import { Properties } from "../components/Properties.tsx";
-import { useRefresh } from "../components/Shell.tsx";
+import { useRefresh, useStatus } from "../components/Shell.tsx";
 import { useDialogs } from "../components/Dialogs.tsx";
 import { Menu, MenuItem, MenuSeparator } from "../components/ui/Menu.tsx";
 import { SaveStatus, useSaveState } from "../components/ui/SaveStatus.tsx";
@@ -131,8 +132,9 @@ export function EditPage() {
     const text = v.state.doc.toString();
     v.dispatch({
       effects: setCommentMarks.of(
+        // Open threads on a passage are marked; a resolved one, or one on the whole entry, is not.
         list.flatMap((c) => {
-          const at = locate(text, c);
+          const at = c.resolved || !c.quote ? null : locate(text, c);
           return at ? [{ id: c.id, ...at }] : [];
         }),
       ),
@@ -386,9 +388,11 @@ export function EditPage() {
   useEffect(() => () => window.clearTimeout(marksTimer.current), []);
 
   // Once the editor holds the text, its comments are found and highlighted.
+  // Read again when the stream says some entry's comments changed (someone commented or replied).
+  const commentChanges = useStatus()?.comments?.changes;
   useEffect(() => {
     if (initial !== null) void loadComments();
-  }, [initial, loadComments]);
+  }, [initial, loadComments, commentChanges]);
 
   function comment() {
     const v = view.current;
@@ -525,7 +529,7 @@ export function EditPage() {
           id: "comments",
           title: "Comments",
           icon: MessageSquare,
-          ...(comments.length > 0 ? { badge: comments.length } : {}),
+          ...(openCount(comments) > 0 ? { badge: openCount(comments) } : {}),
           render: () =>
             view.current && (
               <CommentsPanel
@@ -602,7 +606,7 @@ export function EditPage() {
       if (!v) return [];
       const text = v.state.doc.toString();
       return comments.flatMap((c) => {
-        const at = locate(text, c);
+        const at = c.resolved || !c.quote ? null : locate(text, c);
         if (!at) return [];
         // Lines out of sight are not drawn; their place is still known from the line heights.
         const top = v.coordsAtPos(at.from)?.top ?? v.documentTop + v.lineBlockAt(at.from).top;
@@ -748,7 +752,7 @@ export function EditPage() {
             aria-pressed={bar.open === "comments"}
             onClick={() => bar.toggle("comments")}
           >
-            Comments{comments.length > 0 ? ` (${comments.length})` : ""}
+            Comments{openCount(comments) > 0 ? ` (${openCount(comments)})` : ""}
           </button>
           {/* On a phone, Done moves into the top line, beside the title. */}
           <PageAction>

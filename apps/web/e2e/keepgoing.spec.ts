@@ -619,7 +619,7 @@ test.describe("after Publish", () => {
     });
     expect(saved.ok(), await saved.text()).toBe(true);
     await page.route("**/api/p/*/publish/confirm", (route) =>
-      route.fulfill({ json: { commit: "0123456789abcdef" } }),
+      route.fulfill({ json: { commit: "0123456789abcdef", published: [], conflicts: [] } }),
     );
   }
 
