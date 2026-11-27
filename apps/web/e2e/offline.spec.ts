@@ -166,6 +166,28 @@ test("Home with no connection: pins and recents from the device, the queue needs
   }
 });
 
+test("an invite link opens the app with no connection, and says it needs one", async ({
+  page,
+  context,
+}) => {
+  await install(page);
+  await context.setOffline(true);
+  try {
+    // A page address: the worker answers with the app, not the browser's error page.
+    await page.goto("/join/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
+    await expect(
+      page.getByRole("heading", { name: "The invitation could not be opened" }),
+    ).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByRole("alert")).toContainText("connection");
+    // The connection returns: Try again asks the server, which has never heard of that link.
+    await context.setOffline(false);
+    await page.getByRole("button", { name: "Try again" }).click();
+    await expect(page.getByRole("heading", { name: "This link does not work" })).toBeVisible();
+  } finally {
+    await context.setOffline(false);
+  }
+});
+
 test("Log out needs a connection", async ({ page, context }) => {
   await install(page);
   await reloadOffline(page);
