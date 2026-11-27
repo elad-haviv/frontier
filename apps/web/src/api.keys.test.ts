@@ -53,6 +53,9 @@ describe("which requests carry the keys", () => {
       "/api/lore/draft/check",
       "/api/write/rewrite",
       "/api/characters/say",
+      // Pictures (stage 29): making one, and the dialog's check that this device has a key.
+      "/api/pictures",
+      "/api/pictures?entry=a.md",
       "/api/ai/models?refresh=1",
       "/api/settings/ai/test",
       "/api/proposals/fields",
@@ -263,6 +266,7 @@ describe("the feature a request is for", () => {
     expect(featureOf("/api/lore/c/turns/1/addition")).toBe("Adding to an entry");
     expect(featureOf("/api/write/rewrite")).toBe("Writing help");
     expect(featureOf("/api/characters/say")).toBe("Talking with a character");
+    expect(featureOf("/api/p/alpha/pictures?entry=a.md")).toBe("Pictures for entries");
     expect(featureOf("/api/maps/m/discover")).toBe("Exploring the map");
     expect(featureOf("/api/maps/m/discoveries/d/art")).toBe("Concept art");
     expect(featureOf("/api/comments/c/work")).toBe("Work on it");

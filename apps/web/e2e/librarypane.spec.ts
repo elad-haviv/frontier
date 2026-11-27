@@ -261,7 +261,7 @@ test("g l toggles the pane, moving the focus into the tree and back to the Libra
   await expect(page.getByRole("dialog")).toContainText("Show or hide the Library");
   await page.keyboard.press("Escape");
   // Typing "g l" in a field does nothing.
-  await page.getByRole("button", { name: "Search", exact: true }).click();
+  await page.getByRole("button", { name: /^Search\b/ }).click();
   await page.keyboard.type("gl");
   await page.keyboard.press("Escape");
   await expect(pane(page)).toBeVisible();

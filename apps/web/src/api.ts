@@ -140,7 +140,7 @@ const OPEN =
  * needs no key, which is nearly everything, sends none.
  */
 const AI_REQUEST =
-  /^\/api\/(lore|write|characters|keep-going\/(?:whats-missing|question)|ai\/models|settings\/ai\/test|proposals\/(fields|job)|maps\/[^/?]+\/(discover|generate|discoveries\/[^/?]+\/art)|comments\/[^/?]+\/work)(?:[/?]|$)/;
+  /^\/api\/(lore|write|characters|pictures|keep-going\/(?:whats-missing|question)|ai\/models|settings\/ai\/test|proposals\/(fields|job)|maps\/[^/?]+\/(discover|generate|discoveries\/[^/?]+\/art)|comments\/[^/?]+\/work)(?:[/?]|$)/;
 
 export const needsAiKeys = (url: string): boolean => AI_REQUEST.test(bareUrl(url));
 
@@ -212,6 +212,7 @@ export function featureOf(address: string): string {
   if (/^\/api\/write/.test(url)) return "Writing help";
   if (/^\/api\/characters/.test(url)) return "Talking with a character";
   if (/\/art$/.test(url)) return "Concept art";
+  if (/^\/api\/pictures/.test(url)) return "Pictures for entries";
   if (/^\/api\/maps\//.test(url)) return "Exploring the map";
   if (/^\/api\/comments\//.test(url)) return "Work on it";
   if (/^\/api\/proposals/.test(url)) return "Proposing fields";
