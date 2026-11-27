@@ -31,7 +31,9 @@ import type {
   KeepGoingSettings,
   KeepGoingSettingsRequest,
   CreateProjectRequest,
+  ConfirmResponse,
   CreateInviteResponse,
+  EmailChangeResponse,
   InvitesResponse,
   JoinedResponse,
   JoinInfo,
@@ -121,7 +123,10 @@ export function setDevice(known: { id: string; name: string } | null): void {
 }
 
 /** Routes that answer without a session, whose answers say nothing about the connection's state. */
-const OPEN = /^\/api\/(session|login|passkeys\/login\/|join\/)/;
+// Stage 28: the links in emails (confirm, reset) and "forgot password" answer without a session too,
+// so a refusal on one of them is the page's to word, and never opens the login dialog.
+const OPEN =
+  /^\/api\/(session|login|passkeys\/login\/|join\/|confirm\/|reset\/|forgot-password(?:[/?]|$))/;
 
 /**
  * The requests that can lead to an AI call (stage 27f). Only these carry this device's AI keys,
@@ -468,6 +473,9 @@ const basePost = <T>(url: string, body?: unknown, signal?: AbortSignal) =>
       : { headers: { "content-type": "application/json" }, body: JSON.stringify(body) }),
   });
 
+/** `?m=<proof>` for the calls of an emailed invitation; nothing for a link copied by hand. */
+const proof = (m: string | null | undefined): string => (m ? `?m=${encodeURIComponent(m)}` : "");
+
 const serverApi = {
   session: () => baseCall<SessionResponse>("/api/session"),
   /** The person logged in, with the ways their account signs in. */
@@ -499,24 +507,62 @@ const serverApi = {
   unlinkGoogle: () => baseSend<{ ok: true }>("DELETE", "/api/me/google"),
   // ---- Joining a project by an invite link (stage 27c): public, no project is open -----------
 
-  /** What an invite link is for, or why it no longer works (the error carries `inviter`). */
-  joinInfo: (code: string) => baseCall<JoinInfo>(`/api/join/${encodeURIComponent(code)}`),
+  /**
+   * What an invite link is for, or why it no longer works (the error carries `inviter`). `m` is
+   * the proof from an emailed link (`?m=`): with it the answer holds the address it was sent to.
+   * Every call about one invitation carries it, so the server can tell the emailed link from a copy.
+   */
+  joinInfo: (code: string, m?: string | null) =>
+    baseCall<JoinInfo>(`/api/join/${encodeURIComponent(code)}${proof(m)}`),
   /** A new person joins with an email and a password, and is logged in. */
-  joinWithPassword: (code: string, who: { name: string; email: string; password: string }) =>
-    basePost<JoinedResponse>(`/api/join/${encodeURIComponent(code)}`, who),
+  joinWithPassword: (
+    code: string,
+    who: { name: string; email: string; password: string },
+    m?: string | null,
+  ) => basePost<JoinedResponse>(`/api/join/${encodeURIComponent(code)}${proof(m)}`, who),
   /** A new person joins with a passkey made on this device, and is logged in. */
-  joinWithPasskey: async (code: string, who: { name: string; email: string }) => {
+  joinWithPasskey: async (
+    code: string,
+    who: { name: string; email: string },
+    m?: string | null,
+  ) => {
     const base = `/api/join/${encodeURIComponent(code)}/passkey`;
     const optionsJSON = await basePost<Parameters<typeof startRegistration>[0]["optionsJSON"]>(
-      `${base}/options`,
+      `${base}/options${proof(m)}`,
       who,
     );
     const response = await startRegistration({ optionsJSON });
-    return basePost<JoinedResponse>(`${base}/verify`, { response, passkeyName: "This device" });
+    return basePost<JoinedResponse>(`${base}/verify${proof(m)}`, {
+      response,
+      passkeyName: "This device",
+    });
   },
   /** A person who is logged in takes the invitation into their own account. */
-  acceptInvite: (code: string) =>
-    basePost<JoinedResponse>(`/api/join/${encodeURIComponent(code)}/accept`),
+  acceptInvite: (code: string, m?: string | null) =>
+    basePost<JoinedResponse>(`/api/join/${encodeURIComponent(code)}/accept${proof(m)}`),
+  // ---- Email (stage 28) -----------------------------------------------------------------------
+
+  /**
+   * Asks to change the address. The current password is sent when the account has one that works;
+   * without one the server asks for a login from the last few minutes (`recent_login_needed`).
+   */
+  changeEmail: (email: string, password?: string) =>
+    basePost<EmailChangeResponse>("/api/me/email", { email, ...(password ? { password } : {}) }),
+  /** Takes back a change of address that waits for its link. */
+  cancelEmailChange: () => baseSend<{ ok: true }>("DELETE", "/api/me/email/pending"),
+  /** Sends the confirm link again (to the new address while a change waits). */
+  resendEmail: () => basePost<EmailChangeResponse>("/api/me/email/resend"),
+  /** Opens a confirm link: once, when its page loads. Never starts or changes a session. */
+  confirmEmail: (code: string) =>
+    basePost<ConfirmResponse>(`/api/confirm/${encodeURIComponent(code)}`),
+  /** Asks for a reset link. The answer is the same for every address that is well formed. */
+  forgotPassword: (email: string) => basePost<{ ok: true }>("/api/forgot-password", { email }),
+  /** Whether a reset link still works (410 `link_invalid` when it does not). */
+  checkReset: (code: string) =>
+    baseCall<{ ok: true }>(`/api/reset/${encodeURIComponent(code)}`, { cache: "no-store" }),
+  /** Sets the new password through a reset link: nobody is logged in by it. */
+  resetPassword: (code: string, password: string) =>
+    basePost<{ ok: true }>(`/api/reset/${encodeURIComponent(code)}`, { password }),
   removePasskey: (id: string) =>
     baseSend<{ ok: true }>("DELETE", `/api/passkeys/${encodeURIComponent(id)}`),
   passwordOff: (off: boolean) =>
@@ -625,7 +671,12 @@ function projectCalls(slugOf: () => string) {
       send<RemoveMemberResponse>("DELETE", `/members/${encodeURIComponent(id)}`),
     leaveProject: () => post<RemoveMemberResponse>("/members/leave"),
     invites: () => call<InvitesResponse>("/invites"),
-    createInvite: (role: ProjectRole) => post<CreateInviteResponse>("/invites", { role }),
+    /** With `email` the server mails the link (409 `mail_off` where it cannot); the link comes back either way. */
+    createInvite: (role: ProjectRole, email?: string) =>
+      post<CreateInviteResponse>("/invites", { role, ...(email ? { email } : {}) }),
+    /** Makes a new link for a waiting invitation, cancels the old one and mails the new one. */
+    resendInvite: (id: string) =>
+      post<CreateInviteResponse>(`/invites/${encodeURIComponent(id)}/resend`),
     cancelInvite: (id: string) =>
       send<{ ok: true }>("DELETE", `/invites/${encodeURIComponent(id)}`),
     tree: () => call<TreeResponse>("/tree"),

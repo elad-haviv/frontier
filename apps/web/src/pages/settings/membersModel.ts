@@ -3,7 +3,7 @@
  * how long an invite link has left, when a person was last here, what a role may do, and what
  * the server's refusals mean for the person reading them.
  */
-import type { MemberRow, ProjectRole } from "@frontier/schema";
+import type { InviteSummary, MemberRow, ProjectRole } from "@frontier/schema";
 
 /** What each role may do, in the key under the invite box and on the join page. */
 export const ROLE_MAY: Record<ProjectRole, string> = {
@@ -62,4 +62,56 @@ export function isOnlyOwner(
 export function peopleLine(count: number, project: string, owner: boolean): string {
   if (count <= 1) return owner ? "Only you so far. Invite someone below." : "Only you so far.";
   return `${count} people can open ${project}.`;
+}
+
+// ---- Invitations that are emailed (stage 28) -------------------------------------------------
+
+/** The sentence under a link just made: who it is for and how it works. */
+export function inviteNote(role: ProjectRole, mailOn: boolean | null): string {
+  const first = `Send it to one person, who joins as ${withArticle(ROLE_LABEL[role])}. It works once, for 7 days.`;
+  return mailOn
+    ? `${first} Anyone who opens it can join with it, whoever you send it to. It will not show this link again once you make another or close this page, so copy it now.`
+    : `${first} Frontier sends no mail, and it will not show this link again once you make another or close this page, so copy it now.`;
+}
+
+const ROLE_LABEL: Record<ProjectRole, string> = {
+  owner: "Owner",
+  writer: "Writer",
+  reader: "Reader",
+};
+
+/** Words for a refusal of an emailed invitation, in the app's plain voice. */
+export function inviteFailure(code: string, message: string): string {
+  switch (code) {
+    case "rate_limited":
+      return "Too many invitations were emailed this hour. Try again later.";
+    case "mail_off":
+      return "This server cannot send email, so copy the link and send it yourself.";
+    case "invalid":
+      return "That doesn't look like an email address.";
+    case "invite_used":
+      return "That invitation was already used, so it cannot be sent again.";
+    case "invite_cancelled":
+    case "invite_expired":
+      return "That invitation has run out or was cancelled. Make a new one.";
+    case "not_found":
+      return "That invitation is gone. The list shows what is waiting.";
+    default:
+      return message || "That did not work. Try again.";
+  }
+}
+
+/** What a waiting invitation says about where it was emailed; null for a link made without an address. */
+export function sentLine(invite: Pick<InviteSummary, "sentTo" | "mail">): string | null {
+  if (!invite.sentTo) return null;
+  if (invite.mail === "failed") return `Could not send to ${invite.sentTo}`;
+  if (invite.mail === null) return `Sending to ${invite.sentTo}…`;
+  return `Sent to ${invite.sentTo}`;
+}
+
+/** What Resend said, once the new link is made. */
+export function resentWords(sentTo: string, mail: "sent" | "failed" | null): string {
+  return mail === "failed"
+    ? `We made a new link but could not send the email to ${sentTo}. The earlier link no longer works. Copy the new one and send it yourself.`
+    : `Sent again to ${sentTo}. The earlier link no longer works; this one lasts 7 days.`;
 }

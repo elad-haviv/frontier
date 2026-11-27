@@ -4,6 +4,7 @@ import { api, ApiFailure } from "../api.ts";
 import { loadMe, useMe } from "../me.ts";
 import { noteSignedIn } from "../offline/start.ts";
 import { connection, useConnection } from "../sync/connection.ts";
+import { useLocation } from "../nav.tsx";
 import { queue } from "../sync/queue.ts";
 import { DialogFrame } from "./Dialogs.tsx";
 import { Icon } from "./ui/Icon.tsx";
@@ -60,6 +61,10 @@ export async function withRecentLogin<T>(work: () => Promise<T>): Promise<T> {
  */
 export function LoginDialog() {
   const { state } = useConnection();
+  // The page that sets a new password has no use for a login: a reset ends this browser's own
+  // session, and the 401 that follows must not put this form over the "Done" page, which has its
+  // own Log in button.
+  const onReset = useLocation().pathname.startsWith("/reset/");
   const [closed, setClosed] = useState(false);
   // The person who was logged in is the one logging in again: their email is already here.
   const known = useMe();
@@ -96,6 +101,7 @@ export function LoginDialog() {
   }, []);
 
   // Being signed out is shown until the person says "Not now"; the ask for a recent login is not.
+  if (onReset && !recent) return null;
   if (out ? closed && !recent : !recent) return null;
 
   function finish(loggedIn: boolean) {

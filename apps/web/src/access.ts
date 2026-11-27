@@ -98,6 +98,9 @@ export interface MadeInvite {
   id: string;
   url: string;
   role: "reader" | "writer" | "owner";
+  /** Stage 28: where it was emailed and whether the mail went; absent or null for a link made without an address. */
+  sentTo?: string | null;
+  mail?: "sent" | "failed" | null;
 }
 /** In memory only, never in storage: a link is a key, and it stays in this tab until logout. */
 const inviteLinks = new Map<string, MadeInvite>();

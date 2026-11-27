@@ -45,6 +45,7 @@ import {
   writePrefs,
 } from "./shell/panels.tsx";
 import { useFocusTrap } from "./shell/useFocusTrap.ts";
+import { ConfirmBanner } from "../email/ConfirmBanner.tsx";
 import { UpdateBar } from "./UpdateBar.tsx";
 import { DeviceNotices } from "./InstallCard.tsx";
 import "./Shell.css";
@@ -442,6 +443,7 @@ export function Shell({ children }: { children: ReactNode }) {
                 )}
                 <Panel id="main" minSize="30%" className="shell-main">
                   <UpdateBar />
+                  <ConfirmBanner />
                   <DeviceNotices />
                   <main className="content">{children}</main>
                 </Panel>

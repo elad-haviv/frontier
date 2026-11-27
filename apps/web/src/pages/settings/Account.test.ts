@@ -195,3 +195,35 @@ describe("Settings → Signing in, and Google", () => {
     }
   });
 });
+
+describe("Settings → Signing in: the email address (stage 28)", () => {
+  it("puts the Email address block first, with the state of the address, when the server sends mail", async () => {
+    const m = await show(
+      me({
+        emailInfo: {
+          mailOn: true,
+          status: "unconfirmed",
+          confirmedBy: null,
+          confirmedAt: null,
+          sent: { at: "2026-11-27T10:00:00.000Z", ok: true },
+          pending: null,
+          needsAddress: false,
+        },
+      }),
+    );
+    const headings = [...m.host.querySelectorAll("h2")].map((h) => h.textContent);
+    expect(headings[0]).toBe("Email address");
+    expect(m.one("[data-testid=email-block]").textContent).toContain("olive@example.com");
+    expect(m.one("[data-testid=email-block] .tag").textContent).toBe("Unconfirmed");
+    expect(m.withText("button", "Resend link")).not.toBeNull();
+    expect(m.withText("button", "Change address")).not.toBeNull();
+  });
+
+  it("shows the plain address and Change address with mail off", async () => {
+    const m = await show(me());
+    expect(m.one("[data-testid=email-block]").textContent).toContain("olive@example.com");
+    expect(m.host.querySelector("[data-testid=email-block] .tag")).toBeNull();
+    expect(m.withText("button", "Resend link")).toBeNull();
+    expect(m.withText("button", "Change address")).not.toBeNull();
+  });
+});

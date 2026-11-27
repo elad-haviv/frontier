@@ -18,17 +18,25 @@ import {
   ACCOUNT_EXISTS,
   AI_KEY_NOTE,
   deadLink,
+  emailHint,
   googleProblem,
   inviteHeading,
+  joinAddress,
   joinFailure,
   projectCounts,
+  proofOf,
   ROLE_ALLOWS,
 } from "./joinModel.ts";
 import "./Join.css";
 
 type Load =
   | { state: "loading" }
-  | { state: "ready"; info: JoinInfo; person: { id: string; name: string; email: string } | null }
+  | {
+      state: "ready";
+      info: JoinInfo;
+      person: { id: string; name: string; email: string } | null;
+      mail: boolean;
+    }
   | { state: "dead"; code: string; inviter: string | undefined }
   | { state: "failed"; code: string; message: string };
 
@@ -60,10 +68,17 @@ export function JoinPage({
   const location = useLocation();
   // The reason a Google trip came back is said once, and taken off the address.
   const [problem] = useState(() => new URLSearchParams(location.search).get("problem"));
+  // The proof from an emailed link (`?m=`, stage 28) goes with every call about this invitation.
+  // It stays in the address, so a reload keeps it; taking the problem off keeps it too.
+  const [m] = useState(() => proofOf(location.search));
   useEffect(() => {
     if (!new URLSearchParams(location.search).has("problem")) return;
     void navigate(
-      { pathname: location.pathname, search: "", hash: location.hash },
+      {
+        pathname: location.pathname,
+        search: m ? `?m=${encodeURIComponent(m)}` : "",
+        hash: location.hash,
+      },
       { replace: true },
     );
   }, []);
@@ -80,12 +95,13 @@ export function JoinPage({
     setLoad({ state: "loading" });
     void (async () => {
       try {
-        const [info, session] = await Promise.all([api.joinInfo(code), api.session()]);
+        const [info, session] = await Promise.all([api.joinInfo(code, m), api.session()]);
         if (!live) return;
         setLoad({
           state: "ready",
           info,
           person: session.loggedIn && session.person ? session.person : null,
+          mail: session.mail,
         });
       } catch (err) {
         if (!live) return;
@@ -163,6 +179,8 @@ export function JoinPage({
             code={code}
             info={load.info}
             person={load.person}
+            mail={load.mail}
+            m={m}
             problem={problem}
             onJoined={done}
             onDead={dead}
@@ -192,6 +210,8 @@ function Invitation({
   code,
   info,
   person,
+  mail,
+  m,
   problem,
   onJoined,
   onDead,
@@ -200,6 +220,10 @@ function Invitation({
   code: string;
   info: JoinInfo;
   person: { id: string; name: string; email: string } | null;
+  /** Whether the server sends mail (stage 28). */
+  mail: boolean;
+  /** The proof from an emailed link, carried on every call about the invitation. */
+  m: string | null;
   problem: string | null;
   onJoined: (
     slug: string,
@@ -217,7 +241,8 @@ function Invitation({
     problem === "account_exists" ? "login" : "join",
   );
   const [typedName, setTypedName] = useState("");
-  const [email, setEmail] = useState("");
+  // The address the invitation was emailed to, when the link is the emailed one: filled in.
+  const [email, setEmail] = useState(info.email ?? "");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState<null | "passkey" | "password" | "accept" | "login">(null);
   const [error, setError] = useState<string | null>(googleProblem(problem));
@@ -230,7 +255,7 @@ function Invitation({
     email?: string;
     password?: string;
   }>({});
-  const logout = useLogoutAction(`/join/${code}`);
+  const logout = useLogoutAction(joinAddress(code, m));
   const accepted = useRef(false);
   const ids = { name: useId(), email: useId(), password: useId() };
   const nameField = useRef<HTMLInputElement>(null);
@@ -260,7 +285,7 @@ function Invitation({
     setBusy("accept");
     setError(null);
     try {
-      const joined = await api.acceptInvite(code);
+      const joined = await api.acceptInvite(code, m);
       await onJoined(joined.project, joined.role, name, false);
     } catch (err) {
       if (err instanceof ApiFailure && err.code === "already_member" && err.project) {
@@ -329,10 +354,11 @@ function Invitation({
     if (!check(false)) return;
     setBusy("passkey");
     try {
-      const joined = await api.joinWithPasskey(code, {
-        name: typedName.trim(),
-        email: email.trim(),
-      });
+      const joined = await api.joinWithPasskey(
+        code,
+        { name: typedName.trim(), email: email.trim() },
+        m,
+      );
       await onJoined(joined.project, joined.role, name, true);
     } catch (err) {
       failed(err, "The passkey was not made. Try again, or join another way.");
@@ -345,11 +371,11 @@ function Invitation({
     if (!check(true)) return;
     setBusy("password");
     try {
-      const joined = await api.joinWithPassword(code, {
-        name: typedName.trim(),
-        email: email.trim(),
-        password,
-      });
+      const joined = await api.joinWithPassword(
+        code,
+        { name: typedName.trim(), email: email.trim(), password },
+        m,
+      );
       await onJoined(joined.project, joined.role, name, true);
     } catch (err) {
       failed(err, "Joining did not work. Try again.");
@@ -388,14 +414,14 @@ function Invitation({
       return;
     }
     try {
-      const joined = await api.acceptInvite(code);
+      const joined = await api.acceptInvite(code, m);
       await onJoined(joined.project, joined.role, name, true);
     } catch (err) {
       if (err instanceof ApiFailure && err.code === "already_member" && err.project) {
         await onJoined(err.project, role, name, true, true);
         return;
       }
-      reload(`/join/${encodeURIComponent(code)}`);
+      reload(joinAddress(code, m));
     }
   }
 
@@ -457,6 +483,8 @@ function Invitation({
         error={error}
         notice={switched}
         google={info.google}
+        mail={mail}
+        m={m}
         passkeysHere={passkeys}
         onBack={() => {
           comingBack.current = true;
@@ -471,6 +499,7 @@ function Invitation({
   }
 
   const invalid = (field: "name" | "email" | "password") => (fieldErrors[field] ? true : undefined);
+  const hint = emailHint({ mail, emailed: info.email, typed: email });
   return (
     <>
       {head}
@@ -499,13 +528,22 @@ function Invitation({
           autoComplete="email"
           value={email}
           aria-invalid={invalid("email")}
-          aria-describedby={fieldErrors.email ? `${ids.email}-e` : undefined}
+          aria-describedby={
+            [fieldErrors.email ? `${ids.email}-e` : null, hint ? `${ids.email}-h` : null]
+              .filter(Boolean)
+              .join(" ") || undefined
+          }
           onChange={(e) => setEmail(e.target.value)}
           onKeyDown={enter}
         />
         {fieldErrors.email && (
           <em id={`${ids.email}-e`} className="field-error" role="alert">
             {fieldErrors.email}
+          </em>
+        )}
+        {hint && (
+          <em id={`${ids.email}-h`} className="join-email-hint" data-testid="email-hint">
+            {hint}
           </em>
         )}
         {info.google && (
@@ -584,6 +622,8 @@ function LoginToJoin({
   error,
   notice,
   google,
+  mail,
+  m,
   passkeysHere,
   onBack,
   onLogin,
@@ -598,6 +638,10 @@ function LoginToJoin({
   /** Why this form is here, when the page turned into it by itself. */
   notice: string | null;
   google: boolean;
+  /** Whether the server sends mail: then "Forgot password?" is offered. */
+  mail: boolean;
+  /** The proof of an emailed link, kept through a trip to Google and back. */
+  m: string | null;
   passkeysHere: boolean;
   onBack: () => void;
   onLogin: (how: () => Promise<unknown>) => void;
@@ -647,7 +691,14 @@ function LoginToJoin({
           type="button"
           className="secondary join-google"
           disabled={busy}
-          onClick={() => window.location.assign(googleStartUrl({ invite: code }))}
+          onClick={() =>
+            window.location.assign(
+              // The invitation always goes with the trip, so a person who logs in with Google
+              // still gets to join: the proof only saved one confirm email, which the server
+              // does without it.
+              googleStartUrl({ invite: code }),
+            )
+          }
         >
           <span className="gm" aria-hidden="true">
             G
@@ -679,6 +730,13 @@ function LoginToJoin({
             value={password}
             onChange={(e) => setPassword(e.target.value)}
           />
+          {mail && (
+            <p className="join-forgot">
+              <Link to="/forgot-password" state={{ from: joinAddress(code, m), email }}>
+                Forgot password?
+              </Link>
+            </p>
+          )}
           {error && (
             <p className="error" role="alert">
               {error}

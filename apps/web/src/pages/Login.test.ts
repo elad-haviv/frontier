@@ -106,3 +106,27 @@ describe("the login page", () => {
     expect(other.host.textContent).not.toContain("has no email yet");
   });
 });
+
+describe("the login page and forgot password (stage 28)", () => {
+  it("offers Forgot password only when the server sends mail and passwords are in use", async () => {
+    const on = await login({ mail: true });
+    const link = on.withText<HTMLAnchorElement>("a", "Forgot password?");
+    expect(link).not.toBeNull();
+    expect(link!.getAttribute("href")).toBe("/forgot-password");
+    await on.unmount();
+    mounted = null;
+    const off = await login({ mail: false });
+    expect(off.withText("a", "Forgot password?")).toBeNull();
+    await off.unmount();
+    mounted = null;
+    // The password is switched off: there is nothing to reset, and no form to put the link in.
+    const noPassword = await login({ mail: true, password: false });
+    expect(noPassword.withText("a", "Forgot password?")).toBeNull();
+  });
+
+  it("keeps the buttons as they were, the link being a link", async () => {
+    const m = await login({ mail: true });
+    const names = [...m.host.querySelectorAll("button")].map((b) => b.textContent?.trim());
+    expect(names).toEqual(["Use a passkey", "Log in"]);
+  });
+});

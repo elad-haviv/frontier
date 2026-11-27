@@ -115,3 +115,39 @@ export function joinFailure(code: string, message: string): string {
     return "Too many tries from this address. Wait a few minutes, then try again.";
   return message;
 }
+
+/** What the proof from an emailed link looks like: nothing else is carried on to the server. */
+const PROOF = /^[A-Za-z0-9_-]{1,64}$/;
+
+/** The proof (`?m=`) of an emailed invite link, or null for a link copied by hand or a bad one. */
+export function proofOf(search: string): string | null {
+  const m = new URLSearchParams(search).get("m");
+  return m !== null && PROOF.test(m) ? m : null;
+}
+
+/** The address of an invitation's page, keeping the proof of an emailed link so it is not lost. */
+export function joinAddress(code: string, m: string | null): string {
+  return `/join/${encodeURIComponent(code)}${m ? `?m=${encodeURIComponent(m)}` : ""}`;
+}
+
+/** The same address as the server compares them: no case, no spaces. */
+const same = (a: string, b: string): boolean => a.trim().toLowerCase() === b.trim().toLowerCase();
+
+/**
+ * The line under the email field of the join page (stage 28). Only while the server sends mail:
+ * with it off the page looks as it did. `emailed` is the address the invitation was emailed to, which
+ * the server gives only for the emailed link itself.
+ */
+export function emailHint(options: {
+  mail: boolean;
+  emailed: string | null;
+  typed: string;
+}): string | null {
+  const { mail, emailed, typed } = options;
+  if (!mail) return null;
+  if (emailed && same(typed, emailed))
+    return "Your invitation was emailed to this address, so it counts as confirmed.";
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(typed.trim())
+    ? "We will email a link to confirm it. You can start right away."
+    : null;
+}

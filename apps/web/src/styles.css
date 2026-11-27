@@ -282,6 +282,10 @@ button.plain {
   color: var(--ink-faint);
   font-size: 0.85rem;
 }
+.login-card .login-forgot {
+  margin: -0.2rem 0 0;
+  font-size: 0.85rem;
+}
 .login-card .login-note {
   margin: 0.8rem 0 0;
   font-family: var(--sans);

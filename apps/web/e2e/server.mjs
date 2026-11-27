@@ -8,13 +8,16 @@ import { clearTimeout, setTimeout } from "node:timers";
 import { fileURLToPath } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const dataDir = join(here, "..", "..", "..", ".e2e-data");
+// A second server for the mail specs (stage 28) keeps its own folder, so the two never share a vault.
+const dataDir = join(here, "..", "..", "..", process.env.E2E_DATA ?? ".e2e-data");
 rmSync(dataDir, { recursive: true, force: true });
 
 Object.assign(process.env, {
   FRONTIER_SAMPLE_VAULT: "1",
   DATA_DIR: dataDir,
-  PUBLIC_URL: `http://localhost:${process.env.PORT}`,
+  // Links in emails are made from this address. The mail server answers on 127.0.0.1, not
+  // localhost, so its cookies are never the main server's: cookies ignore the port.
+  PUBLIC_URL: process.env.E2E_ORIGIN ?? `http://localhost:${process.env.PORT}`,
   SESSION_KEY: Buffer.alloc(32, 9).toString("base64"),
   FRONTIER_INITIAL_PASSWORD: "browser-test-password",
   FRONTIER_INITIAL_EMAIL: "owner@example.com",

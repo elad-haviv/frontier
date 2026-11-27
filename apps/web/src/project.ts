@@ -66,7 +66,8 @@ export function useProjectRef(): ProjectRef | null {
 }
 
 /** Addresses that are not a project's: they are what they say, in or out of a project. */
-const OUTSIDE = /^\/(?:p\/|projects(?:[/?#]|$)|login(?:[/?#]|$)|join(?:[/?#]|$))/;
+const OUTSIDE =
+  /^\/(?:p\/|projects(?:[/?#]|$)|login(?:[/?#]|$)|join(?:[/?#]|$)|confirm(?:[/?#]|$)|reset(?:[/?#]|$)|forgot-password(?:[/?#]|$))/;
 
 /** `/p/<slug>`, the front of every address of a project. */
 export const projectRoot = (slug: string): string => `/p/${encodeURIComponent(slug)}`;
@@ -119,5 +120,5 @@ export function movedInto(
 
 /** Whether an address belongs to no project and is not one of the old addresses either. */
 export function isOutsideProject(pathname: string): boolean {
-  return /^\/(?:projects|settings|login|join)(?:\/|$)/.test(pathname);
+  return /^\/(?:projects|settings|login|join|confirm|reset|forgot-password)(?:\/|$)/.test(pathname);
 }

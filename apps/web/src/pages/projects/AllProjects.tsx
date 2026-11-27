@@ -9,6 +9,7 @@ import { useCopyText } from "../../components/CopyText.tsx";
 import { ProjectMark } from "../../components/ui/ProjectMark.tsx";
 import { Problem } from "../../components/ui/Problem.tsx";
 import { ROLE_NAMES } from "../../components/projectContext.ts";
+import { useMailOn } from "../../me.ts";
 import { Link } from "../../nav.tsx";
 import { projectRoot } from "../../project.ts";
 import { loadProjects, useOnDevice, useProjects } from "../../projects.ts";
@@ -152,6 +153,7 @@ function StrandedChanges() {
 export function AllProjects() {
   const { list, failed, loading } = useProjects();
   const onDevice = useOnDevice();
+  const mail = useMailOn() === true;
   const [params, setParams] = useSearchParams();
   const making = params.get("new") === "1";
   const lostNotice = useAccessNotice();
@@ -189,8 +191,10 @@ export function AllProjects() {
           <p>You're not in a project yet.</p>
           <p className="muted">
             You join a project with an invite link from one of its owners. Ask an owner to make one
-            for you and send it; opening it brings you in. Frontier sends no mail, so the link comes
-            from them.
+            for you and send it; opening it brings you in.{" "}
+            {mail
+              ? "They can have Frontier email it to you."
+              : "Frontier sends no mail, so the link comes from them."}
           </p>
         </div>
       ) : (

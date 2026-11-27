@@ -1,15 +1,7 @@
-import type { InviteSummary, MemberRow, MembersResponse, ProjectRole } from "@frontier/schema";
-import { Copy, Link2, X } from "lucide-react";
+import type { MemberRow, MembersResponse, ProjectRole } from "@frontier/schema";
+import { X } from "lucide-react";
 import { useCallback, useEffect, useId, useRef, useState } from "react";
-import {
-  clearAccessNotice,
-  isLeaving,
-  markLeaving,
-  recalledInviteLink,
-  rememberInviteLink,
-  unmarkLeaving,
-  type MadeInvite,
-} from "../../access.ts";
+import { clearAccessNotice, isLeaving, markLeaving, unmarkLeaving } from "../../access.ts";
 import { api, ApiFailure } from "../../api.ts";
 import { useDialogs } from "../../components/Dialogs.tsx";
 import { ROLE_NAMES, useProject, useRole } from "../../components/projectContext.ts";
@@ -28,12 +20,12 @@ import {
   LAST_OWNER,
   lastActive,
   peopleLine,
-  ROLE_MAY,
   ROLE_ORDER,
-  timeLeft,
   withArticle,
 } from "./membersModel.ts";
+import { Invites } from "./Invites.tsx";
 import { message } from "./shared.tsx";
+import "../../email/email.css";
 import "./members.css";
 
 /** The server's words for a refusal, with the one the person can act on put plainly. */
@@ -232,7 +224,23 @@ function Row({
           <b>{member.name}</b>
           {member.you && <span className="tag member-you">You</span>}
         </span>
-        <small>{[member.email, lastActive(member.lastActiveAt)].filter(Boolean).join(" · ")}</small>
+        <small>
+          {member.email ? (
+            <>
+              {member.email}
+              {member.unconfirmed && (
+                <span
+                  className="tag tag-unconfirmed"
+                  title={`${member.email} has not been confirmed yet`}
+                >
+                  Unconfirmed
+                </span>
+              )}
+              {" · "}
+            </>
+          ) : null}
+          {lastActive(member.lastActiveAt)}
+        </small>
       </span>
       {owner ? (
         asking ? (
@@ -367,259 +375,5 @@ function Leave({ members }: { members: MemberRow[] }) {
         </p>
       )}
     </div>
-  );
-}
-
-/** Invite links: make one, copy it, and the ones still waiting. Owners only. */
-function Invites({ projectName }: { projectName: string }) {
-  const project = useProject();
-  const dialogs = useDialogs();
-  const toast = useToast();
-  const offline = useNeedsConnection();
-  const [role, setRole] = useState<ProjectRole>("writer");
-  // The link just made is the server's one showing, so it is kept in memory (never in storage)
-  // while the person moves between the sections of Settings in this tab.
-  const [link, setLinkNow] = useState<MadeInvite | null>(() => recalledInviteLink(project.id));
-  const setLink = (next: MadeInvite | null) => {
-    rememberInviteLink(project.id, next);
-    setLinkNow(next);
-  };
-  const [waiting, setWaiting] = useState<{ list: InviteSummary[]; at: number } | null>(null);
-  const [listError, setListError] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [cancelling, setCancelling] = useState<string | null>(null);
-  const [said, setSaid] = useState("");
-  // Time left is worked out from when the list was read, and moves on each minute.
-  const [now, setNow] = useState(() => Date.now());
-  const box = useRef<HTMLSpanElement>(null);
-  const [byHand, setByHand] = useState(false);
-  const area = useRef<HTMLTextAreaElement>(null);
-  const roleId = useId();
-  const live = useRef(true);
-  useEffect(
-    () => () => {
-      live.current = false;
-    },
-    [],
-  );
-  useEffect(() => {
-    const timer = window.setInterval(() => setNow(Date.now()), 60_000);
-    return () => window.clearInterval(timer);
-  }, []);
-
-  const reload = useCallback(async () => {
-    try {
-      const read = (await api.invites()).invites;
-      if (!live.current) return;
-      setWaiting({ list: read, at: Date.now() });
-      setNow(Date.now());
-      setListError(null);
-    } catch (err) {
-      if (live.current) setListError(message(err));
-    }
-  }, []);
-  useEffect(() => void reload(), [reload]);
-
-  /** The links that still work, with the seconds each has left now. */
-  const alive =
-    waiting === null
-      ? null
-      : waiting.list
-          .map((w) => ({ ...w, left: w.secondsLeft - Math.floor((now - waiting.at) / 1000) }))
-          .filter((w) => w.left > 0);
-
-  async function make() {
-    setError(null);
-    // The link on the screen cannot be shown again once it is replaced: say so first.
-    if (link) {
-      const ok = await dialogs.confirm({
-        title: "Make another link?",
-        body: "The link on this page is shown only once, and making another takes it off the screen. It keeps working until someone uses it or you cancel it. Copy it first if you still need it.",
-        action: "Make another link",
-      });
-      if (!ok) return;
-    }
-    // An owner link gives away the project: it is made on purpose, not by a stray press.
-    if (role === "owner") {
-      const ok = await dialogs.confirm({
-        title: "Make a link that joins as an owner?",
-        body: `Whoever uses it can change roles, remove people, make links and delete ${projectName}. Make it only for someone you trust with all of that.`,
-        action: "Make an owner link",
-        danger: true,
-      });
-      if (!ok) return;
-    }
-    setBusy(true);
-    try {
-      const made = await api.createInvite(role);
-      setLink({
-        id: made.id,
-        url: made.url || `${window.location.origin}${made.path}`,
-        role: made.role,
-      });
-      setByHand(false);
-      setSaid("");
-      await reload();
-    } catch (err) {
-      setError(message(err));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  // The browser would not copy: the link is shown in a box, selected, to copy by hand.
-  useEffect(() => {
-    if (!byHand) return;
-    area.current?.focus();
-    area.current?.select();
-  }, [byHand]);
-
-  async function copy() {
-    if (!link) return;
-    try {
-      await navigator.clipboard.writeText(link.url);
-      setByHand(false);
-      toast({ message: "Copied the invite link." });
-    } catch {
-      // No clipboard (an insecure page, a locked-down browser): the link is selected to copy by hand.
-      setByHand(true);
-      toast({ message: "Select the link and copy it." });
-    }
-  }
-
-  async function cancel(invite: InviteSummary) {
-    setCancelling(invite.id);
-    try {
-      await api.cancelInvite(invite.id);
-      // The link just made, cancelled: there is nothing left to copy, so it leaves the screen.
-      if (link?.id === invite.id) setLink(null);
-      setSaid("The invitation was cancelled. Its link no longer works.");
-    } catch (err) {
-      setSaid(message(err));
-    } finally {
-      await reload();
-      if (live.current) setCancelling(null);
-    }
-  }
-
-  return (
-    <>
-      <section className="settings-block members" aria-labelledby="invite-h">
-        <h2 id="invite-h">Invite someone</h2>
-        <div className="invite-box">
-          <div className="invite-line">
-            <label htmlFor={roleId}>They join as</label>
-            <select
-              id={roleId}
-              className="member-role"
-              value={role}
-              onChange={(e) => setRole(e.target.value as ProjectRole)}
-            >
-              {ROLE_ORDER.map((r) => (
-                <option key={r} value={r}>
-                  {ROLE_NAMES[r]}
-                </option>
-              ))}
-            </select>
-            <ActionButton
-              type="button"
-              className="primary"
-              disabled={busy || offline !== undefined}
-              onClick={() => void make()}
-            >
-              <Icon icon={Link2} size="sm" /> Make an invite link
-            </ActionButton>
-          </div>
-          {error && (
-            <p className="error" role="alert">
-              {error}
-            </p>
-          )}
-          {link && (
-            <div className="invite-made" role="group" aria-label="The invite link">
-              <div className="invite-line">
-                {byHand ? (
-                  <textarea
-                    ref={area}
-                    className="linkbox"
-                    data-testid="invite-link"
-                    readOnly
-                    rows={2}
-                    value={link.url}
-                    aria-label="The invite link, selected to copy"
-                    onFocus={(e) => e.currentTarget.select()}
-                  />
-                ) : (
-                  <span className="linkbox" ref={box} data-testid="invite-link">
-                    {link.url}
-                  </span>
-                )}
-                <button type="button" className="quiet" onClick={() => void copy()}>
-                  <Icon icon={Copy} size="sm" /> Copy
-                </button>
-              </div>
-              <p className="muted invite-once">
-                Send it to one person, who joins as {withArticle(ROLE_NAMES[link.role])}. It works
-                once, for 7 days. Frontier sends no mail, and it will not show this link again once
-                you make another or close this page, so copy it now.
-              </p>
-            </div>
-          )}
-          <dl className="roles-key">
-            {([...ROLE_ORDER].reverse() as ProjectRole[]).map((r) => (
-              <div key={r}>
-                <dt>{ROLE_NAMES[r]}</dt>
-                <dd>{ROLE_MAY[r]}</dd>
-              </div>
-            ))}
-          </dl>
-        </div>
-      </section>
-      <section className="settings-block members" aria-labelledby="waiting-h">
-        <h2 id="waiting-h">Invitations waiting</h2>
-        {alive === null ? (
-          listError ? (
-            <Problem reason={listError} retryLabel="Try again" onRetry={() => void reload()} />
-          ) : (
-            <p className="muted">Loading…</p>
-          )
-        ) : alive.length === 0 ? (
-          <p className="muted">No invitations are waiting.</p>
-        ) : (
-          <>
-            {listError && (
-              <Problem reason={listError} retryLabel="Try again" onRetry={() => void reload()} />
-            )}
-            <ul className="people">
-              {alive.map((w) => (
-                <li key={w.id} className="member-row invite-row">
-                  <Icon icon={Link2} />
-                  <span className="member-who">
-                    <b>A link for one {ROLE_NAMES[w.role].toLowerCase()}</b>
-                    <small>
-                      Made by {w.createdBy.name || "an owner"} · not used yet · {timeLeft(w.left)}
-                    </small>
-                  </span>
-                  <ActionButton
-                    type="button"
-                    className="quiet"
-                    disabled={cancelling !== null}
-                    aria-busy={cancelling === w.id || undefined}
-                    aria-label={`Cancel the link for one ${ROLE_NAMES[w.role].toLowerCase()}, made by ${w.createdBy.name || "an owner"}`}
-                    onClick={() => void cancel(w)}
-                  >
-                    {cancelling === w.id ? "Cancelling…" : "Cancel it"}
-                  </ActionButton>
-                </li>
-              ))}
-            </ul>
-          </>
-        )}
-        <div className="said" role="status" aria-live="polite">
-          {said}
-        </div>
-      </section>
-    </>
   );
 }
