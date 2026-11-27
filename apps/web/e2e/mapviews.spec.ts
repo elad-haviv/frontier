@@ -1,13 +1,13 @@
-import { expect, type Page, test } from "@playwright/test";
+import { expect, type Page, test } from "./test.ts";
 import sharp from "sharp";
-import { newMapInForm } from "./helpers.ts";
+import { newMapInForm, proj } from "./helpers.ts";
 
 const IMAGE = "99 Appendices/Images/map one.png";
 
 const makeMap = (page: Page, title: string, kind: "sphere" | "flat") =>
   page.evaluate(
     async ({ title, kind, image }) => {
-      const res = await fetch("/api/maps", {
+      const res = await fetch(`${API}/maps`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ title, kind, image }),
@@ -20,10 +20,10 @@ const makeMap = (page: Page, title: string, kind: "sphere" | "flat") =>
 const cleanUp = (page: Page, maps: string[], chronicles: string[] = []) =>
   page.evaluate(
     async ({ maps, chronicles }) => {
-      for (const id of maps) await fetch(`/api/maps/${id}`, { method: "DELETE" });
-      for (const id of chronicles) await fetch(`/api/chronicles/${id}`, { method: "DELETE" });
-      const un = await (await fetch("/api/unpublished")).json();
-      for (const d of un.drafts) await fetch(`/api/drafts/${d.id}`, { method: "DELETE" });
+      for (const id of maps) await fetch(`${API}/maps/${id}`, { method: "DELETE" });
+      for (const id of chronicles) await fetch(`${API}/chronicles/${id}`, { method: "DELETE" });
+      const un = await (await fetch(`${API}/unpublished`)).json();
+      for (const d of un.drafts) await fetch(`${API}/drafts/${d.id}`, { method: "DELETE" });
     },
     { maps, chronicles },
   );
@@ -38,12 +38,12 @@ const viewOf = (url: string) => decodeURIComponent(new URL(url).searchParams.get
 test("CUJ 18: steps down to a layer under a globe at the same place, and back up", async ({
   page,
 }, info) => {
-  await page.goto("/maps");
+  await page.goto(proj("/maps"));
   const top = await makeMap(page, `Surface ${info.project.name}`, "sphere");
   const layer = await makeMap(page, `Labyrinth ${info.project.name}`, "sphere");
 
   // The layer is set to lie under the surface.
-  await page.goto(`/map/${layer}?edit=1`);
+  await page.goto(proj(`/map/${layer}?edit=1`));
   await page.getByRole("button", { name: "Layers" }).click();
   await page.getByRole("combobox", { name: "This map lies under" }).click();
   await page.getByPlaceholder("Find a map").fill(`Surface ${info.project.name}`);
@@ -54,7 +54,7 @@ test("CUJ 18: steps down to a layer under a globe at the same place, and back up
   await expect(page.locator(".save-saved")).toBeVisible();
 
   // The list says so.
-  await page.goto("/maps");
+  await page.goto(proj("/maps"));
   const row = (title: string) =>
     page.locator(".map-card").filter({ has: page.getByRole("link", { name: title, exact: true }) });
   await expect(row(`Labyrinth ${info.project.name}`)).toContainText(
@@ -63,7 +63,7 @@ test("CUJ 18: steps down to a layer under a globe at the same place, and back up
   await expect(row(`Surface ${info.project.name}`)).toContainText("1 layer below");
 
   // From the surface, turned to some place, Down keeps the place.
-  await page.goto(`/map/${top}?v=g,40,10,200`);
+  await page.goto(proj(`/map/${top}?v=g,40,10,200`));
   await expect(page.locator(".map-top")).toBeVisible();
   const c = await centre(page);
   await page.mouse.move(c.x, c.y);
@@ -111,17 +111,17 @@ test("CUJ 18: steps down to a layer under a globe at the same place, and back up
 test("CUJ 19: a world on a schematic map revolves as the years move, and there is no measuring", async ({
   page,
 }, info) => {
-  await page.goto("/chronicles");
+  await page.goto(proj("/chronicles"));
   const chronicle = await page.evaluate(async (title) => {
     const json = { "content-type": "application/json" };
     const made = await (
-      await fetch("/api/chronicles", {
+      await fetch(`${API}/chronicles`, {
         method: "POST",
         headers: json,
         body: JSON.stringify({ title }),
       })
     ).json();
-    const { chronicle, revision } = await (await fetch(`/api/chronicles/${made.id}`)).json();
+    const { chronicle, revision } = await (await fetch(`${API}/chronicles/${made.id}`)).json();
     const at = (low: number) => ({ words: "", low, high: low });
     const span = (id: string, start: number) => ({
       id,
@@ -136,12 +136,12 @@ test("CUJ 19: a world on a schematic map revolves as the years move, and there i
     });
     chronicle.origin = "begin001";
     chronicle.spans = [span("begin001", 0), span("later001", 1000)];
-    await fetch(`/api/chronicles/${made.id}`, {
+    await fetch(`${API}/chronicles/${made.id}`, {
       method: "PUT",
       headers: json,
       body: JSON.stringify({ chronicle, revision }),
     });
-    await fetch(`/api/chronicles/${made.id}/main`, { method: "POST", headers: json, body: "{}" });
+    await fetch(`${API}/chronicles/${made.id}/main`, { method: "POST", headers: json, body: "{}" });
     return made.id as string;
   }, `Heavens years ${info.project.name}`);
 
@@ -197,9 +197,9 @@ test("CUJ 19: a world on a schematic map revolves as the years move, and there i
 test("CUJ 17: lays a globe flat in Robinson, turns it, tilts it and focuses on a region", async ({
   page,
 }, info) => {
-  await page.goto("/maps");
+  await page.goto(proj("/maps"));
   const id = await makeMap(page, `Atlas ${info.project.name}`, "sphere");
-  await page.goto(`/map/${id}`);
+  await page.goto(proj(`/map/${id}`));
   await expect(page.locator(".map-top")).toBeVisible();
   await expect(page).toHaveURL(/v=g/);
 

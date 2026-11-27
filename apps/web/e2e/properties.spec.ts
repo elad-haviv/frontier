@@ -1,9 +1,9 @@
-import { expect, type Page, test } from "@playwright/test";
-import { discardDraft, edit, entry, rightPanel, saved } from "./helpers.ts";
+import { expect, type Page, test } from "./test.ts";
+import { api, discardDraft, edit, entry, rightPanel, saved } from "./helpers.ts";
 
 /** The text the server holds for an entry: its draft once one is saved. */
 async function serverText(page: Page, path: string): Promise<string> {
-  const res = await page.request.get(`/api/entries?path=${encodeURIComponent(path)}`);
+  const res = await page.request.get(api(`/entries?path=${encodeURIComponent(path)}`));
   return ((await res.json()) as { text: string }).text;
 }
 

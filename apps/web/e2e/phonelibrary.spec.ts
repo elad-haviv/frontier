@@ -1,5 +1,5 @@
-import { expect, type Page, test } from "@playwright/test";
-import { entry, noSidewaysScroll, openSideBar } from "./helpers.ts";
+import { expect, type Page, test } from "./test.ts";
+import { api, entry, noSidewaysScroll, openSideBar, proj } from "./helpers.ts";
 
 // Stage 26: on a phone the library is a row in the drawer's menu and opens as a panel over it.
 
@@ -9,7 +9,7 @@ type Folder = { notes: { path: string }[]; folders: Folder[] };
 
 /** The paths of every entry of the library, from the server's tree. */
 async function allEntries(page: Page): Promise<string[]> {
-  const tree = (await (await page.request.get("/api/tree")).json()) as Folder;
+  const tree = (await (await page.request.get(api("/tree"))).json()) as Folder;
   const walk = (f: Folder): string[] => [...f.notes.map((n) => n.path), ...f.folders.flatMap(walk)];
   return walk(tree);
 }
@@ -271,7 +271,9 @@ test("closing the drawer from the library resets it to the menu", async ({ page,
 
 test("an empty library says so, with a New entry button", async ({ page, isMobile }) => {
   test.skip(!isMobile, "The drawer is the phone's side bar.");
-  await page.route("**/api/tree", (route) => route.fulfill({ json: { folders: [], notes: [] } }));
+  await page.route("**/api/p/*/tree", (route) =>
+    route.fulfill({ json: { folders: [], notes: [] } }),
+  );
   await openPanel(page);
   await expect(panel(page).getByText("No entries yet.")).toBeVisible();
   await panel(page).getByRole("button", { name: "New entry", exact: true }).click();
@@ -283,7 +285,7 @@ test("a library that cannot be read says why inside the panel, with Retry", asyn
   isMobile,
 }) => {
   test.skip(!isMobile, "The drawer is the phone's side bar.");
-  await page.route("**/api/tree", (route) =>
+  await page.route("**/api/p/*/tree", (route) =>
     route.fulfill({ status: 500, json: { error: "The library could not be read." } }),
   );
   await page.goto(entry("README.md"));
@@ -363,7 +365,7 @@ for (const how of ["g h", "the switcher"]) {
     if (how === "g h") {
       await page.keyboard.press("g");
       await page.keyboard.press("h");
-      await expect(page).toHaveURL(/\/$/);
+      await expect(page).toHaveURL(/\/p\/sample$/);
     } else {
       await page.keyboard.press("Control+k");
       await page.locator(".switcher input").fill("mira");
@@ -473,7 +475,7 @@ test("revealing a folder from Home and closing the drawer gives the focus back",
   isMobile,
 }) => {
   test.skip(!isMobile, "The drawer is the phone's side bar.");
-  await page.goto("/");
+  await page.goto(proj("/"));
   const folder = page.getByRole("button", { name: "01 Places", exact: true });
   await folder.click();
   await expect(panel(page)).toBeVisible();

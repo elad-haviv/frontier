@@ -1,5 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
-import { Link, useLocation, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "../nav.tsx";
 import { api, ApiFailure, entryUrl, fromServer, newDraftId, type PassageComment } from "../api.ts";
 import type { EditorView } from "@codemirror/view";
 import { CodeEditor } from "../components/CodeEditor.tsx";
@@ -16,17 +16,19 @@ import { LinkToEntry } from "../components/LinkToEntry.tsx";
 import { closeHelp, openHelp, passageOf, startHelp } from "../components/writing/helpCard.ts";
 import { WritingHelp } from "../components/writing/WritingHelp.tsx";
 import { CommentsPanel } from "../components/CommentsPanel.tsx";
+import { openCount } from "../components/comments/model.ts";
 import { CommentBubbles, useMargin } from "../components/comments/CommentBubbles.tsx";
 import { type Anchor, anchorAt, locate, MIN_QUOTE } from "../components/anchor.ts";
 import { setCommentMarks } from "../components/commentMarks.ts";
 import { Properties } from "../components/Properties.tsx";
-import { useRefresh } from "../components/Shell.tsx";
+import { changesOf } from "../components/comments/model.ts";
+import { useRefresh, useStatus } from "../components/Shell.tsx";
 import { useDialogs } from "../components/Dialogs.tsx";
 import { Menu, MenuItem, MenuSeparator } from "../components/ui/Menu.tsx";
 import { SaveStatus, useSaveState } from "../components/ui/SaveStatus.tsx";
 import { useScope, useShortcut } from "../keys.ts";
 import { recents } from "../keepGoing/recents.ts";
-import { type QueueKey, queue } from "../sync/queue.ts";
+import { type QueueKey } from "../sync/queue.ts";
 import { connection, useNeedsConnection } from "../sync/connection.ts";
 import { OfflineCopy, useReadAgain } from "../components/OfflineCopy.tsx";
 import { entryAddress, markOpened, NOT_ON_DEVICE, servedFromDevice } from "../offline/copy.ts";
@@ -39,6 +41,9 @@ import { PageAction, usePanel, useRightBar } from "../components/shell/panels.ts
 import { useEditorOutline } from "../components/entry/EditorOutline.tsx";
 import { WideMenuItem } from "../components/entry/WideMenuItem.tsx";
 import { useWide } from "../width.ts";
+import { useProjectWork } from "../projectWork.ts";
+import { useOthersUnsaved } from "../people/live.ts";
+import { OthersNotice } from "../people/OthersNotice.tsx";
 import type { PictureSubject } from "../components/images/GeneratePanel.tsx";
 import { pictureBrief } from "../components/images/pictureBrief.ts";
 
@@ -65,6 +70,7 @@ function pathFrom(pathname: string): string {
 }
 
 export function EditPage() {
+  const work = useProjectWork();
   const dialogs = useDialogs();
   const { pathname, search } = useLocation();
   const navigate = useNavigate();
@@ -97,6 +103,8 @@ export function EditPage() {
   const view = useRef<EditorView | null>(null);
   /** When the text was opened from this device's copy, the time that copy was stored. */
   const [offlineAt, setOfflineAt] = useState<number | null>(null);
+  // Someone else's unsaved changes to this entry: whoever saves second compares (stage 31d).
+  const others = useOthersUnsaved(path, undefined, offlineAt !== null);
   /** The server's copy the text was opened from, to see whether a later read differs. */
   const openedFrom = useRef({ id: "", revision: 0, blob: "" });
   // The panels beside the text: Properties and Comments. Writing help opens in the text itself.
@@ -106,7 +114,7 @@ export function EditPage() {
   /** Whether a model is chosen for writing help; null until the server says. */
   const [canWrite, setCanWrite] = useState<boolean | null>(null);
   useEffect(() => {
-    api.conversations().then(
+    work.api.conversations().then(
       (r) => setCanWrite(r.ready),
       () => setCanWrite(false),
     );
@@ -133,15 +141,16 @@ export function EditPage() {
     const text = v.state.doc.toString();
     v.dispatch({
       effects: setCommentMarks.of(
+        // Open threads on a passage are marked; a resolved one, or one on the whole entry, is not.
         list.flatMap((c) => {
-          const at = locate(text, c);
+          const at = c.resolved || !c.quote ? null : locate(text, c);
           return at ? [{ id: c.id, ...at }] : [];
         }),
       ),
     });
   }, []);
   const loadComments = useCallback(async () => {
-    const list = await api.comments(path).then(
+    const list = await work.api.comments(path).then(
       (r) => r.comments,
       () => null,
     );
@@ -190,7 +199,7 @@ export function EditPage() {
       for (const file of files) {
         setMessage(`Adding ${file.name}…`);
         try {
-          const { embed } = await api.upload(file);
+          const { embed } = await work.api.upload(file);
           const v = view.current;
           if (v) {
             const { from, to } = v.state.selection.main;
@@ -218,7 +227,7 @@ export function EditPage() {
     (async () => {
       let text = "";
       try {
-        const entry = await api.entry(path);
+        const entry = await work.api.entry(path);
         if (entry.readOnly) {
           setError("This file is read-only.");
           return;
@@ -241,8 +250,8 @@ export function EditPage() {
           err instanceof ApiFailure && (err.status === 0 || err.code === NOT_ON_DEVICE);
         let rule: OfflineOpen | null = null;
         if (unreachable) {
-          const record = await queue.get(key);
-          const index = await api.graph().catch(() => null);
+          const record = await work.queue.get(key);
+          const index = await work.api.graph().catch(() => null);
           rule = openOrCreate({
             path,
             hasRecord: !!record && record.kind !== "delete",
@@ -285,7 +294,7 @@ export function EditPage() {
         }
       }
       // Text this device has not sent yet is newer than the server's: it is what was typed last.
-      const unsent = await queue.get(key);
+      const unsent = await work.queue.get(key);
       if (unsent && unsent.kind !== "delete") {
         text = String(unsent.value);
         draft.current = {
@@ -326,10 +335,10 @@ export function EditPage() {
   // replaces the one opened if they differ. With a record, the record's base decides on the server.
   useReadAgain(offlineAt, entryAddress(path), () => {
     void (async () => {
-      if (await queue.get(key)) return;
-      const entry = await fromServer(() => api.entry(path)).catch(() => null);
+      if (await work.queue.get(key)) return;
+      const entry = await fromServer(() => work.api.entry(path)).catch(() => null);
       const v = view.current;
-      if (!entry || !v || (await queue.get(key))) return;
+      if (!entry || !v || (await work.queue.get(key))) return;
       setOfflineAt(null);
       const was = openedFrom.current;
       const now = { id: entry.draft?.id ?? "", revision: entry.draft?.revision ?? 0 };
@@ -343,7 +352,7 @@ export function EditPage() {
       latest.current = entry.text;
       v.dispatch({ changes: { from: 0, to: v.state.doc.length, insert: entry.text } });
       // The line above reports a change like typing does; this text is the server's already.
-      await queue.drop(key);
+      await work.queue.drop(key);
       setMessage("Updated from the server.");
     })();
   });
@@ -351,7 +360,7 @@ export function EditPage() {
   // What the queue hears from the server about this file.
   useEffect(
     () =>
-      queue.subscribe(key, (e) => {
+      work.queue.subscribe(key, (e) => {
         if (e.type === "saved") {
           draft.current = {
             ...draft.current,
@@ -377,7 +386,7 @@ export function EditPage() {
       latest.current = text;
       // Kept on this device at once; sent to the server after a second without typing.
       const { id, revision, kind, baseBlob } = draft.current;
-      void queue.put(key, text, { kind, draftId: id, revision, baseBlob });
+      void work.queue.put(key, text, { kind, draftId: id, revision, baseBlob });
       window.clearTimeout(marksTimer.current);
       marksTimer.current = window.setTimeout(() => {
         placeMarks(commentsNow.current);
@@ -390,9 +399,11 @@ export function EditPage() {
   useEffect(() => () => window.clearTimeout(marksTimer.current), []);
 
   // Once the editor holds the text, its comments are found and highlighted.
+  // Read again when the stream says some entry's comments changed (someone commented or replied).
+  const commentChanges = changesOf(useStatus()?.comments, path);
   useEffect(() => {
     if (initial !== null) void loadComments();
-  }, [initial, loadComments]);
+  }, [initial, loadComments, commentChanges]);
 
   function comment() {
     const v = view.current;
@@ -449,7 +460,7 @@ export function EditPage() {
       setMessage("Select some words, or put the cursor in a paragraph, to ask about it.");
       return;
     }
-    void queue.sendNow(key);
+    void work.queue.sendNow(key);
     navigate("/ask", {
       state: { question: `About this passage of "${title}":\n"""\n${at.text}\n"""\n` },
     });
@@ -459,17 +470,17 @@ export function EditPage() {
   // proposed field on another device, and nothing here is unsent, show the server's text.
   useEffect(() => {
     const check = async () => {
-      if (document.visibilityState !== "visible" || (await queue.get(key))) return;
-      const entry = await api.entry(path).catch(() => null);
+      if (document.visibilityState !== "visible" || (await work.queue.get(key))) return;
+      const entry = await work.api.entry(path).catch(() => null);
       const v = view.current;
       if (!entry?.draft || !v || entry.draft.id !== draft.current.id) return;
       if (entry.draft.revision <= draft.current.revision) return;
-      if (latest.current !== v.state.doc.toString() || (await queue.get(key))) return;
+      if (latest.current !== v.state.doc.toString() || (await work.queue.get(key))) return;
       draft.current.revision = entry.draft.revision;
       latest.current = entry.text;
       v.dispatch({ changes: { from: 0, to: v.state.doc.length, insert: entry.text } });
       // The line above reports a change like typing does; this text is the server's already.
-      await queue.drop(key);
+      await work.queue.drop(key);
     };
     const onVisible = () => void check();
     document.addEventListener("visibilitychange", onVisible);
@@ -482,14 +493,14 @@ export function EditPage() {
 
   async function done() {
     // What waits is sent now; without a connection it stays on this device and goes later.
-    await queue.sendNow(key);
+    await work.queue.sendNow(key);
     navigate(entryUrl(path));
   }
 
   // The editor's keys: Ctrl+S sends the text now instead of after the pause, Ctrl+Enter is Done.
   useScope("editor");
   useScope("table");
-  useShortcut("editor.save", () => void queue.sendNow(key));
+  useShortcut("editor.save", () => void work.queue.sendNow(key));
   useShortcut("editor.done", () => void done());
   useShortcut("editor.help", () => {
     if (view.current) startHelp(view.current);
@@ -551,7 +562,7 @@ export function EditPage() {
           id: "comments",
           title: "Comments",
           icon: MessageSquare,
-          ...(comments.length > 0 ? { badge: comments.length } : {}),
+          ...(openCount(comments) > 0 ? { badge: openCount(comments) } : {}),
           render: () =>
             view.current && (
               <CommentsPanel
@@ -628,7 +639,7 @@ export function EditPage() {
       if (!v) return [];
       const text = v.state.doc.toString();
       return comments.flatMap((c) => {
-        const at = locate(text, c);
+        const at = c.resolved || !c.quote ? null : locate(text, c);
         if (!at) return [];
         // Lines out of sight are not drawn; their place is still known from the line heights.
         const top = v.coordsAtPos(at.from)?.top ?? v.documentTop + v.lineBlockAt(at.from).top;
@@ -648,8 +659,9 @@ export function EditPage() {
     if (!ok) return;
     // The unsent text goes first; a send already on its way is waited for, so the draft it
     // makes is the one discarded.
-    await queue.drop(key);
-    if (draft.current.revision > 0) await api.discardDraft(draft.current.id).catch(() => undefined);
+    await work.queue.drop(key);
+    if (draft.current.revision > 0)
+      await work.api.discardDraft(draft.current.id).catch(() => undefined);
     refresh();
     // A new entry that is discarded was never there: nothing remembers it.
     if (draft.current.kind === "create") recents.forget(path);
@@ -673,14 +685,14 @@ export function EditPage() {
     if (!ok) return;
     try {
       if (draft.current.kind === "create") {
-        await queue.drop(key);
-        if (draft.current.revision > 0) await api.discardDraft(draft.current.id);
+        await work.queue.drop(key);
+        if (draft.current.revision > 0) await work.api.discardDraft(draft.current.id);
       } else {
         // The delete goes through the queue like any change, so it is kept until it is sent.
         const { id, revision, baseBlob } = draft.current;
-        await queue.put(key, "", { kind: "delete", draftId: id, revision, baseBlob });
-        await queue.sendNow(key);
-        const refused = await queue.get(key);
+        await work.queue.put(key, "", { kind: "delete", draftId: id, revision, baseBlob });
+        await work.queue.sendNow(key);
+        const refused = await work.queue.get(key);
         if (refused?.state === "attention") {
           setMessage(refused.error ?? "Could not delete.");
           return;
@@ -774,7 +786,7 @@ export function EditPage() {
             aria-pressed={bar.open === "comments"}
             onClick={() => bar.toggle("comments")}
           >
-            Comments{comments.length > 0 ? ` (${comments.length})` : ""}
+            Comments{openCount(comments) > 0 ? ` (${openCount(comments)})` : ""}
           </button>
           {/* On a phone, Done moves into the top line, beside the title. */}
           <PageAction>
@@ -801,6 +813,7 @@ export function EditPage() {
         </span>
       </div>
       <OfflineCopy at={offlineAt} className="editor-offline" />
+      <OthersNotice people={others} editing />
       {stale && (
         <p className="banner" role="alert">
           This entry was changed on another device after this text was started. Both texts are kept.{" "}

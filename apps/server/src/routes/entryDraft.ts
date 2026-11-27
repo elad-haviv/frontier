@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import type { FastifyInstance } from "fastify";
+import type { RouteApp } from "../projects/facade.js";
 import { makeId } from "@frontier/schema";
 import { z } from "zod";
 import { ApiError } from "../errors.js";
@@ -36,7 +36,7 @@ const Keep = z.object({
 /** A note in the draft that no reader sees but the next person reading the file. */
 const marker = (title: string) => `<!-- kept against the lore: ${title.replace(/[<>-]/g, " ")} -->`;
 
-export function entryDraftRoutes(app: FastifyInstance, s: Services): void {
+export function entryDraftRoutes(app: RouteApp, s: Services): void {
   /** A new entry drafted from what the author said. Nothing is saved. */
   app.post("/api/lore/draft", async (request, reply) => {
     const { said } = Said.parse(request.body);

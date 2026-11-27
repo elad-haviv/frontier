@@ -1,17 +1,19 @@
-import { expect, type Page, test } from "@playwright/test";
-import { discardDraft, edit } from "./helpers.ts";
+import { expect, type Page, test } from "./test.ts";
+import { api, discardDraft, edit, giveDeviceKeys, proj, resetPerson } from "./helpers.ts";
 
-// Consult in the editor (stage 24): the AI's opinion in the right side bar. The AI settings are
-// one per server, so these take turns and put the model back as they found it.
+// Consult in the editor (stage 24): the AI's opinion in the right side bar. The AI settings are the
+// signed-in person's own (one account here), so these take turns, and each starts from a clean slate.
 test.describe.configure({ mode: "serial" });
 
 const NOTE = "02 People/Twin.md";
 
 async function conversationModel(page: Page, model: string | null) {
   const res = await page.request.put("/api/settings/ai", {
-    data: { ...(model ? { key: "sk-or-browser-test-key" } : {}), models: { conversation: model } },
+    data: { models: { conversation: model } },
   });
   expect(res.ok(), await res.text()).toBe(true);
+  // The key is the device's own (stage 31f): the stand-in's goes on this browser.
+  if (model) await giveDeviceKeys(page);
 }
 
 let before: string | null = null;
@@ -25,6 +27,11 @@ test.beforeAll(async ({ browser }, info) => {
     .conversation;
   await page.close();
 });
+// A spec before this one may have chosen another model, or left a draft of the entry.
+test.beforeEach(async ({ page }, info) => {
+  if (info.project.name !== "desktop") return;
+  await resetPerson(page, [NOTE]);
+});
 test.afterAll(async ({ browser }, info) => {
   if (info.project.name !== "desktop") return;
   const page = await browser.newPage({
@@ -36,7 +43,10 @@ test.afterAll(async ({ browser }, info) => {
 });
 
 test("with no model chosen, Consult says how to turn it on", async ({ page }, info) => {
-  test.skip(info.project.name !== "desktop", "The AI settings are one per server.");
+  test.skip(
+    info.project.name !== "desktop",
+    "These change the person's AI settings: run at one size only.",
+  );
   await conversationModel(page, null);
   await page.goto(edit(NOTE));
   await page.locator(".cm-content").getByText("The person.").click();
@@ -44,13 +54,16 @@ test("with no model chosen, Consult says how to turn it on", async ({ page }, in
   const panel = page.getByRole("complementary", { name: "Consult" });
   await expect(panel).toContainText("Consult needs an AI model");
   await panel.getByRole("link", { name: "Open Settings" }).click();
-  await expect(page).toHaveURL(/\/settings\/ai\/models\/conversation$/);
+  await expect(page).toHaveURL(/\/settings\/you\/ai-models\/conversation$/);
 });
 
 test("reads the whole entry, jumps to a passage, applies a suggestion and undoes it", async ({
   page,
 }, info) => {
-  test.skip(info.project.name !== "desktop", "The AI settings are one per server.");
+  test.skip(
+    info.project.name !== "desktop",
+    "These change the person's AI settings: run at one size only.",
+  );
   await conversationModel(page, "sample/reader");
   await page.goto(edit(NOTE));
   const text = page.locator(".cm-content");
@@ -97,9 +110,12 @@ test("reads the whole entry, jumps to a passage, applies a suggestion and undoes
 test("keeps its history: a review survives leaving the page, with what was done with each finding", async ({
   page,
 }, info) => {
-  test.skip(info.project.name !== "desktop", "The AI settings are one per server.");
+  test.skip(
+    info.project.name !== "desktop",
+    "These change the person's AI settings: run at one size only.",
+  );
   await conversationModel(page, "sample/reader");
-  await page.request.delete(`/api/write/reviews?path=${encodeURIComponent(NOTE)}`);
+  await page.request.delete(api(`/write/reviews?path=${encodeURIComponent(NOTE)}`));
   await page.goto(edit(NOTE));
   const text = page.locator(".cm-content");
   await text.getByText("The person.").click();
@@ -116,7 +132,7 @@ test("keeps its history: a review survives leaving the page, with what was done 
   await expect(panel.locator(".consult-dismissed")).toContainText("Dismissed (1)");
 
   // Leave and come back: the review is there as it was left, and nothing runs by itself.
-  await page.goto("/");
+  await page.goto(proj("/"));
   await page.goto(edit(NOTE));
   await page.getByRole("tab", { name: "Consult" }).click();
   const back = page.getByRole("complementary", { name: "Consult" });
@@ -150,14 +166,17 @@ test("keeps its history: a review survives leaving the page, with what was done 
   await expect(back.getByRole("button", { name: "Consult", exact: true })).toBeVisible();
   await expect(back.getByText("Latest review")).toHaveCount(0);
   await expect(back.getByRole("button", { name: /History/ })).toHaveCount(0);
-  await page.request.delete(`/api/write/reviews?path=${encodeURIComponent(NOTE)}`);
+  await page.request.delete(api(`/write/reviews?path=${encodeURIComponent(NOTE)}`));
   await discardDraft(page);
 });
 
 test("reads my changes against the published text, and notices the text changed since", async ({
   page,
 }, info) => {
-  test.skip(info.project.name !== "desktop", "The AI settings are one per server.");
+  test.skip(
+    info.project.name !== "desktop",
+    "These change the person's AI settings: run at one size only.",
+  );
   await conversationModel(page, "sample/reader");
   await page.goto(edit(NOTE));
   const text = page.locator(".cm-content");

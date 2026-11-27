@@ -1,0 +1,23 @@
+/* The Comment button that appears beside words selected in an entry. */
+.comment-selection {
+  position: fixed;
+  z-index: 20;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-height: 2.5rem;
+  padding: 0.3rem 0.8rem;
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  background: var(--paper-raised);
+  color: var(--accent);
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 600;
+  box-shadow: 0 2px 8px rgba(20, 16, 10, 0.18);
+  cursor: pointer;
+}
+.comment-selection:hover,
+.comment-selection:focus-visible {
+  background: var(--accent-soft);
+}

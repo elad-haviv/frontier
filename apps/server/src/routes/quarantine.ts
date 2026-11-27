@@ -1,9 +1,9 @@
-import type { FastifyInstance } from "fastify";
+import type { RouteApp } from "../projects/facade.js";
 import { Id, QuarantineDecision } from "@frontier/schema";
 import { z } from "zod";
 import type { Services } from "../app.js";
 
-export function quarantineRoutes(app: FastifyInstance, s: Services): void {
+export function quarantineRoutes(app: RouteApp, s: Services): void {
   const report = () => {
     s.status.drafts(s.drafts.count(), 0);
     s.status.quarantine(s.quarantine.count(), [

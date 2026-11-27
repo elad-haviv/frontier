@@ -1,11 +1,13 @@
 import { createHash, randomBytes } from "node:crypto";
-import type { FastifyInstance } from "fastify";
+import type { RouteApp } from "../projects/facade.js";
 import { makeId } from "@frontier/schema";
 import { isEditable, isNote } from "@frontier/vault";
 import { z } from "zod";
 import { ApiError } from "../errors.js";
 import type { Conversation, Turn } from "../ai/conversations.js";
 import type { Services } from "../app.js";
+import { personOf } from "../auth/session.js";
+import { perProject } from "../projects/context.js";
 
 const IdParam = z.object({ id: z.string().regex(/^[a-z0-9]{12}$/) });
 const RunParam = z.object({ run: z.string().regex(/^[a-f0-9]{32}$/) });
@@ -26,10 +28,15 @@ const hash = (text: string) => createHash("sha256").update(text).digest("hex");
 const appended = (text: string, addition: string) =>
   `${text.replace(/\s*$/, "")}\n\n${addition.trim()}\n`;
 
-export function loreRoutes(app: FastifyInstance, s: Services): void {
+export function loreRoutes(app: RouteApp, s: Services): void {
   // One change at a time to each conversation, so two answers arriving together keep both turns.
-  const queues = new Map<string, Promise<unknown>>();
+  const held = perProject(() => ({
+    queues: new Map<string, Promise<unknown>>(),
+    /** The answers being worked on, by run, so the author can stop one. */
+    runs: new Map<string, AbortController>(),
+  }));
   const inTurn = <T>(id: string, work: () => Promise<T>): Promise<T> => {
+    const { queues } = held();
     const run = (queues.get(id) ?? Promise.resolve()).then(work, work);
     queues.set(
       id,
@@ -38,8 +45,8 @@ export function loreRoutes(app: FastifyInstance, s: Services): void {
     return run;
   };
 
-  const load = async (id: string): Promise<Conversation> => {
-    const c = await s.conversations.get(id);
+  const load = async (person: string, id: string): Promise<Conversation> => {
+    const c = await s.conversations.get(person, id);
     if (!c) throw new ApiError("not_found", "There is no such conversation.");
     return c;
   };
@@ -59,35 +66,35 @@ export function loreRoutes(app: FastifyInstance, s: Services): void {
       ),
     ].filter((p) => !s.index.note(p));
 
-  app.get("/api/lore", async () => ({
-    conversations: (await s.conversations.list()).map((c) => ({
+  app.get("/api/lore", async (request) => ({
+    conversations: (await s.conversations.list(personOf(request).id)).map((c) => ({
       id: c.id,
       title: c.title,
       at: c.turns.at(-1)?.at ?? c.at,
       turns: c.turns.length,
     })),
-    ready: await s.ai.ready("conversation"),
+    ready: await s.ai.modelChosen("conversation"),
   }));
 
   app.get("/api/lore/:id", async (request) => {
-    const c = await load(IdParam.parse(request.params).id);
+    const c = await load(personOf(request).id, IdParam.parse(request.params).id);
     return { conversation: c, gone: gone(c) };
   });
 
   app.post("/api/lore", async (request) => {
     const { question, conversation } = Ask.parse(request.body);
-    const start = conversation ? await load(conversation) : await s.conversations.create(question);
+    await s.lore.model();
+    const start = conversation
+      ? await load(personOf(request).id, conversation)
+      : await s.conversations.create(question);
     return inTurn(start.id, async () => {
-      const c = conversation ? await load(conversation) : start;
+      const c = conversation ? await load(personOf(request).id, conversation) : start;
       const turn = await s.lore.ask(question, c.turns, { entry: `lore:${c.id}` });
       const next = { ...c, turns: [...c.turns, turn] };
-      await s.conversations.save(next);
+      await s.conversations.save(personOf(request).id, next);
       return { conversation: next, gone: gone(next) };
     });
   });
-
-  /** The answers being worked on, by run, so the author can stop one. */
-  const runs = new Map<string, AbortController>();
 
   /**
    * Asks as `POST /api/lore` does, but answers as server-sent events while it works: `run` first,
@@ -97,9 +104,11 @@ export function loreRoutes(app: FastifyInstance, s: Services): void {
    */
   app.post("/api/lore/stream", async (request, reply) => {
     const { question, conversation } = Ask.parse(request.body);
-    const start = conversation ? await load(conversation) : await s.conversations.create(question);
-    // Refused as a plain error while it still can be, before the stream starts.
+    // Refused as a plain error while it still can be, before anything is made or the stream starts.
     await s.lore.model();
+    const start = conversation
+      ? await load(personOf(request).id, conversation)
+      : await s.conversations.create(question);
 
     reply.hijack();
     const res = reply.raw;
@@ -127,24 +136,25 @@ export function loreRoutes(app: FastifyInstance, s: Services): void {
 
     const run = randomBytes(16).toString("hex");
     const stop = new AbortController();
+    const { runs } = held();
     runs.set(run, stop);
     send("run", { run, conversation: start.id });
     try {
       const done = await inTurn(start.id, async () => {
-        const c = conversation ? await load(conversation) : start;
+        const c = conversation ? await load(personOf(request).id, conversation) : start;
         const turn = await s.lore.ask(question, c.turns, {
           entry: `lore:${c.id}`,
           signal: stop.signal,
           onEvent: (e) => send(e.type, e),
         });
         const next = { ...c, turns: [...c.turns, turn] };
-        await s.conversations.save(next);
+        await s.conversations.save(personOf(request).id, next);
         return { conversation: next, gone: gone(next) };
       });
       send("done", done);
     } catch (err) {
       if (err instanceof ApiError) {
-        send("error", { code: err.code, message: err.message });
+        send("error", { code: err.code, message: err.message, ...err.extra });
       } else {
         app.log.error(err);
         send("error", { code: "merge_failed", message: "The server hit an unexpected error." });
@@ -158,13 +168,13 @@ export function loreRoutes(app: FastifyInstance, s: Services): void {
 
   app.post("/api/lore/runs/:run/stop", async (request) => {
     const { run } = RunParam.parse(request.params);
-    runs.get(run)?.abort();
+    held().runs.get(run)?.abort();
     return { ok: true as const };
   });
 
   app.delete("/api/lore/:id", async (request) => {
     const { id } = IdParam.parse(request.params);
-    await inTurn(id, () => s.conversations.remove(id));
+    await inTurn(id, () => s.conversations.remove(personOf(request).id, id));
     return { ok: true as const };
   });
 
@@ -173,7 +183,7 @@ export function loreRoutes(app: FastifyInstance, s: Services): void {
     const { id, n } = TurnParam.parse(request.params);
     const { again } = Draft.parse(request.body ?? {});
     return inTurn(id, async () => {
-      const c = await load(id);
+      const c = await load(personOf(request).id, id);
       const turn = turnOf(c, n);
       if (turn.addition && !again) return { addition: turn.addition, conversation: c };
       const addition = await s.lore.addition(turn, `lore:${id}`);
@@ -181,7 +191,7 @@ export function loreRoutes(app: FastifyInstance, s: Services): void {
         ...c,
         turns: c.turns.map((t, i) => (i === n ? { ...t, addition, kept: null } : t)),
       };
-      await s.conversations.save(next);
+      await s.conversations.save(personOf(request).id, next);
       return { addition, conversation: next };
     });
   });
@@ -231,7 +241,7 @@ export function loreRoutes(app: FastifyInstance, s: Services): void {
   app.post("/api/lore/:id/turns/:n/addition/preview", async (request) => {
     const { id, n } = TurnParam.parse(request.params);
     const { path } = Target.parse(request.body);
-    const turn = turnOf(await load(id), n);
+    const turn = turnOf(await load(personOf(request).id, id), n);
     const placed = await place(turn, path);
     return { path, ...placed, base: hash(placed.before) };
   });
@@ -244,7 +254,7 @@ export function loreRoutes(app: FastifyInstance, s: Services): void {
     const { id, n } = TurnParam.parse(request.params);
     const { path, base } = Keep.parse(request.body);
     return inTurn(id, async () => {
-      const c = await load(id);
+      const c = await load(personOf(request).id, id);
       const turn = turnOf(c, n);
       const placed = await place(turn, path);
       if (hash(placed.before) !== base) {
@@ -272,7 +282,7 @@ export function loreRoutes(app: FastifyInstance, s: Services): void {
           i === n ? { ...t, kept: { path, at: new Date().toISOString() } } : t,
         ),
       };
-      await s.conversations.save(next);
+      await s.conversations.save(personOf(request).id, next);
       return { draft: draft?.id ?? null, conversation: next };
     });
   });

@@ -1,4 +1,4 @@
-import { expect, type Locator, type Page, test } from "@playwright/test";
+import { expect, type Locator, type Page, test } from "./test.ts";
 import {
   discardDraft,
   edit,
@@ -8,6 +8,8 @@ import {
   openEditor,
   rightPanel,
   saved,
+  proj,
+  keyOf,
 } from "./helpers.ts";
 
 // Canvas pixels are not read: the tests act through ?focus=, which centres a node, so once the
@@ -15,7 +17,7 @@ import {
 
 const HARBOR = "01 Places/Harbor/Harbor.md";
 const MIRA = "02 People/Mira.md";
-const graphOn = (path: string) => `/graph?focus=${encodeURIComponent(path)}`;
+const graphOn = (path: string) => proj(`/graph?focus=${encodeURIComponent(path)}`);
 const canvas = (page: Page) => page.locator("canvas.graph-canvas");
 const card = (page: Page) => page.getByRole("region", { name: "Selected entry" });
 
@@ -30,7 +32,7 @@ async function middle(page: Page): Promise<{ x: number; y: number }> {
 
 test("CUJ 1: the whole library, hover, select and open", async ({ page, isMobile }) => {
   test.skip(isMobile, "Hover and the keyboard are for a desktop.");
-  await page.goto("/");
+  await page.goto(proj("/"));
   await goTo(page, "Graph");
   await expect(page).toHaveURL(/\/graph$/);
   await settled(page);
@@ -42,17 +44,17 @@ test("CUJ 1: the whole library, hover, select and open", async ({ page, isMobile
   await expect(card(page)).toContainText("01 Places/Harbor");
 
   // Hovering the node shows its opening in the preview card.
-  const at = await middle(page);
-  await page.mouse.move(at.x - 20, at.y - 20);
-  await page.mouse.move(at.x, at.y, { steps: 4 });
-  await page.mouse.move(at.x + 1, at.y);
+  const mid = await middle(page);
+  await page.mouse.move(mid.x - 20, mid.y - 20);
+  await page.mouse.move(mid.x, mid.y, { steps: 4 });
+  await page.mouse.move(mid.x + 1, mid.y);
   await expect(page.locator(".hover-preview")).toContainText("A town on the grey water");
 
   // Esc clears the selection; a click on the middle selects again.
   await page.keyboard.press("Escape");
   await expect(card(page)).toHaveCount(0);
   await expect(page).toHaveURL(/\/graph$/);
-  await page.mouse.click(at.x, at.y);
+  await page.mouse.click(mid.x, mid.y);
   await expect(card(page)).toContainText("Harbor");
 
   // Enter opens it; Back comes to the graph with it still selected.
@@ -65,7 +67,7 @@ test("CUJ 1: the whole library, hover, select and open", async ({ page, isMobile
 
 test("CUJ 2: find an entry with the keyboard", async ({ page, isMobile }) => {
   test.skip(isMobile, "The keyboard's way is for a desktop.");
-  await page.goto("/graph");
+  await page.goto(proj("/graph"));
   await settled(page);
   await page.keyboard.press("/");
   await expect(page.getByPlaceholder("Find an entry")).toBeFocused();
@@ -80,7 +82,7 @@ test("CUJ 2: find an entry with the keyboard", async ({ page, isMobile }) => {
   await expect(page).toHaveURL(entry("01 Places/Harbor/Old Quay.md"));
 
   // The Entries tab: down one, Enter selects it, Enter again opens it.
-  await page.goto("/graph");
+  await page.goto(proj("/graph"));
   await settled(page);
   const panel = await rightPanel(page, "Entries");
   const list = panel.getByRole("listbox", { name: "Entries on the graph" });
@@ -96,7 +98,7 @@ test("CUJ 2: find an entry with the keyboard", async ({ page, isMobile }) => {
 });
 
 test("CUJ 3: narrow it down by folder", async ({ page }) => {
-  await page.goto("/graph");
+  await page.goto(proj("/graph"));
   await settled(page);
   let panel = await rightPanel(page, "Filters");
   await panel.getByRole("checkbox", { name: "03 Things" }).uncheck();
@@ -112,15 +114,15 @@ test("CUJ 5: on a phone, tap to select and tap again to open, pinch to zoom", as
   isMobile,
 }) => {
   test.skip(!isMobile, "Touch is for a phone.");
-  await page.goto("/");
+  await page.goto(proj("/"));
   await goTo(page, "Graph");
   await expect(page).toHaveURL(/\/graph$/);
 
   // A tap on the selected node opens it.
   await page.goto(graphOn(HARBOR));
   await settled(page);
-  let at = await middle(page);
-  await page.touchscreen.tap(at.x, at.y);
+  let mid = await middle(page);
+  await page.touchscreen.tap(mid.x, mid.y);
   await expect(page).toHaveURL(entry(HARBOR));
 
   // Back: zoomed right out, a tap on empty space clears; zoomed in again, a tap selects.
@@ -134,16 +136,17 @@ test("CUJ 5: on a phone, tap to select and tap again to open, pinch to zoom", as
   await page.touchscreen.tap(box.x + box.width / 4, box.y + box.height / 2);
   await expect(card(page)).toHaveCount(0);
   for (let i = 0; i < 6; i++) await zoomIn.click();
-  at = await middle(page);
-  await page.touchscreen.tap(at.x, at.y);
+  mid = await middle(page);
+  await page.touchscreen.tap(mid.x, mid.y);
   await expect(card(page)).toContainText("Harbor");
 
   // Two fingers moving apart zoom in.
+  const viewKey = await keyOf(page, "frontier.graph.view");
   const zoom = () =>
-    page.evaluate(() => {
-      const raw = sessionStorage.getItem("frontier.graph.view");
+    page.evaluate((key) => {
+      const raw = sessionStorage.getItem(key);
       return raw ? (JSON.parse(raw) as { k: number }).k : 0;
-    });
+    }, viewKey);
   await expect.poll(zoom).toBeGreaterThan(0);
   const before = await zoom();
   const cdp = await page.context().newCDPSession(page);
@@ -154,8 +157,8 @@ test("CUJ 5: on a phone, tap to select and tap again to open, pinch to zoom", as
         type === "touchEnd"
           ? []
           : [
-              { x: at.x - spread, y: at.y - 40, id: 1 },
-              { x: at.x + spread, y: at.y - 40, id: 2 },
+              { x: mid.x - spread, y: mid.y - 40, id: 1 },
+              { x: mid.x + spread, y: mid.y - 40, id: 2 },
             ],
     });
   await fingers("touchStart", 20);

@@ -72,13 +72,10 @@ export class WritingHelper {
     /** Aborts the provider call, as when the author presses Stop. */
     signal?: AbortSignal | undefined;
   }): Promise<string> {
-    const model = (await this.d.settings.read())?.ai.models.conversation;
-    if (!model) {
-      throw new ApiError(
-        "ai_off",
-        "No model is chosen for lore conversations and writing help. Choose one on the settings page.",
-      );
-    }
+    const model = await this.d.provider.chosenModel(
+      "conversation",
+      "lore conversations and writing help",
+    );
     const asked = HOW[input.how] ?? input.how;
     const refine = input.refine;
     const previous = (input.previous ?? []).filter((p) => p.trim() !== "");

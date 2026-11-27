@@ -1,7 +1,7 @@
 import type { AfterPublishStep } from "@frontier/schema";
 import { Dices } from "lucide-react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "../nav.tsx";
 import { entryUrl } from "../api.ts";
 import { openRandom } from "../keepGoing/random.ts";
 import { stepWords } from "../keepGoing/strip.ts";

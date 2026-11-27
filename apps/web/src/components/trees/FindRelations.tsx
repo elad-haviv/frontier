@@ -1,124 +1,119 @@
 import { useEffect, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
-import type { FieldJobState } from "@frontier/schema";
 import { api, ApiFailure } from "../../api.ts";
+import { forgetRun, runFolder, type RunProgress } from "../../folderRun.ts";
+import { useNavigate } from "../../nav.tsx";
+import { projectWork } from "../../projectWork.ts";
 import { reloadRelations } from "../../trees/data.ts";
 import { DialogFrame } from "../Dialogs.tsx";
 import { useRefresh } from "../Shell.tsx";
 
 const WHOLE = "";
 
+type Shown = RunProgress & { end: "running" | "done" | "cancelled" | "stopped"; why?: string };
+
 /**
- * Find relations (stage 31): has the AI read a folder (or the whole library) for relations, with
- * the number of entries and the cost said first. It is the same run as Settings › Propose for a
- * folder, so dates and types are proposed too; it keeps going if the dialog is closed.
+ * Find relations (stage 33): has the AI read a folder (or the whole library) for relations, with
+ * the number of entries and the cost said first. It is the run of Settings › Propose for a folder
+ * (stage 31f), done by this browser one entry at a time with this device's key, so dates and types
+ * are proposed too, and it goes on only while the dialog is open. What is left is kept on this
+ * device and can be continued in Settings.
  */
 export function FindRelations({ onClose, unread }: { onClose: () => void; unread: number }) {
   const refresh = useRefresh();
   const navigate = useNavigate();
   const [folders, setFolders] = useState<string[]>([]);
   const [folder, setFolder] = useState(WHOLE);
-  const [estimate, setEstimate] = useState<{ entries: number; estimateUsd: number | null } | null>(
-    null,
-  );
-  const [money, setMoney] = useState<{ model: string | null; left: number | null }>({
-    model: null,
-    left: null,
-  });
-  const [job, setJob] = useState<FieldJobState | null>(null);
+  const [estimate, setEstimate] = useState<{
+    paths: string[];
+    entries: number;
+    estimateUsd: number | null;
+  } | null>(null);
+  const [model, setModel] = useState<string | null | undefined>(undefined);
+  const [shown, setShown] = useState<Shown | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [started, setStarted] = useState(false);
-  const timer = useRef<number | undefined>(undefined);
+  const stop = useRef<AbortController | null>(null);
   const select = useRef<HTMLSelectElement>(null);
 
   useEffect(() => {
     api.tree().then(
-      (t) => {
-        const top = t.folders.map((f) => f.path).filter((p) => !p.startsWith("99 "));
-        setFolders(top);
-      },
+      (t) => setFolders(t.folders.map((f) => f.path).filter((p) => !p.startsWith("99 "))),
       () => undefined,
     );
     api.settings().then(
-      (s) =>
-        setMoney({
-          model: s.ai.models.extraction?.replace(/^[a-z]+:/, "") ?? null,
-          left: s.ai.monthlyCapUsd > 0 ? Math.max(0, s.ai.monthlyCapUsd - s.ai.spentUsd) : null,
-        }),
-      () => undefined,
+      (s) => setModel(s.ai.models.extraction?.replace(/^[a-z]+:/, "") ?? null),
+      () => setModel(null),
     );
-    // A run already going is shown as it is.
-    api.fieldJob().then(
-      (j) => {
-        if (j.state === "running") {
-          setJob(j);
-          setStarted(true);
-        }
-      },
-      () => undefined,
-    );
-    return () => window.clearTimeout(timer.current);
+    // Closing the dialog ends the run between two entries; the rest is kept for Settings.
+    return () => stop.current?.abort();
   }, []);
 
   useEffect(() => {
-    if (started) return;
+    if (shown) return;
     setEstimate(null);
     api
-      .estimateJob(folder)
+      .listJob(folder)
       .then(setEstimate, (err: unknown) =>
         setError(err instanceof ApiFailure ? err.message : "The entries could not be counted."),
       );
-  }, [folder, started]);
-
-  useEffect(() => {
-    if (!started) return;
-    const poll = async () => {
-      try {
-        const j = await api.fieldJob();
-        setJob(j);
-        if (j.state === "running") timer.current = window.setTimeout(() => void poll(), 1000);
-        else {
-          refresh();
-          await reloadRelations();
-        }
-      } catch {
-        timer.current = window.setTimeout(() => void poll(), 2000);
-      }
-    };
-    void poll();
-    return () => window.clearTimeout(timer.current);
-  }, [started]);
+  }, [folder, shown]);
 
   async function start() {
+    if (!estimate || estimate.paths.length === 0) return;
     setError(null);
-    try {
-      await api.startJob(folder);
-      setStarted(true);
-    } catch (err) {
-      setError(err instanceof ApiFailure ? err.message : "The run could not start.");
-    }
+    const controller = new AbortController();
+    stop.current = controller;
+    const first: RunProgress = {
+      folder,
+      total: estimate.paths.length,
+      done: 0,
+      made: 0,
+      failed: [],
+    };
+    setShown({ ...first, end: "running" });
+    // Every entry is read in the project the run began in.
+    const work = projectWork();
+    const end = await runFolder(
+      first,
+      estimate.paths,
+      (path) => work.api.proposeFields(path),
+      controller.signal,
+      (p) => setShown((now) => (now ? { ...now, ...p } : now)),
+    );
+    if (stop.current === controller) stop.current = null;
+    setShown((now) =>
+      now ? { ...now, end: end.state, ...(end.state === "stopped" ? { why: end.why } : {}) } : now,
+    );
+    refresh();
+    await reloadRelations();
   }
 
   const n = estimate?.entries ?? 0;
-  const running = job?.state === "running";
-  const done = started && job && !running;
+  const running = shown?.end === "running";
+  const on = model !== null;
 
   return (
     <DialogFrame
       title={
-        done ? "Done reading" : running ? "Reading your entries…" : "Find relations in your entries"
+        shown && !running
+          ? "Done reading"
+          : running
+            ? "Reading your entries…"
+            : "Find relations in your entries"
       }
       onCancel={onClose}
-      onSubmit={() => (started ? onClose() : void start())}
+      onSubmit={() => (shown ? onClose() : void start())}
       initialFocus={select}
       className="tr-find-dialog"
     >
-      {!started && (
+      {!shown && (
         <>
           <p className="dialog-body">
             Frontier&rsquo;s AI reads each entry&rsquo;s published text and proposes the relations
             it states, with the sentence each came from. Nothing changes until you accept it.
           </p>
+          {!on && model !== undefined && (
+            <p className="error">Choose a model for proposing fields in Settings first.</p>
+          )}
           <label className="dialog-field">
             Read the entries in
             <select ref={select} value={folder} onChange={(e) => setFolder(e.target.value)}>
@@ -147,44 +142,42 @@ export function FindRelations({ onClose, unread }: { onClose: () => void; unread
                   : "price unknown"}
               </b>
               <span>
-                {money.model ? `with ${money.model}` : "with your Proposing fields model"}
-                {money.left !== null
-                  ? `. $${money.left.toFixed(2)} of this month's cap is left.`
-                  : "."}
+                {model
+                  ? `with ${model}, on this device's key.`
+                  : "with your Proposing fields model."}
               </span>
             </div>
           </div>
           <p className="tr-muted">
             Dates and types are proposed as well, as Propose fields does. Expect about{" "}
             {Math.round(n * 1.5)} proposals to review
-            {n > 100 ? "; the inbox can show one folder or one tree at a time" : ""}.
+            {n > 100 ? "; the inbox can show one folder or one tree at a time" : ""}. Keep this open
+            while it reads.
           </p>
         </>
       )}
-      {started && job && (
+      {shown && (
         <>
           <div
             className="tr-bar"
             role="progressbar"
             aria-valuemin={0}
-            aria-valuemax={job.total ?? 1}
-            aria-valuenow={job.done ?? 0}
+            aria-valuemax={shown.total}
+            aria-valuenow={shown.done}
           >
-            <i
-              style={{
-                width: `${Math.round(((job.done ?? 0) / Math.max(1, job.total ?? 1)) * 100)}%`,
-              }}
-            />
+            <i style={{ width: `${Math.round((shown.done / Math.max(1, shown.total)) * 100)}%` }} />
           </div>
           <p className="tr-muted" role="status">
             {running
-              ? `${job.done ?? 0} of ${job.total ?? "?"} · ${job.made ?? 0} proposals so far. You can close this; it keeps going, and Settings › Propose for a folder shows it too.`
-              : job.state === "stopped"
-                ? `Stopped after ${job.done ?? 0} of ${job.total ?? "?"}: ${job.stoppedBy ?? "the run stopped"}.`
-                : (job.made ?? 0) === 0
-                  ? `No relations or dates found in ${job.total ?? 0} entries.`
-                  : `Found ${job.made} proposals in ${job.total ?? 0} entries. They wait in the inbox, and show in your trees with a ? until you decide.`}
-            {(job.failed?.length ?? 0) > 0 && ` ${job.failed!.length} entries could not be read.`}
+              ? `${shown.done} of ${shown.total} · ${shown.made} proposals so far. Keep this open while it reads; if you close it, what is left can be continued in Settings › Propose for a folder.`
+              : shown.end === "stopped"
+                ? `Stopped after ${shown.done} of ${shown.total}: ${shown.why ?? "the run stopped"}.`
+                : shown.end === "cancelled"
+                  ? `Stopped after ${shown.done} of ${shown.total}. What is left can be continued in Settings › Propose for a folder.`
+                  : shown.made === 0
+                    ? `No relations or dates found in ${shown.total} entries.`
+                    : `Found ${shown.made} proposals in ${shown.total} entries. They wait in the inbox, and show in your trees with a ? until you decide.`}
+            {shown.failed.length > 0 && ` ${shown.failed.length} entries could not be read.`}
           </p>
         </>
       )}
@@ -195,23 +188,26 @@ export function FindRelations({ onClose, unread }: { onClose: () => void; unread
       )}
       <p className="dialog-actions">
         {running && (
-          <button
-            type="button"
-            className="quiet"
-            onClick={() => void api.cancelJob().then(() => undefined)}
-          >
+          <button type="button" className="quiet" onClick={() => stop.current?.abort()}>
             Stop
           </button>
         )}
-        <button type="button" className="quiet" onClick={onClose}>
-          {started ? "Close" : "Cancel"}
+        <button
+          type="button"
+          className="quiet"
+          onClick={() => {
+            if (shown && shown.end === "done") forgetRun();
+            onClose();
+          }}
+        >
+          {shown ? "Close" : "Cancel"}
         </button>
-        {!started && (
-          <button type="submit" className="primary" disabled={!estimate || n === 0}>
+        {!shown && (
+          <button type="submit" className="primary" disabled={!estimate || n === 0 || !on}>
             Read {n} {n === 1 ? "entry" : "entries"}
           </button>
         )}
-        {done && (job.made ?? 0) > 0 && (
+        {shown && !running && shown.made > 0 && (
           <button
             type="button"
             className="primary"

@@ -1,11 +1,13 @@
 import { Plus } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "../nav.tsx";
 import type { TreeLine, TreeLook, TreesFile } from "@frontier/schema";
-import { treeUrl } from "../api.ts";
+import { api, treeUrl } from "../api.ts";
 import { DialogFrame } from "../components/Dialogs.tsx";
 import { EntryCombobox } from "../components/EntryCombobox.tsx";
-import { usePhone, useStatus } from "../components/Shell.tsx";
+import { useCanWrite } from "../components/projectContext.ts";
+import { usePhone } from "../components/Shell.tsx";
+import { useAsync } from "../useAsync.ts";
 import { FindRelations } from "../components/trees/FindRelations.tsx";
 import "../components/trees/ProposedRelation.css";
 import { usePageTitle } from "../components/shell/panels.tsx";
@@ -68,12 +70,19 @@ export function TreesPage() {
   const relations = useRelations();
   const phone = usePhone();
   const navigate = useNavigate();
+  // A reader opens the trees and the relations; making and changing them is for writers.
+  const canWrite = useCanWrite();
   const [making, setMaking] = useState<{ start?: string } | null>(null);
   const [finding, setFinding] = useState(false);
-  const status = useStatus();
+  // AI is set up when this person has chosen a model for proposing fields (stage 31f: per device keys).
+  const aiOn = useAsync(() => api.settings(), "trees-ai");
+  const proposing = aiOn.state === "ready" && aiOn.value.ai.models.extraction !== null;
   usePageTitle("Trees");
   useScope("trees");
-  useShortcut("trees.new", () => setMaking({}));
+  useShortcut("trees.new", () => {
+    if (!canWrite) return false;
+    setMaking({});
+  });
 
   if (trees.state === "failed")
     return <Problem reason={trees.error ?? "The trees could not be read."} />;
@@ -104,7 +113,7 @@ export function TreesPage() {
           <span className="tr-muted">{list.length === 1 ? "1 tree" : `${list.length} trees`}</span>
         )}
         <span className="tr-spacer" />
-        {list.length > 0 && !phone && (
+        {canWrite && list.length > 0 && !phone && (
           <button type="button" className="primary" onClick={() => setMaking({})}>
             <Icon icon={Plus} size="sm" /> New tree <kbd>N</kbd>
           </button>
@@ -113,7 +122,7 @@ export function TreesPage() {
       {relations.state === "failed" && (
         <Problem reason={relations.error ?? "The relations could not be read."} />
       )}
-      {status?.ai.on ? (
+      {!canWrite ? null : proposing ? (
         (relations.response?.unread ?? 0) > 0 && (
           <div className="tr-findcard">
             <p>
@@ -132,8 +141,8 @@ export function TreesPage() {
         )
       ) : (
         <p className="tr-muted tr-ai-note">
-          <Link to="/settings/ai">Set up AI in Settings</Link> to have relations proposed from your
-          entries.
+          <Link to="/settings/you/ai-models/extraction">Choose a model for proposing fields</Link>{" "}
+          to have relations proposed from your entries.
         </p>
       )}
       {finding && (
@@ -156,15 +165,24 @@ export function TreesPage() {
             pantheon, a chain of command. The relations are written on the entries, so every tree
             that shows them stays in step.
           </p>
-          <button type="button" className="primary" onClick={() => setMaking({})}>
-            New tree
-          </button>
-          {family && g && (
-            <button type="button" onClick={() => void quick()}>
-              Make a tree from {title(g, family.start)} · {family.size} people already related
-            </button>
+          {canWrite ? (
+            <>
+              <button type="button" className="primary" onClick={() => setMaking({})}>
+                New tree
+              </button>
+              {family && g && (
+                <button type="button" onClick={() => void quick()}>
+                  Make a tree from {title(g, family.start)} · {family.size} people already related
+                </button>
+              )}
+              <p className="tr-muted">Or open someone&rsquo;s entry and use its Relations tab.</p>
+            </>
+          ) : (
+            <p className="tr-muted">
+              A writer or an owner of the project can make one. Open someone&rsquo;s entry and use
+              its Relations tab to see how they relate.
+            </p>
           )}
-          <p className="tr-muted">Or open someone&rsquo;s entry and use its Relations tab.</p>
         </div>
       ) : (
         <ul className="tr-grid">
@@ -173,7 +191,7 @@ export function TreesPage() {
               <TreeCard tree={t} g={g} />
             </li>
           ))}
-          {!phone && (
+          {canWrite && !phone && (
             <li>
               <button type="button" className="tr-new-tile" onClick={() => setMaking({})}>
                 + New tree
@@ -182,7 +200,7 @@ export function TreesPage() {
           )}
         </ul>
       )}
-      {phone && list.length > 0 && (
+      {canWrite && phone && list.length > 0 && (
         <button
           type="button"
           className="tr-fab"
@@ -192,7 +210,7 @@ export function TreesPage() {
           <Icon icon={Plus} />
         </button>
       )}
-      {making && (
+      {making && canWrite && (
         <NewTree
           onCancel={() => setMaking(null)}
           onMake={async (line) => {

@@ -1,4 +1,5 @@
-import { type CDPSession, expect, type Page, test } from "@playwright/test";
+import { type CDPSession, expect, type Page, test } from "./test.ts";
+import { proj } from "./helpers.ts";
 
 /**
  * The gestures on a map that the other map tests do not make: pinches, second fingers, the tap
@@ -15,7 +16,7 @@ const plus = (p: Point, dx: number, dy: number): Point => ({ x: p.x + dx, y: p.y
 const makeMap = (page: Page, title: string) =>
   page.evaluate(
     async ({ title, image }) => {
-      const res = await fetch("/api/maps", {
+      const res = await fetch(`${API}/maps`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ title, kind: "sphere", image }),
@@ -28,16 +29,16 @@ const makeMap = (page: Page, title: string) =>
 /** Throws the map away, so the next test finds nothing unpublished. */
 const cleanUp = (page: Page, id: string) =>
   page.evaluate(async (id) => {
-    await fetch(`/api/maps/${id}`, { method: "DELETE" });
-    const un = await (await fetch("/api/unpublished")).json();
-    for (const d of un.drafts) await fetch(`/api/drafts/${d.id}`, { method: "DELETE" });
+    await fetch(`${API}/maps/${id}`, { method: "DELETE" });
+    const un = await (await fetch(`${API}/unpublished`)).json();
+    for (const d of un.drafts) await fetch(`${API}/drafts/${d.id}`, { method: "DELETE" });
   }, id);
 
 /** Opens a new globe of the sample image, editing or not, once its view is laid out. */
 async function openMap(page: Page, title: string, edit = false) {
-  await page.goto("/maps");
+  await page.goto(proj("/maps"));
   const id = await makeMap(page, title);
-  await page.goto(`/map/${id}${edit ? "?edit=1" : ""}`);
+  await page.goto(proj(`/map/${id}${edit ? "?edit=1" : ""}`));
   await expect(page.locator(".map-top")).toBeVisible();
   await expect(page).toHaveURL(/v=/);
   return id;
@@ -67,7 +68,7 @@ type Stored = { features: { kind: string; points?: [number, number][] }[] };
 const stored = (page: Page) =>
   page.evaluate(async () => {
     const id = location.pathname.split("/").pop();
-    return ((await (await fetch(`/api/maps/${id}`)).json()) as { map: Stored }).map;
+    return ((await (await fetch(`${API}/maps/${id}`)).json()) as { map: Stored }).map;
   });
 const zonePoints = async (page: Page) =>
   (await stored(page)).features.find((f) => f.kind === "zone")?.points ?? [];

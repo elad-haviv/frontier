@@ -1,12 +1,12 @@
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { buildApp } from "../src/app.js";
 import { Backup, msUntilHour, restore } from "../src/backup/backup.js";
 import { type BackupTarget, FolderTarget } from "../src/backup/targets.js";
 import { loadConfig } from "../src/config.js";
-import { testEnv } from "./helpers/app.js";
+import { EMAIL, seedAccount, testEnv } from "./helpers/app.js";
 import { makeTestRepo } from "./helpers/repo.js";
 
 let root: string;
@@ -95,6 +95,49 @@ describe("the latest copy", () => {
     expect(inBucket("latest/state/drafts/abc/content")).toBe("second");
     expect(inBucket("latest/state/settings.json")).toBeNull();
     expect(inBucket("latest/generated/art.png")).toBe("image");
+  });
+
+  it("copies a draft's record and text from the same moment, even when it is saved while they are read", async () => {
+    const write = (n: number) => {
+      // The store writes the text first and the record after it.
+      put(state, "drafts/abc/content", `text ${n}`);
+      put(state, "drafts/abc/record.json", JSON.stringify({ revision: n }));
+      put(state, "drafts/abc/versions/dev.txt", `kept ${n}`);
+      put(state, "drafts/abc/versions/dev.json", JSON.stringify({ revision: n }));
+    };
+    write(1);
+    let saved = false;
+    const { backup } = make({
+      // Whatever file of the draft is read first, the draft is saved again right after it.
+      afterDraftRead: () => {
+        if (saved) return;
+        saved = true;
+        write(2);
+      },
+    });
+    expect((await backup.runNow()).lastError).toBeNull();
+    // Never a record of one save with the text of another: the copy is the draft as it was after the save.
+    const record = JSON.parse(inBucket("latest/state/drafts/abc/record.json")!) as {
+      revision: number;
+    };
+    expect(inBucket("latest/state/drafts/abc/content")).toBe(`text ${record.revision}`);
+    expect(inBucket("latest/state/drafts/abc/versions/dev.txt")).toBe(`kept ${record.revision}`);
+    expect(record.revision).toBe(2);
+  });
+
+  it("does not copy a draft that is discarded while it is read, and leaves other folders alone", async () => {
+    put(state, "drafts/gone/record.json", "{}");
+    put(state, "drafts/gone/content", "x");
+    put(state, "drafts/renames/r1.json", "{}");
+    put(state, "drafts/renamed.json", "[]");
+    const { backup } = make({
+      afterDraftRead: () => rmSync(join(state, "drafts/gone"), { recursive: true, force: true }),
+    });
+    expect((await backup.runNow()).lastError).toBeNull();
+    expect(inBucket("latest/state/drafts/gone/content")).toBeNull();
+    expect(inBucket("latest/state/drafts/gone/record.json")).toBeNull();
+    expect(inBucket("latest/state/drafts/renames/r1.json")).toBe("{}");
+    expect(inBucket("latest/state/drafts/renamed.json")).toBe("[]");
   });
 
   it("runs once, the set delay after the first change", async () => {
@@ -244,19 +287,16 @@ describe("in the server", () => {
   it("backs up a draft shortly after it is saved, shows it in the status, and restores it into a new server", async () => {
     const repo = makeTestRepo();
     const env = testEnv(repo);
-    const { hashPassword } = await import("../src/auth/password.js");
     const config = loadConfig(env);
     mkdirSync(join(config.dataDir, "state"), { recursive: true });
     const first = await buildApp(config, { backupDelayMs: 30 });
     await first.services.git.ensureClone();
     await first.services.sync();
-    await first.services.settings.write({
-      passwordHash: await hashPassword("a password for the test"),
-    });
+    await seedAccount(first.services, "a password for the test");
     const login = await first.app.inject({
       method: "POST",
       url: "/api/login",
-      payload: { password: "a password for the test" },
+      payload: { email: EMAIL, password: "a password for the test" },
     });
     const cookie = String(login.headers["set-cookie"]).split(";")[0]!;
     await first.app.inject({
@@ -271,14 +311,25 @@ describe("in the server", () => {
         revision: 0,
       },
     });
-    await new Promise((r) => setTimeout(r, 400));
-    const snapshot = first.services.status.snapshot();
-    expect(snapshot.lastBackupAt).not.toBeNull();
-    expect(snapshot.backupError).toBeNull();
     const bucketFile = join(
       (config.backup as { dir: string }).dir,
       "latest/state/drafts/backupdraft1/content",
     );
+    // The backup runs 30 ms after the save; wait until the draft is in the bucket and reported,
+    // not for a fixed time.
+    await vi.waitFor(
+      () => {
+        expect(existsSync(bucketFile)).toBe(true);
+        // The draft's record is written just after its text; a backup that ran between the two holds
+        // a folder with no record, which a restore (rightly) reads as an interrupted first save.
+        expect(existsSync(join(bucketFile, "..", "record.json"))).toBe(true);
+        expect(first.services.status.snapshot().lastBackupAt).not.toBeNull();
+      },
+      { timeout: 15_000, interval: 20 },
+    );
+    const snapshot = first.services.status.snapshot();
+    expect(snapshot.lastBackupAt).not.toBeNull();
+    expect(snapshot.backupError).toBeNull();
     expect(readFileSync(bucketFile, "utf8")).toBe("# Mira\n\nBacked up.\n");
     await first.app.close();
 
@@ -292,6 +343,8 @@ describe("in the server", () => {
     await second.services.git.ensureClone();
     await second.services.sync();
     expect(second.services.drafts.list().map((d) => d.id)).toEqual(["backupdraft1"]);
+    // The accounts are in the backup too: the same person can log in on the new disk.
+    expect((await second.services.server.people.all()).map((p) => p.email)).toEqual([EMAIL]);
     expect(await second.services.drafts.text("backupdraft1")).toBe("# Mira\n\nBacked up.\n");
     // The time of the last backup is read from disk at start when it exists.
     await second.services.backup.runNow();
@@ -299,6 +352,118 @@ describe("in the server", () => {
     expect(third.services.status.snapshot().lastBackupAt).not.toBeNull();
     await second.app.close();
     await third.app.close();
+    repo.cleanup();
+  });
+});
+
+describe("backup and restore of projects", () => {
+  it("restores only the files asked for, and does not mind the ones that are left out", async () => {
+    put(state, "people.json", "{}");
+    put(state, "drafts/abc/content", "mine");
+    await make().backup.runNow();
+    const fresh = join(root, "fresh", "state");
+    put(fresh, "people.json", "{ already here }");
+    const done = await restore(
+      target,
+      { state: fresh },
+      "latest",
+      (_name, rel) => !rel.startsWith("people.json"),
+    );
+    expect(done.files).toBe(1);
+    expect(readFileSync(join(fresh, "people.json"), "utf8")).toBe("{ already here }");
+    expect(readFileSync(join(fresh, "drafts/abc/content"), "utf8")).toBe("mine");
+    // A file that would be written over one that is there is refused, and nothing is written.
+    await expect(restore(target, { state: fresh }, "latest", () => true)).rejects.toThrow(
+      /already there/,
+    );
+    await expect(restore(target, { state: fresh })).rejects.toThrow(/not empty/);
+  });
+
+  it("keeps a prefixed target to its own prefix", async () => {
+    const { PrefixedTarget } = await import("../src/app.js");
+    const a = new PrefixedTarget(target, "projects/aaaaaaaaaa/");
+    await a.put("latest/x", Buffer.from("x"));
+    await target.put("latest/y", Buffer.from("y"));
+    expect(await a.list("latest/")).toEqual(["latest/x"]);
+    expect((await a.get("latest/x"))?.toString()).toBe("x");
+    expect(await a.get("latest/y")).toBeNull();
+    await a.remove("latest/x");
+    expect(await a.list("")).toEqual([]);
+    expect(await target.list("latest/")).toEqual(["latest/y"]);
+  });
+
+  it("brings back every project on a new disk, or one project alone", async () => {
+    const repo = makeTestRepo();
+    const config = loadConfig(testEnv(repo));
+    mkdirSync(join(config.dataDir, "state"), { recursive: true });
+    const first = await buildApp(config, { backupDelayMs: 20 });
+    await first.services.git.ensureClone();
+    await first.services.sync();
+    const admin = await seedAccount(first.services, "a password for the test");
+    const login = await first.app.inject({
+      method: "POST",
+      url: "/api/login",
+      payload: { email: EMAIL, password: "a password for the test" },
+    });
+    const headers = { cookie: String(login.headers["set-cookie"]).split(";")[0]! };
+    const made = await first.app.inject({
+      method: "POST",
+      url: "/api/projects",
+      headers,
+      payload: { name: "Northwind", slug: "northwind" },
+    });
+    expect(made.statusCode, made.body).toBe(201);
+    const id = made.json().id as string;
+    for (const slug of ["avalymia", "northwind"]) {
+      const saved = await first.app.inject({
+        method: "PUT",
+        url: `/api/p/${slug}/drafts`,
+        headers,
+        payload: {
+          id: slug === "avalymia" ? "avalymiadr01" : "northwinddr1",
+          path: "Note.md",
+          kind: "create",
+          text: `# Note\n\nIn ${slug}.\n`,
+          revision: 0,
+        },
+      });
+      expect(saved.statusCode, saved.body).toBe(200);
+    }
+    await (await first.server.registry.peek(id))!.backup.runNow();
+    await first.services.backup.runNow();
+    await first.app.close();
+    expect(admin.id).toBeTruthy();
+
+    const bucket = new FolderTarget((config.backup as { dir: string }).dir);
+    const { restoreEverything, restoreProject } = await import("../src/backup/restoreProjects.js");
+    const setup = { dataDir: config.dataDir, own: true, target: bucket, from: "latest" };
+
+    // One project alone: lose its folder (its library too), bring it back, and the first project is untouched.
+    rmSync(join(config.dataDir, "projects", id), { recursive: true, force: true });
+    const one = await restoreProject(setup, "northwind");
+    expect(one.name).toBe("Northwind");
+    expect(
+      existsSync(join(config.dataDir, "projects", id, "state", "drafts", "northwinddr1")),
+    ).toBe(true);
+    await expect(restoreProject(setup, "nothing")).rejects.toThrow(/no project "nothing"/);
+    // The first project's own files are restored without the server's: the folder holds them.
+    await expect(restoreProject(setup, "avalymia")).rejects.toThrow(/already there/);
+    rmSync(join(config.dataDir, "state", "drafts"), { recursive: true, force: true });
+    expect((await restoreProject(setup, "avalymia")).files).toBeGreaterThan(0);
+
+    // The disk is lost: everything comes back, the project list with it.
+    rmSync(config.dataDir, { recursive: true, force: true });
+    expect(await restoreEverything(setup)).toBeGreaterThan(5);
+    const second = await buildApp(config);
+    await second.services.git.ensureClone();
+    await second.services.sync();
+    const projects = await second.server.projects.all();
+    expect(projects.map((p) => p.slug)).toEqual(["avalymia", "northwind"]);
+    expect(second.services.drafts.list().map((d) => d.id)).toEqual(["avalymiadr01"]);
+    const north = await second.server.registry.open(projects[1]!);
+    expect(north.drafts.list().map((d) => d.id)).toEqual(["northwinddr1"]);
+    expect(north.index.allNotes().map((n) => n.path)).toEqual(["Welcome.md"]);
+    await second.app.close();
     repo.cleanup();
   });
 });

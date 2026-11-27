@@ -1,9 +1,10 @@
 import { ActionButton } from "../components/ui/ActionButton.tsx";
 import { type FormEvent, type KeyboardEvent, useRef, useState } from "react";
-import { Link, useLocation, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "../nav.tsx";
 import { api, askUrl, type EntryProposal } from "../api.ts";
 import { DictateButton, ListeningBar } from "../components/DictateButton.tsx";
 import { EntryDraft } from "../components/EntryDraft.tsx";
+import { useCanWrite } from "../components/projectContext.ts";
 import { LiveTurn, useLoreAsk } from "../components/LoreWork.tsx";
 import { Problem } from "../components/ui/Problem.tsx";
 import { Progress } from "../components/ui/Progress.tsx";
@@ -26,6 +27,8 @@ export function AskPage() {
   const [drafting, setDrafting] = useState<Drafting | null>(null);
   const drafted = useRef<AbortController | null>(null);
   const voice = useDictation(setQuestion);
+  // Drafting an entry from what was said writes to the project: writers' (stage 31c).
+  const canWrite = useCanWrite();
   const {
     live,
     ask: askLive,
@@ -94,7 +97,7 @@ export function AskPage() {
       {list.state === "ready" && !list.value.ready && (
         <p className="banner">
           No model is chosen for lore conversations.{" "}
-          <Link to="/settings/ai/models/conversation">Choose one in Settings</Link>.
+          <Link to="/settings/you/ai-models/conversation">Choose one in Settings</Link>.
         </p>
       )}
 
@@ -140,14 +143,16 @@ export function AskPage() {
             >
               Ask
             </ActionButton>
-            <ActionButton
-              type="button"
-              className="primary"
-              disabled={locked || voice.listening || empty}
-              onClick={() => void draftEntry()}
-            >
-              Draft entry
-            </ActionButton>
+            {canWrite && (
+              <ActionButton
+                type="button"
+                className="primary"
+                disabled={locked || voice.listening || empty}
+                onClick={() => void draftEntry()}
+              >
+                Draft entry
+              </ActionButton>
+            )}
           </span>
         </p>
         {voice.problem && (

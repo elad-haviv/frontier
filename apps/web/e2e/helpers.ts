@@ -11,9 +11,21 @@ const here = dirname(fileURLToPath(import.meta.url));
 export const REMOTE = join(here, "..", "..", "..", ".e2e-data", "sample-remote.git");
 
 export const PASSWORD = "browser-test-password";
+/** The first account of the e2e server (`server.mjs`). */
+export const EMAIL = "owner@example.com";
+export const NAME = "Olive Owner";
 
 /** Where the shared login session is kept between tests. */
 export const AUTH_FILE = join(here, "..", "..", "..", "test-results", ".auth.json");
+
+/**
+ * For a test that changes how the account logs in (a new password, a passkey removed). That ends
+ * every other session of the account, including the one the other tests start from, so the test
+ * keeps the session it still holds, which is the one that stays valid, for those that follow.
+ */
+export async function keepSession(page: Page): Promise<void> {
+  await page.context().storageState({ path: AUTH_FILE });
+}
 
 function git(cwd: string, ...args: string[]): string {
   return execFileSync(
@@ -98,8 +110,42 @@ export const hasBranch = (branch: string): boolean => {
 };
 export const lastBody = () => git(REMOTE, "log", "-1", "--format=%B", "main");
 
-export const entry = (path: string) => "/e/" + path.split("/").map(encodeURIComponent).join("/");
-export const edit = (path: string) => "/edit/" + path.split("/").map(encodeURIComponent).join("/");
+/**
+ * The e2e server's first project: it is named from the sample, so its address is `sample`. Every
+ * page of the app is under `/p/<slug>/` (stage 31b); the specs write addresses as the app's pages
+ * know them (`/maps`, `/e/...`) and put them through `proj`.
+ */
+export const PROJECT = "sample";
+
+/** The address of a page of the first project: `proj("/maps")` is `/p/sample/maps`. */
+export const proj = (path: string, project = PROJECT): string =>
+  path === "/" ? `/p/${project}` : `/p/${project}${path}`;
+
+/** The address of a call to a project: `api("/maps")` is `/api/p/sample/maps`. */
+export const api = (path: string, project = PROJECT): string => `/api/p/${project}${path}`;
+
+/** The same page without its project, as the app's own patterns see it. */
+export const withoutProject = (url: string): string =>
+  url.replace(/^(https?:\/\/[^/]+)?\/p\/[^/?#]+/, "$1") || "/";
+
+/**
+ * The key the browser's storage files a library's value under: `<name>:<person id>:<project id>`. The page
+ * says which project it shows (`data-project`), once the project is open.
+ */
+export async function keyOf(page: Page, name: string): Promise<string> {
+  await expect(page.locator("html[data-project]")).toBeAttached();
+  const id = await page.locator("html").getAttribute("data-project");
+  // Filed under the signed-in person too, so another person on the browser never reads it.
+  const person = await page.evaluate(
+    () => (JSON.parse(localStorage.getItem("frontier.me") ?? "null") as { id?: string } | null)?.id,
+  );
+  return `${name}:${person}:${id}`;
+}
+
+export const entry = (path: string) =>
+  proj("/e/" + path.split("/").map(encodeURIComponent).join("/"));
+export const edit = (path: string) =>
+  proj("/edit/" + path.split("/").map(encodeURIComponent).join("/"));
 
 /** Opens a file in the editor and puts the cursor at the very end. */
 export async function openEditor(page: Page, path: string): Promise<void> {
@@ -114,7 +160,7 @@ export async function saved(page: Page): Promise<void> {
 
 /** Reviews every unpublished change and stops at the plan, before Publish. */
 export async function review(page: Page): Promise<void> {
-  await page.goto("/unpublished");
+  await page.goto(proj("/unpublished"));
   await expect(page.locator(".changes > li").first()).toBeVisible();
   await page.locator("button.big").click();
   await expect(page.locator(".plan")).toBeVisible();
@@ -325,7 +371,7 @@ export async function newMapInForm(
   space: "flat" | "sphere" | "schematic",
   image = "map one.png",
 ): Promise<void> {
-  await page.goto("/maps");
+  await page.goto(proj("/maps"));
   await openNewMap(page);
   await page.locator(".new-map input[type=text]").fill(title);
   await chooseKind(page, space === "sphere" ? "Globe" : "Flat map");
@@ -375,16 +421,84 @@ export async function answerDialog(page: Page, button: string, value?: string): 
   await expect(dialog).toHaveCount(0);
 }
 
+/** The key the OpenRouter stand-in accepts. It lives on the device only, never on the server. */
+export const DEVICE_KEY = "sk-or-browser-test-key";
+
 /**
- * Connects the OpenRouter stand-in and chooses models, through the same request the settings
- * page sends. Bare ids are OpenRouter's.
+ * Puts AI keys on this browser's device storage, as adding them in Settings does (stage 31f).
+ * The seeding runs once per tab, before the app starts, so a key the test then removes stays
+ * removed through reloads. `page.evaluate` does the same at once when the app is open already.
+ */
+export async function giveDeviceKeys(
+  page: Page,
+  keys: Record<string, string> = { openrouter: DEVICE_KEY },
+): Promise<void> {
+  const seed = (held: Record<string, string>) => {
+    if (sessionStorage.getItem("e2e-keys-seeded")) return;
+    localStorage.setItem("frontier.aiKeys", JSON.stringify(held));
+    sessionStorage.setItem("e2e-keys-seeded", "1");
+  };
+  await page.addInitScript(seed, keys);
+  if (page.url().startsWith("http")) await page.evaluate(seed, keys);
+}
+
+/**
+ * Starts a spec from a clean slate for the signed-in person: no AI model chosen and "propose on
+ * publish" off (the choices are the person's own, since stage 31a, and another spec may have left
+ * them), and no draft of the given entries left over. Through the API, so the spec does not
+ * depend on the order the specs ran in.
+ */
+export async function resetPerson(page: Page, entries: string[] = []): Promise<void> {
+  const res = await page.request.put("/api/settings/ai", {
+    data: { models: { extraction: null, conversation: null, art: null }, proposeOnPublish: false },
+  });
+  expect(res.ok(), await res.text()).toBe(true);
+  const un = await page.request.get(api("/unpublished"));
+  expect(un.ok(), await un.text()).toBe(true);
+  const { drafts } = (await un.json()) as { drafts: { id: string; path: string }[] };
+  for (const d of drafts.filter((x) => entries.includes(x.path))) {
+    expect((await page.request.delete(api(`/drafts/${d.id}`))).ok()).toBe(true);
+  }
+  for (const path of entries) {
+    await page.request.delete(api(`/write/reviews?path=${encodeURIComponent(path)}`));
+  }
+}
+
+/**
+ * Chooses models, through the same request the settings page sends, and puts the OpenRouter
+ * stand-in's key on this device (unless `key` is false, to meet the first-use explanation). Bare
+ * ids are OpenRouter's.
  */
 export async function setUpAi(
   page: Page,
   models: { extraction?: string; conversation?: string; art?: string },
+  options: { key?: boolean } = {},
 ): Promise<void> {
-  const res = await page.request.put("/api/settings/ai", {
-    data: { key: "sk-or-browser-test-key", models },
-  });
+  const res = await page.request.put("/api/settings/ai", { data: { models } });
   expect(res.ok(), await res.text()).toBe(true);
+  if (options.key !== false) await giveDeviceKeys(page);
+}
+
+/**
+ * Puts the sample project back as it was for the next test: the owner alone, and no invite link
+ * waiting. It uses the server's own calls (there is no test-only endpoint), and never fails a
+ * test: a person or a link it cannot remove is left for the next run's fresh data folder.
+ * People made by a test stay accounts on the server, so a test that needs "the only account"
+ * must not assume it.
+ */
+export async function tidyPeople(page: Page): Promise<void> {
+  try {
+    const people = await page.request.get(api("/members"));
+    if (people.ok()) {
+      const list = ((await people.json()) as { members: { id: string; you: boolean }[] }).members;
+      for (const m of list) if (!m.you) await page.request.delete(api(`/members/${m.id}`));
+    }
+    const links = await page.request.get(api("/invites"));
+    if (links.ok()) {
+      const list = ((await links.json()) as { invites: { id: string }[] }).invites;
+      for (const i of list) await page.request.delete(api(`/invites/${i.id}`));
+    }
+  } catch {
+    /* a closed page or a server that stopped: nothing to put back */
+  }
 }

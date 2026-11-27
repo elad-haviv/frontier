@@ -5,9 +5,10 @@
  */
 import type { MapFeature, MapFile } from "@frontier/schema";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, ApiFailure } from "../api.ts";
-import { type Known, type LinkItem, queue } from "../sync/queue.ts";
+import { ApiFailure } from "../api.ts";
+import { type Known, type LinkItem } from "../sync/queue.ts";
 import { stackOf } from "./stack.ts";
+import { useProjectWork } from "../projectWork.ts";
 
 export type Names = Record<string, { path: string; title: string }>;
 
@@ -30,6 +31,7 @@ export interface MapStack {
 }
 
 export function useMapStack(id: string): MapStack {
+  const work = useProjectWork();
   const [order, setOrder] = useState<string[]>([]);
   const [maps, setMaps] = useState<Record<string, MapFile>>({});
   const [names, setNames] = useState<Names>({});
@@ -43,11 +45,11 @@ export function useMapStack(id: string): MapStack {
     let live = true;
     setError(null);
     (async () => {
-      const list = await api.maps();
+      const list = await work.api.maps();
       const ids = stackOf(id, list.maps);
       const loaded = await Promise.all(
         ids.map(async (mid) => {
-          const [m, unsent] = await Promise.all([api.map(mid), queue.get(`map:${mid}`)]);
+          const [m, unsent] = await Promise.all([work.api.map(mid), work.queue.get(`map:${mid}`)]);
           known.current[mid] = { draftId: "", revision: m.revision, baseBlob: m.blob, base: m.map };
           return { id: mid, map: unsent ? (unsent.value as MapFile) : m.map, entries: m.entries };
         }),
@@ -77,7 +79,7 @@ export function useMapStack(id: string): MapStack {
       setMaps(latest.current);
       for (const [mid, next] of Object.entries(changed)) {
         const items = link?.[mid];
-        void queue.put(`map:${mid}`, next, {
+        void work.queue.put(`map:${mid}`, next, {
           ...known.current[mid]!,
           ...(items ? { link: items } : {}),
         });
@@ -113,7 +115,7 @@ export function useMapStack(id: string): MapStack {
   );
 
   const sendAll = useCallback(() => {
-    for (const mid of Object.keys(latest.current)) void queue.sendNow(`map:${mid}`);
+    for (const mid of Object.keys(latest.current)) void work.queue.sendNow(`map:${mid}`);
     setDirty(false);
   }, []);
 

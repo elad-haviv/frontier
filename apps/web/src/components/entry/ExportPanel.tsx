@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link } from "react-router-dom";
+import { Link } from "../../nav.tsx";
 import { ApiFailure, downloadExport, type ExportKind } from "../../api.ts";
 import { useNeedsConnection } from "../../sync/connection.ts";
 import { useWords } from "../Shell.tsx";

@@ -1,7 +1,7 @@
 import { expect, type Page, test } from "@playwright/test";
 import { setUpAi } from "./helpers.ts";
 
-// Stage 31: the AI reads relations from an entry's text. The stand-in model proposes "parent" for
+// Stage 33: the AI reads relations from an entry's text. The stand-in model proposes "parent" for
 // "daughter of X" and "partner" for "married X", quoting the sentence.
 
 const ADA = "Zz Kin/Ada Rook.md";

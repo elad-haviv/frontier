@@ -4,8 +4,8 @@
  */
 import { type MapFeature, type MapFile } from "@frontier/schema";
 import { setFrontmatterKey } from "@frontier/vault";
-import { api, newDraftId } from "../api.ts";
-import { queue } from "../sync/queue.ts";
+import { newDraftId } from "../api.ts";
+import { projectWork } from "../projectWork.ts";
 import type { Names } from "./useMapFile.ts";
 
 /** The title an entry's path gives it. */
@@ -41,10 +41,17 @@ export function folderFor(map: MapFile, kind: MapFeature["kind"], names: Names):
  * When the library already has an entry at that path, nothing is made: it is linked instead.
  */
 export async function makeEntry(path: string, text: string): Promise<void> {
-  const known = await api.names(titleOfPath(path)).catch(() => null);
+  // The project the map is in: the person may switch while the names are being read.
+  const work = projectWork();
+  const known = await work.api.names(titleOfPath(path)).catch(() => null);
   if (known?.results.some((r) => r.path === path)) return;
   const key = `entry:${path}` as const;
-  await queue.put(key, text, { kind: "create", draftId: newDraftId(), revision: 0, baseBlob: "" });
+  await work.queue.put(key, text, {
+    kind: "create",
+    draftId: newDraftId(),
+    revision: 0,
+    baseBlob: "",
+  });
   // Sent now when there is a connection; offline it waits with the map's link behind it.
-  void queue.sendNow(key);
+  void work.queue.sendNow(key);
 }

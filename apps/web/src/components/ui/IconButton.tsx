@@ -1,6 +1,6 @@
 import type { LucideIcon } from "lucide-react";
 import type { ButtonHTMLAttributes, MouseEvent, Ref } from "react";
-import { Link, type LinkProps } from "react-router-dom";
+import { Link, type LinkProps } from "../../nav.tsx";
 import { shortcutText } from "../../keys.ts";
 import { Icon, type IconSize } from "./Icon.tsx";
 import { Tip } from "./Tip.tsx";

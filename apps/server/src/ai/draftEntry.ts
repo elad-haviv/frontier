@@ -159,13 +159,7 @@ export class EntryDrafter {
   constructor(private readonly d: LoreDeps) {}
 
   async model(): Promise<string> {
-    const model = (await this.d.settings.read())?.ai.models.conversation;
-    if (!model) {
-      throw new ApiError(
-        "ai_off",
-        "No model is chosen for lore conversations. Choose one on the settings page.",
-      );
-    }
+    const model = await this.d.provider.chosenModel("conversation", "lore conversations");
     return model;
   }
 

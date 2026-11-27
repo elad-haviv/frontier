@@ -33,7 +33,10 @@ class FakeSource {
 const answer = (status: number, body: unknown = {}) =>
   Promise.resolve(new Response(JSON.stringify(body), { status }));
 
+let slug: string | null = "avalymia";
+
 function make(fetch: typeof globalThis.fetch) {
+  slug = "avalymia";
   FakeSource.made = [];
   const events = new EventTarget();
   const c = new Connection({
@@ -41,23 +44,48 @@ function make(fetch: typeof globalThis.fetch) {
     EventSource: FakeSource as unknown as typeof EventSource,
     events: events as unknown as Window,
     maxDelayMs: 10,
+    project: () => slug,
   });
   return { c, events };
 }
+
+describe("the status stream names its tab (stage 31d)", () => {
+  it("opens the stream with ?client=, the name the announcements of who is reading carry", () => {
+    FakeSource.made = [];
+    slug = "avalymia";
+    const c = new Connection({
+      fetch: vi.fn(),
+      EventSource: FakeSource as unknown as typeof EventSource,
+      maxDelayMs: 10,
+      project: () => slug,
+      client: "tab_1-x",
+    });
+    c.start();
+    expect(FakeSource.made[0]!.url).toBe("/api/p/avalymia/status/events?client=tab_1-x");
+    c.stop();
+  });
+
+  it("names no tab when none is given", () => {
+    const { c } = make(vi.fn());
+    c.start();
+    expect(FakeSource.made[0]!.url).toBe("/api/p/avalymia/status/events");
+    c.stop();
+  });
+});
 
 describe("the connection service", () => {
   it("takes the status from the stream and says online", () => {
     const { c } = make(vi.fn());
     c.start();
     const [source] = FakeSource.made;
-    expect(source!.url).toBe("/api/status/events");
+    expect(source!.url).toBe("/api/p/avalymia/status/events");
     source!.send("status", { unpublished: 3 });
     expect(c.state).toBe("online");
     expect(c.snapshot).toEqual({ unpublished: 3 });
     c.stop();
   });
 
-  it("asks /api/status once when the stream fails: a 401 means signed out", async () => {
+  it("asks the project's status once when the stream fails: a 401 means signed out", async () => {
     const fetch = vi.fn(() => answer(401, { error: { code: "unauthenticated" } }));
     const { c } = make(fetch as unknown as typeof globalThis.fetch);
     c.start();
@@ -66,11 +94,61 @@ describe("the connection service", () => {
     c.unauthorised();
     await c.probe();
     expect(fetch).toHaveBeenCalledTimes(1);
-    expect(fetch.mock.calls[0]).toEqual(["/api/status", { credentials: "same-origin" }]);
+    expect(fetch.mock.calls[0]).toEqual(["/api/p/avalymia/status", { credentials: "same-origin" }]);
     expect(c.state).toBe("signed-out");
     // While signed out the stream is not opened again by itself.
     await new Promise((r) => setTimeout(r, 30));
     expect(FakeSource.made).toHaveLength(1);
+    c.stop();
+  });
+
+  it("says the person's access may have changed when the stream ends and the server still answers (31c)", async () => {
+    // The server closes a person's streams when their role changes or they are taken out.
+    const fetch = vi.fn(() => answer(200, { unpublished: 0 }));
+    const { c } = make(fetch as unknown as typeof globalThis.fetch);
+    const heard = vi.fn();
+    const stop = c.onAccessMayHaveChanged(heard);
+    c.start();
+    FakeSource.made[0]!.open();
+    expect(heard).not.toHaveBeenCalled();
+    FakeSource.made[0]!.fail(false);
+    await vi.waitFor(() => expect(heard).toHaveBeenCalledTimes(1));
+    // A request refused for want of a role says it directly; a listener taken off hears nothing.
+    c.accessMayHaveChanged();
+    expect(heard).toHaveBeenCalledTimes(2);
+    stop();
+    c.accessMayHaveChanged();
+    expect(heard).toHaveBeenCalledTimes(2);
+    c.stop();
+  });
+
+  it("does not say it when the stream ended because the server cannot be reached (31c)", async () => {
+    const fetch = vi.fn(() => Promise.reject(new TypeError("down")));
+    const { c } = make(fetch as unknown as typeof globalThis.fetch);
+    const heard = vi.fn();
+    c.onAccessMayHaveChanged(heard);
+    c.start();
+    FakeSource.made[0]!.fail(true);
+    await c.probe();
+    await new Promise((r) => setTimeout(r, 20));
+    expect(c.state).toBe("offline");
+    expect(heard).not.toHaveBeenCalled();
+    c.stop();
+  });
+
+  it("says access may have changed when a stream opens again after one that ended, but not for the first", async () => {
+    // A role changed while no stream was open: the server could not cut it, so nothing said so.
+    const { c } = make(vi.fn(() => answer(200, { unpublished: 0 })) as never);
+    const heard = vi.fn();
+    c.onAccessMayHaveChanged(heard);
+    c.start();
+    FakeSource.made[0]!.open();
+    expect(heard).not.toHaveBeenCalled();
+    FakeSource.made[0]!.fail(true);
+    await vi.waitFor(() => expect(FakeSource.made.length).toBeGreaterThan(1));
+    const before = heard.mock.calls.length;
+    FakeSource.made.at(-1)!.open();
+    expect(heard.mock.calls.length).toBe(before + 1);
     c.stop();
   });
 
@@ -118,7 +196,7 @@ describe("the connection service", () => {
     expect(c.state).toBe("offline");
     // The stream is started as usual, and the server is asked at once.
     expect(FakeSource.made).toHaveLength(1);
-    expect(fetch).toHaveBeenCalledWith("/api/status", { credentials: "same-origin" });
+    expect(fetch).toHaveBeenCalledWith("/api/p/avalymia/status", { credentials: "same-origin" });
     answerProbe(new Response(JSON.stringify({ unpublished: 2 }), { status: 200 }));
     await vi.waitFor(() => expect(c.state).toBe("online"));
     expect(c.snapshot).toEqual({ unpublished: 2 });
@@ -129,5 +207,41 @@ describe("the connection service", () => {
     const { c } = make(vi.fn(() => answer(503)) as never);
     await c.probe();
     expect(c.state).toBe("online");
+  });
+
+  it("listens to the project that is open, and shows none of the last one's counts", () => {
+    const { c } = make(vi.fn() as never);
+    c.start();
+    const [first] = FakeSource.made;
+    first!.open();
+    first!.send("status", { unpublished: 4 });
+    expect(c.snapshot).toEqual({ unpublished: 4 });
+    // Another project opens: the counts go, and its own stream starts.
+    slug = "beta";
+    c.projectChanged();
+    expect(first!.readyState).toBe(2);
+    expect(c.snapshot).toBeNull();
+    expect(FakeSource.made.at(-1)!.url).toBe("/api/p/beta/status/events");
+    FakeSource.made.at(-1)!.open();
+    FakeSource.made.at(-1)!.send("status", { unpublished: 0 });
+    expect(c.snapshot).toEqual({ unpublished: 0 });
+    // The same project again opens nothing new.
+    const count = FakeSource.made.length;
+    c.projectChanged();
+    expect(FakeSource.made).toHaveLength(count);
+    c.stop();
+  });
+
+  it("listens to nothing outside a project, and asks who is in instead", async () => {
+    const fetch = vi.fn(() => answer(200, { id: "p" }));
+    const { c } = make(fetch as never);
+    slug = null;
+    c.start();
+    expect(FakeSource.made).toHaveLength(0);
+    await c.probe();
+    expect(fetch).toHaveBeenCalledWith("/api/me", { credentials: "same-origin" });
+    expect(c.state).toBe("online");
+    expect(c.snapshot).toBeNull();
+    c.stop();
   });
 });

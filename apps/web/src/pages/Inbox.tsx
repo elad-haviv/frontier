@@ -2,7 +2,7 @@ import { ActionButton } from "../components/ui/ActionButton.tsx";
 import "../components/trees/ProposedRelation.css";
 import type { BranchFile, InboxBranch, InboxProposal, InboxQuarantined } from "@frontier/schema";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "../nav.tsx";
 import { api, ApiFailure, branchImageUrl, editUrl, entryUrl } from "../api.ts";
 import { Diff } from "../components/Diff.tsx";
 import { useRefresh } from "../components/Shell.tsx";
@@ -18,6 +18,7 @@ import {
 import { useScope, useShortcut } from "../keys.ts";
 import { useRelations, useTrees } from "../trees/data.ts";
 import { layoutTree } from "../trees/model.ts";
+import { projectWork } from "../projectWork.ts";
 
 const KIND: Record<BranchFile["kind"], string> = {
   added: "New",
@@ -209,7 +210,7 @@ export function InboxPage() {
   const navigate = useNavigate();
 
   const [loading, setLoading] = useState(false);
-  // Stage 31: sorting through many proposals.
+  // Stage 33: sorting through many proposals.
   const [kind, setKind] = useState<"all" | "relations" | "fields">("all");
   const [folder, setFolder] = useState("");
   const [treeId, setTreeId] = useState("");
@@ -664,13 +665,14 @@ export function InboxPage() {
                   className="plain danger"
                   disabled={busy}
                   onClick={async () => {
+                    const work = projectWork();
                     const ok = await dialogs.confirm({
                       title: "Reject everything left?",
                       body: `Every undecided file on "${b.name}" is rejected and the branch is removed.`,
                       action: "Reject all",
                       danger: true,
                     });
-                    if (ok) void act(() => api.decideBranch(b.name, b.tip, "reject"));
+                    if (ok) void act(() => work.api.decideBranch(b.name, b.tip, "reject"));
                   }}
                 >
                   Reject all that is left

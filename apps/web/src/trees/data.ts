@@ -13,7 +13,9 @@ import {
   type TreesFile,
 } from "@frontier/schema";
 import { makeEntryId } from "@frontier/vault";
-import { api, ApiFailure } from "../api.ts";
+import { ApiFailure } from "../api.ts";
+import { onProjectChange } from "../project.ts";
+import { projectWork } from "../projectWork.ts";
 import { useLibraryFile } from "../sync/libraryFile.ts";
 import { type Graph, kindNamed, makeGraph } from "./model.ts";
 
@@ -33,18 +35,36 @@ function show(next: Partial<RelationsState>) {
   for (const l of [...listeners]) l();
 }
 
-/** Reads the relations again; what is shown stays until the new answer comes. */
+/**
+ * Reads the relations again; what is shown stays until the new answer comes. An answer for a
+ * project that is no longer open is dropped: another project has other relations.
+ */
 export function reloadRelations(): Promise<void> {
-  loading = api.relations().then(
-    (r) => show({ state: "ready", response: r, graph: makeGraph(r), error: null }),
-    (err: unknown) =>
+  const work = projectWork();
+  const mine: Promise<void> = work.api.relations().then(
+    (r) => {
+      if (work.open() && loading === mine) {
+        show({ state: "ready", response: r, graph: makeGraph(r), error: null });
+      }
+    },
+    (err: unknown) => {
+      if (!work.open() || loading !== mine) return;
       show({
         state: snapshot.graph ? "ready" : "failed",
         error: err instanceof ApiFailure ? err.message : "The relations could not be read.",
-      }),
+      });
+    },
   );
-  return loading;
+  loading = mine;
+  return mine;
 }
+
+// Another project has other relations, and another person's view of them may differ (a writer's
+// includes their own unsaved text): none are shown until the new project's own are read.
+onProjectChange(() => {
+  loading = null;
+  show({ state: "loading", graph: null, response: null, error: null });
+});
 
 export function useRelations(): RelationsState & { reload: () => Promise<void> } {
   const s = useSyncExternalStore(
@@ -67,8 +87,9 @@ export function useTrees() {
 
 /** Writes one relation and reads the relations again. */
 export async function addRelation(req: AddRelationRequest) {
-  const made = await api.addRelation(req);
-  await reloadRelations();
+  const work = projectWork();
+  const made = await work.api.addRelation(req);
+  if (work.open()) await reloadRelations();
   return made;
 }
 
@@ -78,8 +99,9 @@ export async function removeRelation(req: {
   what: string;
   who: string;
 }) {
-  await api.removeRelation(req);
-  await reloadRelations();
+  const work = projectWork();
+  await work.api.removeRelation(req);
+  if (work.open()) await reloadRelations();
 }
 
 const random = (n: number) => crypto.getRandomValues(new Uint8Array(n));

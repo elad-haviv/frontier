@@ -17,6 +17,8 @@ const conn = vi.hoisted(() => ({
 }));
 
 vi.mock("../api.ts", () => ({ api: server }));
+// A change goes to the project it began in; here there is one, and it stays open.
+vi.mock("../projectWork.ts", () => ({ projectWork: () => ({ api: server, open: () => true }) }));
 vi.mock("../sync/connection.ts", () => ({
   connection: {
     current: () => ({ state: conn.state }),

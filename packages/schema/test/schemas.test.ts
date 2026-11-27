@@ -4,6 +4,12 @@ import {
   ImageFromUrlRequest,
   ApplyTypeResponse,
   AttentionResponse,
+  AWAY_KEEP_DAYS,
+  DraftCompareResponse,
+  HistoryResponse,
+  PresenceRequest,
+  PublishConfirmResponse,
+  RemoveMemberResponse,
   DeleteFolderRefusal,
   DeleteFolderRequest,
   LibraryFileResponse,
@@ -30,6 +36,12 @@ import {
   statusOf,
   TreeResponse,
   VaultPath,
+  PasswordRequest,
+  PeopleFile,
+  Person,
+  ProfileRequest,
+  LoginRequest,
+  emailKey,
 } from "../src/index.js";
 
 /** The worked example from the design document. */
@@ -336,7 +348,7 @@ describe("API shapes", () => {
       lastBackupAt: null,
       backupError: "bucket unreachable",
       inbox: { branches: 1, operations: 2, quarantined: 0 },
-      ai: { on: false, lastError: null },
+      notices: { keysRemoved: null },
       serverDraftChanges: 0,
       drafts: 7,
       problems: [],
@@ -370,7 +382,29 @@ describe("errors", () => {
     expect(statusOf("has_images")).toBe(409);
     expect(statusOf("image_fetch_failed")).toBe(422);
     expect(statusOf("ai_stopped")).toBe(409);
-    expect(Object.keys(ERROR_STATUS)).toHaveLength(24);
+    // Stage 31a added email_taken.
+    expect(statusOf("email_taken")).toBe(409);
+    expect(statusOf("ai_key_missing")).toBe(409);
+    expect(statusOf("ai_key_rejected")).toBe(409);
+    // The web app asks the person to log in again for this one.
+    expect(statusOf("recent_login_needed")).toBe(403);
+    // 30 before stage 31c, which added seven (below), 31d one more, and stage 32 four.
+    expect(Object.keys(ERROR_STATUS)).toHaveLength(42);
+    // Stage 31b: a project that is not there for the person, a role too low, an address taken.
+    expect(statusOf("no_project")).toBe(403);
+    expect(statusOf("role_too_low")).toBe(403);
+    expect(statusOf("slug_taken")).toBe(409);
+    expect(statusOf("project_not_deletable")).toBe(409);
+    // Stage 31c: the last owner, and the typed answers about an invitation link.
+    expect(statusOf("last_owner")).toBe(409);
+    expect(statusOf("invite_unknown")).toBe(404);
+    for (const code of ["invite_used", "invite_cancelled", "invite_expired"] as const) {
+      expect(statusOf(code)).toBe(410);
+    }
+    expect(statusOf("already_member")).toBe(409);
+    expect(statusOf("account_exists")).toBe(409);
+    // Stage 31d: an entry in a save was saved by someone else since the plan.
+    expect(statusOf("saved_by_other")).toBe(409);
   });
 
   it("takes a web address of at most 2,048 characters for an image", () => {
@@ -384,6 +418,58 @@ describe("errors", () => {
       ErrorBody.parse({ error: { code: "stale_revision", message: "older", id: "k3f9x2ab7qpd" } }),
     ).toBeTruthy();
     expect(ErrorBody.safeParse({ error: { code: "nope", message: "x" } }).success).toBe(false);
+  });
+});
+
+describe("accounts", () => {
+  it("reads a person from a file that holds little, and keeps room for more", () => {
+    const person = Person.parse({ id: "p1", createdAt: "2026-11-26T10:00:00Z" });
+    expect(person).toEqual({
+      id: "p1",
+      name: "",
+      email: "",
+      passwordHash: "",
+      passwordOff: false,
+      passkeys: [],
+      identities: [],
+      createdAt: "2026-11-26T10:00:00Z",
+      admin: false,
+      sessionEpoch: 0,
+      lastProject: null,
+      // Stage 32: an account from before it is unconfirmed, with nothing waiting.
+      emailConfirmedAt: null,
+      emailConfirmedBy: null,
+      emailCode: null,
+      emailPending: null,
+      resetCode: null,
+      emailDisplaced: false,
+      emailSetBySelf: false,
+      emailLinkSentUntil: null,
+      emailUsed: null,
+    });
+    expect(PeopleFile.parse({})).toEqual({ version: 1, people: [] });
+  });
+
+  it("takes the email in any case, and an empty one at login", () => {
+    expect(emailKey("  Elad@Example.COM ")).toBe("elad@example.com");
+    // Full-width letters and ligatures are the plain letters.
+    expect(emailKey("ＥＬＡＤ＠example.com")).toBe("elad@example.com");
+    expect(LoginRequest.parse({ password: "x" })).toEqual({ email: "", password: "x" });
+    expect(LoginRequest.parse({ email: " a@b.co ", password: "x" }).email).toBe("a@b.co");
+    expect(LoginRequest.safeParse({ email: "a@b.co", password: "" }).success).toBe(false);
+  });
+
+  it("checks a profile and a new password", () => {
+    expect(ProfileRequest.parse({ name: " Elad ", email: " e@x.co " })).toEqual({
+      name: "Elad",
+      email: "e@x.co",
+    });
+    expect(ProfileRequest.safeParse({ name: "", email: "e@x.co" }).success).toBe(false);
+    expect(ProfileRequest.safeParse({ name: "E", email: "nope" }).success).toBe(false);
+    expect(PasswordRequest.safeParse({ password: "short" }).success).toBe(false);
+    expect(PasswordRequest.parse({ password: "long enough pass" }).password).toBe(
+      "long enough pass",
+    );
   });
 });
 
@@ -431,5 +517,194 @@ describe("folders and library files", () => {
     ).toBeTruthy();
     expect(SaveLibraryFileRequest.safeParse({ file: {}, revision: -1 }).success).toBe(false);
     expect(LibraryFileResponse.parse({ file: {}, revision: 2, blob: "" }).revision).toBe(2);
+  });
+});
+
+describe("stage 31d: people's unsaved changes, authors and who is reading", () => {
+  it("lets an older record (no owner) and a new one (an owner and a start) parse", () => {
+    const old = {
+      id: "aaaaaaaaaaaa",
+      revision: 1,
+      path: "A.md",
+      kind: "edit",
+      baseBlob: "",
+      lineEnding: "lf",
+      binary: false,
+      updatedAt: "2026-11-01T10:00:00.000Z",
+    };
+    expect(DraftRecord.parse(old).person).toBeUndefined();
+    const now = DraftRecord.parse({ ...old, person: "p1", startedAt: "2026-11-01T09:00:00.000Z" });
+    expect(now.person).toBe("p1");
+    expect(
+      RenameIntent.parse({ id: "aaaaaaaaaaaa", from: "A.md", to: "B.md", createdAt: old.updatedAt })
+        .person,
+    ).toBeUndefined();
+    expect(
+      RenameIntent.parse({
+        id: "aaaaaaaaaaaa",
+        from: "A.md",
+        to: "B.md",
+        createdAt: old.updatedAt,
+        person: "p1",
+      }).person,
+    ).toBe("p1");
+  });
+
+  it("says who saved the other version and when, in a conflict and in a merge, and reads one that does not", () => {
+    const conflict = {
+      draftId: "aaaaaaaaaaaa",
+      path: "A.md",
+      reason: "saved_by_other",
+      mine: "m",
+      theirs: "t",
+      base: "b",
+    };
+    const plain = PublishPlan.parse({
+      planId: "bbbbbbbbbbbb",
+      mainCommit: "abc",
+      ready: [],
+      merges: [],
+      conflicts: [conflict],
+      renames: [],
+      groups: [],
+    });
+    expect(plain.conflicts[0]!.theirsBy).toBeUndefined();
+    const told = PublishPlan.parse({
+      planId: "bbbbbbbbbbbb",
+      mainCommit: "abc",
+      ready: [],
+      merges: [
+        {
+          id: "m-1",
+          draftId: "aaaaaaaaaaaa",
+          path: "A.md",
+          mergedText: "x",
+          mainText: "y",
+          baseText: "z",
+          theirsBy: { id: null, name: "Seed" },
+          theirsAt: "2026-11-01T10:00:00Z",
+        },
+      ],
+      conflicts: [
+        { ...conflict, theirsBy: { id: "p1", name: "Wren" }, theirsAt: "2026-11-01T10:00:00Z" },
+      ],
+      renames: [],
+      groups: [],
+    });
+    expect(told.conflicts[0]!.theirsBy).toEqual({ id: "p1", name: "Wren" });
+    expect(told.merges[0]!.theirsBy).toEqual({ id: null, name: "Seed" });
+    expect(PublishConfirmResponse.parse({ commit: "abc" }).conflicts).toEqual([]);
+    expect(
+      PublishConfirmResponse.parse({ commit: "abc", conflicts: [conflict] }).conflicts,
+    ).toHaveLength(1);
+    expect(
+      DraftCompareResponse.safeParse({
+        draftId: "aaaaaaaaaaaa",
+        path: "A.md",
+        outcome: "conflict",
+        conflict,
+      }).success,
+    ).toBe(true);
+    expect(
+      DraftCompareResponse.safeParse({ draftId: "aaaaaaaaaaaa", path: "A.md", outcome: "maybe" })
+        .success,
+    ).toBe(false);
+  });
+
+  it("has the history carry an author and never an email", () => {
+    const version = {
+      commit: "abc",
+      at: "2026-11-01T10:00:00Z",
+      message: "m",
+      paths: ["A.md"],
+      by: { id: "p1", name: "Wren" },
+    };
+    expect(HistoryResponse.parse({ versions: [version] }).versions[0]!.by.name).toBe("Wren");
+    expect(
+      HistoryResponse.parse({ versions: [{ ...version, by: { id: null, name: "Seed" } }] })
+        .versions[0]!.by.id,
+    ).toBeNull();
+    expect(HistoryResponse.safeParse({ versions: [{ ...version, by: undefined }] }).success).toBe(
+      false,
+    );
+  });
+
+  it("checks what a device says it is reading", () => {
+    expect(PresenceRequest.parse({ path: "02 People/Mira.md", client: "tab-1_a" })).toEqual({
+      path: "02 People/Mira.md",
+      client: "tab-1_a",
+    });
+    expect(PresenceRequest.parse({ path: null }).path).toBeNull();
+    for (const bad of [
+      { path: "../x.md" },
+      { path: "/x.md" },
+      { path: "a".repeat(1100) },
+      { path: "A.md", client: "no spaces" },
+      { client: "x" },
+      {},
+    ]) {
+      expect(PresenceRequest.safeParse(bad).success, JSON.stringify(bad)).toBe(false);
+    }
+  });
+
+  it("reads a status with and without the notice and the readers", () => {
+    const snapshot = {
+      library: "own",
+      backupOutside: false,
+      lastFetchAt: null,
+      lastPushAt: null,
+      failedPush: null,
+      unpublished: 0,
+      conflicts: 0,
+      indexCommit: null,
+      indexStale: false,
+      lastBackupAt: null,
+      backupError: null,
+      inbox: { branches: 0, operations: 0, quarantined: 0 },
+      notices: { keysRemoved: null },
+      serverDraftChanges: 0,
+      drafts: 0,
+      problems: [],
+      attention: {
+        ambiguousLinks: 0,
+        duplicateImages: 0,
+        mixedEndings: 0,
+        brokenAppendixLinks: 0,
+        nearFolderNotes: 0,
+        unreadableFields: 0,
+        duplicateIds: 0,
+        keptCopies: 0,
+      },
+    };
+    expect(StatusSnapshot.parse(snapshot).othersUnsaved).toBeUndefined();
+    const full = StatusSnapshot.parse({
+      ...snapshot,
+      othersUnsaved: [
+        { path: "A.md", people: [{ id: "p1", name: "Wren", since: "2026-11-01T10:00:00.000Z" }] },
+      ],
+      presence: [{ id: "p1", name: "Wren", path: "A.md", since: "2026-11-01T10:00:00.000Z" }],
+    });
+    expect(full.othersUnsaved![0]!.people[0]!.name).toBe("Wren");
+    expect(full.presence![0]!.path).toBe("A.md");
+  });
+
+  it("tells how many unsaved changes stay behind when a person goes", () => {
+    expect(AWAY_KEEP_DAYS).toBe(30);
+    expect(RemoveMemberResponse.parse({ ok: true, unsavedKept: 2, keptDays: 30 }).unsavedKept).toBe(
+      2,
+    );
+    expect(RemoveMemberResponse.safeParse({ ok: true }).success).toBe(false);
+  });
+
+  it("marks a tree entry and an entry with other people's unsaved changes", () => {
+    const tree = TreeResponse.parse({
+      folders: [],
+      notes: [{ path: "A.md", title: "A", state: "published", othersUnsaved: true }],
+    });
+    expect(tree.notes[0]!.othersUnsaved).toBe(true);
+    expect(
+      TreeResponse.parse({ folders: [], notes: [{ path: "A.md", title: "A", state: "published" }] })
+        .notes[0]!.othersUnsaved,
+    ).toBeUndefined();
   });
 });

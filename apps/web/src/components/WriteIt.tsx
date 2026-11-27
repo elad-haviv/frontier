@@ -1,5 +1,5 @@
 import { type ReactNode, useCallback, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate } from "../nav.tsx";
 import { api, editUrl } from "../api.ts";
 import { useAsync } from "../useAsync.ts";
 import { NewEntry } from "./NewEntry.tsx";

@@ -11,6 +11,7 @@ import { Combobox } from "../ui/Combobox.tsx";
 import { Progress } from "../ui/Progress.tsx";
 import { useToast } from "../ui/Toast.tsx";
 import "./RenameField.css";
+import { projectWork } from "../../projectWork.ts";
 
 const WAIT = "Wait until your changes are sent";
 
@@ -38,6 +39,8 @@ export function useRelocate(
     // Only an entry on the page offers renaming.
     if (!entry) return null;
     const e = entry;
+    // The Undo is offered for a while: it goes to the project the entry is in, not the open one.
+    const work = projectWork();
     const now = pendingPath(e);
     if (to === now) return null;
     if (offline) return offline;
@@ -56,18 +59,18 @@ export function useRelocate(
       if (to === e.path && e.rename) {
         // Back where it is in the library: no rename is left.
         const earlier = e.rename.to;
-        await api.cancelRename(e.rename.id);
+        await work.api.cancelRename(e.rename.id);
         done();
         toast({
           message: `${what}, as it is saved.`,
           action: {
             label: "Undo",
-            run: () => void api.rename(e.path, earlier).then(done, undoFailed),
+            run: () => void work.api.rename(e.path, earlier).then(done, undoFailed),
           },
         });
         return null;
       }
-      const made = await api.rename(e.path, to);
+      const made = await work.api.rename(e.path, to);
       done();
       const n = made.affected.length;
       toast({
@@ -79,9 +82,9 @@ export function useRelocate(
           label: "Undo",
           run: () =>
             void (async () => {
-              await api.cancelRename(made.id);
+              await work.api.cancelRename(made.id);
               // The rename this one replaced comes back.
-              if (made.replaced) await api.rename(made.replaced.from, made.replaced.to);
+              if (made.replaced) await work.api.rename(made.replaced.from, made.replaced.to);
             })().then(done, undoFailed),
         },
       });

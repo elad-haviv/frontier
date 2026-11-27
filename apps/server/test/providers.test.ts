@@ -3,10 +3,8 @@
  * leaves the machine: every request goes to a stand-in fetch, which also keeps what was sent.
  */
 import { describe, expect, it } from "vitest";
-import { maskKey } from "../src/ai/connections.js";
 import { costOf } from "../src/ai/cost.js";
 import { matchName } from "../src/ai/models.js";
-import { checkEndpoint, endpointProblem, guardedFetch } from "../src/ai/providers/guard.js";
 import { toGeminiSchema } from "../src/ai/providers/google.js";
 import {
   DEFAULT_BASE_URL,
@@ -50,7 +48,7 @@ const adapter = (
 ) =>
   makeAdapter({
     kind,
-    baseUrl: kind === "custom" ? "https://llm.example.com/v1" : DEFAULT_BASE_URL[kind],
+    baseUrl: DEFAULT_BASE_URL[kind],
     key,
     fetch: fake,
   });
@@ -417,19 +415,6 @@ describe("xAI and the OpenAI-compatible presets", () => {
     expect(s.sent[1]!.url).toBe("https://api.groq.com/openai/v1/chat/completions");
     expect(s.sent[1]!.body!.response_format).toMatchObject({ type: "json_schema" });
   });
-
-  it("calls an endpoint without a key when none is given, and reads a cost if it reports one", async () => {
-    const s = stand([
-      Response.json({
-        choices: [{ message: { content: "{}" } }],
-        usage: { prompt_tokens: 1, completion_tokens: 1, cost: 0 },
-      }),
-    ]);
-    const r = await adapter("custom", s.fake, null).complete(req({ reasoning: "high" }));
-    expect(s.sent[0]!.headers.get("authorization")).toBeNull();
-    expect(s.sent[0]!.body!.reasoning).toBeUndefined();
-    expect(r.usage.costUsd).toBe(0);
-  });
 });
 
 describe("Anthropic", () => {
@@ -788,14 +773,6 @@ describe("failures that never reach the provider", () => {
 });
 
 describe("keys", () => {
-  it("are masked to their prefix and last four characters", () => {
-    expect(maskKey("sk-or-v1-abcdefghijkla1b2")).toBe("sk-…a1b2");
-    expect(maskKey("sk-ant-api03-xyzxyzxyz9f3e")).toBe("sk-…9f3e");
-    expect(maskKey("xai-abcdefghijk1234")).toBe("xai-…1234");
-    expect(maskKey("AIzaSyAbcdefghij5678")).toBe("…5678");
-    expect(maskKey("short")).toBe("…rt");
-  });
-
   it("are taken out of a provider's words, whole or in part", async () => {
     const key = "sk-ant-api03-SECRETSECRETSECRET-tail9";
     expect(scrub(`Invalid key ${key}`, key)).toBe("Invalid key [key]");
@@ -849,70 +826,5 @@ describe("costs", () => {
     expect(matchName("models/gemini-2.5-flash")).toBe(matchName("google/gemini-2.5-flash"));
     expect(matchName("mistral-large-latest")).toBe(matchName("mistralai/mistral-large"));
     expect(matchName("gpt-4o")).not.toBe(matchName("openai/gpt-4o-mini"));
-  });
-});
-
-describe("the address guard for typed endpoints", () => {
-  const resolveTo = (addresses: string[]) => async () => addresses;
-
-  it("allows https to public addresses only", async () => {
-    expect(endpointProblem("http://llm.example.com/v1", false)).toMatch(/https/);
-    expect(endpointProblem("https://user:pw@llm.example.com", false)).toMatch(/user name/);
-    expect(endpointProblem("https://llm.example.com/v1", false)).toBeNull();
-    await expect(
-      checkEndpoint("https://llm.example.com/v1", {
-        allowLoopback: false,
-        resolve: resolveTo(["93.184.216.34"]),
-      }),
-    ).resolves.toBe("93.184.216.34");
-    for (const internal of [
-      "10.0.0.5",
-      "127.0.0.1",
-      "169.254.169.254",
-      "192.168.1.2",
-      "::1",
-      "fd00::1",
-    ]) {
-      await expect(
-        checkEndpoint("https://llm.example.com/v1", {
-          allowLoopback: false,
-          resolve: resolveTo([internal]),
-        }),
-      ).rejects.toThrow(/private or local/);
-    }
-    // One bad address among good ones is enough to refuse.
-    await expect(
-      checkEndpoint("https://x.example.com", {
-        allowLoopback: false,
-        resolve: resolveTo(["93.184.216.34", "10.1.1.1"]),
-      }),
-    ).rejects.toThrow();
-    await expect(
-      checkEndpoint("https://[::1]:8443/v1", { allowLoopback: false }),
-    ).rejects.toThrow();
-  });
-
-  it("allows plain http to loopback only when the tests ask, and follows no redirect", async () => {
-    await expect(checkEndpoint("http://127.0.0.1:9999/v1", { allowLoopback: true })).resolves.toBe(
-      "127.0.0.1",
-    );
-    await expect(
-      checkEndpoint("http://example.com/v1", {
-        allowLoopback: true,
-        resolve: resolveTo(["93.184.216.34"]),
-      }),
-    ).rejects.toThrow(/https/);
-    const s = stand([Response.json({ data: [] })]);
-    let redirect: string | undefined;
-    const spy: typeof fetch = async (input, init) => {
-      redirect = init?.redirect;
-      return s.fake(input, init);
-    };
-    const f = guardedFetch(spy, { allowLoopback: true });
-    await f("http://127.0.0.1:9999/v1/models");
-    expect(redirect).toBe("manual");
-    await expect(
-      guardedFetch(spy, { allowLoopback: false })("http://127.0.0.1:9999/v1/models"),
-    ).rejects.toThrow();
   });
 });

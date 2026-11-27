@@ -1,6 +1,6 @@
-import { type CDPSession, expect, type Page, test } from "@playwright/test";
+import { type CDPSession, expect, type Page, test } from "./test.ts";
 import { midpointOn, outline, type Position } from "@frontier/geo";
-import { newMapInForm, openNewMap, pickEntry } from "./helpers.ts";
+import { newMapInForm, openNewMap, pickEntry, proj } from "./helpers.ts";
 
 /**
  * The editing tools of stage 13c: the line to the cursor while drawing, curves, the "+" handles,
@@ -33,14 +33,14 @@ const makeMap = (page: Page, title: string, kind: "sphere" | "flat", features: u
   page.evaluate(
     async ({ title, kind, image, features }) => {
       const json = { "content-type": "application/json" };
-      const made = await fetch("/api/maps", {
+      const made = await fetch(`${API}/maps`, {
         method: "POST",
         headers: json,
         body: JSON.stringify({ title, kind, image }),
       });
       const { id } = (await made.json()) as { id: string };
       if (features.length === 0) return id;
-      const loaded = await (await fetch(`/api/maps/${id}`)).json();
+      const loaded = await (await fetch(`${API}/maps/${id}`)).json();
       const map = loaded.map;
       const layer = map.layers[0].id;
       map.features = (features as Record<string, unknown>[]).map((f) => ({
@@ -50,7 +50,7 @@ const makeMap = (page: Page, title: string, kind: "sphere" | "flat", features: u
         child: null,
         ...f,
       }));
-      await fetch(`/api/maps/${id}`, {
+      await fetch(`${API}/maps/${id}`, {
         method: "PUT",
         headers: json,
         body: JSON.stringify({ map, revision: loaded.revision, baseBlob: loaded.blob }),
@@ -64,10 +64,10 @@ const makeMap = (page: Page, title: string, kind: "sphere" | "flat", features: u
 const cleanUp = (page: Page, maps: string[], chronicles: string[] = []) =>
   page.evaluate(
     async ({ maps, chronicles }) => {
-      for (const id of maps) await fetch(`/api/maps/${id}`, { method: "DELETE" });
-      for (const id of chronicles) await fetch(`/api/chronicles/${id}`, { method: "DELETE" });
-      const un = await (await fetch("/api/unpublished")).json();
-      for (const d of un.drafts) await fetch(`/api/drafts/${d.id}`, { method: "DELETE" });
+      for (const id of maps) await fetch(`${API}/maps/${id}`, { method: "DELETE" });
+      for (const id of chronicles) await fetch(`${API}/chronicles/${id}`, { method: "DELETE" });
+      const un = await (await fetch(`${API}/unpublished`)).json();
+      for (const d of un.drafts) await fetch(`${API}/drafts/${d.id}`, { method: "DELETE" });
     },
     { maps, chronicles },
   );
@@ -75,7 +75,7 @@ const cleanUp = (page: Page, maps: string[], chronicles: string[] = []) =>
 const stored = (page: Page) =>
   page.evaluate(async () => {
     const id = location.pathname.split("/").pop();
-    return ((await (await fetch(`/api/maps/${id}`)).json()) as { map: Stored }).map;
+    return ((await (await fetch(`${API}/maps/${id}`)).json()) as { map: Stored }).map;
   });
 const featureOf = async (page: Page, id: string) =>
   (await stored(page)).features.find((f) => f.id === id);
@@ -111,7 +111,7 @@ async function onFlat(page: Page, [x, y]: Position): Promise<Point> {
 }
 
 async function open(page: Page, id: string, query = "edit=1") {
-  await page.goto(`/map/${id}?${query}`);
+  await page.goto(proj(`/map/${id}?${query}`));
   await expect(page.locator(".map-top")).toBeVisible();
   await expect(page).toHaveURL(/v=/);
   await page.waitForTimeout(300);
@@ -137,13 +137,13 @@ async function makeChronicle(page: Page, title: string) {
   return page.evaluate(async (title) => {
     const json = { "content-type": "application/json" };
     const made = await (
-      await fetch("/api/chronicles", {
+      await fetch(`${API}/chronicles`, {
         method: "POST",
         headers: json,
         body: JSON.stringify({ title }),
       })
     ).json();
-    const { chronicle, revision } = await (await fetch(`/api/chronicles/${made.id}`)).json();
+    const { chronicle, revision } = await (await fetch(`${API}/chronicles/${made.id}`)).json();
     const lane = chronicle.lanes[0].id;
     const span = (id: string, name: string, extra: object) => ({
       id,
@@ -162,7 +162,7 @@ async function makeChronicle(page: Page, title: string) {
       span("kingdom1", "The kingdom", { start: { words: "", low: 0, high: 0 } }),
       span("treaty01", "The treaty", { point: true, start: { words: "", low: 300, high: 300 } }),
     ];
-    await fetch(`/api/chronicles/${made.id}`, {
+    await fetch(`${API}/chronicles/${made.id}`, {
       method: "PUT",
       headers: json,
       body: JSON.stringify({ chronicle, revision }),
@@ -180,7 +180,7 @@ test.describe("with a mouse", () => {
   test("CUJ 2: draws a curved river with the line to the cursor, then refines it", async ({
     page,
   }) => {
-    await page.goto("/maps");
+    await page.goto(proj("/maps"));
     const id = await makeMap(page, "Curved river", "sphere");
     await open(page, id);
     // A press on the map gives it the focus, so the keys act on it.
@@ -280,7 +280,7 @@ test.describe("with a mouse", () => {
   test("CUJ 3: moves a border at a later year; a drag elsewhere, or with Space, pans", async ({
     page,
   }) => {
-    await page.goto("/maps");
+    await page.goto(proj("/maps"));
     const chronicle = await makeChronicle(page, "Border years");
     const square = (a: number, b: number): Position[] => [
       [a, a],
@@ -301,7 +301,7 @@ test.describe("with a mouse", () => {
       },
     ]);
     const space = (await page.evaluate(
-      async (id) => (await (await fetch(`/api/maps/${id}`)).json()).map.space,
+      async (id) => (await (await fetch(`${API}/maps/${id}`)).json()).map.space,
       id,
     )) as {
       width: number;
@@ -312,11 +312,11 @@ test.describe("with a mouse", () => {
     // The map was made with fractions of its size; it is set in its own units here.
     await page.evaluate(
       async ({ id, first, later }) => {
-        const loaded = await (await fetch(`/api/maps/${id}`)).json();
+        const loaded = await (await fetch(`${API}/maps/${id}`)).json();
         const f = loaded.map.features[0];
         f.points = first;
         f.shapes[0].points = later;
-        await fetch(`/api/maps/${id}`, {
+        await fetch(`${API}/maps/${id}`, {
           method: "PUT",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({
@@ -384,7 +384,7 @@ test.describe("with a mouse", () => {
   });
 
   test("CUJ 4: places five towns with the marker tool on, and links them", async ({ page }) => {
-    await page.goto("/maps");
+    await page.goto(proj("/maps"));
     const port = await makeMap(page, "Port quarter", "flat");
     const id = await makeMap(page, "Five towns", "flat");
     await open(page, id);
@@ -450,7 +450,7 @@ test.describe("with a mouse", () => {
   });
 
   test("the image dialog for a map chooses one image, and the form uses it", async ({ page }) => {
-    await page.goto("/maps");
+    await page.goto(proj("/maps"));
     await openNewMap(page);
     await page.getByRole("button", { name: "Choose an image…" }).click();
     const dialog = page.getByRole("dialog", { name: "Choose an image" });
@@ -526,7 +526,7 @@ test.describe("by touch", () => {
     page,
   }, info) => {
     test.skip(info.project.name !== "phone", "Needs touch");
-    await page.goto("/maps");
+    await page.goto(proj("/maps"));
     const id = await makeMap(page, "Touched zone", "sphere", [
       {
         id: "zone0001",

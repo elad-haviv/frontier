@@ -1,4 +1,4 @@
-import { expect, type Page, test } from "@playwright/test";
+import { expect, type Page, test } from "./test.ts";
 import {
   type Feature,
   cleanUp,
@@ -30,7 +30,7 @@ const zones = async (page: Page) =>
 const layersOf = async (page: Page) =>
   (await page.evaluate(async () => {
     const id = location.pathname.split("/").pop();
-    return (await (await fetch(`/api/maps/${id}`)).json()).map.layers;
+    return (await (await fetch(`${API}/maps/${id}`)).json()).map.layers;
   })) as { id: string; name: string }[];
 
 /** Chooses a biome in a picker by typing part of its name. */
@@ -47,8 +47,8 @@ const resetLibrary = (page: Page) =>
       ["map-styles", { version: 1, styles: [] }],
       ["biomes", { version: 1, biomes: [] }],
     ] as const) {
-      const lib = await (await fetch(`/api/library-files/${name}`)).json();
-      await fetch(`/api/library-files/${name}`, {
+      const lib = await (await fetch(`${API}/library-files/${name}`)).json();
+      await fetch(`${API}/library-files/${name}`, {
         method: "PUT",
         headers: json,
         body: JSON.stringify({ file, revision: lib.revision, baseBlob: lib.blob }),
@@ -87,7 +87,7 @@ test("draws a desert by hand in the Biomes layer, and a cart's route through it 
   expect(desert!.layer).toBe(layers[0]!.id);
   // Its usual style was added to the library.
   const styles = await page.evaluate(
-    async () => (await (await fetch("/api/library-files/map-styles")).json()).file.styles,
+    async () => (await (await fetch(`${API}/library-files/map-styles`)).json()).file.styles,
   );
   expect(styles.map((s: { id: string }) => s.id)).toContain("biodsand");
 
@@ -149,7 +149,7 @@ test("gives a zone a biome in its Edit tab, with the owner's own biome", async (
   await form.getByRole("button", { name: "Done" }).click();
   await expect
     .poll(async () =>
-      page.evaluate(async () => (await (await fetch("/api/library-files/biomes")).json()).file),
+      page.evaluate(async () => (await (await fetch(`${API}/library-files/biomes`)).json()).file),
     )
     .toMatchObject({
       biomes: [{ name: "Blightlands", like: "wasteland", pattern: "thorns", rivers: "dry" }],

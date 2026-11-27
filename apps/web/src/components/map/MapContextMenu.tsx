@@ -28,6 +28,7 @@ import {
   ContextMenuSeparator,
   ContextMenuSub,
 } from "../ui/ContextMenu.tsx";
+import { useCanWrite } from "../projectContext.ts";
 
 /** What the map's right-click menu acts on, and the actions it offers. */
 export interface MapMenu {
@@ -74,6 +75,7 @@ export interface MapMenu {
 /** The items for what was right-clicked: a feature, a corner of the selected one, or nothing. */
 function Items({ menu }: { menu: MapMenu }) {
   const { target, editing, feature } = menu;
+  const canWrite = useCanWrite();
   if (target.kind === "corner" && feature) {
     return (
       <ContextMenuItem
@@ -119,14 +121,18 @@ function Items({ menu }: { menu: MapMenu }) {
         <ContextMenuItem icon={Link2} onSelect={() => menu.copyPlace(feature)}>
           Copy a link to this place
         </ContextMenuItem>
-        <ContextMenuSeparator />
-        <ContextMenuItem
-          icon={Pencil}
-          keys={shortcutText("map.edit")}
-          onSelect={() => menu.editFeature(feature)}
-        >
-          Edit this feature
-        </ContextMenuItem>
+        {canWrite && (
+          <>
+            <ContextMenuSeparator />
+            <ContextMenuItem
+              icon={Pencil}
+              keys={shortcutText("map.edit")}
+              onSelect={() => menu.editFeature(feature)}
+            >
+              Edit this feature
+            </ContextMenuItem>
+          </>
+        )}
       </>
     );
   }

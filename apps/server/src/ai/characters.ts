@@ -183,13 +183,10 @@ export class CharacterTalk {
   constructor(private readonly d: CharacterDeps) {}
 
   private async model(): Promise<string> {
-    const model = (await this.d.settings.read())?.ai.models.conversation;
-    if (!model) {
-      throw new ApiError(
-        "ai_off",
-        "No model is chosen for lore conversations and characters. Choose one on the settings page.",
-      );
-    }
+    const model = await this.d.provider.chosenModel(
+      "conversation",
+      "lore conversations and characters",
+    );
     return model;
   }
 

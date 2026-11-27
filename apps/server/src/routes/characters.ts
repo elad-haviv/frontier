@@ -1,9 +1,10 @@
-import type { FastifyInstance } from "fastify";
+import type { RouteApp } from "../projects/facade.js";
 import { VaultPath } from "@frontier/schema";
 import { z } from "zod";
 import { Trait } from "../ai/characters.js";
 import { summaryOf } from "../ai/talks.js";
 import type { Services } from "../app.js";
+import { personOf } from "../auth/session.js";
 import { ApiError } from "../errors.js";
 
 const Path = z.object({ path: VaultPath });
@@ -31,7 +32,7 @@ const Moment = Path.extend({
     .refine((y) => y === null || Number.isFinite(y), "The year is a number, or empty."),
 });
 
-export function characterRoutes(app: FastifyInstance, s: Services): void {
+export function characterRoutes(app: RouteApp, s: Services): void {
   app.get("/api/characters/profile", async (request) => {
     const { path } = Path.parse(request.query);
     return { profile: await s.characters.profile(path) };
@@ -55,24 +56,24 @@ export function characterRoutes(app: FastifyInstance, s: Services): void {
     return s.characters.withheld(path, year);
   });
 
-  /** The character's saved conversations, the latest spoken in first, without their lines. */
+  /** The caller's own saved conversations with the character, the latest spoken in first, without their lines. */
   app.get("/api/characters/talks", async (request) => {
     const { path } = Path.parse(request.query);
     const profile = await s.characters.profile(path);
     if (!profile) return { talks: [] };
-    return { talks: (await s.talks.forEntry(profile.entry)).map(summaryOf) };
+    return { talks: (await s.talks.forEntry(personOf(request).id, profile.entry)).map(summaryOf) };
   });
 
   app.get("/api/characters/talks/:id", async (request) => {
     const { id } = z.object({ id: TalkId }).parse(request.params);
-    const talk = await s.talks.get(id);
+    const talk = await s.talks.get(personOf(request).id, id);
     if (!talk) throw new ApiError("not_found", "That conversation is not there any more.");
     return { talk };
   });
 
   app.delete("/api/characters/talks/:id", async (request) => {
     const { id } = z.object({ id: TalkId }).parse(request.params);
-    await s.talks.remove(id);
+    await s.talks.remove(personOf(request).id, id);
     return { ok: true };
   });
 
@@ -81,13 +82,15 @@ export function characterRoutes(app: FastifyInstance, s: Services): void {
     const { path, message, talk: id } = Say.parse(request.body);
     const profile = await s.characters.profile(path);
     if (!profile) throw new ApiError("invalid", "Approve a profile for this character first.");
-    const before = id ? await s.talks.get(id) : null;
+    const me = personOf(request).id;
+    const before = id ? await s.talks.get(me, id) : null;
     if (id && (!before || before.entry !== profile.entry)) {
       throw new ApiError("not_found", "That conversation is not there any more.");
     }
     const history = (before?.lines ?? []).map((l) => ({ who: l.who, text: l.text }));
     const lines = await s.characters.say(path, history, message);
     const talk = await s.talks.change(
+      me,
       id ?? null,
       { entry: profile.entry, moment: profile.moment },
       (t) => ({
@@ -110,7 +113,7 @@ export function characterRoutes(app: FastifyInstance, s: Services): void {
    */
   app.post("/api/characters/line", async (request) => {
     const { path, text, talk: id, line } = Line.parse(request.body);
-    const model = (await s.settings.read())?.ai.models.conversation ?? "unknown";
+    const model = (await s.settings.current()).ai.models.conversation ?? "unknown";
     const draft = await s.changer.apply(path, (now) => `${now.replace(/\s*$/, "")}\n\n${text}\n`, {
       kind: "lore",
       ref: `character:${path}`,
@@ -121,12 +124,17 @@ export function characterRoutes(app: FastifyInstance, s: Services): void {
     const talk =
       id && profile && typeof line === "number"
         ? await s.talks
-            .change(id, { entry: profile.entry, moment: profile.moment }, (t) => ({
-              ...t,
-              lines: t.lines.map((l, i) =>
-                i === line && l.who === "character" && l.text === text ? { ...l, kept: true } : l,
-              ),
-            }))
+            .change(
+              personOf(request).id,
+              id,
+              { entry: profile.entry, moment: profile.moment },
+              (t) => ({
+                ...t,
+                lines: t.lines.map((l, i) =>
+                  i === line && l.who === "character" && l.text === text ? { ...l, kept: true } : l,
+                ),
+              }),
+            )
             .catch(() => null)
         : null;
     return { draft: draft?.id ?? null, talk };

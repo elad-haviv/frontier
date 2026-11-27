@@ -1,14 +1,15 @@
 import { type ReactNode, useEffect, useId, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link } from "../../nav.tsx";
 import { api, ApiFailure, entryUrl } from "../../api.ts";
 import { reloadRelations } from "../../trees/data.ts";
 import { EntryCombobox } from "../EntryCombobox.tsx";
+import { useCanWrite } from "../projectContext.ts";
 import { useRefresh } from "../Shell.tsx";
 import { useToast } from "../ui/Toast.tsx";
 import "./ProposedRelation.css";
 
 /**
- * A relation the AI read in an entry's text (stage 31), as the inbox, a tree's panel, the phone's
+ * A relation the AI read in an entry's text (stage 33), as the inbox, a tree's panel, the phone's
  * sheet and the Relations tab all show it: the relation in words with how its person was matched,
  * the sentence(s) with the words that state it marked, what is unclear about it, and Accept, Edit
  * and Reject.
@@ -154,6 +155,7 @@ export function ProposedRelation({
 }) {
   const toast = useToast();
   const refresh = useRefresh();
+  const canWrite = useCanWrite();
   const ids = useId();
   const [editing, setEditing] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -307,51 +309,53 @@ export function ProposedRelation({
           {error}
         </p>
       )}
-      <p className="change-actions">
-        {p.applies === false ? (
-          <button
-            type="button"
-            className="quiet"
-            disabled={busy}
-            onClick={() => void decide("dismiss")}
-          >
-            Dismiss
-          </button>
-        ) : (
-          <>
-            <button
-              type="button"
-              className="primary"
-              data-act="accept"
-              disabled={busy}
-              onClick={() => void accept()}
-            >
-              {editing ? "Accept as edited" : "Accept"}
-            </button>
+      {canWrite && (
+        <p className="change-actions">
+          {p.applies === false ? (
             <button
               type="button"
               className="quiet"
-              data-act="edit"
               disabled={busy}
-              onClick={() => setEditing(!editing)}
+              onClick={() => void decide("dismiss")}
             >
-              {editing ? "Cancel" : "Edit"}
+              Dismiss
             </button>
-            <button
-              type="button"
-              className="plain danger"
-              data-act="reject"
-              disabled={busy}
-              onClick={() => void decide("reject")}
-            >
-              Reject
-            </button>
-            {!compact && !canSaveOnOther && (
-              <span className="muted rp-saved">Saved on {titleOf(saveOn)}’s entry</span>
-            )}
-          </>
-        )}
-      </p>
+          ) : (
+            <>
+              <button
+                type="button"
+                className="primary"
+                data-act="accept"
+                disabled={busy}
+                onClick={() => void accept()}
+              >
+                {editing ? "Accept as edited" : "Accept"}
+              </button>
+              <button
+                type="button"
+                className="quiet"
+                data-act="edit"
+                disabled={busy}
+                onClick={() => setEditing(!editing)}
+              >
+                {editing ? "Cancel" : "Edit"}
+              </button>
+              <button
+                type="button"
+                className="plain danger"
+                data-act="reject"
+                disabled={busy}
+                onClick={() => void decide("reject")}
+              >
+                Reject
+              </button>
+              {!compact && !canSaveOnOther && (
+                <span className="muted rp-saved">Saved on {titleOf(saveOn)}’s entry</span>
+              )}
+            </>
+          )}
+        </p>
+      )}
     </div>
   );
 }

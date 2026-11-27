@@ -1,5 +1,5 @@
-import { expect, type Page, test } from "@playwright/test";
-import { chooseKind, openNewMap } from "./helpers.ts";
+import { expect, type Page, test } from "./test.ts";
+import { chooseKind, openNewMap, proj } from "./helpers.ts";
 
 /** Makes star maps and system models, which need no image, and returns their ids. */
 async function make(page: Page, titles: string[], kind: "stars" | "system" = "stars") {
@@ -7,7 +7,7 @@ async function make(page: Page, titles: string[], kind: "stars" | "system" = "st
     async ({ titles, kind }) => {
       const ids: string[] = [];
       for (const title of titles) {
-        const res = await fetch("/api/maps", {
+        const res = await fetch(`${API}/maps`, {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ title, kind }),
@@ -22,37 +22,39 @@ async function make(page: Page, titles: string[], kind: "stars" | "system" = "st
 
 async function discard(page: Page, ids: string[]) {
   await page.evaluate(async (ids) => {
-    for (const id of ids) await fetch(`/api/maps/${id}`, { method: "DELETE" });
+    for (const id of ids) await fetch(`${API}/maps/${id}`, { method: "DELETE" });
   }, ids);
 }
 
 /** Every map in the library, so a test can leave nothing behind. */
 const allIds = (page: Page) =>
   page.evaluate(async () =>
-    ((await (await fetch("/api/maps")).json()) as { maps: { id: string }[] }).maps.map((m) => m.id),
+    ((await (await fetch(`${API}/maps`)).json()) as { maps: { id: string }[] }).maps.map(
+      (m) => m.id,
+    ),
   );
 
 test("each map is one card with its kind, and a map with maps under it is a deck, not a group", async ({
   page,
 }, info) => {
   const tag = info.project.name;
-  await page.goto("/maps");
+  await page.goto(proj("/maps"));
   // A top globe and two layers under it, made through the API, with a star map beside them.
   const ids = await page.evaluate(async (tag) => {
     const make = async (title: string, under: string | null) => {
-      const res = await fetch("/api/maps", {
+      const res = await fetch(`${API}/maps`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ title, kind: "sphere", image: "99 Appendices/Images/map one.png" }),
       });
       const { id } = (await res.json()) as { id: string };
       if (under) {
-        const got = (await (await fetch(`/api/maps/${id}`)).json()) as {
+        const got = (await (await fetch(`${API}/maps/${id}`)).json()) as {
           map: Record<string, unknown>;
           revision: number;
         };
         got.map.under = under;
-        await fetch(`/api/maps/${id}`, {
+        await fetch(`${API}/maps/${id}`, {
           method: "PUT",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ map: got.map, revision: got.revision }),
@@ -99,7 +101,7 @@ test("each map is one card with its kind, and a map with maps under it is a deck
 
 test("a map is renamed and deleted from its menu", async ({ page }, info) => {
   const tag = info.project.name;
-  await page.goto("/maps");
+  await page.goto(proj("/maps"));
   const [id] = await make(page, [`Old name ${tag}`]);
   await page.reload();
   const card = (title: string) =>
@@ -128,7 +130,7 @@ test("search appears with twelve maps, finds by title, kind and the world a laye
   page,
 }, info) => {
   const tag = info.project.name;
-  await page.goto("/maps");
+  await page.goto(proj("/maps"));
   const before = await allIds(page);
   const titles = Array.from({ length: 12 }, (_, i) => `Reach ${String(i).padStart(2, "0")} ${tag}`);
   const ids = await make(page, titles);
@@ -163,7 +165,7 @@ test("the view is a grid or a list, remembered on this device, with the same map
   page,
 }, info) => {
   const tag = info.project.name;
-  await page.goto("/maps");
+  await page.goto(proj("/maps"));
   const ids = await make(
     page,
     Array.from({ length: 5 }, (_, i) => `View ${i} ${tag}`),
@@ -182,7 +184,7 @@ test("the view is a grid or a list, remembered on this device, with the same map
 test("New map is a dialog with a card for each kind, and the page has no form", async ({
   page,
 }, info) => {
-  await page.goto("/maps");
+  await page.goto(proj("/maps"));
   await expect(page.locator(".new-map")).toHaveCount(0);
   await openNewMap(page);
   for (const name of ["Globe", "Flat map", "Star map", "System model"]) {
@@ -194,7 +196,7 @@ test("New map is a dialog with a card for each kind, and the page has no form", 
   await page.getByRole("button", { name: "Make the map" }).click();
   await expect(page.locator(".star-canvas")).toBeVisible();
   await page.evaluate(async () => {
-    await fetch(`/api/maps/${location.pathname.split("/").pop()}`, { method: "DELETE" });
+    await fetch(`${API}/maps/${location.pathname.split("/").pop()}`, { method: "DELETE" });
   });
 });
 
@@ -202,7 +204,7 @@ test("with filters on, the chips show counts, Needs publishing narrows to unpubl
   page,
 }, info) => {
   const tag = info.project.name;
-  await page.goto("/maps");
+  await page.goto(proj("/maps"));
   const stars = await make(
     page,
     Array.from({ length: 16 }, (_, i) => `Star ${i} ${tag}`),

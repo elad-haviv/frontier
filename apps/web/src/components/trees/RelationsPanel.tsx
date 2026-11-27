@@ -1,6 +1,6 @@
 import { X } from "lucide-react";
 import { useId, useMemo, useRef, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "../../nav.tsx";
 import { findKind, type RelKind, type TreesFile } from "@frontier/schema";
 import { readRelations } from "@frontier/vault";
 import { ApiFailure, entryUrl, treeUrl } from "../../api.ts";
@@ -21,6 +21,7 @@ import {
 } from "./ProposedRelation.tsx";
 import { useDialogs } from "../Dialogs.tsx";
 import { EntryCombobox } from "../EntryCombobox.tsx";
+import { useCanWrite } from "../projectContext.ts";
 import { usePhone } from "../Shell.tsx";
 import { IconButton } from "../ui/IconButton.tsx";
 import { useToast } from "../ui/Toast.tsx";
@@ -45,7 +46,7 @@ function kindFor(g: Graph, path: string): string {
 export function RelationsPanel({
   path,
   text,
-  editable,
+  editable: wanted,
   onChanged,
 }: {
   path: string;
@@ -54,6 +55,9 @@ export function RelationsPanel({
   editable: boolean;
   onChanged: () => void;
 }) {
+  // A reader sees the relations and the trees, and none of the controls that write them.
+  const canWrite = useCanWrite();
+  const editable = wanted && canWrite;
   const relations = useRelations();
   const trees = useTrees();
   const navigate = useNavigate();
@@ -68,7 +72,7 @@ export function RelationsPanel({
   const [error, setError] = useState<string | null>(null);
   const [picker, setPicker] = useState<{ where: AddWhere; at: DOMRect } | null>(null);
   const g = relations.graph;
-  // Stage 31: what the AI proposed from this entry's text, and from others that name it.
+  // Stage 33: what the AI proposed from this entry's text, and from others that name it.
   const response = relations.response;
   const proposed = useMemo(() => response?.proposed ?? [], [response]);
   const asRel = (p: (typeof proposed)[number]): RelProposal => ({ ...p, applies: true });
@@ -305,9 +309,7 @@ export function RelationsPanel({
       <section className="tr-sec">
         <h3>In trees</h3>
         {inTrees.length === 0 ? (
-          <p className="tr-muted">
-            None. <Link to="/trees">Make a tree</Link>
-          </p>
+          <p className="tr-muted">None. {canWrite && <Link to="/trees">Make a tree</Link>}</p>
         ) : (
           <ul>
             {inTrees.map((t) => (

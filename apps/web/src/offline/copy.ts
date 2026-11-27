@@ -5,6 +5,7 @@
  * itself (`device.ts`), which loads on its own once the app is signed in.
  */
 import { setReadThrough } from "../api.ts";
+import { markOffDevice } from "../projects.ts";
 
 const served = new WeakMap<object, number>();
 const unsent = new WeakSet<object>();
@@ -76,4 +77,36 @@ export async function deviceSpace(): Promise<number | null> {
 export async function clearDeviceCopy(): Promise<void> {
   loading ??= import("./device.ts");
   await (await device())?.clear();
+}
+
+/** The project was deleted: its copy is emptied and its keeper let go. */
+export async function dropDeviceCopyOf(ref: { id: string; slug: string }): Promise<void> {
+  loading ??= import("./device.ts");
+  await (await device())?.dropProject(ref);
+}
+
+/** The space each of these projects' copies takes on this device; null where nothing is kept. */
+export async function deviceSpaces(
+  refs: { id: string; slug: string }[],
+): Promise<{ id: string; bytes: number | null }[]> {
+  loading ??= import("./device.ts");
+  const d = await device();
+  return d ? d.spaces(refs) : refs.map((r) => ({ id: r.id, bytes: null }));
+}
+
+/** Empties the copy of one project, which need not be the open one. */
+export async function clearDeviceCopyOf(ref: { id: string; slug: string }): Promise<void> {
+  loading ??= import("./device.ts");
+  await (await device())?.clearProject(ref);
+}
+
+/**
+ * The person is no longer in this project (removed, or left it): what this device kept of it to
+ * read offline goes, its pages and the images found by its own addresses, and it is no longer
+ * marked as on this device. The changes not sent yet stay, since they are the person's own text
+ * and are listed on All projects to copy out.
+ */
+export async function forgetProjectCopy(ref: { id: string; slug: string }): Promise<void> {
+  await dropDeviceCopyOf(ref).catch(() => undefined);
+  markOffDevice(ref.id);
 }

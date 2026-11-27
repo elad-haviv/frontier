@@ -5,6 +5,7 @@
  * save does not change the status, so this is what brings a link just written into the graph).
  * At most one request is in flight, with one more queued behind it.
  */
+import { onProjectChange } from "../project.ts";
 import { useEffect, useSyncExternalStore } from "react";
 import type { GraphResponse } from "@frontier/schema";
 import { api, ApiFailure } from "../api.ts";
@@ -42,6 +43,8 @@ export class GraphData {
   private users = 0;
   private stops: (() => void)[] = [];
   private seen = new Map<string, number>();
+  /** Counts the projects opened, so an answer for an earlier one is not taken. */
+  private generation = 0;
 
   constructor(private readonly d: GraphDataDeps) {}
 
@@ -94,9 +97,13 @@ export class GraphData {
     }
     this.inFlight = true;
     this.set({ loading: true });
+    const generation = this.generation;
     void this.d.fetch().then(
-      (r) => this.settle({ model: makeModel(r), error: null, at: servedFromDevice(r) }),
+      (r) =>
+        generation === this.generation &&
+        this.settle({ model: makeModel(r), error: null, at: servedFromDevice(r) }),
       (err: unknown) =>
+        generation === this.generation &&
         this.settle({
           // A graph already held stays shown as it was.
           error: this.state.model
@@ -106,6 +113,16 @@ export class GraphData {
               : NEEDS_CONNECTION,
         }),
     );
+  }
+
+  /** Another project was opened: nothing of the last one stays, and a screen in use reads again. */
+  reset(): void {
+    this.generation++;
+    this.inFlight = false;
+    this.again = false;
+    this.seen = this.d.entries();
+    this.set({ model: null, error: null, loading: false, at: null });
+    if (this.users > 0) this.fetch();
   }
 
   private settle(change: Partial<GraphState>): void {
@@ -139,6 +156,8 @@ export const graphData = new GraphData({
         .map((r) => [r.key, r.revision]),
     ),
 });
+
+onProjectChange(() => graphData.reset());
 
 /** The graph for a screen or tab, fetched while it is mounted. */
 export function useGraphData(data = graphData): GraphState & { retry: () => void } {

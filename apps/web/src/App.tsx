@@ -1,10 +1,30 @@
 import { lazy, Suspense, useCallback, useEffect, useState } from "react";
 import { Navigate, Route, Routes, useLocation, useParams } from "react-router-dom";
+import { resetAccess } from "./access.ts";
 import { api } from "./api.ts";
+import { keysOwner } from "./aiKeys.ts";
+import { clearMe, loadMe } from "./me.ts";
+import { resumeProposals } from "./proposeAfterPublish.ts";
 import { useAsync } from "./useAsync.ts";
 import { noteOpened } from "./map/mapsList.ts";
+import { AiKeyPromptHost } from "./components/AiKeyPrompt.tsx";
+import { KeysRemovedNotice } from "./components/KeysRemovedNotice.tsx";
 import { LoginDialog } from "./components/LoginDialog.tsx";
-import { Shell } from "./components/Shell.tsx";
+import { OutsideShell } from "./components/OutsideShell.tsx";
+import { ProjectScope } from "./components/ProjectScope.tsx";
+import { WriterOnly } from "./components/WriterOnly.tsx";
+import { AllProjects } from "./pages/projects/AllProjects.tsx";
+import { Navigate as ProjectNavigate, useLocation as useProjectLocation } from "./nav.tsx";
+import { movedInto, projectRoot } from "./project.ts";
+import { fileUnfiled } from "./projectStorage.ts";
+import {
+  clearProjects,
+  hasLegacyFlags,
+  homeProject,
+  knownProjects,
+  loadProjects,
+  useProjects,
+} from "./projects.ts";
 import { startDeviceCopy } from "./offline/copy.ts";
 import { noteSignedIn, openApp } from "./offline/start.ts";
 import { updates } from "./offline/updates.ts";
@@ -17,6 +37,10 @@ import { ChroniclesPage } from "./pages/Chronicles.tsx";
 import { TreesPage } from "./pages/Trees.tsx";
 import { MapsPage } from "./pages/Maps.tsx";
 import { Login } from "./pages/Login.tsx";
+import { JoinPage } from "./pages/Join.tsx";
+import { ConfirmPage } from "./email/ConfirmPage.tsx";
+import { ForgotPage } from "./email/ForgotPage.tsx";
+import { ResetPage } from "./email/ResetPage.tsx";
 const SettingsPage = lazy(() =>
   import("./pages/settings/SettingsPage.tsx").then((m) => ({ default: m.SettingsPage })),
 );
@@ -73,6 +97,22 @@ const VersionsPage = lazy(() =>
   import("./pages/Versions.tsx").then((m) => ({ default: m.VersionsPage })),
 );
 
+/** `/join/<code>`: the page an invite link opens, for someone logged in or not. */
+function JoinRoute() {
+  const { code = "" } = useParams();
+  return <JoinPage key={code} code={code} />;
+}
+
+/** `/confirm/<code>` and `/reset/<code>`: the pages the links in emails open (stage 32), logged in or not. */
+function ConfirmRoute({ loggedIn }: { loggedIn: boolean }) {
+  const { code = "" } = useParams();
+  return <ConfirmPage key={code} code={code} loggedIn={loggedIn} />;
+}
+function ResetRoute({ loggedIn }: { loggedIn: boolean }) {
+  const { code = "" } = useParams();
+  return <ResetPage key={code} code={code} loggedIn={loggedIn} />;
+}
+
 /** A different map gets a fresh page: its own view, drawing surface and history. */
 function OneMap() {
   const { id = "" } = useParams();
@@ -97,12 +137,155 @@ function OneMap() {
 
 /** Renaming happens on the entry's own page now; an old address opens the entry. */
 function RenameRedirect() {
-  const { pathname } = useLocation();
-  return <Navigate to={"/e/" + pathname.slice("/rename/".length)} replace />;
+  const { pathname } = useProjectLocation();
+  return <ProjectNavigate to={pathname.replace(/^\/rename\//, "/e/")} replace />;
+}
+
+/**
+ * An address from before projects (`/e/...`, `/maps`, `/`): it opens the same page in the project
+ * the person used last, or their first, keeping the rest of the path, the query and the hash. The
+ * start page, `/`, opens the project last used; with none remembered it opens the one project
+ * there is, or All projects when there are several or none.
+ */
+function OldAddress() {
+  const { list } = useProjects();
+  const location = useLocation();
+  if (!list) {
+    return (
+      <p className="center muted" role="status">
+        Frontier cannot read your projects without a connection yet. It will open when you are
+        connected.
+      </p>
+    );
+  }
+  const home = homeProject(list);
+  if (location.pathname === "/") {
+    const last = list.projects.find((p) => p.slug === list.last);
+    const target = last ?? (list.projects.length === 1 ? list.projects[0] : null);
+    return target ? (
+      <Navigate to={projectRoot(target.slug) + location.search + location.hash} replace />
+    ) : (
+      <Navigate to="/projects" replace />
+    );
+  }
+  if (!home) return <Navigate to="/projects" replace />;
+  return <Navigate to={movedInto(home.slug, location)} replace />;
+}
+
+/** Everything inside a project, at `/p/<slug>/...`. The addresses are as they were before projects. */
+function ProjectPages() {
+  return (
+    <Suspense fallback={<Progress />}>
+      <Routes>
+        <Route path="/" element={<Home />} />
+        <Route path="/e/*" element={<EntryPage />} />
+        <Route
+          path="/edit/*"
+          element={
+            <WriterOnly what="edit entries">
+              <EditPage />
+            </WriterOnly>
+          }
+        />
+        <Route path="/rename/*" element={<RenameRedirect />} />
+        <Route
+          path="/unpublished"
+          element={
+            <WriterOnly what="keep unsaved changes and save versions">
+              <UnpublishedPage />
+            </WriterOnly>
+          }
+        />
+        <Route
+          path="/inbox"
+          element={
+            <WriterOnly what="work through the inbox">
+              <InboxPage />
+            </WriterOnly>
+          }
+        />
+        <Route
+          path="/import"
+          element={
+            <WriterOnly what="import notes and pictures">
+              <ImportPage />
+            </WriterOnly>
+          }
+        />
+        <Route path="/history/*" element={<HistoryPage />} />
+        <Route path="/versions" element={<LibraryHistoryPage />} />
+        <Route path="/maps" element={<MapsPage />} />
+        <Route path="/map/:id" element={<OneMap />} />
+        <Route
+          path="/stack/:id"
+          element={
+            <Suspense fallback={<Progress />}>
+              <StackPage />
+            </Suspense>
+          }
+        />
+        <Route path="/ask" element={<AskPage />} />
+        <Route path="/ask/:id" element={<ConversationPage />} />
+        <Route path="/talk/*" element={<TalkPage />} />
+        <Route path="/export" element={<ExportPage />} />
+        <Route path="/gallery" element={<GalleryPage />} />
+        <Route path="/chronicles" element={<ChroniclesPage />} />
+        <Route path="/trees" element={<TreesPage />} />
+        <Route
+          path="/tree/:id"
+          element={
+            <Suspense fallback={<Progress />}>
+              <TreePage />
+            </Suspense>
+          }
+        />
+        <Route
+          path="/chronicle/:id"
+          element={
+            <Suspense fallback={<Progress />}>
+              <ChroniclePage />
+            </Suspense>
+          }
+        />
+        <Route
+          path="/graph"
+          element={
+            <Suspense fallback={<Progress />}>
+              <GraphPage />
+            </Suspense>
+          }
+        />
+        <Route path="/settings/*" element={<SettingsPage />} />
+        <Route
+          path="/conflict/:id"
+          element={
+            <WriterOnly what="settle clashing changes">
+              <ConflictPage />
+            </WriterOnly>
+          }
+        />
+        <Route
+          path="/versions/:id"
+          element={
+            <WriterOnly what="compare and merge two texts">
+              <VersionsPage />
+            </WriterOnly>
+          }
+        />
+        <Route path="/status" element={<StatusPage />} />
+        <Route path="/login" element={<ProjectNavigate to="/" replace />} />
+        <Route
+          path="*"
+          element={<p className="center muted">There is no page at this address.</p>}
+        />
+      </Routes>
+    </Suspense>
+  );
 }
 
 export function App() {
   const [loggedIn, setLoggedIn] = useState<boolean | null>(null);
+  const [ready, setReady] = useState(false);
   const location = useLocation();
 
   // Signed in, signed in with the server out of reach, or the login page (`offline/start.ts`).
@@ -119,105 +302,137 @@ export function App() {
   // after taking in what the browser buffer of an earlier build still holds. The service worker
   // is registered only now, so a browser that is logged out never gets one back.
   useEffect(() => {
+    // Who is logged in, for the left bar; forgotten when the login page is what shows.
+    if (loggedIn === false) {
+      clearMe();
+      clearProjects();
+      resetAccess();
+    }
     if (!loggedIn) return;
+    // The person's projects, read before any page: the person who owns what an earlier build kept
+    // on this device unfiled gives it to the project that was the library before projects (and to
+    // no other), and the address decides which project opens.
+    let live = true;
+    const opened = async (list: ReturnType<typeof knownProjects>) => {
+      const person = keysOwner();
+      if (person && list) {
+        const legacy = await queue.legacyFor();
+        if (legacy) fileUnfiled(person, legacy);
+      }
+      if (live) setReady(true);
+    };
+    void (async () => {
+      // Who is signed in is known before anything is filed or read for them.
+      if (!keysOwner()) await loadMe();
+      if (!live) return;
+      // With a list kept from the last visit the app does not wait for the server to open (a list
+      // from before the legacy flag existed is not enough: that decides whose the old data is).
+      const kept = knownProjects();
+      const usable = hasLegacyFlags(kept) ? kept : null;
+      if (usable) await opened(usable);
+      void loadProjects().then(async (list) => {
+        if (!usable) await opened(list ?? knownProjects());
+        // Changes left in the queue of a project the person has since left go on to it.
+        void queue.start();
+      });
+    })();
+    // The person is read again whenever the connection comes back, since the first read may have
+    // failed while it was down.
+    const resume = () => void loadMe().then(() => resumeProposals());
+    resume();
+    let last = connection.state;
+    const unsubscribe = connection.subscribe(() => {
+      if (connection.state === "online" && last !== "online") {
+        resume();
+        void loadProjects();
+      }
+      last = connection.state;
+    });
     connection.start();
     void queue.start();
     void updates.register();
-    return () => connection.stop();
+    return () => {
+      live = false;
+      unsubscribe();
+      connection.stop();
+    };
   }, [loggedIn]);
+
+  // A session was started here (the login page, or joining a project): the app opens as logged in.
+  const enter = () => {
+    void noteSignedIn(queue);
+    // Reads are kept on this device, and answered from it when the server cannot be reached.
+    startDeviceCopy();
+    setLoggedIn(true);
+  };
 
   if (loggedIn === null) return <p className="center muted">Opening Frontier…</p>;
 
   if (!loggedIn) {
     return (
       <Routes>
-        <Route
-          path="/login"
-          element={
-            <Login
-              onLoggedIn={() => {
-                void noteSignedIn(queue);
-                // Reads are kept on this device, and answered from it when the server cannot be reached.
-                startDeviceCopy();
-                setLoggedIn(true);
-              }}
-            />
-          }
-        />
+        <Route path="/login" element={<Login onLoggedIn={enter} />} />
+        <Route path="/join/:code" element={<JoinRoute />} />
+        <Route path="/confirm/:code" element={<ConfirmRoute loggedIn={false} />} />
+        <Route path="/reset/:code" element={<ResetRoute loggedIn={false} />} />
+        <Route path="/forgot-password" element={<ForgotPage />} />
         <Route
           path="*"
-          element={<Navigate to="/login" replace state={{ from: location.pathname }} />}
+          element={
+            <Navigate
+              to="/login"
+              replace
+              state={{ from: location.pathname + location.search + location.hash }}
+            />
+          }
         />
       </Routes>
     );
   }
 
+  if (!ready) return <p className="center muted">Opening Frontier…</p>;
+
   return (
-    <Shell>
-      <Suspense fallback={<Progress />}>
-        <Routes>
-          <Route path="/" element={<Home />} />
-          <Route path="/e/*" element={<EntryPage />} />
-          <Route path="/edit/*" element={<EditPage />} />
-          <Route path="/rename/*" element={<RenameRedirect />} />
-          <Route path="/unpublished" element={<UnpublishedPage />} />
-          <Route path="/inbox" element={<InboxPage />} />
-          <Route path="/import" element={<ImportPage />} />
-          <Route path="/history/*" element={<HistoryPage />} />
-          <Route path="/versions" element={<LibraryHistoryPage />} />
-          <Route path="/maps" element={<MapsPage />} />
-          <Route path="/map/:id" element={<OneMap />} />
-          <Route
-            path="/stack/:id"
-            element={
+    <>
+      <Routes>
+        <Route path="/join/:code" element={<JoinRoute />} />
+        <Route path="/confirm/:code" element={<ConfirmRoute loggedIn />} />
+        <Route path="/reset/:code" element={<ResetRoute loggedIn />} />
+        <Route path="/forgot-password" element={<ForgotPage />} />
+        <Route
+          path="/projects"
+          element={
+            <OutsideShell>
+              <AllProjects />
+            </OutsideShell>
+          }
+        />
+        {/* The library's old sections moved into the project (stage 31b). */}
+        <Route path="/settings/library/*" element={<OldAddress />} />
+        <Route
+          path="/settings/*"
+          element={
+            <OutsideShell>
               <Suspense fallback={<Progress />}>
-                <StackPage />
+                <SettingsPage />
               </Suspense>
-            }
-          />
-          <Route path="/ask" element={<AskPage />} />
-          <Route path="/ask/:id" element={<ConversationPage />} />
-          <Route path="/talk/*" element={<TalkPage />} />
-          <Route path="/export" element={<ExportPage />} />
-          <Route path="/gallery" element={<GalleryPage />} />
-          <Route path="/chronicles" element={<ChroniclesPage />} />
-          <Route path="/trees" element={<TreesPage />} />
-          <Route
-            path="/tree/:id"
-            element={
-              <Suspense fallback={<Progress />}>
-                <TreePage />
-              </Suspense>
-            }
-          />
-          <Route
-            path="/chronicle/:id"
-            element={
-              <Suspense fallback={<Progress />}>
-                <ChroniclePage />
-              </Suspense>
-            }
-          />
-          <Route
-            path="/graph"
-            element={
-              <Suspense fallback={<Progress />}>
-                <GraphPage />
-              </Suspense>
-            }
-          />
-          <Route path="/settings/*" element={<SettingsPage />} />
-          <Route path="/conflict/:id" element={<ConflictPage />} />
-          <Route path="/versions/:id" element={<VersionsPage />} />
-          <Route path="/status" element={<StatusPage />} />
-          <Route path="/login" element={<Navigate to="/" replace />} />
-          <Route
-            path="*"
-            element={<p className="center muted">There is no page at this address.</p>}
-          />
-        </Routes>
-      </Suspense>
+            </OutsideShell>
+          }
+        />
+        <Route
+          path="/p/:slug/*"
+          element={
+            <ProjectScope>
+              <ProjectPages />
+            </ProjectScope>
+          }
+        />
+        <Route path="/login" element={<Navigate to="/" replace />} />
+        <Route path="*" element={<OldAddress />} />
+      </Routes>
       <LoginDialog />
-    </Shell>
+      <AiKeyPromptHost />
+      <KeysRemovedNotice />
+    </>
   );
 }

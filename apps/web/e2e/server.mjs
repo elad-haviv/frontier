@@ -8,19 +8,31 @@ import { clearTimeout, setTimeout } from "node:timers";
 import { fileURLToPath } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const dataDir = join(here, "..", "..", "..", ".e2e-data");
+// A second server for the mail specs (stage 32) keeps its own folder, so the two never share a vault.
+const dataDir = join(here, "..", "..", "..", process.env.E2E_DATA ?? ".e2e-data");
 rmSync(dataDir, { recursive: true, force: true });
 
 Object.assign(process.env, {
   FRONTIER_SAMPLE_VAULT: "1",
   DATA_DIR: dataDir,
-  PUBLIC_URL: `http://localhost:${process.env.PORT}`,
+  // Links in emails are made from this address. The mail server answers on 127.0.0.1, not
+  // localhost, so its cookies are never the main server's: cookies ignore the port.
+  PUBLIC_URL: process.env.E2E_ORIGIN ?? `http://localhost:${process.env.PORT}`,
   SESSION_KEY: Buffer.alloc(32, 9).toString("base64"),
   FRONTIER_INITIAL_PASSWORD: "browser-test-password",
+  FRONTIER_INITIAL_EMAIL: "owner@example.com",
+  FRONTIER_INITIAL_NAME: "Olive Owner",
   ICON_FOLDER: "99 Appendices/Icons",
   // The image dialog's web address is tried against the picture server below, on loopback.
   IMAGE_FETCH_ALLOW_LOOPBACK: "1",
+  // The tests log in and change the password many times from one address.
+  LOGIN_ATTEMPTS: "100",
 });
+
+// Mail is off, as on a server with no relay, unless E2E_MAIL=1 (stage 32): then the messages are
+// kept in memory and the specs read them at GET /api/test/mail (DELETE clears them). That route
+// exists only with this transport, which the server refuses in production.
+if (process.env.E2E_MAIL === "1") process.env.MAIL_TEST_TRANSPORT = "memory";
 
 // A stand-in for a site on the web with one picture, at the server's port plus 100, so the
 // browser tests know where it is.
@@ -294,7 +306,7 @@ async function streamAnswer(req, res, content, user) {
 }
 
 // Relations the stand-in "reads": "daughter of X" or "son of X" is a parent, "married X" a
-// partner, "rival of X" a rival, each with its sentence and the words that say it (stage 31).
+// partner, "rival of X" a rival, each with its sentence and the words that say it (stage 33).
 function relationsIn(lines) {
   const out = [];
   const name = "([A-Z][\\w'-]+(?: [A-Z][\\w'-]+)*)";
@@ -500,6 +512,5 @@ const anthropic = createServer((req, res) => {
 });
 await new Promise((resolve) => anthropic.listen(0, "127.0.0.1", resolve));
 process.env.ANTHROPIC_BASE_URL = `http://127.0.0.1:${anthropic.address().port}/v1`;
-process.env.SECRETS_KEY = Buffer.alloc(32, 5).toString("base64");
 
 await import("../../server/dist/main.js");

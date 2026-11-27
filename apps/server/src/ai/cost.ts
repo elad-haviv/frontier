@@ -1,7 +1,7 @@
 /**
  * What a call cost. The provider's own figure comes first (OpenRouter gives one); without it the
  * cost is worked out from the model's prices and the tokens used, and marked as an estimate;
- * without prices it is unknown, and counts as nothing towards the cap.
+ * without prices it is unknown, and counts as nothing in the total.
  */
 import type { CostKind, ModelPrice } from "@frontier/schema";
 import type { Usage } from "./providers/index.js";

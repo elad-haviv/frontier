@@ -1,0 +1,115 @@
+.all-projects {
+  max-width: 62rem;
+  margin: 0 auto;
+  padding: var(--space-5) var(--space-4) var(--space-6);
+}
+.all-projects h1 {
+  margin: 0 0 var(--space-4);
+  font-family: var(--serif);
+  font-size: 1.6rem;
+}
+.all-projects-empty {
+  max-width: 28rem;
+  padding: var(--space-5);
+  border: 1px dashed var(--rule);
+  border-radius: 8px;
+  color: var(--ink-soft);
+}
+.all-projects-empty p {
+  margin: 0 0 var(--space-2);
+}
+.all-projects-empty p:first-child {
+  color: var(--ink);
+  font-weight: 600;
+}
+.project-cards {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-4);
+  grid-template-columns: repeat(auto-fill, minmax(18rem, 1fr));
+}
+.project-card {
+  height: 100%;
+  display: grid;
+  align-content: start;
+  gap: var(--space-2);
+  padding: var(--space-4);
+  border: 1px solid var(--rule);
+  border-radius: 10px;
+  background: var(--paper-raised);
+  color: var(--ink);
+  text-decoration: none;
+}
+.project-card:hover {
+  border-color: var(--accent);
+}
+.project-card-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+}
+.project-card-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-family: var(--serif);
+  font-size: 1.2rem;
+  font-weight: 600;
+}
+.project-role {
+  flex: none;
+  padding: 0.1rem 0.5rem;
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  color: var(--ink-soft);
+  font-size: 0.75rem;
+}
+.project-role.role-owner {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.project-card-about {
+  color: var(--ink-soft);
+  font-size: 0.92rem;
+}
+.project-card-counts,
+.project-card-saved {
+  color: var(--ink-faint);
+  font-size: 0.85rem;
+}
+.project-card-people {
+  display: flex;
+  align-items: center;
+  gap: 0.2rem;
+}
+.project-more {
+  color: var(--ink-faint);
+  font-size: 0.8rem;
+}
+/* A dashed card, for making a project. */
+.project-card.is-new {
+  width: 100%;
+  min-height: 9rem;
+  place-items: center;
+  align-content: center;
+  border-style: dashed;
+  background: none;
+  color: var(--ink-soft);
+  cursor: pointer;
+}
+.project-card.is-new:hover {
+  color: var(--accent);
+}
+
+.stranded {
+  margin-top: 2rem;
+}
+
+.stranded-project h3 {
+  margin: 1rem 0 0.25rem;
+  font-size: 1rem;
+}

@@ -2,9 +2,12 @@ import { Dices, FilePlus2, Folder, House, PanelLeftOpen, Search } from "lucide-r
 import { ConnectionMark } from "../ConnectionMark.tsx";
 import { Unsent } from "../Unsent.tsx";
 import { IconButton } from "../ui/IconButton.tsx";
-import { AppMenu } from "./AppMenu.tsx";
+import { PersonRow } from "./PersonRow.tsx";
+import { ProjectMenu } from "./ProjectMenu.tsx";
+import { useCanWrite, useProject } from "../projectContext.ts";
 import { PLACES, SideLink, WaitingLinks } from "./LeftBar.tsx";
 import "./LeftBar.css";
+import "./ProjectMenu.css";
 import "./KeepGoing.css";
 
 /**
@@ -30,9 +33,12 @@ export function Rail({
   onKeys: () => void;
   onLogout: () => void;
 }) {
+  const project = useProject();
+  const canWrite = useCanWrite();
   return (
     <div className="left-bar is-rail">
       <div className="left-head">
+        <ProjectMenu rail />
         <IconButton
           label="Unfold the side bar"
           icon={PanelLeftOpen}
@@ -44,14 +50,16 @@ export function Rail({
       </div>
       <div className="left-actions">
         <IconButton
-          label="Search"
+          label={`Search ${project.name}`}
           icon={Search}
           shortcut="app.switcher"
           tipSide="right"
           className="find"
           onClick={onSearch}
         />
-        <IconButton label="New entry" icon={FilePlus2} tipSide="right" onClick={onNewEntry} />
+        {canWrite && (
+          <IconButton label="New entry" icon={FilePlus2} tipSide="right" onClick={onNewEntry} />
+        )}
         <IconButton
           label="Random entry"
           icon={Dices}
@@ -78,14 +86,16 @@ export function Rail({
         />
       </nav>
       <div className="left-foot">
-        <nav className="left-waiting" aria-label="Waiting for you">
-          <WaitingLinks rail />
-        </nav>
+        {canWrite && (
+          <nav className="left-waiting" aria-label="Waiting for you">
+            <WaitingLinks rail />
+          </nav>
+        )}
         <div className="left-status">
           <ConnectionMark compact tipSide="right" />
           <Unsent compact />
-          <AppMenu onKeys={onKeys} onLogout={onLogout} />
         </div>
+        <PersonRow rail onKeys={onKeys} onLogout={onLogout} />
       </div>
     </div>
   );

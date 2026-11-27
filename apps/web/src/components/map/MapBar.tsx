@@ -16,6 +16,7 @@ import { shortcutText } from "../../keys.ts";
 import type { OtherMap } from "../../map/layersBeneath.ts";
 import { useNeedsConnection } from "../../sync/connection.ts";
 import { PageAction } from "../shell/panels.tsx";
+import { useCanWrite } from "../projectContext.ts";
 import { IconButton, IconLink } from "../ui/IconButton.tsx";
 import { Menu, MenuItem, MenuSeparator } from "../ui/Menu.tsx";
 import { SaveStatus, type useSaveState } from "../ui/SaveStatus.tsx";
@@ -90,6 +91,8 @@ export function MapBar({
 }) {
   // Deleting the map goes straight to the server, so it waits for a connection.
   const offline = useNeedsConnection();
+  // Editing, deleting and exploring (asking the AI) are writers' (stage 31c).
+  const canWrite = useCanWrite();
   const sphere = map.space.kind === "sphere";
   return (
     <div className="map-bar">
@@ -181,7 +184,7 @@ export function MapBar({
             className="quiet"
           />
         )}
-        {canExplore && !editing && (
+        {canExplore && canWrite && !editing && (
           <IconButton
             label="Explore"
             icon={Telescope}
@@ -215,16 +218,18 @@ export function MapBar({
       </span>
       {/* Done and "⋯" stay on the first line on a phone, so the way out is always on screen. */}
       <span className="map-main">
-        <PageAction>
-          <Tip
-            label={editing ? "Done editing" : "Edit the map"}
-            keys={shortcutText(editing ? "map.done" : "map.edit")}
-          >
-            <button type="button" className={editing ? "primary" : "quiet"} onClick={onEdit}>
-              {editing ? "Done" : "Edit"}
-            </button>
-          </Tip>
-        </PageAction>
+        {canWrite && (
+          <PageAction>
+            <Tip
+              label={editing ? "Done editing" : "Edit the map"}
+              keys={shortcutText(editing ? "map.done" : "map.edit")}
+            >
+              <button type="button" className={editing ? "primary" : "quiet"} onClick={onEdit}>
+                {editing ? "Done" : "Edit"}
+              </button>
+            </Tip>
+          </PageAction>
+        )}
         <Menu label="More actions" className="map-more">
           {!editing &&
             PICTURES.map((p) => (
@@ -240,16 +245,20 @@ export function MapBar({
               Terrain…
             </MenuItem>
           )}
-          <MenuSeparator />
-          <MenuItem
-            icon={Trash2}
-            danger
-            disabled={offline !== undefined}
-            disabledReason={offline}
-            onSelect={onRemove}
-          >
-            Delete map
-          </MenuItem>
+          {canWrite && (
+            <>
+              <MenuSeparator />
+              <MenuItem
+                icon={Trash2}
+                danger
+                disabled={offline !== undefined}
+                disabledReason={offline}
+                onSelect={onRemove}
+              >
+                Delete map
+              </MenuItem>
+            </>
+          )}
         </Menu>
       </span>
     </div>

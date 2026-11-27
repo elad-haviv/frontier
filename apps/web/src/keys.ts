@@ -387,6 +387,7 @@ keys.register(
   { id: "app.keys", keys: ["?"], scope: "app", label: "Show keyboard shortcuts" },
   // Two presses in a row (stage 25). Where a page uses the first key by itself, the page wins.
   { id: "app.home", keys: ["g h"], scope: "app", label: "Go to Home" },
+  { id: "app.projects", keys: ["g p"], scope: "app", label: "Go to All projects" },
   { id: "app.random", keys: ["g r"], scope: "app", label: "Open a random entry" },
   { id: "app.trees", keys: ["g t"], scope: "app", label: "Go to Trees" },
   // Stage 28: the library pane on a desktop (on a phone the Library is a panel in the drawer).
@@ -822,7 +823,7 @@ keys.register(
     handledBy: "the tree drawing",
   },
 
-  // The inbox (stage 31)
+  // The inbox (stage 33)
   { id: "inbox.next", keys: ["j"], scope: "inbox", label: "Next proposal" },
   { id: "inbox.previous", keys: ["k"], scope: "inbox", label: "Previous proposal" },
   { id: "inbox.accept", keys: ["a"], scope: "inbox", label: "Accept the proposal" },

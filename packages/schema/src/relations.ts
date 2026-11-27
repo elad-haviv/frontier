@@ -109,7 +109,7 @@ export const TreeLine = z
     /** Entries whose branch is folded, and entries opened past `gens`. */
     folded: z.array(VaultPath).optional(),
     opened: z.array(VaultPath).optional(),
-    /** Proposed relations are drawn unless this is set (stage 31). */
+    /** Proposed relations are drawn unless this is set (stage 33). */
     hideProposed: z.boolean().optional(),
   })
   .passthrough();
@@ -251,7 +251,7 @@ export const RelationsResponse = z.object({
   people: z.array(RelPerson),
   facts: z.array(RelFact),
   /**
-   * Relations the AI proposed and the author has not decided (stage 31), in the same shape as
+   * Relations the AI proposed and the author has not decided (stage 33), in the same shape as
    * facts, with where to decide them. They are never counted in checks.
    */
   proposed: z

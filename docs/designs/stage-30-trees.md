@@ -190,3 +190,18 @@ trees against the chronicle's years; AI proposing relations from the prose (firs
   - `how` and `when` of an existing relation are changed in the text, not in a form.
   - The tree needs a connection to read the relations. The trees file itself is kept on the
     device like the other library files.
+
+## Under people and projects (added when merged with stage 31)
+
+- **Who may.** Reading relations (`GET /relations`), the trees file and every tree is for every role.
+  Writing a relation (`POST /relations`, `/relations/remove`) and saving the trees file are writers'.
+  A reader sees no New tree, no + on the cards, no Add or Remove in the Relations tab, no Rename or
+  Delete; what they change in a tree they open (fold, turn, start from someone else) stays on that
+  page and is not saved.
+- **Saved view.** For a reader the relations are those of the saved entries; a writer's include
+  their own unsaved entries and changes, and nobody else's.
+- **Addresses and the device.** `/p/<project>/trees`, `/p/<project>/tree/<id>`. The relations the
+  pages share are read for the project that is open and dropped when another is opened; a write goes
+  to the project it began in. The selected card is remembered per person and project.
+- Tests: `apps/server/test/talksPicturesTrees.test.ts`, `apps/web/src/pages/Trees.test.ts`,
+  `apps/web/src/components/trees/RelationsPanel.test.ts`, `apps/web/src/trees/data.test.ts`.

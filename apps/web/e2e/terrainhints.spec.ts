@@ -1,5 +1,6 @@
-import { expect, type Page, test } from "@playwright/test";
+import { expect, type Page, test } from "./test.ts";
 import { bar, cleanUp, findPaths, open, upload } from "./pathsHelpers.ts";
+import { proj } from "./helpers.ts";
 
 /**
  * Height map from hints (stage 21): find hints in the fixture picture (an island with a river
@@ -14,26 +15,26 @@ type Stored = {
 const stored = (page: Page) =>
   page.evaluate(async () => {
     const id = location.pathname.split("/").pop();
-    return ((await (await fetch(`/api/maps/${id}`)).json()) as { map: Stored }).map;
+    return ((await (await fetch(`${API}/maps/${id}`)).json()) as { map: Stored }).map;
   });
 
 /** A flat map of the fixture picture, one kilometre a pixel. */
 async function makeMap(page: Page, title: string): Promise<string> {
-  if (!page.url().startsWith("http")) await page.goto("/maps");
+  if (!page.url().startsWith("http")) await page.goto(proj("/maps"));
   const image = await upload(page, "infer-heights.png");
   return page.evaluate(
     async ({ title, image }) => {
       const json = { "content-type": "application/json" };
-      const made = await fetch("/api/maps", {
+      const made = await fetch(`${API}/maps`, {
         method: "POST",
         headers: json,
         body: JSON.stringify({ title, kind: "flat", image }),
       });
       const { id } = (await made.json()) as { id: string };
-      const loaded = await (await fetch(`/api/maps/${id}`)).json();
+      const loaded = await (await fetch(`${API}/maps/${id}`)).json();
       const map = loaded.map;
       map.space = { ...map.space, scale: 1, unit: "km" };
-      const saved = await fetch(`/api/maps/${id}`, {
+      const saved = await fetch(`${API}/maps/${id}`, {
         method: "PUT",
         headers: json,
         body: JSON.stringify({ map, revision: loaded.revision, baseBlob: loaded.blob }),

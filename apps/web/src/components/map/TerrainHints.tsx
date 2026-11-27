@@ -38,7 +38,7 @@ import {
   X,
 } from "lucide-react";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
-import { api, mapImageUrl } from "../../api.ts";
+import { mapImageUrl } from "../../api.ts";
 import { openPicture } from "../../map/findAreas/client.ts";
 import { flatGrid } from "../../map/findPaths/grid.ts";
 import { kmPerUnit } from "../../map/findPaths/page.ts";
@@ -67,6 +67,7 @@ import { useConnection } from "../../sync/connection.ts";
 import { DialogFrame } from "../Dialogs.tsx";
 import { Tip } from "../ui/Tip.tsx";
 import "./TerrainHints.css";
+import { projectWork } from "../../projectWork.ts";
 
 type Pos = [number, number];
 type Extent = [number, number, number, number];
@@ -1010,6 +1011,8 @@ export default function TerrainHints(p: {
   const [saving, setSaving] = useState<string | null>(null);
   const use = async () => {
     if (!size || saving) return;
+    // The picture takes a while to build; it is saved in the project the person is in now.
+    const work = projectWork();
     if (!online) {
       p.onKeep(forStore(hints));
       return;
@@ -1032,7 +1035,7 @@ export default function TerrainHints(p: {
           type: "image/png",
         },
       );
-      const { path } = await api.upload(file);
+      const { path } = await work.api.upload(file);
       const high = image.high > 0 ? image.high : 1;
       const terrain: MapTerrain = {
         image: path,

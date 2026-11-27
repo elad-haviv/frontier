@@ -72,3 +72,10 @@ respects reduced motion.
   rail's icon) and spends any ask.
 - **The key sheet** lists `g l` only where the key works (`listWhenBound` in the keys registry): on a phone
   it is not bound, so it is not listed.
+
+## Under people and projects (added when merged with stage 31)
+
+- The pane and the phone's panel show the project that is open; a reader gets the folders to browse
+  and no New entry, New folder, or empty-library button (`useCanWrite`). The confirm-email banner,
+  the update bar and the device notices sit above the page inside the pane's neighbour, and the
+  pane's open state is a layout choice of the device, not of the person or the project.

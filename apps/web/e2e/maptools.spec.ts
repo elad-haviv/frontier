@@ -1,6 +1,6 @@
-import { expect, type Page, test } from "@playwright/test";
+import { expect, type Page, test } from "./test.ts";
 import type { Position } from "@frontier/geo";
-import { drawn, setUpAi as setUpAiAs } from "./helpers.ts";
+import { drawn, setUpAi as setUpAiAs, proj } from "./helpers.ts";
 
 /**
  * The map tools of stage 16d: labels, snapping, making a feature's entry from its entry list,
@@ -26,18 +26,18 @@ type Stored = { space: { width: number; height: number }; features: Feature[] };
  * the map's width and height, and returns its id.
  */
 async function makeMap(page: Page, title: string, features: Record<string, unknown>[] = []) {
-  if (!page.url().startsWith("http")) await page.goto("/maps");
+  if (!page.url().startsWith("http")) await page.goto(proj("/maps"));
   return page.evaluate(
     async ({ title, image, features }) => {
       const json = { "content-type": "application/json" };
-      const made = await fetch("/api/maps", {
+      const made = await fetch(`${API}/maps`, {
         method: "POST",
         headers: json,
         body: JSON.stringify({ title, kind: "flat", image }),
       });
       const { id } = (await made.json()) as { id: string };
       if (features.length === 0) return id;
-      const loaded = await (await fetch(`/api/maps/${id}`)).json();
+      const loaded = await (await fetch(`${API}/maps/${id}`)).json();
       const map = loaded.map;
       const [w, h] = [map.space.width, map.space.height];
       const scale = ([x, y]: number[]) => [x! * w, y! * h];
@@ -50,7 +50,7 @@ async function makeMap(page: Page, title: string, features: Record<string, unkno
         ...(f.at ? { at: scale(f.at as number[]) } : {}),
         ...(f.points ? { points: (f.points as number[][]).map(scale) } : {}),
       }));
-      await fetch(`/api/maps/${id}`, {
+      await fetch(`${API}/maps/${id}`, {
         method: "PUT",
         headers: json,
         body: JSON.stringify({ map, revision: loaded.revision, baseBlob: loaded.blob }),
@@ -64,15 +64,15 @@ async function makeMap(page: Page, title: string, features: Record<string, unkno
 /** Throws maps away, and every draft, so the next test finds nothing unpublished. */
 const cleanUp = (page: Page, maps: string[]) =>
   page.evaluate(async (maps) => {
-    for (const id of maps) await fetch(`/api/maps/${id}`, { method: "DELETE" });
-    const un = await (await fetch("/api/unpublished")).json();
-    for (const d of un.drafts) await fetch(`/api/drafts/${d.id}`, { method: "DELETE" });
+    for (const id of maps) await fetch(`${API}/maps/${id}`, { method: "DELETE" });
+    const un = await (await fetch(`${API}/unpublished`)).json();
+    for (const d of un.drafts) await fetch(`${API}/drafts/${d.id}`, { method: "DELETE" });
   }, maps);
 
 const stored = (page: Page) =>
   page.evaluate(async () => {
     const id = location.pathname.split("/").pop();
-    return ((await (await fetch(`/api/maps/${id}`)).json()) as { map: Stored }).map;
+    return ((await (await fetch(`${API}/maps/${id}`)).json()) as { map: Stored }).map;
   });
 
 const viewOf = (page: Page) =>
@@ -91,7 +91,7 @@ async function onMap(page: Page, [fx, fy]: Position) {
 }
 
 async function open(page: Page, id: string, query = "edit=1") {
-  await page.goto(`/map/${id}?${query}`);
+  await page.goto(proj(`/map/${id}?${query}`));
   await expect(page.locator(".map-top")).toBeVisible();
   await expect(page).toHaveURL(/v=/);
   await page.waitForTimeout(300);
@@ -212,7 +212,7 @@ test("makes the entry a feature's typed name asks for, and links it", async ({ p
     .poll(async () => (await stored(page)).features.find((f) => f.id === "port")?.entry)
     .toBeTruthy();
   const drafts = await page.evaluate(async () =>
-    ((await (await fetch("/api/unpublished")).json()).drafts as { path: string }[]).map(
+    ((await (await fetch(`${API}/unpublished`)).json()).drafts as { path: string }[]).map(
       (d) => d.path,
     ),
   );
@@ -223,7 +223,10 @@ test("makes the entry a feature's typed name asks for, and links it", async ({ p
 test("explores from the names on the map, and says plainly why it cannot", async ({
   page,
 }, info) => {
-  test.skip(info.project.name !== "phone", "The AI settings are one per server.");
+  test.skip(
+    info.project.name !== "phone",
+    "These change the person's AI settings: run at one size only.",
+  );
   await setUpAi(page);
   const empty = await makeMap(page, "Empty sea");
   const named = await makeMap(page, "Named coast", [
@@ -267,7 +270,10 @@ test("explores from the names on the map, and says plainly why it cannot", async
 test("generates a feature's name, makes its entry, and places features with AI", async ({
   page,
 }, info) => {
-  test.skip(info.project.name !== "phone", "The AI settings are one per server.");
+  test.skip(
+    info.project.name !== "phone",
+    "These change the person's AI settings: run at one size only.",
+  );
   await setUpAi(page);
   const id = await makeMap(page, "Generated coast", [
     { id: "tower", kind: "marker", at: [0.5, 0.5], icon: null },
@@ -293,7 +299,7 @@ test("generates a feature's name, makes its entry, and places features with AI",
   await expect(editor.getByRole("combobox", { name: "Entry" })).toContainText("Test Watchtower");
   await saved(page);
   const text = await page.evaluate(async () => {
-    const un = await (await fetch("/api/unpublished")).json();
+    const un = await (await fetch(`${API}/unpublished`)).json();
     return (un.drafts as { path: string; text: string }[]).find(
       (d) => d.path === "02 People/Test Watchtower.md",
     )?.text;

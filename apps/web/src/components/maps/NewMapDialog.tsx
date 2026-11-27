@@ -1,8 +1,8 @@
 import { type ReactNode, useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { api, ApiFailure, imageUrl, mapUrl } from "../../api.ts";
+import { useNavigate } from "../../nav.tsx";
+import { ApiFailure, imageUrl, mapUrl } from "../../api.ts";
+import { projectWork } from "../../projectWork.ts";
 import { type Kind, KIND_WORD, KINDS } from "../../map/mapsList.ts";
-import { queue } from "../../sync/queue.ts";
 import { useNeedsConnection } from "../../sync/connection.ts";
 import { DialogFrame } from "../Dialogs.tsx";
 import { MapImagePicker } from "../images/MapImagePicker.tsx";
@@ -47,8 +47,10 @@ export function NewMapDialog({
     if (!ready || busy) return;
     setBusy(true);
     setError(null);
+    // The project the map is made in, whichever is open when the steps below are done.
+    const work = projectWork();
     try {
-      const { id } = await api.createMap(title.trim(), kind, noImage ? undefined : image);
+      const { id } = await work.api.createMap(title.trim(), kind, noImage ? undefined : image);
       // What the map starts with that creating it does not set is kept like any change: on this
       // device until the server has it.
       const wanted =
@@ -58,18 +60,20 @@ export function NewMapDialog({
             ? "unit"
             : null;
       if (wanted) {
-        const made = await api.map(id);
+        const made = await work.api.map(id);
         let space = made.map.space;
         // A schematic map is a flat map with measuring off.
         if (wanted === "schematic" && space.kind === "flat") space = { ...space, schematic: true };
         if (wanted === "unit" && space.kind === "stars") space = { ...space, unit };
-        await queue.put(
+        await work.queue.put(
           `map:${id}`,
           { ...made.map, space },
           { draftId: "", revision: made.revision, baseBlob: made.blob, base: made.map, delay: 0 },
         );
-        await queue.sendNow(`map:${id}`);
+        await work.queue.sendNow(`map:${id}`);
       }
+      // Someone who has gone to another project is not taken back to this one.
+      if (!work.open()) return;
       refresh();
       navigate(mapUrl(id) + "?edit=1");
     } catch (err) {

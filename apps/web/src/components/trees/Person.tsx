@@ -25,7 +25,7 @@ export interface Section {
   title: string;
   where?: AddWhere;
   worked?: boolean;
-  /** `proposal`: a relation the AI proposed (stage 31), by its place in the response. */
+  /** `proposal`: a relation the AI proposed (stage 33), by its place in the response. */
   items: { key: string; tag?: string; proposal?: number }[];
 }
 
@@ -129,11 +129,13 @@ export function PersonDetails({
   fine: string[];
   trees: string[];
   onGo: (key: string) => void;
-  onAdd: (where: AddWhere, at: DOMRect) => void;
-  onFine: (key: string) => void;
+  /** Absent for someone who cannot write: no + Add beside a section. */
+  onAdd?: ((where: AddWhere, at: DOMRect) => void) | undefined;
+  /** Absent for someone who cannot write: no "It's right" on a warning. */
+  onFine?: ((key: string) => void) | undefined;
   actions: ReactNode;
   compact?: boolean;
-  /** The graph without proposals, for the checks (stage 31). */
+  /** The graph without proposals, for the checks (stage 33). */
   checks?: Graph;
   onProposal?: (i: number) => void;
 }) {
@@ -159,9 +161,11 @@ export function PersonDetails({
           <strong>⚠ Doesn&rsquo;t fit</strong>
           <span>{w.text}</span>
           <div>
-            <button type="button" className="quiet" onClick={() => onFine(w.key)}>
-              It&rsquo;s right
-            </button>
+            {onFine && (
+              <button type="button" className="quiet" onClick={() => onFine(w.key)}>
+                It&rsquo;s right
+              </button>
+            )}
           </div>
         </div>
       ))}
@@ -178,7 +182,7 @@ export function PersonDetails({
               {s.title}
               {s.worked && <span className="tr-worked"> · worked out</span>}
             </span>
-            {s.where && !stub && (
+            {s.where && !stub && onAdd && (
               <button
                 type="button"
                 className="tr-add-link"
@@ -245,7 +249,7 @@ export function OnePerson({
   id: string;
   onGo: (key: string) => void;
   onAdd?: (where: AddWhere, at: DOMRect) => void;
-  /** Opens a relation the AI proposed (stage 31), by its place in the response. */
+  /** Opens a relation the AI proposed (stage 33), by its place in the response. */
   onProposal?: (i: number) => void;
 }) {
   const kind = kindNamed(g, kindName);

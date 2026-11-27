@@ -3,6 +3,12 @@
  * start with a message that names it.
  */
 
+import type { AiProviderKind } from "@frontier/schema";
+
+/** Google's OpenID Connect issuer, whose discovery document names the rest. */
+export const GOOGLE_ISSUER = "https://accounts.google.com";
+const DEFAULT_OPENROUTER_URL = "https://openrouter.ai/api/v1";
+
 export class ConfigError extends Error {
   constructor(message: string) {
     super(message);
@@ -25,6 +31,32 @@ export interface S3Config {
   pathStyle: boolean;
 }
 
+/** How the connection to the mail relay is secured. See `.env.example`. */
+export type SmtpSecurity = "starttls" | "required" | "tls" | "none";
+
+/** Who mail is from: `Frontier <noreply@haviv.pro>`. */
+export interface MailSender {
+  name: string;
+  address: string;
+}
+
+/**
+ * Mail (stage 32). Absent when `SMTP_HOST` and `MAIL_FROM` are not both given, which turns every
+ * email feature off. `memory` keeps the messages in the process, for tests only (`MAIL_TEST_TRANSPORT`;
+ * refused in production).
+ */
+export type MailConfig =
+  | {
+      kind: "smtp";
+      host: string;
+      port: number;
+      security: SmtpSecurity;
+      user: string | null;
+      password: string | null;
+      from: MailSender;
+    }
+  | { kind: "memory"; from: MailSender };
+
 export interface Config {
   publicUrl: string;
   dataDir: string;
@@ -44,28 +76,44 @@ export interface Config {
    * others write to as well, or in the made-up sample.
    */
   library: "own" | "github" | "sample";
+  /** What the first project is called, made from the library the server already had (stage 31b). */
+  projectName: string;
   /** The vault folder new images are put in. */
   uploadFolder: string;
   /** The vault folder whose subfolders are marker sets. */
   iconFolder: string;
-  /** Encrypts the secrets kept in settings. Without it no secret can be stored there. */
-  secretsKey: Buffer | null;
-  /** The AI provider key from the environment, used when none is stored in settings. */
-  openrouterKey: string | null;
+  /** OpenRouter's address, which the model list also reads its public prices from. */
   openrouterUrl: string;
   /**
-   * Keys and addresses of the other providers given in the environment (ANTHROPIC_API_KEY,
-   * OPENAI_API_KEY, GEMINI_API_KEY, XAI_API_KEY and their *_BASE_URL). A key stored in settings
-   * comes first.
+   * The addresses the environment gives for the providers (OPENROUTER_BASE_URL and the others'
+   * *_BASE_URL); tests point them at stand-in servers. AI keys are not read from the environment:
+   * each person's key stays in their own browser (stage 31f).
    */
-  providerEnv: Partial<
-    Record<"anthropic" | "openai" | "google" | "xai", { key: string | null; url: string | null }>
-  >;
+  providerUrls: Partial<Record<AiProviderKind, string>>;
+  /**
+   * The names of provider key variables (OPENROUTER_API_KEY and the others) that are set in the
+   * environment although they are no longer read. The owner is told once, to remove them.
+   */
+  unusedKeyVars: string[];
   /**
    * Lets an image be taken from a web address on this machine's loopback addresses, on any port,
    * so the tests can serve one. Off by default, and refused in production.
    */
   imageFetchAllowLoopback: boolean;
+  /**
+   * How many login attempts one address may make in 15 minutes: 5. Only the browser tests, which
+   * log in and change passwords many times from one address, raise it (`LOGIN_ATTEMPTS`); it is
+   * refused in production.
+   */
+  loginAttempts: number;
+  /**
+   * Google sign-on (stage 31c): present when `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` are
+   * both given; absent turns the feature off. `issuer` is Google's own except in tests, which
+   * point it at a stand-in provider (`GOOGLE_ISSUER`; refused in production).
+   */
+  google: { clientId: string; clientSecret: string; issuer: string } | null;
+  /** Where mail goes through, or null when the server sends none (stage 32). */
+  mail: MailConfig | null;
   /**
    * False when `FRONTIER_SERVICE_WORKER=off`: `/sw.js` then answers the kill worker, which removes
    * the app's service worker from every browser that has it.
@@ -74,6 +122,74 @@ export interface Config {
 }
 
 type Env = Record<string, string | undefined>;
+
+/** `Frontier <noreply@haviv.pro>` or a bare address. Nothing that could end a header line. */
+export function parseSender(text: string): MailSender | null {
+  // eslint-disable-next-line no-control-regex
+  if (/[\u0000-\u001f\u007f]/.test(text)) return null;
+  const named = /^\s*([^<>]*?)\s*<([^<>\s,;"]+@[^<>\s,;"]+)>\s*$/.exec(text);
+  const bare = /^\s*([^<>\s,;"]+@[^<>\s,;"]+)\s*$/.exec(text);
+  const address = named?.[2] ?? bare?.[1];
+  if (!address || address.length > 254) return null;
+  const name = (named?.[1] ?? "").replace(/^"(.*)"$/, "$1").replace(/["\\]/g, "");
+  return { name: name || "Frontier", address };
+}
+
+function loadMail(
+  optional: (name: string) => string | null,
+  production: boolean,
+): MailConfig | null {
+  const test = optional("MAIL_TEST_TRANSPORT");
+  const host = optional("SMTP_HOST");
+  const fromText = optional("MAIL_FROM");
+  if (test !== null) {
+    if (test !== "memory") throw new ConfigError('MAIL_TEST_TRANSPORT can only be "memory".');
+    if (production) {
+      throw new ConfigError("MAIL_TEST_TRANSPORT is for tests and cannot be set in production.");
+    }
+    return {
+      kind: "memory",
+      from: parseSender(fromText ?? "Frontier <noreply@frontier.test>") ?? {
+        name: "Frontier",
+        address: "noreply@frontier.test",
+      },
+    };
+  }
+  // Mail is on only when both are given; with one of them the server says what is missing, so a
+  // half-made setting does not quietly leave every email feature off.
+  if (host === null && fromText === null) return null;
+  if (host === null || fromText === null) {
+    throw new ConfigError("Mail needs both SMTP_HOST and MAIL_FROM. Remove both to send no mail.");
+  }
+  const from = parseSender(fromText);
+  if (!from) {
+    throw new ConfigError("MAIL_FROM must look like: Frontier <noreply@example.com>");
+  }
+  if (/[\s/]/.test(host)) throw new ConfigError("SMTP_HOST must be a host name, such as smtp.");
+  const user = optional("SMTP_USER");
+  const password = optional("SMTP_PASSWORD");
+  if ((user === null) !== (password === null)) {
+    throw new ConfigError("SMTP_USER and SMTP_PASSWORD go together: give both or neither.");
+  }
+  const secure = optional("SMTP_SECURE")?.toLowerCase() ?? null;
+  // A login is never sent over a connection that may be unencrypted or whose certificate is not
+  // checked: with credentials the default is `required`, and the two weaker settings are refused.
+  const security = secure ?? (user !== null ? "required" : "starttls");
+  if (!["starttls", "required", "tls", "none"].includes(security)) {
+    throw new ConfigError("SMTP_SECURE must be starttls, required, tls or none.");
+  }
+  if (user !== null && (security === "starttls" || security === "none")) {
+    throw new ConfigError(
+      `SMTP_USER is set, so SMTP_SECURE must be required or tls, not ${security}: the login would be sent over a connection that may be unencrypted or unchecked.`,
+    );
+  }
+  // Implicit TLS is port 465 unless a port is given.
+  const port = Number(optional("SMTP_PORT") ?? (security === "tls" ? 465 : 587));
+  if (!Number.isInteger(port) || port < 1 || port > 65535) {
+    throw new ConfigError("SMTP_PORT must be a port number.");
+  }
+  return { kind: "smtp", host, port, security: security as SmtpSecurity, user, password, from };
+}
 
 export function loadConfig(env: Env = process.env): Config {
   const missing: string[] = [];
@@ -139,13 +255,6 @@ export function loadConfig(env: Env = process.env): Config {
       `Missing environment variable${missing.length > 1 ? "s" : ""}: ${missing.join(", ")}`,
     );
   }
-  const secretsKeyText = optional("SECRETS_KEY");
-  const secretsKey = secretsKeyText ? Buffer.from(secretsKeyText, "base64") : null;
-  if (secretsKey && secretsKey.length !== 32) {
-    throw new ConfigError(
-      "SECRETS_KEY must be 32 bytes in base64. Generate one with: openssl rand -base64 32",
-    );
-  }
   const imageFetchAllowLoopback = ["1", "true"].includes(
     optional("IMAGE_FETCH_ALLOW_LOOPBACK")?.toLowerCase() ?? "",
   );
@@ -153,6 +262,13 @@ export function loadConfig(env: Env = process.env): Config {
     throw new ConfigError(
       "IMAGE_FETCH_ALLOW_LOOPBACK is for tests and cannot be set in production.",
     );
+  }
+  const loginAttempts = Number(optional("LOGIN_ATTEMPTS") ?? 5);
+  if (!Number.isInteger(loginAttempts) || loginAttempts < 1) {
+    throw new ConfigError("LOGIN_ATTEMPTS must be a whole number of at least 1.");
+  }
+  if (loginAttempts !== 5 && optional("NODE_ENV") === "production") {
+    throw new ConfigError("LOGIN_ATTEMPTS is for tests and cannot be set in production.");
   }
   if (sessionKey.length !== 32) {
     throw new ConfigError(
@@ -167,6 +283,39 @@ export function loadConfig(env: Env = process.env): Config {
     );
   }
 
+  const googleId = optional("GOOGLE_CLIENT_ID");
+  const googleSecret = optional("GOOGLE_CLIENT_SECRET");
+  if ((googleId === null) !== (googleSecret === null)) {
+    throw new ConfigError("Google sign-on needs both GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET.");
+  }
+  const googleIssuer = optional("GOOGLE_ISSUER")?.replace(/\/+$/, "") ?? GOOGLE_ISSUER;
+  if (googleIssuer !== GOOGLE_ISSUER && optional("NODE_ENV") === "production") {
+    throw new ConfigError("GOOGLE_ISSUER is for tests and cannot be set in production.");
+  }
+
+  const mail = loadMail(optional, optional("NODE_ENV") === "production");
+
+  const urlOf = (name: string) => optional(name)?.replace(/\/+$/, "") ?? null;
+  const openrouterUrl = urlOf("OPENROUTER_BASE_URL") ?? DEFAULT_OPENROUTER_URL;
+  const providerUrls: Config["providerUrls"] = { openrouter: openrouterUrl };
+  for (const [kind, name] of [
+    ["anthropic", "ANTHROPIC_BASE_URL"],
+    ["openai", "OPENAI_BASE_URL"],
+    ["google", "GEMINI_BASE_URL"],
+    ["xai", "XAI_BASE_URL"],
+  ] as const) {
+    const url = urlOf(name);
+    if (url) providerUrls[kind] = url;
+  }
+
+  const unusedKeyVars = [
+    "OPENROUTER_API_KEY",
+    "ANTHROPIC_API_KEY",
+    "OPENAI_API_KEY",
+    "GEMINI_API_KEY",
+    "XAI_API_KEY",
+  ].filter((name) => optional(name) !== null);
+
   return {
     publicUrl,
     dataDir,
@@ -179,29 +328,28 @@ export function loadConfig(env: Env = process.env): Config {
     ),
     webhookSecret,
     sessionKey,
+    loginAttempts,
+    unusedKeyVars,
     library:
       optional("FRONTIER_LIBRARY") === "sample"
         ? "sample"
         : optional("FRONTIER_LIBRARY") === "own" || !optional("VAULT_REPO")
           ? "own"
           : "github",
+    projectName:
+      optional("FRONTIER_PROJECT_NAME")?.slice(0, 80) ??
+      (optional("FRONTIER_LIBRARY") === "sample" || optional("FRONTIER_SAMPLE_VAULT") === "1"
+        ? "Sample"
+        : "Avalymia"),
     iconFolder: (optional("ICON_FOLDER") ?? "99 Appendices/07 Icons").replace(/^\/+|\/+$/g, ""),
-    secretsKey,
-    openrouterKey: optional("OPENROUTER_API_KEY"),
-    openrouterUrl: (optional("OPENROUTER_BASE_URL") ?? "https://openrouter.ai/api/v1").replace(
-      /\/+$/,
-      "",
-    ),
-    providerEnv: {
-      anthropic: { key: optional("ANTHROPIC_API_KEY"), url: optional("ANTHROPIC_BASE_URL") },
-      openai: { key: optional("OPENAI_API_KEY"), url: optional("OPENAI_BASE_URL") },
-      google: {
-        key: optional("GEMINI_API_KEY") ?? optional("GOOGLE_API_KEY"),
-        url: optional("GEMINI_BASE_URL"),
-      },
-      xai: { key: optional("XAI_API_KEY"), url: optional("XAI_BASE_URL") },
-    },
+    openrouterUrl,
+    providerUrls,
     imageFetchAllowLoopback,
+    google:
+      googleId !== null && googleSecret !== null
+        ? { clientId: googleId, clientSecret: googleSecret, issuer: googleIssuer }
+        : null,
+    mail,
     serviceWorker: optional("FRONTIER_SERVICE_WORKER")?.toLowerCase() !== "off",
     commitAuthor,
     commitBot,

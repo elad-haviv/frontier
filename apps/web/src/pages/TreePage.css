@@ -1015,7 +1015,7 @@
   }
 }
 
-/* Proposed relations (stage 31): blue dotted lines with a ? that opens the proposal. */
+/* Proposed relations (stage 33): blue dotted lines with a ? that opens the proposal. */
 .tr-down.is-proposed .tr-line,
 .tr-couple.is-proposed .tr-line {
   stroke: var(--proposed);
@@ -1114,7 +1114,7 @@
   color: var(--proposed);
 }
 
-/* Find relations (stage 31) */
+/* Find relations (stage 33) */
 .tr-cost {
   display: grid;
   grid-template-columns: 1fr 1fr;

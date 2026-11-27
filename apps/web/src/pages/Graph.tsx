@@ -7,7 +7,8 @@
 import { OfflineCopy } from "../components/OfflineCopy.tsx";
 import { List, Maximize, SlidersHorizontal, ZoomIn, ZoomOut } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useSearchParams } from "react-router-dom";
+import { useNavigate } from "../nav.tsx";
 import { entryUrl } from "../api.ts";
 import { usePageTitle, usePanel, useRightBar } from "../components/shell/panels.tsx";
 import { IconButton } from "../components/ui/IconButton.tsx";

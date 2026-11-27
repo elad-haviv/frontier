@@ -2,13 +2,15 @@
  * One connection state for the whole app: online, offline or signed out.
  *
  * It listens to the server's status stream, which also brings the status snapshot every page
- * reads. When the stream fails, or a request cannot reach the server, it asks `/api/status` once:
+ * reads. When the stream fails, or a request cannot reach the server, it asks the status once:
  * a 401 means signed out, a failure to connect means offline, and any other answer means online.
  * Any later answer from the server means online again. The browser's own online flag is only a
  * hint to try again at once.
  */
 import { useSyncExternalStore } from "react";
 import type { StatusSnapshot } from "@frontier/schema";
+import { currentSlug } from "../project.ts";
+import { TAB_CLIENT } from "./tab.ts";
 
 export type ConnectionState = "online" | "offline" | "signed-out";
 
@@ -19,16 +21,27 @@ export interface ConnectionDeps {
   events?: Pick<Window, "addEventListener" | "removeEventListener">;
   /** The longest wait before the stream is opened again after it closed. */
   maxDelayMs?: number;
+  /** The address of the project the app has open, or null outside any project. */
+  project: () => string | null;
+  /**
+   * A name for this tab (stage 31d): sent as `?client=` so the server knows which "who is
+   * reading" announcement a closing stream took away. Left out, the stream names no tab.
+   */
+  client?: string;
 }
 
-const STREAM = "/api/status/events";
-const STATUS = "/api/status";
+/** The status and its stream are a project's (stage 31b); outside one, `/api/me` says who is in. */
+const streamOf = (slug: string, client?: string) =>
+  `/api/p/${encodeURIComponent(slug)}/status/events${client ? `?client=${encodeURIComponent(client)}` : ""}`;
+const statusOf = (slug: string | null) =>
+  slug === null ? "/api/me" : `/api/p/${encodeURIComponent(slug)}/status`;
 
 export class Connection {
   state: ConnectionState = "online";
   /** The latest status the server sent, or null before the first. */
   snapshot: StatusSnapshot | null = null;
   private listeners = new Set<() => void>();
+  private accessListeners = new Set<() => void>();
   private source: EventSource | null = null;
   private probing: Promise<void> | null = null;
   private timer: ReturnType<typeof setTimeout> | undefined;
@@ -85,6 +98,22 @@ export class Connection {
     return this.view;
   }
 
+  /**
+   * Hears that what the person may do in the open project may have changed: the status stream was
+   * cut while the server could still be reached (the server closes it when a role changes or a
+   * person is removed), or a request was refused for want of a role or a project. The project's
+   * record is read again then.
+   */
+  onAccessMayHaveChanged(listener: () => void): () => void {
+    this.accessListeners.add(listener);
+    return () => this.accessListeners.delete(listener);
+  }
+
+  /** Says that the person's access to the open project may have changed. */
+  accessMayHaveChanged(): void {
+    for (const l of [...this.accessListeners]) l();
+  }
+
   private set(state: ConnectionState, snapshot = this.snapshot): void {
     if (state === this.state && snapshot === this.snapshot) return;
     const back = state === "online" && this.state !== "online";
@@ -100,10 +129,19 @@ export class Connection {
     clearTimeout(this.timer);
     this.source?.close();
     this.source = null;
-    if (!this.d.EventSource || !this.started) return;
-    const source = new this.d.EventSource(STREAM);
+    const slug = this.d.project();
+    // Outside a project there is nothing to listen to; the first project that opens starts it.
+    if (!this.d.EventSource || !this.started || slug === null) return;
+    const source = new this.d.EventSource(streamOf(slug, this.d.client));
+    if (this.openedFor !== slug) this.streamOpenedBefore = false;
+    this.openedFor = slug;
     this.source = source;
     source.onopen = () => {
+      // A stream that opens again after one that ended: a role may have changed, or the person
+      // been taken out, while none was open. The server cuts a stream that is open at the time,
+      // and one that was not open is never cut, so nothing else would say so.
+      if (this.streamOpenedBefore) this.accessMayHaveChanged();
+      this.streamOpenedBefore = true;
       this.delay = this.firstDelay();
       this.set("online");
     };
@@ -121,8 +159,27 @@ export class Connection {
       if (closed && this.source === source) this.source = null;
       void this.probe().then(() => {
         if (closed && !this.source) this.reopenLater();
+        // The server answers but the stream ended: it closes the streams of a person whose role
+        // changed or who was taken out, so the project's record is read again.
+        if (this.state === "online") this.accessMayHaveChanged();
       });
     };
+  }
+
+  /** The project the stream was opened for. */
+  private openedFor: string | null = null;
+  /** Whether a stream of this project has opened before: a later one is a reconnection. */
+  private streamOpenedBefore = false;
+
+  /**
+   * The app opened another project (or none): the status of the last is forgotten and the stream
+   * of the new one is opened, so no count of one project shows in another.
+   */
+  projectChanged(): void {
+    if (this.d.project() === this.openedFor && this.source) return;
+    this.delay = this.firstDelay();
+    this.set(this.state, null);
+    this.open();
   }
 
   private reopenLater(): void {
@@ -132,14 +189,17 @@ export class Connection {
     this.delay = Math.min(this.delay * 2, this.d.maxDelayMs ?? 30_000);
   }
 
-  /** Asks `/api/status` once, and takes the state from the answer. */
+  /** Asks the project's status once (`/api/me` outside a project), and takes the state from the answer. */
   probe(): Promise<void> {
     this.probing ??= (async () => {
       try {
-        const res = await this.d.fetch(STATUS, { credentials: "same-origin" });
+        const slug = this.d.project();
+        const res = await this.d.fetch(statusOf(slug), { credentials: "same-origin" });
         if (res.status === 401) this.set("signed-out");
         else if (res.ok) {
-          const snapshot = (await res.json().catch(() => null)) as StatusSnapshot | null;
+          // Only a project's status is a snapshot; who is in is not.
+          const snapshot =
+            slug === null ? null : ((await res.json().catch(() => null)) as StatusSnapshot | null);
           this.set("online", snapshot ?? this.snapshot);
         } else this.set("online");
       } catch {
@@ -194,6 +254,8 @@ export const connection = new Connection({
   fetch: (...args) => fetch(...args),
   EventSource: typeof EventSource === "undefined" ? undefined : EventSource,
   ...(typeof window === "undefined" ? {} : { events: window }),
+  project: currentSlug,
+  client: TAB_CLIENT,
 });
 
 /** The connection state and the latest status snapshot, for any component. */

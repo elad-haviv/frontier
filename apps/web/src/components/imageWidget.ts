@@ -4,6 +4,7 @@
  * pointer is let go, and a double tap on it, or the small reset button, takes the width away again.
  * Only the embed's own text changes. Mouse, pen and touch all work, through pointer events.
  */
+import { onProjectChange } from "../project.ts";
 import { Facet } from "@codemirror/state";
 import { type EditorView, WidgetType } from "@codemirror/view";
 import { api, imageUrl } from "../api.ts";
@@ -13,6 +14,8 @@ import { clampWidth, type ImageEmbed, withWidth } from "./embedWidth.ts";
 export const notePath = Facet.define<string, string>({ combine: (values) => values[0] ?? "" });
 
 const found = new Map<string, Promise<string | null>>();
+// The images of one project are not found in another.
+onProjectChange(() => found.clear());
 
 /** The image an embed points at. Answers are kept, except "none", which may change on upload. */
 function findImage(name: string, from: string): Promise<string | null> {

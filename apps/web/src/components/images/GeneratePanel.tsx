@@ -1,7 +1,7 @@
 import type { PictureShape, PictureTry } from "@frontier/schema";
-import { Link } from "react-router-dom";
+import { Link } from "../../nav.tsx";
 import { type MutableRefObject, useEffect, useId, useRef, useState } from "react";
-import { api, ApiFailure } from "../../api.ts";
+import { api, ApiFailure, pictureUrl } from "../../api.ts";
 import { useNeedsConnection } from "../../sync/connection.ts";
 import { failureOf, useAsync } from "../../useAsync.ts";
 import { Problem } from "../ui/Problem.tsx";
@@ -173,7 +173,6 @@ export function GeneratePanel({
 
   const shownShape = current?.shape ?? shape;
   const [rw, rh] = ratioOf(shownShape);
-  const left = ready ? ready.leftUsd : 0;
 
   return (
     <div className="generate-panel">
@@ -219,7 +218,7 @@ export function GeneratePanel({
             Style: <span>{styleText.trim() || "none set"}</span>
           </summary>
           <label htmlFor={ids.style}>
-            For this picture only. The usual style is set in Settings › Models.
+            For this picture only. The usual style is set in Settings › AI models.
           </label>
           <textarea
             id={ids.style}
@@ -259,7 +258,9 @@ export function GeneratePanel({
           <span className="generate-cost">
             {offline
               ? "Making a picture needs a connection."
-              : `${ready?.perPictureUsd != null ? `About ${price(ready.perPictureUsd)} a picture · ` : ""}$${left.toFixed(2)} left this month`}
+              : ready?.perPictureUsd != null
+                ? `About ${price(ready.perPictureUsd)} a picture, paid to your provider`
+                : "Paid to your own AI provider"}
           </span>
         </div>
       </div>
@@ -271,7 +272,7 @@ export function GeneratePanel({
           aria-busy={busy === "making"}
         >
           {current ? (
-            <img src={api.pictureUrl(current.id, 1024)} alt={current.prompt} />
+            <img src={pictureUrl(current.id, 1024)} alt={current.prompt} />
           ) : (
             <p className="muted">Your picture appears here.</p>
           )}
@@ -331,7 +332,7 @@ export function GeneratePanel({
                   tabIndex={t.id === chosen || (!chosen && i === 0) ? 0 : -1}
                   onClick={() => choose(t.id)}
                 >
-                  <img src={api.pictureUrl(t.id, 160)} alt="" />
+                  <img src={pictureUrl(t.id, 160)} alt="" />
                 </button>
               ))}
             </div>

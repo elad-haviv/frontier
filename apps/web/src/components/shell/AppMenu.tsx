@@ -1,6 +1,8 @@
 import { Activity, Download, History, Keyboard, LogOut, Settings, Upload } from "lucide-react";
+import { useMe } from "../../me.ts";
 import { NEEDS_CONNECTION, useConnection } from "../../sync/connection.ts";
-import { Menu, MenuItem, MenuLink, MenuSeparator } from "../ui/Menu.tsx";
+import { useCanWriteOrNot } from "../projectContext.ts";
+import { Menu, MenuHeading, MenuItem, MenuLink, MenuSeparator } from "../ui/Menu.tsx";
 
 /**
  * The pages for looking after the library, and leaving: the "⋯" at the foot of the side bar.
@@ -16,11 +18,24 @@ export function AppMenu({
   align?: "start" | "end";
 }) {
   const offline = useConnection().state === "offline";
+  const me = useMe();
+  const canWrite = useCanWriteOrNot();
   return (
     <Menu label="App menu" className="app-menu" align={align}>
-      <MenuLink icon={Upload} to="/import">
-        Import
-      </MenuLink>
+      {me && (
+        <>
+          <MenuHeading>
+            <strong>{me.name || me.email || "Your account"}</strong>
+            {me.name && me.email && <span>{me.email}</span>}
+          </MenuHeading>
+          <MenuSeparator />
+        </>
+      )}
+      {canWrite && (
+        <MenuLink icon={Upload} to="/import">
+          Import
+        </MenuLink>
+      )}
       <MenuLink icon={Download} to="/export">
         Export
       </MenuLink>

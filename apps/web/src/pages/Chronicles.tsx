@@ -1,8 +1,9 @@
 import { type FormEvent, useState } from "react";
 import { ActionButton } from "../components/ui/ActionButton.tsx";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "../nav.tsx";
 import { api, ApiFailure, chronicleUrl } from "../api.ts";
 import { useRefresh } from "../components/Shell.tsx";
+import { useCanWrite } from "../components/projectContext.ts";
 import { Problem } from "../components/ui/Problem.tsx";
 import { Progress } from "../components/ui/Progress.tsx";
 import { failureOf, useAsync } from "../useAsync.ts";
@@ -20,6 +21,7 @@ export function ChroniclesPage() {
   const [title, setTitle] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const canWrite = useCanWrite();
 
   async function create(e: FormEvent) {
     e.preventDefault();
@@ -51,7 +53,11 @@ export function ChroniclesPage() {
       {list.state === "ready" && (
         <>
           {list.value.chronicles.length === 0 && (
-            <p className="empty">No chronicles yet. Make the first below.</p>
+            <p className="empty">
+              {canWrite
+                ? "No chronicles yet. Make the first below."
+                : "No chronicles have been made yet."}
+            </p>
           )}
           <ul className="map-list">
             {list.value.chronicles.map((c) => (
@@ -73,28 +79,30 @@ export function ChroniclesPage() {
         </>
       )}
 
-      <form className="settings-block new-map settings" onSubmit={create}>
-        <h2>New chronicle</h2>
-        <label className="field">
-          <span>Title</span>
-          <input
-            type="text"
-            value={title}
-            maxLength={120}
-            onChange={(e) => setTitle(e.target.value)}
-          />
-        </label>
-        {error && (
-          <p className="error" role="alert">
-            {error}
+      {canWrite && (
+        <form className="settings-block new-map settings" onSubmit={create}>
+          <h2>New chronicle</h2>
+          <label className="field">
+            <span>Title</span>
+            <input
+              type="text"
+              value={title}
+              maxLength={120}
+              onChange={(e) => setTitle(e.target.value)}
+            />
+          </label>
+          {error && (
+            <p className="error" role="alert">
+              {error}
+            </p>
+          )}
+          <p className="change-actions">
+            <ActionButton type="submit" className="primary" disabled={busy || !title.trim()}>
+              Make the chronicle
+            </ActionButton>
           </p>
-        )}
-        <p className="change-actions">
-          <ActionButton type="submit" className="primary" disabled={busy || !title.trim()}>
-            Make the chronicle
-          </ActionButton>
-        </p>
-      </form>
+        </form>
+      )}
     </article>
   );
 }

@@ -6,168 +6,134 @@ import rateLimit from "@fastify/rate-limit";
 import secureSession from "@fastify/secure-session";
 import Fastify, { type FastifyInstance } from "fastify";
 import { ZodError } from "zod";
-import { type BiomesFile, kindsOf, type TreesFile } from "@frontier/schema";
-import { FieldProposer } from "./ai/fields.js";
-import { FieldJob } from "./ai/job.js";
-import { AiLog } from "./ai/log.js";
-import { ModelCatalogue } from "./ai/models.js";
-import { AiProvider } from "./ai/provider.js";
-import { LoginLimiter } from "./auth/limit.js";
-import { ChronicleStore } from "./chronicles/store.js";
-import { MapStore } from "./maps/store.js";
-import { FolderStore } from "./folders/store.js";
-import { LibraryFileStore } from "./library/files.js";
-import { folderRoutes } from "./routes/folders.js";
-import { libraryFileRoutes } from "./routes/libraryFiles.js";
-import { Conversations } from "./ai/conversations.js";
-import { Talks } from "./ai/talks.js";
-import { EntryDrafter } from "./ai/draftEntry.js";
-import { LoreAsker } from "./ai/lore.js";
-import { entryDraftRoutes } from "./routes/entryDraft.js";
-import { KeepGoingAi } from "./ai/keepGoing.js";
-import { KeepGoingHistory } from "./keepGoing/history.js";
-import { PinStore } from "./keepGoing/pins.js";
-import { KeepGoing } from "./keepGoing/service.js";
-import { keepGoingRoutes } from "./routes/keepGoing.js";
-import { loreRoutes } from "./routes/lore.js";
-import { writingRoutes } from "./routes/writing.js";
-import { commentRoutes } from "./routes/comments.js";
-import { CommentStore } from "./comments/store.js";
-import { ConsultStore } from "./consults/store.js";
-import { characterRoutes } from "./routes/characters.js";
-import { discoverRoutes } from "./routes/discover.js";
-import { exportRoutes } from "./routes/export.js";
-import { Discoverer } from "./ai/discover.js";
-import { EntryPictures } from "./ai/pictures.js";
-import { CharacterTalk } from "./ai/characters.js";
-import { WritingHelper } from "./ai/writing.js";
-import { EditReviewer } from "./ai/review.js";
-import { chronicleRoutes } from "./routes/chronicles.js";
-import { mapRoutes } from "./routes/maps.js";
-import { historyRoutes } from "./routes/history.js";
-import { importRoutes } from "./routes/import.js";
-import { Backup } from "./backup/backup.js";
-import { EntryChanger } from "./entries/change.js";
-import { ProposalStore } from "./proposals/store.js";
-import { Quarantine, REVIEW_FILE } from "./quarantine/quarantine.js";
-import { passkeyRoutes } from "./routes/passkeys.js";
-import { proposalRoutes } from "./routes/proposals.js";
-import { quarantineRoutes } from "./routes/quarantine.js";
-import { settingsRoutes } from "./routes/settings.js";
+import { AI_KEYS_HEADER } from "@frontier/schema";
+import { readKeysHeader } from "./ai/keyring.js";
 import { FolderTarget, S3Target } from "./backup/targets.js";
 import type { Config } from "./config.js";
 import { ApiError, settingsLink } from "./errors.js";
-import { appTokenSource } from "./git/appAuth.js";
-import { GitError, GitGateway } from "./git/gateway.js";
-import { ImageServer } from "./images/serve.js";
-import { type FetchLimits, ImageFetcher, type Resolve } from "./images/fromUrl.js";
-import { BranchInbox } from "./inbox/branches.js";
-import { inboxRoutes } from "./routes/inbox.js";
-import { Publisher } from "./publish/publish.js";
-import { draftRoutes } from "./routes/drafts.js";
-import { DraftStore } from "./state/drafts.js";
-import { VaultIndex } from "./index/build.js";
-import { SearchIndex } from "./index/search.js";
+import { GitError } from "./git/gateway.js";
+import type { FetchLimits, Resolve } from "./images/fromUrl.js";
+import { tidyInvites } from "./members/tidy.js";
+import { guardProjects } from "./projects/guard.js";
+import { projectApp, RouteBook, type ProjectRoute } from "./projects/facade.js";
+import { scopedServices } from "./projects/context.js";
+import { ensureFirstProject } from "./projects/first.js";
+import { ProjectRegistry } from "./projects/registry.js";
+import { buildServices, type Services } from "./projects/services.js";
 import { authRoutes } from "./routes/auth.js";
+import { characterRoutes } from "./routes/characters.js";
+import { chronicleRoutes } from "./routes/chronicles.js";
+import { commentRoutes } from "./routes/comments.js";
+import { emailRoutes } from "./routes/email.js";
+import { discoverRoutes } from "./routes/discover.js";
+import { draftRoutes } from "./routes/drafts.js";
+import { entryDraftRoutes } from "./routes/entryDraft.js";
 import { entryRoutes } from "./routes/entries.js";
+import { exportRoutes } from "./routes/export.js";
+import { folderRoutes } from "./routes/folders.js";
 import { graphRoutes } from "./routes/graph.js";
-import { relationRoutes } from "./routes/relations.js";
-import { collectRelations } from "./relations/collect.js";
-import { relationWarning } from "./ai/relationProposals.js";
+import { historyRoutes } from "./routes/history.js";
 import { imageRoutes } from "./routes/images.js";
 import { pictureRoutes } from "./routes/pictures.js";
+import { relationRoutes } from "./routes/relations.js";
+import { importRoutes } from "./routes/import.js";
+import { inboxRoutes } from "./routes/inbox.js";
+import { keepGoingRoutes } from "./routes/keepGoing.js";
+import { libraryFileRoutes } from "./routes/libraryFiles.js";
+import { memberRoutes } from "./routes/members.js";
+import { googleRoutes } from "./routes/google.js";
+import { joinRoutes } from "./routes/join.js";
+import { loreRoutes } from "./routes/lore.js";
+import { mapRoutes } from "./routes/maps.js";
+import { passkeyRoutes } from "./routes/passkeys.js";
+import { projectRoutes, projectsApi } from "./routes/projects.js";
+import { proposalRoutes } from "./routes/proposals.js";
+import { quarantineRoutes } from "./routes/quarantine.js";
 import { searchRoutes } from "./routes/search.js";
-import { statusRoutes } from "./routes/status.js";
+import { settingsRoutes } from "./routes/settings.js";
+import { healthRoute, presenceRoutes, statusRoutes } from "./routes/status.js";
 import { webhookRoutes } from "./routes/webhook.js";
-import { StateFiles } from "./state/files.js";
-import { SettingsStore } from "./state/settings.js";
-import { StatusService } from "./status/status.js";
+import { writingRoutes } from "./routes/writing.js";
+import { makeServer, type Server } from "./server.js";
+import { decodedPath, isApiRequest, isPublicRoute } from "./auth/openness.js";
+import { requirePerson } from "./auth/session.js";
 import { readBuild, webRoutes } from "./web.js";
+
+export { backupSources, backupPlan, PrefixedTarget } from "./projects/services.js";
+export type { Services } from "./projects/services.js";
 
 declare module "@fastify/secure-session" {
   interface SessionData {
+    /** The id of the person logged in. Sessions from before accounts said "author"; see `auth/session.ts`. */
     user: string;
-    /** How the author logged in. */
-    method: "password" | "passkey";
+    /** How the person logged in. */
+    method: "password" | "passkey" | "google";
+    /** The person's `sessionEpoch` when the session started or last followed a change; see `currentPerson`. */
+    epoch: number;
+    /** When the person logged in (milliseconds), for what asks for a recent login. */
+    loginAt: number;
     /** The challenge of a passkey ceremony in progress, and when it ends. */
     challenge: { value: string; until: number };
+    /**
+     * A passkey registration made to join through an invitation, bound to that invitation and to
+     * the name given, so the second step cannot be used for anything else.
+     */
+    joinChallenge: { value: string; until: number; invite: string; name: string; email: string };
+    /**
+     * Someone new came back from Google for an invitation: the verified profile, kept for ten
+     * minutes until they click Join (`POST /api/join/:code/google`). No account exists before that.
+     */
+    googleJoin: {
+      subject: string;
+      email: string;
+      name: string;
+      until: number;
+      /** The invitation's id, so another invitation cannot use it. */
+      invite: string;
+    };
+    /**
+     * A Google sign-in in progress: the state, nonce and PKCE verifier of this browser's request,
+     * and what it is for. The cookie is encrypted and signed, so it is the "signed state".
+     */
+    google: {
+      state: string;
+      nonce: string;
+      verifier: string;
+      until: number;
+      invite: string | null;
+      returnTo: string | null;
+      /** The person who asked to link Google from Settings; null for a login or a join. */
+      link: string | null;
+    };
   }
-}
-
-export interface Services {
-  config: Config;
-  git: GitGateway;
-  index: VaultIndex;
-  status: StatusService;
-  files: StateFiles;
-  settings: SettingsStore;
-  images: ImageServer;
-  /** Takes images from web addresses, with the safeguards that keep the server's network safe. */
-  imageFetcher: ImageFetcher;
-  drafts: DraftStore;
-  publisher: Publisher;
-  branches: BranchInbox;
-  ai: AiProvider;
-  aiLog: AiLog;
-  models: ModelCatalogue;
-  changer: EntryChanger;
-  proposals: ProposalStore;
-  fields: FieldProposer;
-  fieldJob: FieldJob;
-  quarantine: Quarantine;
-  loginLimit: LoginLimiter;
-  maps: MapStore;
-  chronicles: ChronicleStore;
-  /** Library item files, such as the folder file, through one store. */
-  libraryFiles: LibraryFileStore;
-  folders: FolderStore;
-  lore: LoreAsker;
-  drafter: EntryDrafter;
-  /** Stage 25: the work queue, "From here", Link it, random entry and the steps after Publish. */
-  keepGoing: KeepGoing;
-  keepGoingHistory: KeepGoingHistory;
-  keepGoingAi: KeepGoingAi;
-  pins: PinStore;
-  writing: WritingHelper;
-  review: EditReviewer;
-  characters: CharacterTalk;
-  discoverer: Discoverer;
-  /** Stage 29: pictures made for entries, kept as tries until one is inserted. */
-  pictures: EntryPictures;
-  conversations: Conversations;
-  talks: Talks;
-  comments: CommentStore;
-  consults: ConsultStore;
-  backup: Backup;
-  search: SearchIndex;
-  /** Fetches `main`, resets the working copy and rebuilds the index. */
-  sync(): Promise<void>;
 }
 
 export interface App {
   app: FastifyInstance;
+  /** The first project's services (the library the server had before projects), not brought up. */
   services: Services;
+  /** What belongs to the whole server. */
+  server: Server;
+  /** Every project route, with the role it needs: the table the guard enforces. */
+  routes: ProjectRoute[];
+  /** Every route the server registered, open or not. */
+  allRoutes: RegisteredRoute[];
 }
 
-/** The folders that hold data which cannot be rebuilt from the vault repository. */
-export function backupSources(dataDir: string, ownLibrary = false): Record<string, string> {
-  return {
-    state: join(dataDir, "state"),
-    generated: join(dataDir, "assets", "generated"),
-    // Frontier's own library exists nowhere else, so it is backed up with the rest.
-    ...(ownLibrary ? { library: join(dataDir, "library.git") } : {}),
-  };
+export interface RegisteredRoute {
+  method: string;
+  /** The pattern as registered, with its `:params`. */
+  url: string;
+  /** Declared open with `config: PUBLIC`. */
+  public: boolean;
 }
 
-/** Routes that need no session. */
-const OPEN = new Set([
-  "/api/login",
-  "/api/session",
-  "/api/github/webhook",
-  "/health",
-  "/api/passkeys/login/options",
-  "/api/passkeys/login/verify",
-]);
+/** An address as it may be logged: no invitation code, no OAuth code or state. */
+export function redactAddress(url: string | undefined): string {
+  return (url ?? "")
+    .replace(/(\/(?:(?:api|%61pi)\/)?(?:join|confirm|reset)\/)[^/?#]+/i, "$1:code")
+    .replace(/([?&](?:invite|code|state|returnTo|m)=)[^&#]*/gi, "$1:redacted");
+}
 
 const THIRTY_DAYS = 30 * 24 * 60 * 60;
 
@@ -186,6 +152,8 @@ export interface BuildOptions {
   /** Used by tests to watch Git commands. */
   onGitCommand?: (args: readonly string[]) => void;
   logger?: boolean;
+  /** Where the log lines go when `logger` is on; the standard output when not given. Tests read it. */
+  logStream?: { write(line: string): void };
   /** How long after a change the backup runs. Tests shorten it. */
   backupDelayMs?: number;
   /** How long a note from outside is kept from AI features. Tests shorten it. */
@@ -202,368 +170,97 @@ export interface BuildOptions {
 
 /** Builds the server. The caller decides when to clone, sync and listen. */
 export async function buildApp(config: Config, options: BuildOptions = {}): Promise<App> {
-  const vaultDir = join(config.dataDir, "vault");
-  const stateDir = join(config.dataDir, "state");
-
-  const git = new GitGateway({
-    dir: vaultDir,
-    remoteUrl: config.remoteUrl,
-    author: config.commitAuthor,
-    committer: config.commitBot,
-    ...(config.githubApp
-      ? { token: appTokenSource(config.githubApp) }
-      : config.githubToken
-        ? { token: async () => config.githubToken }
-        : {}),
-    ...(options.onGitCommand ? { onCommand: options.onGitCommand } : {}),
-  });
-  const index = new VaultIndex(vaultDir);
-  const status = new StatusService(index, {
-    library: config.library,
-    backupOutside: config.backup.kind === "s3",
-    // Read only when a snapshot is made, after the draft store below exists.
-    keptCopies: () => drafts.keptCount(),
-    draftChanges: () => drafts.changes,
-  });
-  const files = new StateFiles();
-  const settings = new SettingsStore(stateDir, files);
-  const images = new ImageServer(vaultDir, config.dataDir);
-  const imageFetcher = new ImageFetcher({
-    publicUrl: config.publicUrl,
-    allowLoopback: config.imageFetchAllowLoopback,
-    ...(options.resolveHost ? { resolve: options.resolveHost } : {}),
-    ...(options.imageFetchLimits ? { limits: options.imageFetchLimits } : {}),
-  });
-  const drafts = new DraftStore(stateDir, files);
-  await drafts.load();
-  const backup = new Backup({
-    sources: backupSources(config.dataDir, config.library === "own"),
-    target:
-      config.backup.kind === "local"
-        ? new FolderTarget(config.backup.dir)
-        : new S3Target(config.backup.s3),
-    stateFile: join(stateDir, "backup.json"),
-    ...(options.backupDelayMs !== undefined ? { delayMs: options.backupDelayMs } : {}),
-    onResult: (state) => status.backedUp(state.lastSuccessAt, state.lastError),
-  });
-  files.onChange(() => backup.noteChange());
-  const last = await backup.lastState();
-  status.backedUp(last.lastSuccessAt, last.lastError);
-
-  const aiLog = new AiLog(stateDir, () => backup.noteChange());
-  const ai = new AiProvider({
-    config,
-    settings,
-    log: aiLog,
+  const server = makeServer(config, {
     ...(options.fetch ? { fetch: options.fetch } : {}),
+    ...(options.resolveHost ? { resolveHost: options.resolveHost } : {}),
+    ...(options.imageFetchLimits ? { imageFetchLimits: options.imageFetchLimits } : {}),
   });
-  const models = new ModelCatalogue({
-    connections: ai.connections,
-    settings,
-    openrouterUrl: config.openrouterUrl,
-  });
-  ai.useCatalog(models);
-  const changer = new EntryChanger({ git, index, drafts, status });
-  const proposals = new ProposalStore({
-    stateDir,
-    files,
-    index,
-    changer,
-    status,
-    discard: async (id) => {
-      await drafts.discard(id);
-      status.drafts(drafts.count(), 0);
-    },
-  });
-  await proposals.load();
-  const fields = new FieldProposer({
-    stateDir,
-    files,
-    index,
-    settings,
-    provider: ai,
-    proposals,
-    models,
-    mayRead: (path) => quarantine.aiMayRead(path),
-    // Stage 31: the kinds of relation, and the relations already written, from published entries.
-    kinds: () => relationKinds(),
-    written: () => writtenRelations(),
-  });
-  const quarantine = new Quarantine({
-    stateDir,
-    vaultDir,
-    files,
-    git,
-    index,
-    drafts,
-    ...(options.settleMs !== undefined ? { settleMs: options.settleMs } : {}),
-  });
-  const search = new SearchIndex(index);
-  const conversations = new Conversations(stateDir, files);
-  const talks = new Talks(stateDir, files);
-  const comments = new CommentStore(stateDir, files);
-  const consults = new ConsultStore(stateDir, files);
-  const chronicles = new ChronicleStore({ vaultDir, git, index, drafts, changer });
-  const characters = new CharacterTalk({
-    index,
-    search,
-    provider: ai,
-    settings,
-    drafts,
-    git,
-    changer,
-    chronicles,
-    mayRead: (path) => quarantine.aiMayRead(path) === null,
-  });
-  const maps = new MapStore({
-    vaultDir,
-    iconFolder: config.iconFolder,
-    git,
-    index,
-    drafts,
-    changer,
-  });
-  const libraryFiles = new LibraryFileStore({ vaultDir, drafts });
-  const relationKinds = () => kindsOf((libraryFiles.current("trees").file as TreesFile).kinds);
-  let written: { key: string; keys: Set<string> } | null = null;
-  /** Relations already written, drafts included, so an accepted one is not proposed again. */
-  const writtenRelations = async (): Promise<Set<string>> => {
-    const kinds = relationKinds();
-    const list = drafts.list().filter((d) => d.kind !== "delete" && !d.binary);
-    const key = `${index.generation}|${JSON.stringify(kinds)}|${list.map((d) => `${d.id}:${d.revision}`).join(",")}`;
-    if (written?.key === key) return written.keys;
-    const texts = new Map<string, string>();
-    for (const d of list) texts.set(d.path, await drafts.text(d.id));
-    const notes = index
-      .allNotes()
-      .map((n) => ({ path: n.path, text: texts.get(n.path) ?? n.text }));
-    for (const [path, text] of texts)
-      if (!index.note(path) && path.endsWith(".md")) notes.push({ path, text });
-    const r = collectRelations({
-      notes,
-      files: [...index.files, ...texts.keys()],
-      schema: index.schema,
-      kinds,
-    });
-    const keys = new Set<string>();
-    for (const f of r.facts) {
-      keys.add(`${f.kind}|${f.a}|${f.b}`);
-      if (f.with) keys.add(`${f.kind}|${f.with}|${f.b}`);
-    }
-    written = { key, keys };
-    return keys;
-  };
-  proposals.warnFor = (path, op) =>
-    relationWarning(
-      relationKinds(),
-      op.what,
-      path,
-      op.whoPath,
-      (p) => index.note(p)?.text ?? null,
-      index.schema,
-    );
-  const folders = new FolderStore({ index, git, drafts, files: libraryFiles, changer });
-  const discoverer = new Discoverer({
-    stateDir,
-    files,
-    index,
-    maps,
-    chronicles,
-    drafts,
-    changer,
-    provider: ai,
-    settings,
-    uploadFolder: config.uploadFolder,
-    mayRead: (path) => quarantine.aiMayRead(path) === null,
-    biomes: () => {
-      try {
-        return (libraryFiles.current("biomes").file as BiomesFile).biomes;
-      } catch {
-        return [];
-      }
-    },
-  });
-  const pictures = new EntryPictures({
-    dir: join(config.dataDir, "assets", "generated", "entries"),
-    files,
-    settings,
-    log: aiLog,
-    provider: ai,
-    saving: { index, drafts, config, status },
-  });
-  const writing = new WritingHelper({
-    index,
-    search,
-    provider: ai,
-    settings,
-    mayRead: (path) => quarantine.aiMayRead(path) === null,
-  });
-  const review = new EditReviewer({
-    index,
-    search,
-    provider: ai,
-    settings,
-    mayRead: (path) => quarantine.aiMayRead(path) === null,
-  });
-  const lore = new LoreAsker({
-    index,
-    search,
-    provider: ai,
-    settings,
-    mayRead: (path) => quarantine.aiMayRead(path) === null,
-  });
-  const drafter = new EntryDrafter({
-    index,
-    search,
-    provider: ai,
-    settings,
-    mayRead: (path) => quarantine.aiMayRead(path) === null,
-  });
-  const keepGoingHistory = new KeepGoingHistory({ git, index });
-  const keepGoing = new KeepGoing({
-    index,
-    drafts,
-    comments,
-    settings,
-    folders,
-    changer,
-    status,
-    history: keepGoingHistory,
-  });
-  const keepGoingAi = new KeepGoingAi({
-    index,
-    provider: ai,
-    drafts,
-    drafter,
-    files,
-    stateDir,
-    textOf: (path) => changer.text(path),
-    mayRead: (path) => quarantine.aiMayRead(path) === null,
-  });
-  const pins = new PinStore({ index, drafts, files: libraryFiles });
-  await quarantine.load();
-  const reportAi = async () =>
-    status.ai(await ai.ready("extraction"), ai.lastError, await ai.ready("conversation"));
+  const target =
+    config.backup.kind === "local"
+      ? new FolderTarget(config.backup.dir)
+      : new S3Target(config.backup.s3);
+  server.registry = new ProjectRegistry((record) =>
+    buildServices(server, record, {
+      target,
+      ...(options.onGitCommand ? { onGitCommand: options.onGitCommand } : {}),
+      ...(options.backupDelayMs !== undefined ? { backupDelayMs: options.backupDelayMs } : {}),
+      ...(options.settleMs !== undefined ? { settleMs: options.settleMs } : {}),
+    }),
+  );
 
-  const services: Services = {
-    config,
-    git,
-    index,
-    status,
-    files,
-    settings,
-    images,
-    imageFetcher,
-    drafts,
-    backup,
-    search,
-    publisher: undefined as unknown as Publisher,
-    branches: undefined as unknown as BranchInbox,
-    ai,
-    aiLog,
-    models,
-    changer,
-    proposals,
-    fields,
-    fieldJob: new FieldJob(fields),
-    quarantine,
-    loginLimit: new LoginLimiter(),
-    maps,
-    chronicles,
-    libraryFiles,
-    folders,
-    lore,
-    drafter,
-    keepGoing,
-    keepGoingHistory,
-    keepGoingAi,
-    pins,
-    writing,
-    review,
-    characters,
-    discoverer,
-    pictures,
-    conversations,
-    talks,
-    comments,
-    consults,
-    async sync() {
-      const result = await git.fetch();
-      status.fetched(result.current);
-      if (index.commit !== result.current) index.build(result.current);
-      await quarantine.noteFetched(result.previous ?? result.current, result.current);
-      await quarantine.refresh();
-      maps.refresh();
-      chronicles.refresh();
-      libraryFiles.refresh();
-      await services.publisher.clearPublished();
-      await quarantine.prune();
-      status.quarantine(quarantine.count(), [
-        ...(quarantine.problem ? [quarantine.problem] : []),
-        ...maps.problems.map((p) => `${p.path} is not shown as a map. ${p.message}`),
-        ...chronicles.problems.map((p) => `${p.path} is not shown as a chronicle. ${p.message}`),
-        ...libraryFiles.problems.map((p) => `${p.path} cannot be read. ${p.message}`),
-      ]);
-      await proposals.prune();
-      status.inbox(await services.branches.count());
-      status.indexed();
-    },
-  };
-  services.branches = new BranchInbox({
-    stateDir,
-    files,
-    git,
-    index,
-    drafts,
-    sync: () => services.sync(),
-  });
-  await services.branches.load();
-  services.publisher = new Publisher({
-    vaultDir,
-    git,
-    index,
-    drafts,
-    status,
-    libraryFiles,
-    sync: () => services.sync(),
-    reviews: {
-      pendingDecisions: () => quarantine.pendingDecisions(),
-      reviewFile: (ids) => quarantine.reviewFile(ids),
-      reviewPath: REVIEW_FILE,
-    },
-    onPushed: (commit) => quarantine.notePushed(commit),
-    onRenamed: async (from, to) => {
-      // A device still holding the old path is told where its changes go (stage 15c).
-      await drafts.noteRenamed(from, to);
-      await proposals.renamed(from, to);
-      await comments.renamed(from, to);
-      await consults.renamed(from, to);
-    },
-    onPublished: (paths) => {
-      // Runs after the publish call has answered; a failure shows in the status area. When the
-      // settings cannot be read at all, as when the server is stopping, the step is left out.
-      void (async () => {
-        if (!(await settings.read())?.ai.proposeOnPublish || !(await ai.ready("extraction")))
-          return;
-        for (const path of paths) {
-          await fields.propose(path).catch(() => undefined);
-        }
-        await reportAi();
-      })().catch(() => undefined);
-    },
-  });
-  await reportAi();
+  // AI keys are never kept here: each request brings the person's own (see ai/keyring.ts). Keys an
+  // earlier version stored in the settings file are deleted now, and the web app says so once.
+  const keysRemoved = await server.settings.removeStoredKeys(new Date(), config.unusedKeyVars);
+  server.keysRemoved = keysRemoved ?? (await server.settings.read())?.ai.keysRemoved ?? null;
+
+  const first = await ensureFirstProject(server);
+  // Links whose maker stopped being an owner, and uses cut off half way, are dealt with before the
+  // first request.
+  await tidyInvites(server);
+  const services = await server.registry.adopt(first);
 
   // Coolify's proxy sits in front, so the client address and protocol come from its headers.
-  // Keys are sent in request bodies to the provider routes; keep them out of any log line.
+  // AI keys arrive in a request header. They are taken off the request before anything else sees
+  // it, and redacted from any log line as well, in case a request is ever logged whole.
   const app = Fastify({
     trustProxy: true,
     logger: options.logger
-      ? { redact: ["req.headers.authorization", "req.headers.cookie", "req.body.key"] }
+      ? {
+          ...(options.logStream ? { stream: options.logStream } : {}),
+          redact: [
+            "req.headers.authorization",
+            "req.headers.cookie",
+            `req.headers["${AI_KEYS_HEADER}"]`,
+            "req.body.key",
+          ],
+          // An invitation code is a secret until it is used: it is not written to the log, in the
+          // address of the join page, nor in the query of the Google sign-in routes.
+          serializers: {
+            req: (req) => ({
+              method: req.method,
+              url: redactAddress(req.url),
+              host: req.host,
+              remoteAddress: req.ip,
+              ...(req.socket?.remotePort !== undefined
+                ? { remotePort: req.socket.remotePort }
+                : {}),
+            }),
+          },
+        }
       : false,
   });
+  // A person removed from a project (or given another role) loses what they have open there (but
+  // the request making the change is answered), and a person who is no longer an owner has no
+  // invitation links waiting.
+  server.projects.watchMembers(async (projectId, personId) => {
+    server.live.cut(projectId, personId);
+    // Their unsaved changes are kept for 30 days if they left, and nobody is told they are reading.
+    // (A project that is not open has no clock to start: its next opening starts it.)
+    const open = await server.registry.peek(projectId);
+    if (open) {
+      const role = server.projects.roleOfSync(projectId, personId);
+      if (role === null) open.presence.forget(personId);
+      await open.drafts
+        .memberChanged(personId, role)
+        .catch((err: unknown) => app.log.error({ err }, "Could not note a change of member"));
+      // What others are told about them (a notice, a dot, who is reading) follows their role.
+      open.status.presenceChanged();
+    }
+    if (server.projects.roleOfSync(projectId, personId) === "owner") return;
+    try {
+      await server.invites.cancelBy(projectId, personId);
+    } catch (err) {
+      // The link is also refused when it is used, because its maker is no longer an owner.
+      app.log.error(
+        { err },
+        "Could not cancel the invitations of a person who is no longer an owner",
+      );
+    }
+  });
+  readKeysHeader(app);
+  server.mail.logTo(app.log);
   // A failed AI call is written to the server's log too, or production shows only a bare 502.
-  ai.logFailuresTo(app.log);
+  server.ai.logFailuresTo(app.log);
 
   // Keep the unparsed body: the webhook signature is computed over the exact bytes sent.
   app.addContentTypeParser("application/json", { parseAs: "buffer" }, (request, body, done) => {
@@ -592,14 +289,42 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
   // One image per upload, up to 25 MB.
   await app.register(multipart, { limits: { fileSize: 25 * 1024 * 1024, files: 1 } });
 
-  app.addHook("onClose", async () => backup.stop());
+  app.addHook("onClose", async () => {
+    // A member's last-active note is written without the request waiting; let it land first.
+    await server.mail.settled();
+    await server.projects.settled();
+    await server.registry.closeAll();
+  });
 
+  app.decorateRequest("person", null);
+  // Every route is recorded as it is registered, so the tests can check each one.
+  const registered: RegisteredRoute[] = [];
+  app.addHook("onRoute", (route) => {
+    for (const method of [route.method].flat())
+      registered.push({ method, url: route.url, public: route.config?.public === true });
+  });
+  // A request that changes something, sent by a browser from another site (a page that makes the
+  // browser post to this server with the person's cookie), is refused. The browser says where a
+  // request comes from in `Sec-Fetch-Site`: `cross-site` is never ours, and `same-site` (another
+  // address of the same domain) only when its Origin is the app's own. Without the header (tests,
+  // scripts, GitHub's webhook) nothing is known, and the request goes on as it always did.
+  const ownOrigin = new URL(config.publicUrl).origin;
   app.addHook("onRequest", async (request) => {
-    const path = request.url.split("?")[0] ?? "";
-    if (OPEN.has(path) || !path.startsWith("/api/")) return;
-    if (request.session.get("user") !== "author") {
-      throw new ApiError("unauthenticated", "Log in first.");
-    }
+    if (request.method === "GET" || request.method === "HEAD" || request.method === "OPTIONS")
+      return;
+    if (!isApiRequest(request)) return;
+    const site = request.headers["sec-fetch-site"];
+    if (site === undefined || site === "same-origin" || site === "none") return;
+    if (site === "same-site" && request.headers.origin === ownOrigin) return;
+    throw new ApiError("not_allowed", "This request came from another site, so it was refused.");
+  });
+  // The login check decides from the route the router matched, never from the raw address (which
+  // may be percent-encoded): the API is closed unless the route says `config: PUBLIC`, and so is
+  // anything under `/api` that matched no route.
+  app.addHook("onRequest", async (request) => {
+    if (!isApiRequest(request) || isPublicRoute(request)) return;
+    const person = await requirePerson(request, server.people);
+    request.keysHolder.person = person.id;
   });
 
   // Which build this server carries, for reading logs and the browser's network panel.
@@ -613,7 +338,7 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
         "connect-src 'self'; worker-src 'self'; manifest-src 'self'; frame-ancestors 'none'; " +
         "base-uri 'self'; form-action 'self'",
     );
-    if (request.url.startsWith("/api/")) reply.header("frontier-build", build.build);
+    if (isApiRequest(request)) reply.header("frontier-build", build.build);
     reply.header("x-content-type-options", "nosniff");
     reply.header("referrer-policy", "no-referrer");
   });
@@ -673,9 +398,10 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
   }
 
   app.setNotFoundHandler((request, reply) => {
-    const path = request.url.split("?")[0] ?? "";
     // The interface handles its own addresses: any page address gets the app, which then routes.
-    if (serveWeb && request.method === "GET" && !path.startsWith("/api/") && path !== "/health") {
+    // What is the API's is decided on the decoded path, as the router read it.
+    const path = decodedPath(request.url);
+    if (serveWeb && request.method === "GET" && !isApiRequest(request) && path !== "/health") {
       return reply.header("cache-control", "no-cache").sendFile("index.html");
     }
     return reply
@@ -683,35 +409,52 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
       .send({ error: { code: "not_found", message: "There is nothing at this address." } });
   });
 
-  authRoutes(app, services);
-  entryRoutes(app, services);
-  graphRoutes(app, services);
-  relationRoutes(app, services);
-  draftRoutes(app, services);
-  imageRoutes(app, services);
-  pictureRoutes(app, services);
-  inboxRoutes(app, services);
-  proposalRoutes(app, services);
-  quarantineRoutes(app, services);
-  settingsRoutes(app, services);
-  passkeyRoutes(app, services);
-  mapRoutes(app, services);
-  chronicleRoutes(app, services);
-  libraryFileRoutes(app, services);
-  folderRoutes(app, services);
-  loreRoutes(app, services);
-  entryDraftRoutes(app, services);
-  keepGoingRoutes(app, services);
-  writingRoutes(app, services);
-  commentRoutes(app, services);
-  characterRoutes(app, services);
-  discoverRoutes(app, services);
-  exportRoutes(app, services);
-  importRoutes(app, services);
-  historyRoutes(app, services);
-  searchRoutes(app, services);
-  statusRoutes(app, services);
-  webhookRoutes(app, services);
+  // The project routes: written once against one `Services`, registered once for every project
+  // under `/api/p/:project`, and at their old addresses for devices on the previous web build.
+  const book = new RouteBook();
+  guardProjects(app, server, book);
+  const forProject = projectApp(app, book);
+  const s = scopedServices(server);
+  entryRoutes(forProject, s);
+  graphRoutes(forProject, s);
+  relationRoutes(forProject, s);
+  draftRoutes(forProject, s);
+  imageRoutes(forProject, s);
+  pictureRoutes(forProject, s);
+  inboxRoutes(forProject, s);
+  proposalRoutes(forProject, s);
+  quarantineRoutes(forProject, s);
+  mapRoutes(forProject, s);
+  chronicleRoutes(forProject, s);
+  libraryFileRoutes(forProject, s);
+  folderRoutes(forProject, s);
+  loreRoutes(forProject, s);
+  entryDraftRoutes(forProject, s);
+  keepGoingRoutes(forProject, s);
+  writingRoutes(forProject, s);
+  commentRoutes(forProject, s);
+  characterRoutes(forProject, s);
+  discoverRoutes(forProject, s);
+  exportRoutes(forProject, s);
+  importRoutes(forProject, s);
+  historyRoutes(forProject, s);
+  searchRoutes(forProject, s);
+  statusRoutes(forProject, s);
+  presenceRoutes(forProject, s);
+  // The project's own routes have no alias: `DELETE /api/project` must not exist.
+  projectRoutes(projectApp(app, book, { aliases: false }), s);
+  memberRoutes(projectApp(app, book, { aliases: false }), s);
 
-  return { app, services };
+  // What belongs to the whole server, or to the person.
+  authRoutes(app, server);
+  passkeyRoutes(app, server);
+  joinRoutes(app, server);
+  googleRoutes(app, server);
+  emailRoutes(app, server);
+  settingsRoutes(app, server);
+  projectsApi(app, server);
+  healthRoute(app, server);
+  webhookRoutes(app, server);
+
+  return { app, services, server, routes: book.routes, allRoutes: registered };
 }

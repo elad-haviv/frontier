@@ -1,0 +1,72 @@
+/* Who did what (stage 31d): the notice, who is reading, and the byline. */
+.people-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  margin: 0.8rem 0 0;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--rule);
+  border-left: 3px solid var(--accent);
+  border-radius: 5px;
+  background: var(--paper-raised);
+  color: var(--ink-soft);
+  font-family: var(--sans);
+  font-size: 0.85rem;
+}
+.people-notice strong {
+  color: var(--ink);
+  font-weight: 600;
+}
+.people-notice-faces,
+.people-faces {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+}
+.people-notice-faces .ui-avatar + .ui-avatar,
+.people-faces > span + span {
+  margin-left: -0.4rem;
+}
+.people-faces .ui-avatar {
+  box-shadow: 0 0 0 2px var(--paper);
+}
+.people-more {
+  margin-left: 0.25rem;
+  color: var(--ink-faint);
+  font-size: 0.72rem;
+}
+.people-byline {
+  margin: 0.45rem 0 0;
+  color: var(--ink-faint);
+  font-family: var(--sans);
+  font-size: 0.82rem;
+}
+.people-reading {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0.45rem 0 0;
+  color: var(--ink-faint);
+  font-family: var(--sans);
+  font-size: 0.82rem;
+}
+.people-by {
+  color: var(--ink-faint);
+  font-size: 0.82rem;
+  white-space: nowrap;
+}
+/* A dot on an entry in the tree: someone else has unsaved changes to it. Never text. */
+.tree-others {
+  flex: none;
+  align-self: center;
+  width: 0.5rem;
+  height: 0.5rem;
+  margin: 0 0.35rem;
+  border-radius: 50%;
+  background: var(--accent);
+  opacity: 0.8;
+}
+/* In the editor the notice sits between the bar and the text, as a banner does. */
+.editor-page .people-notice {
+  margin: 0.75rem 1rem 0;
+}

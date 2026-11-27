@@ -20,7 +20,7 @@ import {
   type StatusSnapshot,
   versionMark,
 } from "@frontier/schema";
-import { api, ApiFailure, fromServer, imageUrl, mapImageUrl } from "../api.ts";
+import { apiFor, ApiFailure, fromServer, imageUrl, mapImageUrl, requireSlug } from "../api.ts";
 import type { Connection } from "../sync/connection.ts";
 import type { Queue, QueueRecord } from "../sync/queue.ts";
 import { bodyUrl, type DeviceCopy, IMAGES, isFull } from "./device.ts";
@@ -55,6 +55,8 @@ export interface KeeperDeps {
   >;
   connection: Pick<Connection, "state" | "snapshot" | "subscribe">;
   reads?: KeeperReads;
+  /** The address of the project this keeper looks after, as it is now. */
+  slug?: () => string;
   caches?: Pick<CacheStorage, "open" | "delete"> | undefined;
   fetch?: typeof fetch;
   now?: () => number;
@@ -69,28 +71,45 @@ export interface KeeperDeps {
   channel?: () => BroadcastChannel | null;
 }
 
-const appReads: KeeperReads = {
-  graph: () => fromServer(() => api.graph()),
-  maps: () => fromServer(() => api.maps()),
-  chronicles: () => fromServer(() => api.chronicles()),
-  others: () => [
-    fromServer(() => api.tree()),
-    fromServer(() => api.markerSets()),
-    fromServer(() => api.schema()),
-    fromServer(() => api.pins()),
-    ...LIBRARY_FILES.map((k) => fromServer(() => api.libraryFile(k.name as LibraryFileName))),
-  ],
-  item: (key) => {
-    const id = key.slice(key.indexOf(":") + 1);
-    if (key.startsWith("entry:")) return fromServer(() => api.entry(id));
-    if (key.startsWith("map:")) return fromServer(() => api.map(id));
-    return fromServer(() => api.chronicle(id));
-  },
+/** The reads of one project, by its address as it is now. */
+const appReads = (slug: () => string): KeeperReads => {
+  const p = () => apiFor(slug());
+  return {
+    graph: () => fromServer(() => p().graph()),
+    maps: () => fromServer(() => p().maps()),
+    chronicles: () => fromServer(() => p().chronicles()),
+    others: () => [
+      fromServer(() => p().tree()),
+      fromServer(() => p().markerSets()),
+      fromServer(() => p().schema()),
+      fromServer(() => p().pins()),
+      ...LIBRARY_FILES.map((k) => fromServer(() => p().libraryFile(k.name as LibraryFileName))),
+    ],
+    item: (key) => {
+      const id = key.slice(key.indexOf(":") + 1);
+      if (key.startsWith("entry:")) return fromServer(() => p().entry(id));
+      if (key.startsWith("map:")) return fromServer(() => p().map(id));
+      return fromServer(() => p().chronicle(id));
+    },
+  };
 };
 
 /** The parts of a snapshot that say the stored copies may be out of date. */
 const markOf = (s: StatusSnapshot | null | undefined) =>
   s ? `${s.indexCommit}|${s.unpublished}|${s.drafts ?? 0}` : null;
+
+/**
+ * The snapshot as the device keeps it for an offline start: without who has unsaved changes and
+ * who is reading (stage 31d). Those are true only while the stream says so, so a stored one would
+ * show as current when the app opens with no connection, and storing them on every change of
+ * who reads would write to the device for nothing.
+ */
+export function snapshotForDevice(s: StatusSnapshot): StatusSnapshot {
+  const rest = { ...s };
+  delete rest.othersUnsaved;
+  delete rest.presence;
+  return rest;
+}
 
 export class Keeper {
   private active = false;
@@ -105,8 +124,12 @@ export class Keeper {
   private readonly now: () => number;
 
   constructor(private readonly d: KeeperDeps) {
-    this.reads = d.reads ?? appReads;
+    this.reads = d.reads ?? appReads(() => this.slug());
     this.now = d.now ?? Date.now;
+  }
+
+  private slug(): string {
+    return (this.d.slug ?? requireSlug)();
   }
 
   start(): void {
@@ -145,10 +168,20 @@ export class Keeper {
     this.active = true;
     let mark = markOf(this.d.connection.snapshot);
     let online = this.d.connection.state === "online";
+    let stored = "";
     this.stops.push(
       this.d.connection.subscribe(() => {
         const snapshot = this.d.connection.snapshot;
-        if (snapshot) void this.d.queue.setMeta("snapshot", snapshot).catch(() => undefined);
+        if (snapshot) {
+          const kept = snapshotForDevice(snapshot);
+          const text = JSON.stringify(kept);
+          // Only a change that the device keeps is written: a person starting or stopping to read
+          // changes none of it.
+          if (text !== stored) {
+            stored = text;
+            void this.d.queue.setMeta("snapshot", kept).catch(() => undefined);
+          }
+        }
         const now = markOf(snapshot);
         const back = this.d.connection.state === "online" && !online;
         online = this.d.connection.state === "online";
@@ -286,7 +319,9 @@ export class Keeper {
       const links = (answer.body as { links?: { kind: string; target?: string }[] }).links ?? [];
       return [
         ...new Set(
-          links.filter((l) => l.kind === "image" && l.target).map((l) => imageUrl(l.target!, 1280)),
+          links
+            .filter((l) => l.kind === "image" && l.target)
+            .map((l) => imageUrl(l.target!, 1280, this.slug())),
         ),
       ];
     }
@@ -302,9 +337,14 @@ export class Keeper {
         const path = sets?.sets
           .find((s) => s.name === icon.set)
           ?.icons.find((i) => i.name === icon.name)?.path;
-        return path ? [imageUrl(path)] : [];
+        return path ? [imageUrl(path, undefined, this.slug())] : [];
       });
-      return [...new Set([...map.images.map((i) => mapImageUrl(i.path, size)), ...iconPaths])];
+      return [
+        ...new Set([
+          ...map.images.map((i) => mapImageUrl(i.path, size, this.slug())),
+          ...iconPaths,
+        ]),
+      ];
     }
     // Chronicles carry no images.
     return [];

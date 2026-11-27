@@ -1,5 +1,5 @@
 /**
- * Relations the AI read in an entry's text (stage 31), checked before the author sees them. A
+ * Relations the AI read in an entry's text (stage 33), checked before the author sees them. A
  * relation is kept only when its sentence is in the entry, the words that state it are in the
  * sentence and hold the name, and its word is a kind of relation. Who it names is matched to an
  * entry by title, then by another name; with no match, the closest entry is offered. A relation

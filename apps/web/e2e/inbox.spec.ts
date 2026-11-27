@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./test.ts";
 import {
   commitCount,
   hasBranch,
@@ -7,6 +7,7 @@ import {
   publish,
   pushProposal,
   review,
+  proj,
 } from "./helpers.ts";
 
 test("CUJ 6: reviews an agent's proposal file by file and publishes what was accepted", async ({
@@ -23,9 +24,9 @@ test("CUJ 6: reviews an agent's proposal file by file and publishes what was acc
   );
   const before = commitCount();
 
-  await page.goto("/");
+  await page.goto(proj("/"));
   // The bar shows that something waits; the fetch that finds the branch runs when the inbox opens.
-  await page.goto("/inbox");
+  await page.goto(proj("/inbox"));
   await page.reload();
   const section = page.locator(".proposal", { hasText: `architect/${who}` });
   await expect(section).toBeVisible();

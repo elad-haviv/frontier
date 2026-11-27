@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   AfterPublishResponse,
@@ -506,16 +508,14 @@ describe("pins", () => {
     ]);
   });
 
-  it("is saved at once as the library's pins file, an unpublished change", async () => {
+  it("is kept for the person in a working file, not in the library: no unsaved change", async () => {
     await pin(ALPHA);
-    const file = (await t.get("/api/library-files/pins")).json().file;
-    expect(file).toEqual({ version: 1, pins: [{ path: ALPHA }] });
-    const unpublished = (await t.get("/api/unpublished")).json().drafts as {
-      path: string;
-      text: string;
-    }[];
-    const draft = unpublished.find((d) => d.path === ".frontier/pins.json")!;
-    expect(draft.text).toBe(`{\n  "version": 1,\n  "pins": [\n    {"path":"${ALPHA}"}\n  ]\n}\n`);
+    const kept = JSON.parse(readFileSync(join(t.services.paths.state, "pins.json"), "utf8")) as {
+      people: Record<string, string[]>;
+    };
+    expect(Object.values(kept.people)).toEqual([[ALPHA]]);
+    expect((await t.get("/api/unpublished")).json().drafts).toEqual([]);
+    expect((await t.get("/api/library-files/pins")).json().file).toEqual({ version: 1, pins: [] });
   });
 
   it("unpins, and orders", async () => {
@@ -524,15 +524,18 @@ describe("pins", () => {
     await pin(GAMMA);
     const res = await t.put("/api/pins", { paths: [GAMMA, "10 Test/Unknown.md", ALPHA] });
     expect(PinsResponse.parse(res.json()).pins.map((p) => p.path)).toEqual([GAMMA, ALPHA, BETA]);
-    // The same order again changes nothing.
-    const revision = (await t.get("/api/library-files/pins")).json().revision;
+    // The same order again changes nothing: no write.
+    let writes = 0;
+    const stop = t.services.files.onChange(() => writes++);
     await t.put("/api/pins", { paths: [GAMMA, ALPHA, BETA] });
-    expect((await t.get("/api/library-files/pins")).json().revision).toBe(revision);
+    expect(writes).toBe(0);
     const gone = await t.del(`/api/pins?path=${encodeURIComponent(ALPHA)}`);
     expect(PinsResponse.parse(gone.json()).pins.map((p) => p.path)).toEqual([GAMMA, BETA]);
     // Unpinning what is not pinned writes nothing.
+    expect(writes).toBe(1);
     await t.del(`/api/pins?path=${encodeURIComponent(ALPHA)}`);
-    expect((await t.get("/api/library-files/pins")).json().revision).toBe(revision + 1);
+    expect(writes).toBe(1);
+    stop();
   });
 
   it("does not create the file when nothing is pinned", async () => {
@@ -562,10 +565,10 @@ describe("pins", () => {
     await t.services.sync();
     expect((await pins()).map((p) => p.path)).toEqual([ALPHA]);
     await pin(GAMMA);
-    expect((await t.get("/api/library-files/pins")).json().file.pins).toEqual([
-      { path: ALPHA },
-      { path: GAMMA },
-    ]);
+    const kept = JSON.parse(readFileSync(join(t.services.paths.state, "pins.json"), "utf8")) as {
+      people: Record<string, string[]>;
+    };
+    expect(Object.values(kept.people)).toEqual([[ALPHA, GAMMA]]);
     // An entry marked for deletion is gone too, and so is one the author deleted.
     const draft = await t.put("/api/drafts", {
       id: "deletegamma1",
@@ -674,8 +677,8 @@ describe("words and the AI flag in other answers", () => {
     expect(next.nodes.find((n) => n.path === "10 Test/Fresh.md")!.words).toBe(3);
   });
 
-  it("says in the status whether lore conversations can run", async () => {
-    expect((await t.get("/api/status")).json().ai.conversation).toBe(false);
+  it("says whether lore conversations can run: a model is chosen", async () => {
+    expect((await t.get("/api/lore")).json().ready).toBe(false);
   });
 });
 
@@ -807,14 +810,13 @@ describe("Link it under pressure", () => {
 });
 
 describe("pins at the same time", () => {
-  it("keeps every pin, in one draft of the file", async () => {
+  it("keeps every pin", async () => {
     const paths = [ALPHA, BETA, GAMMA, DELTA];
     const answers = await Promise.all(paths.map((path) => t.post("/api/pins", { path })));
     expect(answers.map((a) => a.statusCode)).toEqual([200, 200, 200, 200]);
     const now = PinsResponse.parse((await t.get("/api/pins")).json()).pins.map((p) => p.path);
     expect([...now].sort()).toEqual([...paths].sort());
-    const drafts = t.services.drafts.list().filter((d) => d.path === ".frontier/pins.json");
-    expect(drafts).toHaveLength(1);
+    expect(t.services.drafts.list().filter((d) => d.path === ".frontier/pins.json")).toEqual([]);
   });
 
   it("does not lose an unpin or an order that runs with a pin", async () => {

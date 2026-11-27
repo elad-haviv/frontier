@@ -77,11 +77,12 @@ export const TreeDrawing = forwardRef<
     onSelect: (key: string, second: boolean) => void;
     onClear: () => void;
     onOpen: (key: string) => void;
-    onAdd: (where: AddWhere, key: string, at: DOMRect) => void;
+    /** Absent where the person cannot write: the cards then have no + around them. */
+    onAdd?: ((where: AddWhere, key: string, at: DOMRect) => void) | undefined;
     onFold: (key: string) => void;
     /** What a screen reader hears about the selected card. */
     said: string;
-    /** The graph without proposals, for checks (stage 31). */
+    /** The graph without proposals, for checks (stage 33). */
     checks?: Graph;
     /** Words for each proposed relation drawn, by its place, for its ? mark. */
     proposalLabel?: (i: number) => string;
@@ -465,7 +466,7 @@ export const TreeDrawing = forwardRef<
       ? [CARD_W / 2, CARD_H + 14]
       : [CARD_W + 14, CARD_H / 2];
     const tools: [AddWhere, number, number][] = [];
-    if (!phone && !stub) {
+    if (!phone && !stub && props.onAdd) {
       tools.push(["up", ...above]);
       if (!L.up && (!n.inlaw || !L.family)) tools.push(["down", ...belowAt]);
       if (L.family && !L.up)
@@ -544,7 +545,7 @@ export const TreeDrawing = forwardRef<
                 role="button"
                 aria-label={addTitle(g, k, where, title(g, n.key))}
                 onClick={(e) =>
-                  props.onAdd(
+                  props.onAdd?.(
                     where,
                     n.key,
                     (e.currentTarget as SVGGElement).getBoundingClientRect(),

@@ -1,5 +1,15 @@
-import { expect, type Locator, type Page, test } from "@playwright/test";
-import { entry, noSidewaysScroll, openLibrary, openSideBar, setUpAi } from "./helpers.ts";
+import { expect, type Locator, type Page, test } from "./test.ts";
+import {
+  api,
+  DEVICE_KEY,
+  entry,
+  keyOf,
+  noSidewaysScroll,
+  openLibrary,
+  openSideBar,
+  proj,
+  setUpAi,
+} from "./helpers.ts";
 
 // Home and the rest of "keep going" in the shell (stage 25). Pins and the settings are one per
 // server, so these take turns and put back what they change.
@@ -14,16 +24,22 @@ const MIRA = "02 People/Mira.md";
  * entry open now and the one before it. Reloads, since the app reads them as it starts.
  */
 async function seedRecents(page: Page): Promise<void> {
-  await page.goto("/");
+  await page.goto(proj("/"));
+  const key = await keyOf(page, "frontier.keepGoing.v1");
   await page.evaluate(
-    ({ harbor, mira, flats }) => {
+    ({ harbor, mira, flats, key }) => {
       const now = Date.now();
+      // Midnight at the start of yesterday: always a calendar day back and more than 24 hours
+      // ago, so "yesterday" is what the page says whatever the hour the test runs at.
+      const yesterday = new Date(now);
+      yesterday.setHours(0, 0, 0, 0);
+      yesterday.setDate(yesterday.getDate() - 1);
       localStorage.setItem(
-        "frontier.keepGoing.v1",
+        key,
         JSON.stringify({
           recents: [
             { path: flats, title: "Salt Flats", kind: "read", at: now - 2 * 3_600_000 },
-            { path: mira, title: "Mira", kind: "edited", at: now - 26 * 3_600_000 },
+            { path: mira, title: "Mira", kind: "edited", at: yesterday.getTime() },
             { path: harbor, title: "Harbor", kind: "read", at: now - 3 * 86_400_000 },
           ],
           current: { path: flats, title: "Salt Flats" },
@@ -33,7 +49,7 @@ async function seedRecents(page: Page): Promise<void> {
         }),
       );
     },
-    { harbor: HARBOR, mira: MIRA, flats: SALT_FLATS },
+    { harbor: HARBOR, mira: MIRA, flats: SALT_FLATS, key },
   );
   await page.reload();
   await expect(page.locator(".home h1")).toBeVisible();
@@ -54,9 +70,9 @@ async function filter(page: Page, name: RegExp): Promise<Locator> {
 }
 
 async function unpinAll(page: Page): Promise<void> {
-  const res = await page.request.get("/api/pins");
+  const res = await page.request.get(api("/pins"));
   const { pins } = (await res.json()) as { pins: { path: string }[] };
-  for (const p of pins) await page.request.delete(`/api/pins?path=${encodeURIComponent(p.path)}`);
+  for (const p of pins) await page.request.delete(api(`/pins?path=${encodeURIComponent(p.path)}`));
 }
 
 test.beforeEach(async ({ page }) => {
@@ -64,7 +80,7 @@ test.beforeEach(async ({ page }) => {
 });
 
 test("opens on Home: what to work on next, each row with its reason", async ({ page }) => {
-  await page.goto("/");
+  await page.goto(proj("/"));
   await expect(page.locator(".home h1")).toHaveText("Welcome back");
   const q = queue(page);
   // Four filters, each with its count; Needs love is the one open.
@@ -106,7 +122,7 @@ test("opens on Home: what to work on next, each row with its reason", async ({ p
 });
 
 test('"Write it" opens New entry with the name and the folder filled in', async ({ page }) => {
-  await page.goto("/");
+  await page.goto(proj("/"));
   const wanted = await filter(page, /^Wanted/);
   const row = wanted.locator("li", { hasText: "The Sunken Gate" });
   const likely = /likely in (.+?)\s*$/.exec((await row.locator(".home-why").textContent()) ?? "");
@@ -121,10 +137,10 @@ test('"Write it" opens New entry with the name and the folder filled in', async 
   await dialog.getByRole("button", { name: "Start writing", exact: true }).click();
   await expect(page).toHaveURL(/\/edit\/.*The%20Sunken%20Gate\.md\?new=1/);
   // Nothing of it is kept if it was not written.
-  const res = await page.request.get("/api/unpublished");
+  const res = await page.request.get(api("/unpublished"));
   const { drafts } = (await res.json()) as { drafts: { id: string; path: string }[] };
   for (const d of drafts.filter((x) => x.path.includes("The Sunken Gate"))) {
-    await page.request.delete(`/api/drafts/${d.id}`);
+    await page.request.delete(api(`/drafts/${d.id}`));
   }
 });
 
@@ -152,7 +168,7 @@ test("the dice: a kind, then Roll, and it says so when nothing fits", async ({ p
   await expect(page).not.toHaveURL(/Salt%20Flats/);
 
   // Untouched for 6 months: an entry opens, or the toast says every entry was touched lately.
-  await page.goto("/");
+  await page.goto(proj("/"));
   await dice.getByRole("button", { name: "Untouched 6 months" }).click();
   await dice.getByRole("button", { name: "Roll" }).click();
   await expect(
@@ -163,8 +179,9 @@ test("the dice: a kind, then Roll, and it says so when nothing fits", async ({ p
 });
 
 test('"In this folder" says plainly when no entry has been read', async ({ page }) => {
-  await page.goto("/");
-  await page.evaluate(() => localStorage.removeItem("frontier.keepGoing.v1"));
+  await page.goto(proj("/"));
+  const key = await keyOf(page, "frontier.keepGoing.v1");
+  await page.evaluate((k) => localStorage.removeItem(k), key);
   await page.reload();
   const dice = card(page, "Random entry");
   await dice.getByRole("button", { name: "In this folder" }).click();
@@ -177,23 +194,26 @@ test('"In this folder" says plainly when no entry has been read', async ({ page 
 test('"In this folder" after reading a top-level entry says so and sends no request', async ({
   page,
 }) => {
-  await page.goto("/");
-  await page.evaluate(() =>
-    localStorage.setItem(
-      "frontier.keepGoing.v1",
-      JSON.stringify({
-        recents: [{ path: "Top.md", title: "Top", kind: "read", at: Date.now() }],
-        current: null,
-        previous: null,
-        scroll: {},
-        cursor: {},
-      }),
-    ),
+  await page.goto(proj("/"));
+  const key = await keyOf(page, "frontier.keepGoing.v1");
+  await page.evaluate(
+    (k) =>
+      localStorage.setItem(
+        k,
+        JSON.stringify({
+          recents: [{ path: "Top.md", title: "Top", kind: "read", at: Date.now() }],
+          current: null,
+          previous: null,
+          scroll: {},
+          cursor: {},
+        }),
+      ),
+    key,
   );
   await page.reload();
   const asked: string[] = [];
   page.on("request", (r) => {
-    if (r.url().includes("/api/keep-going/random")) asked.push(r.url());
+    if (r.url().includes("/keep-going/random")) asked.push(r.url());
   });
   const dice = card(page, "Random entry");
   await dice.getByRole("button", { name: "In this folder" }).click();
@@ -203,7 +223,7 @@ test('"In this folder" after reading a top-level entry says so and sends no requ
 });
 
 test("on a phone the dice is a round button; on a desktop it is not", async ({ page }, info) => {
-  await page.goto("/");
+  await page.goto(proj("/"));
   const round = page.getByRole("button", { name: "Random entry", exact: true });
   if (info.project.name === "phone") {
     await expect(round).toBeVisible();
@@ -236,9 +256,9 @@ test("the newest unpublished draft is offered to continue", async ({ page }) => 
   await seedRecents(page);
   const id = "kgcontinue01";
   const base = await (
-    await page.request.get(`/api/entries?path=${encodeURIComponent(MIRA)}`)
+    await page.request.get(api(`/entries?path=${encodeURIComponent(MIRA)}`))
   ).json();
-  const saved = await page.request.put("/api/drafts", {
+  const saved = await page.request.put(api("/drafts"), {
     data: {
       id,
       path: MIRA,
@@ -257,17 +277,17 @@ test("the newest unpublished draft is offered to continue", async ({ page }) => 
     await pick.getByRole("link", { name: "Continue editing" }).click();
     await expect(page).toHaveURL(/\/edit\/02%20People\/Mira\.md/);
   } finally {
-    await page.request.delete(`/api/drafts/${id}`);
+    await page.request.delete(api(`/drafts/${id}`));
   }
 });
 
 test("pins: Working on, on Home and in the left bar, with Unpin", async ({ page }) => {
-  await page.goto("/");
+  await page.goto(proj("/"));
   const pins = card(page, "Working on");
   await expect(pins).toContainText("Pin an entry from its page");
   try {
     for (const path of [HARBOR, MIRA]) {
-      const res = await page.request.post("/api/pins", { data: { path } });
+      const res = await page.request.post(api("/pins"), { data: { path } });
       expect(res.ok(), await res.text()).toBe(true);
     }
     await page.reload();
@@ -285,7 +305,7 @@ test("pins: Working on, on Home and in the left bar, with Unpin", async ({ page 
     await expect(page.locator(".entry h1").first()).toHaveText("Mira");
 
     // Unpin from Home: gone from Home and from the bar.
-    await page.goto("/");
+    await page.goto(proj("/"));
     await pins.getByRole("button", { name: "Unpin Harbor" }).click();
     await expect(pins.locator("li")).toHaveCount(1);
     await expect(pins).not.toContainText("Harbor");
@@ -331,7 +351,7 @@ test("quick switcher: opened empty it shows the way back, the dice and the recen
   await page.keyboard.press("Escape");
 
   // The dice row opens some entry.
-  await page.goto("/");
+  await page.goto(proj("/"));
   await expect(page.locator(".home h1")).toBeVisible();
   await page.keyboard.press("Control+k");
   await box.getByRole("option", { name: /^Random entry/ }).click();
@@ -339,8 +359,9 @@ test("quick switcher: opened empty it shows the way back, the dice and the recen
 });
 
 test("quick switcher with no recents shows only the dice", async ({ page }) => {
-  await page.goto("/");
-  await page.evaluate(() => localStorage.removeItem("frontier.keepGoing.v1"));
+  await page.goto(proj("/"));
+  const key = await keyOf(page, "frontier.keepGoing.v1");
+  await page.evaluate((k) => localStorage.removeItem(k), key);
   await page.reload();
   await expect(page.locator(".home h1")).toBeVisible();
   await page.keyboard.press("Control+k");
@@ -359,12 +380,12 @@ test("g h goes Home and g r opens a random entry; both are on the key sheet", as
   await expect(page.locator(".entry h1").first()).toBeVisible();
   await page.keyboard.press("g");
   await page.keyboard.press("h");
-  await expect(page).toHaveURL(/\/$/);
+  await expect(page).toHaveURL(/\/p\/sample$/);
   await expect(page.locator(".home h1")).toBeVisible();
 
   // A key alone does nothing, and typing in a field is left alone.
   await page.keyboard.press("h");
-  await expect(page).toHaveURL(/\/$/);
+  await expect(page).toHaveURL(/\/p\/sample$/);
   await page.keyboard.press("?");
   const sheet = page.getByRole("dialog");
   await expect(sheet).toContainText("Go to Home");
@@ -400,7 +421,7 @@ test("the left bar: Home, Random entry under New entry, and stub counts on the t
 
 test("the rail keeps Home and the dice as icons", async ({ page, isMobile }) => {
   test.skip(isMobile, "A phone has a drawer instead of the rail.");
-  await page.goto("/");
+  await page.goto(proj("/"));
   await expect(page.locator(".home h1")).toBeVisible();
   await page.keyboard.press("Control+\\");
   const side = page.locator(".side");
@@ -413,7 +434,7 @@ test("the rail keeps Home and the dice as icons", async ({ page, isMobile }) => 
 });
 
 test("a folder in Folders shows it in the tree", async ({ page }) => {
-  await page.goto("/");
+  await page.goto(proj("/"));
   const folders = card(page, "Folders");
   await expect(folders.locator("li", { hasText: "01 Places" })).toContainText(
     /\d+ of \d+ are stubs/,
@@ -425,7 +446,7 @@ test("a folder in Folders shows it in the tree", async ({ page }) => {
 test("Settings › Keep going: the six rules switch off and on, and Home follows", async ({
   page,
 }) => {
-  await page.goto("/");
+  await page.goto(proj("/"));
   const count = async () => {
     const text = await queue(page)
       .getByRole("button", { name: /^Needs love/ })
@@ -435,7 +456,7 @@ test("Settings › Keep going: the six rules switch off and on, and Home follows
   await expect(queue(page).getByRole("button", { name: /^Needs love \d+/ })).toBeVisible();
   const before = await count();
 
-  await page.goto("/settings/library/keep-going");
+  await page.goto(proj("/settings/library/keep-going"));
   const labels = [
     "Stubs that many entries link to",
     "Headings with nothing under them",
@@ -452,13 +473,13 @@ test("Settings › Keep going: the six rules switch off and on, and Home follows
     await page.reload();
     await expect(page.getByLabel("Entries with no type")).not.toBeChecked();
 
-    await page.goto("/");
+    await page.goto(proj("/"));
     await expect(queue(page).getByRole("button", { name: /^Needs love \d+/ })).toBeVisible();
     expect(await count()).toBeLessThan(before);
     const rows = await filter(page, /^Needs love/);
     await expect(rows).not.toContainText("No type");
   } finally {
-    await page.goto("/settings/library/keep-going");
+    await page.goto(proj("/settings/library/keep-going"));
     await page.getByLabel("Entries with no type").check();
     await expect(page.getByLabel("Entries with no type")).toBeChecked();
     await expect(page.getByText("Saved")).toBeVisible();
@@ -468,10 +489,10 @@ test("Settings › Keep going: the six rules switch off and on, and Home follows
 test("empty states: a new library, and a library with nothing that needs love", async ({
   page,
 }) => {
-  const real = await (await page.request.get("/api/keep-going/queue")).json();
+  const real = await (await page.request.get(api("/keep-going/queue"))).json();
   const none = { total: 0, rows: [] };
 
-  await page.route("**/api/keep-going/queue", (route) =>
+  await page.route("**/api/p/*/keep-going/queue", (route) =>
     route.fulfill({
       json: {
         ...real,
@@ -484,7 +505,7 @@ test("empty states: a new library, and a library with nothing that needs love", 
       },
     }),
   );
-  await page.goto("/");
+  await page.goto(proj("/"));
   await expect(page.locator(".home h1")).toHaveText("Welcome to Frontier");
   await expect(card(page, "Write your first entry")).toContainText("no entries yet");
   await expect(page.getByRole("region", { name: "What to work on next" })).toHaveCount(0);
@@ -492,13 +513,13 @@ test("empty states: a new library, and a library with nothing that needs love", 
   await expect(page.getByRole("dialog", { name: "New entry" })).toBeVisible();
   await page.keyboard.press("Escape");
 
-  await page.unroute("**/api/keep-going/queue");
-  await page.route("**/api/keep-going/queue", (route) =>
+  await page.unroute("**/api/p/*/keep-going/queue");
+  await page.route("**/api/p/*/keep-going/queue", (route) =>
     route.fulfill({
       json: { ...real, needsLove: none, wanted: none, orphans: none, deadEnds: none },
     }),
   );
-  await page.goto("/");
+  await page.goto(proj("/"));
   await expect(queue(page)).toContainText(
     "Every entry has a type, a picture and some text. Pick a random one to reread.",
   );
@@ -506,7 +527,7 @@ test("empty states: a new library, and a library with nothing that needs love", 
 
 test("the queue fails in its own card and can be tried again", async ({ page }) => {
   let fail = true;
-  await page.route("**/api/keep-going/queue", (route) =>
+  await page.route("**/api/p/*/keep-going/queue", (route) =>
     fail
       ? route.fulfill({
           status: 500,
@@ -514,7 +535,7 @@ test("the queue fails in its own card and can be tried again", async ({ page }) 
         })
       : route.continue(),
   );
-  await page.goto("/");
+  await page.goto(proj("/"));
   await expect(queue(page).getByRole("alert")).toContainText("The index is broken.");
   // The rest of the page is still there.
   await expect(card(page, "Random entry")).toBeVisible();
@@ -552,17 +573,20 @@ test.describe("the question of the day (AI)", () => {
   test("hidden with no model, a button when today has none, then a question to answer", async ({
     page,
   }, info) => {
-    test.skip(info.project.name !== "desktop", "The AI settings are one per server.");
+    test.skip(
+      info.project.name !== "desktop",
+      "These change the person's AI settings: run at one size only.",
+    );
     const off = await page.request.put("/api/settings/ai", {
       data: { models: { conversation: null } },
     });
     expect(off.ok(), await off.text()).toBe(true);
-    await page.goto("/");
+    await page.goto(proj("/"));
     await expect(queue(page)).toBeVisible();
     await expect(card(page, "A question to answer")).toHaveCount(0);
 
     await setUpAi(page, { conversation: "sample/reader" });
-    await page.goto("/");
+    await page.goto(proj("/"));
     const q = card(page, "A question to answer");
     // Never made without a click the first time.
     await expect(q.getByRole("button", { name: "Give me a question" })).toBeVisible();
@@ -571,7 +595,7 @@ test.describe("the question of the day (AI)", () => {
     await expect(q.locator("q")).toContainText("smell like");
     await expect(q.getByRole("link", { name: /^Answer it in / })).toHaveAttribute(
       "href",
-      /^\/edit\//,
+      /^\/p\/sample\/edit\//,
     );
 
     // Kept for the day: a reload shows it without asking again.
@@ -583,5 +607,30 @@ test.describe("the question of the day (AI)", () => {
     await expect(q.locator("q")).toContainText("smell like");
     await q.getByRole("link", { name: /^Answer it in / }).click();
     await expect(page).toHaveURL(/\/edit\//);
+  });
+
+  test("with no key on this device, the first ask explains and then carries on (stage 31f)", async ({
+    page,
+  }, info) => {
+    test.skip(
+      info.project.name !== "desktop",
+      "These change the person's AI settings: run at one size only.",
+    );
+    await setUpAi(page, { conversation: "sample/reader" }, { key: false });
+    await page.goto(proj("/"));
+    const q = card(page, "A question to answer");
+    // A question kept for the day by an earlier test is asked for again; either way it is a click.
+    const ask = q
+      .getByRole("button", { name: "Give me a question" })
+      .or(q.getByRole("button", { name: "Another question" }));
+    await ask.click();
+    const explain = page.getByRole("dialog", {
+      name: "The question of the day runs on your own AI key",
+    });
+    await expect(explain).toContainText("The key is kept on this device only.");
+    await explain.getByLabel("Key", { exact: true }).fill(DEVICE_KEY);
+    await explain.getByRole("button", { name: "Test and keep on this device" }).click();
+    await expect(explain).toHaveCount(0);
+    await expect(q.locator("q")).toContainText("smell like");
   });
 });

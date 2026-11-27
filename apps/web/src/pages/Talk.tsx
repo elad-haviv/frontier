@@ -9,7 +9,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { Link, useLocation } from "react-router-dom";
+import { Link, useLocation } from "../nav.tsx";
 import {
   api,
   ApiFailure,
@@ -20,6 +20,7 @@ import {
   type Trait,
 } from "../api.ts";
 import { useRefresh } from "../components/Shell.tsx";
+import { useCanWrite } from "../components/projectContext.ts";
 import { ActionButton } from "../components/ui/ActionButton.tsx";
 import { IconButton } from "../components/ui/IconButton.tsx";
 import { downloadTalk, momentText } from "../talkExport.ts";
@@ -451,6 +452,10 @@ export function TalkPage() {
   const path = decodeURIComponent(pathname.replace(/^\/talk\//, ""));
   const name = titleOf(path);
   const refresh = useRefresh();
+  // A reader talks with a character that has a profile, and keeps their own conversations; making
+  // the profile and adding what was said to the entry change the project, and are writers'
+  // (stage 31, roles).
+  const canWrite = useCanWrite();
   const [profile, setProfile] = useState<CharacterProfile | null | undefined>(undefined);
   /** Set while the profile is edited: the traits to open with when there is no profile yet. */
   const [editing, setEditing] = useState<Trait[] | null>(null);
@@ -609,7 +614,17 @@ export function TalkPage() {
         )}
       </header>
 
-      {profile === null && editing === null && (
+      {profile === null && !canWrite && (
+        <section className="talk-empty">
+          <h2>{name} has no profile yet</h2>
+          <p className="muted">
+            There is no one to talk with until a writer or an owner of the project drafts and
+            approves a profile.
+          </p>
+        </section>
+      )}
+
+      {profile === null && editing === null && canWrite && (
         <section className="talk-empty">
           <h2>{name} needs a profile before speaking</h2>
           <p>
@@ -664,7 +679,7 @@ export function TalkPage() {
         </section>
       )}
 
-      {editing !== null && (
+      {editing !== null && canWrite && (
         <ProfileEditor
           path={path}
           name={name}
@@ -725,13 +740,15 @@ export function TalkPage() {
                           {l.kept ? (
                             <span>Added to {name}'s entry as an unsaved change.</span>
                           ) : (
-                            <ActionButton
-                              type="button"
-                              className="plain"
-                              onClick={() => void keep(i)}
-                            >
-                              Add to {name}'s entry
-                            </ActionButton>
+                            canWrite && (
+                              <ActionButton
+                                type="button"
+                                className="plain"
+                                onClick={() => void keep(i)}
+                              >
+                                Add to {name}'s entry
+                              </ActionButton>
+                            )
                           )}
                         </p>
                       </li>
@@ -817,16 +834,18 @@ export function TalkPage() {
             <div className="talk-panel-head">
               <h2>Profile</h2>
               <span>
-                <button
-                  type="button"
-                  className="quiet"
-                  onClick={() => {
-                    setSheet(false);
-                    setEditing([]);
-                  }}
-                >
-                  Edit
-                </button>
+                {canWrite && (
+                  <button
+                    type="button"
+                    className="quiet"
+                    onClick={() => {
+                      setSheet(false);
+                      setEditing([]);
+                    }}
+                  >
+                    Edit
+                  </button>
+                )}
                 <span className="talk-phone">
                   <IconButton
                     label="Close the profile"

@@ -7,7 +7,7 @@ import { undo } from "@codemirror/commands";
 import type { EditorView } from "@codemirror/view";
 import { RotateCcw, Sparkles, X } from "lucide-react";
 import { type KeyboardEvent, useEffect, useMemo, useRef, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link } from "../../nav.tsx";
 import { api, ApiFailure } from "../../api.ts";
 import { useNeedsConnection } from "../../sync/connection.ts";
 import { wordChanges, WordDiff } from "../Diff.tsx";
@@ -276,7 +276,7 @@ export function HelpCard(p: {
           Writing help needs an AI model. Choose one once in Settings and it works in every entry.
         </p>
         <p className="help-card-actions">
-          <Link className="help-card-settings" to="/settings/ai/models/conversation">
+          <Link className="help-card-settings" to="/settings/you/ai-models/conversation">
             Open Settings
           </Link>
         </p>

@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { Link } from "react-router-dom";
+import { Link } from "../nav.tsx";
 import { api, entryUrl } from "../api.ts";
 import { useConnection } from "../sync/connection.ts";
 import { usePageTitle } from "./shell/panels.tsx";

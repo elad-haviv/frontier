@@ -2,7 +2,7 @@
  * The dice: asks the server for a random entry of a kind and opens it. Used by the left bar, the
  * switcher, Home, the phone's round button, the `g r` key and the nudge after Publish.
  */
-import type { NavigateFunction } from "react-router-dom";
+import type { NavigateFunction } from "../nav.tsx";
 import type { RandomQuery } from "@frontier/schema";
 import { api, entryUrl } from "../api.ts";
 

@@ -116,11 +116,10 @@ async function start() {
   await t.login();
   t.repo.pushFromOutside(NOTES);
   await t.services.sync();
-  const res = await t.put("/api/settings/ai", {
-    key: "sk-or-test-key-1234",
-    models: { extraction: MODEL },
-  });
+  // Since stage 31f the key is this device's, sent with each request; the model is the person's.
+  const res = await t.put("/api/settings/ai", { models: { extraction: MODEL } });
   expect(res.statusCode, res.body).toBe(200);
+  t.keys = { openrouter: "sk-or-test-key-1234" };
 }
 const app = () => t!;
 const propose = async (path: string) => {

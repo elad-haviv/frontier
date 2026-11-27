@@ -1,4 +1,5 @@
-import { expect, type Page, test } from "@playwright/test";
+import { expect, type Page, test } from "./test.ts";
+import { api, proj } from "./helpers.ts";
 
 // Each project (phone, desktop) makes its own family, so the two runs on one server do not meet.
 const family = (project: string) => {
@@ -14,11 +15,11 @@ const family = (project: string) => {
 
 async function seed(page: Page, f: ReturnType<typeof family>) {
   const add = async (data: Record<string, unknown>) => {
-    const res = await page.request.post("/api/relations", { data });
+    const res = await page.request.post(api("/relations"), { data });
     expect(res.ok(), await res.text()).toBe(true);
   };
   // Arlen is made first, as an entry the others are made beside.
-  const made = await page.request.put("/api/drafts", {
+  const made = await page.request.put(api("/drafts"), {
     data: {
       id: `trees${Date.now().toString(36)}`.slice(0, 12).padEnd(12, "0"),
       path: f.path(f.a),
@@ -36,10 +37,10 @@ async function seed(page: Page, f: ReturnType<typeof family>) {
 test("a family tree: make it, read it, add to it, compare two", async ({ page }, info) => {
   const f = family(info.project.name);
   const phone = info.project.name === "phone";
-  await page.goto("/");
+  await page.goto(proj("/"));
   await seed(page, f);
 
-  await page.goto("/trees");
+  await page.goto(proj("/trees"));
   await (
     phone
       ? page.getByRole("button", { name: /New tree/ }).first()
@@ -85,7 +86,7 @@ test("a family tree: make it, read it, add to it, compare two", async ({ page },
   await picker.getByRole("option", { name: /Just the name/ }).click();
   await expect(page.getByText(`Saved on ${f.c}'s entry: child [[Dovey]].`)).toBeVisible();
   await expect(page.locator('.tr-card[data-key="?Dovey"]')).toBeVisible();
-  const text = await page.request.get(`/api/entries?path=${encodeURIComponent(f.path(f.c))}`);
+  const text = await page.request.get(api(`/entries?path=${encodeURIComponent(f.path(f.c))}`));
   expect(((await text.json()) as { text: string }).text).toContain(
     'what: child\n    who: "[[Dovey]]"',
   );

@@ -131,4 +131,38 @@ describe("configuration", () => {
       loadConfig({ ...local, IMAGE_FETCH_ALLOW_LOOPBACK: "true", NODE_ENV: "production" }),
     ).toThrow(/IMAGE_FETCH_ALLOW_LOOPBACK/);
   });
+
+  it("reads the addresses of the AI providers from the environment but never their keys", () => {
+    const c = loadConfig({
+      ...local,
+      OPENROUTER_API_KEY: "sk-or-env",
+      ANTHROPIC_API_KEY: "sk-ant-env",
+      OPENAI_API_KEY: "sk-env",
+      GEMINI_API_KEY: "AIza-env",
+      GOOGLE_API_KEY: "AIza-env-2",
+      XAI_API_KEY: "xai-env",
+      // Once the key that encrypted stored AI keys; it means nothing now, and is no error.
+      SECRETS_KEY: "short",
+    });
+    expect(JSON.stringify(c)).not.toMatch(/sk-or-env|sk-ant-env|AIza-env|xai-env|"sk-env"/);
+    expect(c.openrouterUrl).toBe("https://openrouter.ai/api/v1");
+    expect(c.providerUrls).toEqual({ openrouter: "https://openrouter.ai/api/v1" });
+
+    const urls = loadConfig({
+      ...local,
+      OPENROUTER_BASE_URL: "http://stand-in:1/v1/",
+      ANTHROPIC_BASE_URL: "http://stand-in:2/v1",
+      OPENAI_BASE_URL: "http://stand-in:3/v1",
+      GEMINI_BASE_URL: "http://stand-in:4/v1beta",
+      XAI_BASE_URL: "http://stand-in:5/v1",
+    });
+    expect(urls.openrouterUrl).toBe("http://stand-in:1/v1");
+    expect(urls.providerUrls).toEqual({
+      openrouter: "http://stand-in:1/v1",
+      anthropic: "http://stand-in:2/v1",
+      openai: "http://stand-in:3/v1",
+      google: "http://stand-in:4/v1beta",
+      xai: "http://stand-in:5/v1",
+    });
+  });
 });

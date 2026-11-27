@@ -1,7 +1,7 @@
 import type { EntryFields, EntryResponse } from "@frontier/schema";
 import { customProperties, linkOf } from "@frontier/vault";
 import { useMemo } from "react";
-import { Link } from "react-router-dom";
+import { Link } from "../nav.tsx";
 import { entryUrl } from "../api.ts";
 
 const WIKI = /\[\[([^[\]\n]+?)\]\]/g;
@@ -67,7 +67,7 @@ export function Fields({ fields }: { fields: EntryFields }) {
         </div>
       ))}
       {fields.proposed
-        // Proposed relations show in the Relations tab (stage 31).
+        // Proposed relations show in the Relations tab (stage 33).
         .filter((p) => p.op !== "add_relation")
         .map((p) => (
           <div key={p.id} className="field-proposed">

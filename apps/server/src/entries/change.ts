@@ -86,6 +86,7 @@ export class EntryChanger {
           ...(origin ? { origin } : {}),
         });
     this.d.status.drafts(this.d.drafts.count(), 0);
+    this.d.drafts.noteServerChange();
     this.d.status.serverChangedDraft();
     return record;
   }

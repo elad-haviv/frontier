@@ -25,6 +25,7 @@ import {
   stem,
 } from "@frontier/vault";
 import type { RelationOp } from "../ai/relationProposals.js";
+import { currentPersonId } from "../projects/view.js";
 import { z } from "zod";
 import type { EntryChanger } from "../entries/change.js";
 import { ApiError } from "../errors.js";
@@ -82,9 +83,10 @@ export class ProposalStore {
   private readonly dir: string;
   private proposals = new Map<string, Proposal>();
   private rejected: RejectedOperation[] = [];
-  /** Entries read for relations at least once (stage 31). */
+  /** Entries read for relations at least once (stage 33). */
   private readForRelations = new Set<string>();
-  private lastAccept: LastAccept | null = null;
+  /** The last Accept of relations, by the person who made it. */
+  private lastAccept = new Map<string, LastAccept>();
   /** What accepting a relation would break; set once the relations can be read. */
   warnFor: (path: string, op: RelationOperation) => string | null = () => null;
 
@@ -375,14 +377,14 @@ export class ProposalStore {
     );
     const after = await this.d.changer.text(path);
     const decided = new Set(ops.map((o) => o.op.id));
-    this.lastAccept = {
+    this.lastAccept.set(currentPersonId() ?? "", {
       path,
       before,
       after: after ?? before,
       madeDraft: hadDraft ? null : (draft?.id ?? null),
       proposal,
       ops: proposal.operations.filter((o) => decided.has(o.id)),
-    };
+    });
     await this.write({
       ...proposal,
       operations: proposal.operations.filter((o) => !decided.has(o.id)),
@@ -395,8 +397,9 @@ export class ProposalStore {
 
   /** Takes back the last Accept of relations, if the entry has not changed since. */
   async undoAccept(): Promise<{ undone: boolean }> {
-    const last = this.lastAccept;
-    this.lastAccept = null;
+    const who = currentPersonId() ?? "";
+    const last = this.lastAccept.get(who);
+    this.lastAccept.delete(who);
     if (!last) return { undone: false };
     if ((await this.d.changer.text(last.path)) !== last.after) return { undone: false };
     if (last.madeDraft && this.d.discard) await this.d.discard(last.madeDraft);

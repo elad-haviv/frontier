@@ -1,4 +1,4 @@
-import type { FastifyInstance } from "fastify";
+import type { RouteApp } from "../projects/facade.js";
 import { VaultPath } from "@frontier/schema";
 import { isNote, rankNames, splitFrontmatter, stem } from "@frontier/vault";
 import { z } from "zod";
@@ -11,7 +11,7 @@ const Query = z.object({
   appendices: z.enum(["0", "1"]).optional(),
 });
 
-export function searchRoutes(app: FastifyInstance, s: Services): void {
+export function searchRoutes(app: RouteApp, s: Services): void {
   /** Full-text search over the published vault. */
   app.get("/api/search", async (request) => {
     const { q, appendices } = Query.parse(request.query);

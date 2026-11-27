@@ -1,9 +1,9 @@
-import type { FastifyInstance } from "fastify";
+import type { RouteApp } from "../projects/facade.js";
 import { ApplyTypeRequest, DeleteFolderRequest } from "@frontier/schema";
 import type { Services } from "../app.js";
 
 /** What acts on a whole folder at once. Its settings are saved through the library-file routes. */
-export function folderRoutes(app: FastifyInstance, s: Services): void {
+export function folderRoutes(app: RouteApp, s: Services): void {
   const changed = () => s.status.drafts(s.drafts.count(), 0);
 
   app.post("/api/folders/delete", async (request) => {

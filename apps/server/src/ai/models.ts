@@ -1,6 +1,6 @@
 /**
- * The models of every connected provider, for choosing one per task. Each provider's list is kept
- * for ten minutes.
+ * The models of every provider the request carries a key for, for choosing one per task. Each
+ * provider's list is kept in memory for ten minutes, by a hash of the key it was fetched with.
  *
  * Direct providers' lists are thin: OpenAI's gives ids only, Anthropic's names and limits, Google's
  * token limits; none gives prices. OpenRouter's public list (no key needed) gives prices and
@@ -80,7 +80,7 @@ export class ModelCatalogue {
     this.now = d.now ?? Date.now;
   }
 
-  /** Forgets every kept list, after a key or a provider changed. */
+  /** Forgets every kept list. The lists are kept in memory only, by a hash of the key used. */
   forget(): void {
     this.cache.clear();
   }
@@ -119,12 +119,7 @@ export class ModelCatalogue {
       return this.publicList.result;
     }
     const result = this.d.connections
-      .adapter({
-        kind: "openrouter",
-        baseUrl: this.d.openrouterUrl,
-        key: null,
-        storedBaseUrl: null,
-      })
+      .adapter({ kind: "openrouter", baseUrl: this.d.openrouterUrl, key: null })
       .listModels(AbortSignal.timeout(20_000))
       .then(
         (models) => {
@@ -149,9 +144,9 @@ export class ModelCatalogue {
 
   /** Every model of every usable provider, with the status of each provider's list. */
   async all(refresh = false): Promise<Catalogue> {
-    const settings = await this.d.settings.read();
-    const prices = settings?.ai.modelPrices ?? {};
-    const providers = (await this.d.connections.list()).filter((p) => this.d.connections.usable(p));
+    const prices = (await this.d.settings.current()).ai.modelPrices;
+    // Only the providers this request carries a key for: each person sees their own models.
+    const providers = this.d.connections.list();
     const lists = await Promise.all(providers.map((p) => this.fetchList(p, refresh)));
     const needsIndex = providers.some((p, i) => OPENROUTER_VENDOR[p.kind] && lists[i]!.ok);
     const index = needsIndex ? await this.openRouterIndex() : new Map<string, ListedModel>();
@@ -204,9 +199,7 @@ export class ModelCatalogue {
           imagePrice: null,
           priceFrom,
           // OpenRouter's own list, or one that says what models can do, counts as checked.
-          checked:
-            twin !== undefined ||
-            (m.abilities.structuredOutput !== null && (listed || p.kind !== "custom")),
+          checked: twin !== undefined || m.abilities.structuredOutput !== null,
           costReported: reports,
           abilities,
           suits: { extraction: text, conversation: text, art },
@@ -219,7 +212,7 @@ export class ModelCatalogue {
       const m = models.find((x) => x.id === picks[task]);
       if (m) m.recommendedFor.push(task);
     }
-    const order = new Map(providers.map((p, i) => [p.id, i]));
+    const order = new Map<string, number>(providers.map((p, i) => [p.id, i]));
     models.sort(
       (a, b) => order.get(a.provider)! - order.get(b.provider)! || a.name.localeCompare(b.name),
     );

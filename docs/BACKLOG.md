@@ -76,6 +76,16 @@ One place for what is being built, what is waiting, and ideas. The design in
       Settings, and inserts the chosen one as an unpublished image. Tries are kept for 7 days.
       [Design](designs/stage-29-entry-pictures.md)
 
+## Done: stages 30 to 32 (2026-11-27)
+
+- [x] 30 Trees: relations on entries, family trees, descent, pantheons and hierarchies.
+      [Design](designs/stage-30-trees.md)
+- [x] 31 People and projects: accounts, projects, members and roles, authors, comments between
+      people, AI keys on the device (31a to 31f). [Design](designs/stage-31-people-and-projects.md);
+      what is left: [follow-ups](designs/stage-31-32-follow-ups.md)
+- [x] 32 Email: invitations, address confirmation, forgot password.
+      [Design](designs/stage-32-email.md)
+
 ## Now: stages 11 to 15, the interface and offline work
 
 Design: [stage 11](designs/stage-11-foundations-shell-tree.md), approved after a five-stage review.

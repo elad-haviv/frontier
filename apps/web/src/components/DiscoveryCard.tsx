@@ -1,6 +1,6 @@
 import { ActionButton } from "./ui/ActionButton.tsx";
 import { type ReactNode, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link } from "../nav.tsx";
 import { api, ApiFailure, type Discovery, discoveryArtUrl, entryUrl } from "../api.ts";
 
 const titleOf = (path: string) => path.split("/").pop()!.replace(/\.md$/i, "");

@@ -8,7 +8,7 @@ import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { pipeline } from "node:stream/promises";
-import type { FastifyInstance } from "fastify";
+import type { RouteApp } from "../projects/facade.js";
 import { makeId } from "@frontier/schema";
 import {
   basename,
@@ -22,6 +22,7 @@ import {
 } from "@frontier/vault";
 import sharp from "sharp";
 import yauzl from "yauzl";
+import { authorOf, personOf } from "../auth/session.js";
 import { ApiError } from "../errors.js";
 import type { Services } from "../app.js";
 
@@ -67,7 +68,7 @@ function unzip(file: string, into: string): Promise<number> {
   });
 }
 
-export function importRoutes(app: FastifyInstance, s: Services): void {
+export function importRoutes(app: RouteApp, s: Services): void {
   /**
    * Takes notes and images and keeps them as unsaved changes. A note whose name is taken in the
    * folder is listed as a clash unless the author said to replace it or to keep both.
@@ -211,11 +212,17 @@ export function importRoutes(app: FastifyInstance, s: Services): void {
       }
       let made;
       try {
-        made = await s.git.commitFolder(root, message || "Import a vault");
+        made = await s.git.commitFolder(
+          root,
+          message || "Import a vault",
+          authorOf(personOf(request), s.config.commitAuthor),
+        );
       } catch (err) {
         throw new ApiError("invalid", err instanceof Error ? err.message : "Nothing was imported.");
       }
       await s.git.push(made.commit);
+      // Ours: a save planned before it is not refused only because the import came first.
+      s.publisher.noteOwnCommit(made.commit);
       await s.sync();
       return made;
     } finally {

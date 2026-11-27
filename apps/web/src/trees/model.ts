@@ -20,7 +20,7 @@ export interface Edge {
   how: string | null;
   when: string | null;
   fact: RelFact;
-  /** Set for a relation the AI proposed (stage 31): its place in `proposed`. */
+  /** Set for a relation the AI proposed (stage 33): its place in `proposed`. */
   proposed?: number;
 }
 
@@ -187,7 +187,7 @@ export interface LaidEdge {
   kd: number;
   dashed: boolean;
   ended: boolean;
-  /** A proposed relation (stage 31): its place in the response's `proposed`. */
+  /** A proposed relation (stage 33): its place in the response's `proposed`. */
   proposal: number | null;
 }
 

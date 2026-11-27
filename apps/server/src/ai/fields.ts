@@ -26,7 +26,7 @@ import { checkRelations, type PendingRelation, type ReadRelation } from "./relat
 
 /**
  * Changing the instructions changes this, so cached answers to the old ones are not reused.
- * Version 2 (stage 31) also reads relations.
+ * Version 2 (stage 33) also reads relations.
  */
 export const PROMPT_VERSION = 2;
 
@@ -170,7 +170,7 @@ export interface FieldProposerDeps {
   models: ModelCatalogue;
   /** Says why AI features may not read a note right now, or null when they may. */
   mayRead?: (path: string) => string | null;
-  /** The kinds of relation in use (stage 31). */
+  /** The kinds of relation in use (stage 33). */
   kinds?: () => RelKind[];
   /** The keys of every relation already written (`factKey`). */
   written?: () => Promise<Set<string>>;
@@ -198,7 +198,7 @@ export class FieldProposer {
 
   /** A rough cost for a run over these notes, in US dollars, or null when the price is unknown. */
   async estimate(paths: string[]): Promise<number | null> {
-    const model = (await this.d.settings.read())?.ai.models.extraction;
+    const model = (await this.d.settings.current()).ai.models.extraction;
     const info = model ? await this.d.models.find(model) : undefined;
     if (!info || info.promptPrice === null) return null;
     let chars = 0;
@@ -218,14 +218,7 @@ export class FieldProposer {
     const body = splitFrontmatter(note.text).body;
     if (body.trim() === "") return 0;
 
-    const settings = await this.d.settings.read();
-    const model = settings?.ai.models.extraction;
-    if (!model) {
-      throw new ApiError(
-        "ai_off",
-        "No model is chosen for proposing fields. Choose one on the settings page.",
-      );
-    }
+    const model = await this.d.provider.chosenModel("extraction", "proposing fields");
     const schema = this.d.index.schema;
     const types = Object.keys(schema.types);
     const what = Object.keys(schema.what);
@@ -279,7 +272,7 @@ export class FieldProposer {
     ) {
       operations.push({ op: "set_type", type: answer.type });
     }
-    // Relations (stage 31): checked, matched, and merged with the other entry's proposal.
+    // Relations (stage 33): checked, matched, and merged with the other entry's proposal.
     const { ops, merges } = checkRelations({
       path,
       body,
