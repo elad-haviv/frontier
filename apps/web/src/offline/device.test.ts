@@ -412,7 +412,7 @@ describe("one device copy for each project", () => {
       online: () => true,
       unreachable: () => undefined,
       caches: { open: async () => cache as unknown as Cache },
-      imagePrefix: "/api/p/avalymia/images",
+      imagePrefix: () => "/api/p/avalymia/images",
     });
     await copy.clear();
     expect([...kept.keys()]).toEqual([other.url]);

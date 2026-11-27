@@ -34,7 +34,7 @@ import {
 } from "@frontier/vault";
 import { ApiFailure, projectUrl, type ReadThrough, setReadThrough } from "../api.ts";
 import { currentProject, onProjectChange, type ProjectRef } from "../project.ts";
-import { markOffDevice, markOnDevice, projectAt } from "../projects.ts";
+import { knownProjects, markOffDevice, markOnDevice, projectAt } from "../projects.ts";
 import { connection } from "../sync/connection.ts";
 import type { DeviceAnswer, DeviceItem, QueueRecord, Store } from "../sync/db.ts";
 import { queue } from "../sync/queue.ts";
@@ -134,7 +134,7 @@ export interface DeviceDeps {
    * The front of the addresses of this project's images in Cache Storage, which is shared by all
    * projects: clearing this device copy removes only these.
    */
-  imagePrefix?: string;
+  imagePrefix?: () => string;
   /** Told when the copy starts to exist (its compact index was kept) and when it is emptied. */
   onDevice?: (on: boolean) => void;
   /** Tells the pages a late answer replaced the device's; defaults to `announceFresh`. */
@@ -480,7 +480,7 @@ export class DeviceCopy implements ReadThrough {
     // The images of the other projects stay: the cache is shared, and each has its own addresses.
     try {
       const cache = await this.d.caches?.open(IMAGES);
-      const prefix = this.d.imagePrefix;
+      const prefix = this.d.imagePrefix?.();
       for (const request of (await cache?.keys()) ?? []) {
         if (prefix === undefined || new URL(request.url).pathname.startsWith(prefix)) {
           await cache!.delete(request);
@@ -612,6 +612,10 @@ export function splitProjectUrl(url: string): { slug: string; bare: string } | n
   return { slug, bare: `/api${m[2] ?? ""}` };
 }
 
+/** The address a project has now: the owner may have renamed it since the copy was made. */
+const slugOf = (ref: ProjectRef): string =>
+  knownProjects()?.projects.find((p) => p.id === ref.id)?.slug ?? ref.slug;
+
 interface Held {
   ref: ProjectRef;
   copy: DeviceCopy;
@@ -632,7 +636,7 @@ export class DeviceHub implements ReadThrough {
     let h = this.held.get(ref.id);
     if (!h) {
       const q = queue.queueOf(ref);
-      const slug = () => projectAt(ref.slug)?.slug ?? ref.slug;
+      const slug = () => slugOf(ref);
       const copy = new DeviceCopy({
         store: () => q.database(),
         records: () => q.current(),
@@ -640,7 +644,7 @@ export class DeviceHub implements ReadThrough {
         unreachable: () => connection.unreachable(),
         onChange: () => this.held.get(ref.id)?.keeper?.changed(),
         caches: cacheStorage,
-        imagePrefix: projectUrl("/images", slug()),
+        imagePrefix: () => projectUrl("/images", slug()),
         onDevice: (on) => (on ? markOnDevice(ref.id) : markOffDevice(ref.id)),
         // A late answer is told to the pages only while its project is the open one.
         fresh: (url) => {
@@ -682,7 +686,7 @@ export class DeviceHub implements ReadThrough {
       queue: q,
       connection,
       caches: cacheStorage,
-      slug: () => projectAt(ref.slug)?.slug ?? ref.slug,
+      slug: () => slugOf(ref),
       persist:
         typeof navigator !== "undefined" && navigator.storage?.persist
           ? () => navigator.storage.persist()

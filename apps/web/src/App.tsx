@@ -334,6 +334,7 @@ export function App() {
             </ProjectScope>
           }
         />
+        <Route path="/login" element={<Navigate to="/" replace />} />
         <Route path="*" element={<OldAddress />} />
       </Routes>
       <LoginDialog />
