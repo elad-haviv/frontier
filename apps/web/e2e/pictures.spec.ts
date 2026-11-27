@@ -1,14 +1,25 @@
 import { expect, test } from "@playwright/test";
-import { discardDraft, openEditor, saved, setUpAi } from "./helpers.ts";
+import { openEditor, saved, setUpAi } from "./helpers.ts";
 
-const LANTERN = "03 Things/Lantern.md";
+// An entry of the test's own: other tests rename and publish the sample ones before this runs.
+const LAMP = "03 Things/Harbor Lamp.md";
 
 test("CUJ 29: generates pictures for an entry and inserts the one chosen", async ({
   page,
 }, info) => {
   test.skip(info.project.name !== "desktop", "The AI settings are one per server.");
   await setUpAi(page, { art: "sample/painter" });
-  await openEditor(page, LANTERN);
+  const made = await page.request.put("/api/drafts", {
+    data: {
+      id: "picturelamp1",
+      path: LAMP,
+      kind: "create",
+      text: "# Harbor Lamp\n\nCarried by [[Twin]] at the [[Harbor]].\n",
+      revision: 0,
+    },
+  });
+  expect(made.ok(), await made.text()).toBe(true);
+  await openEditor(page, LAMP);
 
   // The last line, selected, is what the picture starts from.
   await page.locator(".cm-line", { hasText: "Carried by" }).click();
@@ -23,12 +34,12 @@ test("CUJ 29: generates pictures for an entry and inserts the one chosen", async
   const prompt = dialog.getByLabel("Describe the picture");
   await expect(prompt).toHaveValue("Carried by Twin at the Harbor.");
   await dialog.getByRole("button", { name: "Use the opening instead" }).click();
-  await expect(prompt).toHaveValue("Lantern. Carried by Twin at the Harbor.");
+  await expect(prompt).toHaveValue("Harbor Lamp. Carried by Twin at the Harbor.");
   // A look at the library keeps what was written.
   await dialog.getByRole("tab", { name: "Library" }).click();
   await expect(prompt).toBeHidden();
   await dialog.getByRole("tab", { name: "Generate" }).click();
-  await expect(prompt).toHaveValue("Lantern. Carried by Twin at the Harbor.");
+  await expect(prompt).toHaveValue("Harbor Lamp. Carried by Twin at the Harbor.");
   await expect(dialog.getByText("Your picture appears here.")).toBeVisible();
   await expect(dialog.getByRole("button", { name: "Insert" })).toBeDisabled();
 
@@ -37,7 +48,7 @@ test("CUJ 29: generates pictures for an entry and inserts the one chosen", async
   await dialog.getByRole("button", { name: "Generate", exact: true }).click();
   await expect(dialog.locator(".generate-stage img")).toBeVisible();
   await expect(dialog.getByText("Tries for this entry (1)")).toBeVisible();
-  await expect(dialog.getByLabel("Save as")).toHaveValue("Lantern");
+  await expect(dialog.getByLabel("Save as")).toHaveValue("Harbor Lamp");
   await prompt.press("Control+Enter");
   await expect(dialog.getByRole("option")).toHaveCount(2);
   await expect(dialog.getByRole("option", { name: "Try 2" })).toHaveAttribute(
@@ -46,12 +57,12 @@ test("CUJ 29: generates pictures for an entry and inserts the one chosen", async
   );
 
   // Insert keeps the chosen one as an unpublished image, named as the field says.
-  await dialog.getByLabel("Save as").fill("Lantern at dusk");
+  await dialog.getByLabel("Save as").fill("Lamp at dusk");
   await dialog.getByRole("button", { name: "Insert" }).click();
   await expect(dialog).toHaveCount(0);
   // It goes under the text it was made from, which stays.
   await expect(page.locator(".cm-content")).toContainText("Carried by");
-  await expect(page.locator(".cm-content")).toContainText("![[Lantern at dusk.png]]");
+  await expect(page.locator(".cm-content")).toContainText("![[Lamp at dusk.png]]");
   await saved(page);
 
   // The try not inserted is still there, from the right-click menu, with its cost known.
@@ -65,13 +76,14 @@ test("CUJ 29: generates pictures for an entry and inserts the one chosen", async
   await page.keyboard.press("Escape");
   await expect(dialog).toHaveCount(0);
 
-  // Leave the vault as it was for the tests after this one.
-  await discardDraft(page);
+  // Leave the vault as it was for the tests after this one: the entry and the picture go.
   await page.evaluate(async () => {
     const { drafts } = (await (await fetch("/api/unpublished")).json()) as {
       drafts: { id: string; path: string }[];
     };
-    for (const d of drafts.filter((x) => x.path.endsWith("Lantern at dusk.png"))) {
+    for (const d of drafts.filter(
+      (x) => x.path.endsWith("Lamp at dusk.png") || x.path.endsWith("Harbor Lamp.md"),
+    )) {
       await fetch(`/api/drafts/${d.id}`, { method: "DELETE" });
     }
   });
