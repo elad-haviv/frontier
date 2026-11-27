@@ -56,7 +56,11 @@ function provider() {
         ? { text: "Rewritten." }
         : name === "test"
           ? { reply: "ok" }
-          : { time: [] };
+          : name === "question_of_the_day"
+            ? { question: "What did Vel Aran look like when it was founded?" }
+            : name === "whats_missing"
+              ? { proposals: [], questions: ["Who is Mira?"] }
+              : { time: [] };
     return Response.json({
       choices: [{ message: { content: JSON.stringify(answer) } }],
       usage: { prompt_tokens: 100, completion_tokens: 20, cost: 0.001 },
@@ -110,6 +114,13 @@ describe("a key sent with a request", () => {
         how: "shorter",
       }),
     );
+    // Stage 25's two: what's missing here, and the question of the day.
+    const missing = await t.post("/api/keep-going/whats-missing", { path: VEL });
+    expect(missing.statusCode).toBe(200);
+    note(missing);
+    const question = await t.post("/api/keep-going/question", {});
+    expect(question.statusCode).toBe(200);
+    note(question);
     await withDeviceKeys({ openrouter: SECRET }, async () => {
       for await (const e of t.services.ai.stream({
         task: "conversation",

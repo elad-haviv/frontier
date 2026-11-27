@@ -380,7 +380,7 @@ export function ConsultPanel(p: {
         <p className="consult-note">
           Consult needs an AI model. Choose one once in Settings and it works in every entry.
         </p>
-        <Link className="consult-go" to="/settings/ai/models/conversation">
+        <Link className="consult-go" to="/settings/you/ai-models/conversation">
           Open Settings
         </Link>
       </>

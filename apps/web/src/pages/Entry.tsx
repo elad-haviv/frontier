@@ -21,7 +21,6 @@ import {
   scrollPageToTop,
   usePhone,
   useRefresh,
-  useStatus,
   useWords,
 } from "../components/Shell.tsx";
 import {

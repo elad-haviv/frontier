@@ -88,7 +88,7 @@ const OPEN = /^\/api\/(session|login|passkeys\/login\/)/;
  * needs no key, which is nearly everything, sends none.
  */
 const AI_REQUEST =
-  /^\/api\/(lore|write|characters|ai\/models|settings\/ai\/test|proposals\/(fields|job)|maps\/[^/?]+\/(discover|generate|discoveries\/[^/?]+\/art)|comments\/[^/?]+\/work)(?:[/?]|$)/;
+  /^\/api\/(lore|write|characters|keep-going\/(?:whats-missing|question)|ai\/models|settings\/ai\/test|proposals\/(fields|job)|maps\/[^/?]+\/(discover|generate|discoveries\/[^/?]+\/art)|comments\/[^/?]+\/work)(?:[/?]|$)/;
 
 export const needsAiKeys = (url: string): boolean => AI_REQUEST.test(url);
 
@@ -151,6 +151,8 @@ export function fromServer<T>(read: () => Promise<T>): Promise<T> {
 
 /** Which feature a request is for, in the words of "<Feature> runs on your own AI key". */
 export function featureOf(url: string): string {
+  if (/^\/api\/keep-going\/question/.test(url)) return "The question of the day";
+  if (/^\/api\/keep-going\/whats-missing/.test(url)) return "What's missing here";
   if (/^\/api\/lore\/draft/.test(url)) return "Drafting an entry";
   if (/^\/api\/lore\/[^/]+\/turns/.test(url)) return "Adding to an entry";
   if (/^\/api\/lore/.test(url)) return "Ask";

@@ -58,6 +58,9 @@ describe("which requests carry the keys", () => {
       "/api/maps/abc/generate",
       "/api/maps/abc/discoveries/d1/art",
       "/api/comments/c1/work",
+      "/api/write/review",
+      "/api/keep-going/whats-missing",
+      "/api/keep-going/question?tz=60",
     ]) {
       expect(needsAiKeys(url), url).toBe(true);
     }
@@ -69,6 +72,8 @@ describe("which requests carry the keys", () => {
       "/api/ai/log",
       "/api/comments",
       "/api/comments/c1",
+      "/api/keep-going/queue",
+      "/api/keep-going/week?tz=0",
       "/api/maps/abc/discoveries",
       "/api/drafts",
       "/api/publish/confirm",
@@ -172,6 +177,8 @@ describe("a request that finds no key on this device", () => {
 describe("the feature a request is for", () => {
   it("is named in the words of the explanation's heading", () => {
     expect(featureOf("/api/lore/stream")).toBe("Ask");
+    expect(featureOf("/api/keep-going/question")).toBe("The question of the day");
+    expect(featureOf("/api/keep-going/whats-missing")).toBe("What's missing here");
     expect(featureOf("/api/lore/draft")).toBe("Drafting an entry");
     expect(featureOf("/api/lore/c/turns/1/addition")).toBe("Adding to an entry");
     expect(featureOf("/api/write/rewrite")).toBe("Writing help");

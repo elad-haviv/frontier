@@ -516,7 +516,7 @@ test.describe("What's missing (AI)", () => {
           error: {
             code: "ai_off",
             message: "No model is chosen for lore conversations.",
-            href: "/settings/ai/models/conversation",
+            href: "/settings/you/ai-models/conversation",
           },
         },
       }),
@@ -525,7 +525,7 @@ test.describe("What's missing (AI)", () => {
     await expect(card.getByRole("alert")).toContainText("No model is chosen");
     await expect(card.getByRole("link", { name: "Open Settings" })).toHaveAttribute(
       "href",
-      "/settings/ai/models/conversation",
+      "/settings/you/ai-models/conversation",
     );
     await card.getByRole("button", { name: "Retry" }).click();
     await expect(card.getByRole("alert")).toBeVisible();

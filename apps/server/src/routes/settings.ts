@@ -81,7 +81,7 @@ export function settingsRoutes(app: FastifyInstance, s: Services): void {
   const limiter = new CheckLimiter();
   const connections = s.ai.connections;
 
-  app.get("/api/settings", async (request): Promise<SettingsResponse> => {
+  app.get("/api/settings", async (): Promise<SettingsResponse> => {
     const settings = (await s.settings.read())!;
     const { spentUsd } = await s.ai.spending();
     return {
