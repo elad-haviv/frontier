@@ -320,9 +320,17 @@ export function Shell({ children }: { children: ReactNode }) {
       setLibraryOpen(false);
       if (!floatingNow.current) writePrefs(kindNow.current, { library: false });
       if (refocus === "always" || inside) {
-        requestAnimationFrame(() =>
-          document.querySelector<HTMLElement>("[data-library-toggle]")?.focus(),
-        );
+        requestAnimationFrame(() => {
+          // Only where the focus has nowhere better to be: the pane it was in is gone, or it is in
+          // the side bar. Something the reader moved on to a moment ago keeps it.
+          const at = document.activeElement;
+          const adrift =
+            !at ||
+            at === document.body ||
+            !document.contains(at) ||
+            at.closest(".library-pane, .side") !== null;
+          if (adrift) document.querySelector<HTMLElement>("[data-library-toggle]")?.focus();
+        });
       }
     },
     [spendFocusAsk],
