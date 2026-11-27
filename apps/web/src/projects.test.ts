@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import type { ProjectSummary, ProjectsResponse } from "@frontier/schema";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { setKeysOwner } from "./aiKeys.ts";
 import {
   clearProjects,
   homeProject,
@@ -34,8 +35,11 @@ const list = (last: string | null, ...slugs: string[]): ProjectsResponse => ({
   canCreate: true,
 });
 
+beforeEach(() => setKeysOwner("person1"));
 afterEach(() => {
   clearProjects();
+  setKeysOwner(null);
+  localStorage.clear();
   vi.unstubAllGlobals();
 });
 
@@ -58,7 +62,7 @@ describe("the person's projects", () => {
     );
     await loadProjects();
     expect(knownProjects()?.projects.map((p) => p.slug)).toEqual(["alpha", "beta"]);
-    expect(JSON.parse(localStorage.getItem("frontier.projects")!).last).toBe("alpha");
+    expect(JSON.parse(localStorage.getItem("frontier.projects:person1")!).last).toBe("alpha");
     // The server cannot be reached: what was read stays.
     vi.stubGlobal(
       "fetch",
@@ -70,7 +74,7 @@ describe("the person's projects", () => {
     expect(knownProjects()?.projects).toHaveLength(2);
     clearProjects();
     expect(knownProjects()).toBeNull();
-    expect(localStorage.getItem("frontier.projects")).toBeNull();
+    expect(localStorage.getItem("frontier.projects:person1")).toBeNull();
   });
 
   it("follows a rename and the project opened last", async () => {
@@ -91,9 +95,31 @@ describe("the person's projects", () => {
     expect(isOnDevice("alpha00000")).toBe(false);
     markOnDevice("alpha00000");
     expect(isOnDevice("alpha00000")).toBe(true);
-    expect(JSON.parse(localStorage.getItem("frontier.onDevice")!)).toEqual(["alpha00000"]);
+    expect(JSON.parse(localStorage.getItem("frontier.onDevice:person1")!)).toEqual(["alpha00000"]);
     markOffDevice("alpha00000");
     expect(isOnDevice("alpha00000")).toBe(false);
+  });
+
+  it("files the list and the projects on this device under the person, so the next person reads neither", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () => new Response(JSON.stringify(list("alpha", "alpha", "beta")), { status: 200 }),
+      ),
+    );
+    await loadProjects();
+    markOnDevice("alpha00000");
+    expect(knownProjects()?.projects).toHaveLength(2);
+
+    // Another person signs in on the same browser.
+    setKeysOwner("person2");
+    expect(knownProjects()).toBeNull();
+    expect(isOnDevice("alpha00000")).toBe(false);
+    // The first person's stay under their own key, for their next sign-in.
+    setKeysOwner("person1");
+    expect(knownProjects()?.projects).toHaveLength(2);
+    expect(isOnDevice("alpha00000")).toBe(true);
+    expect(localStorage.getItem("frontier.projects")).toBeNull();
   });
 
   it("keeps the project this page opened last, over a list the server read before it was told", async () => {

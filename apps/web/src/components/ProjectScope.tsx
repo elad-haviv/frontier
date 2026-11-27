@@ -9,6 +9,7 @@ import { api, apiFor, ApiFailure } from "../api.ts";
 import { resumeProposals } from "../proposeAfterPublish.ts";
 import { currentProject, projectRoot, setCurrentProject, withoutProject } from "../project.ts";
 import {
+  hasLegacyFlags,
   isOnDevice,
   noteLast,
   noteProject,
@@ -92,11 +93,16 @@ export function ProjectScope({ children }: { children: ReactNode }) {
     // Only a new record moves the address.
   }, [record]);
 
-  const ref = record
-    ? { id: record.id, slug: record.slug }
-    : known && !(error && error.code === "no_project")
-      ? { id: known.id, slug: known.slug }
-      : null;
+  // Not before the list of projects says which one is the legacy one: that decides whose the
+  // device's old data is, and a queue made too early would file this project's changes wrongly.
+  const listed = hasLegacyFlags(list);
+  const ref = !listed
+    ? null
+    : record
+      ? { id: record.id, slug: record.slug }
+      : known && !(error && error.code === "no_project")
+        ? { id: known.id, slug: known.slug }
+        : null;
 
   // The project is opened for the app after the first draw that knows it, so that what hears of
   // it (the queue, the device copy, the status stream) does not change a page while it renders.

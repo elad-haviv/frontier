@@ -1,6 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useState } from "react";
 import { Navigate, Route, Routes, useLocation, useParams } from "react-router-dom";
 import { api } from "./api.ts";
+import { keysOwner } from "./aiKeys.ts";
 import { clearMe, loadMe } from "./me.ts";
 import { resumeProposals } from "./proposeAfterPublish.ts";
 import { useAsync } from "./useAsync.ts";
@@ -16,6 +17,7 @@ import { movedInto, projectRoot } from "./project.ts";
 import { fileUnfiled } from "./projectStorage.ts";
 import {
   clearProjects,
+  hasLegacyFlags,
   homeProject,
   knownProjects,
   loadProjects,
@@ -231,22 +233,33 @@ export function App() {
       clearProjects();
     }
     if (!loggedIn) return;
-    // The person's projects, read before any page: the first of them takes what an earlier build
-    // kept on this device unfiled, and the address decides which opens.
+    // The person's projects, read before any page: the person who owns what an earlier build kept
+    // on this device unfiled gives it to the project that was the library before projects (and to
+    // no other), and the address decides which project opens.
     let live = true;
-    const opened = (list: ReturnType<typeof knownProjects>) => {
-      const first = list?.projects[0];
-      if (first) fileUnfiled(first.id);
+    const opened = async (list: ReturnType<typeof knownProjects>) => {
+      const person = keysOwner();
+      if (person && list) {
+        const legacy = await queue.legacyFor();
+        if (legacy) fileUnfiled(person, legacy);
+      }
       if (live) setReady(true);
     };
-    // With a list kept from the last visit the app does not wait for the server to open.
-    const kept = knownProjects();
-    if (kept) opened(kept);
-    void loadProjects().then((list) => {
-      if (!kept) opened(list ?? knownProjects());
-      // Changes left in the queue of a project the person has since left go on to it.
-      void queue.start();
-    });
+    void (async () => {
+      // Who is signed in is known before anything is filed or read for them.
+      if (!keysOwner()) await loadMe();
+      if (!live) return;
+      // With a list kept from the last visit the app does not wait for the server to open (a list
+      // from before the legacy flag existed is not enough: that decides whose the old data is).
+      const kept = knownProjects();
+      const usable = hasLegacyFlags(kept) ? kept : null;
+      if (usable) await opened(usable);
+      void loadProjects().then(async (list) => {
+        if (!usable) await opened(list ?? knownProjects());
+        // Changes left in the queue of a project the person has since left go on to it.
+        void queue.start();
+      });
+    })();
     // The person is read again whenever the connection comes back, since the first read may have
     // failed while it was down.
     const resume = () => void loadMe().then(() => resumeProposals());

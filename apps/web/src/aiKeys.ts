@@ -29,6 +29,17 @@ const keysName = (person: string) => `frontier.aiKeys:${person}`;
 const checksName = (person: string) => `frontier.aiKeys.checks:${person}`;
 
 let owner: string | null = null;
+const ownerListeners = new Set<(person: string | null) => void>();
+
+/**
+ * Hears who is signed in on this device, now and from here on: the person's id, or null once
+ * nobody is. What the device files per person (the save queues, the list of projects, the
+ * recents) follows it.
+ */
+export function onKeysOwner(listener: (person: string | null) => void): () => void {
+  ownerListeners.add(listener);
+  return () => ownerListeners.delete(listener);
+}
 
 /** What the last test of a key on this device found. Kept beside the key, on this device only. */
 export interface KeyCheck {
@@ -66,6 +77,7 @@ export function setKeysOwner(person: string | null): void {
   keys = null;
   checks = null;
   if (person) migrateOld(person);
+  for (const l of [...ownerListeners]) l(person);
   changed();
 }
 

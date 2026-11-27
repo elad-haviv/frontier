@@ -1,7 +1,9 @@
 // @vitest-environment happy-dom
 import "fake-indexeddb/auto";
-import { afterAll, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { setKeysOwner } from "../aiKeys.ts";
 import { setCurrentProject } from "../project.ts";
+import { loadProjects } from "../projects.ts";
 import { queue } from "./queue.ts";
 
 const A = { id: "projecta01", slug: "alpha" };
@@ -13,7 +15,34 @@ const json = (body: unknown) =>
     headers: { "content-type": "application/json" },
   });
 
+// The person is signed in and their list says alpha is the library from before projects.
+beforeAll(async () => {
+  setKeysOwner("person1");
+  const summary = (p: { id: string; slug: string }, legacy: boolean) => ({
+    ...p,
+    name: p.slug,
+    description: "",
+    colour: 0,
+    kind: "own",
+    role: "owner",
+    entries: null,
+    maps: null,
+    members: [],
+    lastVersion: null,
+    legacy,
+  });
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () =>
+      json({ projects: [summary(A, true), summary(B, false)], last: null, canCreate: true }),
+    ),
+  );
+  await loadProjects();
+  vi.unstubAllGlobals();
+});
+
 afterAll(() => {
+  setKeysOwner(null);
   queue.stop();
   setCurrentProject(null);
 });

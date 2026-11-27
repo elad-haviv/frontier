@@ -24,8 +24,9 @@ import {
   unionClashes,
 } from "@frontier/schema";
 import { api, apiFor, ApiFailure, fromServer, setDevice } from "../api.ts";
-import { inProject, onProjectChange, type ProjectRef } from "../project.ts";
-import { knownProjects } from "../projects.ts";
+import { keysOwner, onKeysOwner } from "../aiKeys.ts";
+import { currentProject, inProject, onProjectChange, type ProjectRef } from "../project.ts";
+import { hasLegacyFlags, knownProjects } from "../projects.ts";
 import { type Connection, connection as appConnection } from "./connection.ts";
 import { migrateBuffers } from "./migrate.ts";
 import {
@@ -126,6 +127,11 @@ export interface QueueDeps {
   names?: { lock: string; channel: string };
   /** Which project the queue's notices are about, so a notice from a background queue says so. */
   project?: ProjectRef;
+  /**
+   * Removes this queue's meta at `clear`. A queue that shares the device's own storage must not
+   * wipe what the device keeps for others there (the hub removes its own keys by name).
+   */
+  clearMeta?: (store: Store) => Promise<void>;
 }
 
 /** How long a page's changes wait for more before they are sent. */
@@ -548,7 +554,7 @@ export class Queue {
   async clear(): Promise<void> {
     const store = await this.ready();
     await store.clear();
-    await store.clearMeta();
+    await (this.d.clearMeta ? this.d.clearMeta(store) : store.clearMeta());
     for (const key of [...this.cache.keys()]) this.changed(key, undefined, false);
     this.cache.clear();
     this.listChanged();
@@ -972,40 +978,71 @@ export class Queue {
   }
 }
 
-// ---- One queue for each project (stage 27b) -----------------------------------------------------
+// ---- One queue for each person and project (stage 27b) ------------------------------------------
 
-/** The name of the database a project's queue and device copy are kept in. */
+/** The name of the database an earlier build gave a project's queue and device copy. */
 export const projectDatabase = (id: string): string => `frontier-p-${id}`;
+
+/** The database of a project for one person: nothing of it is read in another person's session. */
+export const personDatabase = (person: string, id: string): string =>
+  `frontier-u-${person}-p-${id}`;
+
+/** A project the hub can make a queue for. `legacy` comes from the server's list. */
+export type KnownProject = ProjectRef & { legacy?: boolean | undefined };
 
 /** What the hub needs to make a queue for a project. */
 export interface HubDeps {
-  /** The device's own storage, opened once: the first project's data and everything of the device. */
+  /** The device's own storage, opened once: the legacy project's data and everything of the device. */
   main: () => Promise<Store>;
-  /** Opens a project's own storage. */
-  openProject: (id: string) => Promise<Store>;
-  /** Makes the queue of a project over the storage `open` gives. */
-  make: (ref: ProjectRef, open: () => Promise<Store>) => Queue;
+  /** Opens a database by its name. */
+  openProject: (name: string) => Promise<Store>;
+  /** Makes the queue of a project, for a person, over the storage `open` gives. */
+  make: (
+    ref: ProjectRef,
+    open: () => Promise<Store>,
+    person: string,
+    purge: (s: Store) => Promise<void>,
+  ) => Queue;
   /** The projects the person is in, as last known: whose slugs a queue left over is sent to. */
-  known: () => ProjectRef[];
+  known: () => KnownProject[];
+  /** Whether the list was read in a form that says which project is the legacy one. */
+  listed: () => boolean;
+}
+
+/** Whose data this device's storage is for, decided once for the signed-in person. */
+interface Scope {
+  person: string;
+  /** The project whose data is in the device's own database, when it is this person's. */
+  legacy: string | null;
+  /** True for the person who owns what an earlier build kept (the old, un-attributed databases). */
+  own: boolean;
+  /** Projects whose un-attributed `frontier-p-<id>` database from an earlier build is this person's. */
+  old: Set<string>;
 }
 
 /**
- * The app's queue as the pages see it: the open project's. Each project has a queue of its own,
- * over a database of its own, so what is typed in one is never shown in another, and a change
- * made in project A is sent to A even when the person has since gone to B (A's queue goes on
- * sending in the background until it is empty). Which database a project uses is decided once:
- * the first project takes over what an earlier build kept (the device's own database), and the
- * others get one each.
+ * The app's queue as the pages see it: the open project's. Each person has a queue for each
+ * project, over a database of their own, so what is typed in one is never shown in another, and
+ * a change made in project A is sent to A even when the person has since gone to B (A's queue goes
+ * on sending in the background until it is empty).
+ *
+ * Which database is whose is decided once. What an earlier build kept (the device's own database
+ * `frontier`, and any `frontier-p-<id>`) belongs to the first person who signs in and is in the
+ * server's legacy project, and only the legacy project may use `frontier`. Everyone else gets
+ * databases named for them. A person's session never opens another person's database, so it
+ * neither shows nor sends what they left unsent.
  */
 export class QueueHub {
   private queues = new Map<string, Queue>();
   private active: Queue | null = null;
   private mainOpening: Promise<Store> | null = null;
-  private legacy: Promise<string> | null = null;
+  private scoped: Promise<Scope> | null = null;
+  private person: string | null = null;
   private readonly listListeners = new Set<() => void>();
   private readonly noticeListeners = new Set<(notice: Notice) => void>();
   private readonly clearedListeners = new Set<() => void>();
   private readonly senderListeners = new Set<() => void>();
+  private readonly personListeners = new Set<() => void>();
   private readonly none: QueueRecord[] = [];
   /** The listeners of the queue that is open, forwarded and taken off when another opens. */
   private stops: (() => void)[] = [];
@@ -1022,35 +1059,121 @@ export class QueueHub {
     return this.main();
   }
 
-  /** The project that uses the device's own database; `candidate` takes it when none does yet. */
-  legacyOf(candidate: string): Promise<string> {
-    return this.legacyProject(candidate);
+  /** The person whose queues these are, or null when nobody is signed in. */
+  get signedInPerson(): string | null {
+    return this.person;
   }
 
-  /** The project whose data is in the device's own database: the first project, decided once. */
-  private async legacyProject(candidate: string): Promise<string> {
-    this.legacy ??= (async () => {
+  /**
+   * Says who is signed in. The queues of the person before stop (what they left unsent stays in
+   * their own databases, unread), and the open project's queue is made again for the new one.
+   */
+  setPerson(person: string | null): void {
+    if (person === this.person) return;
+    for (const q of this.queues.values()) q.stop();
+    this.queues.clear();
+    for (const stop of this.stops.splice(0)) stop();
+    this.active = null;
+    this.scoped = null;
+    this.person = person;
+    for (const l of [...this.personListeners]) l();
+    const open = currentProject();
+    if (person && open) this.use(open);
+    else this.listChanged();
+  }
+
+  /** Hears that another person is signed in, so what was made for the last one is let go. */
+  onPerson(listener: () => void): () => void {
+    this.personListeners.add(listener);
+    return () => this.personListeners.delete(listener);
+  }
+
+  /** Whose data this device's storage is, for the signed-in person; decided once, and kept. */
+  private scope(): Promise<Scope> {
+    const person = this.person;
+    if (!person) return Promise.reject(new ApiFailure(0, "no_project", "Nobody is signed in."));
+    if (this.scoped) return this.scoped;
+    const made = (async (): Promise<Scope> => {
       const main = await this.main();
-      const known = await main.meta<string>("legacyProject");
-      if (known) return known;
-      const first = this.d.known()[0]?.id ?? candidate;
-      await main.setMeta("legacyProject", first);
-      return first;
+      const owner = await main.meta<string>("legacyOwner");
+      const oldIds = async () => new Set((await main.meta<string[]>("projectDatabases")) ?? []);
+      if (owner === undefined) {
+        // Nobody has taken the old data yet. Only the legacy project, and so only a person who is
+        // in it, may; a person who is not leaves it untouched and unread.
+        if (!this.d.listed()) {
+          throw new ApiFailure(0, "unknown", "Your projects have not been read yet.");
+        }
+        const legacy = this.d.known().find((p) => p.legacy === true)?.id;
+        if (!legacy) {
+          // Not in the legacy project: this is not remembered, so joining it later still takes it.
+          queueMicrotask(() => {
+            this.scoped = null;
+          });
+          return { person, legacy: null, own: false, old: new Set() };
+        }
+        await main.setMeta("legacyProject", legacy);
+        await main.setMeta("legacyOwner", person);
+        return { person, legacy, own: true, old: await oldIds() };
+      }
+      if (owner !== person) return { person, legacy: null, own: false, old: new Set() };
+      const legacy = (await main.meta<string>("legacyProject")) ?? null;
+      return { person, legacy, own: true, old: await oldIds() };
     })();
-    return this.legacy;
+    // A decision that could not be made is made again on the next ask.
+    made.catch(() => {
+      if (this.scoped === made) this.scoped = null;
+    });
+    this.scoped = made;
+    return made;
+  }
+
+  /**
+   * The project whose old, un-filed browser keys and database this person owns, or null when
+   * there is none (they are not in the legacy project, or another person has it).
+   */
+  async legacyFor(): Promise<string | null> {
+    return (await this.scope().catch(() => null))?.legacy ?? null;
+  }
+
+  /** Whether the device's own database is this project's, for this person. */
+  async isLegacy(id: string): Promise<boolean> {
+    return (await this.legacyFor()) === id;
+  }
+
+  /** The storage of a project for this person, made and listed on first use. */
+  private async storeFor(id: string): Promise<Store> {
+    const s = await this.scope();
+    if (s.legacy === id) return this.main();
+    if (s.own && s.old.has(id)) return this.d.openProject(projectDatabase(id));
+    const main = await this.main();
+    const listed = (await main.meta<string[]>(this.listKey(s.person))) ?? [];
+    if (!listed.includes(id)) await main.setMeta(this.listKey(s.person), [...listed, id]);
+    return this.d.openProject(personDatabase(s.person, id));
+  }
+
+  private listKey = (person: string) => `projectDatabases:${person}`;
+
+  /** The databases this person has (other than the device's own), by project id. */
+  private async ownDatabases(s: Scope): Promise<Map<string, string>> {
+    const main = await this.main();
+    const out = new Map<string, string>();
+    if (s.own) for (const id of s.old) out.set(id, projectDatabase(id));
+    for (const id of (await main.meta<string[]>(this.listKey(s.person))) ?? []) {
+      out.set(id, personDatabase(s.person, id));
+    }
+    return out;
   }
 
   /** The queue of a project, made and started on first use. */
   queueOf(ref: ProjectRef): Queue {
     let q = this.queues.get(ref.id);
     if (!q) {
-      q = this.d.make(ref, async () => {
-        if ((await this.legacyProject(ref.id)) === ref.id) return this.main();
-        const main = await this.main();
-        const ids = (await main.meta<string[]>("projectDatabases")) ?? [];
-        if (!ids.includes(ref.id)) await main.setMeta("projectDatabases", [...ids, ref.id]);
-        return this.d.openProject(ref.id);
-      });
+      const person = this.person ?? "nobody";
+      const purge = async (store: Store) => {
+        // The device's own storage holds the device's id and other people's marks: not wiped whole.
+        if (store !== (await this.main())) await store.clearMeta();
+      };
+      q = this.d.make(ref, () => this.storeFor(ref.id), person, purge);
       this.queues.set(ref.id, q);
       // A notice names where to look, in its own project: the one open may be another by now.
       q.onNotice((notice) => {
@@ -1059,7 +1182,11 @@ export class QueueHub {
       });
       q.onCleared(() => this.clearedListeners.forEach((l) => l()));
       q.subscribeList(() => this.settled(ref.id));
-      void q.start().catch(() => undefined);
+      const made = q;
+      void q.start().catch(() => {
+        // It could not start (the list of projects was not read yet): the next ask makes it again.
+        if (this.queues.get(ref.id) === made && this.active !== made) this.queues.delete(ref.id);
+      });
     }
     return q;
   }
@@ -1079,7 +1206,7 @@ export class QueueHub {
    */
   use(ref: ProjectRef | null): void {
     const before = this.active;
-    this.active = ref ? this.queueOf(ref) : null;
+    this.active = ref && this.person ? this.queueOf(ref) : null;
     for (const stop of this.stops.splice(0)) stop();
     if (this.active) {
       const q = this.active;
@@ -1108,16 +1235,19 @@ export class QueueHub {
 
   /**
    * Changes a project's queue held back on this device (the person went to another project, or
-   * closed the app, before they were sent) go on to their own project.
+   * closed the app, before they were sent) go on to their own project. Only this person's.
    */
   private async sendLeftovers(): Promise<void> {
+    const s = await this.scope().catch(() => null);
+    if (!s) return;
     const main = await this.main();
-    const ids = new Set([...((await main.meta<string[]>("projectDatabases")) ?? [])]);
-    const legacy = await main.meta<string>("legacyProject");
-    if (legacy) ids.add(legacy);
+    const databases = await this.ownDatabases(s);
     for (const ref of this.d.known()) {
-      if (!ids.has(ref.id) || this.queues.has(ref.id)) continue;
-      const store = ref.id === legacy ? main : await this.d.openProject(ref.id).catch(() => null);
+      if (this.queues.has(ref.id)) continue;
+      const isMain = s.legacy === ref.id;
+      const name = databases.get(ref.id);
+      if (!isMain && !name) continue;
+      const store = isMain ? main : await this.d.openProject(name!).catch(() => null);
       if (!store) continue;
       const waiting = (await store.all().catch(() => [])).length > 0;
       if (waiting) this.queueOf(ref);
@@ -1217,46 +1347,64 @@ export class QueueHub {
     return () => this.clearedListeners.delete(listener);
   }
 
-  /** Every project's copy for reading offline is emptied; the queues' records are not touched. */
+  /** The copies for reading offline of this person's projects are emptied; the records are not touched. */
   async clearDevice(): Promise<void> {
-    const main = await this.main();
-    await main.clearDevice();
-    for (const id of (await main.meta<string[]>("projectDatabases")) ?? []) {
-      const store = await this.d.openProject(id).catch(() => null);
+    const s = await this.scope().catch(() => null);
+    if (!s) return;
+    // The device's own database holds the legacy project's copy, which is the owner's alone.
+    if (s.own) await (await this.main()).clearDevice();
+    for (const name of (await this.ownDatabases(s)).values()) {
+      const store = await this.d.openProject(name).catch(() => null);
       await store?.clearDevice().catch(() => undefined);
     }
   }
 
-  /** Removes every record of every project and this device's id and name, as at logout. */
+  /**
+   * Removes every record of this person's projects, and this device's id and name, as at logout.
+   * Another person's databases, and the mark of who owns the device's old data when it is not
+   * this person, are left as they are.
+   */
   async clear(): Promise<void> {
+    const s = await this.scope().catch(() => null);
     const main = await this.main();
-    const ids = (await main.meta<string[]>("projectDatabases")) ?? [];
-    for (const id of ids) {
-      const store = await this.d.openProject(id).catch(() => null);
-      if (!store) continue;
-      await store.clear().catch(() => undefined);
-      await store.clearMeta().catch(() => undefined);
-      await store.clearDevice().catch(() => undefined);
+    if (s) {
+      for (const name of (await this.ownDatabases(s)).values()) {
+        const store = await this.d.openProject(name).catch(() => null);
+        if (!store) continue;
+        await store.clear().catch(() => undefined);
+        await store.clearMeta().catch(() => undefined);
+        await store.clearDevice().catch(() => undefined);
+      }
+      await main.removeMeta(this.listKey(s.person)).catch(() => undefined);
     }
     for (const q of this.queues.values()) await q.clear();
-    // Whatever queue is not open yet: the device's own storage, last, so the id is made anew.
-    await main.clear();
-    await main.clearMeta();
-    this.legacy = null;
+    // The device's own storage, last, so the id is made anew; the records in it are the owner's.
+    if (s?.own) {
+      await main.clear();
+      await main.clearDevice();
+      for (const key of ["legacyOwner", "legacyProject", "projectDatabases"]) {
+        await main.removeMeta(key).catch(() => undefined);
+      }
+    }
+    for (const key of ["device", "persistAsked", "imageSizes", "snapshot"]) {
+      await main.removeMeta(key).catch(() => undefined);
+    }
+    this.scoped = null;
     this.listChanged();
   }
 }
 
-/** The app's queues: one for each project, as the pages see the open project's. */
+/** The app's queues: one for each person and project, as the pages see the open project's. */
 export const queue: QueueHub = new QueueHub({
   main: () => openStore(),
-  openProject: (id) => openStore(projectDatabase(id)),
-  make: (ref, open): Queue =>
+  openProject: (name) => openStore(name),
+  make: (ref, open, person, purge): Queue =>
     new Queue({
       open,
       identity: (): Promise<Store> => queue.mainStore(),
       project: ref,
-      names: { lock: `${LOCK}:${ref.id}`, channel: `${CHANNEL}:${ref.id}` },
+      clearMeta: purge,
+      names: { lock: `${LOCK}:${person}:${ref.id}`, channel: `${CHANNEL}:${person}:${ref.id}` },
       // A merge reads the server's copy, never one the device kept for reading offline; and a
       // send goes to the project the change was made in, whichever is open now.
       api: senderApiFor(ref),
@@ -1265,14 +1413,15 @@ export const queue: QueueHub = new QueueHub({
       channel: () =>
         typeof BroadcastChannel === "undefined"
           ? null
-          : new BroadcastChannel(`${CHANNEL}:${ref.id}`),
+          : new BroadcastChannel(`${CHANNEL}:${person}:${ref.id}`),
       // The browser buffer of builds before the queue is moved in once, at start, and only into
-      // the first project's: it is what that build kept for its one library.
+      // the legacy project's: it is what that build kept for its one library.
       migrate: async (q): Promise<void> => {
-        if ((await queue.legacyOf(ref.id)) === ref.id) await migrateBuffers(q);
+        if (await queue.isLegacy(ref.id)) await migrateBuffers(q);
       },
     }),
-  known: () => (knownProjects()?.projects ?? []).map((p) => ({ id: p.id, slug: p.slug })),
+  known: () => knownProjects()?.projects ?? [],
+  listed: () => hasLegacyFlags(knownProjects()),
 });
 
 /** The sender's calls for one project's queue: its address is read when the call is made. */
@@ -1298,8 +1447,10 @@ function queueSlug(ref: ProjectRef): string {
   return knownProjects()?.projects.find((p) => p.id === ref.id)?.slug ?? ref.slug;
 }
 
-// The pages' queue follows the project the app has open.
+// The pages' queue follows the project the app has open, and the person who is signed in.
 onProjectChange((next) => queue.use(next));
+onKeysOwner((person) => queue.setPerson(person));
+queue.setPerson(keysOwner());
 
 /** Every record still on this device, kept up to date. */
 export function useUnsent(): QueueRecord[] {

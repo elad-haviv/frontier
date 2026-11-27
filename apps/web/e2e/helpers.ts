@@ -126,13 +126,17 @@ export const withoutProject = (url: string): string =>
   url.replace(/^(https?:\/\/[^/]+)?\/p\/[^/?#]+/, "$1") || "/";
 
 /**
- * The key the browser's storage files a library's value under: `<name>:<project id>`. The page
+ * The key the browser's storage files a library's value under: `<name>:<person id>:<project id>`. The page
  * says which project it shows (`data-project`), once the project is open.
  */
 export async function keyOf(page: Page, name: string): Promise<string> {
   await expect(page.locator("html[data-project]")).toBeAttached();
   const id = await page.locator("html").getAttribute("data-project");
-  return `${name}:${id}`;
+  // Filed under the signed-in person too, so another person on the browser never reads it.
+  const person = await page.evaluate(
+    () => (JSON.parse(localStorage.getItem("frontier.me") ?? "null") as { id?: string } | null)?.id,
+  );
+  return `${name}:${person}:${id}`;
 }
 
 export const entry = (path: string) =>

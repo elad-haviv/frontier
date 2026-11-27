@@ -26,6 +26,7 @@ function readKept(): MeResponse | null {
 }
 
 function set(next: MeResponse | null): void {
+  const changedPerson = current !== null && next !== null && current.id !== next.id;
   current = next;
   // The AI keys on this device are the signed-in person's: nobody's, once logged out.
   setKeysOwner(next?.id ?? null);
@@ -36,6 +37,9 @@ function set(next: MeResponse | null): void {
     /* without storage the name is shown only while the page is open */
   }
   for (const l of listeners) l();
+  // Another person signed in on this page (the login dialog after a session ended): nothing of the
+  // last one's, in memory or on the screen, must stay. Their own data is filed under their id.
+  if (changedPerson && typeof window !== "undefined") window.location.reload();
 }
 
 /** Reads the person again from the server. A failure leaves what is known as it is. */

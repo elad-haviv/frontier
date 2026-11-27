@@ -665,7 +665,16 @@ export class DeviceHub implements ReadThrough {
     return known ? { id: known.id, slug: known.slug } : null;
   }
 
+  /** Another person signed in: the last one's copies are let go, and nothing of them is read. */
+  reset(): void {
+    for (const h of this.held.values()) h.keeper?.stop();
+    this.held.clear();
+    this.activeId = null;
+  }
+
   read(url: string, network: () => Promise<unknown>, direct: boolean): Promise<unknown> | null {
+    // Nobody signed in: there is no copy to read, and the call goes to the server as it is.
+    if (!queue.signedInPerson) return null;
     const parts = splitProjectUrl(url);
     if (!parts) return null;
     const ref = this.refOf(parts.slug);
@@ -744,8 +753,12 @@ let started: Promise<ReadThrough> | null = null;
 export function startDevice(): Promise<ReadThrough> {
   started ??= (async () => {
     await queue.start();
-    // The keeper follows the project that is open.
+    // The keeper follows the project that is open, and the person who is signed in.
     onProjectChange((next) => device.activate(next));
+    queue.onPerson(() => {
+      device.reset();
+      if (queue.signedInPerson) device.activate(currentProject());
+    });
     const open = currentProject();
     if (open) {
       // An offline start shows the last counts the server sent for this project.

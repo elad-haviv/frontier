@@ -8,10 +8,18 @@
  */
 import type { ProjectSummary, ProjectsResponse } from "@frontier/schema";
 import { useSyncExternalStore } from "react";
+import { keysOwner, onKeysOwner } from "./aiKeys.ts";
 import { api } from "./api.ts";
 
-const KEY = "frontier.projects";
-const DEVICE_KEY = "frontier.onDevice";
+/**
+ * Both are filed under the signed-in person, so on a browser two people share, the next person
+ * neither sees the list of the one before nor which projects that one has kept on the device.
+ * With nobody signed in nothing is read or kept.
+ */
+const keyOf = (name: string, person: string | null = keysOwner()) =>
+  person ? `${name}:${person}` : null;
+const KEY = () => keyOf("frontier.projects");
+const DEVICE_KEY = () => keyOf("frontier.onDevice");
 
 interface Known {
   list: ProjectsResponse | null;
@@ -27,7 +35,8 @@ const listeners = new Set<() => void>();
 
 function readKept(): ProjectsResponse | null {
   try {
-    const text = localStorage.getItem(KEY);
+    const key = KEY();
+    const text = key ? localStorage.getItem(key) : null;
     return text ? (JSON.parse(text) as ProjectsResponse) : null;
   } catch {
     return null;
@@ -36,10 +45,29 @@ function readKept(): ProjectsResponse | null {
 
 function readDevice(): ReadonlySet<string> {
   try {
-    const raw = JSON.parse(localStorage.getItem(DEVICE_KEY) ?? "[]") as unknown;
+    const key = DEVICE_KEY();
+    const raw = JSON.parse((key ? localStorage.getItem(key) : null) ?? "[]") as unknown;
     return new Set(Array.isArray(raw) ? raw.filter((x): x is string => typeof x === "string") : []);
   } catch {
     return new Set();
+  }
+}
+
+// Another person signed in (or nobody): what is known is theirs, read from their own keys.
+onKeysOwner(() => {
+  openedHere = null;
+  reading = null;
+  device = readDevice();
+  change({ list: readKept(), failed: false, loading: false });
+});
+
+/** Stores the list under the person's key, when there is a person. */
+function keep(list: ProjectsResponse): void {
+  try {
+    const key = KEY();
+    if (key) localStorage.setItem(key, JSON.stringify(list));
+  } catch {
+    /* without storage the list is known only while the page is open */
   }
 }
 
@@ -59,17 +87,16 @@ let openedHere: string | null = null;
 export function loadProjects(): Promise<ProjectsResponse | null> {
   reading ??= (async () => {
     change({ loading: true });
+    const asked = keysOwner();
     try {
       const read = await api.projects();
+      // Another person signed in while the server was answering: it was not asked for them.
+      if (keysOwner() !== asked) return state.list;
       const list =
         openedHere && read.projects.some((p) => p.slug === openedHere)
           ? { ...read, last: openedHere }
           : read;
-      try {
-        localStorage.setItem(KEY, JSON.stringify(list));
-      } catch {
-        /* without storage the list is known only while the page is open */
-      }
+      keep(list);
       change({ list, failed: false, loading: false });
     } catch {
       change({ failed: true, loading: false });
@@ -81,6 +108,13 @@ export function loadProjects(): Promise<ProjectsResponse | null> {
   return reading;
 }
 
+/**
+ * Whether the list says which project is the legacy one (a list kept before the flag existed does
+ * not). Which project takes over the device's old data is decided from the flag, never guessed.
+ */
+export const hasLegacyFlags = (list: ProjectsResponse | null): list is ProjectsResponse =>
+  list !== null && list.projects.every((p) => typeof p.legacy === "boolean");
+
 /** What the app knows of the person's projects right now. */
 export const knownProjects = (): ProjectsResponse | null => state.list;
 
@@ -89,19 +123,14 @@ export function noteProject(next: Pick<ProjectSummary, "id"> & Partial<ProjectSu
   if (!state.list) return;
   const projects = state.list.projects.map((p) => (p.id === next.id ? { ...p, ...next } : p));
   const list = { ...state.list, projects };
-  try {
-    localStorage.setItem(KEY, JSON.stringify(list));
-  } catch {
-    /* as above */
-  }
+  keep(list);
   change({ list });
 }
 
 /** Forgets the list, at log out. */
 export function clearProjects(): void {
   try {
-    localStorage.removeItem(KEY);
-    localStorage.removeItem(DEVICE_KEY);
+    for (const key of [KEY(), DEVICE_KEY()]) if (key) localStorage.removeItem(key);
   } catch {
     /* nothing to remove */
   }
@@ -143,11 +172,7 @@ export function homeProject(list: ProjectsResponse | null = state.list): Project
 export function markOnDevice(id: string): void {
   if (device.has(id)) return;
   device = new Set([...device, id]);
-  try {
-    localStorage.setItem(DEVICE_KEY, JSON.stringify([...device]));
-  } catch {
-    /* only the page remembers it */
-  }
+  saveDevice();
   for (const l of [...listeners]) l();
 }
 
@@ -155,12 +180,17 @@ export function markOnDevice(id: string): void {
 export function markOffDevice(id: string): void {
   if (!device.has(id)) return;
   device = new Set([...device].filter((x) => x !== id));
-  try {
-    localStorage.setItem(DEVICE_KEY, JSON.stringify([...device]));
-  } catch {
-    /* as above */
-  }
+  saveDevice();
   for (const l of [...listeners]) l();
+}
+
+function saveDevice(): void {
+  try {
+    const key = DEVICE_KEY();
+    if (key) localStorage.setItem(key, JSON.stringify([...device]));
+  } catch {
+    /* only the page remembers it */
+  }
 }
 
 export const isOnDevice = (id: string): boolean => device.has(id);
@@ -179,10 +209,6 @@ export function noteLast(slug: string): void {
   openedHere = slug;
   if (!state.list || state.list.last === slug) return;
   const list = { ...state.list, last: slug };
-  try {
-    localStorage.setItem(KEY, JSON.stringify(list));
-  } catch {
-    /* as above */
-  }
+  keep(list);
   change({ list });
 }
