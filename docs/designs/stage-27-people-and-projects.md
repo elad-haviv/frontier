@@ -732,3 +732,131 @@ first account who leaves is not made an owner again (that only happens to a proj
 - `GET /api/session` `emailless` is true only when exactly one account has no email; show the
   blank-email login hint only then.
 - A reader gets no open-comment reasons in Home's queue, and an empty `versions` in `/attention`.
+
+## 10. How it was built: 27c web
+
+Built on 2026-11-27, on top of the server half (section 9). Members, invite links, the join page,
+Google sign-on, and the roles in the shell. The server was not changed.
+
+### Members (`/p/<project>/settings/members`)
+
+- A section of "This project", first in the group (`pages/settings/Members.tsx`, words in
+  `membersModel.ts`). The list shows each person (name, "You", email for owners only, when last
+  active, role). Owners change a role with a select (Reader, Writer, Owner) and remove a person
+  with an X that asks in the row ("Remove Wren?", the focus on Keep); stepping down from owner asks
+  in a dialog. The only owner's select is disabled and says why; the server's `last_owner` is put
+  in the same words (`A project always needs an owner. Make someone else an owner first...`).
+  Writers and readers see the same list without emails or controls.
+- **Leave this project**, for everyone, asks first, then goes to All projects. It is disabled for the
+  only owner, with the reason beside it.
+- **Invite someone** (owners): "They join as" (Writer first; the list is Reader, Writer, Owner) and
+  "Make an invite link". An Owner link asks a question first. The link is shown once, with Copy, and
+  says it works once, for 7 days, and will not be shown again. "Invitations waiting" lists each link
+  (role, who made it, time left) with "Cancel it". The key of what each role may do is under the box.
+- General's People list links here; the section's one-line state in the Settings menu is the count.
+  A reader does not see "Propose for a folder" (it changes the project).
+
+### The join page (`/join/<code>`)
+
+- Outside every project, in `App.tsx` for a logged-out and a logged-in browser alike
+  (`pages/Join.tsx`, words in `joinModel.ts`). It says who invited you, to what and as what (the
+  mockup's heading), the project's mark, name and counts, and what the role allows, then the ways in:
+  name and email, then **a passkey on this device** (fingerprint icon), **Continue with Google** when
+  `google` is true, then a password (12 or more characters). Name and email are checked before any
+  way is tried. Google asks for neither: Google supplies the verified name and email.
+- Dead links, each with its own words and the inviter's name when the server gave one: `invite_used`,
+  `invite_cancelled`, `invite_expired`, `invite_unknown` (no name). `rate_limited` says to wait.
+- `account_exists`: the page shows the login form (passkey, Google, email and password) with the link
+  kept; logging in is followed by `POST /api/join/<code>/accept`. A logged-in person gets "Join as
+  <name>" (accept) and a way to log out and use another account; opening a link to a project they are
+  in accepts, hears `already_member`, and goes to the project without using the link. The Google
+  `problem` values are worded (`joinModel.ts`); `account_exists` from Google opens the login form.
+- After joining, the app is told a session started and the project opens. The page also shows the AI
+  key note from the invitation.
+
+### Google
+
+- The login page shows "Continue with Google" when the session says `google`, between the passkey and
+  the password, and words each `problem` (`google_no_account`, `_denied`, `_failed`, `_unverified`,
+  `_expired`, `_off`). The button carries `returnTo` when the login was asked for another page.
+- Settings → Signing in (`/settings/account`; `/settings/you/signing-in`, where the server sends the
+  browser back, is an alias that keeps the query) has a Google block: the linked address, **Unlink
+  Google** (asks; refused, with the reason in words, when it is the last way in), or **Link a Google
+  account**. `?problem=recent_login_needed` opens the "Log in again" dialog as adding a passkey does,
+  and the link trip goes ahead once the login is made. "Switch the password off" now says a passkey
+  or Google session is needed.
+
+### Roles in the shell
+
+- `useRole()` (27b) gives `known`, `canWrite`, `isOwner`; new `useCanWrite()`, `useCanWriteOrNot()`
+  and `useIsReader()`. While the role is unknown nothing that edits is drawn and no reader notice is
+  shown. The role comes from the project's record, else the list, else what the device last knew.
+- A reader's left bar has no New entry, no unsaved changes, inbox or compare, no tree buttons or
+  menus (no drag, F2 or rename), and one line: "You can read and ask here. You cannot change the
+  text." The foot says "Reader here" / "Writer here". Entries have no Edit, Rename, Move, "Write",
+  "Link it", What's missing or field proposals (History and Export stay); a link to an entry not
+  written is plain text; Home has no drafts, no "Continue editing" and no new-entry card; maps have no
+  New map, Edit, Delete or Explore (`?edit=1` only reads); a chronicle has no Add, Make main, rename,
+  undo, units, copy or delete, its bars cannot be dragged, and its details are read-only
+  (`ReadDetails`); Talk needs an existing profile and has no "Add to the entry"; Ask has no "Draft
+  entry" and conversations no "Draft an addition"; History has no Restore. Ask, Talk, search, the
+  graph, history, export and the offline copy are the reader's.
+- Addresses that change things (`/edit/...`, `/unpublished`, `/inbox`, `/import`, `/conflict/:id`,
+  `/versions/:id`) are wrapped in `WriterOnly`: a reader gets "You can read this, not change it" with
+  "Read <entry>" and a way home, never a failing page.
+- The calls only a writer may make are not made by a reader's pages: drafts, `/unpublished`,
+  `/comments` (the entry's comment count and list), map `discoveries`, lore additions and proposals
+  (`resumeProposals` waits for a writer). `readerrole.spec.ts` records every call a reader's browser
+  makes across the pages and checks that none is one of these and none is refused (403).
+
+### Losing access while the app is open
+
+- `Connection.onAccessMayHaveChanged`: the status stream ending while the server still answers (the
+  server closes a person's streams when a role changes or they are removed), or a 403 `role_too_low`
+  / `no_project` on a request. `ProjectScope` reads the project's record again quietly (never while
+  one is in flight): a new role switches the shell, with a toast ("You are now a Reader here."), and a
+  `no_project` for a project the person had goes to All projects with a note ("You are no longer in
+  <project>. An owner may have taken you out of it, or you left it on another device"; `access.ts`).
+  Leaving on purpose sets a flag so it is not reported as a loss. An address that never named a
+  project the person is in still shows the page that says so.
+- A queued save refused with `role_too_low` is not retried: its record is marked `refused` and says
+  so. In the "Not sent yet" list it offers "Copy the text" and Discard (no Retry), and All projects
+  lists it with the other stranded changes ("You can still read this project, but your role no longer
+  lets you change it"), also for the legacy project in the device's own database.
+- A person in no project sees "You're not in a project yet", that they need an invite link from one
+  of the project's owners and that Frontier sends no mail; "New project" is offered only to the
+  server's first account.
+
+### Offline and the service worker
+
+`/join/*` is a page address like `/login`: the worker answers it with the app, which opens with no
+connection and says the invitation needs one. `/api/auth/google/*` and `/api/join/*` are `/api/`
+addresses, which the worker never answers (also as navigations), so the Google redirects and the join
+calls are never served stale. The join calls are "open" in `api.ts`, so a 401 from accepting while
+logged out does not open the login dialog over the page. `routes.test.ts` and an offline spec cover it.
+
+### Departures from the mockup and the brief
+
+- The invite box is inline on Members, as in the mockup, not a dialog; the mockup's "Reader can
+  comment" is not in the key since comments are writers' until 27e (section 9), and the reader's
+  line says "read and ask".
+- Where the mockup and section 9 differ: the mockup's pending invitation in All projects ("An
+  invitation you have not answered") is not built, as there is no server list of invitations for a
+  person; a logged-in person opens the link they were sent. The join page asks for name and email on
+  the passkey and password ways, not for Google (section 9: Google gives both).
+- "Signing in" keeps its address `/settings/account` (existing bookmarks and tests); the server's
+  `/settings/you/signing-in` redirects to it with the query.
+- Google is covered in the browser by routing the server's redirect by hand (the e2e server has no
+  Google and no provider a browser can visit), and by the server's own tests against its stand-in
+  provider; the words, the buttons and the Settings states have unit tests.
+
+### Tests
+
+Unit: Members, Join, Login, Account (Google), All projects, `WriterOnly` and the role hooks,
+`membersModel`, `joinModel`, `access`, the connection's access signal, the queue's refused records
+and the hub's stranded list, the service worker's routes. Browser: `members.spec.ts` (an owner makes
+a link; a new person joins by password in a fresh browser; Members; a role changed and the open app
+follows; removed and landing on All projects; owner links; dead links; `account_exists`; logged-in
+join and `already_member`; leaving; the last owner; a refused save), `readerrole.spec.ts` (a reader's
+whole shell and its calls, an edit address, a writer), `google.spec.ts`, and an offline spec for
+`/join/*`.

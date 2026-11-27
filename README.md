@@ -42,6 +42,13 @@ link. Only a hash of the code is stored (`DATA_DIR/state/invites.json`, in the b
 cannot be read back later. The person opens `/join/<code>` and joins with an email and a password,
 a passkey on their device, or Google. An account is only ever made from an invitation.
 
+In the app (stage 27c, web): Settings › This project › Members lists everyone with their role; an
+owner changes a role, removes a person and makes invite links there, and anyone can leave. A reader
+sees the library as it was last saved and has no control that changes anything, but can still Ask and
+talk with characters with their own AI key; a writer has everything but the owner's settings. The
+pages for this are `/p/<project>/settings/members`, `/join/<code>` (open to someone not logged in),
+and `/settings/account` (Signing in), where Google is linked and unlinked.
+
 "Continue with Google" is off unless the server has a client id and secret. To set it up:
 
 1. In the Google Cloud console, under APIs & Services, make an OAuth client of type "Web
