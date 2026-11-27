@@ -166,3 +166,63 @@ textarea.linkbox {
   resize: none;
   color: var(--ink);
 }
+
+/* Stage 28: the optional address of an emailed invitation, and what became of the mail. */
+.invite-form {
+  display: grid;
+  gap: var(--space-3);
+}
+.invite-send {
+  display: grid;
+  gap: 0.25rem;
+  max-width: 26rem;
+}
+.invite-send label {
+  font-size: 0.9rem;
+}
+.invite-send input {
+  padding: 0.5rem 0.65rem;
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  background: var(--paper);
+  color: var(--ink);
+  font-size: 1rem;
+}
+.invite-send small {
+  font-size: 0.82rem;
+}
+.invite-nomail {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+}
+.invite-nomail > .ui-icon {
+  flex: none;
+  margin-top: 0.15rem;
+}
+.invite-sent {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  color: var(--mail-ok);
+  font-size: 0.9rem;
+  overflow-wrap: anywhere;
+}
+.invite-failed {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0.5rem 0.7rem;
+  border: 1px solid var(--rule);
+  border-left: 3px solid var(--warn);
+  border-radius: 5px;
+  background: var(--paper);
+  font-size: 0.88rem;
+  overflow-wrap: anywhere;
+}
+.invite-failed > .ui-icon {
+  flex: none;
+  margin-top: 0.15rem;
+}
