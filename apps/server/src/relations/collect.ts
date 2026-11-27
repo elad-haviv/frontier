@@ -49,7 +49,8 @@ function datesOf(text: string, schema: Schema) {
     if (y !== null && w.replace(/\[\[|\]\]/g, "").length > 12) return String(y);
     return w.replace(/\[\[([^\]|]*)(\|[^\]]*)?\]\]/g, "$1");
   };
-  const dates = b && d ? `${short(b)} – ${short(d)}` : b ? `b. ${short(b)}` : d ? `d. ${short(d)}` : null;
+  const dates =
+    b && d ? `${short(b)} – ${short(d)}` : b ? `b. ${short(b)}` : d ? `d. ${short(d)}` : null;
   return { born: yearOf(b), died: yearOf(d), dates };
 }
 
@@ -62,7 +63,15 @@ export function collectRelations(input: CollectInput): RelationsResponse {
   const person = (key: string): void => {
     if (people.has(key)) return;
     if (key.startsWith("?")) {
-      people.set(key, { key, title: key.slice(1), path: null, type: null, born: null, died: null, dates: null });
+      people.set(key, {
+        key,
+        title: key.slice(1),
+        path: null,
+        type: null,
+        born: null,
+        died: null,
+        dates: null,
+      });
       return;
     }
     const text = texts.get(key) ?? "";
@@ -87,7 +96,10 @@ export function collectRelations(input: CollectInput): RelationsResponse {
     return `?${stem(link.target)}`;
   };
 
-  const facts = new Map<string, RelFact & { seen: { how: string | null; when: string | null }[] }>();
+  const facts = new Map<
+    string,
+    RelFact & { seen: { how: string | null; when: string | null }[] }
+  >();
   const unknown: RelationsResponse["unknown"] = [];
 
   for (const { path, text } of notes) {
@@ -144,7 +156,8 @@ export function collectRelations(input: CollectInput): RelationsResponse {
     const hows = new Set(seen.map((s) => s.how).filter(Boolean));
     const whens = new Set(seen.map((s) => s.when).filter(Boolean));
     const names = fact.sources.map((s) => stem(s.path));
-    if (hows.size > 1) fact.disagree = `${names[0]} and ${names[1]} say it differently: ${[...hows].join(" / ")}.`;
+    if (hows.size > 1)
+      fact.disagree = `${names[0]} and ${names[1]} say it differently: ${[...hows].join(" / ")}.`;
     else if (whens.size > 1)
       fact.disagree = `${names[0]} and ${names[1]} give different times: ${[...whens].join(" / ")}.`;
     else if (fact.sources.length > 1 && seen.some((s) => s.how) && seen.some((s) => !s.how))

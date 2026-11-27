@@ -29,7 +29,12 @@ describe("readRelations", () => {
     expect(readRelations(note)).toEqual({
       items: [
         { what: "parent", who: "[[Corin Vane]]" },
-        { what: "partner", who: "[[Garrow Pike]]", when: "from 288", extra: { source: "chapter 3" } },
+        {
+          what: "partner",
+          who: "[[Garrow Pike]]",
+          when: "from 288",
+          extra: { source: "chapter 3" },
+        },
         { what: "child", who: "[[Nessa Pike]]", with: "[[Garrow Pike]]", how: "adopted" },
       ],
       problems: [],
@@ -44,7 +49,9 @@ describe("readRelations", () => {
     expect(readRelations("---\nrelations: many\n---\n").problems).toEqual([
       "`relations` is not a list.",
     ]);
-    const r = readRelations("---\nrelations:\n  - who: x\n  - what: parent\n  - what: rival\n    who: Odo\n---\n");
+    const r = readRelations(
+      "---\nrelations:\n  - who: x\n  - what: parent\n  - what: rival\n    who: Odo\n---\n",
+    );
     expect(r.problems).toEqual([
       "Item 1 of `relations` has no `what`.",
       "Item 2 of `relations` has no `who`.",
@@ -59,7 +66,9 @@ describe("setRelations", () => {
     const next = setRelations(note, [...items, { what: "rival", who: "[[Odo Vane]]" }]);
     expect(readRelations(next).items).toEqual([...items, { what: "rival", who: "[[Odo Vane]]" }]);
     expect(next).toContain("# the author's comment");
-    expect(next).toContain('    who: "[[Nessa Pike]]"\n    with: "[[Garrow Pike]]"\n    how: adopted');
+    expect(next).toContain(
+      '    who: "[[Nessa Pike]]"\n    with: "[[Garrow Pike]]"\n    how: adopted',
+    );
     expect(next).toContain('time:\n  - what: born\n    when: "268"');
     expect(next.endsWith("# Wren Vane\n\nBody.\n")).toBe(true);
   });

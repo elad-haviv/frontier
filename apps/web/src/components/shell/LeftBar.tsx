@@ -11,6 +11,7 @@ import {
   Inbox,
   type LucideIcon,
   Map as MapIcon,
+  Network,
   MessagesSquare,
   PanelLeftClose,
   Pin,
@@ -43,6 +44,7 @@ import "./KeepGoing.css";
 export const PLACES: { to: string; label: string; icon: LucideIcon }[] = [
   { to: "/maps", label: "Maps", icon: MapIcon },
   { to: "/chronicles", label: "Chronicles", icon: ScrollText },
+  { to: "/trees", label: "Trees", icon: Network },
   { to: "/graph", label: "Graph", icon: Waypoints },
   { to: "/gallery", label: "Gallery", icon: Images },
   { to: "/ask", label: "Ask", icon: MessagesSquare },

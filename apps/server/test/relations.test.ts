@@ -20,7 +20,7 @@ const NOTES: Record<string, string> = {
   [CORIN]:
     '---\nrelations:\n  - what: father\n    who: "[[Aldric Vane]]"\n  - what: child\n    who: "[[Wren Vane]]"\n    how: adopted\n---\n# Corin Vane\n',
   [WREN]:
-    "---\nrelations:\n  - what: parent\n    who: \"[[Corin Vane]]\"\n  - what: partner\n    who: \"[[Garrow Pike]]\"\n    when: from 288\n" +
+    '---\nrelations:\n  - what: parent\n    who: "[[Corin Vane]]"\n  - what: partner\n    who: "[[Garrow Pike]]"\n    when: from 288\n' +
     '  - what: child\n    who: "[[Nessa Pike]]"\n    with: "[[Garrow Pike]]"\n  - what: friend\n    who: "[[Odo]]"\n  - what: rival\n    who: "[[Unwritten One]]"\n---\n# Wren Vane\n',
   [NESSA]: "# Nessa Pike\n",
   [GARROW]: "# Garrow Pike\n",
@@ -86,16 +86,25 @@ describe("adding and removing", () => {
   it("writes one item on one entry only, and the tree sees it at once", async () => {
     const res = await t.post("/api/relations", { path: NESSA, what: "partner", who: "Odo Vane" });
     expect(res.statusCode, res.body).toBe(200);
-    expect(await textOf(NESSA)).toBe('---\nrelations:\n  - what: partner\n    who: "[[Odo Vane]]"\n---\n# Nessa Pike\n');
+    expect(await textOf(NESSA)).toBe(
+      '---\nrelations:\n  - what: partner\n    who: "[[Odo Vane]]"\n---\n# Nessa Pike\n',
+    );
     expect(await textOf(GARROW)).toBe("# Garrow Pike\n");
     const r = await relations();
-    expect(r.facts.some((f) => f.kind === "partner" && [f.a, f.b].includes("?Odo Vane"))).toBe(true);
+    expect(r.facts.some((f) => f.kind === "partner" && [f.a, f.b].includes("?Odo Vane"))).toBe(
+      true,
+    );
   });
 
   it("links an entry by its path, and can make a new entry in the same folder", async () => {
     await t.post("/api/relations", { path: GARROW, what: "child", who: NESSA, with: WREN });
     expect(await textOf(GARROW)).toContain('who: "[[Nessa Pike]]"\n    with: "[[Wren Vane]]"');
-    const made = await t.post("/api/relations", { path: NESSA, what: "child", who: "Tamsin", create: true });
+    const made = await t.post("/api/relations", {
+      path: NESSA,
+      what: "child",
+      who: "Tamsin",
+      create: true,
+    });
     expect(made.json()).toMatchObject({ made: "02 People/Tamsin.md" });
     expect(await textOf("02 People/Tamsin.md")).toBe("# Tamsin\n\n");
     const r = await relations();
@@ -103,7 +112,12 @@ describe("adding and removing", () => {
   });
 
   it("removes an item only if it is still the one shown", async () => {
-    const stale = await t.post("/api/relations/remove", { path: WREN, index: 0, what: "partner", who: "x" });
+    const stale = await t.post("/api/relations/remove", {
+      path: WREN,
+      index: 0,
+      what: "partner",
+      who: "x",
+    });
     expect(stale.statusCode).toBe(409);
     const ok = await t.post("/api/relations/remove", {
       path: WREN,

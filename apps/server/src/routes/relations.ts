@@ -44,10 +44,12 @@ export function relationRoutes(app: FastifyInstance, s: Services): void {
     }
     const drafted = new Map<string, string>();
     for (const d of s.drafts.list()) {
-      if (d.kind !== "delete" && !d.binary && isNote(d.path)) drafted.set(d.path, await s.drafts.text(d.id));
+      if (d.kind !== "delete" && !d.binary && isNote(d.path))
+        drafted.set(d.path, await s.drafts.text(d.id));
     }
     for (const n of notes) if (drafted.has(n.path)) n.text = drafted.get(n.path)!;
-    for (const path of added) if (isNote(path) && drafted.has(path)) notes.push({ path, text: drafted.get(path)! });
+    for (const path of added)
+      if (isNote(path) && drafted.has(path)) notes.push({ path, text: drafted.get(path)! });
     const files = [...s.index.files.filter((f) => !removed.includes(f)), ...added];
     return { notes, files };
   }
@@ -83,7 +85,10 @@ export function relationRoutes(app: FastifyInstance, s: Services): void {
       const folder = dirname(input.path);
       const path = folder ? `${folder}/${title}.md` : `${title}.md`;
       if (s.index.note(path) || s.drafts.byPath(path) || known.has(path)) {
-        throw new ApiError("not_allowed", `An entry called "${title}" exists. Pick it from the list.`);
+        throw new ApiError(
+          "not_allowed",
+          `An entry called "${title}" exists. Pick it from the list.`,
+        );
       }
       await s.drafts.saveFrom({
         id: makeId(randomBytes),

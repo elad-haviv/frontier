@@ -126,7 +126,8 @@ export const TreesFile = z
   .superRefine((file, ctx) => {
     const seen = new Set<string>();
     for (const t of file.trees) {
-      if (seen.has(t.id)) ctx.addIssue({ code: "custom", message: `Two trees have the id ${t.id}.` });
+      if (seen.has(t.id))
+        ctx.addIssue({ code: "custom", message: `Two trees have the id ${t.id}.` });
       seen.add(t.id);
     }
   });
@@ -148,7 +149,14 @@ export function renameInTrees(file: TreesFile, from: string, to: string): TreesF
       ...(t.opened ? { opened: t.opened.map(m) } : {}),
     })),
     ...(file.fine
-      ? { fine: file.fine.map((f) => f.split("|").map((part, i) => (i === 0 ? part : m(part))).join("|")) }
+      ? {
+          fine: file.fine.map((f) =>
+            f
+              .split("|")
+              .map((part, i) => (i === 0 ? part : m(part)))
+              .join("|"),
+          ),
+        }
       : {}),
   };
 }
@@ -161,7 +169,20 @@ export const TREES: LibraryFileKind<TreesFile> = {
   schema: TreesFile,
   list: "trees",
   topKeys: ["version", "trees", "kinds", "fine"],
-  itemKeys: ["id", "name", "kind", "look", "start", "way", "from", "dir", "gens", "show", "folded", "opened"],
+  itemKeys: [
+    "id",
+    "name",
+    "kind",
+    "look",
+    "start",
+    "way",
+    "from",
+    "dir",
+    "gens",
+    "show",
+    "folded",
+    "opened",
+  ],
   key: (item) => (item as TreeLine).id,
   conflict: "trees_changed_on_both",
   empty: () => ({ version: 1, trees: [] }),
@@ -197,7 +218,11 @@ export const RelPerson = z.object({
 export type RelPerson = z.infer<typeof RelPerson>;
 
 /** Where a fact is written: the entry and the item's place in its `relations` list. */
-export const RelSource = z.object({ path: VaultPath, index: z.number().int().min(0), word: z.string() });
+export const RelSource = z.object({
+  path: VaultPath,
+  index: z.number().int().min(0),
+  word: z.string(),
+});
 export type RelSource = z.infer<typeof RelSource>;
 
 /**

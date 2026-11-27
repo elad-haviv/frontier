@@ -3,6 +3,9 @@ import { CLIENT_API } from "@frontier/schema";
 import { connection } from "./sync/connection.ts";
 import { randomId } from "./sync/db.ts";
 import type {
+  AddRelationRequest,
+  RelationsResponse,
+  RemoveRelationRequest,
   AfterPublishResponse,
   AttentionResponse,
   CreateRenameResponse,
@@ -322,6 +325,13 @@ export const api = {
   tree: () => call<TreeResponse>("/api/tree"),
   /** Every entry and every link between two entries, with the top-level folders' colours. */
   graph: () => call<GraphResponse>("/api/graph"),
+  /** Every entry's relations as facts, with the kinds of relation (stage 29). */
+  relations: () => call<RelationsResponse>("/api/relations"),
+  /** Writes one relation on one entry; `made` is the new entry's path when one was made. */
+  addRelation: (body: AddRelationRequest) =>
+    post<{ ok: true; draft: string | null; made: string | null }>("/api/relations", body),
+  removeRelation: (body: RemoveRelationRequest) =>
+    post<{ ok: true }>("/api/relations/remove", body),
   entry: (path: string) => call<EntryResponse>(`/api/entries?path=${encodeURIComponent(path)}`),
   status: () => call<StatusSnapshot>("/api/status"),
   attention: () => call<AttentionResponse>("/api/attention"),
@@ -886,6 +896,7 @@ export function mapImageUrl(path: string, size: 2560 | 4096): string {
 }
 
 export const chronicleUrl = (id: string): string => `/chronicle/${id}`;
+export const treeUrl = (id: string): string => `/tree/${id}`;
 
 export const mapUrl = (id: string, feature?: string): string =>
   `/map/${id}${feature ? `?f=${encodeURIComponent(feature)}` : ""}`;

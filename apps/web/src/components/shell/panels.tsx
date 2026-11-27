@@ -35,13 +35,14 @@ export interface PanelSpec {
 }
 
 /** The kinds of screen; the side bars are remembered per kind. */
-export type ScreenKind = "editor" | "map" | "chronicle" | "graph" | "page";
+export type ScreenKind = "editor" | "map" | "chronicle" | "graph" | "tree" | "page";
 
 export function kindOf(pathname: string): ScreenKind {
   if (pathname.startsWith("/edit/")) return "editor";
   if (pathname.startsWith("/map/")) return "map";
   if (pathname.startsWith("/chronicle/")) return "chronicle";
   if (pathname === "/graph") return "graph";
+  if (pathname.startsWith("/tree/")) return "tree";
   return "page";
 }
 
@@ -65,7 +66,7 @@ export function readPrefs(kind: ScreenKind): ScreenPrefs {
   // Maps, chronicles and the graph need the width more than the folder list: they start with the
   // rail and the library pane closed. Entries and other pages start with the pane open, or as the
   // one choice kept for the device before the pane was kept per kind.
-  const wide = kind === "map" || kind === "chronicle" || kind === "graph";
+  const wide = kind === "map" || kind === "chronicle" || kind === "graph" || kind === "tree";
   const fallback: ScreenPrefs = {
     width: 340,
     tab: null,

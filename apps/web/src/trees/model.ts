@@ -116,7 +116,11 @@ export function below(g: Graph, id: string, k: string): Set<string> {
 }
 
 /** Everyone above with how many steps up, and the step that leads back down. */
-export function above(g: Graph, id: string, k: string): Map<string, { dist: number; prev: string | null }> {
+export function above(
+  g: Graph,
+  id: string,
+  k: string,
+): Map<string, { dist: number; prev: string | null }> {
   const m = new Map<string, { dist: number; prev: string | null }>([[id, { dist: 0, prev: null }]]);
   const queue = [id];
   while (queue.length) {
@@ -213,8 +217,10 @@ export function layoutTree(g: Graph, t: TreeLine, root?: string): Layout {
     ps.forEach((p) => seen.add(p));
     const next = (up ? ups(g, id, k) : downs(g, id, k)).filter((c) => !seen.has(c));
     const units = ps.length >= 2 ? [ps[0]!, id, ...ps.slice(1)] : [id, ...ps];
-    const order: (string | null)[] = ps.length >= 2 ? [ps[0]!, null, ...ps.slice(1)] : [null, ...ps];
-    const byGens = !up && t.gens !== undefined && depth >= t.gens - 1 && next.length > 0 && !opened.has(id);
+    const order: (string | null)[] =
+      ps.length >= 2 ? [ps[0]!, null, ...ps.slice(1)] : [null, ...ps];
+    const byGens =
+      !up && t.gens !== undefined && depth >= t.gens - 1 && next.length > 0 && !opened.has(id);
     const isFolded = !up && next.length > 0 && (folded.has(id) || byGens);
     const groups: Unit["groups"] = [];
     for (const w of order) {
@@ -225,7 +231,8 @@ export function layoutTree(g: Graph, t: TreeLine, root?: string): Layout {
         return w ? others.includes(w) : !others.some((o) => ps.includes(o));
       });
       g2.forEach((c) => seen.add(c));
-      if (g2.length) groups.push({ with: w, kids: isFolded ? [] : g2.map((c) => build(c, depth + 1)) });
+      if (g2.length)
+        groups.push({ with: w, kids: isFolded ? [] : g2.map((c) => build(c, depth + 1)) });
     }
     return {
       id,
@@ -476,7 +483,10 @@ export function warningsOf(g: Graph, kindName: string, id: string, fine: string[
       const pe = g.people.get(p);
       if (!pe) continue;
       if (pe.born != null && me.born - pe.born < 14) {
-        out.push({ key: `young|${id}|${p}`, text: `Born in ${me.born}, when ${first(p)} was ${me.born - pe.born}.` });
+        out.push({
+          key: `young|${id}|${p}`,
+          text: `Born in ${me.born}, when ${first(p)} was ${me.born - pe.born}.`,
+        });
       } else if (pe.died != null && me.born > pe.died + 1) {
         out.push({
           key: `late|${id}|${p}`,
@@ -486,7 +496,8 @@ export function warningsOf(g: Graph, kindName: string, id: string, fine: string[
     }
   }
   for (const f of g.facts) {
-    if (f.disagree && (f.a === id || f.b === id)) out.push({ key: `differ|${f.a}|${f.b}`, text: f.disagree });
+    if (f.disagree && (f.a === id || f.b === id))
+      out.push({ key: `differ|${f.a}|${f.b}`, text: f.disagree });
   }
   return out.filter((w) => !fine.includes(w.key));
 }
@@ -502,14 +513,18 @@ export function describe(g: Graph, kindName: string, id: string, fine: string[] 
   if (p?.died != null) parts.push(`died ${p.died}`);
   const ab = ups(g, id, k);
   if (ab.length)
-    parts.push(`${kind?.family ? "child of" : (kind?.name ?? k)} ${ab.map((x) => title(g, x)).join(" and ")}`);
+    parts.push(
+      `${kind?.family ? "child of" : (kind?.name ?? k)} ${ab.map((x) => title(g, x)).join(" and ")}`,
+    );
   if (kind?.family) {
     const ps = partners(g, id);
     if (ps.length) parts.push(`${ps.length} ${ps.length > 1 ? "partners" : "partner"}`);
   }
   const bl = downs(g, id, k);
   if (bl.length)
-    parts.push(kind?.family ? `${bl.length} ${bl.length > 1 ? "children" : "child"}` : `${bl.length} below`);
+    parts.push(
+      kind?.family ? `${bl.length} ${bl.length > 1 ? "children" : "child"}` : `${bl.length} below`,
+    );
   for (const w of warningsOf(g, k, id, fine)) parts.push(`doesn't fit: ${w.text}`);
   return parts.join(", ");
 }
