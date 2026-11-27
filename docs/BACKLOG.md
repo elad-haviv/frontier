@@ -53,6 +53,22 @@ One place for what is being built, what is waiting, and ideas. The design in
 - [ ] Have the sync on the Hermes box changed for quarantine (the changes will be written in
       `docs/sync-changes.md`)
 
+## Done: stages 25 to 28 (2026-11-26)
+
+- [x] 25 Keep going: Home with the work queue (needs love, wanted, orphans, dead ends), a "From here"
+      strip on an entry (missing links, unlinked mentions with Link it and Undo, thin neighbours, related,
+      AI "What's missing"), pins, random entry, back to last, resume position, recents in the switcher,
+      what to do next after Publish, a week line and "on this day". Design:
+      [stage 25](designs/stage-25-keep-going.md)
+- [x] 26 The library on the phone: a Library row in the drawer that opens a full-drawer panel with a
+      back button. [Design](designs/stage-26-phone-library.md)
+- [x] 27 Talk with a character, rethought (another session; [design](designs/stage-27-talk-with-a-character.md))
+- [x] 28 The library on desktop: a pane beside the sidebar with a close button, `g l` to toggle it.
+      [Design](designs/stage-28-library-pane.md)
+- Known: with the pane docked, comment bubbles in the editor's margin need a wider window (the comments
+  stay in the Comments panel); the editor could start with the pane closed if that matters more.
+- Known: the folded library state is kept in session memory only (`ShellStore.openFolders`), not on disk.
+
 ## Now: stages 11 to 15, the interface and offline work
 
 Design: [stage 11](designs/stage-11-foundations-shell-tree.md), approved after a five-stage review.

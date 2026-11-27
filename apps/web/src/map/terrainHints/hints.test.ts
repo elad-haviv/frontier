@@ -207,8 +207,10 @@ describe("building heights from the hints", () => {
     expect(get([240, 228])).toBeGreaterThan(get([240, 252]));
   });
 
-  it("takes about a second at most, even with the tests running beside it", () => {
-    expect(built.checks.ms).toBeLessThan(3000);
+  it("takes a few seconds at most, even with the tests running beside it", () => {
+    // About a second on a desktop, 3 to 3.4 s on the CI runners; the limit only has to catch a
+    // change that makes it many times slower.
+    expect(built.checks.ms).toBeLessThan(8000);
   });
 
   it("gives the saved image's greys, white high, with the sea level between", () => {
