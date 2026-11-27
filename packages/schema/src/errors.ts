@@ -17,14 +17,14 @@ export const ERROR_STATUS = {
   not_allowed: 403,
   proposal_moved: 409,
   ai_off: 409,
-  ai_cap_reached: 402,
+  // The person has no key on this device for the provider the task needs (stage 27f).
+  ai_key_missing: 409,
   ai_failed: 502,
   ai_bad_answer: 502,
   // The author stopped the call while it ran.
   ai_stopped: 409,
   // What the author was shown has changed since; he looks again before going on.
   changed: 409,
-  secrets_key_missing: 409,
   // The change needs a login from the last few minutes; the web app asks the person to log in
   // again and then tries once more.
   recent_login_needed: 403,
@@ -47,8 +47,10 @@ export const ErrorBody = z.object({
     message: z.string(),
     /** Present with `stale_revision`: the id of the draft the server holds for that path. */
     id: z.string().optional(),
-    /** Where in the app the problem is put right, such as "/settings/ai/providers". */
+    /** Where in the app the problem is put right, such as "/settings/device/ai-keys". */
     href: z.string().optional(),
+    /** With `ai_key_missing`: the provider kind whose key this device lacks. */
+    provider: z.string().optional(),
   }),
 });
 export type ErrorBody = z.infer<typeof ErrorBody>;

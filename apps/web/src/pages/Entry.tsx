@@ -21,7 +21,6 @@ import {
   scrollPageToTop,
   usePhone,
   useRefresh,
-  useStatus,
   useWords,
 } from "../components/Shell.tsx";
 import {
@@ -138,7 +137,6 @@ export function EntryPage() {
   // an entry that is only a draft, and then the foot of the page is quiet about it.
   const fromHere = useAsync(() => api.fromHere(path), `from-here:${path}@${key}`);
   const here = fromHere.state === "ready" && fromHere.value.path === path ? fromHere.value : null;
-  const aiOn = useStatus()?.ai.conversation === true;
   const comments = useAsync(() => api.commentCount(path), `comments:${path}@${key}`);
   const openComments = comments.state === "ready" ? comments.value.open : 0;
   // The comments themselves, for the margin and the Comments tab.
@@ -709,7 +707,7 @@ export function EntryPage() {
         <HoverPreview scope=".prose" />
 
         {/* Keyed by the entry, so what was done in one (a Link it, an AI answer) is not carried to the next. */}
-        <FromHere key={path} path={path} title={name} data={here} ai={aiOn} />
+        <FromHere key={path} path={path} title={name} data={here} ai={canTalk} />
         <FolderNeighbours path={path} data={here} />
         <BacklinksLine backlinks={ent.backlinks} />
       </article>

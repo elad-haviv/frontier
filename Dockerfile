@@ -17,6 +17,7 @@ RUN apt-get update \
 WORKDIR /app
 COPY --from=build /app /app
 RUN mkdir -p /data && chown node:node /data
+# No AI key is set here: each person keeps their own in their browser and sends it with a request.
 ENV NODE_ENV=production DATA_DIR=/data PORT=3000
 USER node
 VOLUME /data

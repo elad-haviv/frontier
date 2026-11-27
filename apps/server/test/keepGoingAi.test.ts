@@ -5,7 +5,6 @@ import { makeTestApp, type TestApp } from "./helpers/app.js";
 let t: TestApp;
 afterEach(() => t.close());
 
-const SECRETS = { SECRETS_KEY: Buffer.alloc(32, 3).toString("base64") };
 const MODEL = "test/talker";
 const WORDS = (n: number) => Array(n).fill("stone").join(" ");
 
@@ -42,15 +41,14 @@ function provider(answers: object[]) {
 
 async function start(answers: object[], model: string | null = MODEL) {
   const p = provider(answers);
-  t = await makeTestApp(SECRETS, { fetch: p.fake, settleMs: 0 });
+  t = await makeTestApp({}, { fetch: p.fake, settleMs: 0 });
   await t.login();
+  // The key is this device's own: it goes with each request (stage 27f).
+  t.keys = { openrouter: "sk-or-test-key-1234" };
   t.repo.pushFromOutside(NOTES);
   await t.services.sync();
   if (model) {
-    const res = await t.put("/api/settings/ai", {
-      key: "sk-or-test-key-1234",
-      models: { conversation: model },
-    });
+    const res = await t.put("/api/settings/ai", { models: { conversation: model } });
     expect(res.statusCode, res.body).toBe(200);
   }
   return p;
@@ -161,19 +159,33 @@ describe("What's missing here?", () => {
     expect((await missing()).statusCode).toBe(200);
   });
 
-  it("stops at the monthly cap and says so when the answer is not in form", async () => {
+  it("says when the answer is not in form, and has no spending cap to stop at", async () => {
     await start([{ proposals: "none" }]);
     const bad = await missing();
     expect(bad.json().error.code).toBe("ai_bad_answer");
-    await t.put("/api/settings/ai", { monthlyCapUsd: 0 });
-    expect((await missing()).json().error.code).toBe("ai_cap_reached");
+    expect((await missing()).json().error.code).toBe("ai_bad_answer");
   });
 
-  it("says in the status that lore conversations can run once a model is chosen", async () => {
+  it("says when this device has no key, naming the provider and where to add it", async () => {
+    const p = await start([{ proposals: [], questions: [] }]);
+    t.keys = {};
+    const res = await missing();
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error).toMatchObject({
+      code: "ai_key_missing",
+      provider: "openrouter",
+      href: "/settings/device/ai-keys",
+    });
+    expect(p.calls).toHaveLength(0);
+    const question = await t.post("/api/keep-going/question", {});
+    expect(question.json().error.code).toBe("ai_key_missing");
+  });
+
+  it("says once a model is chosen that lore conversations can run", async () => {
     await start([{ proposals: [], questions: [] }]);
-    expect((await t.get("/api/status")).json().ai.conversation).toBe(true);
+    expect((await t.get("/api/lore")).json().ready).toBe(true);
     await t.put("/api/settings/ai", { models: { conversation: null } });
-    expect((await t.get("/api/status")).json().ai.conversation).toBe(false);
+    expect((await t.get("/api/lore")).json().ready).toBe(false);
   });
 });
 

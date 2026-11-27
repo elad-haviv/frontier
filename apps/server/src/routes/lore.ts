@@ -66,7 +66,7 @@ export function loreRoutes(app: FastifyInstance, s: Services): void {
       at: c.turns.at(-1)?.at ?? c.at,
       turns: c.turns.length,
     })),
-    ready: await s.ai.ready("conversation"),
+    ready: await s.ai.modelChosen("conversation"),
   }));
 
   app.get("/api/lore/:id", async (request) => {
@@ -76,6 +76,7 @@ export function loreRoutes(app: FastifyInstance, s: Services): void {
 
   app.post("/api/lore", async (request) => {
     const { question, conversation } = Ask.parse(request.body);
+    await s.lore.model();
     const start = conversation ? await load(conversation) : await s.conversations.create(question);
     return inTurn(start.id, async () => {
       const c = conversation ? await load(conversation) : start;
@@ -97,9 +98,9 @@ export function loreRoutes(app: FastifyInstance, s: Services): void {
    */
   app.post("/api/lore/stream", async (request, reply) => {
     const { question, conversation } = Ask.parse(request.body);
-    const start = conversation ? await load(conversation) : await s.conversations.create(question);
-    // Refused as a plain error while it still can be, before the stream starts.
+    // Refused as a plain error while it still can be, before anything is made or the stream starts.
     await s.lore.model();
+    const start = conversation ? await load(conversation) : await s.conversations.create(question);
 
     reply.hijack();
     const res = reply.raw;
@@ -144,7 +145,7 @@ export function loreRoutes(app: FastifyInstance, s: Services): void {
       send("done", done);
     } catch (err) {
       if (err instanceof ApiError) {
-        send("error", { code: err.code, message: err.message });
+        send("error", { code: err.code, message: err.message, ...err.extra });
       } else {
         app.log.error(err);
         send("error", { code: "merge_failed", message: "The server hit an unexpected error." });

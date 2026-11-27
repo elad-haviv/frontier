@@ -55,7 +55,11 @@ export function missing(name: string, email: string): string {
 
 /** Whether the last attempt to read the person failed, so a page can offer to try again. */
 export function useMeFailed(): boolean {
-  return useSyncExternalStore(subscribe, () => failed);
+  return useSyncExternalStore(
+    subscribe,
+    () => failed,
+    () => failed,
+  );
 }
 
 /** Forgets the person, at log out. */
@@ -74,5 +78,9 @@ const subscribe = (changed: () => void) => {
 };
 
 export function useMe(): MeResponse | null {
-  return useSyncExternalStore(subscribe, () => current);
+  return useSyncExternalStore(
+    subscribe,
+    () => current,
+    () => current,
+  );
 }

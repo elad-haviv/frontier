@@ -78,7 +78,7 @@ export function FolderRun() {
       </p>
       {!on && (
         <p className="settings-note">
-          <Link to="/settings/ai/models/extraction">
+          <Link to="/settings/you/ai-models/extraction">
             Choose a model for proposing fields first.
           </Link>
         </p>

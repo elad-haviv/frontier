@@ -3,6 +3,10 @@
  * start with a message that names it.
  */
 
+import type { AiProviderKind } from "@frontier/schema";
+
+const DEFAULT_OPENROUTER_URL = "https://openrouter.ai/api/v1";
+
 export class ConfigError extends Error {
   constructor(message: string) {
     super(message);
@@ -48,19 +52,14 @@ export interface Config {
   uploadFolder: string;
   /** The vault folder whose subfolders are marker sets. */
   iconFolder: string;
-  /** Encrypts the secrets kept in settings. Without it no secret can be stored there. */
-  secretsKey: Buffer | null;
-  /** The AI provider key from the environment, used when none is stored in settings. */
-  openrouterKey: string | null;
+  /** OpenRouter's address, which the model list also reads its public prices from. */
   openrouterUrl: string;
   /**
-   * Keys and addresses of the other providers given in the environment (ANTHROPIC_API_KEY,
-   * OPENAI_API_KEY, GEMINI_API_KEY, XAI_API_KEY and their *_BASE_URL). A key stored in settings
-   * comes first.
+   * The addresses the environment gives for the providers (OPENROUTER_BASE_URL and the others'
+   * *_BASE_URL); tests point them at stand-in servers. AI keys are not read from the environment:
+   * each person's key stays in their own browser (stage 27f).
    */
-  providerEnv: Partial<
-    Record<"anthropic" | "openai" | "google" | "xai", { key: string | null; url: string | null }>
-  >;
+  providerUrls: Partial<Record<AiProviderKind, string>>;
   /**
    * Lets an image be taken from a web address on this machine's loopback addresses, on any port,
    * so the tests can serve one. Off by default, and refused in production.
@@ -145,13 +144,6 @@ export function loadConfig(env: Env = process.env): Config {
       `Missing environment variable${missing.length > 1 ? "s" : ""}: ${missing.join(", ")}`,
     );
   }
-  const secretsKeyText = optional("SECRETS_KEY");
-  const secretsKey = secretsKeyText ? Buffer.from(secretsKeyText, "base64") : null;
-  if (secretsKey && secretsKey.length !== 32) {
-    throw new ConfigError(
-      "SECRETS_KEY must be 32 bytes in base64. Generate one with: openssl rand -base64 32",
-    );
-  }
   const imageFetchAllowLoopback = ["1", "true"].includes(
     optional("IMAGE_FETCH_ALLOW_LOOPBACK")?.toLowerCase() ?? "",
   );
@@ -180,6 +172,19 @@ export function loadConfig(env: Env = process.env): Config {
     );
   }
 
+  const urlOf = (name: string) => optional(name)?.replace(/\/+$/, "") ?? null;
+  const openrouterUrl = urlOf("OPENROUTER_BASE_URL") ?? DEFAULT_OPENROUTER_URL;
+  const providerUrls: Config["providerUrls"] = { openrouter: openrouterUrl };
+  for (const [kind, name] of [
+    ["anthropic", "ANTHROPIC_BASE_URL"],
+    ["openai", "OPENAI_BASE_URL"],
+    ["google", "GEMINI_BASE_URL"],
+    ["xai", "XAI_BASE_URL"],
+  ] as const) {
+    const url = urlOf(name);
+    if (url) providerUrls[kind] = url;
+  }
+
   return {
     publicUrl,
     dataDir,
@@ -200,21 +205,8 @@ export function loadConfig(env: Env = process.env): Config {
           ? "own"
           : "github",
     iconFolder: (optional("ICON_FOLDER") ?? "99 Appendices/07 Icons").replace(/^\/+|\/+$/g, ""),
-    secretsKey,
-    openrouterKey: optional("OPENROUTER_API_KEY"),
-    openrouterUrl: (optional("OPENROUTER_BASE_URL") ?? "https://openrouter.ai/api/v1").replace(
-      /\/+$/,
-      "",
-    ),
-    providerEnv: {
-      anthropic: { key: optional("ANTHROPIC_API_KEY"), url: optional("ANTHROPIC_BASE_URL") },
-      openai: { key: optional("OPENAI_API_KEY"), url: optional("OPENAI_BASE_URL") },
-      google: {
-        key: optional("GEMINI_API_KEY") ?? optional("GOOGLE_API_KEY"),
-        url: optional("GEMINI_BASE_URL"),
-      },
-      xai: { key: optional("XAI_API_KEY"), url: optional("XAI_BASE_URL") },
-    },
+    openrouterUrl,
+    providerUrls,
     imageFetchAllowLoopback,
     serviceWorker: optional("FRONTIER_SERVICE_WORKER")?.toLowerCase() !== "off",
     commitAuthor,

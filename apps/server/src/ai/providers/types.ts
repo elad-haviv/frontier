@@ -1,6 +1,6 @@
 /**
  * What every provider adapter does. An adapter knows one provider's wire format and nothing of
- * Frontier: the cap, the log, the settings and the checks on answers stay in `AiProvider`.
+ * Frontier: the log, the settings and the checks on answers stay in `AiProvider`.
  */
 import type { AiProviderKind, ModelAbilities } from "@frontier/schema";
 

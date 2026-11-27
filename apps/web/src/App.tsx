@@ -4,6 +4,8 @@ import { api } from "./api.ts";
 import { clearMe, loadMe } from "./me.ts";
 import { useAsync } from "./useAsync.ts";
 import { noteOpened } from "./map/mapsList.ts";
+import { AiKeyPromptHost } from "./components/AiKeyPrompt.tsx";
+import { KeysRemovedNotice } from "./components/KeysRemovedNotice.tsx";
 import { LoginDialog } from "./components/LoginDialog.tsx";
 import { Shell } from "./components/Shell.tsx";
 import { startDeviceCopy } from "./offline/copy.ts";
@@ -221,6 +223,8 @@ export function App() {
         </Routes>
       </Suspense>
       <LoginDialog />
+      <AiKeyPromptHost />
+      <KeysRemovedNotice />
     </Shell>
   );
 }

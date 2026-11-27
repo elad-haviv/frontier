@@ -674,8 +674,8 @@ describe("words and the AI flag in other answers", () => {
     expect(next.nodes.find((n) => n.path === "10 Test/Fresh.md")!.words).toBe(3);
   });
 
-  it("says in the status whether lore conversations can run", async () => {
-    expect((await t.get("/api/status")).json().ai.conversation).toBe(false);
+  it("says whether lore conversations can run: a model is chosen", async () => {
+    expect((await t.get("/api/lore")).json().ready).toBe(false);
   });
 });
 

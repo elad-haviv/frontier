@@ -10,21 +10,21 @@ The full design is in [docs/designs/frontier.md](docs/designs/frontier.md). What
 
 Stage 1 of nine is in progress. What exists so far:
 
-| Part                                                                                                                                         | State                                                                        |
-| -------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
-| `packages/vault`: reading notes, frontmatter, line endings, links, link resolution, rename planning                                          | Built and tested                                                             |
-| `packages/schema`: types and validation shared by server and web                                                                             | Built and tested                                                             |
-| `apps/server`: configuration, Git gateway, in-memory index, login, status, webhook, timer fetch, image serving                               | Built and tested                                                             |
-| `apps/server`: drafts, two-call Publish with merge and conflicts, renames, crash recovery                                                    | Built and tested                                                             |
-| `apps/server`: backup of working files and a restore command                                                                                 | Built and tested; the S3 path has not run against a real bucket              |
-| `apps/web`: login, folder tree, entry reader, image lightbox, status page, quick switcher                                                    | Built; covered by browser tests                                              |
-| `apps/web`: source editor with autosave and link autocomplete, new, delete and rename, unpublished list, Publish, merge and conflict screens | Built; covered by browser tests                                              |
-| Full-text search, outline, hover preview, editing toolbar                                                                                    | Built; covered by browser tests                                              |
-| Live preview; image upload; table editing; properties panel                                                                                  | Built; image sizing and table row tools still to do                          |
-| Stage 3: inbox for agent branches; type and date fields; AI provider, cap and field proposals; quarantine; passkey login                     | Built; the AI needs an OpenRouter key, and quarantine needs the sync changed |
-| Stage 4: maps (flat maps and globes, markers, paths, zones, layers, measuring)                                                               | Built; to be tried on the real images                                        |
-| Own library: Frontier keeps the knowledge base itself, with versions, import and export                                                      | Built; the preview still shows the sample                                    |
-| Stage 11a: icons, tooltips, menus, one keys registry; a save queue on the device, saves that say what they started from                      | Built; covered by tests. 11b (the shell) and 11c (folder tree) to come       |
+| Part                                                                                                                                         | State                                                                            |
+| -------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| `packages/vault`: reading notes, frontmatter, line endings, links, link resolution, rename planning                                          | Built and tested                                                                 |
+| `packages/schema`: types and validation shared by server and web                                                                             | Built and tested                                                                 |
+| `apps/server`: configuration, Git gateway, in-memory index, login, status, webhook, timer fetch, image serving                               | Built and tested                                                                 |
+| `apps/server`: drafts, two-call Publish with merge and conflicts, renames, crash recovery                                                    | Built and tested                                                                 |
+| `apps/server`: backup of working files and a restore command                                                                                 | Built and tested; the S3 path has not run against a real bucket                  |
+| `apps/web`: login, folder tree, entry reader, image lightbox, status page, quick switcher                                                    | Built; covered by browser tests                                                  |
+| `apps/web`: source editor with autosave and link autocomplete, new, delete and rename, unpublished list, Publish, merge and conflict screens | Built; covered by browser tests                                                  |
+| Full-text search, outline, hover preview, editing toolbar                                                                                    | Built; covered by browser tests                                                  |
+| Live preview; image upload; table editing; properties panel                                                                                  | Built; image sizing and table row tools still to do                              |
+| Stage 3: inbox for agent branches; type and date fields; AI provider, cap and field proposals; quarantine; passkey login                     | Built; the AI needs each person's own key, and quarantine needs the sync changed |
+| Stage 4: maps (flat maps and globes, markers, paths, zones, layers, measuring)                                                               | Built; to be tried on the real images                                            |
+| Own library: Frontier keeps the knowledge base itself, with versions, import and export                                                      | Built; the preview still shows the sample                                        |
+| Stage 11a: icons, tooltips, menus, one keys registry; a save queue on the device, saves that say what they started from                      | Built; covered by tests. 11b (the shell) and 11c (folder tree) to come           |
 
 The app writes to its vault: drafts are saved on the server and Publish makes one commit.
 
@@ -66,6 +66,12 @@ accounts are kept in `/data/state/people.json`, which the backup includes. To se
 account's password: `npm run set-password -w apps/server -- someone@example.com`.
 
 `.env.example` lists every variable, including the ones for GitHub and the bucket.
+
+AI help needs no key on the server, and the server reads none from its environment. Each person
+adds their own key in the app, under Settings › AI keys; it stays in that browser and travels with
+each AI request in the `frontier-ai-keys` header, and the server never writes it to disk, a log,
+a backup or an error. Keys that an earlier version stored in the settings file are deleted at
+start, and the app says so once. AI work therefore happens only while someone has Frontier open.
 
 ### Checks against the real vault
 

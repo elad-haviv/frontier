@@ -1,5 +1,5 @@
 import { expect, type Page, test } from "@playwright/test";
-import { discardDraft, edit } from "./helpers.ts";
+import { discardDraft, edit, giveDeviceKeys } from "./helpers.ts";
 
 // Consult in the editor (stage 24): the AI's opinion in the right side bar. The AI settings are
 // one per server, so these take turns and put the model back as they found it.
@@ -9,9 +9,11 @@ const NOTE = "02 People/Twin.md";
 
 async function conversationModel(page: Page, model: string | null) {
   const res = await page.request.put("/api/settings/ai", {
-    data: { ...(model ? { key: "sk-or-browser-test-key" } : {}), models: { conversation: model } },
+    data: { models: { conversation: model } },
   });
   expect(res.ok(), await res.text()).toBe(true);
+  // The key is the device's own (stage 27f): the stand-in's goes on this browser.
+  if (model) await giveDeviceKeys(page);
 }
 
 let before: string | null = null;
@@ -44,7 +46,7 @@ test("with no model chosen, Consult says how to turn it on", async ({ page }, in
   const panel = page.getByRole("complementary", { name: "Consult" });
   await expect(panel).toContainText("Consult needs an AI model");
   await panel.getByRole("link", { name: "Open Settings" }).click();
-  await expect(page).toHaveURL(/\/settings\/ai\/models\/conversation$/);
+  await expect(page).toHaveURL(/\/settings\/you\/ai-models\/conversation$/);
 });
 
 test("reads the whole entry, jumps to a passage, applies a suggestion and undoes it", async ({

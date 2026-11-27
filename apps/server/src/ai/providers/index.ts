@@ -6,8 +6,8 @@ import type { Connection, ProviderAdapter } from "./types.js";
 
 export * from "./types.js";
 
-/** Each provider's usual address. An OpenAI-compatible endpoint has none: the author gives it. */
-export const DEFAULT_BASE_URL: Record<Exclude<AiProviderKind, "custom">, string> = {
+/** Each provider's usual address. Each is used unless the environment gives another (tests do). */
+export const DEFAULT_BASE_URL: Record<AiProviderKind, string> = {
   openrouter: "https://openrouter.ai/api/v1",
   anthropic: "https://api.anthropic.com/v1",
   openai: "https://api.openai.com/v1",

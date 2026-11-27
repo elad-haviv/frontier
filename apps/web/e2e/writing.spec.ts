@@ -1,5 +1,5 @@
 import { expect, type Page, test } from "@playwright/test";
-import { discardDraft, edit } from "./helpers.ts";
+import { discardDraft, edit, giveDeviceKeys } from "./helpers.ts";
 
 // Writing help in the editor at desktop size (stage 17): a card under the passage. The AI
 // settings are one per server, so these take turns and put the model back as they found it.
@@ -10,9 +10,11 @@ const PICTURES = Number(process.env.E2E_PORT ?? 3987) + 100;
 
 async function conversationModel(page: Page, model: string | null) {
   const res = await page.request.put("/api/settings/ai", {
-    data: { ...(model ? { key: "sk-or-browser-test-key" } : {}), models: { conversation: model } },
+    data: { models: { conversation: model } },
   });
   expect(res.ok(), await res.text()).toBe(true);
+  // The key is on this device, not on the server.
+  await giveDeviceKeys(page);
 }
 
 let before: string | null = null;
@@ -53,7 +55,7 @@ test("with no model chosen, Help says how to turn it on", async ({ page }, info)
   await expect(page.locator(".cm-help-passage")).toContainText("The person.");
   await card.getByRole("link", { name: "Open Settings" }).click();
   // Straight to the model for lore conversations and writing help.
-  await expect(page).toHaveURL(/\/settings\/ai\/models\/conversation$/);
+  await expect(page).toHaveURL(/\/settings\/you\/ai-models\/conversation$/);
 });
 
 test("Help from the keyboard: a ready-made request, Keep and Undo, Try again, Discard", async ({

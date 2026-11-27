@@ -489,13 +489,10 @@ export class Discoverer {
   }
 
   private async model(): Promise<string> {
-    const model = (await this.d.settings.read())?.ai.models.conversation;
-    if (!model) {
-      throw new ApiError(
-        "ai_off",
-        "No model is chosen for lore conversations and discovery. Choose one on the settings page.",
-      );
-    }
+    const model = await this.d.provider.chosenModel(
+      "conversation",
+      "lore conversations and discovery",
+    );
     return model;
   }
 
@@ -718,13 +715,13 @@ export class Discoverer {
 
   /**
    * What asking about these places would cost: how many calls (six places a call), and about how
-   * much, from the price of the model chosen; with this month's spending and the cap.
+   * much, from the price of the model chosen.
    */
   async estimate(
     mapId: string,
     spots: readonly SpotAsk[],
     moment: { chronicle: string | null; year: number | null },
-  ): Promise<{ calls: number; usd: number | null; spentUsd: number; capUsd: number }> {
+  ): Promise<{ calls: number; usd: number | null }> {
     const loaded = await this.d.maps.get(mapId);
     if (!loaded) throw new ApiError("not_found", "There is no such map.");
     const price = await this.d.provider.priceForTask("conversation");
@@ -743,7 +740,7 @@ export class Discoverer {
       };
       usd += costOf(usage, price).costUsd;
     }
-    return { calls, usd, ...(await this.d.provider.spending()) };
+    return { calls, usd };
   }
 
   /**

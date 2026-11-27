@@ -98,8 +98,6 @@ export interface PublisherDeps {
   onPushed?: (commit: string) => Promise<void>;
   /** Told when a rename is found published, so that what is kept by path can follow. */
   onRenamed?: (from: string, to: string) => Promise<void>;
-  /** Told the notes whose own draft was just published. */
-  onPublished?: (paths: string[]) => void;
   /** What a library item file reads as while it exists neither as a draft nor in the library. */
   libraryFiles?: { missing(name: string): unknown };
 }
@@ -544,6 +542,11 @@ export class Publisher {
     confirmedMergeIds: string[],
     message: string,
     author?: { name: string; email: string },
+    /**
+     * Told the notes whose own draft was just published. The caller passes it to the browser,
+     * which asks for field proposals with its own AI key: the server has none (stage 27f).
+     */
+    onPublished?: (paths: string[]) => void,
   ): Promise<string> {
     const stored = this.plans.get(planId);
     if (!stored || this.now() - stored.createdAt > PLAN_LIFETIME_MS) {
@@ -660,7 +663,7 @@ export class Publisher {
     this.d.status.pushed(new Date(this.now()));
     this.plans.delete(planId);
     await this.d.sync();
-    this.d.onPublished?.(
+    onPublished?.(
       publishing
         .filter((p) => !p.draft.binary && p.draft.kind !== "delete")
         .map((p) =>

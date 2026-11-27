@@ -468,6 +468,5 @@ const anthropic = createServer((req, res) => {
 });
 await new Promise((resolve) => anthropic.listen(0, "127.0.0.1", resolve));
 process.env.ANTHROPIC_BASE_URL = `http://127.0.0.1:${anthropic.address().port}/v1`;
-process.env.SECRETS_KEY = Buffer.alloc(32, 5).toString("base64");
 
 await import("../../server/dist/main.js");

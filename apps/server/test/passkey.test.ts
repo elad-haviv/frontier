@@ -111,6 +111,6 @@ describe("passkeys", () => {
     expect((await session()).passkeys).toBe(false);
     // The AI settings and the password are untouched by all of this.
     expect((await t.services.server.people.all())[0]!.passwordHash).toMatch(/^\$argon2/);
-    expect((await t.services.settings.read())!.ai.monthlyCapUsd).toBe(10);
+    expect((await t.services.settings.read())!.ai.proposeOnPublish).toBe(false);
   });
 });

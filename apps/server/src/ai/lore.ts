@@ -500,15 +500,14 @@ export interface AskOptions {
 export class LoreAsker {
   constructor(private readonly d: LoreDeps) {}
 
-  /** The model for lore conversations; refuses when none is chosen. */
+  /**
+   * The model for lore conversations; refuses when none is chosen or this request carries no key
+   * for its provider. Routes call it before they create anything, so a refusal leaves no trace
+   * and the browser can ask for a key and send the same request again.
+   */
   async model(): Promise<string> {
-    const model = (await this.d.settings.read())?.ai.models.conversation;
-    if (!model) {
-      throw new ApiError(
-        "ai_off",
-        "No model is chosen for lore conversations. Choose one on the settings page.",
-      );
-    }
+    const model = await this.d.provider.chosenModel("conversation", "lore conversations");
+    await this.d.provider.assertCanRun("conversation", "lore conversations");
     return model;
   }
 

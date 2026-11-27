@@ -1,9 +1,10 @@
 /**
- * The one place that calls the AI providers. Every call is checked against the monthly cap first
- * and written to the cost log afterwards, whether it worked or not. Which provider answers is
- * read from the model id ("anthropic:claude-…"); the wire formats are in `providers/`.
+ * The one place that calls the AI providers. Every call is written to the cost log afterwards,
+ * whether it worked or not. Which provider answers is read from the model id
+ * ("anthropic:claude-…"); the wire formats are in `providers/`. The key a call uses is the one the
+ * request carries from the person's own device (`keyring.ts`); none is kept here.
  */
-import { splitModelId, type ModelPrice } from "@frontier/schema";
+import { AI_PROVIDER_KINDS, splitModelId, type ModelPrice } from "@frontier/schema";
 import type { ZodType, ZodTypeDef } from "zod";
 import { ApiError } from "../errors.js";
 import type { SettingsStore } from "../state/settings.js";
@@ -113,8 +114,6 @@ export interface AiProviderDeps {
   catalog?: ModelCatalogue;
 }
 
-const money = (n: number) => `$${n.toFixed(2)}`;
-
 interface Target {
   /** Provider-qualified. */
   id: string;
@@ -123,11 +122,22 @@ interface Target {
   adapter: ProviderAdapter;
 }
 
+/** The error that tells the web app to ask this device for a key (it shows the field in place). */
+export function keyMissing(kind: string): ApiError {
+  const label = AI_PROVIDER_KINDS[kind as keyof typeof AI_PROVIDER_KINDS]?.label ?? kind;
+  return new ApiError(
+    "ai_key_missing",
+    `No key on this device for ${label}. Add one under AI keys.`,
+    {
+      provider: kind,
+      href: "/settings/device/ai-keys",
+    },
+  );
+}
+
 export class AiProvider {
   readonly connections: Connections;
   private readonly now: () => Date;
-  /** The message of the last failed call, cleared by the next one that works. */
-  lastError: string | null = null;
   private catalog: ModelCatalogue | null;
   private warnLog: AiWarnLog | null = null;
 
@@ -135,11 +145,7 @@ export class AiProvider {
     this.now = d.now ?? (() => new Date());
     this.connections =
       d.connections ??
-      new Connections({
-        config: d.config,
-        settings: d.settings,
-        ...(d.fetch ? { fetch: d.fetch } : {}),
-      });
+      new Connections({ config: d.config, ...(d.fetch ? { fetch: d.fetch } : {}) });
     this.catalog = d.catalog ?? null;
   }
 
@@ -157,15 +163,9 @@ export class AiProvider {
     this.catalog = catalog;
   }
 
-  /** The OpenRouter key: the stored one, or else the one from the environment. */
-  async key(): Promise<{ key: string; from: "settings" | "environment" } | null> {
-    const p = await this.connections.get("openrouter");
-    return p?.key && p.keyFrom !== "none" ? { key: p.key, from: p.keyFrom } : null;
-  }
-
-  async spending(): Promise<{ spentUsd: number; capUsd: number }> {
-    const capUsd = (await this.d.settings.read())?.ai.monthlyCapUsd ?? 0;
-    return { spentUsd: await this.d.log.spent(monthOf(this.now())), capUsd };
+  /** What has been spent this month, in US dollars. There is no cap: each person pays their provider. */
+  async spending(): Promise<{ spentUsd: number }> {
+    return { spentUsd: await this.d.log.spent(monthOf(this.now())) };
   }
 
   /** The prices of the model chosen for a task, to estimate a call before it is made. */
@@ -176,56 +176,47 @@ export class AiProvider {
     return this.priceOf(`${provider}:${model}`);
   }
 
-  /** Whether a task can run: a model is chosen and its provider is connected. */
-  async ready(task: AiTask): Promise<boolean> {
-    const id = (await this.d.settings.read())?.ai.models[task];
-    if (!id) return false;
-    const p = await this.connections.get(splitModelId(id).provider);
-    return p !== null && this.connections.usable(p);
+  /** Whether a model is chosen for a task. Whether this device has the key for it shows on use. */
+  async modelChosen(task: AiTask): Promise<boolean> {
+    return Boolean((await this.d.settings.read())?.ai.models[task]);
+  }
+
+  /** Says why a task cannot run for this request, if it cannot: no model, or no key on the device. */
+  async assertCanRun(task: AiTask, what = "this task"): Promise<void> {
+    await this.target(task, undefined, what);
+  }
+
+  /**
+   * The model chosen for a task, or the reason there is none. A person with no key at all is told
+   * about keys first, with the field to add one, since a model cannot be tried without one.
+   */
+  async chosenModel(task: AiTask, what: string): Promise<string> {
+    const chosen = (await this.d.settings.read())?.ai.models[task] ?? null;
+    if (chosen) return chosen;
+    if (this.connections.list().length === 0) throw keyMissing("openrouter");
+    throw new ApiError(
+      "ai_off",
+      `No model is chosen for ${what}. Choose one on the settings page.`,
+      {
+        href: `/settings/you/ai-models/${task}`,
+      },
+    );
   }
 
   /** The provider and model a call goes to, or the reason it cannot be made. */
   private async target(task: AiTask, override: string | undefined, what: string): Promise<Target> {
-    const settings = await this.d.settings.read();
-    const chosen = override ?? settings?.ai.models[task] ?? null;
-    const anyKey = (await this.connections.list()).some((p) => this.connections.usable(p));
-    if (!chosen) {
-      throw new ApiError(
-        "ai_off",
-        anyKey
-          ? `No model is chosen for ${what}. Choose one on the settings page.`
-          : "No AI provider key is set. Add one on the settings page.",
-        { href: anyKey ? `/settings/ai/models/${task}` : "/settings/ai/providers" },
-      );
-    }
+    const chosen = override ?? (await this.chosenModel(task, what));
     const { provider: id, model } = splitModelId(chosen);
-    const provider = await this.connections.get(id);
-    if (!provider || !this.connections.usable(provider)) {
+    const provider = this.connections.get(id);
+    if (!provider) {
+      if (this.connections.known(id)) throw keyMissing(id);
       throw new ApiError(
         "ai_off",
-        id === "openrouter" && !provider?.key
-          ? "No AI provider key is set. Add one on the settings page."
-          : !provider
-            ? `The model chosen for ${what} is from ${id}, which is not connected. Connect it or choose another model on the settings page.`
-            : !provider.enabled
-              ? `${provider.name} is switched off. Switch it on or choose another model on the settings page.`
-              : `${provider.name} has no key. Add one on the settings page.`,
-        { href: "/settings/ai/providers" },
+        `The model chosen for ${what} is from ${id}, which Frontier cannot call. Choose another model on the settings page.`,
+        { href: `/settings/you/ai-models/${task}` },
       );
     }
     return { id: `${id}:${model}`, provider, model, adapter: this.connections.adapter(provider) };
-  }
-
-  private async checkCap(): Promise<void> {
-    const { spentUsd, capUsd } = await this.spending();
-    if (spentUsd >= capUsd) {
-      throw new ApiError(
-        "ai_cap_reached",
-        `This month's AI spending is ${money(spentUsd)} and your cap is ${money(capUsd)}. ` +
-          "Raise the cap on the settings page to go on.",
-        { href: "/settings/ai/spending" },
-      );
-    }
   }
 
   /** Prices to estimate a cost with: the author's, else the provider's list. */
@@ -370,7 +361,6 @@ export class AiProvider {
 
   async complete<T>(input: CompleteInput<T>): Promise<T> {
     const t = await this.target(input.task, input.model, "this task");
-    await this.checkCap();
 
     const send = () => {
       const timeout = AbortSignal.timeout(input.timeoutMs ?? this.d.timeoutMs ?? 60_000);
@@ -402,8 +392,7 @@ export class AiProvider {
     }
     if (result instanceof ProviderError) {
       if (result.aborted) throw new ApiError("ai_stopped", "Stopped.");
-      this.lastError = result.message;
-      throw new ApiError("ai_failed", this.lastError);
+      throw new ApiError("ai_failed", result.message);
     }
 
     let parsed: unknown;
@@ -414,25 +403,23 @@ export class AiProvider {
     }
     const checked = input.schema.check.safeParse(parsed);
     if (!checked.success) {
-      this.lastError = isCutOff(result.finishReason)
+      const problem = isCutOff(result.finishReason)
         ? CUT_OFF
         : "The model's answer did not have the form that was asked for.";
-      this.warn(input.task, t.id, this.lastError, input.entry);
-      throw new ApiError("ai_bad_answer", this.lastError);
+      this.warn(input.task, t.id, problem, input.entry);
+      throw new ApiError("ai_bad_answer", problem);
     }
-    this.lastError = null;
     return checked.data;
   }
 
   /**
    * A call whose answer comes as it is written: text, thinking and tool calls, then `done`. The
-   * cap is checked before and the call logged after, when the stream ends, fails or is left.
-   * Not sent twice. Throws ApiError ("ai_off", "ai_cap_reached", "ai_failed", "ai_stopped")
+   * call is logged after, when the stream ends, fails or is left.
+   * Not sent twice. Throws ApiError ("ai_off", "ai_key_missing", "ai_failed", "ai_stopped")
    * before or while streaming. Providers that cannot stream answer in one piece.
    */
   async *stream(input: StreamInput): AsyncGenerator<StreamEvent> {
     const t = await this.target(input.task, input.model, "this task");
-    await this.checkCap();
     const timeout = AbortSignal.timeout(input.timeoutMs ?? 300_000);
     const signal = input.signal ? AbortSignal.any([timeout, input.signal]) : timeout;
     const req = this.request(
@@ -466,7 +453,6 @@ export class AiProvider {
         yield { type: "done", usage: r.usage, finishReason: r.finishReason };
       }
       error = undefined;
-      this.lastError = null;
     } catch (err) {
       const e =
         err instanceof ProviderError
@@ -476,7 +462,6 @@ export class AiProvider {
       stopped = e.aborted || (input.signal?.aborted === true && !e.timedOut);
       error = stopped ? STOPPED : e.message;
       if (stopped) throw new ApiError("ai_stopped", "Stopped.");
-      this.lastError = e.message;
       this.warn(input.task, t.id, e.message, input.entry);
       throw new ApiError("ai_failed", e.message);
     } finally {
@@ -485,15 +470,15 @@ export class AiProvider {
   }
 
   /**
-   * One picture made from a description, as PNG or JPEG bytes. Checked against the cap first and
-   * logged like every call. Not sent twice: a picture that timed out may still be billed.
+   * One picture made from a description, as PNG or JPEG bytes. Logged like every call. Not sent twice: a picture that timed out may still be billed.
    */
   async image(prompt: string, entry?: string): Promise<{ bytes: Buffer; costUsd: number }> {
     const t = await this.target("art", undefined, "concept art");
-    await this.checkCap();
     if (!t.adapter.image) {
-      this.lastError = `${t.provider.name} makes no pictures. Choose an image model for concept art.`;
-      throw new ApiError("ai_failed", this.lastError);
+      throw new ApiError(
+        "ai_failed",
+        `${t.provider.name} makes no pictures. Choose an image model for concept art.`,
+      );
     }
     try {
       const r = await t.adapter.image({
@@ -502,7 +487,6 @@ export class AiProvider {
         signal: AbortSignal.timeout(180_000),
       });
       const costUsd = await this.record("art", t, r.usage, entry, undefined);
-      this.lastError = null;
       return { bytes: r.bytes, costUsd };
     } catch (err) {
       const e =
@@ -513,8 +497,7 @@ export class AiProvider {
           : new ProviderError("No picture came back.", false);
       await this.record("art", t, e.opts.usage, entry, e.message);
       this.warn("art", t.id, e.message, entry);
-      this.lastError = e.message;
-      throw new ApiError("ai_failed", this.lastError);
+      throw new ApiError("ai_failed", e.message);
     }
   }
 }

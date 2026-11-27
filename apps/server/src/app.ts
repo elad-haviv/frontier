@@ -6,11 +6,12 @@ import rateLimit from "@fastify/rate-limit";
 import secureSession from "@fastify/secure-session";
 import Fastify, { type FastifyInstance } from "fastify";
 import { ZodError } from "zod";
-import type { BiomesFile } from "@frontier/schema";
+import { AI_KEYS_HEADER, type BiomesFile } from "@frontier/schema";
 import { FieldProposer } from "./ai/fields.js";
 import { FieldJob } from "./ai/job.js";
 import { AiLog } from "./ai/log.js";
 import { ModelCatalogue } from "./ai/models.js";
+import { readKeysHeader } from "./ai/keyring.js";
 import { AiProvider } from "./ai/provider.js";
 import { ChronicleStore } from "./chronicles/store.js";
 import { MapStore } from "./maps/store.js";
@@ -186,6 +187,8 @@ export interface BuildOptions {
   /** Used by tests to watch Git commands. */
   onGitCommand?: (args: readonly string[]) => void;
   logger?: boolean;
+  /** Where the log lines go when `logger` is on; the standard output when not given. Tests read it. */
+  logStream?: { write(line: string): void };
   /** How long after a change the backup runs. Tests shorten it. */
   backupDelayMs?: number;
   /** How long a note from outside is kept from AI features. Tests shorten it. */
@@ -252,6 +255,14 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
   status.backedUp(last.lastSuccessAt, last.lastError);
 
   const aiLog = new AiLog(stateDir, () => backup.noteChange());
+  // AI keys are never kept here: each request brings the person's own (see ai/keyring.ts). Keys an
+  // earlier version stored in the settings file are deleted now, and the web app says so once.
+  const keysRemoved = await settings.removeStoredKeys();
+  if (keysRemoved) {
+    status.keysWereRemoved(keysRemoved);
+  } else {
+    status.keysWereRemoved((await settings.read())?.ai.keysRemoved ?? null);
+  }
   const ai = new AiProvider({
     config,
     settings,
@@ -383,8 +394,6 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
   });
   const pins = new PinStore({ index, drafts, files: libraryFiles });
   await quarantine.load();
-  const reportAi = async () =>
-    status.ai(await ai.ready("extraction"), ai.lastError, await ai.ready("conversation"));
 
   const services: Services = {
     config,
@@ -478,29 +487,26 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
       await comments.renamed(from, to);
       await consults.renamed(from, to);
     },
-    onPublished: (paths) => {
-      // Runs after the publish call has answered; a failure shows in the status area. When the
-      // settings cannot be read at all, as when the server is stopping, the step is left out.
-      void (async () => {
-        if (!(await settings.read())?.ai.proposeOnPublish || !(await ai.ready("extraction")))
-          return;
-        for (const path of paths) {
-          await fields.propose(path).catch(() => undefined);
-        }
-        await reportAi();
-      })().catch(() => undefined);
-    },
   });
-  await reportAi();
 
   // Coolify's proxy sits in front, so the client address and protocol come from its headers.
-  // Keys are sent in request bodies to the provider routes; keep them out of any log line.
+  // AI keys arrive in a request header. They are taken off the request before anything else sees
+  // it, and redacted from any log line as well, in case a request is ever logged whole.
   const app = Fastify({
     trustProxy: true,
     logger: options.logger
-      ? { redact: ["req.headers.authorization", "req.headers.cookie", "req.body.key"] }
+      ? {
+          ...(options.logStream ? { stream: options.logStream } : {}),
+          redact: [
+            "req.headers.authorization",
+            "req.headers.cookie",
+            `req.headers["${AI_KEYS_HEADER}"]`,
+            "req.body.key",
+          ],
+        }
       : false,
   });
+  readKeysHeader(app);
   // A failed AI call is written to the server's log too, or production shows only a bare 502.
   ai.logFailuresTo(app.log);
 

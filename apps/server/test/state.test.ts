@@ -63,13 +63,11 @@ describe("state files", () => {
     expect(await store.read()).toEqual({
       passwordHash: "$argon2id$x",
       ai: {
-        key: null,
-        providers: [],
         models: { extraction: null, conversation: null, art: null },
         modelPrices: {},
         artStyle: expect.stringContaining("Pencil and ink"),
-        monthlyCapUsd: 10,
         proposeOnPublish: false,
+        keysRemoved: null,
       },
       passkeys: [],
       passwordOff: false,
@@ -92,12 +90,12 @@ describe("state files", () => {
     const store = new SettingsStore(dir, new StateFiles());
     await expect(store.update((s) => s)).rejects.toThrow();
     await store.write({ passwordHash: "$argon2id$x" });
-    await store.update((s) => ({ ...s, ai: { ...s.ai, monthlyCapUsd: 3 } }));
+    await store.update((s) => ({ ...s, ai: { ...s.ai, artStyle: "Charcoal." } }));
     // Setting the password again, as the command does, keeps what was set since.
     await store.write({ ...(await store.read()), passwordHash: "$argon2id$y" });
     expect(await store.read()).toMatchObject({
       passwordHash: "$argon2id$y",
-      ai: { monthlyCapUsd: 3 },
+      ai: { artStyle: "Charcoal." },
     });
   });
 });

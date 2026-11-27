@@ -63,8 +63,6 @@ export interface Estimate {
   key: string;
   calls: number;
   usd: number | null;
-  spentUsd: number;
-  capUsd: number;
 }
 
 export function useExplore(o: {

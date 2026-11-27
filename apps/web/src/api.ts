@@ -1,5 +1,6 @@
 import { startAuthentication, startRegistration } from "@simplewebauthn/browser";
-import { CLIENT_API } from "@frontier/schema";
+import { AI_KEYS_HEADER, type AiProviderKind, CLIENT_API } from "@frontier/schema";
+import { keysHeaderValue } from "./aiKeys.ts";
 import { connection } from "./sync/connection.ts";
 import { randomId } from "./sync/db.ts";
 import type {
@@ -15,16 +16,13 @@ import type {
   GraphResponse,
   ModelsResponse,
   AiLogResponse,
-  AiProviderKind,
-  AiProviderView,
   AiTaskName,
   PinsResponse,
-  ProviderCheckResponse,
-  ProvidersResponse,
   QueueResponse,
   QuestionResponse,
   RandomQuery,
   RandomResponse,
+  KeyCheckResponse,
   SettingsResponse,
   SessionResponse,
   MeResponse,
@@ -68,8 +66,10 @@ export class ApiFailure extends Error {
 
   /** With `stale_revision`: the id of the draft the server holds for the file. */
   draftId?: string;
-  /** Where in the app the problem is put right, such as "/settings/ai/providers". */
+  /** Where in the app the problem is put right, such as "/settings/device/ai-keys". */
   href?: string;
+  /** With `ai_key_missing`: the provider whose key this device lacks. */
+  provider?: AiProviderKind;
 }
 
 /** This device, as the save queue knows it; sent with every request once known. */
@@ -83,16 +83,30 @@ export function setDevice(known: { id: string; name: string } | null): void {
 const OPEN = /^\/api\/(session|login|passkeys\/login\/)/;
 
 /**
- * Every request's headers: the shape of writes this build sends, and, once known, the device and
- * its name URI-encoded, since a header holds only ASCII.
+ * The requests that can lead to an AI call (stage 27f). Only these carry this device's AI keys,
+ * in a header: the server uses them for that one request and never saves them. Anything that
+ * needs no key, which is nearly everything, sends none.
  */
-function headers(init?: RequestInit): Record<string, string> {
+const AI_REQUEST =
+  /^\/api\/(lore|write|characters|keep-going\/(?:whats-missing|question)|ai\/models|settings\/ai\/test|proposals\/(fields|job)|maps\/[^/?]+\/(discover|generate|discoveries\/[^/?]+\/art)|comments\/[^/?]+\/work)(?:[/?]|$)/;
+
+export const needsAiKeys = (url: string): boolean => AI_REQUEST.test(url);
+
+/**
+ * Every request's headers: the shape of writes this build sends, and, once known, the device and
+ * its name URI-encoded, since a header holds only ASCII. A request that can lead to an AI call
+ * also carries this device's keys, unless it names the keys itself (a test of one key).
+ */
+function headers(init: RequestInit | undefined, url: string): Record<string, string> {
+  const given = init?.headers as Record<string, string> | undefined;
+  const keys = given?.[AI_KEYS_HEADER] === undefined && needsAiKeys(url) ? keysHeaderValue() : null;
   return {
-    ...(init?.headers as Record<string, string> | undefined),
+    ...given,
     "frontier-api": String(CLIENT_API),
     ...(device
       ? { "frontier-device": device.id, "frontier-device-name": encodeURIComponent(device.name) }
       : {}),
+    ...(keys ? { [AI_KEYS_HEADER]: keys } : {}),
   };
 }
 
@@ -135,7 +149,56 @@ export function fromServer<T>(read: () => Promise<T>): Promise<T> {
   }
 }
 
+/** Which feature a request is for, in the words of "<Feature> runs on your own AI key". */
+export function featureOf(url: string): string {
+  if (/^\/api\/keep-going\/question/.test(url)) return "The question of the day";
+  if (/^\/api\/keep-going\/whats-missing/.test(url)) return "What's missing here";
+  if (/^\/api\/lore\/draft/.test(url)) return "Drafting an entry";
+  if (/^\/api\/lore\/[^/]+\/turns/.test(url)) return "Adding to an entry";
+  if (/^\/api\/lore/.test(url)) return "Ask";
+  if (/^\/api\/write/.test(url)) return "Writing help";
+  if (/^\/api\/characters/.test(url)) return "Talking with a character";
+  if (/\/art$/.test(url)) return "Concept art";
+  if (/^\/api\/maps\//.test(url)) return "Exploring the map";
+  if (/^\/api\/comments\//.test(url)) return "Work on it";
+  if (/^\/api\/proposals/.test(url)) return "Proposing fields";
+  if (/^\/api\/settings\/ai\/test/.test(url)) return "Trying a model";
+  return "AI help";
+}
+
+/** What the app shows when a request needs a key this device lacks. */
+export interface KeyAsk {
+  feature: string;
+  /** The provider the request needs, to have it chosen already. */
+  provider: AiProviderKind | null;
+}
+
+let askForKey: ((ask: KeyAsk) => Promise<boolean>) | null = null;
+
+/**
+ * Registers what shows the explanation and the field for a key (`AiKeyPrompt`). It resolves true
+ * once a key was kept, and the request that needed it is then sent again, as if nothing happened.
+ */
+export function setKeyPrompt(prompt: ((ask: KeyAsk) => Promise<boolean>) | null): void {
+  askForKey = prompt;
+}
+
+/** Whether a key was added after `err` said there was none, so the request may go again. */
+async function keyWasAdded(err: unknown, url: string): Promise<boolean> {
+  if (!(err instanceof ApiFailure) || err.code !== "ai_key_missing" || !askForKey) return false;
+  return askForKey({ feature: featureOf(url), provider: err.provider ?? null });
+}
+
 async function call<T>(url: string, init?: RequestInit): Promise<T> {
+  try {
+    return await callOnce<T>(url, init);
+  } catch (err) {
+    if (await keyWasAdded(err, url)) return callOnce<T>(url, init);
+    throw err;
+  }
+}
+
+async function callOnce<T>(url: string, init?: RequestInit): Promise<T> {
   // Read before the first wait, while `fromServer` still holds.
   const only = direct;
   if (readThrough && (init?.method ?? "GET") === "GET") {
@@ -150,7 +213,7 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
   let res: Response;
   const watched = !OPEN.test(url);
   try {
-    res = await fetch(url, { credentials: "same-origin", ...init, headers: headers(init) });
+    res = await fetch(url, { credentials: "same-origin", ...init, headers: headers(init, url) });
   } catch {
     // Stopped on purpose, as by a Stop button: the server is not unreachable.
     if (init?.signal?.aborted) throw new ApiFailure(0, "stopped", "Stopped.");
@@ -180,6 +243,7 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
   );
   if (body?.error.id) failure.draftId = body.error.id;
   if (body?.error.href) failure.href = body.error.href;
+  if (body?.error.provider) failure.provider = body.error.provider as AiProviderKind;
   throw failure;
 }
 
@@ -215,6 +279,21 @@ async function streamed<T>(
   onEvent: (event: string, data: unknown) => void,
   signal?: AbortSignal,
 ): Promise<T> {
+  try {
+    return await streamedOnce<T>(url, body, onEvent, signal);
+  } catch (err) {
+    // A refusal for want of a key comes before any event, so asking again repeats nothing.
+    if (await keyWasAdded(err, url)) return streamedOnce<T>(url, body, onEvent, signal);
+    throw err;
+  }
+}
+
+async function streamedOnce<T>(
+  url: string,
+  body: unknown,
+  onEvent: (event: string, data: unknown) => void,
+  signal?: AbortSignal,
+): Promise<T> {
   const lost = () =>
     new ApiFailure(0, "offline", "The connection was lost before the answer came.");
   let res: Response;
@@ -222,7 +301,7 @@ async function streamed<T>(
     res = await fetch(url, {
       method: "POST",
       credentials: "same-origin",
-      headers: headers({ headers: { "content-type": "application/json" } }),
+      headers: headers({ headers: { "content-type": "application/json" } }, url),
       body: JSON.stringify(body),
       ...(signal ? { signal } : {}),
     });
@@ -240,11 +319,14 @@ async function streamed<T>(
     if (res.status === 401) connection.unauthorised();
     else connection.reached();
     const error = isErrorBody(read) ? read.error : null;
-    throw new ApiFailure(
+    const refused = new ApiFailure(
       res.status,
       error?.code ?? "unknown",
       error?.message ?? `The server answered with status ${res.status}.`,
     );
+    if (error?.href) refused.href = error.href;
+    if (error?.provider) refused.provider = error.provider as AiProviderKind;
+    throw refused;
   }
   connection.reached();
 
@@ -262,12 +344,20 @@ async function streamed<T>(
         const data: unknown = JSON.parse(e.data);
         if (e.event === "done") result = { done: data as T };
         else if (e.event === "error") {
-          const said = data as { code?: string; message?: string };
-          throw new ApiFailure(
+          const said = data as {
+            code?: string;
+            message?: string;
+            provider?: string;
+            href?: string;
+          };
+          const failure = new ApiFailure(
             200,
             said.code ?? "unknown",
             said.message ?? "The answer could not be made.",
           );
+          if (said.href) failure.href = said.href;
+          if (said.provider) failure.provider = said.provider as AiProviderKind;
+          throw failure;
         } else onEvent(e.event, data);
       }
       if (done) break;
@@ -645,10 +735,11 @@ export const api = {
     chronicle: string | null,
     year: number | null,
   ) =>
-    post<{ calls: number; usd: number | null; spentUsd: number; capUsd: number }>(
-      `/api/maps/${map}/discover/estimate`,
-      { spots, chronicle, year },
-    ),
+    post<{ calls: number; usd: number | null }>(`/api/maps/${map}/discover/estimate`, {
+      spots,
+      chronicle,
+      year,
+    }),
   generateFeatures: (map: string, ask: GenerateAsk) =>
     post<{ items: GeneratedFeature[] }>(`/api/maps/${map}/generate`, ask),
   discoveryArt: (map: string, id: string) =>
@@ -680,10 +771,8 @@ export const api = {
       { path, base },
     ),
   saveAi: (body: {
-    key?: string | null;
     models?: { extraction?: string | null; conversation?: string | null; art?: string | null };
     artStyle?: string;
-    monthlyCapUsd?: number;
     proposeOnPublish?: boolean;
   }) => send<{ ok: true }>("PUT", "/api/settings/ai", body),
   testAi: (body: { task?: AiTaskName; model?: string } = {}) =>
@@ -702,36 +791,17 @@ export const api = {
   },
   aiLog: (month?: string) =>
     call<AiLogResponse>(`/api/ai/log${month ? `?month=${encodeURIComponent(month)}` : ""}`),
-  providers: () => call<ProvidersResponse>("/api/ai/providers"),
-  /** Adds a provider; the server checks the key with it before storing anything. */
-  addProvider: (body: {
-    kind: AiProviderKind;
-    key?: string;
-    baseUrl?: string;
-    name?: string;
-    saveAnyway?: boolean;
-  }) => post<ProviderCheckResponse>("/api/ai/providers", body),
-  checkProvider: (id: string) =>
-    post<ProviderCheckResponse>(`/api/ai/providers/${encodeURIComponent(id)}/check`),
-  providerKey: (id: string, key: string | null, saveAnyway = false) =>
-    send<ProviderCheckResponse>("PUT", `/api/ai/providers/${encodeURIComponent(id)}/key`, {
-      key,
-      ...(saveAnyway ? { saveAnyway } : {}),
+  /**
+   * A real check of a key through the server: the key travels in this one request, which lists the
+   * provider's models with it. Nothing is kept on the server.
+   */
+  checkKey: (kind: AiProviderKind, key: string) =>
+    call<KeyCheckResponse>(`/api/ai/keys/${kind}/check`, {
+      method: "POST",
+      headers: { [AI_KEYS_HEADER]: keysHeaderValue({ [kind]: key }) ?? "" },
     }),
-  updateProvider: (
-    id: string,
-    body: { name?: string | null; enabled?: boolean; baseUrl?: string | null },
-  ) =>
-    send<{ provider: AiProviderView | null }>(
-      "PATCH",
-      `/api/ai/providers/${encodeURIComponent(id)}`,
-      body,
-    ),
-  removeProvider: (id: string, force = false) =>
-    send<{ ok: true; turnedOff: AiTaskName[] }>(
-      "DELETE",
-      `/api/ai/providers/${encodeURIComponent(id)}${force ? "?force=1" : ""}`,
-    ),
+  /** Says the notice about keys deleted from the server was seen. */
+  keysNoticeSeen: () => send<{ ok: true }>("DELETE", "/api/notices/keys-removed"),
   /** The author's prices per million tokens; null removes one. */
   savePrices: (prices: Record<string, { promptPrice: number; completionPrice: number } | null>) =>
     send<{ ok: true }>("PUT", "/api/settings/ai/prices", { prices }),
@@ -760,7 +830,11 @@ export const api = {
     post<{ id: string; draftId?: string }>("/api/quarantine", { path, commit, decision }),
   withdrawDecision: (id: string) => send<{ ok: true }>("DELETE", `/api/quarantine/${id}`),
   confirm: (planId: string, confirmedMergeIds: string[], message: string) =>
-    post<{ commit: string }>("/api/publish/confirm", { planId, confirmedMergeIds, message }),
+    post<{ commit: string; published: string[] }>("/api/publish/confirm", {
+      planId,
+      confirmedMergeIds,
+      message,
+    }),
   cancelRename: (id: string) => send<{ ok: true }>("DELETE", `/api/renames/${id}`),
   /** A library item file, such as the folder file, as the author sees it. */
   libraryFile: (name: LibraryFileName) =>
@@ -1070,7 +1144,7 @@ export async function downloadExport(kind: ExportKind, pick: ExportPick): Promis
     res = await fetch(`/api/export/${kind}`, {
       method: "POST",
       credentials: "same-origin",
-      headers: headers({ headers: { "content-type": "application/json" } }),
+      headers: headers({ headers: { "content-type": "application/json" } }, `/api/export/${kind}`),
       body: JSON.stringify(pick),
     });
   } catch {
