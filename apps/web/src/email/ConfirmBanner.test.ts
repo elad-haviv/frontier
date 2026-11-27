@@ -209,12 +209,8 @@ describe("the confirm banner", () => {
     const { m } = await banner(person(), () => answer(now));
     expect(m.host.querySelector("aside")).not.toBeNull();
     now = confirmed;
-    // Last asked at mount: a focus a moment later is within the pause, so push the clock on.
-    vi.useFakeTimers({ toFake: ["Date"] });
-    vi.setSystemTime(Date.now() + 10_000);
     await act(async () => void window.dispatchEvent(new Event("focus")));
     await m.settle();
-    vi.useRealTimers();
     expect(m.host.querySelector("aside")).toBeNull();
   });
 });

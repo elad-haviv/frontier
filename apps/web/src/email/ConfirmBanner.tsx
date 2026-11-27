@@ -30,7 +30,7 @@ export function ConfirmBanner() {
 
   useEffect(() => {
     if (!shown) return;
-    let last = Date.now();
+    let last = 0;
     const again = () => {
       if (document.visibilityState === "hidden" || Date.now() - last < 5000) return;
       last = Date.now();

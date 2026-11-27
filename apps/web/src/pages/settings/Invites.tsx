@@ -390,7 +390,7 @@ export function Invites({ projectName }: { projectName: string }) {
                         className="quiet"
                         disabled={cancelling !== null || resending !== null}
                         aria-busy={resending === w.id || undefined}
-                        aria-label={`Send the invitation to ${w.sentTo} again, with a new link`}
+                        aria-label={`Resend the invitation to ${w.sentTo}, with a new link`}
                         onClick={() => void resend(w)}
                       >
                         {resending === w.id ? "Sending…" : "Resend"}
