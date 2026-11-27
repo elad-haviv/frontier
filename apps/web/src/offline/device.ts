@@ -46,7 +46,7 @@ import {
   NOT_ON_DEVICE,
   servedFromDevice,
 } from "./copy.ts";
-import { Keeper } from "./keeper.ts";
+import { Keeper, snapshotForDevice } from "./keeper.ts";
 
 /**
  * One number per route shape, stored with each answer. An answer whose number differs from the
@@ -775,7 +775,9 @@ export function startDevice(): Promise<ReadThrough> {
         .queueOf(open)
         .meta<StatusSnapshot>("snapshot")
         .catch(() => undefined);
-      if (last) connection.remember(last);
+      // What a past stream said of others is not current: a stored copy from before this was
+      // left out can hold it.
+      if (last) connection.remember(snapshotForDevice(last));
       device.activate(open);
     }
     // Logout in another tab: nothing more is fetched or kept here.

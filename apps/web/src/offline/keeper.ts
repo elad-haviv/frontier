@@ -98,6 +98,19 @@ const appReads = (slug: () => string): KeeperReads => {
 const markOf = (s: StatusSnapshot | null | undefined) =>
   s ? `${s.indexCommit}|${s.unpublished}|${s.drafts ?? 0}` : null;
 
+/**
+ * The snapshot as the device keeps it for an offline start: without who has unsaved changes and
+ * who is reading (stage 27d). Those are true only while the stream says so, so a stored one would
+ * show as current when the app opens with no connection, and storing them on every change of
+ * who reads would write to the device for nothing.
+ */
+export function snapshotForDevice(s: StatusSnapshot): StatusSnapshot {
+  const rest = { ...s };
+  delete rest.othersUnsaved;
+  delete rest.presence;
+  return rest;
+}
+
 export class Keeper {
   private active = false;
   private stops: (() => void)[] = [];
@@ -155,10 +168,20 @@ export class Keeper {
     this.active = true;
     let mark = markOf(this.d.connection.snapshot);
     let online = this.d.connection.state === "online";
+    let stored = "";
     this.stops.push(
       this.d.connection.subscribe(() => {
         const snapshot = this.d.connection.snapshot;
-        if (snapshot) void this.d.queue.setMeta("snapshot", snapshot).catch(() => undefined);
+        if (snapshot) {
+          const kept = snapshotForDevice(snapshot);
+          const text = JSON.stringify(kept);
+          // Only a change that the device keeps is written: a person starting or stopping to read
+          // changes none of it.
+          if (text !== stored) {
+            stored = text;
+            void this.d.queue.setMeta("snapshot", kept).catch(() => undefined);
+          }
+        }
         const now = markOf(snapshot);
         const back = this.d.connection.state === "online" && !online;
         online = this.d.connection.state === "online";
