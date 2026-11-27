@@ -268,18 +268,22 @@ describe("in the server", () => {
         revision: 0,
       },
     });
-    // The backup runs 30 ms after the save; wait for it to be reported, not for a fixed time.
-    await vi.waitFor(() => expect(first.services.status.snapshot().lastBackupAt).not.toBeNull(), {
-      timeout: 15_000,
-      interval: 20,
-    });
-    const snapshot = first.services.status.snapshot();
-    expect(snapshot.lastBackupAt).not.toBeNull();
-    expect(snapshot.backupError).toBeNull();
     const bucketFile = join(
       (config.backup as { dir: string }).dir,
       "latest/state/drafts/backupdraft1/content",
     );
+    // The backup runs 30 ms after the save; wait until the draft is in the bucket and reported,
+    // not for a fixed time.
+    await vi.waitFor(
+      () => {
+        expect(existsSync(bucketFile)).toBe(true);
+        expect(first.services.status.snapshot().lastBackupAt).not.toBeNull();
+      },
+      { timeout: 15_000, interval: 20 },
+    );
+    const snapshot = first.services.status.snapshot();
+    expect(snapshot.lastBackupAt).not.toBeNull();
+    expect(snapshot.backupError).toBeNull();
     expect(readFileSync(bucketFile, "utf8")).toBe("# Mira\n\nBacked up.\n");
     await first.app.close();
 

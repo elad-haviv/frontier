@@ -39,7 +39,11 @@ export class LiveRequests {
     const requests = [...set].filter((r) => !isThisRequest(r));
     // The connection itself: destroying the request closes it only while the body is unread, and a
     // POST that streams its answer has read its body long ago.
-    for (const r of requests) r.raw.socket.destroy();
+    for (const r of requests) {
+      // (A request made in a test, without a network, has no real socket to close.)
+      if (typeof r.raw.socket?.destroy === "function") r.raw.socket.destroy();
+      else r.raw.destroy();
+    }
     return requests.length;
   }
 }
