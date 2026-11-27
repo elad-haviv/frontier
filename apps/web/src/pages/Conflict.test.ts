@@ -93,7 +93,24 @@ function Landing() {
   return createElement("p", null, "Back at the review");
 }
 
+/** What the server answers to a compare: the clash of the review, unless a test says otherwise. */
+const compareOf = (c: Conflict, over: Record<string, unknown> = {}) =>
+  json(200, {
+    draftId: c.draftId,
+    path: c.path,
+    outcome: "conflict",
+    theirsBlob: c.theirsBlob,
+    revision: 1,
+    mine: c.mine,
+    conflict: { ...c, revision: 1 },
+    ...over,
+  });
+
 async function open(state: unknown) {
+  const given = (state as { conflict?: Conflict } | null)?.conflict;
+  if (given) {
+    answers.push((url) => (url.endsWith("/drafts/d1/compare") ? compareOf(given) : undefined));
+  }
   await act(async () =>
     root.render(
       createElement(
@@ -154,7 +171,11 @@ describe("the compare screen for a version someone else saved", () => {
     await click(radio("Keep mine"));
     await click(button("Use this choice"));
     expect(resolves()).toHaveLength(1);
-    expect(resolves()[0]!.body).toEqual({ text: "Harbor, my version.", theirsBlob: "blob-wren" });
+    expect(resolves()[0]!.body).toEqual({
+      text: "Harbor, my version.",
+      theirsBlob: "blob-wren",
+      revision: 1,
+    });
     // Back at the review, which plans again with the line the person had typed.
     expect(landed).toMatchObject({
       path: "/p/alpha/unpublished",
@@ -174,6 +195,7 @@ describe("the compare screen for a version someone else saved", () => {
     expect(resolves()[0]!.body).toEqual({
       text: "Harbor, Wren's version.",
       theirsBlob: "blob-wren",
+      revision: 1,
     });
     expect(landed?.state).toMatchObject({ replan: true });
   });
@@ -191,7 +213,11 @@ describe("the compare screen for a version someone else saved", () => {
       box.dispatchEvent(new Event("input", { bubbles: true }));
     });
     await click(button("Use this choice"));
-    expect(resolves()[0]!.body).toEqual({ text: "Harbor, both, tidied.", theirsBlob: "blob-wren" });
+    expect(resolves()[0]!.body).toEqual({
+      text: "Harbor, both, tidied.",
+      theirsBlob: "blob-wren",
+      revision: 1,
+    });
   });
 
   it("starts the combined text from the person's own when the changes cannot be combined, and says so", async () => {
@@ -202,11 +228,13 @@ describe("the compare screen for a version someone else saved", () => {
   });
 
   it("is told when they saved again, compares again with the new version, and keeps what the person typed", async () => {
+    let refused = false;
     answers.push((url, method) => {
       if (url.endsWith("/drafts/d1/resolve") && method === "POST") {
+        refused = true;
         return refusal("saved_by_other", "Rex saved a newer version while you were comparing.");
       }
-      if (url.endsWith("/drafts/d1/compare")) {
+      if (url.endsWith("/drafts/d1/compare") && refused) {
         return json(200, {
           draftId: "d1",
           path: "01 Places/Harbor.md",
@@ -295,6 +323,145 @@ describe("the older screen for any other clash", () => {
     expect(host.textContent).toContain("Saving will add it back");
     await click(button("Save as resolved"));
     // "No file" is a null blob, which is not the same as not saying.
-    expect(resolves()[0]!.body).toEqual({ text: "Harbor, my version.", theirsBlob: null });
+    expect(resolves()[0]!.body).toEqual({
+      text: "Harbor, my version.",
+      theirsBlob: null,
+      revision: 1,
+    });
+  });
+});
+
+const typeInto = (box: HTMLTextAreaElement, value: string) =>
+  act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")!.set!.call(box, value);
+    box.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+
+describe("the screen never trusts what the review sent", () => {
+  it("compares on opening and keeps mine with the newest text and revision, not the sent ones", async () => {
+    // The person kept writing in another tab: the server holds a newer text at revision 4.
+    answers.push((url) =>
+      url.endsWith("/drafts/d1/compare")
+        ? compareOf(conflict(), {
+            revision: 4,
+            mine: "Harbor, written later.",
+            conflict: { ...conflict({ mine: "Harbor, written later." }), revision: 4 },
+          })
+        : undefined,
+    );
+    await open({ conflict: conflict({ mine: "Harbor, old text." }) });
+    expect(host.textContent).toContain("Harbor, written later.");
+    expect(host.textContent).not.toContain("Harbor, old text.");
+    await click(radio("Keep mine"));
+    await click(button("Use this choice"));
+    expect(resolves()[0]!.body).toEqual({
+      text: "Harbor, written later.",
+      theirsBlob: "blob-wren",
+      revision: 4,
+    });
+  });
+
+  it("cannot choose before the server has answered", async () => {
+    answers.push((url) =>
+      url.endsWith("/drafts/d1/compare")
+        ? json(500, { error: { code: "internal", message: "Down." } })
+        : undefined,
+    );
+    await open({ conflict: conflict() });
+    await vi.waitFor(() => expect(host.textContent).toContain("Down."));
+    expect(host.textContent).toContain("Harbor, my version.");
+    expect(host.querySelector<HTMLFieldSetElement>("fieldset")!.disabled).toBe(true);
+  });
+
+  it("says the entry was changed elsewhere on stale_revision, and compares again without choosing", async () => {
+    let calls = 0;
+    answers.push((url, method) => {
+      if (url.endsWith("/drafts/d1/resolve") && method === "POST") {
+        return refusal("stale_revision", "This entry was changed elsewhere.");
+      }
+      if (url.endsWith("/drafts/d1/compare")) {
+        calls++;
+        return calls === 1
+          ? undefined
+          : compareOf(conflict(), {
+              revision: 2,
+              mine: "Harbor, newer.",
+              conflict: { ...conflict({ mine: "Harbor, newer." }), revision: 2 },
+            });
+      }
+      return undefined;
+    });
+    await open({ conflict: conflict() });
+    await click(radio("Keep mine"));
+    await click(button("Use this choice"));
+    await vi.waitFor(() => expect(host.textContent).toContain("changed elsewhere"));
+    expect(host.textContent).toContain("Harbor, newer.");
+    expect(landed).toBeNull();
+    expect(button("Use this choice").disabled).toBe(true);
+  });
+});
+
+describe("text typed into the merged editor", () => {
+  const typed = async () => {
+    await click(radio("Use the merged text"));
+    await typeInto(host.querySelector("textarea")!, "My careful merge.");
+  };
+
+  it("asks before the browser is left, once something was typed, and not before", async () => {
+    await open({ conflict: conflict({ mergedText: "Harbor, both." }) });
+    const before = new Event("beforeunload", { cancelable: true });
+    window.dispatchEvent(before);
+    expect(before.defaultPrevented).toBe(false);
+    await typed();
+    const after = new Event("beforeunload", { cancelable: true });
+    window.dispatchEvent(after);
+    expect(after.defaultPrevented).toBe(true);
+  });
+
+  it("asks before a link inside the app is followed, and stays when the person says so", async () => {
+    await open({ conflict: conflict({ mergedText: "Harbor, both." }) });
+    await typed();
+    const link = [...host.querySelectorAll("a")].find((a) => a.textContent === "Not now")!;
+    await click(link);
+    expect(document.body.textContent).toContain("Leave without saving?");
+    expect(landed).toBeNull();
+    await click(button("Leave"));
+    await vi.waitFor(() => expect(landed?.path).toBe("/p/alpha/unpublished"));
+  });
+
+  it("is kept with an offer to save it when the clash went away: ready, not 'nothing differs'", async () => {
+    let refused = false;
+    answers.push((url, method) => {
+      if (url.endsWith("/drafts/d1/resolve") && method === "POST" && !refused) {
+        refused = true;
+        return refusal("saved_by_other", "Rex saved again.");
+      }
+      if (url.endsWith("/drafts/d1/compare") && refused) {
+        return json(200, {
+          draftId: "d1",
+          path: "01 Places/Harbor.md",
+          outcome: "ready",
+          theirsBlob: "blob-now",
+          revision: 3,
+          mine: "Harbor, my version.",
+        });
+      }
+      return undefined;
+    });
+    await open({ conflict: conflict({ mergedText: "Harbor, both." }) });
+    await typed();
+    await click(button("Use this choice"));
+    await vi.waitFor(() => expect(host.textContent).toContain("Your text is still here"));
+    expect(host.textContent).toContain("My careful merge.");
+    expect(host.textContent).toContain("can be saved as it is");
+    expect(host.textContent).not.toContain("Nothing differs");
+    expect(landed).toBeNull();
+    await click(button("Save my text as my unsaved change"));
+    expect(resolves().at(-1)!.body).toEqual({
+      text: "My careful merge.",
+      theirsBlob: "blob-now",
+      revision: 3,
+    });
+    await vi.waitFor(() => expect(landed?.path).toBe("/p/alpha/unpublished"));
   });
 });

@@ -684,13 +684,15 @@ function projectCalls(slugOf: () => string) {
       post<{ id: string; revision: number }>(`/drafts/${id}/merge-versions`, { text }),
     /**
      * Settles a clash: the person's text goes on top of the saved version they compared, which
-     * `theirsBlob` names (`null`: there was no file). A 409 `saved_by_other` says someone saved
-     * again meanwhile; the page then compares again (`compare`).
+     * `theirsBlob` names (`null`: there was no file). `revision` is the one of the person's change
+     * that was shown: a 409 `stale_revision` says it was written to elsewhere meanwhile, a 409
+     * `saved_by_other` that someone saved again; the page then compares again (`compare`).
      */
-    resolve: (id: string, text: string, theirsBlob?: string | null) =>
+    resolve: (id: string, text: string, theirsBlob?: string | null, revision?: number) =>
       post<{ id: string; revision: number }>(`/drafts/${id}/resolve`, {
         text,
         ...(theirsBlob !== undefined ? { theirsBlob } : {}),
+        ...(revision !== undefined ? { revision } : {}),
       }),
     /** What saving this unsaved change now would do, with both texts when they differ (stage 27d). */
     compare: (id: string) => call<DraftCompareResponse>(`/drafts/${id}/compare`),

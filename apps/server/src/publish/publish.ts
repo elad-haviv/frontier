@@ -296,6 +296,7 @@ export class Publisher {
           theirs: null,
           base: null,
           theirsBlob: await git.blobHash(draft.path),
+          revision: draft.revision,
           ...(await who()),
         },
       };
@@ -321,6 +322,7 @@ export class Publisher {
         theirs: mainText,
         base,
         theirsBlob: mainBlob,
+        revision: draft.revision,
         ...(await who()),
         ...extra,
       },
@@ -384,6 +386,7 @@ export class Publisher {
         mainText,
         baseText: base,
         theirsBlob: mainBlob,
+        revision: draft.revision,
         ...(await who()),
       },
     };
@@ -590,6 +593,8 @@ export class Publisher {
     draft: DraftRecord;
     /** The blob of the saved version at the path now; null when there is no file. */
     theirsBlob: string | null;
+    /** The person's own text as it is in this turn; empty for an image. */
+    mine: string;
   }> {
     return this.serial(async () => {
       const draft = this.d.drafts.get(draftId);
@@ -597,7 +602,7 @@ export class Publisher {
       await this.d.sync();
       // A draft cleared by the fetch is on `main` already: nothing differs.
       const now = this.d.drafts.get(draftId);
-      if (!now) return { outcome: "none" as const, c: null, draft, theirsBlob: null };
+      if (!now) return { outcome: "none" as const, c: null, draft, theirsBlob: null, mine: "" };
       const c = await this.classify(now);
       this.noteCompared(c);
       return {
@@ -605,6 +610,7 @@ export class Publisher {
         c,
         draft: now,
         theirsBlob: await this.d.git.blobHash(now.path),
+        mine: now.binary ? "" : await this.d.drafts.text(now.id),
       };
     });
   }
@@ -621,12 +627,25 @@ export class Publisher {
    * unseen. Without `theirsBlob` (the web app before 27d) the version is the one the server last
    * compared for this change, and a change never compared is refused. One turn with plans and saves.
    */
-  resolve(draftId: string, text: string, theirsBlob?: string | null): Promise<DraftRecord> {
+  resolve(
+    draftId: string,
+    text: string,
+    theirsBlob?: string | null,
+    revision?: number,
+  ): Promise<DraftRecord> {
     return this.serial(async () => {
       if (!this.d.drafts.get(draftId)) throw new ApiError("not_found", "There is no such draft.");
       await this.d.sync();
       const draft = this.d.drafts.get(draftId);
       if (!draft) throw new ApiError("not_found", "There is no such draft.");
+      // The screen showed the text of one revision; it was written to since (another tab or device).
+      if (revision !== undefined && revision !== draft.revision) {
+        throw new ApiError(
+          "stale_revision",
+          "This entry was changed elsewhere while you were comparing. Nothing was changed: compare again and choose again.",
+          { id: draft.id },
+        );
+      }
       const expected = theirsBlob !== undefined ? theirsBlob : this.d.drafts.comparedBlob(draftId);
       if (expected === undefined) {
         throw new ApiError("invalid", "Compare this change with the saved version first.");

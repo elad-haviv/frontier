@@ -302,10 +302,10 @@ export function draftRoutes(app: RouteApp, s: Services): void {
    */
   app.post("/api/drafts/:id/resolve", async (request) => {
     const { id } = IdParam.parse(request.params);
-    const { text, theirsBlob } = DraftResolveRequest.parse(request.body);
+    const { text, theirsBlob, revision } = DraftResolveRequest.parse(request.body);
     if (!s.drafts.get(id)) throw new ApiError("not_found", "There is no such draft.");
     onlyNotes(id);
-    const record = await s.publisher.resolve(id, text.replace(/\r\n/g, "\n"), theirsBlob);
+    const record = await s.publisher.resolve(id, text.replace(/\r\n/g, "\n"), theirsBlob, revision);
     return { id: record.id, revision: record.revision };
   });
 
@@ -316,12 +316,14 @@ export function draftRoutes(app: RouteApp, s: Services): void {
    */
   app.get("/api/drafts/:id/compare", async (request): Promise<DraftCompareResponse> => {
     const { id } = IdParam.parse(request.params);
-    const { outcome, c, draft, theirsBlob } = await s.publisher.compare(id);
+    const { outcome, c, draft, theirsBlob, mine } = await s.publisher.compare(id);
     return {
       draftId: draft.id,
       path: draft.path,
       outcome,
       theirsBlob,
+      revision: draft.revision,
+      mine,
       ...(c?.conflict ? { conflict: c.conflict } : {}),
       ...(c?.merge ? { merge: c.merge } : {}),
     };

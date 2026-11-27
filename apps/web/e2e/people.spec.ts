@@ -491,7 +491,7 @@ test("a save that finds some entries changed meanwhile saves the rest and says w
   expect(onMain(beta)).toContain("the owner's change");
   expect(onMain(alpha)).toContain("as Wren has it");
   // The one that needs comparing opens as a compare, naming Wren.
-  await partial.getByRole("link", { name: "Compare Alpha" }).click();
+  await partial.getByRole("link", { name: "Compare" }).click();
   await expect(page.getByRole("heading", { name: /^Wren Writer saved this at/ })).toBeVisible();
   await wren.context.close();
 });

@@ -3,7 +3,13 @@
  * second to save compares the two texts and chooses. These are the pure parts: turning what the
  * server sends into one shape, what each choice sends, and the sentences.
  */
-import type { DraftCompareResponse, PublishPlan } from "@frontier/schema";
+import {
+  chronicleIdOf,
+  type DraftCompareResponse,
+  libraryFileOf,
+  mapIdOf,
+  type PublishPlan,
+} from "@frontier/schema";
 import { shownName, whenText } from "./model.ts";
 
 type PlannedConflict = PublishPlan["conflicts"][number];
@@ -25,6 +31,8 @@ export interface Clash {
   theirsBlob: string | null | undefined;
   /** The two changes combined, when they merge cleanly. */
   mergedText: string | undefined;
+  /** The revision of the person's change this was worked out for: sent back when resolving. */
+  revision: number | undefined;
 }
 
 export function clashOfConflict(c: PlannedConflict): Clash {
@@ -39,6 +47,7 @@ export function clashOfConflict(c: PlannedConflict): Clash {
     theirsAt: c.theirsAt ?? null,
     theirsBlob: c.theirsBlob,
     mergedText: c.mergedText,
+    revision: c.revision,
   };
 }
 
@@ -54,13 +63,26 @@ export function clashOfMerge(m: PlannedMerge, mine: string): Clash {
     theirsAt: m.theirsAt ?? null,
     theirsBlob: m.theirsBlob,
     mergedText: m.mergedText,
+    revision: m.revision,
   };
 }
 
-/** The clash a compare answer holds, or null when nothing differs any more. */
+/**
+ * The clash a compare answer holds, or null when nothing differs any more. The answer's own text
+ * and revision win over what the plan said: they are the newest the server has.
+ */
 export function clashOfCompare(a: DraftCompareResponse, mine: string): Clash | null {
-  if (a.outcome === "conflict" && a.conflict) return clashOfConflict(a.conflict);
-  if (a.outcome === "merge" && a.merge) return clashOfMerge(a.merge, mine);
+  const fresh = <T extends Clash>(c: T): T => ({
+    ...c,
+    ...(a.revision !== undefined ? { revision: a.revision } : {}),
+  });
+  if (a.outcome === "conflict" && a.conflict) {
+    return fresh({
+      ...clashOfConflict(a.conflict),
+      ...(a.mine !== undefined && TEXT_COMPARE.has(a.conflict.reason) ? { mine: a.mine } : {}),
+    });
+  }
+  if (a.outcome === "merge" && a.merge) return fresh(clashOfMerge(a.merge, a.mine ?? mine));
   return null;
 }
 
@@ -108,20 +130,47 @@ export function savedAgainText(name: string | null): string {
   return `${shownName(name) ?? "Someone"} saved again while you were comparing. Nothing was changed. Their newest version is below, and your text is still here: compare again and choose.`;
 }
 
-/** What a partial save says: which entries went in, and which need comparing. */
+/** Said when the choice was refused because the entry was written to elsewhere meanwhile. */
+export const changedElsewhereText =
+  "This entry was changed elsewhere (another tab or device) while you were comparing. Nothing was changed. The text now in your unsaved change is below: compare again and choose.";
+
+/** What went in: the items this save wrote or deleted (any kind), once each, minus those left. */
+export function savedItems(items: readonly string[], left: readonly string[]): string[] {
+  return [...new Set(items)].filter((p) => !left.includes(p));
+}
+
+/** What went in says: which items went in, and which wait for the person. */
 export function partialSaveText(
   saved: string[],
-  waiting: { path: string }[],
+  waiting: { path: string; reason?: string }[],
   own: boolean,
 ): string {
   const verb = own ? "saved" : "published";
-  const entries = (n: number) => `${n} ${n === 1 ? "entry" : "entries"}`;
-  const names = (list: string[]) => list.map(nameOfPath).join(", ");
+  const count = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+  const names = (list: string[]) => list.map(shownPath).join(", ");
   const left = waiting.map((w) => w.path);
-  const head = `${saved.length === 0 ? "Nothing" : `${entries(saved.length)} ${verb}`}${saved.length > 0 ? ` (${names(saved)})` : ""}.`;
-  const rest = `${entries(left.length)} ${left.length === 1 ? "needs" : "need"} comparing, because someone saved a newer version first: ${names(left)}.`;
+  const isEntry = (p: string) => /\.md$/i.test(p);
+  const head =
+    saved.length === 0
+      ? "Nothing."
+      : `${saved.every(isEntry) ? count(saved.length, "entry", "entries") : count(saved.length, "change", "changes")} ${verb} (${names(saved)}).`;
+  const compares = waiting.every((w) => w.reason === undefined || TEXT_COMPARE.has(w.reason));
+  const rest = compares
+    ? `${count(left.length, "entry", "entries")} ${left.length === 1 ? "needs" : "need"} comparing, because someone saved a newer version first: ${names(left)}.`
+    : `${count(left.length, "change", "changes")} ${left.length === 1 ? "waits" : "wait"} for you: ${names(left)}.`;
   return `${head} ${rest}`;
 }
+
+/** The clashes that open the text compare: someone else's saved version of the same entry. */
+const TEXT_COMPARE = new Set<string>(["saved_by_other", "overlap"]);
+
+/** An item as the person knows it: an entry or file by name, a map, a chronicle or a library file by kind. */
+const shownPath = (path: string): string =>
+  mapIdOf(path)
+    ? "a map"
+    : chronicleIdOf(path)
+      ? "a chronicle"
+      : (libraryFileOf(path)?.label ?? nameOfPath(path));
 
 const nameOfPath = (path: string): string => (path.split("/").pop() ?? path).replace(/\.md$/i, "");
 

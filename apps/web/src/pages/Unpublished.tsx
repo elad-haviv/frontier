@@ -16,7 +16,7 @@ import { loadPins } from "../keepGoing/pins.ts";
 import { followPublish, publishedEntries } from "../keepGoing/strip.ts";
 import { Problem } from "../components/ui/Problem.tsx";
 import { Progress } from "../components/ui/Progress.tsx";
-import { libraryReason, partialSaveText, reasonOf } from "../people/compare.ts";
+import { libraryReason, partialSaveText, reasonOf, savedItems } from "../people/compare.ts";
 
 const KIND = { edit: "Edited", create: "New", delete: "Deleted" } as const;
 
@@ -179,7 +179,22 @@ export function UnpublishedPage() {
         kind: "ok",
         text: words.own ? "Saved as a new version." : `Published as commit ${commit.slice(0, 10)}.`,
       });
-      setPartial(conflicts.length > 0 ? { saved: published, waiting: conflicts } : null);
+      setPartial(
+        conflicts.length > 0
+          ? {
+              saved: savedItems(
+                [
+                  ...plan.ready.map(pathOf),
+                  ...plan.merges.filter((m) => confirmed.has(m.id)).map((m) => m.path),
+                  ...plan.renames.map((r) => r.to),
+                  ...plan.decisions.map((d) => d.path),
+                ],
+                left,
+              ),
+              waiting: conflicts,
+            }
+          : null,
+      );
       setNudge(steps.length > 0 ? (n) => ({ n: (n?.n ?? 0) + 1, steps }) : null);
       await load();
       refresh();
@@ -265,6 +280,58 @@ export function UnpublishedPage() {
     refresh();
   }
 
+  /** One clash with its reason and what to do about it: the review's list and the partial-save banner. */
+  const clashItem = (c: PublishPlan["conflicts"][number], line: string) => {
+    const library = libraryFileOf(c.path);
+    return (
+      <li key={c.draftId}>
+        <p className="change-path">{library?.label ?? c.path}</p>
+        <p className="error">
+          {library && c.reason === library.conflict
+            ? (reasonOf(c) ?? libraryReason(library.noun))
+            : reasonOf(c)}{" "}
+          {c.reason === "rename_blocked" && c.mine}
+        </p>
+        {library && c.reason === library.conflict && (
+          <span className="change-actions">
+            <ActionButton type="button" className="quiet" onClick={() => settleMap(c.path, "mine")}>
+              Keep my {library.noun}
+            </ActionButton>
+            <ActionButton
+              type="button"
+              className="quiet"
+              onClick={() => settleMap(c.path, "theirs")}
+            >
+              Take the vault's
+            </ActionButton>
+          </span>
+        )}
+        {(c.reason === "map_changed_on_both" || c.reason === "chronicle_changed_on_both") && (
+          <span className="change-actions">
+            <ActionButton type="button" className="quiet" onClick={() => settleMap(c.path, "mine")}>
+              {c.reason === "map_changed_on_both" ? "Keep my map" : "Keep my chronicle"}
+            </ActionButton>
+            <ActionButton
+              type="button"
+              className="quiet"
+              onClick={() => settleMap(c.path, "theirs")}
+            >
+              Take the vault's
+            </ActionButton>
+          </span>
+        )}
+        {c.reason !== "rename_blocked" &&
+          c.reason !== "map_changed_on_both" &&
+          c.reason !== "chronicle_changed_on_both" &&
+          !(library && c.reason === library.conflict) && (
+            <Link to={`/conflict/${c.draftId}`} state={{ conflict: c, message: line }}>
+              {c.reason === "saved_by_other" ? "Compare" : "Resolve"}
+            </Link>
+          )}
+      </li>
+    );
+  };
+
   if (!data) {
     return notice ? (
       <div className="center">
@@ -319,15 +386,7 @@ export function UnpublishedPage() {
       {partial && (
         <section className="banner" role="status" aria-label="Entries to compare">
           <p>{partialSaveText(partial.saved, partial.waiting, words.own)}</p>
-          <ul className="plain-list">
-            {partial.waiting.map((c) => (
-              <li key={c.draftId}>
-                <Link to={`/conflict/${c.draftId}`} state={{ conflict: c, message: "" }}>
-                  Compare {c.path.split("/").pop()?.replace(/\.md$/i, "")}
-                </Link>
-              </li>
-            ))}
-          </ul>
+          <ul className="changes">{partial.waiting.map((c) => clashItem(c, ""))}</ul>
         </section>
       )}
       {empty && (
@@ -509,69 +568,7 @@ export function UnpublishedPage() {
           {plan.conflicts.length > 0 && (
             <>
               <h3>Held back</h3>
-              <ul className="changes">
-                {plan.conflicts.map((c) => {
-                  const library = libraryFileOf(c.path);
-                  return (
-                    <li key={c.draftId}>
-                      <p className="change-path">{library?.label ?? c.path}</p>
-                      <p className="error">
-                        {library && c.reason === library.conflict
-                          ? (reasonOf(c) ?? libraryReason(library.noun))
-                          : reasonOf(c)}{" "}
-                        {c.reason === "rename_blocked" && c.mine}
-                      </p>
-                      {library && c.reason === library.conflict && (
-                        <span className="change-actions">
-                          <ActionButton
-                            type="button"
-                            className="quiet"
-                            onClick={() => settleMap(c.path, "mine")}
-                          >
-                            Keep my {library.noun}
-                          </ActionButton>
-                          <ActionButton
-                            type="button"
-                            className="quiet"
-                            onClick={() => settleMap(c.path, "theirs")}
-                          >
-                            Take the vault's
-                          </ActionButton>
-                        </span>
-                      )}
-                      {(c.reason === "map_changed_on_both" ||
-                        c.reason === "chronicle_changed_on_both") && (
-                        <span className="change-actions">
-                          <ActionButton
-                            type="button"
-                            className="quiet"
-                            onClick={() => settleMap(c.path, "mine")}
-                          >
-                            {c.reason === "map_changed_on_both"
-                              ? "Keep my map"
-                              : "Keep my chronicle"}
-                          </ActionButton>
-                          <ActionButton
-                            type="button"
-                            className="quiet"
-                            onClick={() => settleMap(c.path, "theirs")}
-                          >
-                            Take the vault's
-                          </ActionButton>
-                        </span>
-                      )}
-                      {c.reason !== "rename_blocked" &&
-                        c.reason !== "map_changed_on_both" &&
-                        c.reason !== "chronicle_changed_on_both" &&
-                        !(library && c.reason === library.conflict) && (
-                          <Link to={`/conflict/${c.draftId}`} state={{ conflict: c, message }}>
-                            {c.reason === "saved_by_other" ? "Compare" : "Resolve"}
-                          </Link>
-                        )}
-                    </li>
-                  );
-                })}
-              </ul>
+              <ul className="changes">{plan.conflicts.map((c) => clashItem(c, message))}</ul>
               <p className="muted">The rest can still be published now.</p>
             </>
           )}

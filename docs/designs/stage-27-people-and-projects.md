@@ -1056,6 +1056,14 @@ a rename id.
   or a compare found something to choose; used up by the resolve); it is refused with 409
   `saved_by_other` when the saved version changed since, and with 400 when the change was never
   compared (including after a restart of the server between the plan and the choice: plan again).
+  **The revision** (review fix): the compare answer, and each plan conflict and merge, carry the
+  `revision` of the person's change they were worked out for, and the compare answer also carries its
+  current `mine`. `resolve` takes `revision` and answers 409 `stale_revision` (text untouched) when the
+  change was written to since (another tab or device), so "keep mine" can never put old text over newer
+  text; left out, the rule is as above. The web screen always asks `compare` on opening (the review's
+  state is only a placeholder), sends the revision it showed, and on `stale_revision` says the entry was
+  changed elsewhere and compares again. The replaced text is not kept as a kept copy: a kept copy
+  blocks edits and saves of the entry (`hasKeptCopies`), too heavy for every choice.
   To keep their text of an entry someone deleted, they save it as a new entry at the path
   (`PUT /drafts` with `kind: "create"` and the same id).
 - **At the save.** Plans and saves go one after another per project, so two people saving at once is
@@ -1229,7 +1237,7 @@ What the review of the first build changed, in the order of its list:
   14:02"). Choose: **keep mine** (`POST /drafts/:id/resolve` with the person's own text, then plan and
   confirm), **keep theirs** (resolve with `theirs`, nothing to save), or **merged** (resolve with the
   conflict's `mergedText`, pre-filled when there is one, or with text merged by hand). **Always send
-  the `theirsBlob` of the screen** with the resolve (`null` when there was no file); a 409
+  the `theirsBlob` and the `revision` of the screen** with the resolve (`null` blob when there was no file); a 409 `stale_revision` means the change was written to elsewhere: compare again; a 409
   `saved_by_other` from the resolve means someone saved while the person was comparing: fetch
   `GET /drafts/:id/compare`, show the new texts and let them choose again. `GET /drafts/:id/compare`
   opens the screen from an entry whose own page says the saved version moved on (no plan needed). After

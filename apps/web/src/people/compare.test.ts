@@ -6,6 +6,7 @@ import {
   clashOfMerge,
   clockText,
   partialSaveText,
+  savedItems,
   reasonOf,
   savedAgainText,
   savedByOtherText,
@@ -156,6 +157,27 @@ describe("the words", () => {
     expect(partialSaveText([], [{ path: "a.md" }, { path: "b.md" }], false)).toBe(
       "Nothing. 2 entries need comparing, because someone saved a newer version first: a, b.",
     );
+  });
+
+  it("counts what a save wrote and deleted, of any kind, minus what was left", () => {
+    expect(
+      savedItems(
+        ["01 Places/Old.md", "05 Images/pic.png", "a/New.md", "a/New.md", "01 Places/Left.md"],
+        ["01 Places/Left.md"],
+      ),
+    ).toEqual(["01 Places/Old.md", "05 Images/pic.png", "a/New.md"]);
+    expect(partialSaveText(["05 Images/pic.png", "a/Old.md"], [{ path: "b.md" }], true)).toBe(
+      "2 changes saved (pic.png, Old). 1 entry needs comparing, because someone saved a newer version first: b.",
+    );
+  });
+
+  it("does not blame a newer version for a map clash", () => {
+    const text = partialSaveText(
+      ["a.md"],
+      [{ path: ".frontier/maps/abcd1234.json", reason: "map_changed_on_both" }],
+      true,
+    );
+    expect(text).toBe("1 entry saved (a). 1 change waits for you: a map.");
   });
 
   it("gives a reason for a newer version by someone else, and names who deleted an entry", () => {

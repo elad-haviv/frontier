@@ -134,6 +134,48 @@ describe("the stage 27d review: saved versions and who made them", () => {
       expect(lastAuthor()).toBe("Wren Writer <wren@example.com>");
     });
 
+    it("is refused when the change was written to elsewhere since it was shown, text untouched", async () => {
+      const w = await edit(wren, MIRA, WREN);
+      const r = await edit(rex, MIRA, REX1);
+      expect((await confirm(rex, (await plan(rex, [r])).planId)).statusCode).toBe(200);
+      const shown = await compare(wren, w);
+      expect(shown.outcome).toBe("conflict");
+      expect(shown.mine).toBe(WREN);
+      expect(shown.revision).toBe(1);
+      expect(shown.conflict!.revision).toBe(1);
+      expect((await plan(wren, [w])).conflicts[0]!.revision).toBe(1);
+      // Wren keeps writing in another tab: the change is at revision 2 now.
+      const newer = "# Mira\n\nWren, written later in another tab.\n";
+      const put = await wren.put(`${base}/drafts`, {
+        id: w,
+        path: MIRA,
+        kind: "edit",
+        text: newer,
+        revision: 1,
+      });
+      expect(put.statusCode, put.body).toBe(200);
+      // "Keep mine" with the text the screen showed would put the old text over the newer one.
+      const refused = await wren.post(`${base}/drafts/${w}/resolve`, {
+        text: WREN,
+        theirsBlob: shown.theirsBlob,
+        revision: shown.revision,
+      });
+      expect(refused.statusCode, refused.body).toBe(409);
+      expect(refused.json().error.code).toBe("stale_revision");
+      expect((await entry(wren, MIRA)).text).toBe(newer);
+      // Compared again, it carries the newer text and revision, and that choice goes through.
+      const again = await compare(wren, w);
+      expect(again).toMatchObject({ mine: newer, revision: 2 });
+      const ok = await wren.post(`${base}/drafts/${w}/resolve`, {
+        text: again.mine,
+        theirsBlob: again.theirsBlob,
+        revision: again.revision,
+      });
+      expect(ok.statusCode, ok.body).toBe(200);
+      expect(ok.json().revision).toBe(3);
+      expect((await entry(wren, MIRA)).text).toBe(newer);
+    });
+
     it("is refused without the compared version when the saved one changed since the plan", async () => {
       const w = await edit(wren, MIRA, WREN);
       const r = await edit(rex, MIRA, REX1);

@@ -13,6 +13,7 @@ import {
   type Clash,
   clashOfCompare,
   clashOfConflict,
+  changedElsewhereText,
   clockText,
   reasonOf,
   savedAgainText,
@@ -66,13 +67,24 @@ export function ConflictPage() {
     given?.conflict ? clashOfConflict(given.conflict) : null,
   );
   /** What the page shows when there is no clash: loading, the answer "nothing differs", or gone. */
-  const [state, setState] = useState<"loading" | "ready" | "none" | "gone" | "failed">(
+  const [state, setState] = useState<"loading" | "ready" | "none" | "clear" | "gone" | "failed">(
     given?.conflict ? "ready" : "loading",
   );
   const [error, setError] = useState<string | null>(null);
   /** Said when the person had to compare again. */
   const [again, setAgain] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  /** Whether the server has answered: until then the clash is only what the review sent. */
+  const [checked, setChecked] = useState(false);
+  /**
+   * The person typed into the merged text, and the clash went away (nothing differs, or it can be
+   * saved as it is): their text is kept on screen to be saved as their unsaved change.
+   */
+  const [settled, setSettled] = useState<{
+    outcome: "none" | "ready";
+    theirsBlob: string | null | undefined;
+    revision: number | undefined;
+  } | null>(null);
   const [choice, setChoice] = useState<Choice | null>(null);
   /** The text of the "merged" choice, and the editor of the older screen: the person's to edit. */
   const text = useRef(clash ? startOfMerged(clash) : "");
@@ -81,34 +93,77 @@ export function ConflictPage() {
   const heading = useRef<HTMLHeadingElement>(null);
   const notice = useRef<HTMLParagraphElement>(null);
 
-  // Opened without the review (a reload, or a link): the server says what the clash is now.
+  // Always asks the server what the clash is now: what the review sent may be old (the person
+  // can have kept writing in another tab or on another device), so it is only a placeholder.
   useEffect(() => {
-    if (clash) return;
     let live = true;
     const work = projectWork();
     (async () => {
       try {
         const answer = await work.api.compare(id);
-        let mine = "";
-        if (answer.outcome === "merge") mine = (await work.api.versions(id)).current.text;
-        const found = clashOfCompare(answer, mine);
         if (!live) return;
-        if (!found) return setState("none");
-        text.current = startOfMerged(found);
+        const found = clashOfCompare(answer, given?.conflict?.mine ?? "");
+        setChecked(true);
+        if (!found) {
+          setClash(null);
+          return setState(answer.outcome === "ready" ? "clear" : "none");
+        }
+        if (!edited.current) {
+          text.current = startOfMerged(found);
+          setSeed((n) => n + 1);
+        }
         setClash(found);
         setState("ready");
       } catch (err) {
         if (!live) return;
-        setState(err instanceof ApiFailure && err.status === 404 ? "gone" : "failed");
-        if (!(err instanceof ApiFailure && err.status === 404)) {
-          setError(err instanceof ApiFailure ? err.message : "Could not open this.");
-        }
+        const gone = err instanceof ApiFailure && err.status === 404;
+        if (gone) {
+          setClash(null);
+          setState("gone");
+        } else if (!clash) setState("failed");
+        if (!gone) setError(err instanceof ApiFailure ? err.message : "Could not open this.");
       }
     })();
     return () => {
       live = false;
     };
   }, [id]);
+
+  // Text typed into the merged editor is the person's: leaving the screen asks first.
+  const askLeave = useRef<() => Promise<boolean>>(async () => true);
+  askLeave.current = () =>
+    dialogs.confirm({
+      title: "Leave without saving?",
+      body: "You changed the text on this screen. It is not saved anywhere yet.",
+      action: "Leave",
+      danger: true,
+    });
+  useEffect(() => {
+    const onUnload = (e: BeforeUnloadEvent) => {
+      if (!edited.current) return;
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    const onClick = (e: MouseEvent) => {
+      if (!edited.current || e.defaultPrevented || e.button !== 0) return;
+      if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+      const a = (e.target as Element | null)?.closest?.("a[href]") as HTMLAnchorElement | null;
+      if (!a || (a.target && a.target !== "_self") || a.origin !== window.location.origin) return;
+      e.preventDefault();
+      e.stopPropagation();
+      void askLeave.current().then((ok) => {
+        if (!ok) return;
+        edited.current = false;
+        a.click();
+      });
+    };
+    window.addEventListener("beforeunload", onUnload);
+    document.addEventListener("click", onClick, true);
+    return () => {
+      window.removeEventListener("beforeunload", onUnload);
+      document.removeEventListener("click", onClick, true);
+    };
+  }, []);
 
   // The screen takes the focus when it opens, and again when it has to compare again.
   useEffect(() => {
@@ -125,6 +180,11 @@ export function ConflictPage() {
         {state === "none" && (
           <p className="muted">
             Nothing differs from the saved version any more, so there is nothing to compare.
+          </p>
+        )}
+        {state === "clear" && (
+          <p className="muted">
+            This change does not clash with anything any more: it can be saved as it is.
           </p>
         )}
         {state === "gone" && (
@@ -150,16 +210,25 @@ export function ConflictPage() {
     });
   }
 
-  /** Someone saved again while the person compared: their newest version is shown, nothing else moves. */
-  async function compareAgain(work = projectWork()) {
+  /** The saved version or the person's change moved on while they compared: show the newest. */
+  async function compareAgain(work = projectWork(), why: "saved" | "revision" = "saved") {
     const answer = await work.api.compare(id);
     const found = clashOfCompare(answer, clash!.mine);
     if (!found) {
+      // What the person typed is theirs: it stays, to be saved as their unsaved change.
+      if (edited.current && answer.outcome !== "conflict" && answer.outcome !== "merge") {
+        setSettled({
+          outcome: answer.outcome === "ready" ? "ready" : "none",
+          theirsBlob: answer.theirsBlob,
+          revision: answer.revision,
+        });
+        return;
+      }
       setClash(null);
-      setState("none");
+      setState(answer.outcome === "ready" ? "clear" : "none");
       return;
     }
-    setAgain(savedAgainText(found.theirsName));
+    setAgain(why === "revision" ? changedElsewhereText : savedAgainText(found.theirsName));
     setChoice(null);
     // The text the person has is theirs: only an untouched merge is replaced by the new one.
     if (!edited.current) {
@@ -174,13 +243,18 @@ export function ConflictPage() {
     setError(null);
     const work = projectWork();
     try {
-      await work.api.resolve(id, chosen, clash!.theirsBlob);
+      await work.api.resolve(id, chosen, clash!.theirsBlob, clash!.revision);
+      edited.current = false;
       carryOn(note);
     } catch (err) {
       setBusy(false);
-      if (err instanceof ApiFailure && err.code === "saved_by_other") {
-        await compareAgain(work).catch((again: unknown) =>
-          setError(again instanceof ApiFailure ? again.message : "Could not compare again."),
+      if (
+        err instanceof ApiFailure &&
+        (err.code === "saved_by_other" || err.code === "stale_revision")
+      ) {
+        await compareAgain(work, err.code === "stale_revision" ? "revision" : "saved").catch(
+          (again: unknown) =>
+            setError(again instanceof ApiFailure ? again.message : "Could not compare again."),
         );
       } else if (err instanceof ApiFailure && err.status === 404) {
         setClash(null);
@@ -217,10 +291,74 @@ export function ConflictPage() {
     });
     if (!ok) return;
     await work.api.discardDraft(id).catch(() => undefined);
+    edited.current = false;
     if (work.open()) navigate("/unpublished");
   }
 
   const name = nameOfPath(clash.path);
+
+  /** Saves the text typed here as the person's unsaved change, once the clash is gone. */
+  async function saveAsMine() {
+    if (!settled) return;
+    setBusy(true);
+    setError(null);
+    const work = projectWork();
+    try {
+      await work.api.resolve(id, text.current, settled.theirsBlob, settled.revision);
+      edited.current = false;
+      if (work.open()) navigate("/unpublished");
+    } catch (err) {
+      setBusy(false);
+      if (
+        err instanceof ApiFailure &&
+        (err.code === "saved_by_other" || err.code === "stale_revision")
+      ) {
+        setSettled(null);
+        await compareAgain(work, err.code === "stale_revision" ? "revision" : "saved").catch(
+          (again: unknown) =>
+            setError(again instanceof ApiFailure ? again.message : "Could not compare again."),
+        );
+      } else setError(err instanceof ApiFailure ? err.message : "Could not save.");
+    }
+  }
+
+  if (settled) {
+    return (
+      <article className="entry wide compare">
+        <header className="entry-head">
+          <p className="crumbs">{clash.path}</p>
+          <h1 ref={heading} tabIndex={-1}>
+            Your text is still here
+          </h1>
+          <p className="muted lede">
+            {settled.outcome === "ready"
+              ? "Your change does not clash with the saved version any more, so it can be saved as it is."
+              : "Your change and the saved version are the same now."}{" "}
+            You had edited the text on this screen. Save it as your unsaved change to keep it.
+          </p>
+        </header>
+        {error && (
+          <p className="banner" role="alert">
+            {error}
+          </p>
+        )}
+        <TextPane title="Your text, not saved yet" label="Your edited text" text={text.current} />
+        <p className="plan-actions">
+          <Link to="/unpublished" className="quiet">
+            Not now
+          </Link>
+          <ActionButton
+            type="button"
+            className="primary big"
+            disabled={busy}
+            onClick={() => void saveAsMine()}
+          >
+            {busy ? "Saving…" : "Save my text as my unsaved change"}
+          </ActionButton>
+        </p>
+      </article>
+    );
+  }
 
   if (compare) {
     const merged = clash.mergedText !== undefined;
@@ -267,7 +405,7 @@ export function ConflictPage() {
           </details>
         )}
 
-        <fieldset className="compare-choices" disabled={busy}>
+        <fieldset className="compare-choices" disabled={busy || !checked}>
           <legend>What do you want to keep?</legend>
           <label className="compare-choice">
             <input
@@ -333,7 +471,7 @@ export function ConflictPage() {
           <ActionButton
             type="button"
             className="primary big"
-            disabled={busy || choice === null}
+            disabled={busy || !checked || choice === null}
             onClick={() => void choose()}
           >
             {busy ? "Saving…" : "Use this choice"}
@@ -406,7 +544,7 @@ export function ConflictPage() {
         <ActionButton
           type="button"
           className="primary big"
-          disabled={busy}
+          disabled={busy || !checked}
           onClick={() => void settle(text.current)}
         >
           {busy ? "Saving…" : "Save as resolved"}

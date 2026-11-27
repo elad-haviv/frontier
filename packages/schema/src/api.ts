@@ -270,6 +270,12 @@ export const DraftTextRequest = z.object({ text: z.string() });
 export const DraftResolveRequest = z.object({
   text: z.string(),
   theirsBlob: z.string().nullable().optional(),
+  /**
+   * The revision of the unsaved change the compare screen showed as "mine" (from the plan or the
+   * compare answer). Refused with `stale_revision`, text untouched, when the change has been
+   * written to since (another tab or device). Left out, the rule is as before.
+   */
+  revision: z.number().int().optional(),
 });
 
 export const DeleteResponse = Ok;
@@ -334,6 +340,8 @@ export const PlannedMerge = z.object({
   theirsAt: z.string().nullable().optional(),
   /** The blob `mainText` was read from: send it back when resolving (stage 27d). */
   theirsBlob: z.string().nullable().optional(),
+  /** The revision of the unsaved change this was worked out for: send it back when resolving. */
+  revision: z.number().int().optional(),
 });
 
 export const ConflictReason = z.enum([
@@ -383,6 +391,8 @@ export const PlannedConflict = z.object({
    * back, so the person's text is rebuilt on exactly the version they compared.
    */
   theirsBlob: z.string().nullable().optional(),
+  /** The revision of the unsaved change this was worked out for: send it back when resolving. */
+  revision: z.number().int().optional(),
   /**
    * With `saved_by_other`, when the two changes merge cleanly: the merged text, for the compare
    * screen to offer as a pre-filled "merged" choice (stage 27d). Absent when they do not merge.
@@ -442,6 +452,10 @@ export const DraftCompareResponse = z.object({
    * as the conflict's or merge's `theirsBlob`, and given when `outcome` is `ready` or `none` too.
    */
   theirsBlob: z.string().nullable().optional(),
+  /** The revision of the unsaved change the answer is for: send it back when resolving. */
+  revision: z.number().int().optional(),
+  /** The person's own text as it is now (empty for an image), whatever the outcome. */
+  mine: z.string().optional(),
 });
 export type DraftCompareResponse = z.infer<typeof DraftCompareResponse>;
 
