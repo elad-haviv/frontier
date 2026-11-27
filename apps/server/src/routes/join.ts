@@ -51,8 +51,9 @@ export function joinRoutes(app: FastifyInstance, s: Server): void {
     role: joined.role,
   });
 
-  app.get("/api/join/:code", { config: PUBLIC }, async (request): Promise<JoinInfo> => {
+  app.get("/api/join/:code", { config: PUBLIC }, async (request, reply): Promise<JoinInfo> => {
     s.joinLimit.attempt(request.ip);
+    reply.header("cache-control", "no-store");
     const { invite, project } = await liveInvite(s, codeOf(request));
     let entries: number | null = null;
     let maps: number | null = null;

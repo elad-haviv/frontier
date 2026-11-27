@@ -501,3 +501,158 @@ project.
 - The e2e specs open pages through one helper (`at`, `helpers.ts`); their direct calls to the
   server in the page (`fetch("/api/maps")`) still use the unprefixed aliases, which reach the
   project used last. `projects.spec.ts` makes the first project the one used last again after each test.
+
+## 9. How it was built: 27c server
+
+For the web half. Built on 2026-11-27; `apps/web/src` was not changed. Everything that existed keeps
+its shape. New: members, roles that now matter, invitation links, joining, Google sign-on, and what
+`/api/me` and `/api/session` say about ways to sign in.
+
+### Roles, as they are now
+
+`projects/roles.ts` is still the one table. Changes against 27b:
+
+- **Readers get the saved view.** A reader's request runs inside `asSavedView` (`projects/view.ts`,
+  set by the facade for every handler): the draft store answers "no drafts, no renames, nothing
+  kept" for it, so `GET /entries` returns the last saved text with `draft: null` and
+  `state: "published"` (an entry that exists only as someone's draft is 404), and the tree, graph,
+  switcher, image finder, maps, chronicles and library files show saved content only. `GET /status`
+  and the status stream give a reader zero for `unpublished`, `conflicts`, `drafts`,
+  `serverDraftChanges`, the inbox and `attention.keptCopies`; `GET /attention` has no `versions`;
+  `POST /export/preview` has `unsaved: []`; a quarantined note shows as published. The role is read
+  live on the stream, so a demotion shows on the next event.
+- **Moved from reader to writer** (a reader's shell must not call them): `POST /lore/:id/turns/:n/addition`
+  and `.../addition/preview` (drafting text into an entry), `GET /maps/:id/discoveries` and
+  `GET /maps/:id/discoveries/:d/art` (what AI proposed and nobody has kept). Ask, characters, pins,
+  Keep going's question, search, export and every read stay reader.
+- **Comments stay writer-only until 27e.** Project creation stays admin-only.
+- **New routes** (owner unless said): `GET /members` reader, `PUT /members/:id`, `DELETE /members/:id`,
+  `POST /members/leave` reader, `GET /invites`, `POST /invites`, `DELETE /invites/:id`. None has an
+  old unprefixed alias.
+
+Removing a person, or changing their role, closes every connection they have open in that project
+(`projects/live.ts`), so the status stream ends and the app reconnects and is told `no_project` or
+sees its new role. A request that has already passed the guard may still finish its own work.
+
+### Members (under `/api/p/:project/`)
+
+| Method and path | Role | Body | Response |
+| --- | --- | --- | --- |
+| `GET /members` | reader | none | `MembersResponse`: `{ members: [{ id, name, email, role, addedAt, lastActiveAt, you }], canManage }`. `email` is `null` unless the caller is an owner. `lastActiveAt` is null for someone who has not used the project since this was added; it is kept to within 5 minutes |
+| `PUT /members/:id` | owner | `{ role }` (`owner`, `writer`, `reader`) | `{ ok: true }`; 404 `not_found` (not a member); 409 `last_owner` |
+| `DELETE /members/:id` | owner | none | `{ ok: true }`; what the person wrote stays, under their name; 409 `last_owner` |
+| `POST /members/leave` | reader | none | `{ ok: true }` for the caller; 409 `last_owner` |
+
+`:id` is the person's id. The rule that a project keeps an owner is checked in the project store's
+serialized change, on the members as they are at that moment.
+
+### Invitations (owner)
+
+| Method and path | Body | Response |
+| --- | --- | --- |
+| `POST /invites` | `{ role }` | 201 `CreateInviteResponse`: `{ id, code, path: "/join/<code>", url, role, expiresAt }`. **The only time the code is given** (`cache-control: no-store`). 400 for any other role |
+| `GET /invites` | none | `InvitesResponse`: `{ invites: [{ id, role, createdBy: { id, name }, createdAt, expiresAt, secondsLeft }] }`: only links that can still be used, soonest to run out first, never the code |
+| `DELETE /invites/:id` | none | `{ ok: true }`; dead at once. 404 `not_found` (not this project's); 410 `invite_used` for one that was used |
+
+A link: 192 random bits as 32 URL-safe characters, stored only as a SHA-256 (`state/invites.json`),
+one project, one role (`owner`, `writer` or `reader`), one use, 7 days by the server's clock. Dead
+records are kept 30 days so the page can say why a link is dead.
+
+### Joining (public unless said; each counts against a per-address allowance of 30 per 15 minutes, apart from login's, answering 429 `rate_limited`)
+
+| Method and path | Body | Response |
+| --- | --- | --- |
+| `GET /api/join/:code` | none | `JoinInfo`: `{ project: { name, colour, entries, maps, people }, inviter: { name }, role, google, alreadyMember }`. `google` is whether to show the Google button; `alreadyMember` is true when the caller is logged in and in the project |
+| `POST /api/join/:code` | `{ name, email, password }` (password 12 to 500 characters) | `JoinedResponse` `{ ok, project, role }` and a session (a password login); `project` is the slug: open `/p/<project>` |
+| `POST /api/join/:code/passkey/options` | `{ name, email? }` | WebAuthn registration options (`userVerification: required`). The challenge, the invitation and the name are kept in the signed session for 5 minutes |
+| `POST /api/join/:code/passkey/verify` | `{ response, passkeyName? }` (the browser's registration response) | `JoinedResponse` and a session (method `passkey`). The challenge is single use and is bound to this link |
+| `POST /api/join/:code/accept` | none; logged in | `JoinedResponse`. 409 `already_member` (with `error.project`, the slug) and the link is **not** used up. 401 when logged out |
+| `GET /api/auth/google/start?invite=&returnTo=&link=1` | see below | 302 to Google |
+| `GET /api/auth/google/callback` | Google's `code` and `state` | 302 to a page of the app |
+
+Errors for a link (all carry the typed `code`; the first three also carry `error.inviter`, the name
+of the person who made the link, so the page can say whom to ask):
+
+| Code | Status | Meaning |
+| --- | --- | --- |
+| `invite_used` | 410 | Already used |
+| `invite_cancelled` | 410 | Cancelled, or its project was deleted |
+| `invite_expired` | 410 | Older than 7 days |
+| `invite_unknown` | 404 | No such link; a malformed code gets the same answer, with no name |
+| `already_member` | 409 | Only from `accept`; `error.project` is the slug |
+| `account_exists` | 409 | The email has an account: the page says "You may already have an account: log in to join" and shows the login form with the link kept (log in, then `POST /api/join/:code/accept`). Nothing says whose account it is |
+| `last_owner` | 409 | Members routes |
+
+The body cannot choose a role, a project or `admin`: they come from the link alone, and unknown body
+fields are ignored. Two uses at once: exactly one succeeds, the rest get `invite_used`. The server
+logs no invitation code (addresses are written `/api/join/:code`, and `invite`, `code`, `state` and
+`returnTo` queries are blanked).
+
+### Google sign-on
+
+Off unless `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` are set; `GET /api/session` says
+`google: true|false`, and `GET /api/join/:code` repeats it as `google`. Authorization code flow with
+PKCE (S256), a `state` and a `nonce`, kept in the browser's signed, encrypted session cookie for 10
+minutes and spent once on the server too. The redirect address is exactly
+`PUBLIC_URL/api/auth/google/callback`. The ID token's signature (RS256, against Google's keys read
+from the discovery document and cached), `iss`, `aud`, `exp`, `nonce` and `email_verified: true` are
+checked. Libraries: `jose` (new dependency). `GOOGLE_ISSUER` points it at a stand-in provider in
+tests (refused in production).
+
+`GET /api/auth/google/start` takes `invite=<code>` (joining), `link=1` (linking from Settings; needs a
+session that logged in within 5 minutes, else it redirects to
+`/settings/you/signing-in?problem=recent_login_needed`) and `returnTo=<path>` (a path in the app: one
+leading slash, no host, no backslash, not `/api`; anything else is dropped and the person lands on
+`/`). Every answer is a redirect; the web app words the `problem` parameter:
+
+| Where | `problem` | When |
+| --- | --- | --- |
+| `/login` | `google_no_account` | Google knows who they are but there is no Frontier account and no invitation (never an account made, never linked by email) |
+| `/login` | `google_denied`, `google_failed`, `google_unverified`, `google_expired`, `google_off` | The person said no; any failure to check the token or reach Google; an email Google has not verified; the state is wrong, used or older than 10 minutes; Google sign-on is off |
+| `/join/<code>` | the same, and `account_exists` | The same, for a trip that started on an invitation; `account_exists` is an account with that email that is not linked to this Google identity: log in and use "accept". The page's own `GET /api/join/:code` says when the link is dead |
+| `/settings/you/signing-in` | `google_taken`, `google_already_linked`, `recent_login_needed` | Linking from Settings: that Google account belongs to another person; this account has one; the login is older than 5 minutes |
+
+What a good trip does, in this order: the Google subject is linked to an account: log in (landing on
+`returnTo` or `/`; with an invitation, join that project as that account, and a person already in it
+just goes there with the link left unused). Else with a valid unused invitation (checked again at
+the callback, used only on success): make the account from Google's name and verified email, join,
+log in, land on `/p/<slug>`. Else with `link=1`: add the identity to the logged-in account. Else
+`google_no_account`. The session's method is `google`.
+
+| Method and path | Body | Response |
+| --- | --- | --- |
+| `DELETE /api/me/google` | none | `{ ok }`. Ends the other sessions; 403 `not_allowed` when it is the last way to sign in (a password that works, a passkey or Google must remain); 404 when none is linked |
+
+### Ways to sign in
+
+`GET /api/me` (`MeResponse`) gains `signingIn`: `{ password: { set, off }, passkeys: [{ id, name,
+addedAt }], google: { email, addedAt } | null, googleAvailable }`, and `method` may be `google`.
+The old `passkeys`, `passwordSet` and `passwordOff` stay. The kept `signIn` block of
+`GET /api/settings` is unchanged except that its `method` may be `google`. "The last way cannot be
+removed" now counts Google (`waysIn`); removing or linking a Google account ends the other sessions
+like any other credential change (and linking asks for a recent login). Switching the password off
+needs a session that came by a passkey or Google. A person who came by Google has no password until
+they set one (`PUT /api/me/password`, which asks for a recent login when there is none).
+
+### A person in no project
+
+Everything copes: `GET /api/session` and `GET /api/me` answer with `lastProject: null`,
+`GET /api/projects` is `{ projects: [], last: null, canCreate }`, every project address and every old
+unprefixed alias answers 403 `no_project`, `PUT /api/projects/last` too, and settings, models, the
+profile and logging out work. Accepting an invitation puts them back in a project. The server's
+first account who leaves is not made an owner again (that only happens to a project with no owner).
+
+### Decisions where the brief was silent
+
+- Joining by password or Google logs the person in as a new account even when someone else is logged
+  in on that browser; the app should send a logged-in person to "accept" instead (`alreadyMember`
+  and the session tell it).
+- `account_exists` reveals that an email has an account to someone who holds a working link; it is
+  the price of letting the page say "log in to join". It is not said for an unknown or dead link.
+- A person who has Google linked and arrives on an invitation through Google joins as that account.
+- A passkey join may give an email (optional); an account made by passkey or Google has no password.
+- Invitations survive the deletion of a project only as dead records (`invite_cancelled`).
+- The allowance for the public join and Google routes is 6 times login's (30 per 15 minutes), counted
+  apart from login so a visit to the join page does not use up a login.
+- Not done in 27c server: unlinking another provider (there is none), an email to the invited person
+  (decision A: Frontier sends no mail), and a list of someone's other sessions.

@@ -201,7 +201,8 @@ export class GoogleSignOn {
     return {
       subject: String(payload.sub),
       email,
-      name: name || email.split("@")[0] || email,
+      // The same length a name may have when typed.
+      name: (name || email.split("@")[0] || email).slice(0, 80),
     };
   }
 }

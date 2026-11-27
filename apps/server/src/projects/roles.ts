@@ -12,7 +12,13 @@ import type { ProjectRole } from "@frontier/schema";
  *   writer   anything that changes the library or the unsaved changes: drafts, saving versions,
  *            uploads, imports, maps, chronicles, folders, inbox, quarantine, AI writing help;
  *            comments for now (see below)
- *   owner    the project's settings, and deleting it. Backups are automatic and have no route yet.
+ *   owner    the project's settings, and deleting it; its members and invitation links (stage 27c).
+ *            Backups are automatic and have no route yet.
+ *
+ * A reader's requests run in the saved view (`view.ts`): the draft store answers nothing, so a
+ * reader gets the last saved version of everything and never anyone's unsaved changes. Writing
+ * help that drafts into the library (an addition to an entry) and what AI has proposed but nobody
+ * has kept (a map's discoveries) are writers', for the same reason.
  *
  * Comments are writer-only until stage 27e: until then they are one person's private notes ("for
  * me", "for the AI"), which a reader must not read or add to.

@@ -34,6 +34,30 @@ A preview on made-up sample content runs with `FRONTIER_SAMPLE_VAULT=1`; see the
 
 A project is a library with its own members (stage 27b). A server holds any number of them, each with its own repository, working copy, drafts, comments, maps, backup and timers, opened the first time it is used. The library a server had before projects becomes the first project, named by `FRONTIER_PROJECT_NAME` (default "Avalymia", "Sample" for the sample), with its files where they were: `library.git`, `vault`, `state` and `assets` under `DATA_DIR`. A project made since lives in `DATA_DIR/projects/<id>/` with the same four inside it, and is always an own library. Every project route is `/api/p/<slug>/...`, and each route says in one table (`apps/server/src/projects/roles.ts`) which role it needs: reader, writer or owner. Accounts, sign-in, AI settings and `/api/projects` stay server-wide. A deleted project's folder is moved to `DATA_DIR/trash/`, not removed. Each project is backed up under its own prefix (`projects/<id>/`) in the bucket; the first project keeps the old keys, and the server's own files (accounts, settings, the project list) are with it. `npm run restore -w apps/server` restores everything; `-- --project <address>` restores one project. The design is [docs/designs/stage-27-people-and-projects.md](docs/designs/stage-27-people-and-projects.md).
 
+### People, invitations and Google sign-on
+
+An owner invites people from a project's Members page (stage 27c): a link for one project and one
+role, for one person, usable once and for seven days. Frontier sends no mail; the owner sends the
+link. Only a hash of the code is stored (`DATA_DIR/state/invites.json`, in the backup), so a link
+cannot be read back later. The person opens `/join/<code>` and joins with an email and a password,
+a passkey on their device, or Google. An account is only ever made from an invitation.
+
+"Continue with Google" is off unless the server has a client id and secret. To set it up:
+
+1. In the Google Cloud console, under APIs & Services, make an OAuth client of type "Web
+   application" (and the consent screen, if none exists: the scopes are `openid`, `email` and
+   `profile`).
+2. Add the authorized redirect URI `PUBLIC_URL/api/auth/google/callback`, spelled exactly as
+   `PUBLIC_URL` is (for example `https://frontier.example.com/api/auth/google/callback`). Google
+   refuses any other address.
+3. Set `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` on the server and restart it. Both or neither.
+
+Google only says who someone is. It never makes an account by itself: a Google account that has no
+Frontier account and no invitation gets "no account" and nothing else, and an account is never
+linked to Google by matching emails: a person links it themselves in Settings, soon after logging
+in. The ID token's signature, issuer, audience, expiry and nonce are checked, the email must be
+verified, and the flow uses PKCE and a state bound to the browser.
+
 ## Working on it
 
 Needs Node 22.
