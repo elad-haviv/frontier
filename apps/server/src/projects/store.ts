@@ -256,7 +256,23 @@ export class ProjectStore {
    * what is held in memory and writes the file at most once per person per window. Changes
    * nothing for someone who is not a member (or no longer one).
    */
-  async touchMember(projectId: string, personId: string, everyMs = ACTIVE_EVERY_MS): Promise<void> {
+  touchMember(projectId: string, personId: string, everyMs = ACTIVE_EVERY_MS): Promise<void> {
+    const work = this.touch(projectId, personId, everyMs);
+    this.touching.add(work);
+    const done = () => this.touching.delete(work);
+    work.then(done, done);
+    return work;
+  }
+
+  /** Waits for the writes still under way (a last-active note that has not landed), at shutdown. */
+  async settled(): Promise<void> {
+    await Promise.allSettled([...this.touching]);
+    await this.turn;
+  }
+
+  private readonly touching = new Set<Promise<void>>();
+
+  private async touch(projectId: string, personId: string, everyMs: number): Promise<void> {
     const at = this.now();
     const member = (await this.get(projectId))?.members.find((m) => m.personId === personId);
     if (!member) return;
