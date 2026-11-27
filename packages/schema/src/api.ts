@@ -4,6 +4,7 @@ import { ModelPrice } from "./ai.js";
 import { EmailInfo } from "./email.js";
 import { AccountEmail } from "./people.js";
 import { KeepGoingSettings } from "./keepGoingSettings.js";
+import { TypeProp, TypesFile } from "./entryTypes.js";
 
 const Ok = z.object({ ok: z.literal(true) });
 
@@ -164,6 +165,10 @@ export const EntryFields = z.object({
   ),
   /** Values that are present and cannot be read. */
   problems: z.array(z.string()),
+  /** The properties the entry's type gives it, in the type's order (stage 35). */
+  props: z.array(TypeProp),
+  /** Whether readers can talk with the entry: its own `chattable`, or else its type's. */
+  chattable: z.boolean(),
   /** What Frontier's AI proposes for the entry and the author has not decided yet. */
   proposed: z.array(ProposalOperation),
 });
@@ -372,6 +377,8 @@ export const ConflictReason = z.enum([
   "saved_by_other",
   /** The trees file changed here and in the library on the same trees. */
   "trees_changed_on_both",
+  /** The types file changed here and in the library on the same types. */
+  "types_changed_on_both",
 ]);
 
 export const PlannedConflict = z.object({
@@ -760,8 +767,44 @@ export const SchemaResponse = z.object({
   problem: z.string().nullable(),
   types: z.array(z.string()),
   what: z.array(z.string()),
+  /** The types file as the author sees it: each type's properties and usual dates (stage 35). */
+  file: TypesFile,
+  /** How many saved entries have each type and how many dates carry each name. */
+  counts: z.object({
+    types: z.record(z.number().int().min(0)),
+    what: z.record(z.number().int().min(0)),
+    /** Entries with no type of their own and none from a folder. */
+    untyped: z.number().int().min(0),
+  }),
+  /** Words that entries carry and the lists do not have. */
+  strays: z.object({
+    types: z.array(z.object({ name: z.string(), entries: z.number().int().min(1) })),
+    what: z.array(z.object({ name: z.string(), entries: z.number().int().min(1) })),
+  }),
 });
 export type SchemaResponse = z.infer<typeof SchemaResponse>;
+
+/**
+ * `POST /api/types/rename`: renames a type, a property of a type, or a date name, in the types
+ * file and in every entry that writes the word.
+ */
+export const RenameTypesRequest = z.object({
+  what: z.enum(["type", "prop", "date"]),
+  /** For a property: the type that has it. */
+  type: z.string().optional(),
+  from: z.string().min(1).max(100),
+  to: z.string().min(1).max(100),
+  /** Only count what would change. */
+  dryRun: z.boolean().optional(),
+});
+export type RenameTypesRequest = z.infer<typeof RenameTypesRequest>;
+export const RenameTypesResponse = z.object({
+  entries: z.number().int().min(0),
+  folders: z.number().int().min(0),
+  /** Entries that could not be changed now and keep the old word. */
+  skipped: z.number().int().min(0),
+});
+export type RenameTypesResponse = z.infer<typeof RenameTypesResponse>;
 
 /** `POST /api/proposals/:id/operations/:op` */
 export const OperationDecision = z.object({

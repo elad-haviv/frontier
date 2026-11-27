@@ -1,6 +1,6 @@
 import type { RouteApp } from "../projects/facade.js";
 import { VaultPath } from "@frontier/schema";
-import { isNote, rankNames, splitFrontmatter, stem } from "@frontier/vault";
+import { isNote, rankNames, splitFrontmatter, stem, typeFromFolder } from "@frontier/vault";
 import { z } from "zod";
 import { factsOf } from "../keepGoing/derived.js";
 import { ApiError } from "../errors.js";
@@ -38,6 +38,7 @@ export function searchRoutes(app: RouteApp, s: Services): void {
    */
   app.get("/api/switcher", async (request) => {
     const { q, appendices } = Query.parse(request.query);
+    const { type } = z.object({ type: z.string().max(60).optional() }).parse(request.query);
     const drafts = s.drafts.list();
     const removed = new Set(drafts.filter((d) => d.kind === "delete").map((d) => d.path));
     const notes = [
@@ -54,6 +55,16 @@ export function searchRoutes(app: RouteApp, s: Services): void {
       const note = s.index.note(hit.path);
       return note ? { ...hit, words: factsOf(note).words } : hit;
     });
-    return { results };
+    if (!type) return { results };
+    // For a property that links to a type (stage 35): entries of that type come first, marked.
+    const schema = s.index.schema;
+    const wanted = type.toLowerCase();
+    const marked = results.map((hit) => {
+      const mine = s.index.note(hit.path)?.fields.type ?? typeFromFolder(schema, hit.path);
+      return mine?.toLowerCase() === wanted ? { ...hit, ofType: true } : hit;
+    });
+    return {
+      results: [...marked.filter((r) => "ofType" in r), ...marked.filter((r) => !("ofType" in r))],
+    };
   });
 }

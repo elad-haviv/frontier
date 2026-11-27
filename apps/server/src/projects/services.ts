@@ -27,6 +27,7 @@ import { FieldProposer } from "../ai/fields.js";
 import { ChronicleStore } from "../chronicles/store.js";
 import { MapStore } from "../maps/store.js";
 import { FolderStore } from "../folders/store.js";
+import { TypeStore } from "../types/store.js";
 import { LibraryFileStore } from "../library/files.js";
 import { Conversations } from "../ai/conversations.js";
 import { Talks } from "../ai/talks.js";
@@ -96,6 +97,7 @@ export interface Services {
   /** Library item files, such as the folder file, through one store. */
   libraryFiles: LibraryFileStore;
   folders: FolderStore;
+  types: TypeStore;
   lore: LoreAsker;
   drafter: EntryDrafter;
   /** Stage 25: the work queue, "From here", Link it, random entry and the steps after Publish. */
@@ -411,6 +413,7 @@ export async function buildServices(
       (p) => index.note(p)?.text ?? null,
       index.schema,
     );
+  const types = new TypeStore({ index, drafts, files: libraryFiles, changer });
   const folders = new FolderStore({ index, git, drafts, files: libraryFiles, changer });
   const discoverer = new Discoverer({
     stateDir,
@@ -567,6 +570,7 @@ export async function buildServices(
     chronicles,
     libraryFiles,
     folders,
+    types,
     lore,
     drafter,
     keepGoing,

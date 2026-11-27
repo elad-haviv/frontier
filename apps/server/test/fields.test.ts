@@ -39,6 +39,8 @@ describe("fields of an entry", () => {
       typeKnown: true,
       time: [],
       problems: [],
+      props: [],
+      chattable: false,
       proposed: [],
     });
   });

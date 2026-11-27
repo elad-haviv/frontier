@@ -225,6 +225,7 @@ describe("renames and the table of library files", () => {
       "biomes",
       "pins",
       "trees",
+      "types",
     ]);
     expect(libraryFileOf(FOLDER_FILE)?.label).toBe("Folders");
     expect(libraryFileOf(".frontier/maps/abcdefgh.json")).toBeUndefined();

@@ -2,6 +2,7 @@ import {
   checkPropertyName,
   type CustomProperty,
   customProperties,
+  isThingKind,
   linkOf,
   PROPERTY_KINDS,
   type PropertyKind,
@@ -11,9 +12,11 @@ import {
   renameFrontmatterKey,
   setFrontmatterKey,
 } from "@frontier/vault";
+import { SYSTEM_PROPS, type TypeLine, type TypeProp } from "@frontier/schema";
 import { Plus, X } from "lucide-react";
 import { type FormEvent, useId, useRef, useState } from "react";
 import { EntryCombobox } from "./EntryCombobox.tsx";
+import { ThingCombobox } from "./ThingCombobox.tsx";
 import { linkTarget } from "./linkComplete.ts";
 import { IconButton } from "./ui/IconButton.tsx";
 
@@ -24,7 +27,14 @@ export const KIND_NAMES: Record<PropertyKind, string> = {
   checkbox: "Checkbox",
   list: "List of text",
   link: "Link to an entry",
+  map: "Link to a map",
+  chronicle: "Link to a chronicle",
+  tree: "Link to a tree",
 };
+
+const sameKey = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
+const sameValue = (a: unknown, b: unknown) =>
+  JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
 
 function without<T>(record: Record<string, T>, key: string): Record<string, T> {
   const rest = { ...record };
@@ -40,6 +50,9 @@ const START: Record<PropertyKind, unknown> = {
   checkbox: false,
   list: [],
   link: null,
+  map: null,
+  chronicle: null,
+  tree: null,
 };
 
 /**
@@ -50,11 +63,17 @@ const START: Record<PropertyKind, unknown> = {
 export function CustomProperties({
   read,
   write,
+  type,
+  onGiveToType,
 }: {
   /** The editor's text as it is now. */
   read: () => string;
   /** Changes the editor's text; false when the change could not be made. */
   write: (change: (text: string) => string) => boolean;
+  /** The entry's type (stage 35): its properties are shown first, as fields to fill. */
+  type?: TypeLine | undefined;
+  /** Given to an owner: makes one of the entry's own properties a property of its type. */
+  onGiveToType?: ((key: string, kind: PropertyKind) => void) | undefined;
 }) {
   const [list, setList] = useState<CustomProperty[] | null>(() => customProperties(read()));
   /**
@@ -125,26 +144,65 @@ export function CustomProperties({
     );
   }
 
+  const given = type?.props ?? [];
+  const ownOf = (prop: TypeProp) => list.find((p) => sameKey(p.key, prop.key));
+  const own = list.filter((p) => !given.some((g) => sameKey(g.key, p.key)));
+
+  /** Writes the entry's value for one of its type's properties; none, or the type's own, is not written. */
+  function setGiven(prop: TypeProp, value: unknown) {
+    const key = ownOf(prop)?.key ?? prop.key;
+    const none = value === null || value === "" || (Array.isArray(value) && value.length === 0);
+    change((text) =>
+      none || sameValue(value, prop.value)
+        ? removeFrontmatterKey(text, key)
+        : setFrontmatterKey(text, key, value),
+    );
+  }
+
   return (
     <div className="custom-props" ref={box}>
-      <h3 className="props-heading">More properties</h3>
-      {list.length === 0 && !adding && (
+      {type && given.length > 0 && (
+        <>
+          <h3 className="props-heading">As a {type.name}</h3>
+          {given.map((prop) => (
+            <GivenRow
+              key={prop.key}
+              prop={prop}
+              own={ownOf(prop)}
+              onValue={(value) => setGiven(prop, value)}
+              onProblem={setProblem}
+              onBack={() => {
+                const mine = ownOf(prop);
+                if (mine) change((text) => removeFrontmatterKey(text, mine.key));
+              }}
+            />
+          ))}
+        </>
+      )}
+      <h3 className="props-heading">{given.length > 0 ? "This entry's own" : "More properties"}</h3>
+      {own.length === 0 && !adding && (
         <p className="muted custom-props-none">None yet. Add one with a name and a value.</p>
       )}
-      {list.map((p) => (
-        <Row
-          key={p.key}
-          property={p}
-          kind={p.kind === "other" ? "other" : (kinds[p.key] ?? p.kind)}
-          onRename={(to) => rename(p.key, to)}
-          onValue={(value) => change((text) => setFrontmatterKey(text, p.key, value))}
-          onProblem={setProblem}
-          onRemove={() => {
-            change((text) => removeFrontmatterKey(text, p.key));
-            setKinds((k) => without(k, p.key));
-          }}
-        />
-      ))}
+      {own.map((p) => {
+        const kind = p.kind === "other" ? "other" : (kinds[p.key] ?? p.kind);
+        return (
+          <Row
+            key={p.key}
+            property={p}
+            kind={kind}
+            onRename={(to) => rename(p.key, to)}
+            onValue={(value) => change((text) => setFrontmatterKey(text, p.key, value))}
+            onProblem={setProblem}
+            onRemove={() => {
+              change((text) => removeFrontmatterKey(text, p.key));
+              setKinds((k) => without(k, p.key));
+            }}
+            {...(type && onGiveToType && kind !== "other"
+              ? { give: { type: type.name, run: () => onGiveToType(p.key, kind) } }
+              : {})}
+          />
+        );
+      })}
       {problem && (
         <p className="error" role="alert">
           {problem}
@@ -229,6 +287,7 @@ function Row({
   onValue,
   onProblem,
   onRemove,
+  give,
 }: {
   property: CustomProperty;
   kind: PropertyKind | "other";
@@ -236,6 +295,8 @@ function Row({
   onValue: (value: unknown) => void;
   onProblem: (problem: string | null) => void;
   onRemove: () => void;
+  /** Offers to make this a property of the entry's type. */
+  give?: { type: string; run: () => void };
 }) {
   const [name, setName] = useState(property.key);
   const valueId = useId();
@@ -292,6 +353,76 @@ function Row({
         className="custom-prop-remove"
         onClick={onRemove}
       />
+      {give && (
+        <button type="button" className="plain custom-prop-give" onClick={give.run}>
+          Give to every {give.type}
+        </button>
+      )}
+    </div>
+  );
+}
+
+/** What a property of a type is called on the entry. */
+export const propLabel = (key: string) => SYSTEM_PROPS[key.toLowerCase()]?.label ?? key;
+
+/**
+ * One of the properties the entry's type gives it: its name, which is the type's to change, and
+ * the entry's value. A value the type gives shows until the entry sets its own.
+ */
+function GivenRow({
+  prop,
+  own,
+  onValue,
+  onProblem,
+  onBack,
+}: {
+  prop: TypeProp;
+  own: CustomProperty | undefined;
+  onValue: (value: unknown) => void;
+  onProblem: (problem: string | null) => void;
+  onBack: () => void;
+}) {
+  const valueId = useId();
+  const label = propLabel(prop.key);
+  const set = own !== undefined && own.value !== null && own.value !== "";
+  const value = set ? own.value : prop.value;
+  const givesValue = prop.value !== undefined;
+
+  function commit(input: string | boolean | string[]) {
+    try {
+      const next =
+        prop.kind === "choice" ? (input === "" ? null : input) : propertyValue(prop.kind, input);
+      if (sameValue(next, value)) return;
+      onProblem(null);
+      onValue(next);
+    } catch (err) {
+      onProblem(err instanceof Error ? err.message : "That value cannot be written.");
+    }
+  }
+
+  return (
+    <div className="custom-prop given-prop" data-key={prop.key} data-kind={prop.kind}>
+      <span className="custom-prop-name given-prop-name">{label}</span>
+      <span className="custom-prop-value" id={valueId}>
+        <Value
+          key={JSON.stringify(value ?? null)}
+          kind={prop.kind}
+          name={label}
+          value={value}
+          labelId={valueId}
+          onCommit={commit}
+          {...(prop.to ? { preferType: prop.to } : {})}
+          {...(prop.options ? { options: prop.options } : {})}
+        />
+      </span>
+      {givesValue &&
+        (set ? (
+          <button type="button" className="plain given-prop-note" onClick={onBack}>
+            Back to the type's
+          </button>
+        ) : (
+          <span className="muted given-prop-note">from the type</span>
+        ))}
     </div>
   );
 }
@@ -303,19 +434,54 @@ function Value({
   value,
   labelId,
   onCommit,
+  preferType,
+  options,
 }: {
-  kind: PropertyKind | "other";
+  kind: PropertyKind | "choice" | "other";
   name: string;
   value: unknown;
   labelId: string;
   onCommit: (input: string | boolean | string[]) => void;
+  /** For a link: the type of entry listed first. */
+  preferType?: string;
+  /** For a choice: what can be chosen. */
+  options?: string[];
 }) {
   const [typed, setTyped] = useState(() => propertyText(value));
   const label = `Value of ${name}`;
   const enter = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Enter") onCommit(e.currentTarget.value);
   };
+  if (kind !== "other" && kind !== "choice" && isThingKind(kind)) {
+    return (
+      <span className="custom-prop-link">
+        <span className="sr-only" id={`${labelId}-label`}>
+          {label}
+        </span>
+        <ThingCombobox
+          kind={kind}
+          value={value}
+          labelledBy={`${labelId}-label`}
+          onChange={(next) => onCommit(next ?? "")}
+        />
+      </span>
+    );
+  }
   switch (kind) {
+    case "choice": {
+      const now = typeof value === "string" ? value : "";
+      const all = options ?? [];
+      return (
+        <select aria-label={label} value={now} onChange={(e) => onCommit(e.target.value)}>
+          <option value="">Not chosen</option>
+          {(now && !all.includes(now) ? [...all, now] : all).map((o) => (
+            <option key={o} value={o}>
+              {o}
+            </option>
+          ))}
+        </select>
+      );
+    }
     case "other":
       return (
         <span className="muted custom-prop-other" title="Change this one in the text">
@@ -356,6 +522,7 @@ function Value({
             labelledBy={`${labelId}-label`}
             value={linkOf(value)}
             allowNone
+            {...(preferType ? { preferType } : {})}
             onChange={(path, title) => {
               if (!path) onCommit("");
               else void linkTarget(path, title).then((target) => onCommit(target));

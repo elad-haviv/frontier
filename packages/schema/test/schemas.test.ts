@@ -203,6 +203,8 @@ describe("API shapes", () => {
         typeKnown: true,
         time: [],
         problems: [],
+        props: [],
+        chattable: false,
         proposed: [],
       },
       maps: [],

@@ -117,7 +117,7 @@ describe("the role table", () => {
         "PUT /presence",
       ].sort(),
     );
-    // Only an owner changes the project itself, its members and its invitation links.
+    // Only an owner changes the project itself, its members, its invitation links and its types.
     expect(
       t.routes
         .filter((r) => r.role === "owner")
@@ -130,6 +130,8 @@ describe("the role table", () => {
       "GET /invites",
       "POST /invites",
       "POST /invites/:id/resend",
+      // Stage 35: types and dates belong to the project.
+      "POST /types/rename",
       "PUT /members/:id",
       "PUT /project",
     ]);

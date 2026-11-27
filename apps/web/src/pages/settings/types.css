@@ -1,0 +1,293 @@
+/* Settings → Types and dates (stage 35): a list of types beside one type's page, then date names. */
+.types-page h2 {
+  margin-bottom: 0.15rem;
+}
+.types-lead {
+  max-width: 42rem;
+}
+.types-kept {
+  min-width: 0;
+  margin-left: 0.5rem;
+}
+.types-columns {
+  display: grid;
+  grid-template-columns: 15rem minmax(0, 1fr);
+  gap: 2rem;
+  align-items: start;
+}
+.types-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  background: var(--paper-raised);
+}
+.types-list > li + li {
+  border-top: 1px solid var(--rule);
+}
+.types-empty {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 0.75rem;
+  align-items: center;
+  padding: 0.9rem;
+  color: var(--ink-soft);
+}
+.types-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 0 0.5rem;
+  align-items: center;
+  width: 100%;
+  padding: 0.5rem 0.8rem;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.is-narrow .types-row {
+  min-height: 3.25rem;
+}
+.types-row[aria-current="true"] {
+  background: var(--accent-soft);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+.types-list > li:first-child .types-row {
+  border-radius: 8px 8px 0 0;
+}
+.types-row small {
+  grid-column: 1 / -1;
+  color: var(--ink-faint);
+  font-size: 0.8rem;
+  overflow-wrap: anywhere;
+}
+.types-count {
+  color: var(--ink-soft);
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.types-add {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  padding: 0.55rem 0.8rem;
+}
+.types-add input[type="text"],
+.types-prop-value input[type="text"],
+.types-prop-value input[type="date"],
+.types-add select,
+.types-prop-value select,
+.types-chip-add {
+  min-width: 0;
+  max-width: 100%;
+  padding: 0.3rem 0.45rem;
+  border: 1px solid var(--rule);
+  border-radius: 5px;
+  background: var(--paper);
+  color: var(--ink);
+  font: inherit;
+}
+.types-add input[type="text"] {
+  flex: 1 1 8rem;
+  width: 8rem;
+}
+.types-add .field-error {
+  flex-basis: 100%;
+  margin: 0;
+}
+.types-offer {
+  display: block;
+  margin: 0 0.8rem 0.6rem;
+}
+.types-strays {
+  list-style: none;
+  margin: 1rem 0 0;
+  padding: 0;
+  display: grid;
+  gap: 0.5rem;
+}
+.types-strays li,
+.types-confirm {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 0.75rem;
+  align-items: center;
+}
+.types-strays li > span,
+.types-confirm p {
+  flex: 1 1 14rem;
+  margin: 0;
+}
+.quiet.danger {
+  color: var(--warn);
+  border-color: var(--warn);
+}
+
+.type-detail {
+  min-width: 0;
+}
+.type-detail h4 {
+  font: 600 0.7rem/1 var(--sans);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  margin: 1.4rem 0 0.45rem;
+}
+.settings-page h3.type-name {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  margin: 0;
+  font-family: var(--serif);
+  font-size: 1.35rem;
+}
+.types-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  align-items: center;
+}
+.types-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.1rem;
+  max-width: 100%;
+  padding: 0.05rem 0.6rem;
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  background: var(--paper-raised);
+  font-size: 0.84rem;
+}
+.types-chip > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.types-chip button {
+  display: inline-grid;
+  place-items: center;
+  margin-right: -0.35rem;
+  padding: 0.15rem;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  color: var(--ink-faint);
+  cursor: pointer;
+}
+.types-chip button:hover {
+  color: var(--warn);
+}
+.types-chip-add {
+  border-style: dashed;
+  border-radius: 999px;
+  background: none;
+  color: var(--ink-faint);
+  font-size: 0.84rem;
+  padding: 0.05rem 0.4rem;
+}
+.types-prop,
+.types-date {
+  display: grid;
+  grid-template-columns: minmax(0, 9.5rem) minmax(0, 1fr) auto;
+  gap: 0.2rem 0.8rem;
+  align-items: center;
+  min-height: 2.8rem;
+  padding: 0.45rem 0.8rem;
+}
+.types-date {
+  grid-template-columns: minmax(0, 9.5rem) minmax(0, 1fr) auto auto;
+}
+.types-prop-name {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.types-tag {
+  display: inline-block;
+  margin-left: 0.35rem;
+  padding: 0.15rem 0.3rem;
+  border: 1px solid currentColor;
+  border-radius: 4px;
+  color: var(--accent);
+  font: 600 0.66rem/1 var(--sans);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+.types-prop-value {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 0.6rem;
+  align-items: center;
+  min-width: 0;
+}
+.types-prop-value input[type="text"] {
+  flex: 1 1 8rem;
+  width: 8rem;
+}
+.types-prop-actions {
+  display: flex;
+  gap: 0.1rem;
+}
+.types-prop-hint {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+.types-check {
+  display: inline-flex;
+  gap: 0.4rem;
+  align-items: center;
+  font-size: 0.9rem;
+  color: var(--ink-soft);
+}
+.types-role {
+  display: inline-flex;
+  justify-self: start;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  overflow: hidden;
+}
+.types-role button {
+  padding: 0.2rem 0.65rem;
+  border: 0;
+  background: none;
+  color: var(--ink-soft);
+  font: inherit;
+  font-size: 0.84rem;
+  cursor: pointer;
+}
+.types-role button + button {
+  border-left: 1px solid var(--rule);
+}
+.types-role button[aria-checked="true"] {
+  background: var(--accent-soft);
+  color: var(--ink);
+  font-weight: 600;
+}
+.types-foot {
+  margin-top: 2rem;
+  padding-top: 0.9rem;
+  border-top: 1px solid var(--rule);
+}
+.is-narrow .types-prop,
+.is-narrow .types-date {
+  grid-template-columns: minmax(0, 1fr) auto auto;
+}
+.is-narrow .types-prop > .types-prop-value,
+.is-narrow .types-date > .types-role {
+  grid-column: 1 / -1;
+  grid-row: 2;
+}
+.is-narrow .types-role button {
+  padding: 0.45rem 0.9rem;
+}
+.types-page input[type="checkbox"] {
+  width: 1.1rem;
+  height: 1.1rem;
+  accent-color: var(--accent);
+}

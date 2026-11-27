@@ -311,6 +311,8 @@ export class DeviceCopy implements ReadThrough {
         typeKnown: true,
         time: [],
         problems: [],
+        props: [],
+        chattable: false,
         proposed: [],
       },
       maps: [],

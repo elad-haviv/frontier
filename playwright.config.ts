@@ -48,7 +48,7 @@ export default defineConfig({
       use: { viewport: { width: 1280, height: 800 }, storageState: AUTH, serviceWorkers: "block" },
       dependencies: ["setup"],
       testMatch:
-        /(reader|voice|chronicle|mapstime|mapviews|mapgestures|mapsread|mapsedit|starmap|systemmap|stackmap|mapslist|mapstyles|maplayers|maptools|findareas|findpaths|terrain|terrainhints|biomes|explore|mapjoins|mapgroups|editor|shell|tree|graph|writing|consult|properties|margin|settings|accounts|home|keepgoing|phonelibrary|librarypane|pictures|trees|projects|members|readerrole|google|people|airelations|artstyles)\.spec\.ts/,
+        /(reader|voice|chronicle|mapstime|mapviews|mapgestures|mapsread|mapsedit|starmap|systemmap|stackmap|mapslist|mapstyles|maplayers|maptools|findareas|findpaths|terrain|terrainhints|biomes|explore|mapjoins|mapgroups|editor|shell|tree|graph|writing|consult|properties|margin|settings|accounts|home|keepgoing|phonelibrary|librarypane|pictures|trees|projects|members|readerrole|google|people|airelations|artstyles|types)\.spec\.ts/,
     },
     // Email (stage 32): against the server that sends mail, logged out: each test logs in or joins
     // by itself, as a person would. Desktop size; the phone is looked at inside the tests.

@@ -2,9 +2,12 @@ import type { RouteApp } from "../projects/facade.js";
 import {
   LIBRARY_FILE_NAMES,
   type LibraryFileResponse,
+  type ProjectRole,
   ResolveLibraryFileRequest,
   SaveLibraryFileRequest,
+  TYPES,
 } from "@frontier/schema";
+import { ApiError } from "../errors.js";
 import { z } from "zod";
 import type { Services } from "../app.js";
 
@@ -20,8 +23,19 @@ export function libraryFileRoutes(app: RouteApp, s: Services): void {
     return { file, revision, blob };
   });
 
+  /** Types and dates belong to the project: only an owner changes that file (stage 35). */
+  const ownersOnly = (name: string, role: ProjectRole | undefined) => {
+    if (name === TYPES.name && role !== "owner") {
+      throw new ApiError(
+        "role_too_low",
+        "Only an owner of the project can change types and dates.",
+      );
+    }
+  };
+
   app.put("/api/library-files/:name", async (request) => {
     const { name } = NameParam.parse(request.params);
+    ownersOnly(name, request.project?.role);
     const { file, revision, baseBlob, op, clashes } = SaveLibraryFileRequest.parse(request.body);
     const result = await s.libraryFiles.save(name, file, revision, { baseBlob, op, clashes });
     changed();
@@ -30,6 +44,7 @@ export function libraryFileRoutes(app: RouteApp, s: Services): void {
 
   app.post("/api/library-files/:name/resolve", async (request) => {
     const { name } = NameParam.parse(request.params);
+    ownersOnly(name, request.project?.role);
     await s.libraryFiles.resolve(name, ResolveLibraryFileRequest.parse(request.body).keep);
     changed();
     return { ok: true as const };

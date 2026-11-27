@@ -2,12 +2,24 @@ import type { RouteApp } from "../projects/facade.js";
 import {
   type EntryResponse,
   type FolderFile,
+  isChattable,
+  RenameTypesRequest,
+  type RenameTypesResponse,
   type SchemaResponse,
+  typeNamed,
   type TreeFolder,
   type TreeResponse,
   VaultPath,
 } from "@frontier/schema";
-import { dirname, isImage, isNote, readFields, stem, typeFromFolder } from "@frontier/vault";
+import {
+  dirname,
+  isImage,
+  isNote,
+  readFields,
+  readFrontmatter,
+  stem,
+  typeFromFolder,
+} from "@frontier/vault";
 import { z } from "zod";
 import { factsOf } from "../keepGoing/derived.js";
 import { overlay } from "../entries/overlay.js";
@@ -51,6 +63,7 @@ export function entryRoutes(app: RouteApp, s: Services): void {
     const schema = s.index.schema;
     const fromFolder = typeFromFolder(schema, path);
     const type = fields.type ?? fromFolder;
+    const line = typeNamed(s.types.file(), type);
     return {
       id: fields.id,
       fields: {
@@ -68,6 +81,8 @@ export function entryRoutes(app: RouteApp, s: Services): void {
           })),
         })),
         problems: fields.problems,
+        props: line?.props ?? [],
+        chattable: isChattable(line, readFrontmatter(text).data),
         proposed: s.proposals.pendingFor(path),
       },
     };
@@ -88,7 +103,15 @@ export function entryRoutes(app: RouteApp, s: Services): void {
     problem: s.index.schemaProblem,
     types: Object.keys(s.index.schema.types),
     what: Object.keys(s.index.schema.what),
+    file: s.types.file(),
+    ...s.types.usage(),
   }));
+
+  app.post("/api/types/rename", async (request): Promise<RenameTypesResponse> => {
+    const result = await s.types.rename(RenameTypesRequest.parse(request.body));
+    s.status.drafts(s.drafts.count(), 0);
+    return result;
+  });
 
   /**
    * The author's view: what is published, with his drafts on top, his renames applied (a moved
