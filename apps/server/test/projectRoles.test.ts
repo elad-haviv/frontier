@@ -81,7 +81,7 @@ describe("the role table", () => {
       .sort();
     expect(readerWrites).toEqual(
       [
-        // Stage 27e: a reader comments and replies, and changes or deletes their own; the rules
+        // Stage 31e: a reader comments and replies, and changes or deletes their own; the rules
         // that are more than the role (own, owner, writer) are in the route, tried in comments27e.
         "DELETE /comments/:id",
         "DELETE /comments/:id/replies/:rid",
@@ -93,6 +93,10 @@ describe("the role table", () => {
         "POST /comments/:id/resolve",
         "DELETE /lore/:id",
         "DELETE /pins",
+        // Stage 27 (talking with a character): a reader talks to a character with their own key,
+        // and deletes their own talks. Nothing a reader says goes into an entry (`/characters/line`
+        // is a writer's).
+        "DELETE /characters/talks/:id",
         "POST /characters/say",
         "POST /export/docx",
         "POST /export/json",
@@ -107,7 +111,7 @@ describe("the role table", () => {
         "POST /lore/stream",
         "POST /members/leave",
         "POST /pins",
-        // Stage 27d: a reader reads, and says which entry they have open for the writers to see.
+        // Stage 31d: a reader reads, and says which entry they have open for the writers to see.
         "POST /presence/leave",
         "PUT /pins",
         "PUT /presence",
