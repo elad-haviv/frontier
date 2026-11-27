@@ -11,7 +11,8 @@ import type { Services } from "./services.js";
  * The file is a convenience, not data: it can be deleted, and a project without one shows no
  * numbers until it is opened once.
  */
-const FILE = "summary.json";
+export const SUMMARY_FILE = "summary.json";
+const FILE = SUMMARY_FILE;
 
 const Stored = z.object({
   entries: z.number().int(),

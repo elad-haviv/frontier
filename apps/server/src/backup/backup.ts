@@ -12,6 +12,7 @@ import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { BackupState } from "@frontier/schema";
 import { outsideRequest } from "../ai/keyring.js";
+import { SUMMARY_FILE } from "../projects/summary.js";
 import type { BackupTarget } from "./targets.js";
 
 export interface BackupOptions {
@@ -143,6 +144,8 @@ export class Backup {
       for (const rel of await walk(dir)) {
         const full = join(dir, rel);
         if (full === this.o.stateFile) continue;
+        // The list's counts of a project are worked out again when it opens; they are not data.
+        if (name === "state" && rel === SUMMARY_FILE) continue;
         out.set(`${name}/${rel}`, await readFile(full));
       }
     }
