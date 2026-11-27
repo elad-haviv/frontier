@@ -189,6 +189,9 @@ export const ROUTE_ROLES: Record<string, ProjectRole> = {
   "POST /proposals/fields": "writer",
   "POST /proposals/job": "writer",
   "POST /proposals/:id/operations/:op": "writer",
+  // Stage 33: relations the AI read, accepted together, and the last Accept taken back.
+  "POST /proposals/:id/relations": "writer",
+  "POST /proposals/undo": "writer",
 
   // What waits for the writers' attention
   "GET /inbox": "writer",

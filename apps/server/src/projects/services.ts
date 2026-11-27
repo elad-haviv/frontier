@@ -9,7 +9,9 @@
  * first project's `state/`, which the server's own files share.
  */
 import { join } from "node:path";
-import type { BiomesFile, ProjectRecord } from "@frontier/schema";
+import { type BiomesFile, kindsOf, type ProjectRecord, type TreesFile } from "@frontier/schema";
+import { relationWarning } from "../ai/relationProposals.js";
+import { collectRelations } from "../relations/collect.js";
 import type { AiProvider } from "../ai/provider.js";
 import type { AiLog } from "../ai/log.js";
 import type { ModelCatalogue } from "../ai/models.js";
@@ -305,7 +307,17 @@ export async function buildServices(
   // Only the first project has data from before projects, and it belongs to the first account.
   const legacyOwner = legacy ? () => server.people.adminIdSync() : () => null;
   const changer = new EntryChanger({ git, index, drafts, status });
-  const proposals = new ProposalStore({ stateDir, files, index, changer, status });
+  const proposals = new ProposalStore({
+    stateDir,
+    files,
+    index,
+    changer,
+    status,
+    discard: async (id) => {
+      await drafts.discard(id);
+      status.drafts(drafts.count(), 0);
+    },
+  });
   await proposals.load();
   const fields = new FieldProposer({
     stateDir,
@@ -316,6 +328,9 @@ export async function buildServices(
     proposals,
     models,
     mayRead: (path) => quarantine.aiMayRead(path),
+    // Stage 33: the kinds of relation, and the relations already written, drafts included.
+    kinds: () => relationKinds(),
+    written: () => writtenRelations(),
   });
   const quarantine = new Quarantine({
     stateDir,
@@ -358,6 +373,44 @@ export async function buildServices(
     changer,
   });
   const libraryFiles = new LibraryFileStore({ vaultDir, drafts });
+  const relationKinds = () => kindsOf((libraryFiles.current("trees").file as TreesFile).kinds);
+  let written: { key: string; keys: Set<string> } | null = null;
+  /** Relations already written, the person's drafts included, so an accepted one is not proposed again. */
+  const writtenRelations = async (): Promise<Set<string>> => {
+    const kinds = relationKinds();
+    const list = drafts.list().filter((d) => d.kind !== "delete" && !d.binary);
+    const key = `${index.generation}|${JSON.stringify(kinds)}|${list.map((d) => `${d.id}:${d.revision}`).join(",")}`;
+    if (written?.key === key) return written.keys;
+    const texts = new Map<string, string>();
+    for (const d of list) texts.set(d.path, await drafts.text(d.id));
+    const notes = index
+      .allNotes()
+      .map((n) => ({ path: n.path, text: texts.get(n.path) ?? n.text }));
+    for (const [path, text] of texts)
+      if (!index.note(path) && path.endsWith(".md")) notes.push({ path, text });
+    const r = collectRelations({
+      notes,
+      files: [...index.files, ...texts.keys()],
+      schema: index.schema,
+      kinds,
+    });
+    const keys = new Set<string>();
+    for (const f of r.facts) {
+      keys.add(`${f.kind}|${f.a}|${f.b}`);
+      if (f.with) keys.add(`${f.kind}|${f.with}|${f.b}`);
+    }
+    written = { key, keys };
+    return keys;
+  };
+  proposals.warnFor = (path, op) =>
+    relationWarning(
+      relationKinds(),
+      op.what,
+      path,
+      op.whoPath,
+      (p) => index.note(p)?.text ?? null,
+      index.schema,
+    );
   const folders = new FolderStore({ index, git, drafts, files: libraryFiles, changer });
   const discoverer = new Discoverer({
     stateDir,

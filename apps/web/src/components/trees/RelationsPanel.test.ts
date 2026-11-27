@@ -25,7 +25,7 @@ vi.mock("../../trees/data.ts", async (original) => ({
     reload: async () => undefined,
   }),
 }));
-vi.mock("../Shell.tsx", () => ({ usePhone: () => false }));
+vi.mock("../Shell.tsx", () => ({ usePhone: () => false, useRefresh: () => () => undefined }));
 
 let mounted: Mounted | null = null;
 afterEach(async () => {

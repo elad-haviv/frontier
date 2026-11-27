@@ -305,6 +305,38 @@ async function streamAnswer(req, res, content, user) {
   if (open) res.end("data: [DONE]\n\n");
 }
 
+// Relations the stand-in "reads": "daughter of X" or "son of X" is a parent, "married X" a
+// partner, "rival of X" a rival, each with its sentence and the words that say it (stage 33).
+function relationsIn(lines) {
+  const out = [];
+  const name = "([A-Z][\\w'-]+(?: [A-Z][\\w'-]+)*)";
+  const kinds = [
+    [new RegExp(`(?:daughter|son|child) of ${name}`), "parent"],
+    [new RegExp(`married ${name}`), "partner"],
+    [new RegExp(`rival of ${name}`), "rival"],
+  ];
+  for (const line of lines) {
+    for (const sentence of line.split(/(?<=[.!?])\s+/)) {
+      for (const [re, what] of kinds) {
+        const m = re.exec(sentence);
+        if (m) {
+          out.push({
+            what,
+            who: m[1],
+            with: null,
+            how: null,
+            when: null,
+            quote: sentence,
+            words: m[0],
+            stated: true,
+          });
+        }
+      }
+    }
+  }
+  return out;
+}
+
 // A stand-in for the AI provider. For any entry it "finds" one dated fact and quotes the entry's
 // first line of text, so the answer passes the check that a quote must be in the entry.
 const ai = createServer((req, res) => {
@@ -393,7 +425,11 @@ const ai = createServer((req, res) => {
     const lines = user.split("\n").slice(1);
     const quote = lines.find((l) => l.trim() !== "" && !l.startsWith("#")) ?? "";
     const answer = user.startsWith("Entry:")
-      ? { type: null, time: [{ what: "happened", when: "in the year of the test", quote }] }
+      ? {
+          type: null,
+          time: [{ what: "happened", when: "in the year of the test", quote }],
+          relations: relationsIn(lines),
+        }
       : user.includes("\nWhat to propose: ")
         ? generated(user)
         : user.startsWith("Entries about what is near")

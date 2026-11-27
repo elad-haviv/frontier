@@ -908,6 +908,27 @@ function projectCalls(slugOf: () => string) {
         type?: string;
       },
     ) => post<{ draftId?: string }>(`/proposals/${id}/operations/${op}`, body),
+    /** Accepts relations of one entry's proposal in one change (stage 33). */
+    acceptRelations: (
+      id: string,
+      accept: {
+        op: string;
+        edits?: {
+          what?: string;
+          who?: string;
+          with?: string | null;
+          how?: string | null;
+          when?: string | null;
+          saveOn?: string;
+        };
+      }[],
+    ) =>
+      post<{ draftId?: string; saved: { path: string; item: { what: string; who: string } }[] }>(
+        `/proposals/${id}/relations`,
+        { accept },
+      ),
+    /** Takes back the person's last Accept of relations, if the entry has not changed since. */
+    undoRelations: () => post<{ undone: boolean }>("/proposals/undo", {}),
     conversations: () =>
       call<{
         conversations: { id: string; title: string; at: string; turns: number }[];

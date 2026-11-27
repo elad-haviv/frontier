@@ -694,6 +694,8 @@ export const InboxProposal = z.object({
       operation: ProposalOperation,
       /** False when the sentence it was taken from is no longer in the entry. */
       applies: z.boolean(),
+      /** For a relation: what accepting it would break, in words, such as a child born too late. */
+      warning: z.string().nullable().optional(),
     }),
   ),
 });
@@ -768,6 +770,12 @@ export const OperationDecision = z.object({
   what: z.string().min(1).optional(),
   when: z.string().min(1).optional(),
   type: z.string().min(1).optional(),
+  /** With a relation (stage 33): the corrected relation, and which entry it is saved on. */
+  who: z.string().min(1).optional(),
+  with: z.string().nullable().optional(),
+  how: z.string().nullable().optional(),
+  relationWhen: z.string().nullable().optional(),
+  saveOn: VaultPath.optional(),
 });
 
 /** `GET /api/me`: the logged-in person, and the ways their account signs in. No secret in it. */

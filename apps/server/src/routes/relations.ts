@@ -2,6 +2,7 @@ import { randomBytes } from "node:crypto";
 import type { RouteApp } from "../projects/facade.js";
 import {
   AddRelationRequest,
+  findKind,
   kindsOf,
   makeId,
   type RelationsResponse,
@@ -56,7 +57,76 @@ export function relationRoutes(app: RouteApp, s: Services): void {
 
   app.get("/api/relations", async (): Promise<RelationsResponse> => {
     const { notes, files } = await library();
-    return collectRelations({ notes, files, schema: s.index.schema, kinds: kindsOf(madeKinds()) });
+    const kinds = kindsOf(madeKinds());
+    const r = collectRelations({ notes, files, schema: s.index.schema, kinds });
+    // Stage 33: what the AI proposed, as facts with where to decide them.
+    const people = new Map(r.people.map((p) => [p.key, p]));
+    const texts = new Map(notes.map((n) => [n.path, n.text]));
+    const person = (key: string) => {
+      if (people.has(key)) return;
+      const p = collectRelations({
+        notes: key.startsWith("?") ? [] : [{ path: key, text: texts.get(key) ?? "" }],
+        files,
+        schema: s.index.schema,
+        kinds,
+      });
+      people.set(
+        key,
+        p.people.find((x) => x.key === key) ?? {
+          key,
+          title: key.startsWith("?") ? key.slice(1) : stem(key),
+          path: key.startsWith("?") ? null : key,
+          type: null,
+          born: null,
+          died: null,
+          dates: null,
+        },
+      );
+    };
+    const proposed: NonNullable<RelationsResponse["proposed"]> = [];
+    for (const op of s.proposals.pendingRelations()) {
+      const found = findKind(kinds, op.what);
+      if (!found) continue;
+      const whoKey = op.whoPath ?? `?${op.who}`;
+      const [a, b] = found.kind.reverse
+        ? found.reversed
+          ? [op.path, whoKey]
+          : [whoKey, op.path]
+        : op.path < whoKey
+          ? [op.path, whoKey]
+          : [whoKey, op.path];
+      person(a);
+      person(b);
+      const withKey = op.withPath ?? (op.with ? `?${op.with}` : null);
+      if (withKey) person(withKey);
+      proposed.push({
+        kind: found.kind.name,
+        a,
+        b,
+        with: withKey,
+        how: op.how,
+        when: op.when,
+        proposal: op.proposal,
+        op: op.id,
+        path: op.path,
+        word: op.what,
+        who: op.who,
+        whoPath: op.whoPath,
+        quote: op.quote,
+        words: op.words,
+        stated: op.stated,
+        also: op.also,
+        match: op.match,
+        maybe: op.maybe,
+        warning: s.proposals.warnFor(op.path, op),
+      });
+    }
+    return {
+      ...r,
+      people: [...people.values()].sort((x, y) => x.title.localeCompare(y.title)),
+      proposed,
+      unread: s.proposals.unreadCount(s.fields.candidates("")),
+    };
   });
 
   /** How the entry at `target` is best linked from `from`: by its title, or by its path when the title is not enough. */

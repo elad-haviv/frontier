@@ -2,13 +2,15 @@ import { ArrowLeft } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import { Link, useNavigate } from "../nav.tsx";
-import type { TreeLine, TreesFile } from "@frontier/schema";
+import type { RelationsResponse, TreeLine, TreesFile } from "@frontier/schema";
 import { entryUrl } from "../api.ts";
 import { useDialogs } from "../components/Dialogs.tsx";
 import { useCanWrite } from "../components/projectContext.ts";
 import { usePhone } from "../components/Shell.tsx";
 import { usePageTitle } from "../components/shell/panels.tsx";
 import { AddPicker } from "../components/trees/AddPicker.tsx";
+import { FindRelations } from "../components/trees/FindRelations.tsx";
+import { ProposedRelation } from "../components/trees/ProposedRelation.tsx";
 import { OnePerson, PersonDetails } from "../components/trees/Person.tsx";
 import { TreeDrawing, type TreeDrawingHandle } from "../components/trees/TreeDrawing.tsx";
 import { Icon } from "../components/ui/Icon.tsx";
@@ -28,8 +30,10 @@ import {
   relate,
   title,
   warningsOf,
+  makeGraph,
 } from "../trees/model.ts";
 import "./TreePage.css";
+import "../components/trees/ProposedRelation.css";
 
 const PHONE_VIEW = "frontier.trees.phoneView";
 const LAST = (tree: string) => projectKey(`frontier.trees.selected.${tree}`);
@@ -82,7 +86,12 @@ export function TreePage() {
         onRetry={() => void relations.reload()}
       />
     );
-  if (trees.state === "loading" || relations.state === "loading" || !relations.graph)
+  if (
+    trees.state === "loading" ||
+    relations.state === "loading" ||
+    !relations.graph ||
+    !relations.response
+  )
     return <Progress label="Loading the tree" />;
   if (!tree)
     return (
@@ -95,6 +104,7 @@ export function TreePage() {
     <Tree
       key={tree.id}
       g={relations.graph}
+      response={relations.response}
       tree={tree}
       fine={file?.fine ?? []}
       allTrees={file!.trees}
@@ -106,13 +116,16 @@ export function TreePage() {
 
 function Tree({
   g,
+  response,
   tree,
   fine,
   allTrees,
   change,
   canWrite,
 }: {
+  /** The relations as written; checks and kinship use only these. */
   g: Graph;
+  response: RelationsResponse;
   tree: TreeLine;
   fine: string[];
   allTrees: TreeLine[];
@@ -143,7 +156,24 @@ function Tree({
   );
 
   const update = (fn: (t: TreeLine) => TreeLine) => void changeTree(change, tree.id, fn);
-  const L = useMemo(() => layoutTree(g, tree), [g, tree]);
+  // Stage 33: what the AI proposed is drawn too, unless this tree hides it.
+  const proposed = response.proposed ?? [];
+  const gAll = useMemo(
+    () =>
+      tree.hideProposed || proposed.length === 0 ? g : makeGraph(response, { proposed: true }),
+    [g, response, tree.hideProposed, proposed.length],
+  );
+  const [selProp, setSelProp] = useState<number | null>(null);
+  const [finding, setFinding] = useState(false);
+  const L = useMemo(() => layoutTree(gAll, tree), [gAll, tree]);
+  const withAll = useMemo(
+    () => (proposed.length ? layoutTree(makeGraph(response, { proposed: true }), tree) : null),
+    [response, tree, proposed.length],
+  );
+  const proposedHere = withAll
+    ? new Set(withAll.edges.filter((e) => e.proposal !== null).map((e) => e.proposal!)).size
+    : 0;
+  const shownProposal = selProp !== null && !tree.hideProposed ? proposed[selProp] : undefined;
   const visible = [...L.nodes.keys()];
   const kinship: Kinship | null = useMemo(
     () => (compareFrom && compareTo ? relate(g, k, compareFrom, compareTo) : null),
@@ -225,7 +255,7 @@ function Tree({
   function findNow() {
     const q = find.trim().toLowerCase();
     if (!q) return;
-    const all = layoutTree(g, { ...tree, gens: undefined, folded: [] });
+    const all = layoutTree(gAll, { ...tree, gens: undefined, folded: [] });
     const hit = [...all.nodes.keys()].find((key) => title(g, key).toLowerCase().includes(q));
     if (!hit) return;
     if (!L.nodes.has(hit)) {
@@ -308,9 +338,26 @@ function Tree({
       )}
     </>
   ) : null;
+  const proposalBox = shownProposal ? (
+    <div className="tr-proposal-box">
+      <ProposedRelation
+        key={`${shownProposal.proposal}${shownProposal.op}`}
+        p={{ ...shownProposal, applies: true }}
+        tag={false}
+        compact
+        heading={<h3>Proposed from {title(g, shownProposal.path)}&rsquo;s text</h3>}
+        onDecided={(key) => {
+          setSelProp(null);
+          if (key) setSelected(key);
+        }}
+      />
+    </div>
+  ) : null;
   const details = sel ? (
     <PersonDetails
-      g={g}
+      g={gAll}
+      checks={g}
+      onProposal={(i) => setSelProp(i)}
       kindName={k}
       id={sel}
       fine={fine}
@@ -451,7 +498,33 @@ function Tree({
                 Fit <kbd>F</kbd>
               </button>
             )}
+            {!phone && canWrite && (
+              <button type="button" onClick={() => setFinding(true)}>
+                Find relations…
+              </button>
+            )}
             <span className="tr-spacer" />
+            {proposedHere > 0 && (
+              <button
+                type="button"
+                className="tr-chip-btn"
+                aria-pressed={!tree.hideProposed}
+                onClick={() => {
+                  setSelProp(null);
+                  update((t) => {
+                    const next = { ...t };
+                    if (t.hideProposed) delete next.hideProposed;
+                    else next.hideProposed = true;
+                    return next;
+                  });
+                }}
+              >
+                <span className="tr-qdot" aria-hidden="true">
+                  ?
+                </span>
+                Proposed · {proposedHere}
+              </button>
+            )}
             {overlays.map((o) => {
               const on = (tree.show ?? []).includes(o.name);
               return (
@@ -526,7 +599,8 @@ function Tree({
         {showOne ? (
           <div className="tr-one-scroll">
             <OnePerson
-              g={g}
+              g={gAll}
+              onProposal={(i) => setSelProp(i)}
               kindName={k}
               id={sel ?? tree.start}
               onGo={(key) => setSelected(key)}
@@ -547,7 +621,17 @@ function Tree({
           <div className="tr-canvas">
             <TreeDrawing
               ref={drawing}
-              g={g}
+              g={gAll}
+              checks={g}
+              selectedProposal={selProp}
+              onProposal={(i) => {
+                setPicker(null);
+                setSelProp(i);
+              }}
+              proposalLabel={(i) => {
+                const p = proposed[i]!;
+                return `Proposed: ${title(g, p.path)}, ${p.word} ${p.whoPath ? title(g, p.whoPath) : p.who}. Open it to decide.`;
+              }}
               tree={tree}
               layout={L}
               selected={sel}
@@ -570,6 +654,18 @@ function Tree({
                 : {})}
               onFold={fold}
             />
+            {!kinship && !compareFrom && proposedHere > 0 && !tree.hideProposed && (
+              <p className="tr-proposed-note">
+                <span>
+                  <span className="tr-qdot" aria-hidden="true">
+                    ?
+                  </span>
+                  {proposedHere} {proposedHere === 1 ? "relation" : "relations"} proposed from the
+                  text, drawn dotted. They count in nothing until you accept them.
+                </span>
+                <Link to="/inbox">All in the inbox</Link>
+              </p>
+            )}
             {(kinship || compareFrom) && (
               <div className="tr-banner" role="status">
                 {kinship ? (
@@ -613,7 +709,20 @@ function Tree({
                 </button>
               )}
             </div>
-            {phone && details && !picker && (
+            {phone && proposalBox && !picker && (
+              <div className="tr-sheet" role="region" aria-label="Proposed relation">
+                <button
+                  type="button"
+                  className="tr-sheet-close quiet"
+                  aria-label="Close"
+                  onClick={() => setSelProp(null)}
+                >
+                  ×
+                </button>
+                {proposalBox}
+              </div>
+            )}
+            {phone && details && !picker && !proposalBox && (
               <div className="tr-sheet" role="region" aria-label={title(g, sel!)}>
                 <button
                   type="button"
@@ -630,6 +739,7 @@ function Tree({
         )}
         {!phone && (
           <aside className="tr-panel" aria-label="Selected">
+            {proposalBox}
             {details ?? (
               <p className="tr-muted">
                 Select someone to see how they relate, to add around them, or to compare two.
@@ -646,6 +756,7 @@ function Tree({
             : "The relations are written on the entries. What you change here is for this visit only."}
         </p>
       )}
+      {finding && <FindRelations unread={response.unread ?? 0} onClose={() => setFinding(false)} />}
       {picker && (
         <AddPicker
           g={g}

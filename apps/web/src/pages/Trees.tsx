@@ -2,11 +2,14 @@ import { Plus } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "../nav.tsx";
 import type { TreeLine, TreeLook, TreesFile } from "@frontier/schema";
-import { treeUrl } from "../api.ts";
+import { api, treeUrl } from "../api.ts";
 import { DialogFrame } from "../components/Dialogs.tsx";
 import { EntryCombobox } from "../components/EntryCombobox.tsx";
 import { useCanWrite } from "../components/projectContext.ts";
 import { usePhone } from "../components/Shell.tsx";
+import { useAsync } from "../useAsync.ts";
+import { FindRelations } from "../components/trees/FindRelations.tsx";
+import "../components/trees/ProposedRelation.css";
 import { usePageTitle } from "../components/shell/panels.tsx";
 import { TreeShape } from "../components/trees/TreeDrawing.tsx";
 import { Icon } from "../components/ui/Icon.tsx";
@@ -70,6 +73,10 @@ export function TreesPage() {
   // A reader opens the trees and the relations; making and changing them is for writers.
   const canWrite = useCanWrite();
   const [making, setMaking] = useState<{ start?: string } | null>(null);
+  const [finding, setFinding] = useState(false);
+  // AI is set up when this person has chosen a model for proposing fields (stage 31f: per device keys).
+  const aiOn = useAsync(() => api.settings(), "trees-ai");
+  const proposing = aiOn.state === "ready" && aiOn.value.ai.models.extraction !== null;
   usePageTitle("Trees");
   useScope("trees");
   useShortcut("trees.new", () => {
@@ -114,6 +121,32 @@ export function TreesPage() {
       </header>
       {relations.state === "failed" && (
         <Problem reason={relations.error ?? "The relations could not be read."} />
+      )}
+      {!canWrite ? null : proposing ? (
+        (relations.response?.unread ?? 0) > 0 && (
+          <div className="tr-findcard">
+            <p>
+              <b>
+                {relations.response!.unread}{" "}
+                {relations.response!.unread === 1 ? "entry has" : "entries have"} never been read
+                for relations.
+              </b>{" "}
+              Frontier&rsquo;s AI can read them and propose the relations they state, each with its
+              sentence, for you to accept or reject.
+            </p>
+            <button type="button" className="primary" onClick={() => setFinding(true)}>
+              Find relations…
+            </button>
+          </div>
+        )
+      ) : (
+        <p className="tr-muted tr-ai-note">
+          <Link to="/settings/you/ai-models/extraction">Choose a model for proposing fields</Link>{" "}
+          to have relations proposed from your entries.
+        </p>
+      )}
+      {finding && (
+        <FindRelations unread={relations.response?.unread ?? 0} onClose={() => setFinding(false)} />
       )}
       {list.length === 0 ? (
         <div className="tr-empty">

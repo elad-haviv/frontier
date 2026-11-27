@@ -245,6 +245,35 @@ export const ProposalOperation = z.discriminatedUnion("op", [
     model: z.string(),
   }),
   z.object({ id: z.string(), op: z.literal("set_type"), type: z.string(), model: z.string() }),
+  /**
+   * A relation the entry's text states (stage 33), written on this entry in its own direction:
+   * "parent: Corin Vane" on Wren. `words` are the exact words of the quote that state it, holding
+   * both the relation word and the name.
+   */
+  z.object({
+    id: z.string(),
+    op: z.literal("add_relation"),
+    what: z.string(),
+    /** The name as the text gives it. */
+    who: z.string(),
+    /** The entry it was matched to, and how: by title, by another name, or not at all. */
+    whoPath: VaultPath.nullable(),
+    match: z.enum(["title", "alias", "none"]),
+    /** With no match: the closest entry, offered as "Is this …?". */
+    maybe: VaultPath.nullable(),
+    with: z.string().nullable(),
+    withPath: VaultPath.nullable(),
+    how: z.string().nullable(),
+    when: z.string().nullable(),
+    quote: z.string(),
+    words: z.string(),
+    quoteHash: z.string(),
+    /** False when the text only lets it be worked out. */
+    stated: z.boolean(),
+    /** The same relation stated in other entries' text, read later. */
+    also: z.array(z.object({ path: VaultPath, quote: z.string(), words: z.string() })).optional(),
+    model: z.string(),
+  }),
 ]);
 export type ProposalOperation = z.infer<typeof ProposalOperation>;
 
@@ -262,5 +291,12 @@ export type Proposal = z.infer<typeof Proposal>;
 export const RejectedOperation = z.union([
   z.object({ path: VaultPath, op: z.literal("add_time"), what: z.string(), quoteHash: z.string() }),
   z.object({ path: VaultPath, op: z.literal("set_type"), type: z.string() }),
+  z.object({
+    path: VaultPath,
+    op: z.literal("add_relation"),
+    what: z.string(),
+    who: z.string(),
+    quoteHash: z.string(),
+  }),
 ]);
 export type RejectedOperation = z.infer<typeof RejectedOperation>;

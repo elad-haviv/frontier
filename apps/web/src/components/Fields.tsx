@@ -66,17 +66,20 @@ export function Fields({ fields }: { fields: EntryFields }) {
           </dd>
         </div>
       ))}
-      {fields.proposed.map((p) => (
-        <div key={p.id} className="field-proposed">
-          <dt>{p.op === "add_time" ? p.what : "Type"}</dt>
-          <dd>
-            {p.op === "add_time" ? p.when : p.type}{" "}
-            <Link to="/inbox" className="field-mark">
-              proposed
-            </Link>
-          </dd>
-        </div>
-      ))}
+      {fields.proposed
+        // Proposed relations show in the Relations tab (stage 33).
+        .filter((p) => p.op !== "add_relation")
+        .map((p) => (
+          <div key={p.id} className="field-proposed">
+            <dt>{p.op === "add_time" ? p.what : "Type"}</dt>
+            <dd>
+              {p.op === "add_time" ? p.when : p.op === "set_type" ? p.type : ""}{" "}
+              <Link to="/inbox" className="field-mark">
+                proposed
+              </Link>
+            </dd>
+          </div>
+        ))}
       {fields.problems.map((p) => (
         <div key={p} className="field-problem">
           <dt>Cannot be read</dt>
