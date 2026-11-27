@@ -460,16 +460,16 @@ test("a save refused for a lowered role says so where the editor was, and is sen
     .poll(
       async () =>
         JSON.stringify(
-          await (await page.request.get(api(`/entries?path=${encodeURIComponent(path)}`))).json(),
+          await (await w.request.get(api(`/entries?path=${encodeURIComponent(path)}`))).json(),
         ),
       { timeout: 30_000 },
     )
     .toContain("typed as the role was lowered");
 
-  // The draft it made goes, so the next run starts from the saved entry.
-  const after = await page.request.get(api(`/entries?path=${encodeURIComponent(path)}`));
+  // The draft it made (the writer's own) goes, so the next run starts from the saved entry.
+  const after = await w.request.get(api(`/entries?path=${encodeURIComponent(path)}`));
   const draft = ((await after.json()) as { draft: { id: string } | null }).draft;
-  if (draft) expect((await page.request.delete(api(`/drafts/${draft.id}`))).ok()).toBe(true);
+  if (draft) expect((await w.request.delete(api(`/drafts/${draft.id}`))).ok()).toBe(true);
 
   await writer.context.close();
   await takeOut(page, "Wren Rewriter");
