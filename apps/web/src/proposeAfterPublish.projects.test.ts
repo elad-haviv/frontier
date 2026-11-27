@@ -44,7 +44,7 @@ describe("proposals after a save, with more than one project", () => {
       }),
     );
     setCurrentProject(A);
-    expect(await proposeAfterPublish(["a.md", "b.md"])).toBe(2);
+    expect(await proposeAfterPublish(A, ["a.md", "b.md"])).toBe(2);
     // Both went to alpha, and nothing of it is waiting in either project.
     expect(asked.filter((u) => u.includes("proposals"))).toEqual([
       "/api/p/alpha/proposals/fields",
@@ -63,14 +63,36 @@ describe("proposals after a save, with more than one project", () => {
       }),
     );
     setCurrentProject(A);
-    await proposeAfterPublish(["a.md"]);
+    await proposeAfterPublish(A, ["a.md"]);
     setCurrentProject(B);
-    await proposeAfterPublish(["b.md"]);
+    await proposeAfterPublish(B, ["b.md"]);
     expect(
       JSON.parse(localStorage.getItem("frontier.pendingProposals:person1:projecta01")!),
     ).toEqual(["a.md"]);
     expect(
       JSON.parse(localStorage.getItem("frontier.pendingProposals:person1:projectb01")!),
     ).toEqual(["b.md"]);
+  });
+
+  it("ask the project the entries were published in, even when another is open by then", async () => {
+    // A publish waits for the server; the person went to beta meanwhile.
+    setKeysOwner("person1");
+    const asked: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        asked.push(url);
+        const body = url.endsWith("/api/settings")
+          ? { ai: { proposeOnPublish: true, models: { extraction: "anthropic:claude-x" } } }
+          : { made: 1 };
+        return new Response(JSON.stringify(body), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      }),
+    );
+    setCurrentProject(B);
+    expect(await proposeAfterPublish(A, ["a.md"])).toBe(1);
+    expect(asked.filter((u) => u.includes("proposals"))).toEqual(["/api/p/alpha/proposals/fields"]);
   });
 });

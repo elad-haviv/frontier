@@ -1034,6 +1034,8 @@ interface Scope {
  */
 export class QueueHub {
   private queues = new Map<string, Queue>();
+  /** Projects whose queue has held a change, so that it is let go once it is empty again. */
+  private worked = new Set<string>();
   private active: Queue | null = null;
   private mainOpening: Promise<Store> | null = null;
   private scoped: Promise<Scope> | null = null;
@@ -1182,6 +1184,8 @@ export class QueueHub {
       });
       q.onCleared(() => this.clearedListeners.forEach((l) => l()));
       q.subscribeList(() => this.settled(ref.id));
+      // One that was only asked for (to read, or to hold a change that went at once) is let go too.
+      setTimeout(() => this.settled(ref.id, true), 60_000);
       const made = q;
       void q.start().catch(() => {
         // It could not start (the list of projects was not read yet): the next ask makes it again.
@@ -1191,12 +1195,22 @@ export class QueueHub {
     return q;
   }
 
-  /** A queue that is not open and has nothing left to send is let go. */
-  private settled(id: string): void {
+  /**
+   * A queue that is not open and has nothing left to send is let go. Not before it had something
+   * (`force` aside): a queue just handed out for a change to a project that is not open has not
+   * been given the change yet, and letting it go now would leave the change with no one to send it.
+   */
+  private settled(id: string, force = false): void {
     const q = this.queues.get(id);
-    if (!q || q === this.active || q.current().length > 0) return;
+    if (!q || q === this.active) return;
+    if (q.current().length > 0) {
+      this.worked.add(id);
+      return;
+    }
+    if (!force && !this.worked.has(id)) return;
     q.stop();
     this.queues.delete(id);
+    this.worked.delete(id);
     this.listChanged();
   }
 
@@ -1219,7 +1233,7 @@ export class QueueHub {
 
   private settledQueue(q: Queue): void {
     const id = [...this.queues].find(([, v]) => v === q)?.[0];
-    if (id !== undefined) this.settled(id);
+    if (id !== undefined) this.settled(id, true);
   }
 
   private open(): Queue {

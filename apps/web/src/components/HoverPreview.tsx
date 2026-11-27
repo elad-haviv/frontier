@@ -1,6 +1,7 @@
 import { onProjectChange, withoutProject } from "../project.ts";
 import { type CSSProperties, type ReactNode, useEffect, useRef, useState } from "react";
-import { api, ApiFailure } from "../api.ts";
+import { ApiFailure } from "../api.ts";
+import { projectWork } from "../projectWork.ts";
 import { NEEDS_CONNECTION } from "../sync/connection.ts";
 
 interface Shown {
@@ -43,9 +44,11 @@ export function usePreviewText(path: string | null): string | null {
       return;
     }
     let live = true;
-    api.preview(path).then(
+    // Kept only while the project it was asked for is open: a switch has cleared the cache.
+    const work = projectWork();
+    work.api.preview(path).then(
       (p) => {
-        cache.set(path, p.text);
+        if (work.open()) cache.set(path, p.text);
         if (live) setText({ path, text: p.text });
       },
       (err) => {

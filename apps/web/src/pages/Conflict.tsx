@@ -7,6 +7,7 @@ import { api, ApiFailure } from "../api.ts";
 import { CodeEditor } from "../components/CodeEditor.tsx";
 import { Diff } from "../components/Diff.tsx";
 import { useDialogs } from "../components/Dialogs.tsx";
+import { projectWork } from "../projectWork.ts";
 
 type Conflict = PublishPlan["conflicts"][number];
 
@@ -42,6 +43,7 @@ export function ConflictPage() {
   }
 
   async function discard() {
+    const work = projectWork();
     const ok = await dialogs.confirm({
       title: "Discard your version?",
       body: "What is in the vault stays as it is.",
@@ -49,8 +51,8 @@ export function ConflictPage() {
       danger: true,
     });
     if (!ok) return;
-    await api.discardDraft(id).catch(() => undefined);
-    navigate("/unpublished");
+    await work.api.discardDraft(id).catch(() => undefined);
+    if (work.open()) navigate("/unpublished");
   }
 
   return (

@@ -3,7 +3,6 @@ import { ActionButton } from "../components/ui/ActionButton.tsx";
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "../nav.tsx";
 import { chronicleIdOf, type LibraryFileName, libraryFileOf, mapIdOf } from "@frontier/schema";
-import { queue } from "../sync/queue.ts";
 import { libraryFileClient } from "../sync/libraryFile.ts";
 import { api, ApiFailure, chronicleUrl, editUrl, entryUrl, imageUrl, mapUrl } from "../api.ts";
 import { proposeAfterPublish } from "../proposeAfterPublish.ts";
@@ -11,7 +10,8 @@ import { Diff } from "../components/Diff.tsx";
 import { useRefresh, useWords } from "../components/Shell.tsx";
 import { useDialogs } from "../components/Dialogs.tsx";
 import { AfterPublish } from "../components/AfterPublish.tsx";
-import { recents } from "../keepGoing/recents.ts";
+import { recentsOf } from "../keepGoing/recents.ts";
+import { projectWork, type ProjectWork } from "../projectWork.ts";
 import { loadPins } from "../keepGoing/pins.ts";
 import { followPublish, publishedEntries } from "../keepGoing/strip.ts";
 import { Problem } from "../components/ui/Problem.tsx";
@@ -47,14 +47,14 @@ const STEPS_WAIT_MS = 2500;
  * The next steps after a publish, from what it wrote. None when there are none, or when they are
  * slow or cannot be had: Publish is not made to wait for them.
  */
-async function nextSteps(paths: string[]): Promise<AfterPublishStep[]> {
+async function nextSteps(work: ProjectWork, paths: string[]): Promise<AfterPublishStep[]> {
   if (paths.length === 0) return [];
   let timer: number | undefined;
   try {
     const slow = new Promise<never>((_, no) => {
       timer = window.setTimeout(() => no(new Error("slow")), STEPS_WAIT_MS);
     });
-    return (await Promise.race([api.afterPublish(paths), slow])).steps;
+    return (await Promise.race([work.api.afterPublish(paths), slow])).steps;
   } catch {
     return [];
   } finally {
@@ -104,8 +104,9 @@ export function UnpublishedPage() {
     if (!data) return;
     setBusy(true);
     setNotice(null);
+    const work = projectWork();
     try {
-      const p = await api.plan(
+      const p = await work.api.plan(
         data.drafts.filter((d) => selected.has(d.id)).map((d) => d.id),
         data.renames.filter((r) => selected.has(r.id)).map((r) => r.id),
         data.decisions.map((d) => d.id),
@@ -125,6 +126,9 @@ export function UnpublishedPage() {
     if (!plan) return;
     setBusy(true);
     setNotice(null);
+    // Everything after the server's answer belongs to the project that was published, which may
+    // not be the one open by then.
+    const work = projectWork();
     try {
       // What this publish writes, found before the lists are read again.
       const deleted = plan.ready.flatMap((id) => {
@@ -136,16 +140,22 @@ export function UnpublishedPage() {
         ...plan.merges.filter((m) => confirmed.has(m.id)).map((m) => m.path),
         ...plan.renames.map((r) => r.to),
       ]).filter((p) => !deleted.includes(p));
-      const { commit, published } = await api.confirm(plan.planId, [...confirmed], message.trim());
+      const { commit, published } = await work.api.confirm(
+        plan.planId,
+        [...confirmed],
+        message.trim(),
+      );
       // The entries read lately follow what was moved and forget what was deleted.
-      followPublish(recents, { renames: plan.renames, deleted });
+      followPublish(work.ref, { renames: plan.renames, deleted });
       // Renames and deletions rewrite the pins on the server.
-      void loadPins(true);
+      if (work.open()) void loadPins(true);
       // The server has no AI key of its own: this browser asks for the field proposals, with its.
-      void proposeAfterPublish(published).then((made) => made > 0 && refresh());
+      void proposeAfterPublish(work.ref, published).then(
+        (made) => made > 0 && work.open() && refresh(),
+      );
       setPlan(null);
       setMessage("");
-      const steps = await nextSteps(written);
+      const steps = await nextSteps(work, written);
       // The notice is always set; while the nudge shows it stands in for the notice, and when the
       // nudge goes the notice is what is left.
       setNotice({
@@ -166,6 +176,8 @@ export function UnpublishedPage() {
   }
 
   async function discard(id: string) {
+    // The project the draft is in, taken before the question is asked.
+    const work = projectWork();
     const ok = await dialogs.confirm({
       title: "Discard this draft?",
       body: "The text you wrote is thrown away.",
@@ -175,11 +187,11 @@ export function UnpublishedPage() {
     if (!ok) return;
     // A library file's change still on this device would bring the draft back: it goes first.
     const library = libraryFileOf(data?.drafts.find((d) => d.id === id)?.path ?? "");
-    if (library) await queue.drop(library.name);
-    await api.discardDraft(id).catch(fail);
+    if (library) await work.queue.drop(library.name);
+    await work.api.discardDraft(id).catch(fail);
     // A new entry that is thrown away was never there.
     const thrown = data?.drafts.find((d) => d.id === id);
-    if (thrown?.kind === "create") recents.forget(thrown.path);
+    if (thrown?.kind === "create") recentsOf(work.ref).forget(thrown.path);
     if (library) await libraryFileClient(library).reload();
     setPlan(null);
     await load();
@@ -187,7 +199,7 @@ export function UnpublishedPage() {
   }
 
   async function cancelRename(id: string) {
-    await api.cancelRename(id).catch(fail);
+    await projectWork().api.cancelRename(id).catch(fail);
     setPlan(null);
     await load();
     refresh();
@@ -204,10 +216,11 @@ export function UnpublishedPage() {
     const id = mapIdOf(path);
     const chronicle = chronicleIdOf(path);
     const library = libraryFileOf(path);
-    if (id) await api.resolveMap(id, keep).catch(fail);
-    else if (chronicle) await api.resolveChronicle(chronicle, keep).catch(fail);
+    const work = projectWork();
+    if (id) await work.api.resolveMap(id, keep).catch(fail);
+    else if (chronicle) await work.api.resolveChronicle(chronicle, keep).catch(fail);
     else if (library) {
-      await api.resolveLibraryFile(library.name as LibraryFileName, keep).catch(fail);
+      await work.api.resolveLibraryFile(library.name as LibraryFileName, keep).catch(fail);
       await libraryFileClient(library).reload();
     } else return;
     setPlan(null);

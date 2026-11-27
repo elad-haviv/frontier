@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { sameValue } from "@frontier/schema";
 import { ApiFailure } from "../api.ts";
-import { type Known, type LinkItem, type QueueKey, queue } from "../sync/queue.ts";
+import { type Known, type LinkItem, type QueueKey } from "../sync/queue.ts";
+import { useProjectWork } from "../projectWork.ts";
 
 export interface ItemFileOptions<T> {
   /** The file's key in the save queue, such as `chronicle:<id>`. */
@@ -50,6 +51,7 @@ const KEPT = 100;
  * component a React key so a different file gets a fresh loop.
  */
 export function useItemFile<T>(options: ItemFileOptions<T>): ItemFile<T> {
+  const work = useProjectWork();
   const [state, setState] = useState<"loading" | "ready" | "failed">("loading");
   const [value, setValue] = useState<T | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -74,7 +76,7 @@ export function useItemFile<T>(options: ItemFileOptions<T>): ItemFile<T> {
   const put = useCallback(
     (next: T, link?: LinkItem[]) => {
       show(next);
-      void queue.put(key, next, { ...known.current, ...(link ? { link } : {}) });
+      void work.queue.put(key, next, { ...known.current, ...(link ? { link } : {}) });
     },
     [key],
   );
@@ -90,7 +92,7 @@ export function useItemFile<T>(options: ItemFileOptions<T>): ItemFile<T> {
         base: loaded.value,
       };
       // A change this device has not sent yet is newer than the server's copy.
-      const unsent = await queue.get(key);
+      const unsent = await work.queue.get(key);
       if (!live) return;
       show(unsent ? (unsent.value as T) : loaded.value);
       setState("ready");
@@ -100,7 +102,7 @@ export function useItemFile<T>(options: ItemFileOptions<T>): ItemFile<T> {
       setState("failed");
     });
 
-    const stop = queue.subscribe(key, (e) => {
+    const stop = work.queue.subscribe(key, (e) => {
       if (e.type === "saved") {
         known.current = e.known;
         const sent = e.sent as T;
@@ -180,7 +182,7 @@ export function useItemFile<T>(options: ItemFileOptions<T>): ItemFile<T> {
   const reload = useCallback(async () => {
     const theirs = await opts.current.load();
     if (current.current === null) return;
-    const unsent = await queue.get(key);
+    const unsent = await work.queue.get(key);
     const base = (known.current.base as T | undefined) ?? theirs.value;
     known.current = {
       draftId: "",
@@ -196,7 +198,7 @@ export function useItemFile<T>(options: ItemFileOptions<T>): ItemFile<T> {
       return;
     }
     // A change still unsent is merged with what the server holds now, and goes from there.
-    await queue.drop(key);
+    await work.queue.drop(key);
     put(opts.current.merge(base, current.current, theirs.value));
   }, [key, put]);
 

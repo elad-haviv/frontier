@@ -20,7 +20,7 @@ import { Menu, MenuItem, MenuSeparator } from "../components/ui/Menu.tsx";
 import { SaveStatus, useSaveState } from "../components/ui/SaveStatus.tsx";
 import { useScope, useShortcut } from "../keys.ts";
 import { recents } from "../keepGoing/recents.ts";
-import { type QueueKey, queue } from "../sync/queue.ts";
+import { type QueueKey } from "../sync/queue.ts";
 import { connection, useNeedsConnection } from "../sync/connection.ts";
 import { OfflineCopy, useReadAgain } from "../components/OfflineCopy.tsx";
 import { entryAddress, markOpened, NOT_ON_DEVICE, servedFromDevice } from "../offline/copy.ts";
@@ -33,6 +33,7 @@ import { PageAction, usePanel, useRightBar } from "../components/shell/panels.ts
 import { useEditorOutline } from "../components/entry/EditorOutline.tsx";
 import { WideMenuItem } from "../components/entry/WideMenuItem.tsx";
 import { useWide } from "../width.ts";
+import { useProjectWork } from "../projectWork.ts";
 
 /** A phone, where the right bar is a sheet over the text. */
 const PHONE = "(max-width: 47.99rem)";
@@ -57,6 +58,7 @@ function pathFrom(pathname: string): string {
 }
 
 export function EditPage() {
+  const work = useProjectWork();
   const dialogs = useDialogs();
   const { pathname, search } = useLocation();
   const navigate = useNavigate();
@@ -98,7 +100,7 @@ export function EditPage() {
   /** Whether a model is chosen for writing help; null until the server says. */
   const [canWrite, setCanWrite] = useState<boolean | null>(null);
   useEffect(() => {
-    api.conversations().then(
+    work.api.conversations().then(
       (r) => setCanWrite(r.ready),
       () => setCanWrite(false),
     );
@@ -133,7 +135,7 @@ export function EditPage() {
     });
   }, []);
   const loadComments = useCallback(async () => {
-    const list = await api.comments(path).then(
+    const list = await work.api.comments(path).then(
       (r) => r.comments,
       () => null,
     );
@@ -180,7 +182,7 @@ export function EditPage() {
       for (const file of files) {
         setMessage(`Adding ${file.name}…`);
         try {
-          const { embed } = await api.upload(file);
+          const { embed } = await work.api.upload(file);
           const v = view.current;
           if (v) {
             const { from, to } = v.state.selection.main;
@@ -208,7 +210,7 @@ export function EditPage() {
     (async () => {
       let text = "";
       try {
-        const entry = await api.entry(path);
+        const entry = await work.api.entry(path);
         if (entry.readOnly) {
           setError("This file is read-only.");
           return;
@@ -231,8 +233,8 @@ export function EditPage() {
           err instanceof ApiFailure && (err.status === 0 || err.code === NOT_ON_DEVICE);
         let rule: OfflineOpen | null = null;
         if (unreachable) {
-          const record = await queue.get(key);
-          const index = await api.graph().catch(() => null);
+          const record = await work.queue.get(key);
+          const index = await work.api.graph().catch(() => null);
           rule = openOrCreate({
             path,
             hasRecord: !!record && record.kind !== "delete",
@@ -275,7 +277,7 @@ export function EditPage() {
         }
       }
       // Text this device has not sent yet is newer than the server's: it is what was typed last.
-      const unsent = await queue.get(key);
+      const unsent = await work.queue.get(key);
       if (unsent && unsent.kind !== "delete") {
         text = String(unsent.value);
         draft.current = {
@@ -316,10 +318,10 @@ export function EditPage() {
   // replaces the one opened if they differ. With a record, the record's base decides on the server.
   useReadAgain(offlineAt, entryAddress(path), () => {
     void (async () => {
-      if (await queue.get(key)) return;
-      const entry = await fromServer(() => api.entry(path)).catch(() => null);
+      if (await work.queue.get(key)) return;
+      const entry = await fromServer(() => work.api.entry(path)).catch(() => null);
       const v = view.current;
-      if (!entry || !v || (await queue.get(key))) return;
+      if (!entry || !v || (await work.queue.get(key))) return;
       setOfflineAt(null);
       const was = openedFrom.current;
       const now = { id: entry.draft?.id ?? "", revision: entry.draft?.revision ?? 0 };
@@ -333,7 +335,7 @@ export function EditPage() {
       latest.current = entry.text;
       v.dispatch({ changes: { from: 0, to: v.state.doc.length, insert: entry.text } });
       // The line above reports a change like typing does; this text is the server's already.
-      await queue.drop(key);
+      await work.queue.drop(key);
       setMessage("Updated from the server.");
     })();
   });
@@ -341,7 +343,7 @@ export function EditPage() {
   // What the queue hears from the server about this file.
   useEffect(
     () =>
-      queue.subscribe(key, (e) => {
+      work.queue.subscribe(key, (e) => {
         if (e.type === "saved") {
           draft.current = {
             ...draft.current,
@@ -367,7 +369,7 @@ export function EditPage() {
       latest.current = text;
       // Kept on this device at once; sent to the server after a second without typing.
       const { id, revision, kind, baseBlob } = draft.current;
-      void queue.put(key, text, { kind, draftId: id, revision, baseBlob });
+      void work.queue.put(key, text, { kind, draftId: id, revision, baseBlob });
       window.clearTimeout(marksTimer.current);
       marksTimer.current = window.setTimeout(() => {
         placeMarks(commentsNow.current);
@@ -439,7 +441,7 @@ export function EditPage() {
       setMessage("Select some words, or put the cursor in a paragraph, to ask about it.");
       return;
     }
-    void queue.sendNow(key);
+    void work.queue.sendNow(key);
     navigate("/ask", {
       state: { question: `About this passage of "${title}":\n"""\n${at.text}\n"""\n` },
     });
@@ -449,17 +451,17 @@ export function EditPage() {
   // proposed field on another device, and nothing here is unsent, show the server's text.
   useEffect(() => {
     const check = async () => {
-      if (document.visibilityState !== "visible" || (await queue.get(key))) return;
-      const entry = await api.entry(path).catch(() => null);
+      if (document.visibilityState !== "visible" || (await work.queue.get(key))) return;
+      const entry = await work.api.entry(path).catch(() => null);
       const v = view.current;
       if (!entry?.draft || !v || entry.draft.id !== draft.current.id) return;
       if (entry.draft.revision <= draft.current.revision) return;
-      if (latest.current !== v.state.doc.toString() || (await queue.get(key))) return;
+      if (latest.current !== v.state.doc.toString() || (await work.queue.get(key))) return;
       draft.current.revision = entry.draft.revision;
       latest.current = entry.text;
       v.dispatch({ changes: { from: 0, to: v.state.doc.length, insert: entry.text } });
       // The line above reports a change like typing does; this text is the server's already.
-      await queue.drop(key);
+      await work.queue.drop(key);
     };
     const onVisible = () => void check();
     document.addEventListener("visibilitychange", onVisible);
@@ -472,14 +474,14 @@ export function EditPage() {
 
   async function done() {
     // What waits is sent now; without a connection it stays on this device and goes later.
-    await queue.sendNow(key);
+    await work.queue.sendNow(key);
     navigate(entryUrl(path));
   }
 
   // The editor's keys: Ctrl+S sends the text now instead of after the pause, Ctrl+Enter is Done.
   useScope("editor");
   useScope("table");
-  useShortcut("editor.save", () => void queue.sendNow(key));
+  useShortcut("editor.save", () => void work.queue.sendNow(key));
   useShortcut("editor.done", () => void done());
   useShortcut("editor.help", () => {
     if (view.current) startHelp(view.current);
@@ -616,8 +618,9 @@ export function EditPage() {
     if (!ok) return;
     // The unsent text goes first; a send already on its way is waited for, so the draft it
     // makes is the one discarded.
-    await queue.drop(key);
-    if (draft.current.revision > 0) await api.discardDraft(draft.current.id).catch(() => undefined);
+    await work.queue.drop(key);
+    if (draft.current.revision > 0)
+      await work.api.discardDraft(draft.current.id).catch(() => undefined);
     refresh();
     // A new entry that is discarded was never there: nothing remembers it.
     if (draft.current.kind === "create") recents.forget(path);
@@ -641,14 +644,14 @@ export function EditPage() {
     if (!ok) return;
     try {
       if (draft.current.kind === "create") {
-        await queue.drop(key);
-        if (draft.current.revision > 0) await api.discardDraft(draft.current.id);
+        await work.queue.drop(key);
+        if (draft.current.revision > 0) await work.api.discardDraft(draft.current.id);
       } else {
         // The delete goes through the queue like any change, so it is kept until it is sent.
         const { id, revision, baseBlob } = draft.current;
-        await queue.put(key, "", { kind: "delete", draftId: id, revision, baseBlob });
-        await queue.sendNow(key);
-        const refused = await queue.get(key);
+        await work.queue.put(key, "", { kind: "delete", draftId: id, revision, baseBlob });
+        await work.queue.sendNow(key);
+        const refused = await work.queue.get(key);
         if (refused?.state === "attention") {
           setMessage(refused.error ?? "Could not delete.");
           return;

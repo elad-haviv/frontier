@@ -5,18 +5,19 @@
 import { type MapFeature, type MapFile, type MapGroup, mergeMaps } from "@frontier/schema";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "../nav.tsx";
-import { api, ApiFailure, fromServer } from "../api.ts";
+import { ApiFailure, fromServer } from "../api.ts";
 import { useReadAgain } from "../components/OfflineCopy.tsx";
 import { markOpened, servedFromDevice } from "../offline/copy.ts";
 import { useDialogs } from "../components/Dialogs.tsx";
 import { useRefresh } from "../components/Shell.tsx";
 import { useSaveState } from "../components/ui/SaveStatus.tsx";
-import { type Known, type LinkItem, type QueueKey, queue } from "../sync/queue.ts";
+import { type Known, type LinkItem, type QueueKey } from "../sync/queue.ts";
 import type { Space } from "@frontier/geo";
 import { keepJoins } from "./joins.ts";
 import { keepStretches } from "./stretches.ts";
 import type { OtherMap } from "./layersBeneath.ts";
 import type { TimeState } from "./useMapTime.ts";
+import { useProjectWork } from "../projectWork.ts";
 
 export type Names = Record<string, { path: string; title: string }>;
 export type MarkerSets = { name: string; icons: { name: string; path: string }[] }[];
@@ -37,6 +38,7 @@ export function useMapFile(
     onLoaded: (map: MapFile) => void;
   },
 ) {
+  const work = useProjectWork();
   const dialogs = useDialogs();
   const navigate = useNavigate();
   const refresh = useRefresh();
@@ -76,7 +78,7 @@ export function useMapFile(
     setHistory({ past: [], future: [] });
     // Opened: kept on this device among the recent maps.
     markOpened(key);
-    Promise.all([api.map(id), queue.get(key)]).then(
+    Promise.all([work.api.map(id), work.queue.get(key)]).then(
       ([loaded, unsent]) => {
         if (!live) return;
         setOfflineAt(servedFromDevice(loaded));
@@ -96,11 +98,11 @@ export function useMapFile(
       (err: unknown) =>
         live && setError(err instanceof ApiFailure ? err.message : "The map could not be opened."),
     );
-    api.markerSets().then(
+    work.api.markerSets().then(
       (r) => live && setSets(r.sets),
       () => undefined,
     );
-    api.maps().then(
+    work.api.maps().then(
       (r) => live && setOtherMaps(r.maps.filter((m) => m.id !== id)),
       () => undefined,
     );
@@ -114,11 +116,11 @@ export function useMapFile(
   // here is unsent and it differs. With a record, the queue's merge brings the two together.
   useReadAgain(offlineAt, `/api/maps/${id}`, () => {
     void (async () => {
-      const loaded = await fromServer(() => api.map(id)).catch(() => null);
+      const loaded = await fromServer(() => work.api.map(id)).catch(() => null);
       if (!loaded) return;
       setOfflineAt(null);
       setNames((n) => ({ ...n, ...loaded.entries }));
-      if (await queue.get(key)) return;
+      if (await work.queue.get(key)) return;
       const was = known.current;
       if (loaded.revision === was.revision && loaded.blob === was.baseBlob) return;
       known.current = {
@@ -136,7 +138,7 @@ export function useMapFile(
   // What the save queue hears from the server about this map.
   useEffect(
     () =>
-      queue.subscribe(key, (e) => {
+      work.queue.subscribe(key, (e) => {
         if (e.type === "saved") {
           known.current = e.known;
           if (e.link.length > 0) {
@@ -182,7 +184,7 @@ export function useMapFile(
           setMap(e.value as MapFile);
           // What changed in both places is said once the save answers, with Compare (stage 15c).
           setNotice("Changes from another device were merged in.");
-          void api.map(id).then(
+          void work.api.map(id).then(
             (theirs) => setNames((n) => ({ ...theirs.entries, ...n })),
             () => undefined,
           );
@@ -196,7 +198,7 @@ export function useMapFile(
   /** Puts the map into the save queue, which keeps it on this device until the server has it. */
   const store = useCallback(
     (next: MapFile, link?: LinkItem[]) =>
-      void queue.put(key, next, { ...known.current, ...(link ? { link } : {}) }),
+      void work.queue.put(key, next, { ...known.current, ...(link ? { link } : {}) }),
     [key],
   );
 
@@ -307,7 +309,7 @@ export function useMapFile(
   /** Takes in the map as the server holds it, after the server changed it, as when a discovery is kept. */
   async function reloadMap() {
     try {
-      const loaded = await api.map(id);
+      const loaded = await work.api.map(id);
       const base = (known.current.base as MapFile | undefined) ?? loaded.map;
       known.current = {
         draftId: "",
@@ -317,14 +319,14 @@ export function useMapFile(
       };
       setNames((n) => ({ ...n, ...loaded.entries }));
       setHistory({ past: [], future: [] });
-      const unsent = await queue.get(key);
+      const unsent = await work.queue.get(key);
       if (!unsent || !mapRef.current) {
         setMap(loaded.map);
         return;
       }
       // A change still unsent is merged with what the server holds now, and goes from there.
       const merged = mergeMaps(base, mapRef.current, loaded.map).map;
-      await queue.drop(key);
+      await work.queue.drop(key);
       setMap(merged);
       store(merged);
     } catch {
@@ -340,8 +342,8 @@ export function useMapFile(
       danger: true,
     });
     if (!ok) return;
-    await queue.drop(key);
-    await api.deleteMap(id).catch(() => undefined);
+    await work.queue.drop(key);
+    await work.api.deleteMap(id).catch(() => undefined);
     refresh();
     navigate("/maps");
   }

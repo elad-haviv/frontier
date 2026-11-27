@@ -8,7 +8,7 @@
  * entry bodies, not what was read when or where.
  */
 import { useSyncExternalStore } from "react";
-import { onProjectChange } from "../project.ts";
+import { currentProject, onProjectChange, type ProjectRef } from "../project.ts";
 import { projectKey } from "../projectStorage.ts";
 
 export const RECENTS_KEY = "frontier.keepGoing.v1";
@@ -348,6 +348,19 @@ if (typeof window !== "undefined") {
   // Another tab of the app changed them.
   window.addEventListener("storage", (e) => {
     if (e.key === projectKey(RECENTS_KEY)) recents.reload();
+  });
+}
+
+/**
+ * The recents of a named project: the shared ones when it is the project open, else a copy read
+ * from, and written back to, that project's own key. For work that finishes after the person has
+ * gone to another project (what a publish did to the entries read lately).
+ */
+export function recentsOf(project: ProjectRef): Recents {
+  if (currentProject()?.id === project.id) return recents;
+  return new Recents({
+    storage: deviceStorage(),
+    key: () => projectKey(RECENTS_KEY, project.id),
   });
 }
 

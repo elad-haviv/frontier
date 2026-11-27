@@ -13,6 +13,7 @@ import {
 import { useDialogs } from "./Dialogs.tsx";
 import { Icon } from "./ui/Icon.tsx";
 import "./Unsent.css";
+import { useProjectWork } from "../projectWork.ts";
 
 /** Where a file is changed: the editor for an entry, the page of a map or chronicle. */
 function pageOf(key: QueueKey): string | null {
@@ -33,6 +34,8 @@ function age(since: number): string {
 
 function Row({ record }: { record: QueueRecord }) {
   const dialogs = useDialogs();
+  // This row is a record of the project the list was drawn for.
+  const work = useProjectWork();
   const href = pageOf(record.key);
   const name = nameOf(record);
   async function discard() {
@@ -42,7 +45,7 @@ function Row({ record }: { record: QueueRecord }) {
       action: "Throw it away",
       danger: true,
     });
-    if (ok) await queue.drop(record.key);
+    if (ok) await work.queue.drop(record.key);
   }
   return (
     <li className={`unsent-row${record.state === "attention" ? " needs-attention" : ""}`}>
@@ -54,7 +57,7 @@ function Row({ record }: { record: QueueRecord }) {
       {record.error && <p className="unsent-error">{record.error}</p>}
       {record.state === "attention" && (
         <p className="unsent-actions">
-          <button type="button" className="quiet" onClick={() => void queue.retry(record.key)}>
+          <button type="button" className="quiet" onClick={() => void work.queue.retry(record.key)}>
             Retry
           </button>
           <button type="button" className="quiet danger" onClick={() => void discard()}>

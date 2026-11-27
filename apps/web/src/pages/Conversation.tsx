@@ -7,6 +7,7 @@ import { Diff } from "../components/Diff.tsx";
 import { useDialogs } from "../components/Dialogs.tsx";
 import { LiveTurn, TurnWork, useLoreAsk } from "../components/LoreWork.tsx";
 import { useRefresh } from "../components/Shell.tsx";
+import { projectWork } from "../projectWork.ts";
 
 const titleOf = (path: string) => path.split("/").pop()!.replace(/\.md$/i, "");
 const failed = (err: unknown, fallback: string) =>
@@ -291,6 +292,7 @@ export function ConversationPage() {
   }
 
   async function remove() {
+    const work = projectWork();
     const ok = await dialogs.confirm({
       title: "Delete this conversation?",
       body: "Its questions and answers are removed. Additions you kept stay among your drafts.",
@@ -298,8 +300,8 @@ export function ConversationPage() {
       danger: true,
     });
     if (!ok) return;
-    await api.deleteConversation(id).catch(() => undefined);
-    navigate(askUrl());
+    await work.api.deleteConversation(id).catch(() => undefined);
+    if (work.open()) navigate(askUrl());
   }
 
   if (!conversation) {

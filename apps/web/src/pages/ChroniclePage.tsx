@@ -6,7 +6,7 @@ import { useParams, useSearchParams } from "react-router-dom";
 import { Link, useNavigate } from "../nav.tsx";
 import { type ChronicleFile, mergeChronicles } from "@frontier/schema";
 import { allSpanPoints, formatYears, placeable } from "@frontier/time";
-import { api, ApiFailure, chronicleUrl, mapUrl } from "../api.ts";
+import { ApiFailure, chronicleUrl, mapUrl } from "../api.ts";
 import { AddEvent } from "../components/chronicle/AddEvent.tsx";
 import { CompareView } from "../components/chronicle/CompareView.tsx";
 import { Details, type OnMap } from "../components/chronicle/Details.tsx";
@@ -39,8 +39,9 @@ import { useItemFile } from "../hooks/useItemFile.ts";
 import { useShortcut } from "../keys.ts";
 import { markOpened, servedFromDevice } from "../offline/copy.ts";
 import { useNeedsConnection } from "../sync/connection.ts";
-import { type QueueKey, queue } from "../sync/queue.ts";
+import { type QueueKey } from "../sync/queue.ts";
 import "./ChroniclePage.css";
+import { useProjectWork } from "../projectWork.ts";
 
 const NARROW = "(max-width: 34rem)";
 
@@ -106,6 +107,7 @@ function Sheet(p: { title: string; onClose: () => void; children: ReactNode }) {
 }
 
 function Chronicle({ id }: { id: string }) {
+  const proj = useProjectWork();
   const navigate = useNavigate();
   const refresh = useRefresh();
   const dialogs = useDialogs();
@@ -176,7 +178,7 @@ function Chronicle({ id }: { id: string }) {
   const file = useItemFile<ChronicleFile>({
     key,
     load: async () => {
-      const loaded = await api.chronicle(id);
+      const loaded = await proj.api.chronicle(id);
       setOfflineAt(servedFromDevice(loaded));
       setEntries(loaded.entries);
       setOnMaps(loaded.onMaps ?? {});
@@ -197,7 +199,7 @@ function Chronicle({ id }: { id: string }) {
           Object.fromEntries(Object.entries(now).filter(([span]) => links.current.has(span))),
         );
         if (unlinked.length > 0) setNotice(unlinked.map((u) => u.reason).join(" "));
-        void api.chronicle(id).then(
+        void proj.api.chronicle(id).then(
           (r) => {
             setEntries(r.entries);
             setOnMaps(r.onMaps ?? {});
@@ -255,14 +257,14 @@ function Chronicle({ id }: { id: string }) {
   // Opened from the device's copy: the server's copy is taken in once it answers, unless a change
   // waits here, which the queue's merge brings together with it.
   useReadAgain(offlineAt, `/api/chronicles/${id}`, () => {
-    void queue.get(key).then((r) => (r ? undefined : file.reload()));
+    void proj.queue.get(key).then((r) => (r ? undefined : file.reload()));
   });
 
   // The maps, for "Open map at…": read once; offline the button is simply not offered.
   const [maps, setMaps] = useState<{ id: string; title: string }[]>([]);
   useEffect(() => {
     let live = true;
-    api.maps().then(
+    proj.api.maps().then(
       (r) => live && setMaps(r.maps.map((m) => ({ id: m.id, title: m.title }))),
       () => undefined,
     );
@@ -406,7 +408,7 @@ function Chronicle({ id }: { id: string }) {
     });
     if (!ok) return;
     try {
-      await api.deleteChronicle(id);
+      await proj.api.deleteChronicle(id);
     } catch (err) {
       setNotice(err instanceof ApiFailure ? err.message : "The chronicle could not be deleted.");
       return;
@@ -417,7 +419,7 @@ function Chronicle({ id }: { id: string }) {
 
   async function copy() {
     try {
-      const made = await api.copyChronicle(id);
+      const made = await proj.api.copyChronicle(id);
       refresh();
       navigate(chronicleUrl(made.id));
     } catch (err) {
@@ -427,7 +429,7 @@ function Chronicle({ id }: { id: string }) {
 
   async function makeMain() {
     try {
-      await api.makeMainChronicle(id);
+      await proj.api.makeMainChronicle(id);
       // The server wrote the mark itself, so the page takes in what the server now holds.
       await file.reload();
       refresh();
@@ -438,7 +440,7 @@ function Chronicle({ id }: { id: string }) {
 
   async function showUnder() {
     try {
-      const list = (await api.chronicles()).chronicles.filter((c) => c.id !== id);
+      const list = (await proj.api.chronicles()).chronicles.filter((c) => c.id !== id);
       setOthers(list.map((c) => ({ id: c.id, title: c.title })));
     } catch {
       setNotice("The other chronicles could not be read.");
@@ -715,7 +717,7 @@ function Chronicle({ id }: { id: string }) {
                 const pick = e.target.value;
                 setOthers(null);
                 if (!pick) return;
-                api.chronicle(pick).then(
+                proj.api.chronicle(pick).then(
                   (r) => setUnder(r.chronicle),
                   () => setNotice("That chronicle could not be read."),
                 );

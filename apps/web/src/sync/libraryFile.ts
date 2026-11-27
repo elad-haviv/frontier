@@ -4,11 +4,12 @@
  * queue, which sends it, merges it with another device's copy when that one was saved first, and
  * keeps it on the device until the server has it.
  */
-import { onProjectChange } from "../project.ts";
+import { currentProject, onProjectChange } from "../project.ts";
+import { projectWork } from "../projectWork.ts";
 import { useEffect, useSyncExternalStore } from "react";
 import type { LibraryFileKind, LibraryFileName } from "@frontier/schema";
-import { api, ApiFailure } from "../api.ts";
-import { type Known, queue } from "./queue.ts";
+import { ApiFailure } from "../api.ts";
+import type { Known } from "./queue.ts";
 
 export interface LibraryFileState<F> {
   state: "loading" | "ready" | "failed";
@@ -22,8 +23,14 @@ export class LibraryFileClient<F> {
   private known: Known = { draftId: "", revision: 0, baseBlob: "" };
   private loading: Promise<void> | null = null;
   private stop: (() => void) | null = null;
+  /** The project this client was made in: a late answer or a change is never another project's. */
+  private readonly ref = currentProject();
 
   constructor(readonly kind: LibraryFileKind<F>) {}
+
+  private get work() {
+    return projectWork(this.ref ?? undefined);
+  }
 
   get name(): LibraryFileName {
     return this.kind.name;
@@ -44,7 +51,7 @@ export class LibraryFileClient<F> {
 
   /** Loads the file once, and hears from then on what the queue does with it. */
   start(): Promise<void> {
-    this.stop ??= queue.subscribe(this.name, (e) => {
+    this.stop ??= this.work.queue.subscribe(this.name, (e) => {
       if (e.type === "saved") this.known = e.known;
       else if (e.type === "merged") {
         this.known = e.known;
@@ -67,15 +74,16 @@ export class LibraryFileClient<F> {
   }
 
   private async load(): Promise<void> {
+    const work = this.work;
     try {
-      const loaded = await api.libraryFile(this.name);
+      const loaded = await work.api.libraryFile(this.name);
       this.known = {
         draftId: "",
         revision: loaded.revision,
         baseBlob: loaded.blob,
         base: loaded.file,
       };
-      const unsent = await queue.get(this.name);
+      const unsent = await work.queue.get(this.name);
       this.show({ state: "ready", value: (unsent?.value ?? loaded.file) as F, error: null });
     } catch (err) {
       if (this.snapshot.value !== null) return;
@@ -96,12 +104,12 @@ export class LibraryFileClient<F> {
     const next = fn(before);
     if (next === before) return;
     this.show({ value: next });
-    await queue.put(this.name, next, this.known);
+    await this.work.queue.put(this.name, next, this.known);
   }
 
   /** Sends what waits now, and resolves once it has been sent or could not be. */
   flush(): Promise<void> {
-    return queue.sendNow(this.name);
+    return this.work.queue.sendNow(this.name);
   }
 }
 

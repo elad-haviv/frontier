@@ -74,6 +74,7 @@ import { Icon } from "./ui/Icon.tsx";
 import { useToast } from "./ui/Toast.tsx";
 import "./FolderSettings.css";
 import "./Tree.css";
+import { projectWork } from "../projectWork.ts";
 
 const SAVE_FIRST = "Save a version first";
 const WAIT = "Wait until your changes are sent";
@@ -274,6 +275,9 @@ export function Tree({
     async (row: Row, to: string, orders: Map<string, string> = new Map()) => {
       const folder = row.folder!;
       const from = folder.path;
+      // The project the folder is in: the Undo below is offered for a while, and the person may
+      // have moved to another project by then.
+      const work = projectWork();
       if (pending(row)) return refuse(`${SAVE_FIRST}: this folder is being moved.`);
       if (to === from) {
         if (orders.size > 0) await changeFile((f) => withOrders(f, orders));
@@ -302,7 +306,7 @@ export function Tree({
       if (unsentUnder(from)) return refuse(`${WAIT}, then move the folder.`);
       let made: { id: string; affected: string[] };
       try {
-        made = await api.rename(from, to);
+        made = await work.api.rename(from, to);
       } catch (err) {
         return refuse(err instanceof ApiFailure ? err.message : "The folder could not be moved.");
       }
@@ -321,7 +325,7 @@ export function Tree({
           run: () =>
             void (async () => {
               try {
-                await api.cancelRename(made.id);
+                await work.api.cancelRename(made.id);
                 if (keyed.size > 0 && before) await changeFile(() => before);
               } catch (err) {
                 refuse(err instanceof ApiFailure ? err.message : "The move could not be undone.");
@@ -338,6 +342,7 @@ export function Tree({
   const moveNote = useCallback(
     async (row: Row, folder: string) => {
       const note = row.note!;
+      const work = projectWork();
       const to = `${folder ? folder + "/" : ""}${nameOf(note.path)}`;
       if (to === note.path) return;
       if (offline) return refuse(`${offline}: moving an entry needs the server.`);
@@ -345,14 +350,14 @@ export function Tree({
         return refuse(`${WAIT}, then move the entry.`);
       }
       try {
-        const made = await api.rename(note.path, to);
+        const made = await work.api.rename(note.path, to);
         onChanged();
         const links = made.affected.length;
         toast({
           message: `Moved ${row.name}; links in ${links} other ${links === 1 ? "entry" : "entries"} will be updated when you save a version`,
           action: {
             label: "Undo",
-            run: () => void api.cancelRename(made.id).then(onChanged, onChanged),
+            run: () => void work.api.cancelRename(made.id).then(onChanged, onChanged),
           },
         });
       } catch (err) {
@@ -417,13 +422,14 @@ export function Tree({
 
   async function remove(row: Row) {
     const folder = row.folder!;
+    const work = projectWork();
     if (pending(row)) return refuse(`${SAVE_FIRST}: this folder is being moved.`);
     if (offline) return refuse(`${offline}: deleting a folder needs the server.`);
     if (unsentUnder(folder.path)) return refuse(`${WAIT}, then delete the folder.`);
     // A new line still on this device goes first, so the server knows the folder.
     if (queue.current().some((r) => r.key === FOLDERS.name)) await client.flush();
     try {
-      const counts = await api.deleteFolder(folder.path, true);
+      const counts = await work.api.deleteFolder(folder.path, true);
       const n = counts.entries;
       const entries = `${n} ${n === 1 ? "entry" : "entries"}`;
       const sub = counts.folders;
@@ -442,7 +448,7 @@ export function Tree({
         danger: true,
       });
       if (!ok) return;
-      await api.deleteFolder(folder.path);
+      await work.api.deleteFolder(folder.path);
       await client.reload();
       onChanged();
     } catch (err) {

@@ -11,10 +11,10 @@ import {
 } from "../api.ts";
 import { Diff } from "../components/Diff.tsx";
 import { useRefresh } from "../components/Shell.tsx";
-import { queue } from "../sync/queue.ts";
 import { Problem } from "../components/ui/Problem.tsx";
 import { Progress } from "../components/ui/Progress.tsx";
 import { failureOf, useAsync } from "../useAsync.ts";
+import { projectWork } from "../projectWork.ts";
 
 const when = (at: string) =>
   new Date(at).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
@@ -54,23 +54,25 @@ function VersionRow({
     if (!texts) return;
     setBusy(true);
     setError(null);
+    // The project the entry is in: the person may switch while it is read and saved.
+    const work = projectWork();
     try {
-      const entry = await api.entry(current);
+      const entry = await work.api.entry(current);
       const key = `entry:${current}` as const;
-      if (entry.draft || (await queue.get(key))) {
+      if (entry.draft || (await work.queue.get(key))) {
         setError("This entry has unsaved changes. Save or discard them first.");
         return;
       }
       // The restored text is a change like any other: it goes through the save queue.
-      await queue.put(key, texts.text, {
+      await work.queue.put(key, texts.text, {
         kind: "edit",
         draftId: newDraftId(),
         revision: 0,
         baseBlob: entry.blob,
         delay: 0,
       });
-      await queue.sendNow(key);
-      const left = await queue.get(key);
+      await work.queue.sendNow(key);
+      const left = await work.queue.get(key);
       if (left?.state === "attention") {
         setError(left.error ?? "The version could not be restored.");
         return;

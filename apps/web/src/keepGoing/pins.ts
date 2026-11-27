@@ -7,6 +7,7 @@ import { onProjectChange } from "../project.ts";
 import { useSyncExternalStore } from "react";
 import type { PinsResponse } from "@frontier/schema";
 import { api } from "../api.ts";
+import { projectWork } from "../projectWork.ts";
 import { connection } from "../sync/connection.ts";
 
 export type Pin = PinsResponse["pins"][number];
@@ -55,11 +56,14 @@ const inFlight = new Set<string>();
 export async function togglePin(path: string): Promise<boolean | null> {
   if (inFlight.has(path)) return null;
   inFlight.add(path);
+  // The project the entry is in: the list is shown only if it is still the one open at the end.
+  const work = projectWork();
   try {
     await loadPins();
+    if (!work.open()) return null;
     const on = pins.some((p) => p.path === path);
-    const r = on ? await api.unpin(path) : await api.pin(path);
-    set(r.pins);
+    const r = on ? await work.api.unpin(path) : await work.api.pin(path);
+    if (work.open()) set(r.pins);
     return !on;
   } finally {
     inFlight.delete(path);
@@ -77,7 +81,9 @@ onProjectChange(() => {
 });
 
 export async function reorderPins(paths: string[]): Promise<void> {
-  set((await api.reorderPins(paths)).pins);
+  const work = projectWork();
+  const answer = await work.api.reorderPins(paths);
+  if (work.open()) set(answer.pins);
 }
 
 /** How long the page is hidden before showing it again reloads the pins. */

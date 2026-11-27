@@ -9,6 +9,7 @@ import { Problem } from "../ui/Problem.tsx";
 import { LibraryView } from "./LibraryView.tsx";
 import { UrlField } from "./UrlField.tsx";
 import "./ImagePicker.css";
+import { projectWork } from "../../projectWork.ts";
 
 /** The name an embed carries, from the server's `![[name]]`. */
 const embedName = (embed: string) => embed.replace(/^!\[\[|\]\]$/g, "");
@@ -54,10 +55,13 @@ export function ImagePicker({
       const list = forMap ? given.slice(0, 1) : given;
       const done: { path: string; embed: string }[] = [];
       setProblem(null);
+      // Every file goes to the project the picker was opened in, even if another is open by the
+      // time the last one is sent.
+      const work = projectWork();
       for (const file of list) {
         setBusy(`Adding ${file.name}…`);
         try {
-          done.push(await api.upload(file));
+          done.push(await work.api.upload(file));
         } catch (err) {
           setProblem(err instanceof ApiFailure ? err.message : "Could not add the image.");
           break;

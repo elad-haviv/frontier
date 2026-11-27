@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { graphData } from "./graph/data.ts";
 import { loadPins } from "./keepGoing/pins.ts";
 import { recents } from "./keepGoing/recents.ts";
+import { followPublish } from "./keepGoing/strip.ts";
 import { setCurrentProject } from "./project.ts";
 import * as pinsModule from "./keepGoing/pins.ts";
 import { libraryFileClient } from "./sync/libraryFile.ts";
@@ -60,6 +61,18 @@ describe("switching projects leaves nothing of the last one", () => {
     await vi.waitFor(() => expect(seen.at(-1)).toEqual(["Beta.md"]));
     expect(asked).toEqual(["/api/p/alpha/pins", "/api/p/beta/pins"]);
     await act(async () => root.unmount());
+  });
+
+  it("follows a publish in the project it was made in, not the one open by the time it ends", () => {
+    setCurrentProject(A);
+    recents.touch("Harbor.md", "Harbor", "read");
+    setCurrentProject(B);
+    recents.touch("Harbor.md", "Harbor", "read");
+    // The publish was made in alpha; beta is open when its answer arrives.
+    followPublish(A, { renames: [{ from: "Harbor.md", to: "Port.md" }], deleted: [] });
+    expect(recents.snapshot().recents.map((r) => r.path)).toEqual(["Harbor.md"]);
+    setCurrentProject(A);
+    expect(recents.snapshot().recents.map((r) => r.path)).toEqual(["Port.md"]);
   });
 
   it("keeps the recents of each project apart, and gives them back", () => {

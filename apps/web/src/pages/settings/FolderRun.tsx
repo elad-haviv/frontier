@@ -8,6 +8,7 @@ import { Combobox, type ComboboxOption } from "../../components/ui/Combobox.tsx"
 import { forgetRun, runFolder, runLeft, type RunLeft, type RunProgress } from "../../folderRun.ts";
 import { useAsync } from "../../useAsync.ts";
 import { message, usd, useSettingsData } from "./shared.tsx";
+import { projectWork } from "../../projectWork.ts";
 
 const WHOLE = "The whole library";
 
@@ -68,10 +69,12 @@ export function FolderRun() {
     const controller = new AbortController();
     stop.current = controller;
     setShown({ ...start, end: "running" });
+    // Every entry is read in the project the run began in, however long it takes.
+    const work = projectWork();
     const end = await runFolder(
       start,
       paths,
-      (path) => api.proposeFields(path),
+      (path) => work.api.proposeFields(path),
       controller.signal,
       (p) => setShown((now) => (now ? { ...now, ...p } : now)),
     );

@@ -1,6 +1,6 @@
 import { onProjectChange } from "../project.ts";
 import type { Completion, CompletionContext, CompletionResult } from "@codemirror/autocomplete";
-import { api } from "../api.ts";
+import { projectWork } from "../projectWork.ts";
 
 interface Name {
   path: string;
@@ -10,14 +10,18 @@ interface Name {
 }
 
 let cache: { at: number; names: Name[] } | null = null;
+
 // The names of one project are not offered in another.
 onProjectChange(() => (cache = null));
 
 /** Every entry name and alias. Read again after 30 seconds, so new entries show up. */
 async function names(): Promise<Name[]> {
   if (cache && Date.now() - cache.at < 30_000) return cache.names;
-  const { results } = await api.names();
-  cache = { at: Date.now(), names: results };
+  // The fill is tagged with the project it was asked for. A project switch clears the cache; an
+  // answer that arrives after it is for a project that is no longer open and must not refill it.
+  const work = projectWork();
+  const { results } = await work.api.names();
+  if (work.open()) cache = { at: Date.now(), names: results };
   return results;
 }
 
