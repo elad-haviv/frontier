@@ -19,7 +19,7 @@ import {
   startSession,
 } from "../auth/session.js";
 import { ApiError } from "../errors.js";
-import type { Services } from "../app.js";
+import type { Server } from "../server.js";
 import { passwordWorks, waysIn } from "./auth.js";
 import type { Person } from "@frontier/schema";
 
@@ -43,7 +43,7 @@ const onlyWayIn = (person: Person) =>
       : "This is your only passkey and the password is switched off. Switch the password on first.",
   );
 
-export function passkeyRoutes(app: FastifyInstance, s: Services): void {
+export function passkeyRoutes(app: FastifyInstance, s: Server): void {
   const origin = new URL(s.config.publicUrl).origin;
   const rpID = new URL(s.config.publicUrl).hostname;
 
@@ -102,11 +102,11 @@ export function passkeyRoutes(app: FastifyInstance, s: Services): void {
     }
     const { credential } = result.registrationInfo;
     // A credential id belongs to one account: it is not taken from another.
-    const owner = await s.server.people.byPasskey(credential.id);
+    const owner = await s.people.byPasskey(credential.id);
     if (owner && owner.id !== personOf(request).id) {
       throw new ApiError("invalid", "The passkey could not be checked. Try again.");
     }
-    await s.server.people.update(personOf(request).id, (now) => ({
+    await s.people.update(personOf(request).id, (now) => ({
       ...now,
       passkeys: [
         ...now.passkeys.filter((p) => p.id !== credential.id),
@@ -125,7 +125,7 @@ export function passkeyRoutes(app: FastifyInstance, s: Services): void {
 
   app.post("/api/passkeys/login/options", async (request) => {
     // Nobody has said who they are yet, so every passkey is offered to the device.
-    const keys = (await s.server.people.all()).flatMap((p) => p.passkeys);
+    const keys = (await s.people.all()).flatMap((p) => p.passkeys);
     if (keys.length === 0) {
       throw new ApiError("not_found", "No passkey is registered.");
     }
@@ -142,10 +142,10 @@ export function passkeyRoutes(app: FastifyInstance, s: Services): void {
   });
 
   app.post("/api/passkeys/login/verify", async (request) => {
-    s.server.loginLimit.attempt(request.ip);
+    s.loginLimit.attempt(request.ip);
     const { response } = LoginVerify.parse(request.body);
     const expectedChallenge = take(request);
-    const person = await s.server.people.byPasskey(response.id);
+    const person = await s.people.byPasskey(response.id);
     const passkey = person?.passkeys.find((p) => p.id === response.id);
     const refused = new ApiError("unauthenticated", "This passkey was not accepted.");
     if (!person || !passkey) throw refused;
@@ -171,7 +171,7 @@ export function passkeyRoutes(app: FastifyInstance, s: Services): void {
     }
     if (!result.verified) throw refused;
     const counter = result.authenticationInfo.newCounter;
-    const now = await s.server.people.update(person.id, (p) => ({
+    const now = await s.people.update(person.id, (p) => ({
       ...p,
       passkeys: p.passkeys.map((k) => (k.id === passkey.id ? { ...k, counter } : k)),
     }));
@@ -183,7 +183,7 @@ export function passkeyRoutes(app: FastifyInstance, s: Services): void {
     const { id } = z.object({ id: z.string() }).parse(request.params);
     // The checks run on the account as it is when the change is made, not as it was when the
     // request arrived: two removals at once must not each see a passkey that is left.
-    const now = await s.server.people.update(personOf(request).id, (person) => {
+    const now = await s.people.update(personOf(request).id, (person) => {
       if (!person.passkeys.some((p) => p.id === id)) {
         throw new ApiError("not_found", "There is no such passkey.");
       }
@@ -204,7 +204,7 @@ export function passkeyRoutes(app: FastifyInstance, s: Services): void {
       );
     }
     // Checked on the account as it is when the change is made; see the removal of a passkey.
-    const now = await s.server.people.update(personOf(request).id, (person) => {
+    const now = await s.people.update(personOf(request).id, (person) => {
       if (off && person.passkeys.length === 0) {
         throw new ApiError(
           "not_allowed",

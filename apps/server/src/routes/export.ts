@@ -1,4 +1,4 @@
-import type { FastifyInstance } from "fastify";
+import type { RouteApp } from "../projects/facade.js";
 import { VaultPath } from "@frontier/schema";
 import { z } from "zod";
 import { choose } from "../export/entries.js";
@@ -20,9 +20,9 @@ const Pick = z
 const fileName = (title: string, ending: string) =>
   `${title.replace(/[^\p{L}\p{N} _-]+/gu, "").trim() || "export"}.${ending}`;
 
-export function exportRoutes(app: FastifyInstance, s: Services): void {
+export function exportRoutes(app: RouteApp, s: Services): void {
   const mayRead = (path: string) => s.quarantine.aiMayRead(path) === null;
-  const deps = { index: s.index, git: s.git };
+  const deps = () => ({ index: s.index, git: s.git });
 
   /** The folders an export can be made of: those holding entries, appendices aside. */
   app.get("/api/export/folders", async () => {
@@ -51,7 +51,7 @@ export function exportRoutes(app: FastifyInstance, s: Services): void {
   const send = (kind: string, type: string, ending: string, make: typeof site) =>
     app.post(`/api/export/${kind}`, async (request, reply) => {
       const pick = Pick.parse(request.body);
-      const bytes = await make(deps, pick.title, choose(s.index, s.drafts, mayRead, pick));
+      const bytes = await make(deps(), pick.title, choose(s.index, s.drafts, mayRead, pick));
       const name = fileName(pick.title, ending);
       return reply
         .type(type)

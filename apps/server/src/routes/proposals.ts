@@ -1,4 +1,4 @@
-import type { FastifyInstance } from "fastify";
+import type { RouteApp } from "../projects/facade.js";
 import { Id, OperationDecision, VaultPath } from "@frontier/schema";
 import { z } from "zod";
 import { ApiError } from "../errors.js";
@@ -8,7 +8,7 @@ const FieldsRequest = z.object({ path: VaultPath });
 const JobRequest = z.object({ folder: z.string() });
 const OperationParams = z.object({ id: Id, op: Id });
 
-export function proposalRoutes(app: FastifyInstance, s: Services): void {
+export function proposalRoutes(app: RouteApp, s: Services): void {
   app.post("/api/proposals/fields", async (request) => {
     const { path } = FieldsRequest.parse(request.body);
     return { made: await s.fields.propose(path) };

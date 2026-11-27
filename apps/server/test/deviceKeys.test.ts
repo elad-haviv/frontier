@@ -15,7 +15,7 @@ import {
   requestPerson,
   withDeviceKeys,
 } from "../src/ai/keyring.js";
-import { makeTestApp, seedAccount, type TestApp } from "./helpers/app.js";
+import { addMember, makeTestApp, seedAccount, type TestApp } from "./helpers/app.js";
 
 let t: TestApp;
 afterEach(() => t.close());
@@ -271,7 +271,12 @@ describe("one person's key checks, spending and notice", () => {
     const p = provider();
     t = await makeTestApp({}, { fetch: p.fake, settleMs: 0 });
     await t.login();
-    await seedAccount(t.services, SECOND.password, { email: SECOND.email, name: SECOND.name });
+    const second = await seedAccount(t.services, SECOND.password, {
+      email: SECOND.email,
+      name: SECOND.name,
+    });
+    // The second person is in the project too (stage 27b), as a writer: the status is the project's.
+    await addMember(t, (await t.server.projects.all())[0]!.id, second.id, "writer");
     t.keys = { openrouter: SECRET };
     await t.put("/api/settings/ai", { models: { extraction: "test/model" } });
     return p;

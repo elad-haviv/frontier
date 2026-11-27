@@ -6,78 +6,53 @@ import rateLimit from "@fastify/rate-limit";
 import secureSession from "@fastify/secure-session";
 import Fastify, { type FastifyInstance } from "fastify";
 import { ZodError } from "zod";
-import { AI_KEYS_HEADER, type BiomesFile } from "@frontier/schema";
-import { FieldProposer } from "./ai/fields.js";
-import { AiLog } from "./ai/log.js";
-import { ModelCatalogue } from "./ai/models.js";
+import { AI_KEYS_HEADER } from "@frontier/schema";
 import { readKeysHeader } from "./ai/keyring.js";
-import { AiProvider } from "./ai/provider.js";
-import { ChronicleStore } from "./chronicles/store.js";
-import { MapStore } from "./maps/store.js";
-import { FolderStore } from "./folders/store.js";
-import { LibraryFileStore } from "./library/files.js";
-import { folderRoutes } from "./routes/folders.js";
-import { libraryFileRoutes } from "./routes/libraryFiles.js";
-import { Conversations } from "./ai/conversations.js";
-import { EntryDrafter } from "./ai/draftEntry.js";
-import { LoreAsker } from "./ai/lore.js";
-import { entryDraftRoutes } from "./routes/entryDraft.js";
-import { KeepGoingAi } from "./ai/keepGoing.js";
-import { KeepGoingHistory } from "./keepGoing/history.js";
-import { PinStore } from "./keepGoing/pins.js";
-import { KeepGoing } from "./keepGoing/service.js";
-import { keepGoingRoutes } from "./routes/keepGoing.js";
-import { loreRoutes } from "./routes/lore.js";
-import { writingRoutes } from "./routes/writing.js";
-import { commentRoutes } from "./routes/comments.js";
-import { CommentStore } from "./comments/store.js";
-import { ConsultStore } from "./consults/store.js";
-import { characterRoutes } from "./routes/characters.js";
-import { discoverRoutes } from "./routes/discover.js";
-import { exportRoutes } from "./routes/export.js";
-import { Discoverer } from "./ai/discover.js";
-import { CharacterTalk } from "./ai/characters.js";
-import { WritingHelper } from "./ai/writing.js";
-import { EditReviewer } from "./ai/review.js";
-import { chronicleRoutes } from "./routes/chronicles.js";
-import { mapRoutes } from "./routes/maps.js";
-import { historyRoutes } from "./routes/history.js";
-import { importRoutes } from "./routes/import.js";
-import { Backup } from "./backup/backup.js";
-import { EntryChanger } from "./entries/change.js";
-import { ProposalStore } from "./proposals/store.js";
-import { Quarantine, REVIEW_FILE } from "./quarantine/quarantine.js";
-import { passkeyRoutes } from "./routes/passkeys.js";
-import { proposalRoutes } from "./routes/proposals.js";
-import { quarantineRoutes } from "./routes/quarantine.js";
-import { settingsRoutes } from "./routes/settings.js";
 import { FolderTarget, S3Target } from "./backup/targets.js";
 import type { Config } from "./config.js";
 import { ApiError, settingsLink } from "./errors.js";
-import { appTokenSource } from "./git/appAuth.js";
-import { GitError, GitGateway } from "./git/gateway.js";
-import { ImageServer } from "./images/serve.js";
-import { type FetchLimits, ImageFetcher, type Resolve } from "./images/fromUrl.js";
-import { BranchInbox } from "./inbox/branches.js";
-import { inboxRoutes } from "./routes/inbox.js";
-import { Publisher } from "./publish/publish.js";
-import { draftRoutes } from "./routes/drafts.js";
-import { DraftStore } from "./state/drafts.js";
-import { VaultIndex } from "./index/build.js";
-import { SearchIndex } from "./index/search.js";
+import { GitError } from "./git/gateway.js";
+import type { FetchLimits, Resolve } from "./images/fromUrl.js";
+import { guardProjects } from "./projects/guard.js";
+import { projectApp, RouteBook, type ProjectRoute } from "./projects/facade.js";
+import { scopedServices } from "./projects/context.js";
+import { ensureFirstProject } from "./projects/first.js";
+import { ProjectRegistry } from "./projects/registry.js";
+import { buildServices, type Services } from "./projects/services.js";
 import { authRoutes } from "./routes/auth.js";
+import { characterRoutes } from "./routes/characters.js";
+import { chronicleRoutes } from "./routes/chronicles.js";
+import { commentRoutes } from "./routes/comments.js";
+import { discoverRoutes } from "./routes/discover.js";
+import { draftRoutes } from "./routes/drafts.js";
+import { entryDraftRoutes } from "./routes/entryDraft.js";
 import { entryRoutes } from "./routes/entries.js";
+import { exportRoutes } from "./routes/export.js";
+import { folderRoutes } from "./routes/folders.js";
 import { graphRoutes } from "./routes/graph.js";
+import { historyRoutes } from "./routes/history.js";
 import { imageRoutes } from "./routes/images.js";
+import { importRoutes } from "./routes/import.js";
+import { inboxRoutes } from "./routes/inbox.js";
+import { keepGoingRoutes } from "./routes/keepGoing.js";
+import { libraryFileRoutes } from "./routes/libraryFiles.js";
+import { loreRoutes } from "./routes/lore.js";
+import { mapRoutes } from "./routes/maps.js";
+import { passkeyRoutes } from "./routes/passkeys.js";
+import { projectRoutes, projectsApi } from "./routes/projects.js";
+import { proposalRoutes } from "./routes/proposals.js";
+import { quarantineRoutes } from "./routes/quarantine.js";
 import { searchRoutes } from "./routes/search.js";
-import { statusRoutes } from "./routes/status.js";
+import { settingsRoutes } from "./routes/settings.js";
+import { healthRoute, statusRoutes } from "./routes/status.js";
 import { webhookRoutes } from "./routes/webhook.js";
-import { StateFiles } from "./state/files.js";
+import { writingRoutes } from "./routes/writing.js";
 import { makeServer, type Server } from "./server.js";
-import { SettingsStore } from "./state/settings.js";
 import { requirePerson } from "./auth/session.js";
-import { StatusService } from "./status/status.js";
 import { readBuild, webRoutes } from "./web.js";
+
+export { backupSources, backupPlan, PrefixedTarget } from "./projects/services.js";
+export type { Services } from "./projects/services.js";
 
 declare module "@fastify/secure-session" {
   interface SessionData {
@@ -94,66 +69,14 @@ declare module "@fastify/secure-session" {
   }
 }
 
-export interface Services {
-  config: Config;
-  git: GitGateway;
-  index: VaultIndex;
-  status: StatusService;
-  files: StateFiles;
-  settings: SettingsStore;
-  /** What is the whole server's, not this library's: the accounts and the login allowance. */
-  server: Server;
-  images: ImageServer;
-  /** Takes images from web addresses, with the safeguards that keep the server's network safe. */
-  imageFetcher: ImageFetcher;
-  drafts: DraftStore;
-  publisher: Publisher;
-  branches: BranchInbox;
-  ai: AiProvider;
-  aiLog: AiLog;
-  models: ModelCatalogue;
-  changer: EntryChanger;
-  proposals: ProposalStore;
-  fields: FieldProposer;
-  quarantine: Quarantine;
-  maps: MapStore;
-  chronicles: ChronicleStore;
-  /** Library item files, such as the folder file, through one store. */
-  libraryFiles: LibraryFileStore;
-  folders: FolderStore;
-  lore: LoreAsker;
-  drafter: EntryDrafter;
-  /** Stage 25: the work queue, "From here", Link it, random entry and the steps after Publish. */
-  keepGoing: KeepGoing;
-  keepGoingHistory: KeepGoingHistory;
-  keepGoingAi: KeepGoingAi;
-  pins: PinStore;
-  writing: WritingHelper;
-  review: EditReviewer;
-  characters: CharacterTalk;
-  discoverer: Discoverer;
-  conversations: Conversations;
-  comments: CommentStore;
-  consults: ConsultStore;
-  backup: Backup;
-  search: SearchIndex;
-  /** Fetches `main`, resets the working copy and rebuilds the index. */
-  sync(): Promise<void>;
-}
-
 export interface App {
   app: FastifyInstance;
+  /** The first project's services (the library the server had before projects), not brought up. */
   services: Services;
-}
-
-/** The folders that hold data which cannot be rebuilt from the vault repository. */
-export function backupSources(dataDir: string, ownLibrary = false): Record<string, string> {
-  return {
-    state: join(dataDir, "state"),
-    generated: join(dataDir, "assets", "generated"),
-    // Frontier's own library exists nowhere else, so it is backed up with the rest.
-    ...(ownLibrary ? { library: join(dataDir, "library.git") } : {}),
-  };
+  /** What belongs to the whole server. */
+  server: Server;
+  /** Every project route, with the role it needs: the table the guard enforces. */
+  routes: ProjectRoute[];
 }
 
 /** Routes that need no session. */
@@ -180,8 +103,6 @@ function cacheRule(file: string): string | null {
 }
 
 export interface BuildOptions {
-  /** The server-wide accounts, when a server holds more than one library. Made here when not given. */
-  server?: Server;
   /** Used by tests to watch Git commands. */
   onGitCommand?: (args: readonly string[]) => void;
   logger?: boolean;
@@ -203,288 +124,31 @@ export interface BuildOptions {
 
 /** Builds the server. The caller decides when to clone, sync and listen. */
 export async function buildApp(config: Config, options: BuildOptions = {}): Promise<App> {
-  const vaultDir = join(config.dataDir, "vault");
-  const stateDir = join(config.dataDir, "state");
+  const server = makeServer(config, {
+    ...(options.fetch ? { fetch: options.fetch } : {}),
+    ...(options.resolveHost ? { resolveHost: options.resolveHost } : {}),
+    ...(options.imageFetchLimits ? { imageFetchLimits: options.imageFetchLimits } : {}),
+  });
+  const target =
+    config.backup.kind === "local"
+      ? new FolderTarget(config.backup.dir)
+      : new S3Target(config.backup.s3);
+  server.registry = new ProjectRegistry((record) =>
+    buildServices(server, record, {
+      target,
+      ...(options.onGitCommand ? { onGitCommand: options.onGitCommand } : {}),
+      ...(options.backupDelayMs !== undefined ? { backupDelayMs: options.backupDelayMs } : {}),
+      ...(options.settleMs !== undefined ? { settleMs: options.settleMs } : {}),
+    }),
+  );
 
-  const git = new GitGateway({
-    dir: vaultDir,
-    remoteUrl: config.remoteUrl,
-    author: config.commitAuthor,
-    committer: config.commitBot,
-    ...(config.githubApp
-      ? { token: appTokenSource(config.githubApp) }
-      : config.githubToken
-        ? { token: async () => config.githubToken }
-        : {}),
-    ...(options.onGitCommand ? { onCommand: options.onGitCommand } : {}),
-  });
-  const index = new VaultIndex(vaultDir);
-  const status = new StatusService(index, {
-    library: config.library,
-    backupOutside: config.backup.kind === "s3",
-    // Read only when a snapshot is made, after the draft store below exists.
-    keptCopies: () => drafts.keptCount(),
-    draftChanges: () => drafts.changes,
-  });
-  const files = new StateFiles();
-  const settings = new SettingsStore(stateDir, files);
-  const server = options.server ?? makeServer(config, files);
-  const images = new ImageServer(vaultDir, config.dataDir);
-  const imageFetcher = new ImageFetcher({
-    publicUrl: config.publicUrl,
-    allowLoopback: config.imageFetchAllowLoopback,
-    ...(options.resolveHost ? { resolve: options.resolveHost } : {}),
-    ...(options.imageFetchLimits ? { limits: options.imageFetchLimits } : {}),
-  });
-  const drafts = new DraftStore(stateDir, files);
-  await drafts.load();
-  const backup = new Backup({
-    sources: backupSources(config.dataDir, config.library === "own"),
-    target:
-      config.backup.kind === "local"
-        ? new FolderTarget(config.backup.dir)
-        : new S3Target(config.backup.s3),
-    stateFile: join(stateDir, "backup.json"),
-    ...(options.backupDelayMs !== undefined ? { delayMs: options.backupDelayMs } : {}),
-    onResult: (state) => status.backedUp(state.lastSuccessAt, state.lastError),
-  });
-  files.onChange(() => backup.noteChange());
-  const last = await backup.lastState();
-  status.backedUp(last.lastSuccessAt, last.lastError);
-
-  const aiLog = new AiLog(stateDir, () => backup.noteChange());
   // AI keys are never kept here: each request brings the person's own (see ai/keyring.ts). Keys an
   // earlier version stored in the settings file are deleted now, and the web app says so once.
-  const keysRemoved = await settings.removeStoredKeys(new Date(), config.unusedKeyVars);
-  if (keysRemoved) {
-    status.keysWereRemoved(keysRemoved);
-  } else {
-    status.keysWereRemoved((await settings.read())?.ai.keysRemoved ?? null);
-  }
-  const ai = new AiProvider({
-    config,
-    settings,
-    log: aiLog,
-    ...(options.fetch ? { fetch: options.fetch } : {}),
-  });
-  const models = new ModelCatalogue({
-    connections: ai.connections,
-    settings,
-    openrouterUrl: config.openrouterUrl,
-  });
-  ai.useCatalog(models);
-  const changer = new EntryChanger({ git, index, drafts, status });
-  const proposals = new ProposalStore({ stateDir, files, index, changer, status });
-  await proposals.load();
-  const fields = new FieldProposer({
-    stateDir,
-    files,
-    index,
-    settings,
-    provider: ai,
-    proposals,
-    models,
-    mayRead: (path) => quarantine.aiMayRead(path),
-  });
-  const quarantine = new Quarantine({
-    stateDir,
-    vaultDir,
-    files,
-    git,
-    index,
-    drafts,
-    ...(options.settleMs !== undefined ? { settleMs: options.settleMs } : {}),
-  });
-  const search = new SearchIndex(index);
-  const conversations = new Conversations(stateDir, files);
-  const comments = new CommentStore(stateDir, files);
-  const consults = new ConsultStore(stateDir, files);
-  const chronicles = new ChronicleStore({ vaultDir, git, index, drafts, changer });
-  const characters = new CharacterTalk({
-    index,
-    search,
-    provider: ai,
-    settings,
-    drafts,
-    git,
-    changer,
-    chronicles,
-    mayRead: (path) => quarantine.aiMayRead(path) === null,
-  });
-  const maps = new MapStore({
-    vaultDir,
-    iconFolder: config.iconFolder,
-    git,
-    index,
-    drafts,
-    changer,
-  });
-  const libraryFiles = new LibraryFileStore({ vaultDir, drafts });
-  const folders = new FolderStore({ index, git, drafts, files: libraryFiles, changer });
-  const discoverer = new Discoverer({
-    stateDir,
-    files,
-    index,
-    maps,
-    chronicles,
-    drafts,
-    changer,
-    provider: ai,
-    settings,
-    uploadFolder: config.uploadFolder,
-    mayRead: (path) => quarantine.aiMayRead(path) === null,
-    biomes: () => {
-      try {
-        return (libraryFiles.current("biomes").file as BiomesFile).biomes;
-      } catch {
-        return [];
-      }
-    },
-  });
-  const writing = new WritingHelper({
-    index,
-    search,
-    provider: ai,
-    settings,
-    mayRead: (path) => quarantine.aiMayRead(path) === null,
-  });
-  const review = new EditReviewer({
-    index,
-    search,
-    provider: ai,
-    settings,
-    mayRead: (path) => quarantine.aiMayRead(path) === null,
-  });
-  const lore = new LoreAsker({
-    index,
-    search,
-    provider: ai,
-    settings,
-    mayRead: (path) => quarantine.aiMayRead(path) === null,
-  });
-  const drafter = new EntryDrafter({
-    index,
-    search,
-    provider: ai,
-    settings,
-    mayRead: (path) => quarantine.aiMayRead(path) === null,
-  });
-  const keepGoingHistory = new KeepGoingHistory({ git, index });
-  const keepGoing = new KeepGoing({
-    index,
-    drafts,
-    comments,
-    settings,
-    folders,
-    changer,
-    status,
-    history: keepGoingHistory,
-  });
-  const keepGoingAi = new KeepGoingAi({
-    index,
-    provider: ai,
-    drafts,
-    drafter,
-    files,
-    stateDir,
-    textOf: (path) => changer.text(path),
-    mayRead: (path) => quarantine.aiMayRead(path) === null,
-  });
-  const pins = new PinStore({ index, drafts, files: libraryFiles });
-  await quarantine.load();
+  const keysRemoved = await server.settings.removeStoredKeys(new Date(), config.unusedKeyVars);
+  server.keysRemoved = keysRemoved ?? (await server.settings.read())?.ai.keysRemoved ?? null;
 
-  const services: Services = {
-    config,
-    git,
-    index,
-    status,
-    files,
-    settings,
-    server,
-    images,
-    imageFetcher,
-    drafts,
-    backup,
-    search,
-    publisher: undefined as unknown as Publisher,
-    branches: undefined as unknown as BranchInbox,
-    ai,
-    aiLog,
-    models,
-    changer,
-    proposals,
-    fields,
-    quarantine,
-    maps,
-    chronicles,
-    libraryFiles,
-    folders,
-    lore,
-    drafter,
-    keepGoing,
-    keepGoingHistory,
-    keepGoingAi,
-    pins,
-    writing,
-    review,
-    characters,
-    discoverer,
-    conversations,
-    comments,
-    consults,
-    async sync() {
-      const result = await git.fetch();
-      status.fetched(result.current);
-      if (index.commit !== result.current) index.build(result.current);
-      await quarantine.noteFetched(result.previous ?? result.current, result.current);
-      await quarantine.refresh();
-      maps.refresh();
-      chronicles.refresh();
-      libraryFiles.refresh();
-      await services.publisher.clearPublished();
-      await quarantine.prune();
-      status.quarantine(quarantine.count(), [
-        ...(quarantine.problem ? [quarantine.problem] : []),
-        ...maps.problems.map((p) => `${p.path} is not shown as a map. ${p.message}`),
-        ...chronicles.problems.map((p) => `${p.path} is not shown as a chronicle. ${p.message}`),
-        ...libraryFiles.problems.map((p) => `${p.path} cannot be read. ${p.message}`),
-      ]);
-      await proposals.prune();
-      status.inbox(await services.branches.count());
-      status.indexed();
-    },
-  };
-  services.branches = new BranchInbox({
-    stateDir,
-    files,
-    git,
-    index,
-    drafts,
-    sync: () => services.sync(),
-  });
-  await services.branches.load();
-  services.publisher = new Publisher({
-    vaultDir,
-    git,
-    index,
-    drafts,
-    status,
-    libraryFiles,
-    sync: () => services.sync(),
-    reviews: {
-      pendingDecisions: () => quarantine.pendingDecisions(),
-      reviewFile: (ids) => quarantine.reviewFile(ids),
-      reviewPath: REVIEW_FILE,
-    },
-    onPushed: (commit) => quarantine.notePushed(commit),
-    onRenamed: async (from, to) => {
-      // A device still holding the old path is told where its changes go (stage 15c).
-      await drafts.noteRenamed(from, to);
-      await proposals.renamed(from, to);
-      await comments.renamed(from, to);
-      await consults.renamed(from, to);
-    },
-  });
+  const first = await ensureFirstProject(server);
+  const services = await server.registry.adopt(first);
 
   // Coolify's proxy sits in front, so the client address and protocol come from its headers.
   // AI keys arrive in a request header. They are taken off the request before anything else sees
@@ -505,7 +169,7 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
   });
   readKeysHeader(app);
   // A failed AI call is written to the server's log too, or production shows only a bare 502.
-  ai.logFailuresTo(app.log);
+  server.ai.logFailuresTo(app.log);
 
   // Keep the unparsed body: the webhook signature is computed over the exact bytes sent.
   app.addContentTypeParser("application/json", { parseAs: "buffer" }, (request, body, done) => {
@@ -534,7 +198,7 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
   // One image per upload, up to 25 MB.
   await app.register(multipart, { limits: { fileSize: 25 * 1024 * 1024, files: 1 } });
 
-  app.addHook("onClose", async () => backup.stop());
+  app.addHook("onClose", async () => server.registry.closeAll());
 
   app.decorateRequest("person", null);
   app.addHook("onRequest", async (request) => {
@@ -625,33 +289,45 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
       .send({ error: { code: "not_found", message: "There is nothing at this address." } });
   });
 
-  authRoutes(app, services);
-  entryRoutes(app, services);
-  graphRoutes(app, services);
-  draftRoutes(app, services);
-  imageRoutes(app, services);
-  inboxRoutes(app, services);
-  proposalRoutes(app, services);
-  quarantineRoutes(app, services);
-  settingsRoutes(app, services);
-  passkeyRoutes(app, services);
-  mapRoutes(app, services);
-  chronicleRoutes(app, services);
-  libraryFileRoutes(app, services);
-  folderRoutes(app, services);
-  loreRoutes(app, services);
-  entryDraftRoutes(app, services);
-  keepGoingRoutes(app, services);
-  writingRoutes(app, services);
-  commentRoutes(app, services);
-  characterRoutes(app, services);
-  discoverRoutes(app, services);
-  exportRoutes(app, services);
-  importRoutes(app, services);
-  historyRoutes(app, services);
-  searchRoutes(app, services);
-  statusRoutes(app, services);
-  webhookRoutes(app, services);
+  // The project routes: written once against one `Services`, registered once for every project
+  // under `/api/p/:project`, and at their old addresses for devices on the previous web build.
+  const book = new RouteBook();
+  guardProjects(app, server, book);
+  const forProject = projectApp(app, book);
+  const s = scopedServices(server);
+  entryRoutes(forProject, s);
+  graphRoutes(forProject, s);
+  draftRoutes(forProject, s);
+  imageRoutes(forProject, s);
+  inboxRoutes(forProject, s);
+  proposalRoutes(forProject, s);
+  quarantineRoutes(forProject, s);
+  mapRoutes(forProject, s);
+  chronicleRoutes(forProject, s);
+  libraryFileRoutes(forProject, s);
+  folderRoutes(forProject, s);
+  loreRoutes(forProject, s);
+  entryDraftRoutes(forProject, s);
+  keepGoingRoutes(forProject, s);
+  writingRoutes(forProject, s);
+  commentRoutes(forProject, s);
+  characterRoutes(forProject, s);
+  discoverRoutes(forProject, s);
+  exportRoutes(forProject, s);
+  importRoutes(forProject, s);
+  historyRoutes(forProject, s);
+  searchRoutes(forProject, s);
+  statusRoutes(forProject, s);
+  // The project's own routes have no alias: `DELETE /api/project` must not exist.
+  projectRoutes(projectApp(app, book, { aliases: false }), s);
 
-  return { app, services };
+  // What belongs to the whole server, or to the person.
+  authRoutes(app, server);
+  passkeyRoutes(app, server);
+  settingsRoutes(app, server);
+  projectsApi(app, server);
+  healthRoute(app, server);
+  webhookRoutes(app, server);
+
+  return { app, services, server, routes: book.routes };
 }

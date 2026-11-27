@@ -17,7 +17,8 @@ import {
   startSession,
 } from "../auth/session.js";
 import { ApiError } from "../errors.js";
-import type { Services } from "../app.js";
+import { lastProjectSlug } from "../projects/guard.js";
+import type { Server } from "../server.js";
 
 /** Said for a wrong email and a wrong password alike, so neither tells which was wrong. */
 const WRONG = "Wrong email or password.";
@@ -39,7 +40,12 @@ export function suggestEmail(p: Person, authorEmail: string): string {
   return email;
 }
 
-export function me(p: Person, method: "password" | "passkey", authorEmail = ""): MeResponse {
+export function me(
+  p: Person,
+  method: "password" | "passkey",
+  authorEmail = "",
+  lastProject: string | null = null,
+): MeResponse {
   return {
     suggestedEmail: suggestEmail(p, authorEmail),
     id: p.id,
@@ -51,18 +57,19 @@ export function me(p: Person, method: "password" | "passkey", authorEmail = ""):
     passwordSet: p.passwordHash !== "",
     passwordOff: p.passwordOff,
     method,
+    lastProject,
   };
 }
 
 /** A hash to check against when no account matches, so a wrong email takes as long as a wrong password. */
 let decoy: Promise<string> | null = null;
 
-export function authRoutes(app: FastifyInstance, s: Services): void {
+export function authRoutes(app: FastifyInstance, s: Server): void {
   // 5 attempts per 15 minutes per network address, counted together with passkey logins.
   app.post("/api/login", async (request) => {
-    s.server.loginLimit.attempt(request.ip);
+    s.loginLimit.attempt(request.ip);
     const { email, password } = LoginRequest.parse(request.body);
-    const people = await s.server.people.all();
+    const people = await s.people.all();
     if (people.length === 0) {
       throw new ApiError(
         "unauthenticated",
@@ -102,11 +109,13 @@ export function authRoutes(app: FastifyInstance, s: Services): void {
   });
 
   app.get("/api/session", async (request) => {
-    const people = await s.server.people.all();
-    const person = await currentPerson(request, s.server.people);
+    const people = await s.people.all();
+    const person = await currentPerson(request, s.people);
     return {
       loggedIn: person !== null,
       person: person && { id: person.id, name: person.name, email: person.email },
+      // The project the person used last, as its address; null until they have used one (stage 27b).
+      lastProject: person ? await lastProjectSlug(s, person) : null,
       emailless: people.length === 1 && emailKey(people[0]!.email) === "",
       passkeys: people.some((p) => p.passkeys.length > 0),
       // Before any account exists the form is shown, so the page says what is missing on use.
@@ -115,17 +124,27 @@ export function authRoutes(app: FastifyInstance, s: Services): void {
   });
 
   app.get("/api/me", async (request) =>
-    me(personOf(request), request.session.get("method") ?? "password", s.config.commitAuthor.email),
+    me(
+      personOf(request),
+      request.session.get("method") ?? "password",
+      s.config.commitAuthor.email,
+      await lastProjectSlug(s, personOf(request)),
+    ),
   );
 
   app.put("/api/me", async (request) => {
     const { name, email } = ProfileRequest.parse(request.body);
-    const person = await s.server.people.update(personOf(request).id, (p) => ({
+    const person = await s.people.update(personOf(request).id, (p) => ({
       ...p,
       name,
       email,
     }));
-    return me(person, request.session.get("method") ?? "password", s.config.commitAuthor.email);
+    return me(
+      person,
+      request.session.get("method") ?? "password",
+      s.config.commitAuthor.email,
+      await lastProjectSlug(s, person),
+    );
   });
 
   // Changes the password, or sets one for an account that has none. The one asked for is the
@@ -133,7 +152,7 @@ export function authRoutes(app: FastifyInstance, s: Services): void {
   // for, a login from the last few minutes stands in for it. It guesses at the current password,
   // so it draws on the same allowance as logging in.
   app.put("/api/me/password", async (request) => {
-    s.server.loginLimit.attempt(request.ip);
+    s.loginLimit.attempt(request.ip);
     const { current, password } = PasswordRequest.parse(request.body);
     const person = personOf(request);
     if (person.passwordHash !== "") {
@@ -144,7 +163,7 @@ export function authRoutes(app: FastifyInstance, s: Services): void {
       requireRecentLogin(request);
     }
     const passwordHash = await hashPassword(password);
-    const now = await s.server.people.update(person.id, (p) =>
+    const now = await s.people.update(person.id, (p) =>
       endOtherSessions({
         ...p,
         passwordHash,

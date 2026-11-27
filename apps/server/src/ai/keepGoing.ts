@@ -110,6 +110,8 @@ export interface KeepGoingAiDeps {
   drafter: EntryDrafter;
   files: StateFiles;
   stateDir: string;
+  /** The person whose question the old `question.json` (from before projects) holds; null for a project made since. */
+  legacyOwner?: () => string | null;
   /** The entry's text as the author sees it: his draft, else what is published. */
   textOf: (path: string) => Promise<string | null>;
   mayRead: (path: string) => boolean;
@@ -125,10 +127,17 @@ const safe = (text: string): string =>
     .trim();
 
 export class KeepGoingAi {
-  private readonly file: string;
+  constructor(private readonly d: KeepGoingAiDeps) {}
 
-  constructor(private readonly d: KeepGoingAiDeps) {
-    this.file = join(d.stateDir, "question.json");
+  /** A person's question of the day is theirs: `question/<person id>.json`. */
+  private fileOf(person: string): string {
+    if (!/^[A-Za-z0-9-]{1,64}$/.test(person)) throw new Error("Not a person id.");
+    return join(this.d.stateDir, "question", `${person}.json`);
+  }
+
+  /** The question kept before projects, which was the one person's. */
+  private legacyFile(): string {
+    return join(this.d.stateDir, "question.json");
   }
 
   private random(): number {
@@ -247,11 +256,15 @@ export class KeepGoingAi {
   // ---- The question of the day ------------------------------------------------------------
 
   /** The question kept for today, if one was made. Never makes one. */
-  async today(tz: number): Promise<DayQuestion | null> {
-    const kept = await this.d.files
-      .readJson(this.file, DayQuestion)
-      // A file that cannot be read is as good as none: the next question replaces it.
-      .catch(() => null);
+  async today(person: string, tz: number): Promise<DayQuestion | null> {
+    const read = (file: string) =>
+      this.d.files
+        .readJson(file, DayQuestion)
+        // A file that cannot be read is as good as none: the next question replaces it.
+        .catch(() => null);
+    const kept =
+      (await read(this.fileOf(person))) ??
+      (person === this.d.legacyOwner?.() ? await read(this.legacyFile()) : null);
     return kept && kept.day === dayOf((this.d.now?.() ?? new Date()).getTime(), tz) ? kept : null;
   }
 
@@ -277,8 +290,13 @@ export class KeepGoingAi {
    * Today's question, made now when there is none or `another` asks for a different one. A
    * second call for the same day, without `another`, returns the kept question.
    */
-  async ask(tz: number, another: boolean, o: { signal?: AbortSignal } = {}): Promise<DayQuestion> {
-    const kept = await this.today(tz);
+  async ask(
+    person: string,
+    tz: number,
+    another: boolean,
+    o: { signal?: AbortSignal } = {},
+  ): Promise<DayQuestion> {
+    const kept = await this.today(person, tz);
     if (kept && !another) return kept;
     const model = await this.d.drafter.model();
     const picked = this.thin(kept?.path ?? null);
@@ -316,7 +334,7 @@ export class KeepGoingAi {
       model,
       madeAt: now.toISOString(),
     };
-    await this.d.files.writeJson(this.file, made);
+    await this.d.files.writeJson(this.fileOf(person), made);
     return made;
   }
 }

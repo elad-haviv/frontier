@@ -1,5 +1,6 @@
 import { randomBytes } from "node:crypto";
-import type { FastifyInstance, FastifyRequest } from "fastify";
+import type { FastifyRequest } from "fastify";
+import type { RouteApp } from "../projects/facade.js";
 import {
   CreateRenameRequest,
   type CreateRenameResponse,
@@ -49,7 +50,7 @@ export function deviceOf(request: FastifyRequest): Device {
   return { id, name };
 }
 
-export function draftRoutes(app: FastifyInstance, s: Services): void {
+export function draftRoutes(app: RouteApp, s: Services): void {
   /**
    * Refuses a draft for a path that may not be changed, and returns what is published there.
    * `stale` is true for a save that started from a file the server may no longer have: its text is

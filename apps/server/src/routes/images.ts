@@ -1,4 +1,4 @@
-import type { FastifyInstance } from "fastify";
+import type { RouteApp } from "../projects/facade.js";
 import { ImageFromUrlRequest, ImageQuery } from "@frontier/schema";
 import { isExcluded, isImage } from "@frontier/vault";
 import sharp from "sharp";
@@ -10,7 +10,7 @@ import { cleanImageName, saveImage } from "../images/save.js";
 /** The one answer to every failed fetch: what went wrong is for the server log, not the page. */
 const FETCH_FAILED = "Frontier could not get an image from that address.";
 
-export function imageRoutes(app: FastifyInstance, s: Services): void {
+export function imageRoutes(app: RouteApp, s: Services): void {
   /**
    * Every image of the library, with the entries that show or link it, and the images uploaded
    * but not yet published, marked.

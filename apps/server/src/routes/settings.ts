@@ -4,6 +4,8 @@ import {
   AiProviderKind,
   AiSettingsRequest,
   AiTestRequest,
+  KeepGoingSettingsRequest,
+  NeedsLoveRules,
   ModelPricesRequest,
   ModelsQuery,
   qualifyModelId,
@@ -20,7 +22,7 @@ import { keyMissing } from "../ai/provider.js";
 import { ProviderError, type ProviderAdapter } from "../ai/providers/index.js";
 import { personOf } from "../auth/session.js";
 import { ApiError } from "../errors.js";
-import type { Services } from "../app.js";
+import type { Server } from "../server.js";
 
 const LogQuery = z.object({
   month: z
@@ -87,7 +89,13 @@ async function checkWith(
   }
 }
 
-export function settingsRoutes(app: FastifyInstance, s: Services): void {
+function stripUndefined<T extends object>(value: T | undefined): Partial<T> {
+  return Object.fromEntries(
+    Object.entries(value ?? {}).filter(([, v]) => v !== undefined),
+  ) as Partial<T>;
+}
+
+export function settingsRoutes(app: FastifyInstance, s: Server): void {
   const limiter = new CheckLimiter();
   const connections = s.ai.connections;
 
@@ -114,6 +122,22 @@ export function settingsRoutes(app: FastifyInstance, s: Services): void {
       },
       keepGoing: settings.keepGoing,
     };
+  });
+
+  // The rules for Keep going are the person's setting, not a project's: they are kept with the
+  // server's settings.
+  app.put("/api/settings/keep-going", async (request) => {
+    const input = KeepGoingSettingsRequest.parse(request.body);
+    const next = await s.settings.update((now) => ({
+      ...now,
+      keepGoing: {
+        needsLove: NeedsLoveRules.parse({
+          ...now.keepGoing.needsLove,
+          ...stripUndefined(input.needsLove),
+        }),
+      },
+    }));
+    return next.keepGoing;
   });
 
   app.put("/api/settings/ai", async (request) => {
@@ -231,7 +255,8 @@ export function settingsRoutes(app: FastifyInstance, s: Services): void {
       throw new ApiError("not_allowed", "Only the server's owner can clear this notice.");
     }
     await s.settings.update((now) => ({ ...now, ai: { ...now.ai, keysRemoved: null } }));
-    s.status.keysWereRemoved(null);
+    s.keysRemoved = null;
+    for (const open of await s.registry.opened()) open.status.keysWereRemoved(null);
     return { ok: true as const };
   });
 

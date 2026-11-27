@@ -40,6 +40,8 @@ export const Person = z.object({
   sessionEpoch: z.number().int().default(0),
   /** The server's first account. Only it may do what only the server's owner may. */
   admin: z.boolean().default(false),
+  /** The id of the project the person used last (stage 27b), so the app opens it after a login. */
+  lastProject: z.string().nullable().default(null),
 });
 export type Person = z.infer<typeof Person>;
 

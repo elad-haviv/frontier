@@ -1,11 +1,14 @@
-import type { FastifyInstance, FastifyRequest } from "fastify";
+import type { FastifyRequest } from "fastify";
+import type { FastifyInstance } from "fastify";
+import type { RouteApp } from "../projects/facade.js";
+import type { Server } from "../server.js";
 import type { StatusSnapshot } from "@frontier/schema";
 import type { Services } from "../app.js";
 
 /** How often the status stream says it is still there. */
 export const HEARTBEAT_MS = 20_000;
 
-export function statusRoutes(app: FastifyInstance, s: Services): void {
+export function statusRoutes(app: RouteApp, s: Services): void {
   /** The notice about keys the server deleted is for the server's owner, who can revoke them. */
   const forPersonOf = (request: FastifyRequest) => (snapshot: StatusSnapshot) =>
     request.person?.admin
@@ -41,10 +44,17 @@ export function statusRoutes(app: FastifyInstance, s: Services): void {
       stop();
     });
   });
+}
 
-  /** For Coolify's health check. Times and a commit hash; no vault content. */
+/**
+ * For Coolify's health check, which has no login: times and a commit hash of the first project's
+ * library, no vault content.
+ */
+export function healthRoute(app: FastifyInstance, server: Server): void {
   app.get("/health", async (_request, reply) => {
-    const health = s.status.health();
+    const first = (await server.projects.all()).find((p) => p.layout === "legacy");
+    if (!first) return reply.status(503).send({ ok: false });
+    const health = (await server.registry.open(first)).status.health();
     return reply.status(health.ok ? 200 : 503).send(health);
   });
 }

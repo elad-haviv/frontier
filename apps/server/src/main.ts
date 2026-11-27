@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { buildApp } from "./app.js";
 import { startAccounts } from "./auth/accounts.js";
 import { ConfigError, loadConfig } from "./config.js";
-import { startPolling } from "./git/poll.js";
+import { claimForAdmin } from "./projects/guard.js";
 import { applyLibraryMode } from "./sample.js";
 
 async function main(): Promise<void> {
@@ -24,13 +24,13 @@ async function main(): Promise<void> {
     say: (message) => app.log.info(message),
   });
 
-  await services.git.ensureClone();
-  await services.sync();
-  services.backup.startNightly();
-  // Only a library that others write to has anything new to fetch.
-  if (config.library === "github") {
-    startPolling(services.sync, (err) => app.log.error({ err }, "Timer fetch failed"));
-  }
+  // A server from before accounts has its first account only now; it owns the first project.
+  const admin = (await services.server.people.all()).find((p) => p.admin);
+  if (admin) await claimForAdmin(services.server, admin);
+
+  // Clones the library when it is new, reads it, starts the nightly backup, and for a GitHub
+  // library the timer fetch. Projects made since are brought up when first used.
+  await services.bringUp();
 
   const port = Number(process.env["PORT"] ?? 3000);
   await app.listen({ host: "0.0.0.0", port });

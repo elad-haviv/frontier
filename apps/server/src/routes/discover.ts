@@ -1,5 +1,5 @@
 import { readFile } from "node:fs/promises";
-import type { FastifyInstance } from "fastify";
+import type { RouteApp } from "../projects/facade.js";
 import { z } from "zod";
 import { PLACES_PER_CALL, SPOT_KIND_IDS } from "../ai/discover.js";
 import { ApiError } from "../errors.js";
@@ -48,7 +48,7 @@ const Generate = Discover.extend({
     .default([]),
 });
 
-export function discoverRoutes(app: FastifyInstance, s: Services): void {
+export function discoverRoutes(app: RouteApp, s: Services): void {
   app.get("/api/maps/:id/discoveries", async (request) => {
     const { id } = MapParam.parse(request.params);
     // The folders a kept discovery can go to: those of the library's entries, appendices aside.

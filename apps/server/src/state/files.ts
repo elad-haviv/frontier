@@ -12,8 +12,16 @@ export class StateFiles {
   private listeners: (() => void)[] = [];
 
   /** Registers a function called after every write or removal. The backup uses it. */
-  onChange(listener: () => void): void {
+  onChange(listener: () => void): () => void {
     this.listeners.push(listener);
+    return () => {
+      this.listeners = this.listeners.filter((l) => l !== listener);
+    };
+  }
+
+  /** Says that something this store's folder holds changed, for a writer that is not this class (the AI log). */
+  touch(): void {
+    this.changed();
   }
 
   private changed(): void {

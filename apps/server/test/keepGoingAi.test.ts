@@ -277,7 +277,8 @@ describe("the question of the day", () => {
     await ask();
     const { writeFileSync } = await import("node:fs");
     const { join } = await import("node:path");
-    writeFileSync(join(t.services.config.dataDir, "state", "question.json"), "{ not json");
+    const person = (await t.services.server.people.all())[0]!;
+    writeFileSync(join(t.services.paths.state, "question", `${person.id}.json`), "{ not json");
     expect(await today()).toBeNull();
   });
 });

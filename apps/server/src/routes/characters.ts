@@ -1,4 +1,4 @@
-import type { FastifyInstance } from "fastify";
+import type { RouteApp } from "../projects/facade.js";
 import { VaultPath } from "@frontier/schema";
 import { z } from "zod";
 import { Trait } from "../ai/characters.js";
@@ -17,7 +17,7 @@ const Say = Path.extend({
 });
 const Line = Path.extend({ text: z.string().trim().min(1).max(4000) });
 
-export function characterRoutes(app: FastifyInstance, s: Services): void {
+export function characterRoutes(app: RouteApp, s: Services): void {
   app.get("/api/characters/profile", async (request) => {
     const { path } = Path.parse(request.query);
     return { profile: await s.characters.profile(path) };

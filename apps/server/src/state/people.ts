@@ -57,6 +57,11 @@ export class PeopleStore {
     }
   }
 
+  /** The id of the server's first account, from what is held in memory; null before any was read. */
+  adminIdSync(): string | null {
+    return this.held?.people.find((p) => p.admin)?.id ?? null;
+  }
+
   async get(id: string): Promise<Person | null> {
     return (await this.all()).find((p) => p.id === id) ?? null;
   }
@@ -83,6 +88,7 @@ export class PeopleStore {
         sessionEpoch: 0,
         passkeys: [],
         identities: [],
+        lastProject: null,
         name: "",
         email: "",
         ...input,

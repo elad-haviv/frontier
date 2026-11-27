@@ -1,6 +1,5 @@
 import { spawn } from "node:child_process";
-import { join } from "node:path";
-import type { FastifyInstance } from "fastify";
+import type { RouteApp } from "../projects/facade.js";
 import { VaultPath } from "@frontier/schema";
 import { normaliseLineEndings } from "@frontier/vault";
 import { z } from "zod";
@@ -10,7 +9,7 @@ import type { Services } from "../app.js";
 const HistoryQuery = z.object({ path: VaultPath.optional() });
 const VersionQuery = z.object({ path: VaultPath, commit: z.string().regex(/^[0-9a-f]{7,64}$/) });
 
-export function historyRoutes(app: FastifyInstance, s: Services): void {
+export function historyRoutes(app: RouteApp, s: Services): void {
   /** The saved versions of one file, or of the whole library, newest first. */
   app.get("/api/history", async (request) => {
     const { path } = HistoryQuery.parse(request.query);
@@ -32,7 +31,7 @@ export function historyRoutes(app: FastifyInstance, s: Services): void {
   /** The library as it stands at the last saved version, as a zip that opens in Obsidian. */
   app.get("/api/export/library.zip", async (_request, reply) => {
     const child = spawn("git", ["archive", "--format=zip", "HEAD"], {
-      cwd: join(s.config.dataDir, "vault"),
+      cwd: s.paths.vault,
       stdio: ["ignore", "pipe", "ignore"],
     });
     const day = new Date().toISOString().slice(0, 10);

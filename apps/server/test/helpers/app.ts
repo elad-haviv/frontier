@@ -151,3 +151,62 @@ export async function makeTestApp(
   };
   return t;
 }
+
+/** A person's session on a test server: requests as them, without the helper's own login. */
+export interface Client {
+  id: string;
+  cookie: string;
+  get(url: string): Promise<LightMyRequestResponse>;
+  post(url: string, body?: unknown): Promise<LightMyRequestResponse>;
+  put(url: string, body: unknown): Promise<LightMyRequestResponse>;
+  del(url: string, body?: unknown): Promise<LightMyRequestResponse>;
+}
+
+let sharedHash: Promise<string> | null = null;
+
+/** Makes another account on the server and logs it in. It belongs to no project until it is made a member. */
+export async function addPerson(
+  t: Pick<App, "app" | "server">,
+  name: string,
+  email: string,
+): Promise<Client> {
+  sharedHash ??= hashPassword(PASSWORD);
+  const person = await t.server.people.create({ name, email, passwordHash: await sharedHash });
+  const res = await t.app.inject({
+    method: "POST",
+    url: "/api/login",
+    payload: { email, password: PASSWORD },
+  });
+  const cookie = String(res.headers["set-cookie"]).split(";")[0]!;
+  const send = (method: "GET" | "POST" | "PUT" | "DELETE", url: string, payload?: unknown) =>
+    t.app.inject({
+      method,
+      url,
+      headers: { cookie },
+      ...(payload === undefined ? {} : { payload: payload as object }),
+    });
+  return {
+    id: person.id,
+    cookie,
+    get: (url) => send("GET", url),
+    post: (url, body) => send("POST", url, body),
+    put: (url, body) => send("PUT", url, body),
+    del: (url, body) => send("DELETE", url, body),
+  };
+}
+
+/** Puts a person in a project with a role, as the store would hold it after an invitation (stage 27c). */
+export async function addMember(
+  t: Pick<App, "server">,
+  projectId: string,
+  personId: string,
+  role: "owner" | "writer" | "reader",
+): Promise<void> {
+  await t.server.projects.update(projectId, (p) => ({
+    ...p,
+    members: [
+      ...p.members.filter((m) => m.personId !== personId),
+      { personId, role, addedAt: new Date().toISOString() },
+    ],
+  }));
+}

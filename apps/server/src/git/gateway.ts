@@ -604,6 +604,15 @@ export class GitGateway {
     });
   }
 
+  /** When the last saved version was made and the name of its author; null for a library with none. */
+  lastVersion(): Promise<{ at: string; by: string } | null> {
+    return this.locked(async () => {
+      const r = await this.run(["log", "-n1", "--format=%cI%x02%an"], { allow: () => true });
+      const [at, by] = r.stdout.toString("utf8").trim().split("\u0002");
+      return r.code === 0 && at ? { at, by: by ?? "" } : null;
+    });
+  }
+
   /**
    * The commits that changed Markdown files, newest first, each with the files it added, changed,
    * renamed or deleted. `since` is anything Git reads as a time. A merge commit lists nothing.

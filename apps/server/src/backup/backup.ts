@@ -200,6 +200,8 @@ export async function restore(
   target: BackupTarget,
   sources: Record<string, string>,
   from = "latest",
+  /** Restores only the files this accepts (a source's name, and the path in it); the rest is left alone. */
+  include: (source: string, rel: string) => boolean = () => true,
 ): Promise<{ files: number; from: string }> {
   const prefix = from === "latest" ? "latest/" : `nightly/${from}/`;
   const keys = (await target.list(prefix)).filter(
@@ -207,7 +209,7 @@ export async function restore(
   );
   if (keys.length === 0) throw new Error(`There is no backup under "${prefix}".`);
   for (const [name, dir] of Object.entries(sources)) {
-    if ((await walk(dir)).length > 0) {
+    if ((await walk(dir)).filter((rel) => include(name, rel)).length > 0) {
       throw new Error(`"${dir}" (${name}) is not empty. Restore only into an empty folder.`);
     }
   }
@@ -216,7 +218,7 @@ export async function restore(
     const rel = key.slice(prefix.length);
     const name = rel.split("/")[0]!;
     const dir = sources[name];
-    if (!dir) continue;
+    if (!dir || !include(name, rel.slice(name.length + 1))) continue;
     const data = await target.get(key);
     if (data === null) continue;
     const path = join(dir, rel.slice(name.length + 1));

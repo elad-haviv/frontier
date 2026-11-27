@@ -48,6 +48,8 @@ export interface Config {
    * others write to as well, or in the made-up sample.
    */
   library: "own" | "github" | "sample";
+  /** What the first project is called, made from the library the server already had (stage 27b). */
+  projectName: string;
   /** The vault folder new images are put in. */
   uploadFolder: string;
   /** The vault folder whose subfolders are marker sets. */
@@ -218,6 +220,11 @@ export function loadConfig(env: Env = process.env): Config {
         : optional("FRONTIER_LIBRARY") === "own" || !optional("VAULT_REPO")
           ? "own"
           : "github",
+    projectName:
+      optional("FRONTIER_PROJECT_NAME")?.slice(0, 80) ??
+      (optional("FRONTIER_LIBRARY") === "sample" || optional("FRONTIER_SAMPLE_VAULT") === "1"
+        ? "Sample"
+        : "Avalymia"),
     iconFolder: (optional("ICON_FOLDER") ?? "99 Appendices/07 Icons").replace(/^\/+|\/+$/g, ""),
     openrouterUrl,
     providerUrls,

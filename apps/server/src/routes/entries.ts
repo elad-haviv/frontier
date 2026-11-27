@@ -1,4 +1,4 @@
-import type { FastifyInstance } from "fastify";
+import type { RouteApp } from "../projects/facade.js";
 import {
   type EntryResponse,
   type FolderFile,
@@ -44,7 +44,7 @@ function shown(links: IndexedLink[]): EntryResponse["links"] {
   }));
 }
 
-export function entryRoutes(app: FastifyInstance, s: Services): void {
+export function entryRoutes(app: RouteApp, s: Services): void {
   /** The structured fields of a text, with the links inside each date resolved. */
   const fieldsOf = (path: string, text: string): Pick<EntryResponse, "id" | "fields"> => {
     const fields = readFields(text);

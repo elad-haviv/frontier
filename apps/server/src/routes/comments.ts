@@ -1,4 +1,4 @@
-import type { FastifyInstance } from "fastify";
+import type { RouteApp } from "../projects/facade.js";
 import { VaultPath } from "@frontier/schema";
 import { isNote } from "@frontier/vault";
 import { z } from "zod";
@@ -30,7 +30,7 @@ const Work = z.object({
   previous: Previous,
 });
 
-export function commentRoutes(app: FastifyInstance, s: Services): void {
+export function commentRoutes(app: RouteApp, s: Services): void {
   app.get("/api/comments", async (request) => {
     const { path } = PathQuery.parse(request.query);
     return { comments: await s.comments.forPath(path) };

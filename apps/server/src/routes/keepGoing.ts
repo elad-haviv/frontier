@@ -1,14 +1,13 @@
-import type { FastifyInstance } from "fastify";
+import type { FastifyRequest } from "fastify";
+import type { RouteApp } from "../projects/facade.js";
 import {
   AfterPublishRequest,
   type AfterPublishResponse,
   type FromHereResponse,
-  KeepGoingSettingsRequest,
   LinkItRequest,
   type LinkItResponse,
   LinkItUndoRequest,
   MakeQuestionRequest,
-  NeedsLoveRules,
   PinOrderRequest,
   PinRequest,
   type PinsResponse,
@@ -23,6 +22,7 @@ import {
 } from "@frontier/schema";
 import { z } from "zod";
 import type { Services } from "../app.js";
+import { personOf } from "../auth/session.js";
 import { whileAsked } from "./writing.js";
 
 /** Minutes east of UTC, which decides what "today" is for the reader. */
@@ -31,7 +31,7 @@ const Tz = z.object({
 });
 const PathQuery = z.object({ path: VaultPath });
 
-export function keepGoingRoutes(app: FastifyInstance, s: Services): void {
+export function keepGoingRoutes(app: RouteApp, s: Services): void {
   const changed = () => s.status.drafts(s.drafts.count(), 0);
 
   /** Every list of Home's work queue, from the published index. */
@@ -83,13 +83,13 @@ export function keepGoingRoutes(app: FastifyInstance, s: Services): void {
   /** Today's question, if one was made. Never makes one. */
   app.get("/api/keep-going/question", async (request): Promise<QuestionResponse> => {
     const { tz } = Tz.parse(request.query);
-    return { question: await s.keepGoingAi.today(tz) };
+    return { question: await s.keepGoingAi.today(personOf(request).id, tz) };
   });
 
   /** Makes today's question, or another one in its place. */
   app.post("/api/keep-going/question", async (request, reply): Promise<QuestionResponse> => {
     const { another, tz } = MakeQuestionRequest.parse(request.body ?? {});
-    const question = await s.keepGoingAi.ask(tz ?? 0, another === true, {
+    const question = await s.keepGoingAi.ask(personOf(request).id, tz ?? 0, another === true, {
       signal: whileAsked(reply),
     });
     return { question };
@@ -97,51 +97,27 @@ export function keepGoingRoutes(app: FastifyInstance, s: Services): void {
 
   // ---- Pins ------------------------------------------------------------------------------
 
-  const pins = (): Promise<PinsResponse> =>
+  const pins = (request: FastifyRequest): Promise<PinsResponse> =>
     s.pins.list(
+      personOf(request).id,
       (path) => s.keepGoing.titleOf(path),
       (path) => s.keepGoing.wordsOf(path),
     );
 
-  app.get("/api/pins", async (): Promise<PinsResponse> => pins());
+  app.get("/api/pins", async (request): Promise<PinsResponse> => pins(request));
 
   app.post("/api/pins", async (request): Promise<PinsResponse> => {
-    await s.pins.add(PinRequest.parse(request.body).path);
-    changed();
-    return pins();
+    await s.pins.add(personOf(request).id, PinRequest.parse(request.body).path);
+    return pins(request);
   });
 
   app.delete("/api/pins", async (request): Promise<PinsResponse> => {
-    await s.pins.remove(PinRequest.parse(request.query).path);
-    changed();
-    return pins();
+    await s.pins.remove(personOf(request).id, PinRequest.parse(request.query).path);
+    return pins(request);
   });
 
   app.put("/api/pins", async (request): Promise<PinsResponse> => {
-    await s.pins.reorder(PinOrderRequest.parse(request.body).paths);
-    changed();
-    return pins();
+    await s.pins.reorder(personOf(request).id, PinOrderRequest.parse(request.body).paths);
+    return pins(request);
   });
-
-  // ---- Settings -------------------------------------------------------------------------
-
-  app.put("/api/settings/keep-going", async (request) => {
-    const input = KeepGoingSettingsRequest.parse(request.body);
-    const next = await s.settings.update((now) => ({
-      ...now,
-      keepGoing: {
-        needsLove: NeedsLoveRules.parse({
-          ...now.keepGoing.needsLove,
-          ...stripUndefined(input.needsLove),
-        }),
-      },
-    }));
-    return next.keepGoing;
-  });
-}
-
-function stripUndefined<T extends object>(value: T | undefined): Partial<T> {
-  return Object.fromEntries(
-    Object.entries(value ?? {}).filter(([, v]) => v !== undefined),
-  ) as Partial<T>;
 }

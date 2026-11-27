@@ -35,6 +35,16 @@ export const ERROR_STATUS = {
   // A folder cannot be deleted while something under it has an unpublished change, or is an image.
   has_drafts: 409,
   has_images: 409,
+  // Stage 27b: the project is not there for this person (it does not exist, or they are not a member:
+  // the two answers are the same, so an address cannot be used to find out which projects exist).
+  no_project: 403,
+  // The person's role in the project is below what the route needs.
+  role_too_low: 403,
+  // This address is used by another project, or is a reserved word.
+  slug_taken: 409,
+  // The first project's files are the server's old layout and cannot be deleted from the app, and
+  // a server's last project cannot be deleted.
+  project_not_deletable: 409,
   // An image could not be taken from a web address; the server log says why.
   image_fetch_failed: 422,
 } as const;

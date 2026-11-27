@@ -624,6 +624,8 @@ export const MeResponse = z.object({
    * is usually the same person. Only a suggestion; nothing is saved until the person saves.
    */
   suggestedEmail: z.string().default(""),
+  /** The address of the project the person used last, if they are still in it; null before they used one. */
+  lastProject: z.string().nullable().default(null),
 });
 export type MeResponse = z.infer<typeof MeResponse>;
 

@@ -1,7 +1,7 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import type { FastifyInstance } from "fastify";
 import { ApiError } from "../errors.js";
-import type { Services } from "../app.js";
+import type { Server } from "../server.js";
 
 /** Checks GitHub's `X-Hub-Signature-256` header against the unparsed request body. */
 export function validSignature(secret: string, body: Buffer, header: string | undefined): boolean {
@@ -11,7 +11,12 @@ export function validSignature(secret: string, body: Buffer, header: string | un
   return given.length === expected.length && timingSafeEqual(given, expected);
 }
 
-export function webhookRoutes(app: FastifyInstance, s: Services): void {
+/**
+ * GitHub's push webhook. The repository it names is the one the server is configured with, which
+ * is the first project's library: no project made since is on GitHub, so the first project is the
+ * one it reaches, whoever is logged in (it carries no session).
+ */
+export function webhookRoutes(app: FastifyInstance, s: Server): void {
   app.post("/api/github/webhook", async (request) => {
     const secret = s.config.webhookSecret;
     if (!secret) throw new ApiError("not_found", "No webhook is configured.");
@@ -22,7 +27,8 @@ export function webhookRoutes(app: FastifyInstance, s: Services): void {
     }
     const body = request.body as { ref?: string } | null;
     if (request.headers["x-github-event"] === "push" && body?.ref === "refs/heads/main") {
-      await s.sync();
+      const first = (await s.projects.all()).find((p) => p.layout === "legacy");
+      if (first) await (await s.registry.open(first)).sync();
     }
     return { ok: true as const };
   });

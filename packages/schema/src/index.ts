@@ -16,3 +16,4 @@ export * from "./keptItems.js";
 export * from "./ai.js";
 export * from "./keepGoing.js";
 export * from "./people.js";
+export * from "./projects.js";

@@ -1,4 +1,5 @@
-import type { FastifyInstance, FastifyReply } from "fastify";
+import type { FastifyReply } from "fastify";
+import type { RouteApp } from "../projects/facade.js";
 import { VaultPath } from "@frontier/schema";
 import { isNote } from "@frontier/vault";
 import { z } from "zod";
@@ -76,7 +77,7 @@ export function whileAsked(reply: FastifyReply): AbortSignal {
   return stop.signal;
 }
 
-export function writingRoutes(app: FastifyInstance, s: Services): void {
+export function writingRoutes(app: RouteApp, s: Services): void {
   /** A selected passage rewritten as asked. Nothing is saved: the editor puts it in the text. */
   app.post("/api/write/rewrite", async (request, reply) => {
     const input = Rewrite.parse(request.body);

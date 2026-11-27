@@ -133,8 +133,13 @@ export const SAMPLE_BRANCH = "proposal/sample-agent/harbor-keeper";
  */
 export const PLACEHOLDER_AUTHOR_EMAIL = "author@frontier.invalid";
 
-export function ensureSampleRemote(dataDir: string, sampleDir = DEFAULT_SAMPLE): string {
-  const remote = join(dataDir, "sample-remote.git");
+export function ensureSampleRemote(
+  dataDir: string,
+  sampleDir = DEFAULT_SAMPLE,
+  /** The name of the repository made in `dataDir`; a project's own is `library.git`. */
+  remoteName = "sample-remote.git",
+): string {
+  const remote = join(dataDir, remoteName);
   if (existsSync(remote)) return remote;
   mkdirSync(dataDir, { recursive: true });
   const work = mkdtempSync(join(tmpdir(), "frontier-sample-"));

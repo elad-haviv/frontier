@@ -78,38 +78,53 @@ export type Conversation = z.infer<typeof Conversation>;
 
 const ID = /^[a-z0-9]{12}$/;
 
+/**
+ * Each person's conversations are theirs alone: `conversations/<person id>/<id>.json`. A server
+ * from before projects kept them straight in `conversations/`; those belong to the project's
+ * first owner (`legacyOwner`), who is read from there until a conversation is saved again, which
+ * moves it to their folder. Nothing is moved at start.
+ */
 export class Conversations {
   private readonly dir: string;
 
   constructor(
     stateDir: string,
     private readonly files: StateFiles,
+    private readonly legacyOwner: () => string | null = () => null,
   ) {
     this.dir = join(stateDir, "conversations");
   }
 
-  private file(id: string): string {
+  private file(person: string, id: string): string {
     if (!ID.test(id)) throw new Error("Not a conversation id.");
+    if (!/^[A-Za-z0-9-]{1,64}$/.test(person)) throw new Error("Not a person id.");
+    return join(this.dir, person, `${id}.json`);
+  }
+
+  private legacyFile(id: string): string {
     return join(this.dir, `${id}.json`);
   }
 
-  async get(id: string): Promise<Conversation | null> {
+  async get(person: string, id: string): Promise<Conversation | null> {
     if (!ID.test(id)) return null;
-    return this.files.readJson(this.file(id), Conversation);
+    const own = await this.files.readJson(this.file(person, id), Conversation);
+    if (own || person !== this.legacyOwner()) return own;
+    return this.files.readJson(this.legacyFile(id), Conversation);
   }
 
-  async list(): Promise<Conversation[]> {
-    let names: string[] = [];
-    try {
-      names = await readdir(this.dir);
-    } catch {
-      return [];
+  async list(person: string): Promise<Conversation[]> {
+    const names = async (dir: string) => {
+      try {
+        return (await readdir(dir)).filter((n) => n.endsWith(".json") && ID.test(n.slice(0, -5)));
+      } catch {
+        return [];
+      }
+    };
+    const ids = new Set((await names(join(this.dir, person))).map((n) => n.slice(0, -5)));
+    if (person === this.legacyOwner()) {
+      for (const n of await names(this.dir)) ids.add(n.slice(0, -5));
     }
-    const all = await Promise.all(
-      names
-        .filter((n) => n.endsWith(".json") && ID.test(n.slice(0, -5)))
-        .map((n) => this.get(n.slice(0, -5))),
-    );
+    const all = await Promise.all([...ids].map((id) => this.get(person, id)));
     return all
       .filter((c): c is Conversation => c !== null)
       .sort((a, b) => (lastAt(b) < lastAt(a) ? -1 : 1));
@@ -127,12 +142,17 @@ export class Conversations {
     };
   }
 
-  async save(conversation: Conversation): Promise<void> {
-    await this.files.writeJson(this.file(conversation.id), Conversation.parse(conversation));
+  async save(person: string, conversation: Conversation): Promise<void> {
+    await this.files.writeJson(
+      this.file(person, conversation.id),
+      Conversation.parse(conversation),
+    );
+    if (person === this.legacyOwner()) await this.files.remove(this.legacyFile(conversation.id));
   }
 
-  async remove(id: string): Promise<void> {
-    await this.files.remove(this.file(id));
+  async remove(person: string, id: string): Promise<void> {
+    await this.files.remove(this.file(person, id));
+    if (person === this.legacyOwner()) await this.files.remove(this.legacyFile(id));
   }
 }
 
