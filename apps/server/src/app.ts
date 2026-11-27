@@ -112,6 +112,13 @@ export interface RegisteredRoute {
   public: boolean;
 }
 
+/** An address as it may be logged: no invitation code, no OAuth code or state. */
+export function redactAddress(url: string): string {
+  return url
+    .replace(/(\/(?:api|%61pi)\/join\/)[^/?#]+/i, "$1:code")
+    .replace(/([?&](?:invite|code|state|returnTo)=)[^&#]*/gi, "$1:redacted");
+}
+
 const THIRTY_DAYS = 30 * 24 * 60 * 60;
 
 /**
@@ -190,6 +197,19 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
             `req.headers["${AI_KEYS_HEADER}"]`,
             "req.body.key",
           ],
+          // An invitation code is a secret until it is used: it is not written to the log, in the
+          // address of the join page, nor in the query of the Google sign-in routes.
+          serializers: {
+            req: (req) => ({
+              method: req.method,
+              url: redactAddress(req.url),
+              host: req.host,
+              remoteAddress: req.ip,
+              ...(req.socket?.remotePort !== undefined
+                ? { remotePort: req.socket.remotePort }
+                : {}),
+            }),
+          },
         }
       : false,
   });
