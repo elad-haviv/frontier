@@ -854,9 +854,11 @@ logged out does not open the login dialog over the page. `routes.test.ts` and an
 
 Unit: Members, Join, Login, Account (Google), All projects, `WriterOnly` and the role hooks,
 `membersModel`, `joinModel`, `access`, the connection's access signal, the queue's refused records
-and the hub's stranded list, the service worker's routes. Browser: `members.spec.ts` (an owner makes
+and the hub's stranded list, the service worker's routes. Browser: `people.spec.ts` (an owner makes
 a link; a new person joins by password in a fresh browser; Members; a role changed and the open app
 follows; removed and landing on All projects; owner links; dead links; `account_exists`; logged-in
 join and `already_member`; leaving; the last owner; a refused save), `readerrole.spec.ts` (a reader's
 whole shell and its calls, an edit address, a writer), `google.spec.ts`, and an offline spec for
-`/join/*`.
+`/join/*`. `people.spec.ts` and `readerrole.spec.ts` make people with passwords, who stay accounts on
+the server, and `GET /api/session` says `password: true` while any account has one: they are named to
+run after `passkey.spec.ts`, which needs the one account to be the only one with a password.

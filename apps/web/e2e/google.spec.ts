@@ -22,16 +22,13 @@ test("Continue with Google is offered only when the server says so, and a failed
   await expect(s.page.getByRole("button", { name: "Continue with Google" })).toHaveCount(0);
 
   // Google offered: the button is there, beside the password, and sends the browser to the server.
-  await s.page.route("**/api/session", async (route) => {
-    try {
-      const res = await route.fetch();
-      const body = (await res.json()) as Record<string, unknown>;
-      await route.fulfill({ response: res, json: { ...body, google: true } });
-    } catch {
-      // The page moved on while this was being answered.
-      await route.abort().catch(() => undefined);
-    }
-  });
+  const session = (await (await s.context.request.get("/api/session")).json()) as Record<
+    string,
+    unknown
+  >;
+  await s.page.route("**/api/session", (route) =>
+    route.fulfill({ json: { ...session, google: true } }),
+  );
   const started: string[] = [];
   await s.page.route("**/api/auth/google/start**", async (route) => {
     started.push(new URL(route.request().url()).search);
@@ -65,13 +62,16 @@ test("the join page offers Google, and explains a trip that did not work", async
   const made = await page.request.post(api("/invites"), { data: { role: "reader" } });
   const { id, path } = (await made.json()) as { id: string; path: string };
   const s = await stranger(browser);
-  await s.page.route("**/api/join/*", async (route) => {
-    if (route.request().method() !== "GET") return route.continue();
-    const res = await route.fetch();
-    const body = (await res.json()) as Record<string, unknown>;
-    await route.fulfill({ response: res, json: { ...body, google: true } });
-  });
   const code = path.split("/join/")[1]!;
+  const info = (await (await s.context.request.get(`/api/join/${code}`)).json()) as Record<
+    string,
+    unknown
+  >;
+  await s.page.route("**/api/join/*", (route) =>
+    route.request().method() === "GET"
+      ? route.fulfill({ json: { ...info, google: true } })
+      : route.continue(),
+  );
   await s.page.route("**/api/auth/google/start**", async (route) => {
     const url = new URL(route.request().url());
     expect(url.searchParams.get("invite")).toBe(code);
@@ -95,28 +95,27 @@ test("the join page offers Google, and explains a trip that did not work", async
 test("Settings shows a linked Google account, refuses to unlink the last way in, and asks for a recent login", async ({
   page,
 }) => {
+  const real = (await (await page.request.get("/api/me")).json()) as Record<string, unknown>;
   const me = async (googleLinked: boolean, others: boolean) => {
-    await page.route("**/api/me", async (route) => {
-      if (route.request().method() !== "GET") return route.continue();
-      const res = await route.fetch();
-      const body = (await res.json()) as Record<string, unknown>;
-      await route.fulfill({
-        response: res,
-        json: {
-          ...body,
-          signingIn: {
-            password: { set: others, off: false },
-            passkeys: [],
-            google: googleLinked
-              ? { email: "gwen@example.com", addedAt: "2026-11-20T10:00:00.000Z" }
-              : null,
-            googleAvailable: true,
-          },
-          passwordSet: others,
-          passwordOff: false,
-        },
-      });
-    });
+    await page.route("**/api/me", (route) =>
+      route.request().method() !== "GET"
+        ? route.continue()
+        : route.fulfill({
+            json: {
+              ...real,
+              signingIn: {
+                password: { set: others, off: false },
+                passkeys: [],
+                google: googleLinked
+                  ? { email: "gwen@example.com", addedAt: "2026-11-20T10:00:00.000Z" }
+                  : null,
+                googleAvailable: true,
+              },
+              passwordSet: others,
+              passwordOff: false,
+            },
+          }),
+    );
   };
   // Linked, and it is the only way in: unlinking is not offered, and the page says why.
   await me(true, false);

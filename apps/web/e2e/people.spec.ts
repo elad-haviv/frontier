@@ -5,6 +5,10 @@ import { api, EMAIL, NAME, noSidewaysScroll, openSideBar, PASSWORD, proj } from 
  * Stage 27c: people in a project. The owner makes invite links; people join by them, are listed in
  * Members, have their role changed and are taken out; the join page says why a link is dead. Each
  * test leaves the project as it found it: the owner alone, with no link waiting.
+ *
+ * The people made here stay accounts on the server after they are taken out, and an account with a
+ * password makes the login page offer the password again. So this file is named to run after
+ * `passkey.spec.ts`, which checks that it stops offering it once the one account has switched it off.
  */
 test.describe.configure({ mode: "serial" });
 
