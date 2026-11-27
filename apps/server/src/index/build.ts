@@ -3,6 +3,7 @@
  * Nothing here is saved to disk; it is rebuilt at start and after every fetch.
  */
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import type { TypesFile } from "@frontier/schema";
 import { join } from "node:path";
 import {
   aliasesOf,
@@ -85,7 +86,29 @@ export class VaultIndex {
   private backlinkMap = new Map<string, Backlink[]>();
   private resolver: Resolver = createResolver([]);
   /** The types and `what` names of the vault's own schema file, or the built-in ones. */
-  baseSchema: Schema = BUILT_IN_SCHEMA;
+  fileSchema: Schema = BUILT_IN_SCHEMA;
+  /**
+   * The types file as the author sees it (stage 34), or null before the type store is there. Set
+   * by the type store; read each time, so a draft of the types file counts at once.
+   */
+  typesFile: () => TypesFile | null = () => null;
+  /**
+   * The types and `what` names in use: the types file's, which starts from the schema file's.
+   * A type keeps the folders the schema file listed for it, for a library with no folder file.
+   */
+  get baseSchema(): Schema {
+    const file = this.typesFile();
+    if (file === null) return this.fileSchema;
+    const types: Schema["types"] = {};
+    for (const t of file.types) {
+      types[t.name] = { folders: this.fileSchema.types[t.name]?.folders ?? [] };
+    }
+    const what: Schema["what"] = {};
+    for (const w of file.what) {
+      what[w.name] = { ...(w.begins ? { begins: true } : {}), ...(w.ends ? { ends: true } : {}) };
+    }
+    return { version: 1, types, what };
+  }
   /**
    * The folder file's types by folder path, or null while there is no folder file. Set by the
    * folder store; read each time the schema is read, so a draft of the folder file counts at once.
@@ -159,27 +182,28 @@ export class VaultIndex {
    */
   get schema(): Schema {
     const types = this.folderTypes();
-    if (types === null) return this.baseSchema;
+    const base = this.baseSchema;
+    if (types === null) return base;
     const out: Schema["types"] = {};
-    for (const name of Object.keys(this.baseSchema.types)) out[name] = { folders: [] };
+    for (const name of Object.keys(base.types)) out[name] = { folders: [] };
     for (const [path, type] of types) {
       // A type the schema no longer has still gives its folder that type.
       (out[type] ??= { folders: [] }).folders.push(path);
     }
-    return { ...this.baseSchema, types: out };
+    return { ...base, types: out };
   }
 
   /** Said on the status page while the schema's folder lists are kept but no longer read. */
   get schemaNote(): string | null {
     if (this.schemaBuiltIn || this.folderTypes() === null) return null;
-    const listed = Object.values(this.baseSchema.types).some((t) => t.folders.length > 0);
+    const listed = Object.values(this.fileSchema.types).some((t) => t.folders.length > 0);
     return listed
       ? `The folder lists in ${SCHEMA_FILE} are no longer read: folder types now come from .frontier/folders.json.`
       : null;
   }
 
   private readSchema(): void {
-    this.baseSchema = BUILT_IN_SCHEMA;
+    this.fileSchema = BUILT_IN_SCHEMA;
     this.schemaText = BUILT_IN_SCHEMA_TEXT;
     this.schemaBuiltIn = true;
     this.schemaProblem = null;
@@ -190,7 +214,7 @@ export class VaultIndex {
       const schema = parseSchema(text);
       if (schema.version !== 1)
         throw new Error(`It has version ${schema.version}; Frontier reads version 1.`);
-      this.baseSchema = schema;
+      this.fileSchema = schema;
       this.schemaText = text;
       this.schemaBuiltIn = false;
     } catch (err) {

@@ -174,7 +174,7 @@ describe("a zone's biome in the map file", () => {
 describe("the biomes file", () => {
   const file: BiomesFile = { version: 1, biomes: [blight] };
   it("is the third library file", () => {
-    expect(LIBRARY_FILE_NAMES).toEqual(["folders", "map-styles", "biomes", "pins", "trees"]);
+    expect(LIBRARY_FILE_NAMES).toEqual(["folders", "map-styles", "biomes", "pins", "trees", "types"]);
     expect(libraryFileNamed("biomes")).toBe(BIOMES_LIBRARY);
   });
 

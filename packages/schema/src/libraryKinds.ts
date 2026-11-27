@@ -1,10 +1,11 @@
-/** The table of library item files: the folder file, the map styles file, the biomes file, the pins file and the trees file. */
+/** The table of library item files: the folder file, the map styles file, the biomes file, the pins file, the trees file and the types file. */
 import { BIOMES_LIBRARY } from "./biomes.js";
 import { FOLDERS } from "./folders.js";
 import { PINS } from "./keepGoing.js";
 import type { AnyLibraryFile } from "./libraryFiles.js";
 import { MAP_STYLES } from "./mapStyles.js";
 import { TREES } from "./relations.js";
+import { TYPES } from "./entryTypes.js";
 
 /** Every library item file, in a fixed order. */
 export const LIBRARY_FILES: AnyLibraryFile[] = [
@@ -13,6 +14,7 @@ export const LIBRARY_FILES: AnyLibraryFile[] = [
   BIOMES_LIBRARY as unknown as AnyLibraryFile,
   PINS as unknown as AnyLibraryFile,
   TREES as unknown as AnyLibraryFile,
+  TYPES as unknown as AnyLibraryFile,
 ];
 
 /** The kind a library path belongs to, if any. */

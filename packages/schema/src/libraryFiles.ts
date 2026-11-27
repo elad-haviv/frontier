@@ -9,13 +9,14 @@ import type { ConflictReason } from "./api.js";
 import { mergeItemLists, serialiseItemFile } from "./itemFile.js";
 
 /** The names of the library item files: the save queue's key and the routes' `:name`. */
-export type LibraryFileName = "folders" | "map-styles" | "biomes" | "pins" | "trees";
+export type LibraryFileName = "folders" | "map-styles" | "biomes" | "pins" | "trees" | "types";
 export const LIBRARY_FILE_NAMES: readonly LibraryFileName[] = [
   "folders",
   "map-styles",
   "biomes",
   "pins",
   "trees",
+  "types",
 ];
 
 export interface LibraryFileKind<F> {

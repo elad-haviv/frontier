@@ -54,8 +54,9 @@ describe("the map styles file", () => {
       "biomes",
       "pins",
       "trees",
+      "types",
     ]);
-    expect(LIBRARY_FILE_NAMES).toEqual(["folders", "map-styles", "biomes", "pins", "trees"]);
+    expect(LIBRARY_FILE_NAMES).toEqual(["folders", "map-styles", "biomes", "pins", "trees", "types"]);
     expect(libraryFileOf(MAP_STYLES_FILE)).toBe(MAP_STYLES);
     expect(libraryFileNamed("map-styles")).toBe(MAP_STYLES);
     expect(MAP_STYLES.empty()).toEqual({ version: 1, styles: [] });

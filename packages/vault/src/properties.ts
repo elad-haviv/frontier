@@ -7,7 +7,17 @@ import { readFrontmatter } from "./frontmatter.js";
 import type { NameCheck } from "./names.js";
 
 /** The kinds of value a property can hold. */
-export const PROPERTY_KINDS = ["text", "number", "date", "checkbox", "list", "link"] as const;
+export const PROPERTY_KINDS = [
+  "text",
+  "number",
+  "date",
+  "checkbox",
+  "list",
+  "link",
+  "map",
+  "chronicle",
+  "tree",
+] as const;
 export type PropertyKind = (typeof PROPERTY_KINDS)[number];
 
 /** Keys with fields of their own; they are not the author's own properties. */
@@ -22,6 +32,33 @@ export interface CustomProperty {
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const LINK = /^\[\[([^[\]\n]+)\]\]$/;
+/** A link to a map, a chronicle or a tree by its id, with a place or an event inside it after "#". */
+const THING = /^(map|chronicle|tree)\/([A-Za-z0-9_-]{1,40})(?:#([A-Za-z0-9_-]{1,40}))?$/;
+
+/** The kinds that link to something of Frontier's that is not an entry. */
+export const THING_KINDS = ["map", "chronicle", "tree"] as const;
+export type ThingKind = (typeof THING_KINDS)[number];
+export const isThingKind = (kind: string): kind is ThingKind =>
+  (THING_KINDS as readonly string[]).includes(kind);
+
+export interface ThingRef {
+  kind: ThingKind;
+  id: string;
+  /** A feature of the map or an event of the chronicle, when the link points inside. */
+  spot?: string;
+}
+
+/** What a value such as "map/ab12cd34#f9" points at, or null when it is not such a link. */
+export function thingOf(value: unknown): ThingRef | null {
+  if (typeof value !== "string") return null;
+  const m = THING.exec(value);
+  if (!m) return null;
+  return { kind: m[1] as ThingKind, id: m[2]!, ...(m[3] ? { spot: m[3] } : {}) };
+}
+
+/** The value written for a link to a map, a chronicle or a tree. */
+export const thingValue = (ref: ThingRef): string =>
+  `${ref.kind}/${ref.id}${ref.spot ? `#${ref.spot}` : ""}`;
 
 /** The kind a value reads as. An empty value reads as text. */
 export function propertyKind(value: unknown): PropertyKind | "other" {
@@ -32,6 +69,8 @@ export function propertyKind(value: unknown): PropertyKind | "other" {
   if (typeof value === "string") {
     if (DATE.test(value)) return "date";
     if (LINK.test(value)) return "link";
+    const thing = THING.exec(value);
+    if (thing) return thing[1] as ThingKind;
     return "text";
   }
   if (Array.isArray(value) && value.every((v) => typeof v === "string" || typeof v === "number")) {
@@ -94,6 +133,15 @@ export function propertyValue(kind: PropertyKind, input: string | boolean | stri
       const raw = String(input).trim();
       if (raw === "") return null;
       return LINK.test(raw) ? raw : `[[${raw}]]`;
+    }
+    case "map":
+    case "chronicle":
+    case "tree": {
+      const raw = String(input).trim();
+      if (raw === "") return null;
+      const ref = thingOf(raw);
+      if (!ref || ref.kind !== kind) throw new Error(`Choose a ${kind} from the list.`);
+      return raw;
     }
     default: {
       const raw = String(input);
