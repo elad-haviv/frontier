@@ -254,11 +254,20 @@ test("p twice quickly makes one change, and a pin made elsewhere shows when the 
     await page.goto(entry(HARBOR));
     const pin = page.getByRole("button", { name: "Pin to Working on" });
     await expect(pin).toHaveAttribute("aria-pressed", "false");
+    // The first change is held on its way, so the second press always comes while it is under
+    // way, however fast this machine is.
+    await page.route("**/api/p/*/pins", async (route) => {
+      if (route.request().method() === "POST") await new Promise((r) => setTimeout(r, 150));
+      await route.continue();
+    });
     await page.keyboard.press("p");
     await page.keyboard.press("p");
     await expect(pin).toHaveAttribute("aria-pressed", "true");
+    await expect.poll(() => asked).toEqual(["POST"]);
+    // Nothing more follows: the second press made no change.
     await page.waitForTimeout(300);
     expect(asked).toEqual(["POST"]);
+    await page.unroute("**/api/p/*/pins");
     await page.request.delete(api(`/pins?path=${encodeURIComponent(HARBOR)}`));
 
     // Another device unpinned it; this page hears of it when it is shown again after a while.
