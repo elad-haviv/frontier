@@ -23,7 +23,6 @@ test.describe.configure({ mode: "serial" });
 const WORDS = "a long enough password";
 const mail = (who: string) => `${who}.${Date.now()}.${Math.floor(Math.random() * 1e6)}@example.com`;
 const FOLDER = "People Spec";
-const OWNER = "Olive Owner";
 
 /** The entries this spec made, so each test leaves the library as it found it. */
 const made = new Set<string>();
