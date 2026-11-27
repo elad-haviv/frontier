@@ -12,6 +12,15 @@
  * A comment from before people has no author. It is read as the project's first owner's, and the
  * first load that can name one writes that into the file, so a project that had no owner yet when
  * 27e arrived is finished later; running it again changes nothing.
+ *
+ * Such a comment is also marked `legacy`: before 27e only the writers and the owner could read
+ * comments, so a legacy comment stays for writers and owners only until its author or an owner
+ * shares it with everyone (`share`). The first 27e build gave these comments to the first owner
+ * without a mark, so a file that does not carry `version: 2` is corrected once, on the first start
+ * of this build: every comment in it that has no author, or whose author is the first owner (or
+ * when no owner can be named yet), is marked legacy. That can only hide more than was shared
+ * (a comment the first owner really wrote under 27e is hidden from readers until they share it),
+ * never show more than before. The file is then written with `version: 2` and this runs no more.
  */
 import { randomBytes } from "node:crypto";
 import { join } from "node:path";
@@ -21,7 +30,10 @@ import { movedPath } from "../publish/publish.js";
 import { currentPersonId } from "../projects/view.js";
 import type { StateFiles } from "../state/files.js";
 
+/** Open shared comments on one entry. */
 export const MAX_COMMENTS_PER_ENTRY = 300;
+/** Open comments (shared or for the AI) one person has in a project. */
+export const MAX_OPEN_PER_PERSON = 200;
 export const MAX_REPLIES_PER_COMMENT = 100;
 
 const Id = z.string().regex(/^[a-z0-9]{12}$/);
@@ -49,6 +61,8 @@ export const Comment = z.object({
   text: z.string(),
   /** "me": shared with the people of the project. "ai": its author's own, for the writing help. */
   for: z.enum(["me", "ai"]),
+  /** From before people: only writers and owners read it until it is shared (see the file's note). */
+  legacy: z.boolean().optional(),
   at: z.string(),
   person: z.string().optional(),
   name: z.string().optional(),
@@ -60,7 +74,9 @@ export const Comment = z.object({
 });
 export type Comment = z.infer<typeof Comment>;
 
-const File = z.object({ comments: z.array(Comment) });
+/** `version` 2 marks a file that has been through the legacy correction. */
+const File = z.object({ version: z.number().optional(), comments: z.array(Comment) });
+const VERSION = 2;
 
 /** What the store asks of the project to know people: kept apart so it can be tested alone. */
 export interface CommentPeople {
@@ -80,13 +96,16 @@ const newId = (): string => {
   return [...randomBytes(12)].map((b) => alphabet[b % 36]).join("");
 };
 
-/** A comment is shared with the project while it is not for the AI. */
-export const isShared = (c: Pick<Comment, "for">): boolean => c.for !== "ai";
+/** A comment is shared with the whole project while it is not for the AI and not a legacy one. */
+export const isShared = (c: Pick<Comment, "for" | "legacy">): boolean =>
+  c.for !== "ai" && !c.legacy;
 
 export class CommentStore {
   private readonly file: string;
   /** The comments, read once; every change goes through `queue`, one after another. */
   private loaded: Promise<Comment[]> | null = null;
+  /** The file was there but from before `version: 2`: its legacy comments are still to be marked. */
+  private unmarked = false;
   private queue: Promise<unknown> = Promise.resolve();
   /** The entries whose shared comments the change being made touches, told when it is kept. */
   private readonly pending = new Set<string>();
@@ -100,7 +119,10 @@ export class CommentStore {
   }
 
   private all(): Promise<Comment[]> {
-    this.loaded ??= this.files.readJson(this.file, File).then((f) => f?.comments ?? []);
+    this.loaded ??= this.files.readJson(this.file, File).then((f) => {
+      this.unmarked = !!f && f.version !== VERSION;
+      return f?.comments ?? [];
+    });
     return this.loaded;
   }
 
@@ -136,8 +158,15 @@ export class CommentStore {
    */
   load(): Promise<void> {
     return this.apply(async (all) => {
-      const { all: next, changed } = this.stamped(all);
-      return { next: changed ? next : null, value: undefined };
+      const { all: stamped, changed } = this.stamped(all);
+      if (!this.unmarked) return { next: changed ? stamped : null, value: undefined };
+      // Decided before stamping: what had no author, or the first owner's (whoever stamped it).
+      const owner = this.people.legacyOwner?.() ?? null;
+      const old = new Set(
+        all.filter((c) => !owner || !c.person || c.person === owner).map((c) => c.id),
+      );
+      const next = stamped.map((c) => (old.has(c.id) ? { ...c, legacy: true } : c));
+      return { next, value: undefined };
     });
   }
 
@@ -150,7 +179,8 @@ export class CommentStore {
         // What could not be given to anyone before is given now that an owner can be named.
         const { all: whole } = this.stamped(next);
         this.loaded = Promise.resolve(whole);
-        await this.files.writeJson(this.file, { comments: whole });
+        this.unmarked = false;
+        await this.files.writeJson(this.file, { version: VERSION, comments: whole });
       }
       // Told after the change is kept, so whoever reads at once finds it.
       const paths = [...this.pending];
@@ -170,6 +200,17 @@ export class CommentStore {
     const fill = <T extends { person?: string | undefined; name?: string | undefined }>(x: T): T =>
       x.person ? x : { ...x, person: owner, ...(name ? { name } : {}) };
     return { ...fill(c), replies: c.replies.map(fill) };
+  }
+
+  /** Refuses another open shared comment on an entry that already holds the most. */
+  private checkEntryRoom(all: Comment[], path: string): void {
+    const open = all.filter((c) => c.path === path && isShared(c) && !c.resolved).length;
+    if (open >= MAX_COMMENTS_PER_ENTRY) {
+      throw new ApiError(
+        "invalid",
+        `An entry can hold at most ${MAX_COMMENTS_PER_ENTRY} open comments. Resolve or delete some first.`,
+      );
+    }
   }
 
   /** Every comment on the entry, shared or not; the route says which the caller may see. */
@@ -200,13 +241,14 @@ export class CommentStore {
 
   add(input: NewComment, now = new Date()): Promise<Comment> {
     return this.apply(async (all) => {
-      if (all.filter((c) => c.path === input.path).length >= MAX_COMMENTS_PER_ENTRY) {
+      const who = this.actor();
+      if (input.for !== "ai") this.checkEntryRoom(all, input.path);
+      if (who && all.filter((c) => c.person === who && !c.resolved).length >= MAX_OPEN_PER_PERSON) {
         throw new ApiError(
           "invalid",
-          `An entry can hold at most ${MAX_COMMENTS_PER_ENTRY} comments. Resolve or delete some first.`,
+          `You can have at most ${MAX_OPEN_PER_PERSON} open comments in a project. Resolve or delete some first.`,
         );
       }
-      const who = this.actor();
       const name = this.nameFor(who);
       const comment = Comment.parse({
         ...input,
@@ -226,6 +268,8 @@ export class CommentStore {
     change: {
       text?: string | undefined;
       for?: "me" | "ai" | undefined;
+      /** Where the passage is in the saved text, when the comment becomes shared. */
+      anchor?: { prefix: string; suffix: string } | undefined;
       /** Set when the words are edited by their author, to mark the comment "edited". */
       edited?: boolean | undefined;
     },
@@ -238,8 +282,13 @@ export class CommentStore {
         ...found,
         ...(change.text === undefined ? {} : { text: change.text }),
         ...(change.for === undefined ? {} : { for: change.for }),
+        ...(change.anchor ?? {}),
         ...(change.text !== undefined && change.edited ? { editedAt: now.toISOString() } : {}),
       };
+      // Giving a comment to everyone (for "me") ends its being a legacy, writers-only note.
+      if (change.for === "me") delete next.legacy;
+      if (isShared(next) && !isShared(found) && !found.resolved)
+        this.checkEntryRoom(all, next.path);
       this.tell(found, next);
       return { next: all.map((c) => (c.id === id ? next : c)), value: this.read(next) };
     });

@@ -4,7 +4,16 @@ import { roleAtLeast, VaultPath } from "@frontier/schema";
 import { isNote } from "@frontier/vault";
 import { z } from "zod";
 import { LoginLimiter } from "../auth/limit.js";
-import { canDelete, canEdit, canHand, canResolve, canSee, type Who } from "../comments/rules.js";
+import { savedAnchor } from "../comments/anchor.js";
+import {
+  canDelete,
+  canEdit,
+  canHand,
+  canResolve,
+  canSee,
+  canShare,
+  type Who,
+} from "../comments/rules.js";
 import type { Comment } from "../comments/store.js";
 import { ApiError } from "../errors.js";
 import { displayName } from "../members/names.js";
@@ -38,12 +47,8 @@ const Work = z.object({
   previous: Previous,
 });
 
-/** Words with the Markdown marks and the spacing taken out, to tell whether a passage is in a text. */
-const plain = (t: string): string =>
-  t
-    .replace(/<\/?u>|[*_~`#>[\]]/g, "")
-    .replace(/\s+/g, " ")
-    .trim();
+/** The longest passage a shared comment keeps (a comment for the AI may hold a whole paragraph). */
+const MOST_SHARED_QUOTE = 1500;
 
 /** Comments and replies written per minute by one person, however many projects. */
 const WRITES_PER_MINUTE = 40;
@@ -85,6 +90,7 @@ export function commentRoutes(app: RouteApp, s: Services): void {
     suffix: c.suffix,
     text: c.text,
     for: c.for,
+    legacy: c.legacy === true,
     at: c.at,
     editedAt: c.editedAt ?? null,
     author: named(me, c.person, c.name),
@@ -104,6 +110,7 @@ export function commentRoutes(app: RouteApp, s: Services): void {
       delete: canDelete(c, me),
       resolve: canResolve(c, me),
       hand: canHand(c, me),
+      share: canShare(c, me),
     },
   });
 
@@ -118,6 +125,39 @@ export function commentRoutes(app: RouteApp, s: Services): void {
 
   const refuse = (what: string): never => {
     throw new ApiError("role_too_low", what);
+  };
+
+  /**
+   * What a comment needs to be shared: the entry as saved, the passage in it, and the context cut
+   * from the saved text (never the writer's own). The same refusals for readers and writers, so
+   * nobody learns of unsaved changes from them.
+   */
+  const sharedAnchor = (
+    path: string,
+    quote: string,
+    hint: { prefix: string; suffix: string },
+  ): { prefix: string; suffix: string } => {
+    const saved = s.index.note(path);
+    if (!saved) {
+      throw new ApiError(
+        "invalid",
+        "This entry is not saved yet. Save a version first, so the others can read your comment.",
+      );
+    }
+    if (quote.length > MOST_SHARED_QUOTE) {
+      throw new ApiError(
+        "invalid",
+        "That passage is too long to share. Comment on a shorter part of it.",
+      );
+    }
+    const found = savedAnchor(saved.text, quote, hint);
+    if (!found) {
+      throw new ApiError(
+        "invalid",
+        "That passage is not in the saved entry. Comment on saved text, or save your changes first.",
+      );
+    }
+    return found;
   };
 
   app.get("/api/comments", async (request) => {
@@ -141,29 +181,16 @@ export function commentRoutes(app: RouteApp, s: Services): void {
     if (input.for === "ai" && !roleAtLeast(me.role, "writer")) {
       refuse("Only a writer can leave a comment for the AI.");
     }
-    if (input.for === "me") {
-      // What others read must be what is saved: never text only someone's unsaved changes hold.
-      const saved = s.index.note(input.path);
-      if (!saved) {
-        throw new ApiError(
-          "invalid",
-          "This entry is not saved yet. Save a version first, so the others can read your comment.",
-        );
-      }
-      if (input.quote !== "" && !plain(saved.text).includes(plain(input.quote))) {
-        throw new ApiError(
-          "invalid",
-          "That passage is not in the saved entry. Comment on saved text, or save your changes first.",
-        );
-      }
-    }
+    // What others read must be what is saved: never text only someone's unsaved changes hold, and
+    // the context around the passage is cut from the saved text, whatever the browser sent.
+    const anchor =
+      input.for === "me"
+        ? sharedAnchor(input.path, input.quote, input)
+        : input.quote === ""
+          ? { prefix: "", suffix: "" }
+          : { prefix: input.prefix, suffix: input.suffix };
     limit.attempt(me.id);
-    const whole = input.quote === "";
-    const comment = await s.comments.add({
-      ...input,
-      prefix: whole ? "" : input.prefix,
-      suffix: whole ? "" : input.suffix,
-    });
+    const comment = await s.comments.add({ ...input, ...anchor });
     return { comment: shown(comment, me) };
   });
 
@@ -174,20 +201,52 @@ export function commentRoutes(app: RouteApp, s: Services): void {
       refuse("You can edit only your own comments.");
     }
     if (change.for !== undefined && change.for !== c.for && !canHand(c, me)) {
-      refuse("Only the writer of a comment can give it to the AI or take it back.");
+      // An owner may share an old, writers-only comment, whatever it is for, but not hand it over.
+      if (!(change.for === "me" && canShare(c, me))) {
+        refuse("Only the writer of a comment can give it to the AI or take it back.");
+      }
+    }
+    if (change.for === "me" && c.legacy && !canShare(c, me)) {
+      refuse("Only the writer of an old comment, or an owner, can share it with everyone.");
     }
     const edited = change.text !== undefined && change.text !== c.text;
+    // Giving it to everyone (also a legacy one, with the same word): the saved-text rules apply.
+    const sharing = change.for === "me" && (c.for !== "me" || !!c.legacy);
+    if (change.for === "ai" && c.for === "me" && c.replies.some((r) => r.person !== me.id)) {
+      throw new ApiError(
+        "invalid",
+        "Others have replied to this comment. Resolve it instead of making it private.",
+      );
+    }
+    const handed = change.for !== undefined && change.for !== c.for;
+    // Nothing changes: nothing is written or told, and it costs nothing against the limit.
+    if (!edited && !handed && !sharing) return { comment: shown(c, me) };
+    const anchor = sharing ? sharedAnchor(c.path, c.quote, c) : undefined;
+    limit.attempt(me.id);
     const next = await s.comments.change(c.id, {
       text: edited ? change.text : undefined,
       for: change.for,
+      anchor,
       edited,
     });
     return { comment: shown(next, me) };
   });
 
+  /** A legacy comment (from before sharing) given to everyone: its author or an owner may. */
+  app.post("/api/comments/:id/share", async (request) => {
+    const { c, me } = await visible(request, Id.parse(request.params).id);
+    if (!canShare(c, me)) {
+      refuse("Only the writer of an old comment, or an owner, can share it with everyone.");
+    }
+    const anchor = sharedAnchor(c.path, c.quote, c);
+    limit.attempt(me.id);
+    return { comment: shown(await s.comments.change(c.id, { for: "me", anchor }), me) };
+  });
+
   app.delete("/api/comments/:id", async (request) => {
     const { c, me } = await visible(request, Id.parse(request.params).id);
     if (!canDelete(c, me)) refuse("You can delete only your own comments.");
+    limit.attempt(me.id);
     await s.comments.remove(c.id);
     return { ok: true as const };
   });
@@ -196,6 +255,7 @@ export function commentRoutes(app: RouteApp, s: Services): void {
     const { c, me } = await visible(request, Id.parse(request.params).id);
     if (!canResolve(c, me))
       refuse("Only the writer of a comment, a writer or an owner can resolve it.");
+    limit.attempt(me.id);
     return { comment: shown(await s.comments.resolve(c.id, true), me) };
   });
 
@@ -203,6 +263,7 @@ export function commentRoutes(app: RouteApp, s: Services): void {
     const { c, me } = await visible(request, Id.parse(request.params).id);
     if (!canResolve(c, me))
       refuse("Only the writer of a comment, a writer or an owner can reopen it.");
+    limit.attempt(me.id);
     return { comment: shown(await s.comments.resolve(c.id, false), me) };
   });
 
@@ -221,7 +282,9 @@ export function commentRoutes(app: RouteApp, s: Services): void {
     if (!reply) throw new ApiError("not_found", "That reply is not there any more.");
     if (!canEdit(reply, me)) refuse("You can edit only your own replies.");
     const { text } = Reply.parse(request.body);
-    const next = text === reply.text ? c : await s.comments.editReply(c.id, reply.id, text);
+    if (text === reply.text) return { comment: shown(c, me) };
+    limit.attempt(me.id);
+    const next = await s.comments.editReply(c.id, reply.id, text);
     return { comment: shown(next, me) };
   });
 
@@ -231,6 +294,7 @@ export function commentRoutes(app: RouteApp, s: Services): void {
     const reply = c.replies.find((r) => r.id === rid);
     if (!reply) throw new ApiError("not_found", "That reply is not there any more.");
     if (!canDelete(reply, me)) refuse("You can delete only your own replies.");
+    limit.attempt(me.id);
     return { comment: shown(await s.comments.removeReply(c.id, reply.id), me) };
   });
 

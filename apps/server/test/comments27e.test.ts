@@ -8,6 +8,7 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { QueueResponse, StatusSnapshot } from "@frontier/schema";
+import { asPerson } from "../src/projects/view.js";
 import { buildApp } from "../src/app.js";
 import { CommentStore } from "../src/comments/store.js";
 import { loadConfig } from "../src/config.js";
@@ -237,10 +238,34 @@ describe("what each role may do to a comment, its own and another person's", () 
   it("tells each person, in `can`, what they may do", async () => {
     await made(rhea);
     const flags = async (who: Who) => (await list(who))[0]!.can;
-    expect(await flags(rhea)).toEqual({ edit: true, delete: true, resolve: true, hand: false });
-    expect(await flags(rae)).toEqual({ edit: false, delete: false, resolve: false, hand: false });
-    expect(await flags(wes)).toEqual({ edit: false, delete: false, resolve: true, hand: false });
-    expect(await flags(owner())).toEqual({ edit: false, delete: true, resolve: true, hand: false });
+    expect(await flags(rhea)).toEqual({
+      edit: true,
+      delete: true,
+      resolve: true,
+      hand: false,
+      share: false,
+    });
+    expect(await flags(rae)).toEqual({
+      edit: false,
+      delete: false,
+      resolve: false,
+      hand: false,
+      share: false,
+    });
+    expect(await flags(wes)).toEqual({
+      edit: false,
+      delete: false,
+      resolve: true,
+      hand: false,
+      share: false,
+    });
+    expect(await flags(owner())).toEqual({
+      edit: false,
+      delete: true,
+      resolve: true,
+      hand: false,
+      share: false,
+    });
   });
 
   it("replies: anyone adds, edits their own only, and deletes their own (an owner anyone's)", async () => {
@@ -626,5 +651,334 @@ describe("open comments in the keep-going queue", () => {
     }
     await wren.post(`${base}/comments/${one}/resolve`, {});
     expect(await reasons(rhea)).toEqual([{ rule: "openComments", text: "1 open comment" }]);
+  });
+});
+
+describe("legacy comments (from before sharing) stay for writers and owners", () => {
+  const old = (over: Record<string, unknown> = {}) => ({
+    id: "abcdefghij01",
+    path: ROAD,
+    quote: SALT,
+    prefix: "",
+    suffix: "",
+    text: "An old note",
+    for: "me",
+    at: "2026-01-01T00:00:00.000Z",
+    ...over,
+  });
+  const file = () => join(t.services.config.dataDir, "state", "comments.json");
+  /** A start: the server's own store forgets what it holds and reads the file again, then loads. */
+  const rebuild = async () => {
+    const store = t.services.comments;
+    (store as unknown as { loaded: unknown }).loaded = null;
+    await store.load();
+  };
+  let admin: string;
+  beforeEach(async () => {
+    admin = (await t.server.people.all())[0]!.id;
+    // The admin's first request in a project with no owner makes them its owner.
+    await t.get(`${base}/comments?path=${path}`);
+  });
+
+  // The state of an install that already ran the first 27e build: the old notes carry the first
+  // owner as author, with nothing to tell them from the owner's own comments, and no version.
+  const firstBuild = (extra: Record<string, unknown>[] = []) =>
+    writeFileSync(
+      file(),
+      JSON.stringify({
+        comments: [
+          old({ person: admin, name: "The Author", replies: [] }),
+          old({ id: "abcdefghij02", for: "ai", text: "Old AI note", person: admin }),
+          old({ id: "abcdefghij03", text: "No author at all" }),
+          old({
+            id: "abcdefghij04",
+            text: "Wren, under 27e",
+            person: wren.id,
+            name: "Wren Writer",
+          }),
+          ...extra,
+        ],
+      }),
+    );
+  const texts = async (who: Who) => (await list(who)).map((c) => c.text).sort();
+
+  it("marks, once, what has no author or the first owner's, so readers never see it", async () => {
+    firstBuild();
+    await rebuild();
+    const stored = JSON.parse(readFileSync(file(), "utf8"));
+    expect(stored.version).toBe(2);
+    const marked = (stored.comments as { text: string; legacy?: boolean }[])
+      .filter((c) => c.legacy)
+      .map((c) => c.text)
+      .sort();
+    expect(marked).toEqual(["An old note", "No author at all", "Old AI note"]);
+    // Readers see only the comment written under 27e by someone else; writers and owners all.
+    expect(await texts(rhea)).toEqual(["Wren, under 27e"]);
+    expect(await texts(wes)).toEqual([
+      "An old note",
+      "No author at all",
+      "Old AI note",
+      "Wren, under 27e",
+    ]);
+    expect(await texts(owner())).toEqual(await texts(wes));
+    // An old comment for the AI stays usable by writers, not private to the first owner.
+    expect(code(await rhea.get(`${base}/comments/abcdefghij02`))[0]).toBe(404);
+    // The count, the queue and the stream treat it as writers' and owners' only.
+    expect((await rhea.get(`${base}/comments/count?path=${path}`)).json()).toEqual({ open: 1 });
+    expect((await wes.get(`${base}/comments/count?path=${path}`)).json()).toEqual({ open: 4 });
+    const queue = ((await rhea.get(`${base}/keep-going/queue`)).json() as QueueResponse).needsLove
+      .rows;
+    expect(
+      queue.find((r) => r.path === ROAD)?.reasons.filter((r) => r.rule === "openComments"),
+    ).toEqual([{ rule: "openComments", text: "1 open comment" }]);
+    // Running it again, on a new start, changes nothing.
+    const once = readFileSync(file(), "utf8");
+    await rebuild();
+    expect(readFileSync(file(), "utf8")).toBe(once);
+  });
+
+  it("is quiet on the stream when a legacy comment changes", async () => {
+    firstBuild();
+    await rebuild();
+    const seen: string[] = [];
+    const orig = t.services.status.commentsChanged.bind(t.services.status);
+    t.services.status.commentsChanged = (p: string) => {
+      seen.push(p);
+      orig(p);
+    };
+    expect((await t.post(`${base}/comments/abcdefghij01/resolve`, {})).statusCode).toBe(200);
+    expect(seen).toEqual([]);
+  });
+
+  it("is shared with everyone only by its author or an owner, and only through the saved-text check", async () => {
+    firstBuild();
+    await rebuild();
+    // Another writer cannot, a reader cannot even see it.
+    expect(code(await wes.post(`${base}/comments/abcdefghij01/share`, {}))).toEqual([
+      403,
+      "role_too_low",
+    ]);
+    expect(code(await patch(wes, `${base}/comments/abcdefghij01`, { for: "me" }))[0]).toBe(403);
+    expect(code(await rhea.post(`${base}/comments/abcdefghij01/share`, {}))[0]).toBe(403);
+    // A passage that is not in the saved entry cannot be shared, and says why.
+    writeFileSync(
+      file(),
+      JSON.stringify({
+        version: 2,
+        comments: [
+          old({ person: admin, legacy: true }),
+          old({
+            id: "abcdefghij05",
+            quote: "Words that left the entry",
+            person: admin,
+            legacy: true,
+          }),
+        ],
+      }),
+    );
+    await rebuild();
+    const bad = await t.post(`${base}/comments/abcdefghij05/share`, {});
+    expect(code(bad)).toEqual([400, "invalid"]);
+    expect(bad.json().error.message).toContain("not in the saved entry");
+    expect(await texts(rhea)).toEqual([]);
+    // The owner (the first owner is the author) shares the good one; readers then see it.
+    const ok = await t.post(`${base}/comments/abcdefghij01/share`, {});
+    expect(ok.statusCode, ok.body).toBe(200);
+    expect(ok.json().comment.legacy).toBe(false);
+    expect(await texts(rhea)).toEqual(["An old note"]);
+    expect(JSON.parse(readFileSync(file(), "utf8")).comments[0].legacy).toBeUndefined();
+  });
+
+  it("is shared by an owner who is not its author, and an old note for the AI by its author's PATCH", async () => {
+    firstBuild();
+    await rebuild();
+    await t.server.projects.update(projectId, (p) => ({
+      ...p,
+      members: p.members.map((m) => (m.personId === wes.id ? { ...m, role: "owner" as const } : m)),
+    }));
+    const byOwner = await wes.post(`${base}/comments/abcdefghij01/share`, {});
+    expect(byOwner.statusCode, byOwner.body).toBe(200);
+    // The old AI note is the first owner's to hand over: "Share it" runs the same check.
+    const shared = await patch(owner(), `${base}/comments/abcdefghij02`, { for: "me" });
+    expect(shared.statusCode, shared.body).toBe(200);
+    expect(await texts(rhea)).toEqual(["An old note", "Old AI note", "Wren, under 27e"]);
+  });
+});
+
+describe("what others read of a shared comment comes from the saved text", () => {
+  const stored = async () => (await t.services.comments.forPath(ROAD))[0]!;
+
+  it("ignores the browser's prefix and suffix for a shared comment, and keeps them for the AI", async () => {
+    await made(rhea, { prefix: "SECRET unsaved words ", suffix: " more SECRET words" });
+    const c = await stored();
+    expect(c.prefix).toBe("# Long Road\n\nA road.\n\n");
+    expect(c.suffix).toBe("\n\n" + WAYS + "\n");
+    expect(JSON.stringify(await list(owner()))).not.toContain("SECRET");
+    const own = await made(wren, { for: "ai", prefix: "mine ", suffix: " mine" });
+    const ai = (await t.services.comments.forPath(ROAD)).find((x) => x.id === own)!;
+    expect([ai.prefix, ai.suffix]).toEqual(["mine ", " mine"]);
+  });
+
+  it("uses the hint only to choose among repeats of the words, and cuts the context from the saved text", async () => {
+    t.repo.pushFromOutside({ [ROAD]: `# Long Road\n\nAlpha salt one.\n\nBeta salt two.\n` });
+    await t.services.sync();
+    await made(rhea, { quote: "salt", prefix: "Beta ", suffix: " two.", text: "Second" });
+    const c = await stored();
+    expect(c.prefix).toBe("# Long Road\n\nAlpha salt one.\n\nBeta ");
+    expect(c.prefix.length).toBeGreaterThan(5);
+    expect(c.suffix).toBe(" two.\n");
+  });
+
+  it('applies the same rules to "Share it" (PATCH for: me) as to a new comment', async () => {
+    const told: string[] = [];
+    const orig = t.services.status.commentsChanged.bind(t.services.status);
+    t.services.status.commentsChanged = (p: string) => {
+      told.push(p);
+      orig(p);
+    };
+    // A private note on words, and on an entry, that only an unsaved draft holds.
+    const words = await made(wren, { for: "ai", quote: "Words nobody saved yet." });
+    const entry = await made(wren, {
+      for: "ai",
+      path: "03 Places/Never.md",
+      quote: "Words nobody saved yet.",
+    });
+    const a = await patch(wren, `${base}/comments/${words}`, { for: "me" });
+    const b = await patch(wren, `${base}/comments/${entry}`, { for: "me" });
+    expect(code(a)).toEqual([400, "invalid"]);
+    expect(a.json().error.message).toContain("not in the saved entry");
+    expect(code(b)).toEqual([400, "invalid"]);
+    expect(b.json().error.message).toContain("not saved yet");
+    expect(told).toEqual([]);
+    expect(await list(rhea)).toEqual([]);
+    // A good one is shared, with its context cut from the saved text, not the old private one.
+    const good = await made(wren, { for: "ai", prefix: "mine ", suffix: " mine" });
+    expect((await patch(wren, `${base}/comments/${good}`, { for: "me" })).statusCode).toBe(200);
+    const c = (await t.services.comments.forPath(ROAD)).find((x) => x.id === good)!;
+    expect([c.prefix, c.suffix]).toEqual(["# Long Road\n\nA road.\n\n", "\n\n" + WAYS + "\n"]);
+    expect(told).toEqual([ROAD]);
+  });
+
+  it("refuses to make a shared comment private while others have replied to it", async () => {
+    const id = await made(wren);
+    await rhea.post(`${base}/comments/${id}/replies`, { text: "I agree" });
+    const res = await patch(wren, `${base}/comments/${id}`, { for: "ai" });
+    expect(code(res)).toEqual([400, "invalid"]);
+    expect((await list(rhea)).map((c) => c.id)).toContain(id);
+    // With only the author's own replies, it may still be taken private.
+    const mine = await made(wren, { text: "Own thread" });
+    await wren.post(`${base}/comments/${mine}/replies`, { text: "Note to self" });
+    expect((await patch(wren, `${base}/comments/${mine}`, { for: "ai" })).statusCode).toBe(200);
+  });
+});
+
+describe("limits on comments", () => {
+  it("runs the per-person write limit on every mutating route", async () => {
+    const hit = async (call: (i: number) => Promise<{ statusCode: number }>) => {
+      let last = 0;
+      for (let i = 0; i < 60 && last !== 429; i++) last = (await call(i)).statusCode;
+      return last;
+    };
+    const id = await made(rae);
+    await rae.post(`${base}/comments/${id}/replies`, { text: "r" });
+    // Resolve and reopen, by their author.
+    expect(
+      await hit((i) => rae.post(`${base}/comments/${id}/${i % 2 ? "reopen" : "resolve"}`, {})),
+    ).toBe(429);
+    const other = await made(rhea);
+    const reply = (await rhea.post(`${base}/comments/${other}/replies`, { text: "r" })).json()
+      .comment.replies[0].id;
+    expect(
+      await hit((i) => rhea.post(`${base}/comments/${other}/replies`, { text: `x${i}` })),
+    ).toBe(429);
+    // A person who has used up the limit cannot edit or delete either; someone else can.
+    const who = rhea;
+    expect(code(await patch(who, `${base}/comments/${other}`, { text: "changed" }))[0]).toBe(429);
+    expect(
+      code(await patch(who, `${base}/comments/${other}/replies/${reply}`, { text: "changed" }))[0],
+    ).toBe(429);
+    expect(code(await who.del(`${base}/comments/${other}/replies/${reply}`))[0]).toBe(429);
+    expect(code(await who.del(`${base}/comments/${other}`))[0]).toBe(429);
+    expect(code(await who.post(`${base}/comments/${other}/resolve`, {}))[0]).toBe(429);
+    expect(code(await who.post(`${base}/comments/${other}/reopen`, {}))[0]).toBe(429);
+    expect((await wes.del(`${base}/comments/${other}`)).statusCode).toBe(403);
+  });
+
+  it("neither writes nor tells for an unchanged PATCH or reply edit", async () => {
+    const id = await made(wren, { text: "Same words" });
+    const reply = (await rhea.post(`${base}/comments/${id}/replies`, { text: "Same reply" })).json()
+      .comment.replies[0].id;
+    const told: string[] = [];
+    const orig = t.services.status.commentsChanged.bind(t.services.status);
+    t.services.status.commentsChanged = (p: string) => {
+      told.push(p);
+      orig(p);
+    };
+    const before = readFileSync(join(t.services.config.dataDir, "state", "comments.json"), "utf8");
+    expect(
+      (await patch(wren, `${base}/comments/${id}`, { text: "Same words", for: "me" })).statusCode,
+    ).toBe(200);
+    expect(
+      (await patch(rhea, `${base}/comments/${id}/replies/${reply}`, { text: "Same reply" }))
+        .statusCode,
+    ).toBe(200);
+    expect(told).toEqual([]);
+    expect(readFileSync(join(t.services.config.dataDir, "state", "comments.json"), "utf8")).toBe(
+      before,
+    );
+    expect((await list(wren))[0]!.editedAt).toBeNull();
+  });
+
+  it("counts only open shared comments toward an entry's cap of 300", async () => {
+    const store = t.services.comments;
+    const put = (n: number, extra: Partial<Parameters<typeof store.add>[0]> = {}) =>
+      Array.from({ length: n }, (_, i) =>
+        asPerson(`person${i % 3}`, () =>
+          store.add({
+            path: ROAD,
+            quote: "x",
+            prefix: "",
+            suffix: "",
+            text: "n",
+            for: "me",
+            ...extra,
+          }),
+        ),
+      );
+    // Private notes do not fill the entry, and neither do resolved threads.
+    await Promise.all(put(120, { for: "ai" }));
+    const done = await Promise.all(put(300));
+    expect(code(await say(wes))).toEqual([400, "invalid"]);
+    await asPerson("resolver", () => store.resolve(done[0]!.id, true));
+    expect((await say(wes)).statusCode).toBe(200); // 299 open and shared, so room for one
+    expect(code(await say(rhea))).toEqual([400, "invalid"]); // now 300
+    expect((await say(wren, { for: "ai" })).statusCode).toBe(200); // private ones are not counted
+  });
+
+  it("keeps a person to 200 open comments in a project", async () => {
+    const store = t.services.comments;
+    for (let i = 0; i < 200; i++) {
+      await asPerson(rae.id, () =>
+        store.add({
+          path: `03 Places/E${i % 5}.md`,
+          quote: "x",
+          prefix: "",
+          suffix: "",
+          text: "n",
+          for: "ai",
+        }),
+      );
+    }
+    const res = await say(rae);
+    expect(code(res)).toEqual([400, "invalid"]);
+    expect(res.json().error.message).toContain("200 open comments");
+    // Someone else is not held up, and resolving one makes room.
+    expect((await say(rhea)).statusCode).toBe(200);
+  });
+
+  it("keeps a shared passage short, and a private one to a paragraph", async () => {
+    const long = `${SALT} ` + "salt ".repeat(400);
+    expect(code(await say(rhea, { quote: long }))[0]).toBe(400);
+    expect(code(await say(wren, { quote: long, for: "ai" }))[0]).toBe(200);
   });
 });

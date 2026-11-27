@@ -1354,7 +1354,7 @@ still unstamped, so running it again changes nothing. A comment may now be on th
 | Resolve / reopen | own thread | any | any |
 | For the AI (private to its writer), give to or take from the AI | no | own | own |
 
-A refusal is `role_too_low`. A comment for the AI is invisible to everyone else (`not_found`). The role
+A refusal is `role_too_low`. A comment for the AI is invisible to everyone else (`not_found`); so is a legacy comment to readers. The role
 table's reader-writes list gained the ten comment routes; `POST /comments/:id/work` stays a writer's.
 Routes: `GET /comments?path=`, `GET /comments/count`, `POST /comments`, `PATCH|DELETE /comments/:id`,
 `POST /comments/:id/{resolve,reopen,replies}`, `PATCH|DELETE /comments/:id/replies/:rid`. Every comment
@@ -1395,7 +1395,36 @@ comment and ask".
 - "Unread" is not tracked: the count is open threads. The design's left-bar count of comments opened
   since you last looked is not built.
 - Delete of a thread with replies asks first; resolving is the gentle way.
-- Existing "for me" notes became shared, with the first owner as author.
+- Existing "for me" notes are NOT shared with readers (review fix; the first build did share them).
+  A comment from before people is `legacy: true`: writers and owners see it (also one "for the AI",
+  which stays usable by every writer, not private to the first owner), readers never do, and it is
+  left out of the counts, the keep-going queue and the status event. It carries a "from before
+  sharing: writers only" mark in the panel. Its author (when a writer) or an owner can give it to
+  everyone: `POST /comments/:id/share` (or "Share it" on an old note for the AI), which runs the
+  saved-entry, quote and context checks below, so a comment whose passage is not in the saved entry
+  cannot be shared and the answer says why. Replies written on it meanwhile become visible with it.
+  `comments.json` now carries `version: 2`. A file without it (written by the first 27e build, which
+  stamped old notes with the first owner and no mark) is corrected once on the first start: every
+  comment that has no author, or whose author is the first owner (or any comment when no owner can be
+  named yet) becomes legacy, then the file is written with `version: 2`. No marker of the first
+  migration exists, so this rule can hide a comment the first owner wrote under 27e (they share it
+  again in one click); it can never show more than before. Comments by anyone else are not touched.
+
+### Saved text, sharing and limits (review fixes)
+
+- A shared comment's `prefix` and `suffix` are cut by the server from the saved entry around the
+  quote (40 characters); the browser's values are ignored, except to choose among repeats of the same
+  words. A passage found only with marks and spacing ignored has no context. A private comment keeps
+  the browser's.
+- Making a comment shared by `PATCH {for:"me"}` ("Share it") applies the same rules as `POST`: saved
+  entry, passage in the saved text, context from the saved text; otherwise the same 400, and nothing
+  is told on the status stream. A shared comment cannot become private while someone else has
+  replied to it.
+- Every mutating comment route counts against the 40-a-minute per-person limit; a `PATCH` or reply
+  edit that changes nothing writes and tells nothing and does not count. Only open shared comments
+  count toward the 300 per entry; one person may have 200 open comments in a project; a shared
+  passage is at most 1500 characters (a private one up to 6000, a paragraph for the writing help).
+- The web reads an entry's comments again only when the stream's `comments.path` is that entry.
 
 ### Changed expectations
 

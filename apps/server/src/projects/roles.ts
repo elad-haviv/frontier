@@ -194,6 +194,8 @@ export const ROUTE_ROLES: Record<string, ProjectRole> = {
   "POST /comments/:id/replies": "reader",
   "PATCH /comments/:id/replies/:rid": "reader",
   "DELETE /comments/:id/replies/:rid": "reader",
+  // Sharing an old, writers-only comment: only writers and owners ever see one.
+  "POST /comments/:id/share": "writer",
   // The writing help works on a comment for the AI, which only a writer has.
   "POST /comments/:id/work": "writer",
 };

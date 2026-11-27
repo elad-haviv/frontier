@@ -1,3 +1,4 @@
+import { asPerson } from "../src/projects/view.js";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { makeTestApp, type TestApp } from "./helpers/app.js";
@@ -85,10 +86,13 @@ describe("comments on a passage", () => {
     expect((await add({ text: "  " })).statusCode).toBe(400);
     expect((await add({ path: "03 Places/map.png" })).statusCode).toBe(400);
     const store = t.services.comments;
+    // Three people, so that the per-person limit is not what stops it.
     for (let i = 0; i < 300; i++) {
-      await store.add({ path: ROAD, quote: "x", prefix: "", suffix: "", text: "n", for: "me" });
+      await asPerson(`person${i % 3}`, () =>
+        store.add({ path: ROAD, quote: "x", prefix: "", suffix: "", text: "n", for: "me" }),
+      );
     }
-    expect((await add()).statusCode).toBe(400);
+    expect((await add({ for: "me" })).statusCode).toBe(400);
   });
 
   it("keep every one of many added at once, on disk too", async () => {

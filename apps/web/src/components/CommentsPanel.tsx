@@ -192,7 +192,10 @@ export function CommentsPanel(p: {
               “{short(c.quote, 100)}” <em>(passage not found)</em>
             </>
           )}
-          {c.for === "ai" && <span className="chip chip-quiet">for the AI, only you see it</span>}
+          {c.for === "ai" && !c.legacy && (
+            <span className="chip chip-quiet">for the AI, only you see it</span>
+          )}
+          {c.legacy && <span className="chip chip-quiet">from before sharing: writers only</span>}
         </p>
         <Message
           kind="comment"
@@ -292,7 +295,19 @@ export function CommentsPanel(p: {
                 Suggest a change
               </ActionButton>
             )}
-            {c.can.hand && (c.for === "ai" || p.canAi) && (
+            {c.can.share && (
+              <ActionButton
+                type="button"
+                className="plain"
+                disabled={busy !== null}
+                onClick={() =>
+                  void run(c.id, () => api.shareComment(c.id), "The comment could not be shared.")
+                }
+              >
+                Share with everyone
+              </ActionButton>
+            )}
+            {c.can.hand && !c.can.share && (c.for === "ai" || p.canAi) && (
               <ActionButton
                 type="button"
                 className="plain"

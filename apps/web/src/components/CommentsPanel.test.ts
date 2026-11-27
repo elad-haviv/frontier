@@ -31,12 +31,13 @@ const thread = (over: Partial<PassageComment> = {}): PassageComment => ({
   suffix: "",
   text: "Since when?",
   for: "me",
+  legacy: false,
   at: new Date().toISOString(),
   editedAt: null,
   author: RHEA,
   resolved: null,
   replies: [],
-  can: { edit: false, delete: false, resolve: false, hand: false },
+  can: { edit: false, delete: false, resolve: false, hand: false, share: false },
   ...over,
 });
 
@@ -107,7 +108,7 @@ describe("the comments panel", () => {
     await m.unmount();
     mounted = null;
     const again = await show([
-      thread({ can: { edit: true, delete: true, resolve: true, hand: false } }),
+      thread({ can: { edit: true, delete: true, resolve: true, hand: false, share: false } }),
     ]);
     expect(button(again.m, "Edit your comment")).not.toBeNull();
     expect(button(again.m, "Delete Rhea Reader's comment")).not.toBeNull();
@@ -155,7 +156,7 @@ describe("the comments panel", () => {
     const { m } = await show([
       thread({
         resolved: { by: WREN, at: new Date().toISOString() },
-        can: { edit: false, delete: false, resolve: true, hand: false },
+        can: { edit: false, delete: false, resolve: true, hand: false, share: false },
       }),
     ]);
     expect(m.host.textContent).not.toContain("Since when?");
@@ -184,5 +185,43 @@ describe("the comments panel", () => {
     expect(m.one('[role="alert"]').textContent).toContain("not saved yet");
     // A reader is not offered a comment for the AI.
     expect(m.host.textContent).not.toContain("For the AI");
+  });
+
+  it("marks an old comment as writers-only and offers Share with everyone only where allowed", async () => {
+    const calls = stubServer(() => answer({ comment: thread({ legacy: false }) }));
+    const old = thread({
+      legacy: true,
+      can: { edit: false, delete: false, resolve: true, hand: false, share: true },
+    });
+    const { m, changed } = await show([old]);
+    expect(m.host.textContent).toContain("from before sharing: writers only");
+    await m.click(button(m, "Share with everyone")!);
+    await m.settle();
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.url).toContain("/comments/aaaaaaaaaaaa/share");
+    expect(changed).toHaveBeenCalled();
+    await m.unmount();
+    mounted = null;
+    const other = await show([thread({ legacy: true })]);
+    expect(other.m.host.textContent).toContain("from before sharing: writers only");
+    expect(button(other.m, "Share with everyone")).toBeNull();
+  });
+
+  it("says why an old comment cannot be shared", async () => {
+    stubServer(() =>
+      answer(
+        { error: { code: "invalid", message: "That passage is not in the saved entry." } },
+        400,
+      ),
+    );
+    const { m } = await show([
+      thread({
+        legacy: true,
+        can: { edit: false, delete: false, resolve: true, hand: false, share: true },
+      }),
+    ]);
+    await m.click(button(m, "Share with everyone")!);
+    await m.settle();
+    expect(m.one('[role="alert"]').textContent).toContain("not in the saved entry");
   });
 });

@@ -980,6 +980,8 @@ function projectCalls(slugOf: () => string) {
     addComment: (body: NewComment) => post<{ comment: PassageComment }>("/comments", body),
     changeComment: (id: string, change: { text?: string; for?: "me" | "ai" }) =>
       send<{ comment: PassageComment }>("PATCH", `/comments/${id}`, change),
+    /** Gives an old, writers-only comment to everyone. */
+    shareComment: (id: string) => post<{ comment: PassageComment }>(`/comments/${id}/share`, {}),
     removeComment: (id: string) => send<{ ok: true }>("DELETE", `/comments/${id}`),
     /** Resolves a thread, or opens it again. */
     resolveComment: (id: string, resolved: boolean) =>
@@ -1473,12 +1475,14 @@ export interface PassageComment {
   text: string;
   /** "me": shared with the project; "ai": its writer's own, for the writing help. */
   for: "me" | "ai";
+  /** From before sharing: only writers and owners see it, until it is shared with everyone. */
+  legacy: boolean;
   at: string;
   editedAt: string | null;
   author: CommentPerson;
   resolved: { by: CommentPerson; at: string } | null;
   replies: CommentReply[];
-  can: { edit: boolean; delete: boolean; resolve: boolean; hand: boolean };
+  can: { edit: boolean; delete: boolean; resolve: boolean; hand: boolean; share: boolean };
 }
 
 export interface NewComment {
