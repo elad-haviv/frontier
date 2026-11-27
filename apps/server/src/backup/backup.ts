@@ -200,17 +200,35 @@ export async function restore(
   target: BackupTarget,
   sources: Record<string, string>,
   from = "latest",
-  /** Restores only the files this accepts (a source's name, and the path in it); the rest is left alone. */
-  include: (source: string, rel: string) => boolean = () => true,
+  /**
+   * Restores only the files this accepts (a source's name, and the path in it); the rest is left
+   * alone, and the folders need not be empty, only free of the files to be written.
+   */
+  include?: (source: string, rel: string) => boolean,
 ): Promise<{ files: number; from: string }> {
   const prefix = from === "latest" ? "latest/" : `nightly/${from}/`;
   const keys = (await target.list(prefix)).filter(
     (k) => !k.endsWith("/.manifest.json") && !k.endsWith("/.complete"),
   );
   if (keys.length === 0) throw new Error(`There is no backup under "${prefix}".`);
-  for (const [name, dir] of Object.entries(sources)) {
-    if ((await walk(dir)).filter((rel) => include(name, rel)).length > 0) {
-      throw new Error(`"${dir}" (${name}) is not empty. Restore only into an empty folder.`);
+  if (include === undefined) {
+    for (const [name, dir] of Object.entries(sources)) {
+      if ((await walk(dir)).length > 0) {
+        throw new Error(`"${dir}" (${name}) is not empty. Restore only into an empty folder.`);
+      }
+    }
+  } else {
+    // A part of a folder, such as one project among the server's own files: the folder is not
+    // empty, so what is refused is writing over a file that is there.
+    for (const key of keys) {
+      const rel = key.slice(prefix.length);
+      const name = rel.split("/")[0]!;
+      const dir = sources[name];
+      if (!dir || !include(name, rel.slice(name.length + 1))) continue;
+      const path = join(dir, rel.slice(name.length + 1));
+      if (existsSync(path)) {
+        throw new Error(`"${path}" is already there. Restore only where the files are gone.`);
+      }
     }
   }
   let files = 0;
@@ -218,7 +236,7 @@ export async function restore(
     const rel = key.slice(prefix.length);
     const name = rel.split("/")[0]!;
     const dir = sources[name];
-    if (!dir || !include(name, rel.slice(name.length + 1))) continue;
+    if (!dir || (include && !include(name, rel.slice(name.length + 1)))) continue;
     const data = await target.get(key);
     if (data === null) continue;
     const path = join(dir, rel.slice(name.length + 1));

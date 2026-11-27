@@ -12,15 +12,10 @@
  *
  * Uses the same environment variables as the server. Run it while the server is stopped.
  */
-import { join } from "node:path";
-import { ProjectsFile, type ProjectRecord } from "@frontier/schema";
-import { restore } from "../backup/backup.js";
+import { restoreEverything, restoreProject } from "../backup/restoreProjects.js";
 import { FolderTarget, S3Target } from "../backup/targets.js";
 import { loadConfig } from "../config.js";
-import { backupPlan, backupSources, PrefixedTarget } from "../app.js";
-import { isServerState } from "../projects/layout.js";
 import { applySampleMode } from "../sample.js";
-import { StateFiles } from "../state/files.js";
 
 applySampleMode(process.env);
 const config = loadConfig();
@@ -33,46 +28,16 @@ const args = process.argv.slice(2);
 const at = args.indexOf("--project");
 const wanted = at >= 0 ? args[at + 1] : undefined;
 const from = args.find((a, i) => !a.startsWith("--") && i !== at + 1) ?? "latest";
-
-/** The first project's files: the old layout, without the server's own files that share it. */
-const restoreFirst = (everything: boolean) =>
-  restore(
-    target,
-    backupSources(config.dataDir, config.library === "own"),
-    from,
-    everything ? () => true : (name, rel) => !(name === "state" && isServerState(rel)),
-  );
-
-const restoreOf = (record: Pick<ProjectRecord, "id" | "layout">) => {
-  const plan = backupPlan(config.dataDir, record, true);
-  return restore(new PrefixedTarget(target, plan.prefix), plan.sources, from);
-};
+const setup = { dataDir: config.dataDir, own: config.library === "own", target, from };
 
 try {
-  let files = 0;
+  if (at >= 0 && !wanted) throw new Error("Say which project: --project <address>.");
   if (wanted === undefined) {
-    files += (await restoreFirst(true)).files;
-    const ids = new Set(
-      (await target.list("projects/"))
-        .map((k) => /^projects\/([a-z0-9]{10})\//.exec(k)?.[1])
-        .filter((id): id is string => id !== undefined),
-    );
-    for (const id of ids) files += (await restoreOf({ id, layout: "folder" })).files;
+    const files = await restoreEverything(setup);
     console.error(`Restored ${files} files from ${from} into ${config.dataDir}.`);
   } else {
-    const list = await new StateFiles().readJson(
-      join(config.dataDir, "state", "projects.json"),
-      ProjectsFile,
-    );
-    const record = list?.projects.find((p) => p.slug === wanted || p.id === wanted);
-    if (!record) {
-      throw new Error(
-        `There is no project "${wanted}" in the project list. On a new disk, restore everything first.`,
-      );
-    }
-    files = (record.layout === "legacy" ? await restoreFirst(false) : await restoreOf(record))
-      .files;
-    console.error(`Restored ${files} files of "${record.name}" from ${from}.`);
+    const done = await restoreProject(setup, wanted);
+    console.error(`Restored ${done.files} files of "${done.name}" from ${from}.`);
   }
 } catch (err) {
   console.error(`Nothing was restored. ${(err as Error).message}`);

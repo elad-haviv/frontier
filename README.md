@@ -30,6 +30,10 @@ The app writes to its vault: drafts are saved on the server and Publish makes on
 
 A preview on made-up sample content runs with `FRONTIER_SAMPLE_VAULT=1`; see the Dockerfile.
 
+## Projects
+
+A project is a library with its own members (stage 27b). A server holds any number of them, each with its own repository, working copy, drafts, comments, maps, backup and timers, opened the first time it is used. The library a server had before projects becomes the first project, named by `FRONTIER_PROJECT_NAME` (default "Avalymia", "Sample" for the sample), with its files where they were: `library.git`, `vault`, `state` and `assets` under `DATA_DIR`. A project made since lives in `DATA_DIR/projects/<id>/` with the same four inside it, and is always an own library. Every project route is `/api/p/<slug>/...`, and each route says in one table (`apps/server/src/projects/roles.ts`) which role it needs: reader, writer or owner. Accounts, sign-in, AI settings and `/api/projects` stay server-wide. A deleted project's folder is moved to `DATA_DIR/trash/`, not removed. Each project is backed up under its own prefix (`projects/<id>/`) in the bucket; the first project keeps the old keys, and the server's own files (accounts, settings, the project list) are with it. `npm run restore -w apps/server` restores everything; `-- --project <address>` restores one project. The design is [docs/designs/stage-27-people-and-projects.md](docs/designs/stage-27-people-and-projects.md).
+
 ## Working on it
 
 Needs Node 22.

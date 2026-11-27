@@ -382,7 +382,12 @@ describe("errors", () => {
     expect(statusOf("ai_key_rejected")).toBe(409);
     // The web app asks the person to log in again for this one.
     expect(statusOf("recent_login_needed")).toBe(403);
-    expect(Object.keys(ERROR_STATUS)).toHaveLength(26);
+    expect(Object.keys(ERROR_STATUS)).toHaveLength(30);
+    // Stage 27b: a project that is not there for the person, a role too low, an address taken.
+    expect(statusOf("no_project")).toBe(403);
+    expect(statusOf("role_too_low")).toBe(403);
+    expect(statusOf("slug_taken")).toBe(409);
+    expect(statusOf("project_not_deletable")).toBe(409);
   });
 
   it("takes a web address of at most 2,048 characters for an image", () => {
@@ -413,6 +418,7 @@ describe("accounts", () => {
       createdAt: "2026-11-26T10:00:00Z",
       admin: false,
       sessionEpoch: 0,
+      lastProject: null,
     });
     expect(PeopleFile.parse({})).toEqual({ version: 1, people: [] });
   });

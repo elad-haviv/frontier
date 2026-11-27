@@ -209,3 +209,115 @@ Each part is released on its own and leaves the app working for one person.
 - **Browser:** log in each of the three ways; switch projects on desktop and phone; create a
   project; invite, join and change a role; the reader's shell; comment and reply; add a key on one
   device and see it absent on another; the first-use notice on Ask.
+
+## 7. How it was built: 27b server
+
+For the web half. Built on 2026-11-27; the web app was not changed, and still works through the
+old unprefixed addresses (see "The legacy alias").
+
+### Shape
+
+- **A project store**, `state/projects.json` (`apps/server/src/projects/store.ts`, schemas in
+  `packages/schema/src/projects.ts`). A record: `id` (10 characters), `slug`, `previousSlugs`
+  (`{ slug, until }`, an old address works for 90 days), `name`, `description`, `colour`
+  (0 to 7, an index into the app's list for the letter mark), `createdAt`, `kind` (`own`,
+  `github`, `sample`), `layout` (`legacy` or `folder`), `iconFolder`, and `members`
+  (`{ personId, role, addedAt }`). Reserved addresses: `new api join settings projects login logout
+  p health assets icons admin help`.
+- **One set of services per project** (`projects/services.ts`, `buildServices`), opened on first use
+  by the registry (`projects/registry.ts`) and kept; `close` stops the nightly backup and the timer
+  fetch. Server-wide, on `Server` (`server.ts`): people, login limiter, the project store, settings
+  (AI models, Keep going rules), the AI provider, spending log and model list, the image fetcher,
+  the stored-keys notice.
+- **Where files live.** The first project is the library the server had: `layout: "legacy"`, files
+  where they were (`DATA_DIR/library.git`, `vault`, `state`, `assets`). Nothing moves on upgrade;
+  only `state/projects.json` is new. A new project is `DATA_DIR/projects/<id>/{library.git, vault,
+  state, assets}` and is always an own library. `projects/layout.ts` lists which files in
+  `DATA_DIR/state` are the server's (`people.json`, `settings.json`, `projects.json`, `ai-log/`) and
+  which the first project's.
+- **The guard** (`projects/guard.ts`): after the login check, for `/api/p/<slug>/...` it finds the
+  project (the current slug, or an old one not run out), checks the person is a member, checks the
+  role against the table, opens the services and puts `request.project = { record, role, services,
+  movedFrom }`. A slug that does not exist and a project the person is not in give the same answer,
+  403 `no_project`. A route under a project that the table does not know is refused (403
+  `not_allowed`), and a route cannot be registered without an entry.
+- **The role table**, `apps/server/src/projects/roles.ts` (`ROUTE_ROLES`, keyed by `METHOD /path`
+  after `/api`). Routes are written once against one `Services` and registered by
+  `projects/facade.ts`, which gives each route its `/api/p/:project` address, its old unprefixed
+  address, and runs the handler for the request's project (`projects/context.ts`).
+  `test/projectRoles.test.ts` walks every route as owner, writer and reader.
+- **Per person, per project** (kept in the project's `state/`, keyed by person id): pins
+  (`pins.json`; no longer an unsaved change in the library, the old `.frontier/pins.json` is read as
+  the first account's until they change their pins), lore conversations (`conversations/<person>/`),
+  the question of the day (`question/<person>.json`). What a server from before projects had in
+  `conversations/*.json` and `question.json` belongs to the first account and is read from there; no
+  file is moved at start. **Per project, not per person yet**: drafts (27d), comments (27e), consults
+  and field proposals. **Server-wide**: chosen AI models and prices, Keep going rules, spending log,
+  the last-used project (`Person.lastProject`).
+- **Backup.** The first project keeps the old keys (`latest/state`, `latest/library`,
+  `latest/generated`, `nightly/<date>/...`), and the server's own files are in `state/`. A new
+  project goes under `projects/<id>/` (`latest/`, `nightly/`) with its own manifest and its own
+  `state/backup.json`. `npm run restore -w apps/server [-- <night>] [-- --project <address>]`
+  (`backup/restoreProjects.ts`). A bare repository is mended after a restore (the backup holds
+  files, not empty folders). The status's `backupOutside` and last backup time are per project.
+
+### The API
+
+Server-wide, unprefixed (unchanged unless said):
+
+| Method and path | Body | Response |
+| --- | --- | --- |
+| `POST /api/login`, `POST /api/logout`, `/api/passkeys/*`, `PUT /api/me/password`, `PUT /api/settings/password-off` | as before | as before |
+| `GET /api/session` | none | as before, and `lastProject`: the address of the project last used, or null |
+| `GET /api/me`, `PUT /api/me` | as before | `MeResponse`, and `lastProject` as above |
+| `GET /api/settings`, `PUT /api/settings/ai`, `/ai/prices`, `POST /api/settings/ai/test`, `PUT /api/settings/keep-going`, `POST /api/ai/keys/:kind/check`, `GET /api/ai/models`, `GET /api/ai/log`, `DELETE /api/notices/keys-removed` | as before | as before (per person; nothing in them is a project's) |
+| `GET /api/projects` | none | `ProjectsResponse`: `{ projects: [{ id, slug, name, description, colour, kind, role, entries, maps, members: [{ id, name }], lastVersion: { at, by } or null }], last, canCreate }`. Opens each project (counts are null when one cannot be opened) |
+| `POST /api/projects` | `{ name, slug, description?, start: "empty" or "sample" }`; the first account only, else 403 `not_allowed` | 201 `ProjectResponse`; 409 `slug_taken` for a used or reserved address, 400 for a bad shape. An empty library has one `Welcome.md`. A vault zip is brought in next with `POST /api/p/<slug>/import/vault` (multipart: `message`, one zip), which the creator, as owner, may do |
+| `GET /api/projects/slug-free?slug=` | none | `{ free, reason }` |
+| `PUT /api/projects/last` | `{ slug }` | `{ ok }`; 403 `no_project` when the person is not in it. Call it when a project is opened |
+| `GET /health` | none | health of the first project's library |
+| `POST /api/github/webhook` | GitHub's push | syncs the first project (the one on the configured repository) |
+
+Under `/api/p/:project/` (the address is the slug, or a previous slug), each with the role the table
+gives; the paths after the prefix are exactly the old `/api/...` paths: `/entries`, `/tree`,
+`/schema`, `/images`, `/images/find`, `/images/from-url`, `/gallery`, `/graph`, `/search`,
+`/preview`, `/switcher`, `/drafts...`, `/unpublished`, `/publish/plan`, `/publish/confirm`,
+`/renames...`, `/library-files/:name...`, `/folders/...`, `/maps...`, `/marker-sets`,
+`/chronicles...`, `/lore...`, `/characters/...`, `/keep-going/...`, `/pins`, `/write/...`,
+`/comments...`, `/proposals/...`, `/quarantine...`, `/inbox...`, `/export/...`, `/import`,
+`/import/vault`, `/history`, `/history/version`, and the project's own:
+
+| Method and path | Role | Body | Response |
+| --- | --- | --- | --- |
+| `GET /api/p/:project/project` | reader | none | `ProjectResponse`: `{ id, slug, movedFrom, name, description, colour, kind, createdAt, role, members: [{ id, name, role }], deletable }`. `movedFrom` is the old address used; the app moves to `slug` |
+| `PUT /api/p/:project/project` | owner | `{ name?, slug?, description?, colour? }` | `ProjectResponse`; 409 `slug_taken`. The old address keeps working for 90 days |
+| `DELETE /api/p/:project/project` | owner | `{ name }`, the project's name | `{ ok }`; the folder is moved to `DATA_DIR/trash/<id>-<time>`. 400 when the name is wrong, 409 `project_not_deletable` for the first project (its files are the old layout) and for the last project |
+| `GET /api/p/:project/status` | reader | none | `StatusSnapshot` (the project's library, index, inbox, backup; `notices.keysRemoved` for the first account only) |
+| `GET /api/p/:project/status/events` | reader | none | the same as server-sent events |
+| `GET /api/p/:project/attention` | reader | none | as `GET /api/attention` |
+
+Errors added (`packages/schema/src/errors.ts`): `no_project` 403 (unknown project and non-member
+alike), `role_too_low` 403, `slug_taken` 409, `project_not_deletable` 409. Images and every other GET
+that goes in an `<img>` are under the prefix too.
+
+### The legacy alias
+
+Every project route also answers at its old unprefixed address (`GET /api/entries`), for devices
+still on the previous web build, on the person's last-used project (`PUT /api/projects/last`), or
+their first. It is the second registration in `projects/facade.ts`; to remove it, delete that loop
+and `aliases` in `projects/guard.ts`. The project's own routes have no alias. The keep-going
+settings route, `PUT /api/settings/keep-going`, moved to the server-wide settings.
+
+### For the web half
+
+- Routes that a reader may not call answer 403 `role_too_low`; until 27c every reachable account in
+  a project is an owner, but the first account can already be given a different role by editing the
+  store (tests do).
+- Comments are writer-only until 27e, and `GET /unpublished`, the draft routes and the inbox are
+  writer-only: a reader's shell must not call them. `GET /entries` still returns the project's
+  unsaved text of an entry to a reader; 27d makes unsaved changes per person.
+- Pins are no longer part of the library: they are not an unsaved change and are not in
+  `/library-files/pins` (that file is kept, and is only the old pins of a server from before
+  projects).
+- A person who is in no project gets 403 `no_project` from every project route and an empty list
+  from `GET /api/projects`.

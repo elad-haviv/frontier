@@ -301,3 +301,115 @@ describe("in the server", () => {
     repo.cleanup();
   });
 });
+
+describe("backup and restore of projects", () => {
+  it("restores only the files asked for, and does not mind the ones that are left out", async () => {
+    put(state, "people.json", "{}");
+    put(state, "drafts/abc/content", "mine");
+    await make().backup.runNow();
+    const fresh = join(root, "fresh", "state");
+    put(fresh, "people.json", "{ already here }");
+    const done = await restore(
+      target,
+      { state: fresh },
+      "latest",
+      (_name, rel) => !rel.startsWith("people.json"),
+    );
+    expect(done.files).toBe(1);
+    expect(readFileSync(join(fresh, "people.json"), "utf8")).toBe("{ already here }");
+    expect(readFileSync(join(fresh, "drafts/abc/content"), "utf8")).toBe("mine");
+    // A file that would be written over one that is there is refused, and nothing is written.
+    await expect(restore(target, { state: fresh }, "latest", () => true)).rejects.toThrow(
+      /already there/,
+    );
+    await expect(restore(target, { state: fresh })).rejects.toThrow(/not empty/);
+  });
+
+  it("keeps a prefixed target to its own prefix", async () => {
+    const { PrefixedTarget } = await import("../src/app.js");
+    const a = new PrefixedTarget(target, "projects/aaaaaaaaaa/");
+    await a.put("latest/x", Buffer.from("x"));
+    await target.put("latest/y", Buffer.from("y"));
+    expect(await a.list("latest/")).toEqual(["latest/x"]);
+    expect((await a.get("latest/x"))?.toString()).toBe("x");
+    expect(await a.get("latest/y")).toBeNull();
+    await a.remove("latest/x");
+    expect(await a.list("")).toEqual([]);
+    expect(await target.list("latest/")).toEqual(["latest/y"]);
+  });
+
+  it("brings back every project on a new disk, or one project alone", async () => {
+    const repo = makeTestRepo();
+    const config = loadConfig(testEnv(repo));
+    mkdirSync(join(config.dataDir, "state"), { recursive: true });
+    const first = await buildApp(config, { backupDelayMs: 20 });
+    await first.services.git.ensureClone();
+    await first.services.sync();
+    const admin = await seedAccount(first.services, "a password for the test");
+    const login = await first.app.inject({
+      method: "POST",
+      url: "/api/login",
+      payload: { email: EMAIL, password: "a password for the test" },
+    });
+    const headers = { cookie: String(login.headers["set-cookie"]).split(";")[0]! };
+    const made = await first.app.inject({
+      method: "POST",
+      url: "/api/projects",
+      headers,
+      payload: { name: "Northwind", slug: "northwind" },
+    });
+    expect(made.statusCode, made.body).toBe(201);
+    const id = made.json().id as string;
+    for (const slug of ["avalymia", "northwind"]) {
+      const saved = await first.app.inject({
+        method: "PUT",
+        url: `/api/p/${slug}/drafts`,
+        headers,
+        payload: {
+          id: slug === "avalymia" ? "avalymiadr01" : "northwinddr1",
+          path: "Note.md",
+          kind: "create",
+          text: `# Note\n\nIn ${slug}.\n`,
+          revision: 0,
+        },
+      });
+      expect(saved.statusCode, saved.body).toBe(200);
+    }
+    await (await first.server.registry.peek(id))!.backup.runNow();
+    await first.services.backup.runNow();
+    await first.app.close();
+    expect(admin.id).toBeTruthy();
+
+    const bucket = new FolderTarget((config.backup as { dir: string }).dir);
+    const { restoreEverything, restoreProject } = await import("../src/backup/restoreProjects.js");
+    const setup = { dataDir: config.dataDir, own: true, target: bucket, from: "latest" };
+
+    // One project alone: lose its folder (its library too), bring it back, and the first project is untouched.
+    rmSync(join(config.dataDir, "projects", id), { recursive: true, force: true });
+    const one = await restoreProject(setup, "northwind");
+    expect(one.name).toBe("Northwind");
+    expect(
+      existsSync(join(config.dataDir, "projects", id, "state", "drafts", "northwinddr1")),
+    ).toBe(true);
+    await expect(restoreProject(setup, "nothing")).rejects.toThrow(/no project "nothing"/);
+    // The first project's own files are restored without the server's: the folder holds them.
+    await expect(restoreProject(setup, "avalymia")).rejects.toThrow(/already there/);
+    rmSync(join(config.dataDir, "state", "drafts"), { recursive: true, force: true });
+    expect((await restoreProject(setup, "avalymia")).files).toBeGreaterThan(0);
+
+    // The disk is lost: everything comes back, the project list with it.
+    rmSync(config.dataDir, { recursive: true, force: true });
+    expect(await restoreEverything(setup)).toBeGreaterThan(5);
+    const second = await buildApp(config);
+    await second.services.git.ensureClone();
+    await second.services.sync();
+    const projects = await second.server.projects.all();
+    expect(projects.map((p) => p.slug)).toEqual(["avalymia", "northwind"]);
+    expect(second.services.drafts.list().map((d) => d.id)).toEqual(["avalymiadr01"]);
+    const north = await second.server.registry.open(projects[1]!);
+    expect(north.drafts.list().map((d) => d.id)).toEqual(["northwinddr1"]);
+    expect(north.index.allNotes().map((n) => n.path)).toEqual(["Welcome.md"]);
+    await second.app.close();
+    repo.cleanup();
+  });
+});
