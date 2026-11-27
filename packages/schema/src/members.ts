@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { ProjectRole } from "./projects.js";
+import { AccountEmail } from "./people.js";
 
 /**
  * Stage 27c: members, invite links and joining. Members are listed and changed by owners under
@@ -116,7 +117,7 @@ export type JoinInfo = z.infer<typeof JoinInfo>;
 /** `POST /api/join/:code`: a new person joins with an email and a password. */
 export const JoinPasswordRequest = z.object({
   name: z.string().trim().min(1, "Give a name.").max(80, "Use 80 characters or fewer."),
-  email: z.string().trim().min(1, "Give an email.").max(200).email("This is not an email address."),
+  email: AccountEmail,
   password: z.string().min(12, "Use at least 12 characters.").max(500),
 });
 export type JoinPasswordRequest = z.infer<typeof JoinPasswordRequest>;
@@ -124,7 +125,7 @@ export type JoinPasswordRequest = z.infer<typeof JoinPasswordRequest>;
 /** `POST /api/join/:code/passkey/options`: the name and the email (every account has one). */
 export const JoinPasskeyOptionsRequest = z.object({
   name: z.string().trim().min(1, "Give a name.").max(80, "Use 80 characters or fewer."),
-  email: z.string().trim().min(1, "Give an email.").max(200).email("This is not an email address."),
+  email: AccountEmail,
 });
 export type JoinPasskeyOptionsRequest = z.infer<typeof JoinPasskeyOptionsRequest>;
 

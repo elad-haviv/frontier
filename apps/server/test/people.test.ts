@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { emailKey, initialsOf, MeResponse, type Person } from "@frontier/schema";
+import { emailKey, initialsOf, MeResponse, type Person, STAND_IN_DOMAIN } from "@frontier/schema";
 import { startAccounts } from "../src/auth/accounts.js";
 import { LoginLimiter } from "../src/auth/limit.js";
 import { hashPassword, verifyPassword } from "../src/auth/password.js";
@@ -445,13 +445,14 @@ describe("who saves a version", () => {
     expect(lastAuthor()).toBe("Elad Z <elad@new.example.com>");
   });
 
-  it("falls back to the configured author for what the person has not given", async () => {
+  it("never authors a known person as the configured author, even with no name or email", async () => {
     const [person] = await t.services.server.people.all();
     await t.services.server.people.update(person!.id, (p) => ({ ...p, name: "", email: "" }));
     // The login needs no email while it is the only account without one.
     expect((await t.login(PASSWORD, "")).statusCode).toBe(200);
     expect((await save()).statusCode).toBe(200);
-    expect(lastAuthor()).toBe("The Author <author@example.com>");
+    // The configured author is for work with no person; this one is traced to the account.
+    expect(lastAuthor()).toBe(`Someone <${person!.id}@${STAND_IN_DOMAIN}>`);
   });
 });
 

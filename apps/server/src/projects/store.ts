@@ -82,6 +82,14 @@ export class ProjectStore {
     );
   }
 
+  /** Whether a person is, or was, a member of a project, from what is held in memory (no file read). */
+  everMemberSync(projectId: string, personId: string): boolean {
+    const p = this.held?.projects.find((x) => x.id === projectId);
+    return (
+      !!p && (p.members.some((m) => m.personId === personId) || p.formerMembers.includes(personId))
+    );
+  }
+
   /** A project's members as held in memory right now; empty when it is not known. */
   membersSync(projectId: string): ProjectRecord["members"] {
     return this.held?.projects.find((p) => p.id === projectId)?.members ?? [];
@@ -140,7 +148,9 @@ export class ProjectStore {
 
   /** Adds a project. Refuses an address that is not free. */
   create(
-    input: Omit<ProjectRecord, "id" | "createdAt" | "previousSlugs"> & { id?: string },
+    input: Omit<ProjectRecord, "id" | "createdAt" | "previousSlugs" | "formerMembers"> & {
+      id?: string;
+    },
   ): Promise<ProjectRecord> {
     return this.change(async (projects) => {
       const reason = await this.whyNotSlug(input.slug, null);
@@ -150,6 +160,7 @@ export class ProjectStore {
         id: input.id ?? newProjectId(),
         createdAt: this.now().toISOString(),
         previousSlugs: [],
+        formerMembers: [],
       };
       return { projects: [...projects, record], result: record };
     });
@@ -260,7 +271,12 @@ export class ProjectStore {
       if (member.role === "owner" && ownersOf(now) <= 1) {
         throw new ApiError("last_owner", LAST_OWNER);
       }
-      const record = { ...now, members: now.members.filter((m) => m.personId !== personId) };
+      const record = {
+        ...now,
+        members: now.members.filter((m) => m.personId !== personId),
+        // Their saved versions stay under their name.
+        formerMembers: [...new Set([...now.formerMembers, personId])],
+      };
       return { projects: projects.map((p) => (p.id === projectId ? record : p)), result: record };
     });
   }

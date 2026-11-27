@@ -148,7 +148,12 @@ describe.each(["own", "github"] as const)(
       it("names the author from the account, with a stand-in for what is missing", () => {
         const configured = { name: "The Author", email: "author@example.com" };
         const person = { id: "p1", name: "", email: "" } as never;
-        expect(authorOf(person, configured)).toEqual(configured);
+        // Only work with no person at all is by the configured author.
+        expect(authorOf(null, configured)).toEqual(configured);
+        expect(authorOf(person, configured)).toEqual({
+          name: "Someone",
+          email: `p1@${STAND_IN_DOMAIN}`,
+        });
         expect(authorOf({ id: "p1", name: "Ann", email: "" } as never, configured)).toEqual({
           name: "Ann",
           email: `p1@${STAND_IN_DOMAIN}`,

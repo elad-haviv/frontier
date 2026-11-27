@@ -13,7 +13,6 @@ import { factsOf } from "../keepGoing/derived.js";
 import { overlay } from "../entries/overlay.js";
 import { ApiError } from "../errors.js";
 import { type IndexedLink, linkKindOf } from "../index/build.js";
-import { Authors } from "../publish/authors.js";
 import { movedPath } from "../publish/publish.js";
 import type { Services } from "../app.js";
 
@@ -203,7 +202,7 @@ export function entryRoutes(app: RouteApp, s: Services): void {
       ? {
           commit: last.commit,
           at: last.at,
-          by: await new Authors(s.server.people).resolve(last.author),
+          by: await s.authors.resolve(last.author),
         }
       : null;
     // The one rename waiting for this entry, if any; a folder's rename is the folder's own.

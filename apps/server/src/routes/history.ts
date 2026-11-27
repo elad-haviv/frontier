@@ -1,7 +1,6 @@
 import { spawn } from "node:child_process";
 import type { RouteApp } from "../projects/facade.js";
 import { type HistoryResponse, VaultPath } from "@frontier/schema";
-import { Authors } from "../publish/authors.js";
 import { normaliseLineEndings } from "@frontier/vault";
 import { z } from "zod";
 import { ApiError } from "../errors.js";
@@ -14,11 +13,11 @@ export function historyRoutes(app: RouteApp, s: Services): void {
   /** The saved versions of one file, or of the whole library, newest first. */
   app.get("/api/history", async (request): Promise<HistoryResponse> => {
     const { path } = HistoryQuery.parse(request.query);
-    const authors = new Authors(s.server.people);
+    const authors = s.authors;
     const versions = await s.git.history(path);
     // Each version says who saved it: the person (by id and the name they have now) when it was
     // saved through the app, else the name Git has. Never an email.
-    const by = new Map<string, Awaited<ReturnType<Authors["resolve"]>>>();
+    const by = new Map<string, Awaited<ReturnType<Services["authors"]["resolve"]>>>();
     const who = async (a: { name: string; email: string }) => {
       const key = `${a.name}\u0000${a.email}`;
       if (!by.has(key)) by.set(key, await authors.resolve(a));

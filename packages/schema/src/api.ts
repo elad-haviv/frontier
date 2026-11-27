@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { DraftKind, Id, Origin, ProposalOperation, VaultPath } from "./state.js";
 import { ModelPrice } from "./ai.js";
+import { AccountEmail } from "./people.js";
 import { KeepGoingSettings } from "./keepGoingSettings.js";
 
 const Ok = z.object({ ok: z.literal(true) });
@@ -248,6 +249,20 @@ export type DraftVersionsResponse = z.infer<typeof DraftVersionsResponse>;
 /** `POST /api/drafts/:id/merge-versions` and `POST /api/drafts/:id/resolve` */
 export const DraftTextRequest = z.object({ text: z.string() });
 
+/**
+ * `POST /api/drafts/:id/resolve` (stage 27d): the person's text, and `theirsBlob`, the blob of the
+ * saved version the compare screen showed as "theirs" (from the plan's conflict or merge, or the
+ * compare answer; `null` when it showed no file, as for an entry that was deleted). The text is
+ * rebuilt on exactly that version, and refused (`saved_by_other`) when the saved version is another
+ * one by now, so a version saved while the person was comparing is never overwritten unseen. Left
+ * out, as by the web app before 27d: it is accepted only when the saved version is the one the
+ * server last compared for this change.
+ */
+export const DraftResolveRequest = z.object({
+  text: z.string(),
+  theirsBlob: z.string().nullable().optional(),
+});
+
 export const DeleteResponse = Ok;
 
 // ---- Unpublished and publish ---------------------------------------------------------------
@@ -308,6 +323,8 @@ export const PlannedMerge = z.object({
   /** Who saved `mainText`, and when (stage 27d). */
   theirsBy: AuthorRef.nullable().optional(),
   theirsAt: z.string().nullable().optional(),
+  /** The blob `mainText` was read from: send it back when resolving (stage 27d). */
+  theirsBlob: z.string().nullable().optional(),
 });
 
 export const ConflictReason = z.enum([
@@ -352,6 +369,16 @@ export const PlannedConflict = z.object({
    */
   theirsBy: AuthorRef.nullable().optional(),
   theirsAt: z.string().nullable().optional(),
+  /**
+   * The blob `theirs` was read from, `null` when there is no file (stage 27d). Resolving sends it
+   * back, so the person's text is rebuilt on exactly the version they compared.
+   */
+  theirsBlob: z.string().nullable().optional(),
+  /**
+   * With `saved_by_other`, when the two changes merge cleanly: the merged text, for the compare
+   * screen to offer as a pre-filled "merged" choice (stage 27d). Absent when they do not merge.
+   */
+  mergedText: z.string().optional(),
 });
 
 export const PublishPlan = z.object({
@@ -401,6 +428,11 @@ export const DraftCompareResponse = z.object({
   outcome: z.enum(["ready", "merge", "conflict", "none"]),
   conflict: PlannedConflict.optional(),
   merge: PlannedMerge.optional(),
+  /**
+   * The blob of the saved version at the path now, `null` when there is none (stage 27d): the same
+   * as the conflict's or merge's `theirsBlob`, and given when `outcome` is `ready` or `none` too.
+   */
+  theirsBlob: z.string().nullable().optional(),
 });
 export type DraftCompareResponse = z.infer<typeof DraftCompareResponse>;
 
@@ -751,7 +783,7 @@ export type MeResponse = z.infer<typeof MeResponse>;
 /** `PUT /api/me` */
 export const ProfileRequest = z.object({
   name: z.string().trim().min(1, "Give a name.").max(80, "Use 80 characters or fewer."),
-  email: z.string().trim().min(1, "Give an email.").max(200).email("This is not an email address."),
+  email: AccountEmail,
 });
 export type ProfileRequest = z.infer<typeof ProfileRequest>;
 

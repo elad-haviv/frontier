@@ -48,6 +48,7 @@ export async function ensureFirstProject(server: Server): Promise<ProjectRecord>
     layout: "legacy",
     iconFolder: null,
     members: owners,
+    formerMembers: [],
   }));
   const first = (await server.projects.all()).find((p) => p.layout === "legacy");
   if (!first) throw new Error("The project list has no first project. Restore projects.json.");

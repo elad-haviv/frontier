@@ -77,6 +77,8 @@ export interface Services {
   /** Who is reading which entry now; in memory only (stage 27d). */
   presence: Presence;
   publisher: Publisher;
+  /** Who made each saved version: people who are or were members of this project (stage 27d). */
+  authors: Authors;
   branches: BranchInbox;
   ai: AiProvider;
   aiLog: AiLog;
@@ -441,6 +443,9 @@ export async function buildServices(
     backup,
     search,
     publisher: undefined as unknown as Publisher,
+    authors: new Authors(server.people, (personId) =>
+      server.projects.everMemberSync(record.id, personId),
+    ),
     branches: undefined as unknown as BranchInbox,
     ai,
     aiLog,
@@ -535,7 +540,7 @@ export async function buildServices(
     drafts,
     status,
     libraryFiles,
-    authors: new Authors(server.people),
+    authors: services.authors,
     sync: () => services.sync(),
     reviews: {
       pendingDecisions: () => quarantine.pendingDecisions(),

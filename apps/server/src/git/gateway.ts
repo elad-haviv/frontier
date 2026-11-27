@@ -63,6 +63,19 @@ export interface Version {
   author: Identity;
 }
 
+/** One saved version of a file: the commit, when, and who Git says made it. */
+export interface SavedChange {
+  commit: string;
+  at: string;
+  author: Identity;
+}
+
+const changeOf = ([commit, at, name, email]: string[]): SavedChange => ({
+  commit: commit ?? "",
+  at: at ?? "",
+  author: { name: name ?? "", email: email ?? "" },
+});
+
 export interface CommitChanges {
   writes: { path: string; content: Buffer }[];
   deletes: string[];
@@ -156,6 +169,36 @@ function parseChangeLog(out: string): LoggedCommit[] {
       }
       return { commit, at, changes };
     });
+}
+
+/**
+ * Reads the output of `git log -z` whose format is `%x00` and then `fields` placeholders joined by
+ * `%x00`, optionally with `--name-only` or `--raw`. Every free-text field (a name, a subject) is
+ * split off by NUL, which Git never lets into one, so a control character in an author's name
+ * cannot shift the fields or the paths. A commit starts at an empty token (a path is never empty),
+ * takes the next `fields` tokens, and then every token up to the next empty one is a path (or, for
+ * `--raw`, a `:mode mode old new status` token and then its path).
+ */
+export function parseLogZ(out: string, fields: number): { fields: string[]; rest: string[] }[] {
+  const tokens = out.split("\0");
+  const commits: { fields: string[]; rest: string[] }[] = [];
+  let i = 0;
+  while (i < tokens.length) {
+    if (tokens[i] !== "") {
+      i++;
+      continue;
+    }
+    i++;
+    if (i + fields > tokens.length) break;
+    const head = tokens.slice(i, i + fields);
+    i += fields;
+    const rest: string[] = [];
+    while (i < tokens.length && tokens[i] !== "") rest.push(tokens[i++]!);
+    // Git puts a newline between the format and the first path.
+    if (rest[0]?.startsWith("\n")) rest[0] = rest[0].slice(1);
+    commits.push({ fields: head, rest });
+  }
+  return commits;
 }
 
 const wordsIn = (line: string): number => line.match(/[\p{L}\p{N}][\p{L}\p{N}'’-]*/gu)?.length ?? 0;
@@ -600,23 +643,18 @@ export class GitGateway {
           "log",
           `-n${limit}`,
           "--name-only",
-          "--format=%x01%H%x02%cI%x02%s%x02%an%x02%ae%x02",
+          "-z",
+          "--format=%x00%H%x00%cI%x00%s%x00%an%x00%ae",
           ...(path ? ["--follow", "--", path] : ["--no-renames"]),
         ])
       ).stdout.toString("utf8");
-      return out
-        .split("\u0001")
-        .filter((part) => part.trim() !== "")
-        .map((part) => {
-          const [commit, at, message, name, email, rest] = part.split("\u0002");
-          return {
-            commit: commit!,
-            at: at!,
-            message: message!,
-            author: { name: name ?? "", email: email ?? "" },
-            paths: (rest ?? "").split("\n").filter((p) => p !== ""),
-          };
-        });
+      return parseLogZ(out, 5).map(({ fields: [commit, at, message, name, email], rest }) => ({
+        commit: commit!,
+        at: at!,
+        message: message!,
+        author: { name: name ?? "", email: email ?? "" },
+        paths: rest.filter((p) => p !== ""),
+      }));
     });
   }
 
@@ -626,23 +664,125 @@ export class GitGateway {
    */
   lastChange(path: string): Promise<{ commit: string; at: string; author: Identity } | null> {
     return this.locked(async () => {
-      const r = await this.run(["log", "-n1", "--format=%H%x02%cI%x02%an%x02%ae", "--", path], {
-        allow: (c) => c === 128,
-      });
+      const r = await this.run(
+        ["log", "-n1", "-z", "--format=%x00%H%x00%cI%x00%an%x00%ae", "--", path],
+        { allow: (c) => c === 128 },
+      );
       if (r.code !== 0) return null;
-      const [commit, at, name, email] = r.stdout.toString("utf8").trim().split("\u0002");
-      return commit
-        ? { commit, at: at ?? "", author: { name: name ?? "", email: email ?? "" } }
-        : null;
+      const [last] = parseLogZ(r.stdout.toString("utf8"), 4);
+      return last ? changeOf(last.fields) : null;
+    });
+  }
+
+  /** The last version that touched each path, by path, as of a commit: see `lastChangeAt`. */
+  private changeMap: { head: string; map: Map<string, SavedChange> } | null = null;
+
+  /**
+   * As `lastChange`, for a path at a commit the caller already knows is the working copy's (the
+   * index's commit). Answered from one map of every path's last version, built by one pass over the
+   * log and, for each new commit after that, by reading only the commits since; a read of an entry
+   * costs no Git command once the map is there, instead of a `git log` for each (stage 27d).
+   */
+  async lastChangeAt(path: string, commit: string): Promise<SavedChange | null> {
+    const held =
+      this.changeMap?.head === commit ? this.changeMap : await this.buildChangeMap(commit);
+    return held.map.get(path) ?? null;
+  }
+
+  private buildChangeMap(commit: string): Promise<{ head: string; map: Map<string, SavedChange> }> {
+    return this.locked(async () => {
+      // Another read may have built it while this one waited.
+      if (this.changeMap?.head === commit) return this.changeMap;
+      const before = this.changeMap;
+      const range = before
+        ? (
+            await this.run(["merge-base", "--is-ancestor", before.head, commit], {
+              allow: (c) => c === 1 || c === 128,
+            })
+          ).code === 0
+          ? `${before.head}..${commit}`
+          : commit
+        : commit;
+      const r = await this.run(
+        [
+          "log",
+          "--no-renames",
+          "--name-only",
+          "-z",
+          "--format=%x00%H%x00%cI%x00%an%x00%ae",
+          range,
+          "--",
+        ],
+        // A library with no commit yet has no log.
+        { allow: (c) => c === 128 },
+      );
+      const map =
+        range === commit || !before ? new Map<string, SavedChange>() : new Map(before.map);
+      const seen = new Set<string>();
+      // Newest first: the first commit to name a path is its last version.
+      if (r.code === 0) {
+        for (const { fields, rest } of parseLogZ(r.stdout.toString("utf8"), 4)) {
+          const change = changeOf(fields);
+          for (const p of rest) {
+            if (p === "" || seen.has(p)) continue;
+            seen.add(p);
+            map.set(p, change);
+          }
+        }
+      }
+      this.changeMap = { head: commit, map };
+      return this.changeMap;
+    });
+  }
+
+  /**
+   * The saved versions of a file made after the version whose blob is `sinceBlob` (the one a change
+   * was started from), newest first, each with who saved it and the blob it left; `""` for a change
+   * started from no file counts every version. Stops at the version with that blob; when none has it
+   * (the base is no longer in the history) every version up to `limit` is listed.
+   */
+  changesAfter(
+    path: string,
+    sinceBlob: string,
+    limit = 200,
+  ): Promise<(SavedChange & { blob: string | null })[]> {
+    return this.locked(async () => {
+      const r = await this.run(
+        [
+          "log",
+          `-n${limit}`,
+          "--no-renames",
+          "--raw",
+          "--no-abbrev",
+          "-z",
+          "--format=%x00%H%x00%cI%x00%an%x00%ae",
+          "--",
+          path,
+        ],
+        { allow: (c) => c === 128 },
+      );
+      if (r.code !== 0) return [];
+      const out: (SavedChange & { blob: string | null })[] = [];
+      for (const { fields, rest } of parseLogZ(r.stdout.toString("utf8"), 4)) {
+        // ":<mode> <mode> <old> <new> <status>", then the path.
+        const meta = rest.find((t) => t.startsWith(":"))?.split(" ");
+        const blob = meta?.[3] && !/^0+$/.test(meta[3]) ? meta[3] : null;
+        if (sinceBlob !== "" && blob === sinceBlob) break;
+        out.push({ ...changeOf(fields), blob });
+      }
+      return out;
     });
   }
 
   /** When the last saved version was made and the name of its author; null for a library with none. */
   lastVersion(): Promise<{ at: string; by: string } | null> {
     return this.locked(async () => {
-      const r = await this.run(["log", "-n1", "--format=%cI%x02%an"], { allow: () => true });
-      const [at, by] = r.stdout.toString("utf8").trim().split("\u0002");
-      return r.code === 0 && at ? { at, by: by ?? "" } : null;
+      const r = await this.run(["log", "-n1", "-z", "--format=%x00%cI%x00%an"], {
+        allow: () => true,
+      });
+      const [last] = r.code === 0 ? parseLogZ(r.stdout.toString("utf8"), 2) : [];
+      const [at, by] = last?.fields ?? [];
+      return at ? { at, by: by ?? "" } : null;
     });
   }
 

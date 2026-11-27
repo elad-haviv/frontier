@@ -59,6 +59,32 @@ export type PeopleFile = z.infer<typeof PeopleFile>;
  */
 export const emailKey = (email: string): string => email.normalize("NFKC").trim().toLowerCase();
 
+/**
+ * The domain a saved version is authored under for a person who has no email of their own (stage
+ * 27d): `<person id>@people.frontier.invalid`. It receives nothing and names a person only for the
+ * author lookup, so no account may ever have an address on it.
+ */
+export const STAND_IN_DOMAIN = "people.frontier.invalid";
+
+/**
+ * Whether an address is on the stand-in domain or any domain below it, in any letter case and
+ * however it is typed (full-width letters, a dot at the end).
+ */
+export function isStandInAddress(email: string): boolean {
+  const key = emailKey(email);
+  const domain = key.slice(key.lastIndexOf("@") + 1).replace(/\.+$/, "");
+  return domain === STAND_IN_DOMAIN || domain.endsWith(`.${STAND_IN_DOMAIN}`);
+}
+
+/** The email of an account: an address, never one on the stand-in domain (stage 27d). */
+export const AccountEmail = z
+  .string()
+  .trim()
+  .min(1, "Give an email.")
+  .max(200)
+  .email("This is not an email address.")
+  .refine((e) => !isStandInAddress(e), "This address cannot be used. Give your own email.");
+
 /** Two letters for a round avatar: the first letters of the first and last name, or of the email. */
 export function initialsOf(name: string, email = ""): string {
   const words = name.trim().split(/\s+/).filter(Boolean);
