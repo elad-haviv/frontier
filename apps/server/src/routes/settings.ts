@@ -1,4 +1,4 @@
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyRequest } from "fastify";
 import {
   AI_PROVIDER_KINDS,
   AiProviderKind,
@@ -15,7 +15,7 @@ import {
 } from "@frontier/schema";
 import { z } from "zod";
 import { deviceKey } from "../ai/keyring.js";
-import { type AiCall, monthOf } from "../ai/log.js";
+import { type AiCall, type LogViewer, monthOf } from "../ai/log.js";
 import { keyMissing } from "../ai/provider.js";
 import { ProviderError, type ProviderAdapter } from "../ai/providers/index.js";
 import { personOf } from "../auth/session.js";
@@ -45,15 +45,24 @@ const median = (xs: number[]) => {
 
 /** Key checks call a third party, so a few a minute is plenty. */
 class CheckLimiter {
-  private times: number[] = [];
-  take(now = Date.now()): void {
-    this.times = this.times.filter((t) => now - t < 60_000);
-    if (this.times.length >= 20) {
+  private times = new Map<string, number[]>();
+  /** Counts a check against one person, so one person trying keys cannot lock the others out. */
+  take(person: string, now = Date.now()): void {
+    const recent = (this.times.get(person) ?? []).filter((t) => now - t < 60_000);
+    if (recent.length >= 20) {
+      this.times.set(person, recent);
       throw new ApiError("rate_limited", "Too many key checks. Wait a minute and try again.");
     }
-    this.times.push(now);
+    recent.push(now);
+    this.times.set(person, recent);
   }
 }
+
+/** The person asking, as the log knows them. */
+const viewerOf = (request: FastifyRequest): LogViewer => {
+  const p = personOf(request);
+  return { id: p.id, admin: p.admin };
+};
 
 /** A free call with the key: listing the provider's models. */
 async function checkWith(
@@ -84,7 +93,7 @@ export function settingsRoutes(app: FastifyInstance, s: Services): void {
 
   app.get("/api/settings", async (request): Promise<SettingsResponse> => {
     const settings = (await s.settings.read())!;
-    const { spentUsd } = await s.ai.spending();
+    const { spentUsd } = await s.ai.spending(viewerOf(request));
     return {
       ai: {
         modelPrices: settings.ai.modelPrices,
@@ -211,12 +220,16 @@ export function settingsRoutes(app: FastifyInstance, s: Services): void {
     const kind = parsed.data;
     const key = deviceKey(kind);
     if (!key) throw keyMissing(kind);
-    limiter.take();
+    limiter.take(personOf(request).id);
     return checkWith(connections.trial(kind, key), kind);
   });
 
   /** Says that the notice about keys deleted from the server was seen, so it is not shown again. */
-  app.delete("/api/notices/keys-removed", async () => {
+  app.delete("/api/notices/keys-removed", async (request) => {
+    // Only the owner of the server, who can revoke the old keys, can say it was seen.
+    if (!personOf(request).admin) {
+      throw new ApiError("not_allowed", "Only the server's owner can clear this notice.");
+    }
     await s.settings.update((now) => ({ ...now, ai: { ...now.ai, keysRemoved: null } }));
     s.status.keysWereRemoved(null);
     return { ok: true as const };
@@ -231,7 +244,7 @@ export function settingsRoutes(app: FastifyInstance, s: Services): void {
       ...(q.limit ? { limit: q.limit } : {}),
       refresh: q.refresh !== undefined,
     });
-    const calls = await s.aiLog.calls(monthOf(new Date()));
+    const calls = await s.aiLog.callsOf(monthOf(new Date()), viewerOf(request));
     const typical = { ...TYPICAL };
     for (const task of ["extraction", "conversation"] as const) {
       const done = calls.filter((c) => c.task === task && c.ok);
@@ -247,7 +260,7 @@ export function settingsRoutes(app: FastifyInstance, s: Services): void {
 
   app.get("/api/ai/log", async (request): Promise<AiLogResponse> => {
     const month = LogQuery.parse(request.query).month ?? monthOf(new Date());
-    const calls = await s.aiLog.calls(month);
+    const calls = await s.aiLog.callsOf(month, viewerOf(request));
     const full = calls.map((c: AiCall) => ({
       ...c,
       // Lines written before stage 18 were all OpenRouter's, its cost reported.
@@ -272,7 +285,7 @@ export function settingsRoutes(app: FastifyInstance, s: Services): void {
     }
     return {
       month,
-      totalUsd: await s.aiLog.spent(month),
+      totalUsd: await s.aiLog.spentBy(month, viewerOf(request)),
       byProvider: [...byProvider.values()],
       calls: full.reverse().slice(0, 200),
     };

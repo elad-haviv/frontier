@@ -7,10 +7,15 @@ import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { AI_KEYS_HEADER, encodeDeviceKeys } from "@frontier/schema";
-import { FieldJob } from "../src/ai/job.js";
-import { deviceKey, deviceKeys, withDeviceKeys } from "../src/ai/keyring.js";
-import { ApiError } from "../src/errors.js";
-import { makeTestApp, type TestApp } from "./helpers/app.js";
+import { buildApp } from "../src/app.js";
+import {
+  deviceKey,
+  deviceKeys,
+  outsideRequest,
+  requestPerson,
+  withDeviceKeys,
+} from "../src/ai/keyring.js";
+import { makeTestApp, seedAccount, type TestApp } from "./helpers/app.js";
 
 let t: TestApp;
 afterEach(() => t.close());
@@ -140,7 +145,9 @@ describe("a key sent with a request", () => {
       passage: "Vel Aran was founded.",
       how: "shorter",
     });
-    expect(failed.statusCode).toBe(502);
+    // The provider turned the key away: said as such, not as a failed call.
+    expect(failed.statusCode).toBe(409);
+    expect(failed.json().error).toMatchObject({ code: "ai_key_rejected", provider: "openrouter" });
     note(failed);
     note(await t.post("/api/settings/ai/test"));
     // Something that is no request for the AI at all, with the keys header present.
@@ -219,28 +226,149 @@ describe("a key sent with a request", () => {
   });
 });
 
-describe("a run over a folder", () => {
-  it("stops when the key goes missing, as it does for a model that is off", async () => {
-    for (const code of ["ai_key_missing", "ai_off"] as const) {
-      const proposed: string[] = [];
-      const proposer = {
-        candidates: () => ["a.md", "b.md", "c.md"],
-        propose: async (path: string) => {
-          proposed.push(path);
-          if (path === "b.md") throw new ApiError(code, "Nothing to call.");
-          return 1;
-        },
-      };
-      const job = new FieldJob(proposer as never);
-      job.start("");
-      await job.finished();
-      expect(proposed).toEqual(["a.md", "b.md"]);
-      expect(job.snapshot()).toMatchObject({
-        state: "stopped",
-        stoppedBy: "Nothing to call.",
-        made: 1,
-        done: 1,
+describe("what a request holds", () => {
+  it("survives body parsing on a real socket, and is empty once the response is sent", async () => {
+    t = await makeTestApp({}, { settleMs: 0 });
+    const held: { keys: unknown; person: string | null; outside: unknown; holder?: unknown }[] = [];
+    t.app.post("/api/_echo", async (request) => {
+      held.push({
+        keys: deviceKeys(),
+        person: requestPerson(),
+        outside: outsideRequest(() => deviceKeys()),
+        holder: request.keysHolder,
       });
+      return { body: request.body, keys: deviceKeys() };
+    });
+    await t.login();
+    await t.app.listen({ port: 0, host: "127.0.0.1" });
+    const address = t.app.server.address();
+    const port = typeof address === "object" && address ? address.port : 0;
+    const res = await fetch(`http://127.0.0.1:${port}/api/_echo`, {
+      method: "POST",
+      headers: {
+        cookie: t.cookie,
+        "content-type": "application/json",
+        [AI_KEYS_HEADER]: encodeDeviceKeys({ openrouter: SECRET }),
+      },
+      body: JSON.stringify({ hello: "world" }),
+    });
+    // Parsed from the socket, and the keys are still the request's own in the handler.
+    expect(await res.json()).toEqual({ body: { hello: "world" }, keys: { openrouter: SECRET } });
+    expect(held[0]!.keys).toEqual({ openrouter: SECRET });
+    expect(held[0]!.person).toBe((await t.services.server.people.all())[0]!.id);
+    // A timer armed from a request is armed outside it, so it never inherits the keys.
+    expect(held[0]!.outside).toEqual({});
+    // And the holder is emptied when the response is over.
+    await new Promise((r) => setTimeout(r, 50));
+    expect(held[0]!.holder).toMatchObject({ keys: {}, person: null });
+  });
+});
+
+describe("one person's key checks, spending and notice", () => {
+  const SECOND = { email: "second@example.com", name: "Second", password: "second-password-1" };
+
+  async function twoPeople() {
+    const p = provider();
+    t = await makeTestApp({}, { fetch: p.fake, settleMs: 0 });
+    await t.login();
+    await seedAccount(t.services, SECOND.password, { email: SECOND.email, name: SECOND.name });
+    t.keys = { openrouter: SECRET };
+    await t.put("/api/settings/ai", { models: { extraction: "test/model" } });
+    return p;
+  }
+  const asSecond = async () => {
+    t.cookie = "";
+    expect((await t.login(SECOND.password, SECOND.email)).statusCode).toBe(200);
+  };
+
+  it("limits key checks for each person, not for the whole server", async () => {
+    await twoPeople();
+    for (let i = 0; i < 20; i++) {
+      expect((await t.post("/api/ai/keys/openrouter/check")).statusCode).toBe(200);
+    }
+    const over = await t.post("/api/ai/keys/openrouter/check");
+    expect(over.statusCode).toBe(429);
+    // Someone else is not locked out by it.
+    await asSecond();
+    expect((await t.post("/api/ai/keys/openrouter/check")).statusCode).toBe(200);
+  });
+
+  it("counts calls and spending for each person, the older lines being the admin's", async () => {
+    await twoPeople();
+    // A line from before calls named a person.
+    await t.services.aiLog.append({
+      at: new Date().toISOString(),
+      task: "extraction",
+      model: "openrouter:test/model",
+      provider: "openrouter",
+      promptTokens: 1,
+      completionTokens: 1,
+      costUsd: 0.5,
+      entry: null,
+      ok: true,
+    });
+    await t.post("/api/settings/ai/test");
+    const mine = (await t.get("/api/ai/log")).json();
+    expect(mine.calls).toHaveLength(2);
+    expect(mine.totalUsd).toBeCloseTo(0.501, 3);
+    expect((await t.get("/api/settings")).json().ai.spentUsd).toBeCloseTo(0.501, 3);
+
+    await asSecond();
+    const theirs = (await t.get("/api/ai/log")).json();
+    expect(theirs.calls).toHaveLength(0);
+    expect(theirs.totalUsd).toBe(0);
+    expect((await t.get("/api/settings")).json().ai.spentUsd).toBe(0);
+    await t.post("/api/settings/ai/test");
+    const after = (await t.get("/api/ai/log")).json();
+    expect(after.calls).toHaveLength(1);
+    expect(after.totalUsd).toBeCloseTo(0.001, 3);
+  });
+
+  it("shows the notice about removed keys only to the server's owner, who alone clears it", async () => {
+    await twoPeople();
+    t.services.status.keysWereRemoved({
+      at: "2026-11-20T00:00:00.000Z",
+      providers: ["OpenRouter"],
+      environment: [],
+    });
+    expect((await t.get("/api/status")).json().notices.keysRemoved).toMatchObject({
+      providers: ["OpenRouter"],
+    });
+    await asSecond();
+    expect((await t.get("/api/status")).json().notices.keysRemoved).toBeNull();
+    const refused = await t.del("/api/notices/keys-removed");
+    expect(refused.statusCode).toBe(403);
+    expect((await t.services.settings.read())!.ai.keysRemoved).toBeNull();
+    t.cookie = "";
+    await t.login();
+    expect((await t.del("/api/notices/keys-removed")).statusCode).toBe(200);
+    expect((await t.get("/api/status")).json().notices.keysRemoved).toBeNull();
+  });
+});
+
+describe("provider keys still set in the environment", () => {
+  it("are told to the owner once, and not again after it is cleared", async () => {
+    t = await makeTestApp({ OPENROUTER_API_KEY: "sk-or-env-0000", XAI_API_KEY: "xai-env-0000" });
+    // The settings file exists once the first account does; the next start finds the variables.
+    const second = await buildApp(t.services.config, {});
+    try {
+      expect(second.services.status.snapshot().notices.keysRemoved).toMatchObject({
+        providers: [],
+        environment: ["OPENROUTER_API_KEY", "XAI_API_KEY"],
+      });
+      expect((await t.services.settings.read())!.ai.envKeysNoticed).toBe(true);
+    } finally {
+      await second.app.close();
+    }
+    // Cleared by the owner, it is not made again at the start after.
+    await t.login();
+    t.services.status.keysWereRemoved({ at: "x", providers: [], environment: [] });
+    expect((await t.del("/api/notices/keys-removed")).statusCode).toBe(200);
+    const third = await buildApp(t.services.config, {});
+    try {
+      expect(third.services.status.snapshot().notices.keysRemoved).toBeNull();
+    } finally {
+      await third.app.close();
     }
   });
 });

@@ -10,7 +10,8 @@ import { ApiError } from "../errors.js";
 import type { SettingsStore } from "../state/settings.js";
 import { Connections, type ConnectionsConfig, type ResolvedProvider } from "./connections.js";
 import { costOf } from "./cost.js";
-import { type AiLog, monthOf } from "./log.js";
+import { type AiLog, type LogViewer, monthOf } from "./log.js";
+import { requestPerson } from "./keyring.js";
 import type { ModelCatalogue } from "./models.js";
 import {
   type ChatMessage,
@@ -122,6 +123,21 @@ interface Target {
   adapter: ProviderAdapter;
 }
 
+/**
+ * What a provider's failure becomes for the person: a key the provider turned away (401 or 403) is
+ * named as such, with the provider, so the web app can ask for a new key in place.
+ */
+function failure(e: ProviderError, t: { provider: ResolvedProvider }): ApiError {
+  if (e.opts.status === 401 || e.opts.status === 403) {
+    return new ApiError(
+      "ai_key_rejected",
+      `${t.provider.name} did not accept the key on this device. Add a working key under AI keys.`,
+      { provider: t.provider.kind, href: "/settings/device/ai-keys" },
+    );
+  }
+  return new ApiError("ai_failed", e.message);
+}
+
 /** The error that tells the web app to ask this device for a key (it shows the field in place). */
 export function keyMissing(kind: string): ApiError {
   const label = AI_PROVIDER_KINDS[kind as keyof typeof AI_PROVIDER_KINDS]?.label ?? kind;
@@ -163,9 +179,15 @@ export class AiProvider {
     this.catalog = catalog;
   }
 
-  /** What has been spent this month, in US dollars. There is no cap: each person pays their provider. */
-  async spending(): Promise<{ spentUsd: number }> {
-    return { spentUsd: await this.d.log.spent(monthOf(this.now())) };
+  /**
+   * What the person making this request has spent this month, in US dollars. There is no cap: each
+   * person pays their provider. Without a person (a task outside a request) it is everyone's.
+   */
+  async spending(viewer?: LogViewer): Promise<{ spentUsd: number }> {
+    const month = monthOf(this.now());
+    const person = requestPerson();
+    const who = viewer ?? (person ? { id: person, admin: false } : null);
+    return { spentUsd: who ? await this.d.log.spentBy(month, who) : await this.d.log.spent(month) };
   }
 
   /** The prices of the model chosen for a task, to estimate a call before it is made. */
@@ -248,6 +270,7 @@ export class AiProvider {
       task,
       model: t.id,
       provider: t.provider.id,
+      ...(requestPerson() ? { person: requestPerson()! } : {}),
       promptTokens: u.promptTokens,
       completionTokens: u.completionTokens,
       costUsd,
@@ -392,7 +415,7 @@ export class AiProvider {
     }
     if (result instanceof ProviderError) {
       if (result.aborted) throw new ApiError("ai_stopped", "Stopped.");
-      throw new ApiError("ai_failed", result.message);
+      throw failure(result, t);
     }
 
     let parsed: unknown;
@@ -463,7 +486,7 @@ export class AiProvider {
       error = stopped ? STOPPED : e.message;
       if (stopped) throw new ApiError("ai_stopped", "Stopped.");
       this.warn(input.task, t.id, e.message, input.entry);
-      throw new ApiError("ai_failed", e.message);
+      throw failure(e, t);
     } finally {
       await this.record(input.task, t, usage, input.entry, error);
     }
@@ -497,7 +520,7 @@ export class AiProvider {
           : new ProviderError("No picture came back.", false);
       await this.record("art", t, e.opts.usage, entry, e.message);
       this.warn("art", t.id, e.message, entry);
-      throw new ApiError("ai_failed", e.message);
+      throw failure(e, t);
     }
   }
 }

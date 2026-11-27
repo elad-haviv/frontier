@@ -1,5 +1,6 @@
 import type { MeResponse } from "@frontier/schema";
 import { useSyncExternalStore } from "react";
+import { setKeysOwner } from "./aiKeys.ts";
 import { api } from "./api.ts";
 
 /**
@@ -10,6 +11,7 @@ import { api } from "./api.ts";
 const KEY = "frontier.me";
 
 let current: MeResponse | null = readKept();
+setKeysOwner(current?.id ?? null);
 /** True after the server was asked and could not say, until it does. */
 let failed = false;
 const listeners = new Set<() => void>();
@@ -25,6 +27,8 @@ function readKept(): MeResponse | null {
 
 function set(next: MeResponse | null): void {
   current = next;
+  // The AI keys on this device are the signed-in person's: nobody's, once logged out.
+  setKeysOwner(next?.id ?? null);
   try {
     if (next) localStorage.setItem(KEY, JSON.stringify(next));
     else localStorage.removeItem(KEY);

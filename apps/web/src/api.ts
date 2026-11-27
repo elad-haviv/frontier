@@ -1,6 +1,6 @@
 import { startAuthentication, startRegistration } from "@simplewebauthn/browser";
 import { AI_KEYS_HEADER, type AiProviderKind, CLIENT_API } from "@frontier/schema";
-import { keysHeaderValue } from "./aiKeys.ts";
+import { keysHeaderValue, recordCheck } from "./aiKeys.ts";
 import { connection } from "./sync/connection.ts";
 import { randomId } from "./sync/db.ts";
 import type {
@@ -11,7 +11,6 @@ import type {
   DraftVersionsResponse,
   EntryResponse,
   ErrorBody,
-  FieldJobState,
   FromHereResponse,
   GraphResponse,
   ModelsResponse,
@@ -166,34 +165,58 @@ export function featureOf(url: string): string {
   return "AI help";
 }
 
-/** What the app shows when a request needs a key this device lacks. */
+/** What the app shows when a request needs a key this device lacks, or one the provider refused. */
 export interface KeyAsk {
   feature: string;
   /** The provider the request needs, to have it chosen already. */
   provider: AiProviderKind | null;
+  /** The key this device holds for that provider was turned away: it needs a new one. */
+  rejected?: boolean;
 }
 
 let askForKey: ((ask: KeyAsk) => Promise<boolean>) | null = null;
 
 /**
  * Registers what shows the explanation and the field for a key (`AiKeyPrompt`). It resolves true
- * once a key was kept, and the request that needed it is then sent again, as if nothing happened.
+ * once the key the request needs was kept (for the provider it names, when it names one), and the
+ * request is then sent again, as if nothing happened.
  */
 export function setKeyPrompt(prompt: ((ask: KeyAsk) => Promise<boolean>) | null): void {
   askForKey = prompt;
 }
 
-/** Whether a key was added after `err` said there was none, so the request may go again. */
-async function keyWasAdded(err: unknown, url: string): Promise<boolean> {
-  if (!(err instanceof ApiFailure) || err.code !== "ai_key_missing" || !askForKey) return false;
-  return askForKey({ feature: featureOf(url), provider: err.provider ?? null });
+/**
+ * Notes that a provider turned a key away, so the AI keys section and the rail stop saying it
+ * works. A key that is not on this device any more is left alone.
+ */
+function noteRejected(err: unknown): void {
+  if (!(err instanceof ApiFailure) || err.code !== "ai_key_rejected" || !err.provider) return;
+  recordCheck(err.provider, { at: new Date().toISOString(), ok: false, message: err.message });
 }
 
-async function call<T>(url: string, init?: RequestInit): Promise<T> {
+/** Whether a key was added after `err` said there was none or a bad one, so the request may go again. */
+async function keyWasAdded(err: unknown, url: string): Promise<boolean> {
+  if (!(err instanceof ApiFailure) || !askForKey) return false;
+  if (err.code !== "ai_key_missing" && err.code !== "ai_key_rejected") return false;
+  return askForKey({
+    feature: featureOf(url),
+    provider: err.provider ?? null,
+    ...(err.code === "ai_key_rejected" ? { rejected: true } : {}),
+  });
+}
+
+async function call<T>(url: string, init?: RequestInit, quiet = false): Promise<T> {
   try {
     return await callOnce<T>(url, init);
   } catch (err) {
-    if (await keyWasAdded(err, url)) return callOnce<T>(url, init);
+    noteRejected(err);
+    if (!quiet && (await keyWasAdded(err, url))) {
+      // Once: a second refusal is the person's to read.
+      return callOnce<T>(url, init).catch((again: unknown) => {
+        noteRejected(again);
+        throw again;
+      });
+    }
     throw err;
   }
 }
@@ -282,8 +305,15 @@ async function streamed<T>(
   try {
     return await streamedOnce<T>(url, body, onEvent, signal);
   } catch (err) {
-    // A refusal for want of a key comes before any event, so asking again repeats nothing.
-    if (await keyWasAdded(err, url)) return streamedOnce<T>(url, body, onEvent, signal);
+    noteRejected(err);
+    // A refusal for want of a key, or a key the provider turned away, comes before any event, so
+    // asking again repeats nothing.
+    if (await keyWasAdded(err, url)) {
+      return streamedOnce<T>(url, body, onEvent, signal).catch((again: unknown) => {
+        noteRejected(again);
+        throw again;
+      });
+    }
     throw err;
   }
 }
@@ -580,7 +610,17 @@ export const api = {
     });
   },
   inbox: () => call<InboxResponse>("/api/inbox"),
-  proposeFields: (path: string) => post<{ made: number }>("/api/proposals/fields", { path }),
+  /** `quiet`: for proposals made by themselves, which never open the key dialog. */
+  proposeFields: (path: string, quiet = false) =>
+    call<{ made: number }>(
+      "/api/proposals/fields",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ path }),
+      },
+      quiet,
+    ),
   decideOperation: (
     id: string,
     op: string,
@@ -796,7 +836,9 @@ export const api = {
    * provider's models with it. Nothing is kept on the server.
    */
   checkKey: (kind: AiProviderKind, key: string) =>
-    call<KeyCheckResponse>(`/api/ai/keys/${kind}/check`, {
+    // Never `call`: a check that finds no key must not open the key dialog, which is where it is
+    // asked from.
+    callOnce<KeyCheckResponse>(`/api/ai/keys/${kind}/check`, {
       method: "POST",
       headers: { [AI_KEYS_HEADER]: keysHeaderValue({ [kind]: key }) ?? "" },
     }),
@@ -805,12 +847,11 @@ export const api = {
   /** The author's prices per million tokens; null removes one. */
   savePrices: (prices: Record<string, { promptPrice: number; completionPrice: number } | null>) =>
     send<{ ok: true }>("PUT", "/api/settings/ai/prices", { prices }),
-  fieldJob: () => call<FieldJobState>("/api/proposals/job"),
-  estimateJob: (folder: string) =>
-    post<{ entries: number; estimateUsd: number | null }>("/api/proposals/job", { folder }),
-  startJob: (folder: string) =>
-    post<{ started: true }>("/api/proposals/job", { folder, confirm: true }),
-  cancelJob: () => send<{ ok: true }>("DELETE", "/api/proposals/job"),
+  /** The entries a run over a folder would read, and what it would cost; nothing is read yet. */
+  listJob: (folder: string) =>
+    post<{ paths: string[]; entries: number; estimateUsd: number | null }>("/api/proposals/job", {
+      folder,
+    }),
   branchFile: (branch: string, path: string) =>
     call<{ before: string | null; after: string | null }>(
       `/api/inbox/branch-file?branch=${encodeURIComponent(branch)}&path=${encodeURIComponent(path)}`,

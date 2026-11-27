@@ -379,9 +379,10 @@ describe("errors", () => {
     // Stage 27a added email_taken.
     expect(statusOf("email_taken")).toBe(409);
     expect(statusOf("ai_key_missing")).toBe(409);
+    expect(statusOf("ai_key_rejected")).toBe(409);
     // The web app asks the person to log in again for this one.
     expect(statusOf("recent_login_needed")).toBe(403);
-    expect(Object.keys(ERROR_STATUS)).toHaveLength(25);
+    expect(Object.keys(ERROR_STATUS)).toHaveLength(26);
   });
 
   it("takes a web address of at most 2,048 characters for an image", () => {

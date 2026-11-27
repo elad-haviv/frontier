@@ -133,9 +133,16 @@ export const AiSettings = z.object({
    * device (stage 27f): the keys were deleted, and the web app says so once.
    */
   keysRemoved: z
-    .object({ at: z.string(), providers: z.array(z.string()) })
+    .object({
+      at: z.string(),
+      providers: z.array(z.string()),
+      /** Provider key variables still set in the server's environment, which are not read. */
+      environment: z.array(z.string()).default([]),
+    })
     .nullable()
     .default(null),
+  /** Set once the owner was told about provider key variables in the environment. */
+  envKeysNoticed: z.boolean().default(false),
 });
 export type AiSettings = z.infer<typeof AiSettings>;
 

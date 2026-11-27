@@ -8,7 +8,6 @@ import Fastify, { type FastifyInstance } from "fastify";
 import { ZodError } from "zod";
 import { AI_KEYS_HEADER, type BiomesFile } from "@frontier/schema";
 import { FieldProposer } from "./ai/fields.js";
-import { FieldJob } from "./ai/job.js";
 import { AiLog } from "./ai/log.js";
 import { ModelCatalogue } from "./ai/models.js";
 import { readKeysHeader } from "./ai/keyring.js";
@@ -116,7 +115,6 @@ export interface Services {
   changer: EntryChanger;
   proposals: ProposalStore;
   fields: FieldProposer;
-  fieldJob: FieldJob;
   quarantine: Quarantine;
   maps: MapStore;
   chronicles: ChronicleStore;
@@ -257,7 +255,7 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
   const aiLog = new AiLog(stateDir, () => backup.noteChange());
   // AI keys are never kept here: each request brings the person's own (see ai/keyring.ts). Keys an
   // earlier version stored in the settings file are deleted now, and the web app says so once.
-  const keysRemoved = await settings.removeStoredKeys();
+  const keysRemoved = await settings.removeStoredKeys(new Date(), config.unusedKeyVars);
   if (keysRemoved) {
     status.keysWereRemoved(keysRemoved);
   } else {
@@ -416,7 +414,6 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
     changer,
     proposals,
     fields,
-    fieldJob: new FieldJob(fields),
     quarantine,
     maps,
     chronicles,
@@ -543,7 +540,8 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
   app.addHook("onRequest", async (request) => {
     const path = request.url.split("?")[0] ?? "";
     if (OPEN.has(path) || !path.startsWith("/api/")) return;
-    await requirePerson(request, server.people);
+    const person = await requirePerson(request, server.people);
+    request.keysHolder.person = person.id;
   });
 
   // Which build this server carries, for reading logs and the browser's network panel.

@@ -15,11 +15,26 @@ import {
 } from "@frontier/schema";
 import type { FastifyInstance } from "fastify";
 
-const current = new AsyncLocalStorage<DeviceKeys>();
+/**
+ * What a request holds: the keys it carried, and who asked. The holder is emptied when the
+ * response is over, so a timer, a promise or a log line that still reaches it later finds nothing.
+ */
+interface Holder {
+  keys: DeviceKeys;
+  person: string | null;
+}
+
+declare module "fastify" {
+  interface FastifyRequest {
+    keysHolder: Holder;
+  }
+}
+
+const current = new AsyncLocalStorage<Holder>();
 
 /** The keys of the request being served, or none outside one. */
 export function deviceKeys(): DeviceKeys {
-  return current.getStore() ?? {};
+  return current.getStore()?.keys ?? {};
 }
 
 /** The key this request carries for a provider, or null. */
@@ -27,22 +42,52 @@ export function deviceKey(kind: AiProviderKind): string | null {
   return deviceKeys()[kind] ?? null;
 }
 
+/** Who the request being served is from (their id), or null outside one. */
+export function requestPerson(): string | null {
+  return current.getStore()?.person ?? null;
+}
+
 /** Runs `work` with these keys as the request's own. For routes that try a typed key, and tests. */
-export function withDeviceKeys<T>(keys: DeviceKeys, work: () => T): T {
-  return current.run(keys, work);
+export function withDeviceKeys<T>(
+  keys: DeviceKeys,
+  work: () => T,
+  person: string | null = null,
+): T {
+  return current.run({ keys, person }, work);
 }
 
 /**
- * Reads the keys header of each request into the request's own context, then takes the header off
- * the request so nothing later (a log line, an error report, a plugin) can see it. Registered
- * before every other hook.
+ * Runs `work` as if no request were being served, so a timer or task it starts never inherits the
+ * request's keys. Use it where a request arms something that outlives it (the backup's timer).
+ */
+export function outsideRequest<T>(work: () => T): T {
+  return current.exit(work);
+}
+
+/**
+ * Reads the keys header of each request into the request's own holder, then takes the header off
+ * the request so nothing later (a log line, an error report, a plugin) can see it. The holder is
+ * made current again just before the handler, because the body is read from the socket, whose
+ * events do not carry the context of the request's start; and it is emptied when the response is
+ * over. Registered before every other hook.
  */
 export function readKeysHeader(app: FastifyInstance): void {
-  app.addHook("onRequest", (request, _reply, done) => {
+  app.decorateRequest("keysHolder", null as unknown as Holder);
+  app.addHook("onRequest", (request, reply, done) => {
     const value = request.headers[AI_KEYS_HEADER];
-    const keys = decodeDeviceKeys(Array.isArray(value) ? value[0] : value);
+    const holder: Holder = {
+      keys: decodeDeviceKeys(Array.isArray(value) ? value[0] : value),
+      person: null,
+    };
+    request.keysHolder = holder;
     delete request.headers[AI_KEYS_HEADER];
     delete request.raw.headers[AI_KEYS_HEADER];
-    current.run(keys, done);
+    reply.raw.once("close", () => {
+      holder.keys = {};
+      holder.person = null;
+    });
+    current.run(holder, done);
   });
+  app.addHook("preValidation", (request, _reply, done) => current.run(request.keysHolder, done));
+  app.addHook("preHandler", (request, _reply, done) => current.run(request.keysHolder, done));
 }

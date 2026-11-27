@@ -5,6 +5,11 @@
 > under `SECRETS_KEY`, keys from the environment and the monthly cap described below are gone. The
 > sections moved: AI keys (This device), AI models and Your AI spending (You). Old addresses
 > redirect. See `stage-27-people-and-projects.md`, "Your own AI keys".
+>
+> The `custom` provider kind (an OpenAI-compatible endpoint at an address the author types) is not
+> offered any more and is not coming back: a client-chosen address would receive people's keys. Models
+> chosen from one are switched off at start. Spending is counted per person ("Your AI spending"),
+> and the first-use explanation of keys is a dialog, not a page.
 
 For the owner's four asks: a side menu, several AI providers with their own keys, a model picker
 with search and details, and a UX review to approve. Read on 2026-11-24 from

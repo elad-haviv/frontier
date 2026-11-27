@@ -61,6 +61,11 @@ export interface Config {
    */
   providerUrls: Partial<Record<AiProviderKind, string>>;
   /**
+   * The names of provider key variables (OPENROUTER_API_KEY and the others) that are set in the
+   * environment although they are no longer read. The owner is told once, to remove them.
+   */
+  unusedKeyVars: string[];
+  /**
    * Lets an image be taken from a web address on this machine's loopback addresses, on any port,
    * so the tests can serve one. Off by default, and refused in production.
    */
@@ -185,6 +190,14 @@ export function loadConfig(env: Env = process.env): Config {
     if (url) providerUrls[kind] = url;
   }
 
+  const unusedKeyVars = [
+    "OPENROUTER_API_KEY",
+    "ANTHROPIC_API_KEY",
+    "OPENAI_API_KEY",
+    "GEMINI_API_KEY",
+    "XAI_API_KEY",
+  ].filter((name) => optional(name) !== null);
+
   return {
     publicUrl,
     dataDir,
@@ -198,6 +211,7 @@ export function loadConfig(env: Env = process.env): Config {
     webhookSecret,
     sessionKey,
     loginAttempts,
+    unusedKeyVars,
     library:
       optional("FRONTIER_LIBRARY") === "sample"
         ? "sample"

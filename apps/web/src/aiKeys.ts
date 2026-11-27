@@ -16,8 +16,19 @@ import {
 } from "@frontier/schema";
 import { useSyncExternalStore } from "react";
 
-const KEYS = "frontier.aiKeys";
-const CHECKS = "frontier.aiKeys.checks";
+/** Before keys were filed by person, they were kept under these two names. */
+const OLD_KEYS = "frontier.aiKeys";
+const OLD_CHECKS = "frontier.aiKeys.checks";
+
+/**
+ * The keys and their test results are filed under the person signed in, so on a browser two people
+ * share, the next login neither reads nor sends the keys of the one before. Logging out does not
+ * remove them: they wait for that person's next login.
+ */
+const keysName = (person: string) => `frontier.aiKeys:${person}`;
+const checksName = (person: string) => `frontier.aiKeys.checks:${person}`;
+
+let owner: string | null = null;
 
 /** What the last test of a key on this device found. Kept beside the key, on this device only. */
 export interface KeyCheck {
@@ -44,15 +55,50 @@ function load<T>(name: string, fallback: T, valid: (raw: unknown) => T): T {
   }
 }
 
+/**
+ * Says whose keys this device uses now: the person signed in, or nobody (logged out), when no key
+ * is read or sent. Keys kept before they were filed by person go to the first person who is
+ * signed in, once.
+ */
+export function setKeysOwner(person: string | null): void {
+  if (person === owner) return;
+  owner = person;
+  keys = null;
+  checks = null;
+  if (person) migrateOld(person);
+  changed();
+}
+
+function migrateOld(person: string): void {
+  try {
+    for (const [from, to] of [
+      [OLD_KEYS, keysName(person)],
+      [OLD_CHECKS, checksName(person)],
+    ] as const) {
+      const old = localStorage.getItem(from);
+      if (old === null) continue;
+      if (localStorage.getItem(to) === null) localStorage.setItem(to, old);
+      localStorage.removeItem(from);
+    }
+  } catch {
+    /* storage blocked: nothing was kept to move */
+  }
+}
+
 function readKeys(): DeviceKeys {
+  if (!owner) return {};
   // The same checks the server applies to what a header carries: only real providers, and
   // only text that can be a key.
-  keys ??= load<DeviceKeys>(KEYS, {}, (raw) => decodeDeviceKeys(btoa(JSON.stringify(raw))));
+  const mine = owner;
+  keys ??= load<DeviceKeys>(keysName(mine), {}, (raw) =>
+    decodeDeviceKeys(btoa(JSON.stringify(raw))),
+  );
   return keys;
 }
 
 function readChecks(): Checks {
-  checks ??= load<Checks>(CHECKS, {}, (raw) => {
+  if (!owner) return {};
+  checks ??= load<Checks>(checksName(owner), {}, (raw) => {
     const out: Checks = {};
     for (const kind of AiProviderKind.options) {
       const c = (raw as Record<string, Partial<KeyCheck> | undefined>)[kind];
@@ -75,9 +121,10 @@ function changed(): void {
 }
 
 function save(): void {
+  if (!owner) return;
   try {
-    localStorage.setItem(KEYS, JSON.stringify(readKeys()));
-    localStorage.setItem(CHECKS, JSON.stringify(readChecks()));
+    localStorage.setItem(keysName(owner), JSON.stringify(readKeys()));
+    localStorage.setItem(checksName(owner), JSON.stringify(readChecks()));
   } catch {
     /* kept in memory only */
   }
@@ -94,6 +141,7 @@ export function hasDeviceKey(kind: AiProviderKind): boolean {
 
 /** Keeps a key on this device, replacing the one for that provider, and what its test found. */
 export function setDeviceKey(kind: AiProviderKind, key: string, check?: KeyCheck): void {
+  if (!owner) return;
   keys = { ...readKeys(), [kind]: key.trim() };
   const next = { ...readChecks() };
   if (check) next[kind] = check;
@@ -142,12 +190,30 @@ function subscribe(listener: () => void): () => void {
 // Another tab of this browser changed the keys: read them again.
 if (typeof window !== "undefined") {
   window.addEventListener("storage", (e) => {
-    if (e.key === KEYS || e.key === CHECKS || e.key === null) {
+    if (e.key === null || (owner && (e.key === keysName(owner) || e.key === checksName(owner)))) {
       keys = null;
       checks = null;
       changed();
     }
   });
+}
+
+/** Removes every key and test result this device holds, whoever's. For "remove everything". */
+export function removeAllDeviceKeys(): void {
+  try {
+    const names: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const name = localStorage.key(i);
+      if (name && (name === OLD_KEYS || name === OLD_CHECKS || name.startsWith("frontier.aiKeys")))
+        names.push(name);
+    }
+    for (const name of names) localStorage.removeItem(name);
+  } catch {
+    /* storage blocked */
+  }
+  keys = null;
+  checks = null;
+  changed();
 }
 
 /** The keys on this device, and what their last tests found, as React state. */
@@ -157,8 +223,14 @@ export function useDeviceKeys(): { keys: DeviceKeys; checks: Checks } {
 }
 
 /** For tests: forgets what was read, so the next read comes from storage again. */
-export function resetKeysForTests(): void {
+export function resetKeysForTests(person: string | null = "p1"): void {
+  owner = person;
   keys = null;
   checks = null;
   version++;
+}
+
+/** Whose keys these are now: the signed-in person's id, or null when nobody is signed in. */
+export function keysOwner(): string | null {
+  return owner;
 }

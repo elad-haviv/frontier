@@ -1,11 +1,11 @@
 import type { FastifyInstance } from "fastify";
-import { type FieldJobState, Id, OperationDecision, VaultPath } from "@frontier/schema";
+import { Id, OperationDecision, VaultPath } from "@frontier/schema";
 import { z } from "zod";
 import { ApiError } from "../errors.js";
 import type { Services } from "../app.js";
 
 const FieldsRequest = z.object({ path: VaultPath });
-const JobRequest = z.object({ folder: z.string(), confirm: z.boolean().optional() });
+const JobRequest = z.object({ folder: z.string() });
 const OperationParams = z.object({ id: Id, op: Id });
 
 export function proposalRoutes(app: FastifyInstance, s: Services): void {
@@ -14,24 +14,17 @@ export function proposalRoutes(app: FastifyInstance, s: Services): void {
     return { made: await s.fields.propose(path) };
   });
 
+  /**
+   * The entries of a folder that a run would read, and what it would cost. The server does not run
+   * it: the browser asks for each entry in turn, with its key, while its page is open.
+   */
   app.post("/api/proposals/job", async (request) => {
-    const { folder, confirm } = JobRequest.parse(request.body);
+    const { folder } = JobRequest.parse(request.body);
     const clean = folder.replace(/^\/+|\/+$/g, "");
     if (clean.split("/").includes(".."))
       throw new ApiError("invalid", "Not a folder of the vault.");
     const paths = s.fields.candidates(clean);
-    if (!confirm) return { entries: paths.length, estimateUsd: await s.fields.estimate(paths) };
-    // Says now, before a run starts, if there is no model or no key on this device.
-    await s.ai.assertCanRun("extraction", "proposing fields");
-    s.fieldJob.start(clean);
-    return { started: true as const };
-  });
-
-  app.get("/api/proposals/job", async (): Promise<FieldJobState> => s.fieldJob.snapshot());
-
-  app.delete("/api/proposals/job", async () => {
-    s.fieldJob.cancel();
-    return { ok: true as const };
+    return { paths, entries: paths.length, estimateUsd: await s.fields.estimate(paths) };
   });
 
   app.post("/api/proposals/:id/operations/:op", async (request) => {

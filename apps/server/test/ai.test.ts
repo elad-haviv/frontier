@@ -3,7 +3,6 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   EntryResponse,
-  FieldJobState,
   InboxResponse,
   SettingsResponse,
   UnpublishedResponse,
@@ -598,52 +597,34 @@ describe("field proposals", () => {
 });
 
 describe("a run over a folder", () => {
-  it("estimates first, then runs in the background and reports each failure", async () => {
-    const p = await start([GOOD, 400, GOOD]);
+  it("lists the entries and estimates the cost, and makes no call itself", async () => {
+    const p = await start([GOOD]);
     t.repo.pushFromOutside({
       "01 Places/Second.md": "# Second\n\nFounded in the dry year.\n",
-      "01 Places/Third.md": "# Third\n\nVel Aran was founded around 340 EM by [[Mira]].\n",
     });
     await t.services.sync();
     const candidates = t.services.fields.candidates("01 Places");
-    const first = (await t.post("/api/proposals/job", { folder: "01 Places" })).json();
-    expect(first.entries).toBe(candidates.length);
-    expect(first.estimateUsd).toBeGreaterThan(0);
+    const res = (await t.post("/api/proposals/job", { folder: "01 Places" })).json();
+    expect(res.paths).toEqual(candidates);
+    expect(res.entries).toBe(candidates.length);
+    expect(res.estimateUsd).toBeGreaterThan(0);
+    // The browser reads the entries one at a time; the server does nothing on its own.
     expect(p.calls).toHaveLength(0);
-
-    expect(
-      (await t.post("/api/proposals/job", { folder: "01 Places", confirm: true })).json(),
-    ).toEqual({
-      started: true,
-    });
-    await t.services.fieldJob.finished();
-    const state = FieldJobState.parse((await t.get("/api/proposals/job")).json());
-    expect(state).toMatchObject({ state: "done", folder: "01 Places", total: candidates.length });
-    expect(state.done).toBe(candidates.length);
-    expect(state.failed).toHaveLength(1);
-    expect(state.made).toBeGreaterThan(0);
+    expect((await t.get("/api/proposals/job")).statusCode).toBe(404);
+    expect((await t.del("/api/proposals/job")).statusCode).toBe(404);
   });
 
-  it("uses the key of the request that started it, and refuses to start without one", async () => {
-    const p = await start([GOOD], { keys: false });
-    const refused = await t.post("/api/proposals/job", { folder: "", confirm: true });
-    expect(refused.statusCode).toBe(409);
-    expect(refused.json().error.code).toBe("ai_key_missing");
+  it("goes on with the key of each request, and with none afterwards", async () => {
+    const p = await start([GOOD, GOOD], { keys: false });
+    const none = await t.post("/api/proposals/fields", { path: VEL });
+    expect(none.json().error.code).toBe("ai_key_missing");
     t.keys = { openrouter: KEY };
-    await t.post("/api/proposals/job", { folder: "", confirm: true });
-    // The request is over, but the run goes on with the key it was started with, in memory only.
+    expect((await t.post("/api/proposals/fields", { path: VEL })).statusCode).toBe(200);
     t.keys = {};
-    await t.services.fieldJob.finished();
-    expect(p.calls.length).toBeGreaterThan(0);
+    // Nothing started in the request is left to run once it is over.
+    await new Promise((r) => setTimeout(r, 50));
+    expect(p.calls.length).toBe(1);
     expect(p.calls.every((c) => c.auth === `Bearer ${KEY}`)).toBe(true);
-  });
-
-  it("can be cancelled", async () => {
-    await start([GOOD]);
-    await t.post("/api/proposals/job", { folder: "", confirm: true });
-    await t.del("/api/proposals/job");
-    await t.services.fieldJob.finished();
-    expect((await t.get("/api/proposals/job")).json().state).toBe("cancelled");
   });
 });
 

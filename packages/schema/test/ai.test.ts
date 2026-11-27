@@ -4,6 +4,7 @@ import {
   AiSettings,
   decodeDeviceKeys,
   encodeDeviceKeys,
+  keyProblem,
   maskKey,
   qualifyModelId,
   Settings,
@@ -88,5 +89,20 @@ describe("keys shown", () => {
     expect(maskKey("xai-abcdefghijk1234")).toBe("xai-…1234");
     expect(maskKey("AIzaSyAbcdefghij5678")).toBe("…5678");
     expect(maskKey("short")).toBe("…rt");
+  });
+});
+
+describe("a key that can be kept", () => {
+  it("is told apart by the rule the server reads a header with", () => {
+    expect(keyProblem("sk-or-v1-abc123")).toBeNull();
+    expect(keyProblem("  sk-or-v1-abc123\n")).toBeNull();
+    expect(keyProblem("")).toBe("Enter the key.");
+    // Inner whitespace is what the server would drop, leaving the first-use dialog open for ever.
+    expect(keyProblem("sk-or-v1\nabc123")).toMatch(/space or a line break/);
+    expect(keyProblem("sk or v1")).toMatch(/space or a line break/);
+    expect(keyProblem("sk-or-clé")).toMatch(/characters a key does not use/);
+    for (const ok of ["sk-or-v1-abc123", "AIzaSyKey1234567"]) {
+      expect(decodeDeviceKeys(encodeDeviceKeys({ openrouter: ok })).openrouter).toBe(ok);
+    }
   });
 });

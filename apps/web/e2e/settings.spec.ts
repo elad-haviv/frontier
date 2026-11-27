@@ -180,9 +180,15 @@ test("keys stay on the device: another device has none, and a key removed is gon
   await expect(page.locator(".provider-row", { hasText: "OpenRouter" })).toContainText(
     "No key on this device",
   );
-  expect(await page.evaluate(() => localStorage.getItem("frontier.aiKeys"))).not.toContain(
-    "sk-or-browser-test-key",
-  );
+  // Filed under the person, so look through everything this device keeps about AI keys.
+  expect(
+    await page.evaluate(() =>
+      Object.keys(localStorage)
+        .filter((k) => k.startsWith("frontier.aiKeys"))
+        .map((k) => localStorage.getItem(k))
+        .join(""),
+    ),
+  ).not.toContain("sk-or-browser-test-key");
 });
 
 test("chooses a model through the picker with search, keys and details, then undoes it", async ({

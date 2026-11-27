@@ -1,9 +1,15 @@
 import { describe, expect, it, vi } from "vitest";
-import { type ProposeDeps, proposeAfterPublish } from "./proposeAfterPublish.ts";
+import { type ProposeDeps, proposeAfterPublish, resumeProposals } from "./proposeAfterPublish.ts";
 
 const deps = (over: Partial<ProposeDeps> & { on?: boolean; model?: string | null } = {}) => {
   const proposed: string[] = [];
+  /** What the device remembers; a test that "closes the tab" keeps it and builds new deps. */
+  const waiting: string[] = [];
   const d: ProposeDeps = {
+    pending: {
+      read: () => [...waiting],
+      write: (paths) => void waiting.splice(0, waiting.length, ...paths),
+    },
     settings: async () => ({
       ai: {
         proposeOnPublish: over.on ?? true,
@@ -17,7 +23,14 @@ const deps = (over: Partial<ProposeDeps> & { on?: boolean; model?: string | null
     hasKey: (kind) => kind === "anthropic",
     ...over,
   };
-  return { d, proposed };
+  if (over.pending) d.pending = over.pending;
+  return {
+    d,
+    proposed,
+    get waiting() {
+      return d.pending!.read();
+    },
+  };
 };
 
 describe("field proposals after a publish", () => {
@@ -56,5 +69,57 @@ describe("field proposals after a publish", () => {
       },
     });
     expect(await proposeAfterPublish(["a.md"], broken.d)).toBe(0);
+  });
+
+  it("are kept on the device until asked for, so a closed tab loses none of them", async () => {
+    // The page is closed before any answer: the settings cannot be read.
+    const first = deps({
+      settings: async () => {
+        throw new Error("offline");
+      },
+    });
+    await proposeAfterPublish(["a.md", "b.md"], first.d);
+    expect(first.waiting).toEqual(["a.md", "b.md"]);
+
+    // The next load, online and with the key, goes on where it was left.
+    const next = deps({ pending: first.d.pending! });
+    expect(await resumeProposals(next.d)).toBe(4);
+    expect(next.proposed).toEqual(["a.md", "b.md"]);
+    expect(next.waiting).toEqual([]);
+    // Nothing waiting, nothing asked.
+    expect(await resumeProposals(next.d)).toBe(0);
+  });
+
+  it("wait for a key, and for the connection, and drop an entry that is gone", async () => {
+    const noKey = deps({ hasKey: () => false });
+    await proposeAfterPublish(["a.md", "gone.md", "b.md"], noKey.d);
+    expect(noKey.waiting).toEqual(["a.md", "gone.md", "b.md"]);
+
+    // Online with the key, the connection drops after the first entry.
+    const calls: string[] = [];
+    const flaky = deps({
+      pending: noKey.d.pending!,
+      propose: async (path) => {
+        calls.push(path);
+        if (path === "gone.md")
+          throw Object.assign(new Error("There is no such entry."), {
+            code: "not_found",
+            status: 404,
+          });
+        if (path === "b.md")
+          throw Object.assign(new Error("offline"), { code: "offline", status: 0 });
+        return { made: 1 };
+      },
+    });
+    expect(await resumeProposals(flaky.d)).toBe(1);
+    // "a.md" was made, "gone.md" no longer exists and is dropped, "b.md" waits for the connection.
+    expect(calls).toEqual(["a.md", "gone.md", "b.md"]);
+    expect(flaky.waiting).toEqual(["b.md"]);
+  });
+
+  it("are forgotten when the setting is off, as there is nothing to wait for", async () => {
+    const off = deps({ on: false });
+    await proposeAfterPublish(["a.md"], off.d);
+    expect(off.waiting).toEqual([]);
   });
 });

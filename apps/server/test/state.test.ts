@@ -68,6 +68,7 @@ describe("state files", () => {
         artStyle: expect.stringContaining("Pencil and ink"),
         proposeOnPublish: false,
         keysRemoved: null,
+        envKeysNoticed: false,
       },
       passkeys: [],
       passwordOff: false,

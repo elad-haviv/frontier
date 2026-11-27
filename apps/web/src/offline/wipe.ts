@@ -2,7 +2,8 @@
  * What logout removes from the device beside the save queue: the note that this device is signed
  * in, the last status, the device copy, the app's caches (the images on the device among them),
  * and the service worker. Display settings in
- * `localStorage` stay; they say nothing about the library.
+ * `localStorage` stay; they say nothing about the library. The AI keys stay too, filed under the
+ * person who added them, for their next login (they are the person's, not the library's).
  */
 import type { Queue } from "../sync/queue.ts";
 import { SIGNED_IN } from "./start.ts";

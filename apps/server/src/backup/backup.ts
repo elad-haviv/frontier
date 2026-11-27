@@ -11,6 +11,7 @@ import { existsSync } from "node:fs";
 import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { BackupState } from "@frontier/schema";
+import { outsideRequest } from "../ai/keyring.js";
 import type { BackupTarget } from "./targets.js";
 
 export interface BackupOptions {
@@ -68,10 +69,13 @@ export class Backup {
   /** Call on every write to the working files. The copy runs once, `delayMs` after the first call. */
   noteChange(): void {
     if (this.timer) return;
-    this.timer = setTimeout(() => {
-      this.timer = undefined;
-      void this.runNow();
-    }, this.delayMs);
+    // Armed outside the request that made the change, so the timer never carries its AI keys.
+    this.timer = outsideRequest(() =>
+      setTimeout(() => {
+        this.timer = undefined;
+        void this.runNow();
+      }, this.delayMs),
+    );
     this.timer.unref();
   }
 

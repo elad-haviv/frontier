@@ -681,17 +681,3 @@ export const AiSettingsRequest = z.object({
   artStyle: z.string().trim().min(1).max(600).optional(),
   proposeOnPublish: z.boolean().optional(),
 });
-
-/** `GET /api/proposals/job` */
-export const FieldJobState = z.object({
-  state: z.enum(["none", "running", "done", "cancelled", "stopped"]),
-  folder: z.string().optional(),
-  done: z.number().optional(),
-  total: z.number().optional(),
-  /** Operations proposed so far. */
-  made: z.number().optional(),
-  failed: z.array(z.object({ path: VaultPath, message: z.string() })).optional(),
-  /** Why the job stopped early. */
-  stoppedBy: z.string().optional(),
-});
-export type FieldJobState = z.infer<typeof FieldJobState>;

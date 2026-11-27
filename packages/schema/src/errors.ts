@@ -19,6 +19,8 @@ export const ERROR_STATUS = {
   ai_off: 409,
   // The person has no key on this device for the provider the task needs (stage 27f).
   ai_key_missing: 409,
+  // The provider turned the key on this device away (stage 27f): the person adds a working one.
+  ai_key_rejected: 409,
   ai_failed: 502,
   ai_bad_answer: 502,
   // The author stopped the call while it ran.

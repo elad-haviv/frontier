@@ -21,7 +21,7 @@ Stage 1 of nine is in progress. What exists so far:
 | `apps/web`: source editor with autosave and link autocomplete, new, delete and rename, unpublished list, Publish, merge and conflict screens | Built; covered by browser tests                                                  |
 | Full-text search, outline, hover preview, editing toolbar                                                                                    | Built; covered by browser tests                                                  |
 | Live preview; image upload; table editing; properties panel                                                                                  | Built; image sizing and table row tools still to do                              |
-| Stage 3: inbox for agent branches; type and date fields; AI provider, cap and field proposals; quarantine; passkey login                     | Built; the AI needs each person's own key, and quarantine needs the sync changed |
+| Stage 3: inbox for agent branches; type and date fields; AI provider and field proposals; quarantine; passkey login                          | Built; the AI needs each person's own key, and quarantine needs the sync changed |
 | Stage 4: maps (flat maps and globes, markers, paths, zones, layers, measuring)                                                               | Built; to be tried on the real images                                            |
 | Own library: Frontier keeps the knowledge base itself, with versions, import and export                                                      | Built; the preview still shows the sample                                        |
 | Stage 11a: icons, tooltips, menus, one keys registry; a save queue on the device, saves that say what they started from                      | Built; covered by tests. 11b (the shell) and 11c (folder tree) to come           |
@@ -71,7 +71,11 @@ AI help needs no key on the server, and the server reads none from its environme
 adds their own key in the app, under Settings › AI keys; it stays in that browser and travels with
 each AI request in the `frontier-ai-keys` header, and the server never writes it to disk, a log,
 a backup or an error. Keys that an earlier version stored in the settings file are deleted at
-start, and the app says so once. AI work therefore happens only while someone has Frontier open.
+start, and the app tells the server's owner once. **Those keys are still in the backups for up to
+14 days, so revoke each of them with its provider and make new ones for your devices.** The same goes
+for any `OPENROUTER_API_KEY`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY` or
+`XAI_API_KEY` set in the server's environment: they are not read, so revoke them and remove them.
+AI work therefore happens only while someone has Frontier open.
 
 ### Checks against the real vault
 

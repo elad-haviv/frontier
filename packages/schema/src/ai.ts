@@ -99,6 +99,21 @@ export type DeviceKeys = Partial<Record<AiProviderKind, string>>;
 /** Printable ASCII only: a key is sent in a header, and no real key is anything else. */
 const KEY_TEXT = /^[\x21-\x7e]{1,2000}$/;
 
+/**
+ * Why a key cannot be kept, in words for the person, or null when it can. The same rule the server
+ * applies to what a header carries, so a key that passes here is one the server will read.
+ */
+export function keyProblem(key: string): string | null {
+  const k = key.trim();
+  if (k === "") return "Enter the key.";
+  if (/\s/.test(k)) {
+    return "This key has a space or a line break inside it. Paste only the key, with nothing around it.";
+  }
+  if (!KEY_TEXT.test(k))
+    return "This does not look like a key: it has characters a key does not use.";
+  return null;
+}
+
 /** The header's value for a set of keys: base64 of a small JSON map of kind to key. */
 export function encodeDeviceKeys(keys: DeviceKeys): string {
   return btoa(JSON.stringify(keys));

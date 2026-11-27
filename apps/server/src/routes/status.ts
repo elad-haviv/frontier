@@ -1,11 +1,18 @@
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyRequest } from "fastify";
+import type { StatusSnapshot } from "@frontier/schema";
 import type { Services } from "../app.js";
 
 /** How often the status stream says it is still there. */
 export const HEARTBEAT_MS = 20_000;
 
 export function statusRoutes(app: FastifyInstance, s: Services): void {
-  app.get("/api/status", async () => s.status.snapshot());
+  /** The notice about keys the server deleted is for the server's owner, who can revoke them. */
+  const forPersonOf = (request: FastifyRequest) => (snapshot: StatusSnapshot) =>
+    request.person?.admin
+      ? snapshot
+      : { ...snapshot, notices: { ...snapshot.notices, keysRemoved: null } };
+
+  app.get("/api/status", async (request) => forPersonOf(request)(s.status.snapshot()));
 
   app.get("/api/attention", async () => ({
     ...s.index.attention(),
@@ -23,8 +30,9 @@ export function statusRoutes(app: FastifyInstance, s: Services): void {
       "cache-control": "no-cache",
       connection: "keep-alive",
     });
-    const send = (snapshot: unknown) =>
-      reply.raw.write(`event: status\ndata: ${JSON.stringify(snapshot)}\n\n`);
+    const mine = forPersonOf(request);
+    const send = (snapshot: StatusSnapshot) =>
+      reply.raw.write(`event: status\ndata: ${JSON.stringify(mine(snapshot))}\n\n`);
     send(s.status.snapshot());
     const stop = s.status.subscribe(send);
     const beat = setInterval(() => reply.raw.write(": heartbeat\n\n"), HEARTBEAT_MS);

@@ -47,7 +47,9 @@ export class SettingsStore {
    */
   async removeStoredKeys(
     now: Date = new Date(),
-  ): Promise<{ at: string; providers: string[] } | null> {
+    /** Provider key variables set in the environment (not read any more), told once. */
+    environment: string[] = [],
+  ): Promise<{ at: string; providers: string[]; environment: string[] } | null> {
     if (!existsSync(this.path)) return null;
     let raw: Record<string, unknown>;
     try {
@@ -72,17 +74,36 @@ export class SettingsStore {
     const orphaned = Object.entries(models).filter(
       ([, id]) => typeof id === "string" && /^custom(-\d+)?:/.test(id),
     );
-    if (!legacy && orphaned.length === 0) return null;
+    const newEnv = environment.length > 0 && ai.envKeysNoticed !== true;
+    if (!legacy && orphaned.length === 0 && !newEnv) return null;
 
     const rest = { ...ai };
     for (const gone of ["key", "providers", "monthlyCapUsd"]) delete rest[gone];
-    const notice = had.length > 0 ? { at: now.toISOString(), providers: had } : null;
+    const earlier = ai.keysRemoved as { at: string; providers: string[] } | null | undefined;
+    const made =
+      had.length > 0 || newEnv
+        ? {
+            at: now.toISOString(),
+            providers: had,
+            environment: newEnv ? environment : [],
+          }
+        : null;
+    // A notice nobody has cleared yet keeps its time, and gains what is new.
+    const notice =
+      made && earlier && typeof earlier.at === "string"
+        ? {
+            ...made,
+            at: earlier.at,
+            providers: [...new Set([...earlier.providers, ...made.providers])],
+          }
+        : made;
     await this.write({
       ...(raw as SettingsInput),
       ai: {
         ...rest,
         models: { ...models, ...Object.fromEntries(orphaned.map(([task]) => [task, null])) },
         ...(notice ? { keysRemoved: notice } : {}),
+        ...(newEnv ? { envKeysNoticed: true } : {}),
       },
     } as SettingsInput);
     return notice;

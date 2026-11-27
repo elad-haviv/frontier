@@ -17,7 +17,7 @@ export class StatusService {
   private operations = 0;
   private quarantined = 0;
   private fileProblems: string[] = [];
-  private keysRemoved: { at: string; providers: string[] } | null = null;
+  private keysRemoved: { at: string; providers: string[]; environment: string[] } | null = null;
   private serverDraftChanges = 0;
   private listeners = new Set<Listener>();
 
@@ -144,7 +144,7 @@ export class StatusService {
   }
 
   /** The notice that keys stored on the server were deleted, or null once it has been seen. */
-  keysWereRemoved(notice: { at: string; providers: string[] } | null): void {
+  keysWereRemoved(notice: { at: string; providers: string[]; environment: string[] } | null): void {
     if (this.keysRemoved?.at === notice?.at) return;
     this.keysRemoved = notice;
     this.changed();

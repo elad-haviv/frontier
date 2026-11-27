@@ -164,11 +164,16 @@ export function AiKeys() {
             On another phone or computer add the key again, and clearing this browser&apos;s data
             removes it.
           </li>
+          <li>
+            Logging out keeps your keys on this device for your next login. On a shared computer,
+            remove them before you leave.
+          </li>
         </ul>
       </div>
       <p className="muted">
-        What changes without a server key: AI work happens only while you have Frontier open. The
-        question of the day and field proposals are made when you open the page, not overnight.
+        AI work happens only while you have Frontier open. Field proposals are made right after you
+        save a version, and for a folder only while its page is open; the question of the day is
+        made when you ask for it.
       </p>
       <ul className="provider-list">
         {shown.map((kind) => (

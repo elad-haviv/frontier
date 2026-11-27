@@ -10,6 +10,7 @@ import {
   removeDeviceKey,
   resetKeysForTests,
   setDeviceKey,
+  setKeysOwner,
 } from "./aiKeys.ts";
 
 beforeEach(() => {
@@ -70,10 +71,10 @@ describe("the AI keys this device holds", () => {
 
   it("ignore what storage holds that is not a key, and work in memory when storage is blocked", () => {
     localStorage.setItem(
-      "frontier.aiKeys",
+      "frontier.aiKeys:p1",
       JSON.stringify({ openrouter: "ok-key-1", nobody: "x", xai: 5 }),
     );
-    localStorage.setItem("frontier.aiKeys.checks", "not json");
+    localStorage.setItem("frontier.aiKeys.checks:p1", "not json");
     resetKeysForTests();
     expect(deviceKeys()).toEqual({ openrouter: "ok-key-1" });
     expect(checkOf("openrouter")).toBeNull();
@@ -91,7 +92,49 @@ describe("the AI keys this device holds", () => {
 
   it("are never put in the service worker's cache: they live only in localStorage", () => {
     setDeviceKey("openrouter", "sk-or-abc123");
-    expect(localStorage.getItem("frontier.aiKeys")).toContain("sk-or-abc123");
+    expect(localStorage.getItem("frontier.aiKeys:p1")).toContain("sk-or-abc123");
     expect(Object.keys(sessionStorage)).toEqual([]);
+  });
+
+  it("are filed under the person signed in: another login neither reads nor sends them, and logging out keeps them", () => {
+    setDeviceKey("openrouter", "sk-or-abc123", {
+      at: "2026-11-01T10:00:00Z",
+      ok: true,
+      message: null,
+    });
+    // Logged out: nobody's keys are read or sent.
+    setKeysOwner(null);
+    expect(deviceKeys()).toEqual({});
+    expect(keysHeaderValue()).toBeNull();
+    expect(hasDeviceKey("openrouter")).toBe(false);
+    // Someone else logs in on the same browser.
+    setKeysOwner("p2");
+    expect(deviceKeys()).toEqual({});
+    expect(keysHeaderValue()).toBeNull();
+    expect(checkOf("openrouter")).toBeNull();
+    setDeviceKey("anthropic", "sk-ant-two");
+    expect(deviceKeys()).toEqual({ anthropic: "sk-ant-two" });
+    // The first person comes back: their keys and their check are waiting, the other's are not.
+    setKeysOwner(null);
+    setKeysOwner("p1");
+    expect(deviceKeys()).toEqual({ openrouter: "sk-or-abc123" });
+    expect(checkOf("openrouter")?.ok).toBe(true);
+  });
+
+  it("kept before they were filed go to the first person who signs in, once", () => {
+    resetKeysForTests(null);
+    localStorage.setItem("frontier.aiKeys", JSON.stringify({ openrouter: "sk-or-old1234" }));
+    localStorage.setItem(
+      "frontier.aiKeys.checks",
+      JSON.stringify({ openrouter: { at: "2026-11-01T10:00:00Z", ok: true, message: null } }),
+    );
+    expect(deviceKeys()).toEqual({});
+    setKeysOwner("first");
+    expect(deviceKeys()).toEqual({ openrouter: "sk-or-old1234" });
+    expect(checkOf("openrouter")?.ok).toBe(true);
+    expect(localStorage.getItem("frontier.aiKeys")).toBeNull();
+    // The next person does not get them.
+    setKeysOwner("second");
+    expect(deviceKeys()).toEqual({});
   });
 });

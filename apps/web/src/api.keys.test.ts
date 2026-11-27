@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { AI_KEYS_HEADER, decodeDeviceKeys } from "@frontier/schema";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { removeDeviceKey, resetKeysForTests, setDeviceKey } from "./aiKeys.ts";
+import { checkOf, removeDeviceKey, resetKeysForTests, setDeviceKey } from "./aiKeys.ts";
 import { api, ApiFailure, featureOf, needsAiKeys, setKeyPrompt } from "./api.ts";
 
 const json = (status: number, body: unknown) =>
@@ -171,6 +171,82 @@ describe("a request that finds no key on this device", () => {
     expect(decodeDeviceKeys(asked[1]!.headers[AI_KEYS_HEADER])).toEqual({
       openrouter: "sk-or-new1234",
     });
+  });
+});
+
+const rejected = (provider = "openrouter") =>
+  json(409, {
+    error: {
+      code: "ai_key_rejected",
+      message: "OpenRouter did not accept the key on this device. Add a working key under AI keys.",
+      provider,
+      href: "/settings/device/ai-keys",
+    },
+  });
+
+describe("a key the provider turned away during use", () => {
+  it("is recorded as not working, then the key is asked for in place, and the request goes again once", async () => {
+    setDeviceKey("openrouter", "sk-or-old1234", {
+      at: "2026-11-01T10:00:00Z",
+      ok: true,
+      message: null,
+    });
+    const asked = answers(rejected, () => json(200, { made: 3 }));
+    const ask = vi.fn(async (a: { rejected?: boolean; provider: string | null }) => {
+      // The section and the rail already stop saying "Working" while the dialog is open.
+      expect(checkOf("openrouter")?.ok).toBe(false);
+      expect(a).toMatchObject({ provider: "openrouter", rejected: true });
+      setDeviceKey("openrouter", "sk-or-new1234", {
+        at: "2026-11-02T10:00:00Z",
+        ok: true,
+        message: null,
+      });
+      return true;
+    });
+    setKeyPrompt(ask);
+    expect(await api.proposeFields("a.md")).toEqual({ made: 3 });
+    expect(ask).toHaveBeenCalledTimes(1);
+    expect(asked).toHaveLength(2);
+    expect(decodeDeviceKeys(asked[1]!.headers[AI_KEYS_HEADER])).toEqual({
+      openrouter: "sk-or-new1234",
+    });
+    expect(checkOf("openrouter")?.ok).toBe(true);
+  });
+
+  it("is only recorded, with no dialog, for proposals that run by themselves", async () => {
+    setDeviceKey("openrouter", "sk-or-old1234", {
+      at: "2026-11-01T10:00:00Z",
+      ok: true,
+      message: null,
+    });
+    answers(rejected);
+    const ask = vi.fn(async () => true);
+    setKeyPrompt(ask);
+    await expect(api.proposeFields("a.md", true)).rejects.toMatchObject({
+      code: "ai_key_rejected",
+    });
+    expect(ask).not.toHaveBeenCalled();
+    expect(checkOf("openrouter")?.ok).toBe(false);
+  });
+
+  it("is asked for once: a second refusal is the person's to read", async () => {
+    setDeviceKey("openrouter", "sk-or-old1234");
+    const asked = answers(rejected, rejected);
+    setKeyPrompt(async () => true);
+    await expect(api.proposeFields("a.md")).rejects.toMatchObject({ code: "ai_key_rejected" });
+    expect(asked).toHaveLength(2);
+  });
+});
+
+describe("a check of a key", () => {
+  it("never opens the key dialog by itself", async () => {
+    answers(missing);
+    const ask = vi.fn(async () => true);
+    setKeyPrompt(ask);
+    await expect(api.checkKey("openrouter", "sk-or-typed1234")).rejects.toMatchObject({
+      code: "ai_key_missing",
+    });
+    expect(ask).not.toHaveBeenCalled();
   });
 });
 

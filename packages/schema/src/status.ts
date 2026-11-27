@@ -29,7 +29,13 @@ export const StatusSnapshot = z.object({
   /** One-time notices the web app shows and then clears. */
   notices: z.object({
     /** AI keys that were stored on the server were deleted at start (stage 27f). */
-    keysRemoved: z.object({ at: z.string(), providers: z.array(z.string()) }).nullable(),
+    keysRemoved: z
+      .object({
+        at: z.string(),
+        providers: z.array(z.string()),
+        environment: z.array(z.string()).default([]),
+      })
+      .nullable(),
   }),
   /** Rises each time the server itself changes a draft, so an open editor can reload it. */
   serverDraftChanges: z.number().int().min(0),

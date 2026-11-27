@@ -22,6 +22,8 @@ export const AiCall = z.object({
    * (then `costUsd` is 0). Absent in older lines, whose cost OpenRouter reported.
    */
   costKind: CostKind.optional(),
+  /** Who made the call (their id). Absent in lines written before stage 27f: the admin's. */
+  person: z.string().optional(),
   /** The entry the call was about, when there is one. */
   entry: z.string().nullable(),
   ok: z.boolean(),
@@ -32,9 +34,20 @@ export type AiCall = z.infer<typeof AiCall>;
 /** The calendar month of a moment, in UTC, as "2026-11". */
 export const monthOf = (at: Date): string => at.toISOString().slice(0, 7);
 
+/** Who is asking about the log: a person sees their own calls, and the admin the old ones too. */
+export interface LogViewer {
+  id: string;
+  admin: boolean;
+}
+
+/** Whether a call is the viewer's own. Lines from before calls named a person are the admin's. */
+export const isMine = (c: AiCall, v: LogViewer): boolean =>
+  c.person !== undefined ? c.person === v.id : v.admin;
+
 export class AiLog {
   private readonly dir: string;
   private totals = new Map<string, number>();
+  private mine = new Map<string, number>();
 
   constructor(
     stateDir: string,
@@ -70,12 +83,27 @@ export class AiLog {
     return out;
   }
 
-  /** What was spent in a month, in US dollars. */
+  /** One person's calls of a month, oldest first. */
+  async callsOf(month: string, viewer: LogViewer): Promise<AiCall[]> {
+    return (await this.calls(month)).filter((c) => isMine(c, viewer));
+  }
+
+  /** What was spent in a month by everyone, in US dollars. */
   async spent(month: string): Promise<number> {
     const known = this.totals.get(month);
     if (known !== undefined) return known;
     const total = (await this.calls(month)).reduce((sum, c) => sum + c.costUsd, 0);
     this.totals.set(month, total);
+    return total;
+  }
+
+  /** What one person spent in a month, in US dollars. */
+  async spentBy(month: string, viewer: LogViewer): Promise<number> {
+    const key = `${month}|${viewer.id}|${viewer.admin}`;
+    const known = this.mine.get(key);
+    if (known !== undefined) return known;
+    const total = (await this.callsOf(month, viewer)).reduce((sum, c) => sum + c.costUsd, 0);
+    this.mine.set(key, total);
     return total;
   }
 
@@ -85,6 +113,7 @@ export class AiLog {
     await mkdir(this.dir, { recursive: true });
     await appendFile(this.file(month), JSON.stringify(call) + "\n");
     this.totals.set(month, before + call.costUsd);
+    this.mine.clear();
     this.onWrite();
   }
 }

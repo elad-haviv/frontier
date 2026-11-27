@@ -2,6 +2,7 @@ import { lazy, Suspense, useCallback, useEffect, useState } from "react";
 import { Navigate, Route, Routes, useLocation, useParams } from "react-router-dom";
 import { api } from "./api.ts";
 import { clearMe, loadMe } from "./me.ts";
+import { resumeProposals } from "./proposeAfterPublish.ts";
 import { useAsync } from "./useAsync.ts";
 import { noteOpened } from "./map/mapsList.ts";
 import { AiKeyPromptHost } from "./components/AiKeyPrompt.tsx";
@@ -123,12 +124,15 @@ export function App() {
     // Who is logged in, for the left bar; forgotten when the login page is what shows.
     if (loggedIn === false) clearMe();
     if (!loggedIn) return;
-    void loadMe();
+    // Proposals an earlier page left waiting (after a save) go on once the person is known,
+    // since the keys on this device are theirs.
+    const resume = () => void loadMe().then(() => resumeProposals());
+    resume();
     // The person is read again whenever the connection comes back, since the first read may have
     // failed while it was down.
     let last = connection.state;
     const unsubscribe = connection.subscribe(() => {
-      if (connection.state === "online" && last !== "online") void loadMe();
+      if (connection.state === "online" && last !== "online") resume();
       last = connection.state;
     });
     connection.start();

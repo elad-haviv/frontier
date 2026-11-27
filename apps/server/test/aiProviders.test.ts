@@ -176,6 +176,7 @@ describe("keys an earlier version stored on the server", () => {
     expect(again.services.status.snapshot().notices.keysRemoved).toEqual({
       at: expect.any(String),
       providers: ["OpenRouter", "Anthropic", "Home server"],
+      environment: [],
     });
     const file = readFileSync(settingsFile(), "utf8");
     expect(file).not.toContain(stored.data);

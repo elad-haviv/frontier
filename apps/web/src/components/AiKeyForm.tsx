@@ -6,7 +6,7 @@
  * The key is tested for real, through the server, with the key in that one request. It is kept
  * only if the provider accepts it, and only in this browser. The server never saves it.
  */
-import { AI_PROVIDER_KINDS, AiProviderKind } from "@frontier/schema";
+import { AI_PROVIDER_KINDS, AiProviderKind, keyProblem } from "@frontier/schema";
 import { Eye, EyeOff } from "lucide-react";
 import { useId, useState } from "react";
 import { api, ApiFailure } from "../api.ts";
@@ -75,7 +75,8 @@ export function useKeyEntry(
     blocked: offline ? "Testing a key needs a connection." : undefined,
     async submit() {
       clear();
-      if (key.trim() === "") return setError("Enter the key.");
+      const problem = keyProblem(key);
+      if (problem) return setError(problem);
       if (offline) return setError("Testing a key needs a connection.");
       setBusy(true);
       try {

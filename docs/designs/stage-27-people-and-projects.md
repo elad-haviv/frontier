@@ -119,6 +119,8 @@ controls.
   The server never saves one: the browser sends the key with each AI request, the server uses it
   for that one call and forgets it. It is never written to disk, a log, a backup or an error
   report. Keys in the server's environment (`OPENROUTER_API_KEY` and the rest) stop being read.
+- Custom OpenAI-compatible endpoints are no longer offered (a client-chosen address would receive
+  people's keys), the first-use explanation is a dialog, and spending is per person.
 - Settings → This device → **AI keys**: each provider with its state on this device, Test, Add a
   key, Remove from this device. The notice at the top says: your keys stay in this browser; the
   server never saves them and other members never see them; you pay your provider directly; on
