@@ -1,11 +1,12 @@
 import "fake-indexeddb/auto";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { openStore } from "./db.ts";
+import { ApiFailure } from "../api.ts";
 import { type KnownProject, Queue, QueueHub, type SenderApi } from "./queue.ts";
 import type { ConnectionState } from "./connection.ts";
 
-const A: KnownProject = { id: "projecta01", slug: "alpha", legacy: true };
-const B: KnownProject = { id: "projectb01", slug: "beta", legacy: false };
+const A: KnownProject = { id: "projecta01", slug: "alpha", legacy: true, name: "Alpha" };
+const B: KnownProject = { id: "projectb01", slug: "beta", legacy: false, name: "Beta" };
 
 let n = 0;
 const hubs: QueueHub[] = [];
@@ -15,6 +16,9 @@ function makeHub(projects: () => KnownProject[]) {
   const prefix = `scope-${++n}-`;
   const sent: string[] = [];
   const state = { current: "offline" as ConnectionState };
+  /** Projects the server now says are gone. */
+  const gone = new Set<string>();
+  const told: string[] = [];
   const listeners = new Set<() => void>();
   const connection = {
     get state() {
@@ -35,6 +39,9 @@ function makeHub(projects: () => KnownProject[]) {
     make: (ref, open, person, purge) => {
       const api = {
         saveDraft: vi.fn(async (d: { id: string; revision: number }) => {
+          if (gone.has(ref.id)) {
+            throw new ApiFailure(403, "no_project", "There is no project here that you can open.");
+          }
           sent.push(`${person}:${ref.id}`);
           return { id: d.id, revision: d.revision + 1 };
         }),
@@ -45,6 +52,7 @@ function makeHub(projects: () => KnownProject[]) {
         connection,
         identity: () => hub.mainStore(),
         clearMeta: purge,
+        onGone: () => told.push(ref.id),
       });
     },
     known: projects,
@@ -53,7 +61,7 @@ function makeHub(projects: () => KnownProject[]) {
   hubs.push(hub);
   /** The device's own database, read directly: what an earlier build left there. */
   const raw = (name = "frontier") => openStore(`${prefix}${name}`);
-  return { hub, sent, go, raw };
+  return { hub, sent, go, raw, gone, told };
 }
 
 afterEach(() => {
@@ -181,5 +189,84 @@ describe("one browser, two people", () => {
     expect((await (await raw()).all()).map((r) => r.key)).toEqual(["entry:Harbor.md"]);
     expect(await hub.meta("legacyOwner")).toBe("first");
     expect(await (await raw(`frontier-u-second-p-${A.id}`)).all()).toEqual([]);
+  });
+});
+
+describe("the count of unsent changes in other projects", () => {
+  it("tells the list's listeners when another project's queue changes", async () => {
+    const { hub } = makeHub(() => [A, B]);
+    hub.setPerson("first");
+    hub.use(A);
+    await hub.start();
+    await put(hub, "entry:Harbor.md", "unsent in alpha");
+    hub.use(B);
+    expect(hub.waitingElsewhere()).toEqual([{ id: A.id, count: 1 }]);
+    // Alpha's change goes while beta is open: the switcher is told, and the count goes.
+    let heard = 0;
+    const stop = hub.subscribeList(() => heard++);
+    await hub.queueOf(A).drop("entry:Harbor.md");
+    expect(heard).toBeGreaterThan(0);
+    expect(hub.waitingElsewhere()).toEqual([]);
+    stop();
+  });
+});
+
+describe("changes in a project that turns out to be gone", () => {
+  it("are listed with the project's name, counted, and thrown away one by one", async () => {
+    let projects = [A, B];
+    const { hub, go, gone, told, raw } = makeHub(() => projects);
+    hub.setPerson("first");
+    hub.use(B);
+    await hub.start();
+    await put(hub, "entry:Salt.md", "kept only here");
+    await put(hub, "entry:Pepper.md", "also only here");
+    hub.use(A);
+    expect(await hub.stranded()).toEqual([]);
+
+    // The server now says beta is not there for this person: the queued save is refused.
+    gone.add(B.id);
+    go("online");
+    await vi.waitFor(() => expect(told).toEqual([B.id]));
+    // The person's list no longer has it.
+    projects = [A];
+    const stranded = await hub.stranded();
+    expect(stranded.map((p) => [p.id, p.name, p.records.map((r) => r.key).sort()])).toEqual([
+      [B.id, "Beta", ["entry:Pepper.md", "entry:Salt.md"]],
+    ]);
+    // They are counted for the logout warning, not left unseen.
+    expect(await hub.unsentOnDevice()).toBe(2);
+
+    await hub.discardStranded(B.id, "entry:Salt.md");
+    expect((await hub.stranded())[0]!.records.map((r) => r.key)).toEqual(["entry:Pepper.md"]);
+    await hub.discardStranded(B.id);
+    expect(await hub.stranded()).toEqual([]);
+    expect(await hub.unsentOnDevice()).toBe(0);
+    void raw;
+  });
+
+  it("does not call a project gone because the list was not read", async () => {
+    const { hub } = makeHub(() => []);
+    hub.setPerson("first");
+    // No project is known and nothing says which is legacy: nothing is stranded.
+    expect(await hub.stranded()).toEqual([]);
+  });
+});
+
+describe("deleting a project", () => {
+  it("counts its unsent changes, then removes its queue and its database", async () => {
+    const { hub, raw } = makeHub(() => [A, B]);
+    hub.setPerson("first");
+    hub.use(B);
+    await hub.start();
+    await put(hub, "entry:Salt.md", "unsent in beta");
+    expect(await hub.unsentIn(B.id)).toBe(1);
+    expect(await hub.unsentIn(A.id)).toBe(0);
+
+    await hub.dropProject(B);
+    expect(await hub.unsentIn(B.id)).toBe(0);
+    expect(hub.total()).toBe(0);
+    // Its database is gone: opened again, it is empty and has nothing of the old record.
+    expect(await (await raw(`frontier-u-first-p-${B.id}`)).all()).toEqual([]);
+    expect(await hub.unsentOnDevice()).toBe(0);
   });
 });

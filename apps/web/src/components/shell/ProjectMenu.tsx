@@ -1,10 +1,9 @@
-import { type Ref, useEffect } from "react";
+import { type Ref } from "react";
 import { Check, ChevronsUpDown, HardDrive, Layers, Plus } from "lucide-react";
 import { useNavigate } from "../../nav.tsx";
 import { projectRoot } from "../../project.ts";
 import { loadProjects, useOnDevice, useProjects } from "../../projects.ts";
-import { useConnection } from "../../sync/connection.ts";
-import { queue } from "../../sync/queue.ts";
+import { useWaitingElsewhere } from "../../sync/queue.ts";
 import { ROLE_NAMES, useProject } from "../projectContext.ts";
 import { Icon } from "../ui/Icon.tsx";
 import { Menu, MenuHeading, MenuItem, MenuSeparator } from "../ui/Menu.tsx";
@@ -61,16 +60,14 @@ export function ProjectMenu({ rail = false }: { rail?: boolean }) {
   const { list } = useProjects();
   const onDevice = useOnDevice();
   const navigate = useNavigate();
-  const waiting = new Map(queue.waitingElsewhere().map((w) => [w.id, w.count]));
-  // The counts in the list follow the library: read again when a version is saved.
-  const { snapshot } = useConnection();
-  const mark = snapshot?.indexCommit ?? "";
-  useEffect(() => {
-    void loadProjects();
-  }, [mark]);
+  // Changes this device holds for the other projects, kept up to date as they are sent.
+  const waiting = new Map(useWaitingElsewhere().map((w) => [w.id, w.count]));
   return (
     <Menu
       label="Projects"
+      // The list (and the counts in it) is read when it is looked at, not on every change to a
+      // library in every open tab; the counts show as they arrive.
+      onOpenChange={(open) => open && void loadProjects()}
       align="start"
       contentClassName="project-menu"
       trigger={<ProjectButton rail={rail} name={project.name} colour={project.colour} />}

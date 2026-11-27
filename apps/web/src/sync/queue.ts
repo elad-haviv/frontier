@@ -10,7 +10,7 @@
  * or needs attention does not hold up the others. Sending pauses only while the connection service
  * says offline or signed out.
  */
-import { useEffect, useState, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import {
   type AnyLibraryFile,
   type ChronicleFile,
@@ -26,7 +26,7 @@ import {
 import { api, apiFor, ApiFailure, fromServer, setDevice } from "../api.ts";
 import { keysOwner, onKeysOwner } from "../aiKeys.ts";
 import { currentProject, inProject, onProjectChange, type ProjectRef } from "../project.ts";
-import { hasLegacyFlags, knownProjects } from "../projects.ts";
+import { hasLegacyFlags, knownProjects, loadProjects, useProjects } from "../projects.ts";
 import { type Connection, connection as appConnection } from "./connection.ts";
 import { migrateBuffers } from "./migrate.ts";
 import {
@@ -132,6 +132,12 @@ export interface QueueDeps {
    * wipe what the device keeps for others there (the hub removes its own keys by name).
    */
   clearMeta?: (store: Store) => Promise<void>;
+  /**
+   * The server said the project is gone for this person (deleted elsewhere, or they were taken
+   * out of it): its changes can never be sent. Told once; the changes stay in the store for the
+   * hub to offer as a list.
+   */
+  onGone?: () => void;
 }
 
 /** How long a page's changes wait for more before they are sent. */
@@ -260,6 +266,8 @@ export class Queue {
   /** Calls waiting for a key to be sent, by key. */
   private waiting = new Map<QueueKey, (() => void)[]>();
   private sender = false;
+  /** The hub was told that the project is gone; once is enough. */
+  private toldGone = false;
   private timer: ReturnType<typeof setTimeout> | undefined;
   private channel: BroadcastChannel | null = null;
   private releaseLock: (() => void) | null = null;
@@ -811,6 +819,10 @@ export class Queue {
     } else {
       // The server said no to this value: it waits for Retry or Discard in the unsent list.
       record = await keep(() => ({ state: "attention", error: failure.message }));
+      if (failure.code === "no_project" && !this.toldGone) {
+        this.toldGone = true;
+        this.d.onGone?.();
+      }
     }
     this.changed(key, record ?? undefined);
   }
@@ -988,7 +1000,7 @@ export const personDatabase = (person: string, id: string): string =>
   `frontier-u-${person}-p-${id}`;
 
 /** A project the hub can make a queue for. `legacy` comes from the server's list. */
-export type KnownProject = ProjectRef & { legacy?: boolean | undefined };
+export type KnownProject = ProjectRef & { legacy?: boolean | undefined; name?: string };
 
 /** What the hub needs to make a queue for a project. */
 export interface HubDeps {
@@ -1007,6 +1019,13 @@ export interface HubDeps {
   known: () => KnownProject[];
   /** Whether the list was read in a form that says which project is the legacy one. */
   listed: () => boolean;
+}
+
+/** The changes held for one project that is gone. */
+export interface StrandedProject {
+  id: string;
+  name: string;
+  records: QueueRecord[];
 }
 
 /** Whose data this device's storage is for, decided once for the signed-in person. */
@@ -1150,7 +1169,18 @@ export class QueueHub {
     const main = await this.main();
     const listed = (await main.meta<string[]>(this.listKey(s.person))) ?? [];
     if (!listed.includes(id)) await main.setMeta(this.listKey(s.person), [...listed, id]);
+    await this.rememberName(s, id);
     return this.d.openProject(personDatabase(s.person, id));
+  }
+
+  /** The project's name, kept beside its database, so its changes can still be named once it is gone. */
+  private async rememberName(s: Scope, id: string): Promise<void> {
+    const name = this.d.known().find((p) => p.id === id)?.name;
+    if (!name) return;
+    const main = await this.main();
+    const key = `projectNames:${s.person}`;
+    const names = (await main.meta<Record<string, string>>(key)) ?? {};
+    if (names[id] !== name) await main.setMeta(key, { ...names, [id]: name });
   }
 
   private listKey = (person: string) => `projectDatabases:${person}`;
@@ -1183,7 +1213,11 @@ export class QueueHub {
         this.noticeListeners.forEach((l) => l(said));
       });
       q.onCleared(() => this.clearedListeners.forEach((l) => l()));
-      q.subscribeList(() => this.settled(ref.id));
+      q.subscribeList(() => {
+        this.settled(ref.id);
+        // What a project that is not open still holds is counted in the switcher.
+        if (this.queues.get(ref.id) === q && q !== this.active) this.listChanged();
+      });
       // One that was only asked for (to read, or to hold a change that went at once) is let go too.
       setTimeout(() => this.settled(ref.id, true), 60_000);
       const made = q;
@@ -1270,6 +1304,108 @@ export class QueueHub {
 
   stop(): void {
     for (const q of this.queues.values()) q.stop();
+  }
+
+  // ---- Changes in projects that are gone --------------------------------------------------------
+
+  /**
+   * The changes this device holds for projects the person can no longer open (deleted, or they
+   * were taken out): they can never be sent, and no page of theirs can be opened, so they are
+   * listed on All projects for the person to copy out or throw away.
+   */
+  async stranded(): Promise<StrandedProject[]> {
+    const s = await this.scope().catch(() => null);
+    // Only against a list that was read: a project missing from an unread list is not gone.
+    if (!s || !this.d.listed()) return [];
+    const inList = new Set(this.d.known().map((p) => p.id));
+    const main = await this.main();
+    const names = (await main.meta<Record<string, string>>(`projectNames:${s.person}`)) ?? {};
+    const out: StrandedProject[] = [];
+    for (const [id, name] of await this.ownDatabases(s)) {
+      if (inList.has(id)) continue;
+      const store = await this.d.openProject(name).catch(() => null);
+      const records = (await store?.all().catch(() => [])) ?? [];
+      if (records.length > 0)
+        out.push({ id, name: names[id] ?? "A project that is gone", records });
+    }
+    return out;
+  }
+
+  /** Throws away one change held for a project that is gone, or all of them when no key is given. */
+  async discardStranded(id: string, key?: QueueKey): Promise<void> {
+    const s = await this.scope();
+    const name = (await this.ownDatabases(s)).get(id);
+    if (!name) return;
+    const store = await this.d.openProject(name);
+    if (key) await store.update(key, () => null);
+    else await store.clear();
+    // Dropping a queue still held for it, so what it kept in memory is not shown again.
+    const q = this.queues.get(id);
+    if (q && q !== this.active) {
+      q.stop();
+      this.queues.delete(id);
+    }
+    this.listChanged();
+  }
+
+  /**
+   * Removes everything this device keeps for a project that was deleted here: its queue, its
+   * changes, its copy for reading offline and its database.
+   */
+  async dropProject(ref: ProjectRef): Promise<void> {
+    const s = await this.scope().catch(() => null);
+    const q = this.queues.get(ref.id);
+    if (q) {
+      q.stop();
+      this.queues.delete(ref.id);
+      this.worked.delete(ref.id);
+      if (this.active === q) this.active = null;
+    }
+    if (s) {
+      const name = (await this.ownDatabases(s)).get(ref.id);
+      if (name) {
+        const store = await this.d.openProject(name).catch(() => null);
+        await store?.destroy().catch(() => undefined);
+        const main = await this.main();
+        if (s.old.has(ref.id)) {
+          const rest = [...s.old].filter((x) => x !== ref.id);
+          await main.setMeta("projectDatabases", rest);
+          s.old.delete(ref.id);
+        }
+        const key = this.listKey(s.person);
+        const listed = (await main.meta<string[]>(key)) ?? [];
+        await main.setMeta(
+          key,
+          listed.filter((x) => x !== ref.id),
+        );
+      }
+    }
+    this.listChanged();
+  }
+
+  /** How many changes this device holds for one project, whether or not it is the open one. */
+  async unsentIn(id: string): Promise<number> {
+    const q = this.queues.get(id);
+    if (q) return q.current().length;
+    const s = await this.scope().catch(() => null);
+    if (!s) return 0;
+    if (s.legacy === id) return (await (await this.main()).all().catch(() => [])).length;
+    const name = (await this.ownDatabases(s)).get(id);
+    const store = name ? await this.d.openProject(name).catch(() => null) : null;
+    return (await store?.all().catch(() => []))?.length ?? 0;
+  }
+
+  /** How many changes this device holds for the person in every project, gone ones too. */
+  async unsentOnDevice(): Promise<number> {
+    const s = await this.scope().catch(() => null);
+    if (!s) return 0;
+    let n = 0;
+    if (s.legacy) n += (await (await this.main()).all().catch(() => [])).length;
+    for (const name of (await this.ownDatabases(s)).values()) {
+      const store = await this.d.openProject(name).catch(() => null);
+      n += (await store?.all().catch(() => []))?.length ?? 0;
+    }
+    return n;
   }
 
   // ---- What the pages call: the open project's ------------------------------------------------
@@ -1418,6 +1554,8 @@ export const queue: QueueHub = new QueueHub({
       identity: (): Promise<Store> => queue.mainStore(),
       project: ref,
       clearMeta: purge,
+      // Its changes are listed on All projects once the list shows the project is not there.
+      onGone: () => void loadProjects(),
       names: { lock: `${LOCK}:${person}:${ref.id}`, channel: `${CHANNEL}:${person}:${ref.id}` },
       // A merge reads the server's copy, never one the device kept for reading offline; and a
       // send goes to the project the change was made in, whichever is open now.
@@ -1465,6 +1603,34 @@ function queueSlug(ref: ProjectRef): string {
 onProjectChange((next) => queue.use(next));
 onKeysOwner((person) => queue.setPerson(person));
 queue.setPerson(keysOwner());
+
+/**
+ * The changes held for projects that are gone, read when asked for and again when the list of
+ * projects or any queue changes. Empty until the first read.
+ */
+export function useStranded(): { stranded: StrandedProject[]; refresh: () => void } {
+  const [stranded, setStranded] = useState<StrandedProject[]>([]);
+  const [tick, setTick] = useState(0);
+  const { list } = useProjects();
+  useEffect(() => {
+    let live = true;
+    void queue.stranded().then((s) => live && setStranded(s));
+    return () => {
+      live = false;
+    };
+  }, [list, tick]);
+  useEffect(() => queue.subscribeList(() => setTick((n) => n + 1)), []);
+  return { stranded, refresh: () => setTick((n) => n + 1) };
+}
+
+/** How many changes wait for each project other than the open one, kept up to date. */
+export function useWaitingElsewhere(): { id: string; count: number }[] {
+  const text = useSyncExternalStore(
+    (l) => queue.subscribeList(l),
+    () => JSON.stringify(queue.waitingElsewhere()),
+  );
+  return useMemo(() => JSON.parse(text) as { id: string; count: number }[], [text]);
+}
 
 /** Every record still on this device, kept up to date. */
 export function useUnsent(): QueueRecord[] {

@@ -1,14 +1,17 @@
 import type { ProjectSummary } from "@frontier/schema";
 import { Plus } from "lucide-react";
-import { useEffect } from "react";
+import { useEffect, useId } from "react";
 import { useSearchParams } from "react-router-dom";
+import { useDialogs } from "../../components/Dialogs.tsx";
 import { Avatar } from "../../components/ui/Avatar.tsx";
+import { useToast } from "../../components/ui/Toast.tsx";
 import { ProjectMark } from "../../components/ui/ProjectMark.tsx";
 import { Problem } from "../../components/ui/Problem.tsx";
 import { ROLE_NAMES } from "../../components/projectContext.ts";
 import { Link } from "../../nav.tsx";
 import { projectRoot } from "../../project.ts";
 import { loadProjects, useOnDevice, useProjects } from "../../projects.ts";
+import { nameOf, type QueueRecord, queue, useStranded } from "../../sync/queue.ts";
 import { ago } from "../settings/shared.tsx";
 import { NewProjectDialog } from "./NewProjectDialog.tsx";
 import "./AllProjects.css";
@@ -54,6 +57,83 @@ function Card({ project, here }: { project: ProjectSummary; here: boolean }) {
         </span>
       </Link>
     </li>
+  );
+}
+
+/** What a change holds, as text to copy out: an entry's own text, or a map or chronicle's file. */
+export function textOfChange(record: Pick<QueueRecord, "value">): string {
+  return typeof record.value === "string" ? record.value : JSON.stringify(record.value, null, 2);
+}
+
+/**
+ * Changes this device holds for projects the person can no longer open (the project was deleted,
+ * or they were taken out of it). They can never be sent, so they are listed here to copy out or
+ * throw away, and are not counted as waiting forever.
+ */
+function StrandedChanges() {
+  const { stranded, refresh } = useStranded();
+  const dialogs = useDialogs();
+  const toast = useToast();
+  const heading = useId();
+  if (stranded.length === 0) return null;
+
+  async function copy(record: QueueRecord) {
+    try {
+      await navigator.clipboard.writeText(textOfChange(record));
+      toast({ message: `Copied the text of ${nameOf(record)}.` });
+    } catch {
+      toast({ message: "The text could not be copied. Select it in the browser and try again." });
+    }
+  }
+
+  async function discard(projectId: string, record: QueueRecord) {
+    const ok = await dialogs.confirm({
+      title: `Throw away the change to ${nameOf(record)}?`,
+      body: "It exists only on this device, and the project it belongs to cannot be opened.",
+      action: "Discard",
+      danger: true,
+    });
+    if (!ok) return;
+    await queue.discardStranded(projectId, record.key).catch(() => undefined);
+    refresh();
+  }
+
+  return (
+    <section className="stranded" aria-labelledby={heading}>
+      <h2 id={heading}>Changes that cannot be saved</h2>
+      <p className="muted">
+        These were made on this device in projects you can no longer open: the project was deleted,
+        or you were taken out of it. They exist only here. Copy the text if you want to keep it,
+        then discard it.
+      </p>
+      {stranded.map((p) => (
+        <div key={p.id} className="stranded-project">
+          <h3>{p.name}</h3>
+          <ul className="unsent-list">
+            {p.records.map((r) => (
+              <li key={r.key} className="unsent-row">
+                <p className="unsent-name">
+                  {nameOf(r)}
+                  {r.kind === "delete" && <span className="muted"> (delete)</span>}
+                </p>
+                <p className="unsent-actions">
+                  <button type="button" className="quiet" onClick={() => void copy(r)}>
+                    Copy the text
+                  </button>
+                  <button
+                    type="button"
+                    className="quiet danger"
+                    onClick={() => void discard(p.id, r)}
+                  >
+                    Discard
+                  </button>
+                </p>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ))}
+    </section>
   );
 }
 
@@ -109,6 +189,7 @@ export function AllProjects() {
       {list && list.projects.length === 0 && list.canCreate && (
         <p className="muted">You're not in a project yet. Make one to begin.</p>
       )}
+      <StrandedChanges />
       {making && list?.canCreate && <NewProjectDialog onClose={() => setMaking(false)} />}
     </section>
   );

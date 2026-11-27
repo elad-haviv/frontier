@@ -78,6 +78,12 @@ export async function clearDeviceCopy(): Promise<void> {
   await (await device())?.clear();
 }
 
+/** The project was deleted: its copy is emptied and its keeper let go. */
+export async function dropDeviceCopyOf(ref: { id: string; slug: string }): Promise<void> {
+  loading ??= import("./device.ts");
+  await (await device())?.dropProject(ref);
+}
+
 /** The space each of these projects' copies takes on this device; null where nothing is kept. */
 export async function deviceSpaces(
   refs: { id: string; slug: string }[],

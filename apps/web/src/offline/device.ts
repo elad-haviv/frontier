@@ -742,6 +742,15 @@ export class DeviceHub implements ReadThrough {
   async clearProject(ref: ProjectRef): Promise<void> {
     await this.forRef(ref).copy.clear();
   }
+
+  /** The project was deleted: its copy is emptied and let go, with its keeper. */
+  async dropProject(ref: ProjectRef): Promise<void> {
+    const h = this.held.get(ref.id);
+    await this.forRef(ref).copy.clear();
+    h?.keeper?.stop();
+    this.held.delete(ref.id);
+    if (this.activeId === ref.id) this.activeId = null;
+  }
 }
 
 /** The app's device copies. */

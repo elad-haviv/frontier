@@ -16,7 +16,8 @@ export function useLogoutAction(): () => void {
   const toast = useToast();
   return useCallback(() => {
     void (async () => {
-      const unsent = queue.total();
+      // In every project, those of projects that are gone included: all are kept only here.
+      const unsent = Math.max(queue.total(), await queue.unsentOnDevice());
       if (unsent > 0) {
         const ok = await dialogs.confirm({
           title: unsent === 1 ? "1 change is not sent yet" : `${unsent} changes are not sent yet`,

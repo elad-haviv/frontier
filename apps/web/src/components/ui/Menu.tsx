@@ -25,7 +25,8 @@ function keepFocusElsewhere(content: { current: HTMLElement | null }) {
  * With `text`, the button shows words beside the icon and a down arrow, such as a style picker
  * showing "Heading 2". `portal: false` draws the menu inside the page beside its button, so CSS
  * around the button (a container query) reaches its items. `onClosed` runs when the menu closes
- * and nothing else has taken the focus, in place of giving it back to the button.
+ * and nothing else has taken the focus, in place of giving it back to the button. `onOpenChange`
+ * hears the menu open and close, for a list that is read when it is looked at.
  */
 export function Menu({
   label,
@@ -38,6 +39,7 @@ export function Menu({
   portal = true,
   onPointerDown,
   onClosed,
+  onOpenChange,
   trigger,
   children,
 }: {
@@ -51,6 +53,7 @@ export function Menu({
   portal?: boolean;
   onPointerDown?: (e: React.PointerEvent) => void;
   onClosed?: () => void;
+  onOpenChange?: (open: boolean) => void;
   /**
    * A button of the caller's own, in place of the "⋯" or the text trigger, such as the project
    * switcher's. It must be a single element that takes a ref and props, like a `<button>`.
@@ -80,7 +83,7 @@ export function Menu({
     </Dropdown.Content>
   );
   return (
-    <Dropdown.Root>
+    <Dropdown.Root {...(onOpenChange ? { onOpenChange } : {})}>
       <Dropdown.Trigger asChild>
         {trigger ? (
           trigger

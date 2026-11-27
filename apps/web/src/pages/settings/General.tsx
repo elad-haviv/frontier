@@ -4,9 +4,11 @@ import { ROLE_NAMES, useProject } from "../../components/projectContext.ts";
 import { useNavigate } from "../../nav.tsx";
 import { OLD_SLUG_DAYS } from "@frontier/schema";
 import { projectRoot } from "../../project.ts";
-import { clearDeviceCopyOf } from "../../offline/copy.ts";
+import { dropDeviceCopyOf } from "../../offline/copy.ts";
 import { loadProjects, noteProject, useProjects } from "../../projects.ts";
+import { useDialogs } from "../../components/Dialogs.tsx";
 import { useNeedsConnection } from "../../sync/connection.ts";
+import { queue } from "../../sync/queue.ts";
 import { useSlugCheck } from "../projects/useSlugCheck.ts";
 import { message } from "./shared.tsx";
 
@@ -221,6 +223,7 @@ function DeleteArea({
   slug: string;
 }) {
   const navigate = useNavigate();
+  const dialogs = useDialogs();
   const offline = useNeedsConnection();
   const [typed, setTyped] = useState("");
   const [working, setWorking] = useState(false);
@@ -231,6 +234,17 @@ function DeleteArea({
 
   async function remove() {
     if (typed.trim() !== name || disabled) return;
+    // Changes still on this device for the project go with it: the person is told how many.
+    const unsent = await queue.unsentIn(id);
+    if (unsent > 0) {
+      const ok = await dialogs.confirm({
+        title: unsent === 1 ? "1 change is not sent yet" : `${unsent} changes are not sent yet`,
+        body: `This device holds ${unsent === 1 ? "a change" : "changes"} to ${name} that ${unsent === 1 ? "has" : "have"} not reached the server. Deleting the project throws ${unsent === 1 ? "it" : "them"} away.`,
+        action: "Delete the project and lose them",
+        danger: true,
+      });
+      if (!ok) return;
+    }
     setWorking(true);
     setProblem(null);
     try {
@@ -241,7 +255,8 @@ function DeleteArea({
       return;
     }
     // Nothing of it stays on this device, and the list no longer has it.
-    await clearDeviceCopyOf({ id, slug }).catch(() => undefined);
+    await dropDeviceCopyOf({ id, slug }).catch(() => undefined);
+    await queue.dropProject({ id, slug }).catch(() => undefined);
     const next = await loadProjects();
     void navigate(
       next && next.projects.length === 1 ? projectRoot(next.projects[0]!.slug) : "/projects",
