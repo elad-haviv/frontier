@@ -518,9 +518,12 @@ its shape. New: members, roles that now matter, invitation links, joining, Googl
   `state: "published"` (an entry that exists only as someone's draft is 404), and the tree, graph,
   switcher, image finder, maps, chronicles and library files show saved content only. `GET /status`
   and the status stream give a reader zero for `unpublished`, `conflicts`, `drafts`,
-  `serverDraftChanges`, the inbox and `attention.keptCopies`; `GET /attention` has no `versions`;
+  `serverDraftChanges`, the inbox and `attention.keptCopies`; `GET /attention` has an empty `versions`;
   `POST /export/preview` has `unsaved: []`; a quarantined note shows as published. The role is read
-  live on the stream, so a demotion shows on the next event.
+  live on the stream, so a demotion shows on the next event. A reader is also told no open comments:
+  `GET /keep-going/queue` and `/keep-going/from-here` never give an entry the "open comments" reason.
+  `GET /history/version` reads a commit only when it is part of the published library (any other
+  commit id answers 404 `not_found`), so a reader cannot read an unpublished branch by its id.
 - **Moved from reader to writer** (a reader's shell must not call them): `POST /lore/:id/turns/:n/addition`
   and `.../addition/preview` (drafting text into an entry), `GET /maps/:id/discoveries` and
   `GET /maps/:id/discoveries/:d/art` (what AI proposed and nobody has kept). Ask, characters, pins,
@@ -530,9 +533,11 @@ its shape. New: members, roles that now matter, invitation links, joining, Googl
   `POST /members/leave` reader, `GET /invites`, `POST /invites`, `DELETE /invites/:id`. None has an
   old unprefixed alias.
 
-Removing a person, or changing their role, closes every connection they have open in that project
-(`projects/live.ts`), so the status stream ends and the app reconnects and is told `no_project` or
-sees its new role. A request that has already passed the guard may still finish its own work.
+Removing a person, or changing their role to a different one, closes every connection they have open
+in that project (`projects/live.ts`), POST streams such as `POST /lore/stream` included, so the status
+stream ends and the app reconnects and is told `no_project` or sees its new role. The request that
+makes the change is never cut: leaving, removing oneself, demoting oneself or deleting the project is
+answered as usual. Setting the role a person already has writes and cuts nothing.
 
 ### Members (under `/api/p/:project/`)
 
@@ -554,6 +559,12 @@ serialized change, on the members as they are at that moment.
 | `GET /invites` | none | `InvitesResponse`: `{ invites: [{ id, role, createdBy: { id, name }, createdAt, expiresAt, secondsLeft }] }`: only links that can still be used, soonest to run out first, never the code |
 | `DELETE /invites/:id` | none | `{ ok: true }`; dead at once. 404 `not_found` (not this project's); 410 `invite_used` for one that was used |
 
+A link stops working when its maker stops being an owner of the project: removing or demoting them
+cancels the links they made (as part of that change), and a link whose maker is not an owner at the
+moment it is used answers `invite_cancelled` (the same for joining as a new person and for accept).
+The invitation file is also tidied at startup and whenever an owner lists the links (old dead links
+are dropped, and a use that was cut off half way is dealt with, see "All or nothing" below).
+
 A link: 192 random bits as 32 URL-safe characters, stored only as a SHA-256 (`state/invites.json`),
 one project, one role (`owner`, `writer` or `reader`), one use, 7 days by the server's clock. Dead
 records are kept 30 days so the page can say why a link is dead.
@@ -564,7 +575,7 @@ records are kept 30 days so the page can say why a link is dead.
 | --- | --- | --- |
 | `GET /api/join/:code` | none | `JoinInfo`: `{ project: { name, colour, entries, maps, people }, inviter: { name }, role, google, alreadyMember }`. `google` is whether to show the Google button; `alreadyMember` is true when the caller is logged in and in the project |
 | `POST /api/join/:code` | `{ name, email, password }` (password 12 to 500 characters) | `JoinedResponse` `{ ok, project, role }` and a session (a password login); `project` is the slug: open `/p/<project>` |
-| `POST /api/join/:code/passkey/options` | `{ name, email? }` | WebAuthn registration options (`userVerification: required`). The challenge, the invitation and the name are kept in the signed session for 5 minutes |
+| `POST /api/join/:code/passkey/options` | `{ name, email }` (both required) | WebAuthn registration options (`userVerification: required`). The challenge, the invitation and the name are kept in the signed session for 5 minutes |
 | `POST /api/join/:code/passkey/verify` | `{ response, passkeyName? }` (the browser's registration response) | `JoinedResponse` and a session (method `passkey`). The challenge is single use and is bound to this link |
 | `POST /api/join/:code/accept` | none; logged in | `JoinedResponse`. 409 `already_member` (with `error.project`, the slug) and the link is **not** used up. 401 when logged out |
 | `GET /api/auth/google/start?invite=&returnTo=&link=1` | see below | 302 to Google |
@@ -583,10 +594,18 @@ of the person who made the link, so the page can say whom to ask):
 | `account_exists` | 409 | The email has an account: the page says "You may already have an account: log in to join" and shows the login form with the link kept (log in, then `POST /api/join/:code/accept`). Nothing says whose account it is |
 | `last_owner` | 409 | Members routes |
 
+**An email is required for every join** (password, passkey; Google always gives one): a blank or
+missing email is 400 `invalid`. Emails given on a password or passkey join are not verified (known).
+
+All or nothing: if putting the new account into the project fails, the account is removed and the link
+given back (a failing release never hides the first error). At startup, and when the list of links is
+read, a claim that was never settled (used, no one recorded) and is older than 5 minutes is given back,
+unless someone with the link's role joined the project after it, who is then recorded as its user.
+
 The body cannot choose a role, a project or `admin`: they come from the link alone, and unknown body
 fields are ignored. Two uses at once: exactly one succeeds, the rest get `invite_used`. The server
-logs no invitation code (addresses are written `/api/join/:code`, and `invite`, `code`, `state` and
-`returnTo` queries are blanked).
+logs no invitation code (addresses are written `/api/join/:code` and `/join/:code`, and `invite`,
+`code`, `state` and `returnTo` queries are blanked).
 
 ### Google sign-on
 
@@ -613,8 +632,8 @@ leading slash, no host, no backslash, not `/api`; anything else is dropped and t
 | `/settings/you/signing-in` | `google_taken`, `google_already_linked`, `recent_login_needed` | Linking from Settings: that Google account belongs to another person; this account has one; the login is older than 5 minutes |
 
 What a good trip does, in this order: the Google subject is linked to an account: log in (landing on
-`returnTo` or `/`; with an invitation, join that project as that account, and a person already in it
-just goes there with the link left unused). Else with a valid unused invitation (checked again at
+`returnTo` or `/`; with an invitation they are logged in but **not joined**: they land on
+`/join/<code>` and confirm with "accept", so a link is never used without a click). Else with a valid unused invitation (checked again at
 the callback, used only on success): make the account from Google's name and verified email, join,
 log in, land on `/p/<slug>`. Else with `link=1`: add the identity to the logged-in account. Else
 `google_no_account`. The session's method is `google`.
@@ -629,9 +648,11 @@ log in, land on `/p/<slug>`. Else with `link=1`: add the identity to the logged-
 addedAt }], google: { email, addedAt } | null, googleAvailable }`, and `method` may be `google`.
 The old `passkeys`, `passwordSet` and `passwordOff` stay. The kept `signIn` block of
 `GET /api/settings` is unchanged except that its `method` may be `google`. "The last way cannot be
-removed" now counts Google (`waysIn`); removing or linking a Google account ends the other sessions
+removed" now counts Google (`waysIn`), but only while the server offers Google sign-on (a linked
+identity is no way in on a server without it, and unlinking it is then always allowed); removing or linking a Google account ends the other sessions
 like any other credential change (and linking asks for a recent login). Switching the password off
-needs a session that came by a passkey or Google. A person who came by Google has no password until
+needs a session that came by a passkey or Google (a session with no recorded method counts as a
+password one). A person who came by Google has no password until
 they set one (`PUT /api/me/password`, which asks for a recent login when there is none).
 
 ### A person in no project
@@ -649,10 +670,38 @@ first account who leaves is not made an owner again (that only happens to a proj
   and the session tell it).
 - `account_exists` reveals that an email has an account to someone who holds a working link; it is
   the price of letting the page say "log in to join". It is not said for an unknown or dead link.
-- A person who has Google linked and arrives on an invitation through Google joins as that account.
-- A passkey join may give an email (optional); an account made by passkey or Google has no password.
+- A person who has Google linked and arrives on an invitation through Google is logged in and sent to
+  `/join/<code>` to accept; a new person through Google still joins directly.
+- Every join gives an email; an account made by passkey or Google has no password.
+- `GET /api/session` says `emailless: true` when exactly one account has no email (however many
+  accounts there are), and a blank email at login then means that account.
+- A person's name falls back to their email only for an owner of that project, never to anyone else
+  and never on a public page (join info, invitation errors): those say "Someone".
 - Invitations survive the deletion of a project only as dead records (`invite_cancelled`).
 - The allowance for the public join and Google routes is 6 times login's (30 per 15 minutes), counted
   apart from login so a visit to the join page does not use up a login.
+- The per-address allowance counts an IPv6 address by its /64, forgets old addresses on a timer-free
+  sweep, and holds at most 10 000 addresses. `trustProxy` is still on (Coolify's proxy), so the address
+  is whatever the proxy says.
+- Any state-changing `/api` request that a browser marks `Sec-Fetch-Site: cross-site` is refused 403
+  `not_allowed`, and `same-site` too unless its `Origin` is the app's own; a request with no such header
+  (tests, scripts, GitHub's webhook) goes on. Reads, including the Google callback, are not affected.
+- Last-active notes are written without arming the backup (they wait for the next backup).
+- Known and left: emails on password and passkey joins are not verified; a removed writer's request
+  that was already running may finish its own write.
 - Not done in 27c server: unlinking another provider (there is none), an email to the invited person
   (decision A: Frontier sends no mail), and a list of someone's other sessions.
+
+### Notes for the web half
+
+- Readers must not call the map discoveries (`GET /maps/:id/discoveries`, its `art`) or the lore
+  addition routes (`.../addition`, `.../addition/preview`): they answer 403 `role_too_low`.
+- Stop retrying queued saves on `role_too_low` (the person was demoted): drop them and say so.
+- The status stream ends when the person's role changes or they are removed (the connection is
+  closed); reconnect and read the new role, or `no_project`.
+- An email is required on every join, including the passkey options request.
+- An existing Google account that arrives with an invitation lands on `/join/<code>` logged in, to
+  accept; only a new account through Google joins without a click.
+- `GET /api/session` `emailless` is true only when exactly one account has no email; show the
+  blank-email login hint only then.
+- A reader gets no open-comment reasons in Home's queue, and an empty `versions` in `/attention`.
