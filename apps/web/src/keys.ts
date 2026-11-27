@@ -453,6 +453,12 @@ keys.register(
     label: "Writing help on the selection or paragraph",
   },
   {
+    id: "editor.generateImage",
+    keys: ["Mod-Alt-i"],
+    scope: "editor",
+    label: "Generate an image for this entry",
+  },
+  {
     id: "editor.consult",
     keys: ["Mod-Alt-r"],
     scope: "editor",
@@ -993,6 +999,9 @@ export function editorKeymap(registry = keys): Extension {
     // The browser's own Ctrl+J (its downloads) never opens from the editor.
     ...bind("editor.help", runBound("editor.help", registry), { preventDefault: true }),
     ...bind("editor.consult", runBound("editor.consult", registry), { preventDefault: true }),
+    ...bind("editor.generateImage", runBound("editor.generateImage", registry), {
+      preventDefault: true,
+    }),
     // In a list Tab nests the item; elsewhere it indents the line.
     ...bind("editor.indent", (v) => command(indentListItem)(v) || indentMore(v)),
     ...bind("editor.outdent", (v) => command(outdentListItem)(v) || indentLess(v)),

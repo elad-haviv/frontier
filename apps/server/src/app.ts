@@ -38,6 +38,7 @@ import { characterRoutes } from "./routes/characters.js";
 import { discoverRoutes } from "./routes/discover.js";
 import { exportRoutes } from "./routes/export.js";
 import { Discoverer } from "./ai/discover.js";
+import { EntryPictures } from "./ai/pictures.js";
 import { CharacterTalk } from "./ai/characters.js";
 import { WritingHelper } from "./ai/writing.js";
 import { EditReviewer } from "./ai/review.js";
@@ -71,6 +72,7 @@ import { authRoutes } from "./routes/auth.js";
 import { entryRoutes } from "./routes/entries.js";
 import { graphRoutes } from "./routes/graph.js";
 import { imageRoutes } from "./routes/images.js";
+import { pictureRoutes } from "./routes/pictures.js";
 import { searchRoutes } from "./routes/search.js";
 import { statusRoutes } from "./routes/status.js";
 import { webhookRoutes } from "./routes/webhook.js";
@@ -127,6 +129,8 @@ export interface Services {
   review: EditReviewer;
   characters: CharacterTalk;
   discoverer: Discoverer;
+  /** Stage 29: pictures made for entries, kept as tries until one is inserted. */
+  pictures: EntryPictures;
   conversations: Conversations;
   talks: Talks;
   comments: CommentStore;
@@ -325,6 +329,14 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
       }
     },
   });
+  const pictures = new EntryPictures({
+    dir: join(config.dataDir, "assets", "generated", "entries"),
+    files,
+    settings,
+    log: aiLog,
+    provider: ai,
+    saving: { index, drafts, config, status },
+  });
   const writing = new WritingHelper({
     index,
     search,
@@ -416,6 +428,7 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
     review,
     characters,
     discoverer,
+    pictures,
     conversations,
     talks,
     comments,
@@ -621,6 +634,7 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
   graphRoutes(app, services);
   draftRoutes(app, services);
   imageRoutes(app, services);
+  pictureRoutes(app, services);
   inboxRoutes(app, services);
   proposalRoutes(app, services);
   quarantineRoutes(app, services);

@@ -15,6 +15,7 @@ import {
   type ChatMessage,
   type ChatRequest,
   type ChatResult,
+  type ImageRequest,
   type ProviderAdapter,
   ProviderError,
   type Reasoning,
@@ -488,7 +489,11 @@ export class AiProvider {
    * One picture made from a description, as PNG or JPEG bytes. Checked against the cap first and
    * logged like every call. Not sent twice: a picture that timed out may still be billed.
    */
-  async image(prompt: string, entry?: string): Promise<{ bytes: Buffer; costUsd: number }> {
+  async image(
+    prompt: string,
+    entry?: string,
+    aspect?: ImageRequest["aspect"],
+  ): Promise<{ bytes: Buffer; costUsd: number }> {
     const t = await this.target("art", undefined, "concept art");
     await this.checkCap();
     if (!t.adapter.image) {
@@ -499,6 +504,7 @@ export class AiProvider {
       const r = await t.adapter.image({
         model: t.model,
         prompt,
+        ...(aspect ? { aspect } : {}),
         signal: AbortSignal.timeout(180_000),
       });
       const costUsd = await this.record("art", t, r.usage, entry, undefined);

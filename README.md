@@ -27,6 +27,7 @@ Stage 1 of nine is in progress. What exists so far:
 | Stage 11a: icons, tooltips, menus, one keys registry; a save queue on the device, saves that say what they started from                      | Built; covered by tests. 11b (the shell) and 11c (folder tree) to come       |
 | Stage 25: Home with a work queue, From here, pins, random entry, back to last, resume position, recents in the switcher                      | Built; covered by tests                                                      |
 | Stages 26 and 28: the library as a menu item and full-drawer panel on the phone, and as a pane beside the sidebar on desktop                 | Built; covered by tests                                                      |
+| Stage 29: generating pictures for entries from the image dialog, in the art style from Settings                                              | Built; covered by tests                                                      |
 
 The app writes to its vault: drafts are saved on the server and Publish makes one commit.
 

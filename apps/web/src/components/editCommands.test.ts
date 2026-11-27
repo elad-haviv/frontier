@@ -5,6 +5,7 @@ import {
   fenceAround,
   indentListItem,
   insertEmbeds,
+  insertEmbedsAfter,
   insertLink,
   insertRule,
   lineStyle,
@@ -180,6 +181,16 @@ describe("inserting", () => {
 
   it("embeds images one per line", () => {
     expect(apply("|", (s) => insertEmbeds(s, ["a.png", "b.png"]))).toBe("![[a.png]]\n![[b.png]]|");
+  });
+
+  it("embeds a picture under the selected text, leaving the text in place", () => {
+    const put = (t: string) => apply(t, (s) => insertEmbedsAfter(s, ["a.png"]));
+    expect(put("# T\n\nA «lamp» on the wall.\n\nMore.")).toBe(
+      "# T\n\nA lamp on the wall.\n\n![[a.png]]|\n\nMore.",
+    );
+    expect(put("A «lamp».")).toBe("A lamp.\n\n![[a.png]]|");
+    expect(put("A «lamp».\nNext line.")).toBe("A lamp.\n\n![[a.png]]|\n\nNext line.");
+    expect(put("Here|.")).toBe("Here![[a.png]]|.");
   });
 
   it("names a file by its name when that is unique, else by its path", () => {
