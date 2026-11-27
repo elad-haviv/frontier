@@ -16,3 +16,10 @@ export const asSavedView = <T>(work: () => T): T => saved.run(true, work);
 
 /** True while serving a request that may see only what is saved. */
 export const savedViewOnly = (): boolean => saved.getStore() === true;
+
+/**
+ * Runs `work` outside the saved view, whatever request started it. For what is shared by everyone
+ * and only happens to be started by a reader's request (a timer, the status snapshot everyone is
+ * sent): it must not be computed as the reader sees things.
+ */
+export const outsideSavedView = <T>(work: () => T): T => saved.exit(work);

@@ -43,7 +43,7 @@ async function describe(
     members: await Promise.all(
       record.members.map(async (m) => ({
         id: m.personId,
-        name: await nameOf(server, m.personId),
+        name: await nameOf(server, m.personId, role === "owner"),
         role: m.role,
       })),
     ),
@@ -163,7 +163,7 @@ export function projectsApi(app: FastifyInstance, server: Server): void {
           members: await Promise.all(
             record.members.map(async (m) => ({
               id: m.personId,
-              name: await nameOf(server, m.personId),
+              name: await nameOf(server, m.personId, role === "owner"),
             })),
           ),
           lastVersion,

@@ -427,6 +427,19 @@ export class GitGateway {
     });
   }
 
+  /**
+   * Whether a commit is part of the published library: reachable from where the working copy is.
+   * A commit of an unpublished branch (a proposal not yet kept) is not, however it is named.
+   */
+  isPublished(commit: string): Promise<boolean> {
+    return this.locked(async () => {
+      const r = await this.run(["merge-base", "--is-ancestor", commit, "HEAD"], {
+        allow: (c) => c === 1 || c === 128,
+      });
+      return r.code === 0;
+    });
+  }
+
   /** The bytes of a file at a commit, or null when it does not exist there. */
   readFile(path: string, commit = "HEAD"): Promise<Buffer | null> {
     return this.locked(async () => {
