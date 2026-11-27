@@ -101,3 +101,13 @@
   font-family: var(--sans);
   font-style: normal;
 }
+.join-form em.join-email-hint {
+  margin: -0.3rem 0 0;
+  font-size: 0.82rem;
+  font-style: normal;
+  color: var(--ink-faint);
+}
+.join-login p.join-forgot {
+  margin: -0.2rem 0 0;
+  font-size: 0.85rem;
+}
