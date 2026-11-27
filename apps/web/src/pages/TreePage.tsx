@@ -1,9 +1,11 @@
 import { ArrowLeft } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { useParams } from "react-router-dom";
+import { Link, useNavigate } from "../nav.tsx";
 import type { TreeLine, TreesFile } from "@frontier/schema";
 import { entryUrl } from "../api.ts";
 import { useDialogs } from "../components/Dialogs.tsx";
+import { useCanWrite } from "../components/projectContext.ts";
 import { usePhone } from "../components/Shell.tsx";
 import { usePageTitle } from "../components/shell/panels.tsx";
 import { AddPicker } from "../components/trees/AddPicker.tsx";
@@ -14,6 +16,7 @@ import { Menu, MenuItem } from "../components/ui/Menu.tsx";
 import { Problem } from "../components/ui/Problem.tsx";
 import { Progress } from "../components/ui/Progress.tsx";
 import { useScope, useShortcut } from "../keys.ts";
+import { projectKey } from "../projectStorage.ts";
 import { type AddWhere, changeTree, useRelations, useTrees } from "../trees/data.ts";
 import {
   above,
@@ -29,7 +32,7 @@ import {
 import "./TreePage.css";
 
 const PHONE_VIEW = "frontier.trees.phoneView";
-const LAST = "frontier.trees.selected.";
+const LAST = (tree: string) => projectKey(`frontier.trees.selected.${tree}`);
 const read = (key: string) => {
   try {
     return localStorage.getItem(key);
@@ -57,7 +60,17 @@ export function TreePage() {
   const { id } = useParams();
   const trees = useTrees();
   const relations = useRelations();
-  const tree = trees.value?.trees.find((t) => t.id === id);
+  const canWrite = useCanWrite();
+  // A reader can open and look around a tree (fold it, turn it, start it from someone else), but
+  // what that changes stays on this page: the trees file is a writer's to save.
+  const [mine, setMine] = useState<TreesFile | null>(null);
+  const file = !canWrite && mine ? mine : trees.value;
+  const change = (fn: (f: TreesFile) => TreesFile): Promise<void> => {
+    if (canWrite) return trees.client.change(fn);
+    if (trees.value) setMine(fn(mine ?? trees.value));
+    return Promise.resolve();
+  };
+  const tree = file?.trees.find((t) => t.id === id);
   usePageTitle(tree?.name ?? "Tree");
 
   if (trees.state === "failed")
@@ -83,9 +96,10 @@ export function TreePage() {
       key={tree.id}
       g={relations.graph}
       tree={tree}
-      fine={trees.value?.fine ?? []}
-      allTrees={trees.value!.trees}
-      change={(fn) => trees.client.change(fn)}
+      fine={file?.fine ?? []}
+      allTrees={file!.trees}
+      change={change}
+      canWrite={canWrite}
     />
   );
 }
@@ -96,12 +110,14 @@ function Tree({
   fine,
   allTrees,
   change,
+  canWrite,
 }: {
   g: Graph;
   tree: TreeLine;
   fine: string[];
   allTrees: TreeLine[];
   change: (fn: (f: TreesFile) => TreesFile) => Promise<void>;
+  canWrite: boolean;
 }) {
   const phone = usePhone();
   const navigate = useNavigate();
@@ -111,7 +127,7 @@ function Tree({
   const kind = kindNamed(g, tree.kind);
   const k = kind?.name ?? tree.kind;
   const [selected, setSelected] = useState<string | null>(() => {
-    const last = read(LAST + tree.id);
+    const last = read(LAST(tree.id));
     return last && g.people.has(last) ? last : tree.start;
   });
   const [compareFrom, setCompareFrom] = useState<string | null>(null);
@@ -147,7 +163,7 @@ function Tree({
         : tree.start;
 
   useEffect(() => {
-    if (selected) write(LAST + tree.id, selected);
+    if (selected) write(LAST(tree.id), selected);
   }, [selected, tree.id]);
 
   useScope("tree");
@@ -156,7 +172,7 @@ function Tree({
     findBox.current.focus();
   });
   useShortcut("tree.add", () => {
-    if (!selected || !g.people.get(selected)?.path) return false;
+    if (!canWrite || !selected || !g.people.get(selected)?.path) return false;
     setPicker({ where: tree.way === "up" ? "up" : "down", from: selected, at: null });
   });
   useShortcut("tree.compare", () => {
@@ -303,8 +319,12 @@ function Tree({
         select(key, false);
         drawing.current?.reveal(key);
       }}
-      onAdd={(where, at) => setPicker({ where, from: sel, at })}
-      onFine={markFine}
+      {...(canWrite
+        ? {
+            onAdd: (where: AddWhere, at: DOMRect | null) => setPicker({ where, from: sel, at }),
+            onFine: markFine,
+          }
+        : {})}
       actions={actions}
       compact={phone}
     />
@@ -359,10 +379,12 @@ function Tree({
           </button>
         )}
         <span className="tr-spacer" />
-        <Menu label="More about this tree">
-          <MenuItem onSelect={() => void rename()}>Rename…</MenuItem>
-          <MenuItem onSelect={() => void remove()}>Delete the tree…</MenuItem>
-        </Menu>
+        {canWrite && (
+          <Menu label="More about this tree">
+            <MenuItem onSelect={() => void rename()}>Rename…</MenuItem>
+            <MenuItem onSelect={() => void remove()}>Delete the tree…</MenuItem>
+          </Menu>
+        )}
       </header>
 
       <div className="tr-tools">
@@ -390,21 +412,23 @@ function Tree({
             </button>
           </div>
         ) : (
-          <button
-            type="button"
-            className="primary"
-            disabled={!sel || !g.people.get(sel)?.path}
-            onClick={(e) =>
-              sel &&
-              setPicker({
-                where: tree.way === "up" ? "up" : "down",
-                from: sel,
-                at: e.currentTarget.getBoundingClientRect(),
-              })
-            }
-          >
-            + Add <kbd>A</kbd>
-          </button>
+          canWrite && (
+            <button
+              type="button"
+              className="primary"
+              disabled={!sel || !g.people.get(sel)?.path}
+              onClick={(e) =>
+                sel &&
+                setPicker({
+                  where: tree.way === "up" ? "up" : "down",
+                  from: sel,
+                  at: e.currentTarget.getBoundingClientRect(),
+                })
+              }
+            >
+              + Add <kbd>A</kbd>
+            </button>
+          )
         )}
         {!showOne && (
           <>
@@ -506,7 +530,12 @@ function Tree({
               kindName={k}
               id={sel ?? tree.start}
               onGo={(key) => setSelected(key)}
-              onAdd={(where) => setPicker({ where, from: sel ?? tree.start, at: null })}
+              {...(canWrite
+                ? {
+                    onAdd: (where: AddWhere) =>
+                      setPicker({ where, from: sel ?? tree.start, at: null }),
+                  }
+                : {})}
             />
             {sel && (
               <div className="tr-one-actions">
@@ -531,10 +560,14 @@ function Tree({
               onSelect={select}
               onClear={clear}
               onOpen={open}
-              onAdd={(where, key, at) => {
-                setSelected(key);
-                setPicker({ where, from: key, at });
-              }}
+              {...(canWrite
+                ? {
+                    onAdd: (where: AddWhere, key: string, at: DOMRect) => {
+                      setSelected(key);
+                      setPicker({ where, from: key, at });
+                    },
+                  }
+                : {})}
               onFold={fold}
             />
             {(kinship || compareFrom) && (
@@ -549,7 +582,7 @@ function Tree({
                 </button>
               </div>
             )}
-            {lonely && (
+            {lonely && canWrite && (
               <p className="tr-hint-card">
                 Add who comes above, beside and below. Select the card and use its +, or press{" "}
                 <kbd>A</kbd>. Picking an entry links it; a new name can wait for its entry.
@@ -608,8 +641,9 @@ function Tree({
       </div>
       {!phone && (
         <p className="tr-foot">
-          The relations are written on the entries. This tree keeps only where it starts, what it
-          shows and what is folded.
+          {canWrite
+            ? "The relations are written on the entries. This tree keeps only where it starts, what it shows and what is folded."
+            : "The relations are written on the entries. What you change here is for this visit only."}
         </p>
       )}
       {picker && (

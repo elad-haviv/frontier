@@ -1,6 +1,6 @@
 import { X } from "lucide-react";
 import { useId, useMemo, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "../../nav.tsx";
 import { findKind, type RelKind, type TreesFile } from "@frontier/schema";
 import { readRelations } from "@frontier/vault";
 import { ApiFailure, entryUrl, treeUrl } from "../../api.ts";
@@ -14,6 +14,7 @@ import {
 import { downs, type Graph, layoutTree, partners, ups } from "../../trees/model.ts";
 import { useDialogs } from "../Dialogs.tsx";
 import { EntryCombobox } from "../EntryCombobox.tsx";
+import { useCanWrite } from "../projectContext.ts";
 import { usePhone } from "../Shell.tsx";
 import { IconButton } from "../ui/IconButton.tsx";
 import { useToast } from "../ui/Toast.tsx";
@@ -36,7 +37,7 @@ function kindFor(g: Graph, path: string): string {
 export function RelationsPanel({
   path,
   text,
-  editable,
+  editable: wanted,
   onChanged,
 }: {
   path: string;
@@ -45,6 +46,9 @@ export function RelationsPanel({
   editable: boolean;
   onChanged: () => void;
 }) {
+  // A reader sees the relations and the trees, and none of the controls that write them.
+  const canWrite = useCanWrite();
+  const editable = wanted && canWrite;
   const relations = useRelations();
   const trees = useTrees();
   const navigate = useNavigate();
@@ -225,9 +229,7 @@ export function RelationsPanel({
       <section className="tr-sec">
         <h3>In trees</h3>
         {inTrees.length === 0 ? (
-          <p className="tr-muted">
-            None. <Link to="/trees">Make a tree</Link>
-          </p>
+          <p className="tr-muted">None. {canWrite && <Link to="/trees">Make a tree</Link>}</p>
         ) : (
           <ul>
             {inTrees.map((t) => (

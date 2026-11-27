@@ -8,6 +8,8 @@
  * entry bodies, not what was read when or where.
  */
 import { useSyncExternalStore } from "react";
+import { currentProject, onProjectChange, type ProjectRef } from "../project.ts";
+import { projectKey } from "../projectStorage.ts";
 
 export const RECENTS_KEY = "frontier.keepGoing.v1";
 /** How many recent entries are kept. */
@@ -139,6 +141,8 @@ export interface RecentsDeps {
   now?: () => number;
   /** Stands in for the timer that delays writing positions, in tests. */
   later?: (run: () => void, ms: number) => unknown;
+  /** The storage key of the open library's recents; each project has its own (stage 31b). */
+  key?: () => string;
 }
 
 export class Recents {
@@ -148,16 +152,19 @@ export class Recents {
   private dirty = false;
   private timer: unknown = null;
   private readonly now: () => number;
+  /** The key the data was read from and is written to, until `switchProject`. */
+  private name: string;
 
   constructor(private readonly d: RecentsDeps) {
     this.now = d.now ?? Date.now;
+    this.name = d.key?.() ?? RECENTS_KEY;
     this.data = readStored(this.read());
     this.snap = this.snapshotOf();
   }
 
   private read(): string | null {
     try {
-      return this.d.storage?.getItem(RECENTS_KEY) ?? null;
+      return this.d.storage?.getItem(this.name) ?? null;
     } catch {
       return null;
     }
@@ -166,7 +173,7 @@ export class Recents {
   private write(): void {
     this.dirty = false;
     try {
-      this.d.storage?.setItem(RECENTS_KEY, JSON.stringify(this.data));
+      this.d.storage?.setItem(this.name, JSON.stringify(this.data));
     } catch {
       // No room or no storage: this device forgets at reload, which is all that is lost.
     }
@@ -200,6 +207,16 @@ export class Recents {
     this.snap = this.snapshotOf();
     this.write();
     for (const l of this.listeners) l();
+  }
+
+  /**
+   * Another project was opened: what waits to be written goes to the project it belongs to, and
+   * the new project's recents are read. Nothing of one shows in the other.
+   */
+  switchProject(): void {
+    this.flush();
+    this.name = this.d.key?.() ?? RECENTS_KEY;
+    this.reload();
   }
 
   /** Reads the storage again, as when another tab changed it. */
@@ -319,14 +336,31 @@ function deviceStorage(): Storage | null {
 }
 
 /** This device's recents, shared by the whole app. */
-export const recents = new Recents({ storage: deviceStorage() });
+export const recents = new Recents({
+  storage: deviceStorage(),
+  key: () => projectKey(RECENTS_KEY),
+});
+onProjectChange(() => recents.switchProject());
 
 if (typeof window !== "undefined") {
   // Positions are written a moment after they change; leaving the page writes them at once.
   window.addEventListener("pagehide", () => recents.flush());
   // Another tab of the app changed them.
   window.addEventListener("storage", (e) => {
-    if (e.key === RECENTS_KEY) recents.reload();
+    if (e.key === projectKey(RECENTS_KEY)) recents.reload();
+  });
+}
+
+/**
+ * The recents of a named project: the shared ones when it is the project open, else a copy read
+ * from, and written back to, that project's own key. For work that finishes after the person has
+ * gone to another project (what a publish did to the entries read lately).
+ */
+export function recentsOf(project: ProjectRef): Recents {
+  if (currentProject()?.id === project.id) return recents;
+  return new Recents({
+    storage: deviceStorage(),
+    key: () => projectKey(RECENTS_KEY, project.id),
   });
 }
 

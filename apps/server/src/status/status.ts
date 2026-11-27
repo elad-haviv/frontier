@@ -1,7 +1,21 @@
 import type { Health, StatusSnapshot } from "@frontier/schema";
 import type { VaultIndex } from "../index/build.js";
+import { outsideSavedView } from "../projects/view.js";
 
 type Listener = (snapshot: StatusSnapshot) => void;
+
+/**
+ * What the snapshot says about one person (stage 31d): their own unsaved changes, and what they
+ * may know of other people's work in progress. A snapshot is the project's; each person's stream
+ * lays this over it.
+ */
+export type PersonalStatus = Pick<
+  StatusSnapshot,
+  "unpublished" | "conflicts" | "drafts" | "serverDraftChanges"
+> & {
+  keptCopies: number;
+  othersUnsaved: NonNullable<StatusSnapshot["othersUnsaved"]>;
+};
 
 /** Holds the facts shown in the status area and tells listeners when one changes. */
 export class StatusService {
@@ -17,10 +31,10 @@ export class StatusService {
   private operations = 0;
   private quarantined = 0;
   private fileProblems: string[] = [];
-  private aiOn = false;
-  private aiConversation = false;
-  private aiError: string | null = null;
+  private keysRemoved: { at: string; providers: string[]; environment: string[] } | null = null;
   private serverDraftChanges = 0;
+  private commentChanges = 0;
+  private commentPath: string | null = null;
   private listeners = new Set<Listener>();
 
   constructor(
@@ -32,10 +46,39 @@ export class StatusService {
       keptCopies?: () => number;
       /** The draft store's count of draft writes and discards. */
       draftChanges?: () => number;
+      /** What the snapshot says of one person's own work, and of other people's (stage 31d). */
+      person?: (personId: string) => PersonalStatus;
+      /** Who else is reading what, as this person is told. Asked for each time: it changes with every announcement. */
+      presence?: (personId: string) => NonNullable<StatusSnapshot["presence"]>;
+      /**
+       * Changes whenever what `person` answers for anyone could: someone's unsaved changes, who the
+       * members and their roles and names are, the library. Cheap to ask; with it a person's part is
+       * worked out once for all their streams, and again only when this changes.
+       */
+      personVersion?: () => string;
     } = { library: "github", backupOutside: true },
   ) {}
 
+  /** Rises when a fact of the project's own changes, so the part of the snapshot made of them is made again. */
+  private rev = 0;
+  /** The part of the snapshot that is the same for everyone, for the `rev` and build it was made at. */
+  private shared: { key: string; value: StatusSnapshot } | null = null;
+  /** Each person's part, for the version it was made at: many tabs of one person share it. */
+  private personal = new Map<string, { version: string; value: PersonalStatus }>();
+
   snapshot(): StatusSnapshot {
+    const key = `${this.rev}|${this.index.generation}|${this.index.commit}`;
+    if (this.shared?.key !== key) this.shared = { key, value: this.makeShared() };
+    const shared = this.shared.value;
+    // What the person being served has of their own is asked for each time: it is cheap.
+    return {
+      ...shared,
+      drafts: this.facts.draftChanges?.() ?? 0,
+      attention: { ...shared.attention, keptCopies: this.facts.keptCopies?.() ?? 0 },
+    };
+  }
+
+  private makeShared(): StatusSnapshot {
     const a = this.index.attention();
     return {
       library: this.facts.library,
@@ -54,8 +97,9 @@ export class StatusService {
         operations: this.operations,
         quarantined: this.quarantined,
       },
-      ai: { on: this.aiOn, conversation: this.aiConversation, lastError: this.aiError },
+      notices: { keysRemoved: this.keysRemoved },
       serverDraftChanges: this.serverDraftChanges,
+      comments: { changes: this.commentChanges, path: this.commentPath },
       drafts: this.facts.draftChanges?.() ?? 0,
       problems: [
         ...(this.index.schemaProblem ? [this.index.schemaProblem] : []),
@@ -75,6 +119,46 @@ export class StatusService {
     };
   }
 
+  /**
+   * The snapshot as one person gets it: the project's, with their own unsaved changes in place of
+   * whatever the last change left in the project's. A reader has none and sees nobody's: the caller
+   * zeroes the lot (`routes/status.ts`).
+   */
+  snapshotFor(personId: string): StatusSnapshot {
+    const base = this.snapshot();
+    const mine = this.personalFor(personId);
+    if (!mine) return base;
+    const { keptCopies, ...rest } = mine;
+    return {
+      ...base,
+      ...rest,
+      presence: this.facts.presence?.(personId) ?? [],
+      attention: { ...base.attention, keptCopies },
+    };
+  }
+
+  /**
+   * A person's own part of the snapshot, from the cache while nothing it is made of has changed.
+   * Who is reading is not in it (it is cheap, and changes with every announcement), so it is asked
+   * for each time.
+   */
+  private personalFor(personId: string): PersonalStatus | null {
+    const person = this.facts.person;
+    if (!person) return null;
+    const version = this.facts.personVersion?.();
+    if (version === undefined) return person(personId);
+    const held = this.personal.get(personId);
+    if (held?.version === version) return held.value;
+    const value = person(personId);
+    this.personal.set(personId, { version, value });
+    return value;
+  }
+
+  /** Who is reading what changed: listeners are told, and nothing else is worked out again. */
+  presenceChanged(): void {
+    this.tell();
+  }
+
   health(): Health {
     return {
       ok: this.index.commit !== null,
@@ -90,8 +174,15 @@ export class StatusService {
   }
 
   private changed(): void {
+    this.rev++;
+    this.tell();
+  }
+
+  private tell(): void {
     if (this.listeners.size === 0) return;
-    const snapshot = this.snapshot();
+    // The snapshot is shared by every listener, so it is never computed as a reader sees it, even
+    // when a reader's request is what made the change.
+    const snapshot = outsideSavedView(() => this.snapshot());
     for (const l of this.listeners) l(snapshot);
   }
 
@@ -145,20 +236,23 @@ export class StatusService {
     this.changed();
   }
 
-  /** `conversation` is whether lore conversations can run; left as it was when not given. */
-  ai(on: boolean, lastError: string | null, conversation = this.aiConversation): void {
-    if (this.aiOn === on && this.aiError === lastError && this.aiConversation === conversation) {
-      return;
-    }
-    this.aiOn = on;
-    this.aiError = lastError;
-    this.aiConversation = conversation;
+  /** The notice that keys stored on the server were deleted, or null once it has been seen. */
+  keysWereRemoved(notice: { at: string; providers: string[]; environment: string[] } | null): void {
+    if (this.keysRemoved?.at === notice?.at) return;
+    this.keysRemoved = notice;
     this.changed();
   }
 
   /** The server changed a draft itself, such as by accepting a proposed field into it. */
   serverChangedDraft(): void {
     this.serverDraftChanges++;
+    this.changed();
+  }
+
+  /** An entry's shared comments changed: open pages read them again. The event says where, never what. */
+  commentsChanged(path: string): void {
+    this.commentChanges++;
+    this.commentPath = path;
     this.changed();
   }
 

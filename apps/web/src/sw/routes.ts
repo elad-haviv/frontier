@@ -30,9 +30,11 @@ export function routeOf({
   const path = url.pathname;
   if (method !== "GET" || OWN.has(path) || path === "/health") return "none";
   if (path.startsWith("/api/")) {
-    // An image of the library, not one from a proposal's branch, nor one opened as a page.
+    // An image of a project's library (`/api/p/<slug>/images`), not one from a proposal's
+    // branch, nor one opened as a page. Each project's images have their own addresses, so one
+    // project's are never answered for another.
     const image =
-      path === "/api/images" &&
+      IMAGE.test(path) &&
       mode !== "navigate" &&
       url.searchParams.has("path") &&
       !url.searchParams.has("branch");
@@ -42,7 +44,14 @@ export function routeOf({
   return PRECACHED.test(path) ? "precache" : "none";
 }
 
-/** The `path` an image address shows, for finding the same image stored at another width. */
+/** The address of a project's images. */
+const IMAGE = /^\/api\/p\/[^/]+\/images$/;
+
+/**
+ * What an image address shows, for finding the same image stored at another width: the project
+ * and the `path`, so the same path in another project is another image.
+ */
 export function imagePath(url: URL): string | null {
-  return url.pathname === "/api/images" ? url.searchParams.get("path") : null;
+  const path = url.searchParams.get("path");
+  return IMAGE.test(url.pathname) && path !== null ? `${url.pathname}\n${path}` : null;
 }

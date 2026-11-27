@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import type { FastifyInstance } from "fastify";
+import type { RouteApp } from "../projects/facade.js";
 import {
   AddRelationRequest,
   kindsOf,
@@ -30,7 +30,7 @@ const UNREADABLE =
  * two changes a tree or the Relations tab makes, each to one entry only: add an item, or take one
  * off. A new name can also be made an entry, in the folder of the entry it is written on.
  */
-export function relationRoutes(app: FastifyInstance, s: Services): void {
+export function relationRoutes(app: RouteApp, s: Services): void {
   const changed = () => s.status.drafts(s.drafts.count(), 0);
   const madeKinds = () => (s.libraryFiles.current("trees").file as TreesFile).kinds;
 

@@ -1,5 +1,5 @@
-import { expect, type Page, test } from "@playwright/test";
-import { edit, entry, noSidewaysScroll, review, setUpAi } from "./helpers.ts";
+import { expect, type Page, test } from "./test.ts";
+import { api, edit, entry, noSidewaysScroll, proj, review, setUpAi } from "./helpers.ts";
 
 /**
  * Stage 25, the entry's half: back to last, resume position, pins, "From here", next and previous
@@ -30,7 +30,7 @@ async function neighbours(
   previous: { path: string; title: string } | null;
   next: { path: string; title: string } | null;
 }> {
-  const res = await page.request.get(`/api/keep-going/from-here?path=${encodeURIComponent(path)}`);
+  const res = await page.request.get(api(`/keep-going/from-here?path=${encodeURIComponent(path)}`));
   expect(res.ok(), await res.text()).toBe(true);
   return res.json();
 }
@@ -44,7 +44,7 @@ async function tallDraft(page: Page, id: string): Promise<string> {
       `## Section ${i + 1}\n\n` +
       Array.from({ length: 6 }, () => "Salt and brine and the grey tide. ".repeat(20)).join("\n\n"),
   ).join("\n\n");
-  const made = await page.request.put("/api/drafts", {
+  const made = await page.request.put(api("/drafts"), {
     data: { id, path, kind: "create", text: `# Keep Going Tall\n\n${sections}\n`, revision: 0 },
   });
   expect(made.ok(), await made.text()).toBe(true);
@@ -163,7 +163,7 @@ test.describe("where reading stopped", () => {
       await expect(page.locator(".entry h1").first()).toHaveText("Keep Going Tall");
       await expect(line).toHaveCount(0);
     } finally {
-      await page.request.delete(`/api/drafts/${id}`);
+      await page.request.delete(api(`/drafts/${id}`));
     }
   });
 
@@ -191,7 +191,7 @@ test.describe("where reading stopped", () => {
     await expect(page.locator(".cm-activeLine")).toContainText("The boiling takes");
     // Nothing was typed, so nothing was kept as a draft.
     const text = await (
-      await page.request.get(`/api/entries?path=${encodeURIComponent("03 Things/Brine Works.md")}`)
+      await page.request.get(api(`/entries?path=${encodeURIComponent("03 Things/Brine Works.md")}`))
     ).json();
     expect(text.draft).toBeNull();
   });
@@ -205,7 +205,7 @@ test("pins the entry from the bar, the phone's top line, and the p key", async (
     await pin.click();
     await expect(page.locator(".ui-toast")).toContainText("Pinned “Harbor” to Working on.");
     await expect(pin).toHaveAttribute("aria-pressed", "true");
-    const pins = await (await page.request.get("/api/pins")).json();
+    const pins = await (await page.request.get(api("/pins"))).json();
     expect(pins.pins.map((p: { path: string }) => p.path)).toContain(HARBOR);
 
     await page.keyboard.press("p");
@@ -214,13 +214,13 @@ test("pins the entry from the bar, the phone's top line, and the p key", async (
     await page.keyboard.press("p");
     await expect(pin).toHaveAttribute("aria-pressed", "true");
   } finally {
-    await page.request.delete(`/api/pins?path=${encodeURIComponent(HARBOR)}`);
+    await page.request.delete(api(`/pins?path=${encodeURIComponent(HARBOR)}`));
     // The pins file is a library file with its own draft; it goes, so later tests start clean.
-    const { drafts } = (await (await page.request.get("/api/unpublished")).json()) as {
+    const { drafts } = (await (await page.request.get(api("/unpublished"))).json()) as {
       drafts: { id: string; path: string }[];
     };
     for (const d of drafts.filter((d) => d.path === ".frontier/pins.json")) {
-      await page.request.delete(`/api/drafts/${d.id}`);
+      await page.request.delete(api(`/drafts/${d.id}`));
     }
   }
   // The key is the reader's only: typed in a field it is a letter.
@@ -237,29 +237,52 @@ test("pins the entry from the bar, the phone's top line, and the p key", async (
 test("p twice quickly makes one change, and a pin made elsewhere shows when the page returns", async ({
   page,
 }) => {
-  const asked: string[] = [];
-  page.on("request", (r) => {
-    if (r.method() !== "GET" && r.url().includes("/api/pins")) asked.push(r.method());
-  });
+  // The page's own calls to the pins, counted inside the page (see below), not by Playwright.
+  const asked = () =>
+    page.evaluate(() => (window as unknown as { __pinWrites: string[] }).__pinWrites ?? []);
   const clean = async () => {
-    await page.request.delete(`/api/pins?path=${encodeURIComponent(HARBOR)}`);
-    const { drafts } = (await (await page.request.get("/api/unpublished")).json()) as {
+    await page.request.delete(api(`/pins?path=${encodeURIComponent(HARBOR)}`));
+    const { drafts } = (await (await page.request.get(api("/unpublished"))).json()) as {
       drafts: { id: string; path: string }[];
     };
     for (const d of drafts.filter((d) => d.path === ".frontier/pins.json")) {
-      await page.request.delete(`/api/drafts/${d.id}`);
+      await page.request.delete(api(`/drafts/${d.id}`));
     }
   };
   try {
     await page.goto(entry(HARBOR));
     const pin = page.getByRole("button", { name: "Pin to Working on" });
     await expect(pin).toHaveAttribute("aria-pressed", "false");
+    // The first change is held on its way, so the second press always comes while it is under
+    // way, however fast this machine is. The hold, and the count of the calls that change the
+    // pins, are in the page's own `fetch`, not in a Playwright route or request listener: those
+    // were found to miss requests the page really sent (the page's fetch log showed the POST, and
+    // the server had the pin, while neither a route handler nor the "request" event ever fired),
+    // which made this test fail one run in fifty for a reason that was not the app's.
+    await page.evaluate(() => {
+      const w = window as unknown as { __pinWrites: string[] };
+      w.__pinWrites = [];
+      const original = window.fetch;
+      window.fetch = async (input, init) => {
+        const method = init?.method ?? (input instanceof Request ? input.method : "GET");
+        if (
+          method !== "GET" &&
+          String(input instanceof Request ? input.url : input).includes("/pins")
+        ) {
+          w.__pinWrites.push(method);
+          if (method === "POST") await new Promise((r) => setTimeout(r, 150));
+        }
+        return original(input, init);
+      };
+    });
     await page.keyboard.press("p");
     await page.keyboard.press("p");
     await expect(pin).toHaveAttribute("aria-pressed", "true");
+    await expect.poll(asked).toEqual(["POST"]);
+    // Nothing more follows: the second press made no change.
     await page.waitForTimeout(300);
-    expect(asked).toEqual(["POST"]);
-    await page.request.delete(`/api/pins?path=${encodeURIComponent(HARBOR)}`);
+    expect(await asked()).toEqual(["POST"]);
+    await page.request.delete(api(`/pins?path=${encodeURIComponent(HARBOR)}`));
 
     // Another device unpinned it; this page hears of it when it is shown again after a while.
     await page.clock.install();
@@ -334,12 +357,12 @@ test.describe("From here", () => {
       }
       await expect(page.getByRole("button", { name: "Pin to Working on" })).toHaveCount(0);
     } finally {
-      await page.request.delete(`/api/drafts/${id}`);
+      await page.request.delete(api(`/drafts/${id}`));
     }
   });
 
   test("is quiet when it cannot be read", async ({ page }) => {
-    await page.route("**/api/keep-going/from-here*", (route) => route.abort());
+    await page.route("**/api/p/*/keep-going/from-here*", (route) => route.abort());
     await page.goto(entry(HARBOR));
     await expect(page.locator(".entry h1").first()).toHaveText("Harbor");
     // Who links here is read with the entry, so it stays.
@@ -364,7 +387,7 @@ test.describe("From here", () => {
     await expect(row).toContainText("Linked, in drafts");
     await expect(page.locator(".ui-toast")).toContainText("Linked in Salt Road");
     const drafted = await (
-      await page.request.get(`/api/entries?path=${encodeURIComponent(SALT_ROAD)}`)
+      await page.request.get(api(`/entries?path=${encodeURIComponent(SALT_ROAD)}`))
     ).json();
     expect(drafted.draft).not.toBeNull();
     expect(drafted.text).toContain("[[Harbor]]");
@@ -373,7 +396,7 @@ test.describe("From here", () => {
     await expect(page.locator(".ui-toast")).toContainText("Took the link back out of Salt Road");
     await expect(row.getByRole("button", { name: "Link it" })).toBeVisible();
     const undone = await (
-      await page.request.get(`/api/entries?path=${encodeURIComponent(SALT_ROAD)}`)
+      await page.request.get(api(`/entries?path=${encodeURIComponent(SALT_ROAD)}`))
     ).json();
     expect(undone.draft).toBeNull();
     expect(undone.text).not.toContain("[[Harbor]]");
@@ -384,7 +407,7 @@ test.describe("From here", () => {
     const row = page.locator(".fh-mention", { hasText: "Salt Road" });
 
     // The mention is gone: nothing is linked and the row goes.
-    await page.route("**/api/keep-going/link-it", (route) =>
+    await page.route("**/api/p/*/keep-going/link-it", (route) =>
       route.fulfill({
         status: 404,
         json: { error: { code: "not_found", message: "There is no such mention." } },
@@ -396,8 +419,8 @@ test.describe("From here", () => {
 
     // The entry cannot be changed here.
     await page.reload();
-    await page.unroute("**/api/keep-going/link-it");
-    await page.route("**/api/keep-going/link-it", (route) =>
+    await page.unroute("**/api/p/*/keep-going/link-it");
+    await page.route("**/api/p/*/keep-going/link-it", (route) =>
       route.fulfill({
         status: 403,
         json: { error: { code: "not_allowed", message: "Not allowed." } },
@@ -409,13 +432,13 @@ test.describe("From here", () => {
 
     // A real link, whose undo is refused because the draft was edited since.
     await page.reload();
-    await page.unroute("**/api/keep-going/link-it");
+    await page.unroute("**/api/p/*/keep-going/link-it");
     const made = page.waitForResponse(
-      (r) => r.url().endsWith("/api/keep-going/link-it") && r.request().method() === "POST",
+      (r) => r.url().endsWith("/keep-going/link-it") && r.request().method() === "POST",
     );
     await row.getByRole("button", { name: "Link it" }).click();
     const { undo } = await (await made).json();
-    await page.route("**/api/keep-going/link-it/undo", (route) =>
+    await page.route("**/api/p/*/keep-going/link-it/undo", (route) =>
       route.fulfill({
         status: 403,
         json: { error: { code: "not_allowed", message: "Not allowed." } },
@@ -426,8 +449,8 @@ test.describe("From here", () => {
     await page.locator(".ui-toast").getByRole("button", { name: "Open" }).click();
     await expect(page).toHaveURL(/\/edit\/01%20Places\/Salt%20Road\.md/);
     // Put right for the tests that follow.
-    await page.unroute("**/api/keep-going/link-it/undo");
-    const back = await page.request.post("/api/keep-going/link-it/undo", { data: undo });
+    await page.unroute("**/api/p/*/keep-going/link-it/undo");
+    const back = await page.request.post(api("/keep-going/link-it/undo"), { data: undo });
     expect(back.ok(), await back.text()).toBe(true);
   });
 
@@ -439,7 +462,7 @@ test.describe("From here", () => {
       ["03 Things/Rope.md", "Rope"],
       ["03 Things/Knot.md", "Knot"],
     ] as const;
-    await page.route("**/api/keep-going/from-here*", async (route) => {
+    await page.route("**/api/p/*/keep-going/from-here*", async (route) => {
       const res = await route.fetch();
       const data = await res.json();
       data.unlinked = names.map(([path, title]) => ({
@@ -501,22 +524,22 @@ test.describe("What's missing (AI)", () => {
     const card = page.locator(".fh-card", { hasText: "What's missing" });
 
     // Held up: Stop puts the button back.
-    await page.route("**/api/keep-going/whats-missing", () => new Promise(() => undefined));
+    await page.route("**/api/p/*/keep-going/whats-missing", () => new Promise(() => undefined));
     await card.getByRole("button", { name: "What's missing here?" }).click();
     await expect(card).toContainText("Reading this entry and its neighbours");
     await card.getByRole("button", { name: "Stop" }).click();
     await expect(card.getByRole("button", { name: "What's missing here?" })).toBeVisible();
 
     // No model, with where to put it right.
-    await page.unroute("**/api/keep-going/whats-missing");
-    await page.route("**/api/keep-going/whats-missing", (route) =>
+    await page.unroute("**/api/p/*/keep-going/whats-missing");
+    await page.route("**/api/p/*/keep-going/whats-missing", (route) =>
       route.fulfill({
         status: 409,
         json: {
           error: {
             code: "ai_off",
             message: "No model is chosen for lore conversations.",
-            href: "/settings/ai/models/conversation",
+            href: "/settings/you/ai-models/conversation",
           },
         },
       }),
@@ -525,7 +548,7 @@ test.describe("What's missing (AI)", () => {
     await expect(card.getByRole("alert")).toContainText("No model is chosen");
     await expect(card.getByRole("link", { name: "Open Settings" })).toHaveAttribute(
       "href",
-      "/settings/ai/models/conversation",
+      proj("/settings/you/ai-models/conversation"),
     );
     await card.getByRole("button", { name: "Retry" }).click();
     await expect(card.getByRole("alert")).toBeVisible();
@@ -545,10 +568,15 @@ test.describe("next and previous in the folder", () => {
     );
     await expect(nav.getByRole("link", { name: /Next in 01 Places/ })).toContainText(next!.title);
 
+    // A key is read once the entry's neighbours are: wait for them before each press.
     await page.keyboard.press("Alt+ArrowDown");
     await expect(page.locator(".entry h1").first()).toHaveText(next!.title);
+    await expect(nav.getByRole("link", { name: /Previous in 01 Places/ })).toContainText(
+      "Salt Road",
+    );
     await page.keyboard.press("Alt+ArrowUp");
     await expect(page.locator(".entry h1").first()).toHaveText("Salt Road");
+    await expect(nav.getByRole("link", { name: /Next in 01 Places/ })).toContainText(next!.title);
     await page.keyboard.press("Alt+ArrowUp");
     await expect(page.locator(".entry h1").first()).toHaveText(previous!.title);
     await nav.getByRole("link", { name: /Next in 01 Places/ }).click();
@@ -591,9 +619,9 @@ test.describe("after Publish", () => {
   /** A draft of Salt Road to publish; Publish itself is held back, so the library stays as it is. */
   async function draftToPublish(page: Page, id: string): Promise<void> {
     const now = await (
-      await page.request.get(`/api/entries?path=${encodeURIComponent(SALT_ROAD)}`)
+      await page.request.get(api(`/entries?path=${encodeURIComponent(SALT_ROAD)}`))
     ).json();
-    const saved = await page.request.put("/api/drafts", {
+    const saved = await page.request.put(api("/drafts"), {
       data: {
         id,
         path: SALT_ROAD,
@@ -604,8 +632,8 @@ test.describe("after Publish", () => {
       },
     });
     expect(saved.ok(), await saved.text()).toBe(true);
-    await page.route("**/api/publish/confirm", (route) =>
-      route.fulfill({ json: { commit: "0123456789abcdef" } }),
+    await page.route("**/api/p/*/publish/confirm", (route) =>
+      route.fulfill({ json: { commit: "0123456789abcdef", published: [], conflicts: [] } }),
     );
   }
 
@@ -645,7 +673,7 @@ test.describe("after Publish", () => {
       await expect(page).toHaveURL(/\/e\//);
       await expect(page.locator(".entry h1").first()).toBeVisible();
     } finally {
-      await page.request.delete(`/api/drafts/${id}`);
+      await page.request.delete(api(`/drafts/${id}`));
     }
   });
 
@@ -671,7 +699,7 @@ test.describe("after Publish", () => {
       await page.clock.fastForward(2_000);
       await expect(page.locator(".nudge")).toHaveCount(0);
     } finally {
-      await page.request.delete(`/api/drafts/${id}`);
+      await page.request.delete(api(`/drafts/${id}`));
     }
   });
 
@@ -699,14 +727,14 @@ test.describe("after Publish", () => {
       await expect(nudge).toHaveCount(0);
       await expect(page.locator(".banner-ok")).toContainText("Published as commit 0123456789");
     } finally {
-      await page.request.delete(`/api/drafts/${id}`);
+      await page.request.delete(api(`/drafts/${id}`));
     }
   });
 
   test("with no steps it is the plain end as before", async ({ page }) => {
     const id = "kgnudge00003";
     await draftToPublish(page, id);
-    await page.route("**/api/keep-going/after-publish", (route) =>
+    await page.route("**/api/p/*/keep-going/after-publish", (route) =>
       route.fulfill({ json: { steps: [] } }),
     );
     try {
@@ -714,7 +742,7 @@ test.describe("after Publish", () => {
       await expect(page.locator(".banner-ok")).toContainText("Published as commit 0123456789");
       await expect(page.locator(".nudge")).toHaveCount(0);
     } finally {
-      await page.request.delete(`/api/drafts/${id}`);
+      await page.request.delete(api(`/drafts/${id}`));
     }
   });
 });

@@ -1,12 +1,13 @@
 import { expect, test as setup } from "@playwright/test";
-import { AUTH_FILE, PASSWORD } from "./helpers.ts";
+import { AUTH_FILE, EMAIL, PASSWORD, proj } from "./helpers.ts";
 
 /**
  * Logs in once and keeps the session for every other test. The server allows five login attempts
  * per 15 minutes, so the tests must not log in one by one.
  */
 setup("log in", async ({ page }) => {
-  await page.goto("/");
+  await page.goto(proj("/"));
+  await page.fill("#email", EMAIL);
   await page.fill("#password", PASSWORD);
   await page.click("button[type=submit]");
   await expect(page.locator(".home h1")).toBeVisible();

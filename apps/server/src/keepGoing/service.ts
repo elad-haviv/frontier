@@ -74,14 +74,19 @@ export class KeepGoing {
 
   /** The needs-love rules in force; all on until the author switches one off. */
   async rules(): Promise<NeedsLoveRules> {
-    return (await this.d.settings.read())?.keepGoing.needsLove ?? NeedsLoveRules.parse({});
+    return (await this.d.settings.current()).keepGoing.needsLove;
+  }
+
+  /** Open shared comments per entry: everyone in the project may know their number (stage 31e). */
+  private commentCounts(): Promise<ReadonlyMap<string, number>> {
+    return this.d.comments.counts();
   }
 
   async queue(): Promise<QueueResponse> {
     return buildQueue(
       derive(this.d.index),
       await this.rules(),
-      await this.d.comments.counts(),
+      await this.commentCounts(),
       this.d.folders.file(),
     );
   }
@@ -123,7 +128,7 @@ export class KeepGoing {
     const { mentions, more } = unlinkedMentions(this.d.index, note);
     return {
       path,
-      ...fromHereParts(this.d.index, d, note, await this.rules(), await this.d.comments.counts()),
+      ...fromHereParts(this.d.index, d, note, await this.rules(), await this.commentCounts()),
       unlinked: mentions,
       unlinkedMore: more,
     };
@@ -208,6 +213,7 @@ export class KeepGoing {
     if (kept.previousText === null) await this.d.drafts.discard(draft.id);
     else await this.d.drafts.serverChange(draft.id, kept.previousText);
     this.d.status.drafts(this.d.drafts.count(), 0);
+    this.d.drafts.noteServerChange();
     this.d.status.serverChangedDraft();
   }
 

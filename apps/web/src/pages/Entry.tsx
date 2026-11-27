@@ -1,6 +1,7 @@
 import { aliasesOf, dirname, splitFrontmatter, stem } from "@frontier/vault";
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
-import { Link, useLocation, useNavigate, useNavigationType } from "react-router-dom";
+import { useNavigationType } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "../nav.tsx";
 import {
   api,
   ApiFailure,
@@ -11,7 +12,10 @@ import {
   type PassageComment,
   talkUrl,
 } from "../api.ts";
-import { CommentsPanel } from "../components/CommentsPanel.tsx";
+import { type Adding, CommentsPanel } from "../components/CommentsPanel.tsx";
+import { openCount } from "../components/comments/model.ts";
+import { SelectionComment } from "../components/comments/SelectionComment.tsx";
+import { useComments } from "../components/comments/useComments.ts";
 import { CommentBubbles, useMargin } from "../components/comments/CommentBubbles.tsx";
 import { passageRange } from "../components/comments/passage.ts";
 import { HoverPreview } from "../components/HoverPreview.tsx";
@@ -21,7 +25,6 @@ import {
   scrollPageToTop,
   usePhone,
   useRefresh,
-  useStatus,
   useWords,
 } from "../components/Shell.tsx";
 import {
@@ -73,6 +76,12 @@ import {
   useRelocate,
 } from "../components/entry/RenameField.tsx";
 import { useNeedsConnection } from "../sync/connection.ts";
+import { useCanWrite } from "../components/projectContext.ts";
+import { useOthersUnsaved, useReaders } from "../people/live.ts";
+import { lastVersionText } from "../people/model.ts";
+import { OthersNotice } from "../people/OthersNotice.tsx";
+import { presence } from "../people/presence.ts";
+import { ReadingNow } from "../people/ReadingNow.tsx";
 import { NotOnDevice } from "../components/NotOnDevice.tsx";
 import { OfflineCopy, useReadAgain } from "../components/OfflineCopy.tsx";
 import {
@@ -111,8 +120,6 @@ function Crumbs({ path, pending }: { path: string; pending: boolean }) {
   );
 }
 
-const NO_COMMENTS: PassageComment[] = [];
-
 const join = (folder: string, name: string) => `${folder ? folder + "/" : ""}${name}.md`;
 
 /** How the browser loaded this page: "navigate", "reload" or "back_forward". */
@@ -142,12 +149,17 @@ export function EntryPage() {
   // an entry that is only a draft, and then the foot of the page is quiet about it.
   const fromHere = useAsync(() => api.fromHere(path), `from-here:${path}@${key}`);
   const here = fromHere.state === "ready" && fromHere.value.path === path ? fromHere.value : null;
-  const aiOn = useStatus()?.ai.conversation === true;
-  const comments = useAsync(() => api.commentCount(path), `comments:${path}@${key}`);
-  const openComments = comments.state === "ready" ? comments.value.open : 0;
-  // The comments themselves, for the margin and the Comments tab.
-  const commentList = useAsync(() => api.comments(path), `comment-list:${path}@${key}`);
-  const passageComments = commentList.state === "ready" ? commentList.value.comments : NO_COMMENTS;
+  // Comments are between people (stage 31e): every role reads and adds them. They are read again
+  // when the stream says an entry's comments changed.
+  const canWrite = useCanWrite();
+  const commentsOf = useComments(path);
+  const passageComments = commentsOf.comments;
+  const openComments = openCount(passageComments);
+  /** A passage the person chose to comment on, or the whole entry (empty words); `n` makes each a new form. */
+  const [commenting, setCommenting] = useState<{ adding: Adding | null; n: number }>({
+    adding: null,
+    n: 0,
+  });
   /** The comment whose bubble was pressed last; a new object at each press. */
   const [focusComment, setFocusComment] = useState<{ id: string } | null>(null);
   const article = useRef<HTMLElement>(null);
@@ -165,6 +177,24 @@ export function EntryPage() {
   // The entry as loaded, which keeps its identity until another arrives; `entry` itself is new
   // at every render.
   const loaded = entry.state === "ready" ? entry.value : null;
+
+  // Who else has unsaved changes to this entry and who is reading it are live: the stream says,
+  // and nothing is shown from the device's copy or while the server cannot be reached.
+  const shownEntry = loaded && loaded.path === path ? loaded : null;
+  const fromDevice = offlineAt !== null;
+  const others = useOthersUnsaved(path, shownEntry?.othersUnsaved, fromDevice);
+  const readers = useReaders(path, fromDevice);
+  // This tab says which published entry it reads (readers too, so writers can see them). An entry
+  // that is only the person's own unsaved new one is never announced.
+  const announce =
+    shownEntry !== null &&
+    !fromDevice &&
+    shownEntry.blob !== "" &&
+    shownEntry.draft?.kind !== "create";
+  useEffect(() => {
+    presence.set(announce ? path : null);
+  }, [announce, path]);
+  useEffect(() => () => presence.set(null), []);
   const view = useMemo(() => {
     if (!loaded) return null;
     const { body } = splitFrontmatter(loaded.text);
@@ -256,6 +286,8 @@ export function EntryPage() {
   const name = stem(shownPath);
   const folder = dirname(shownPath);
   const editable = !!e && !e.readOnly && e.draft?.kind !== "delete";
+  /** Edit, rename and move are for writers; History and Export are for everyone who reads. */
+  const mayEdit = editable && canWrite;
   const reached = current >= 0 ? (headings[current]?.text ?? null) : null;
   const relocate = useRelocate(e, entry.retry);
 
@@ -330,28 +362,36 @@ export function EntryPage() {
     range?.startContainer.parentElement?.scrollIntoView({ block: "center" });
   }
 
+  /** Starts a comment: the panel opens with a form for this passage. */
+  function startComment(adding: Adding) {
+    setCommenting((c) => ({ adding, n: c.n + 1 }));
+    openPanel("comments");
+  }
+
   usePanel(
-    !e || passageComments.length === 0
+    !e
       ? null
       : {
           id: "comments",
           title: "Comments",
           icon: MessageSquare,
-          badge: passageComments.length,
+          ...(openComments > 0 ? { badge: openComments } : {}),
           render: () => (
             <CommentsPanel
-              key={e.path}
+              key={`${e.path}:${commenting.n}`}
               view={null}
               text={e.text}
               path={e.path}
               comments={passageComments}
-              adding={null}
-              canAi={canTalk}
+              adding={commenting.adding}
+              onStart={() => startComment({ quote: "", prefix: "", suffix: "" })}
+              onCancelAdding={() => setCommenting((c) => ({ ...c, adding: null }))}
+              canAi={canTalk && canWrite}
               focus={focusComment}
               onShow={showPassage}
               onChanged={() => {
-                commentList.retry();
-                comments.retry();
+                setCommenting((c) => ({ ...c, adding: null }));
+                commentsOf.reload();
               }}
               onClose={() => bar.hide()}
             />
@@ -366,7 +406,9 @@ export function EntryPage() {
     (box) => {
       const root = prose.current;
       if (!root || !loaded) return [];
+      // Open threads on a passage; a resolved one is out of the way.
       return passageComments.flatMap((c) => {
+        if (c.resolved || c.for === "ai" || !c.quote) return [];
         const range = passageRange(root, loaded.text, c);
         if (!range) return [];
         const top = range.getBoundingClientRect().top - box.top;
@@ -532,10 +574,13 @@ export function EntryPage() {
 
   const toggle = (id: string) => () => (bar.open === id ? bar.hide() : openPanel(id));
   const actions: EntryActionsProps = {
-    editHref: editable ? editUrl(ent.path) : undefined,
+    editHref: mayEdit ? editUrl(ent.path) : undefined,
     onOutline: headings.length > 0 ? toggle("outline") : undefined,
     outlineOpen: bar.open === "outline",
     onGraph: toggle("graph"),
+    onComments: toggle("comments"),
+    commentsOpen: bar.open === "comments",
+    openComments,
     graphOpen: bar.open === "graph",
     onRelations: toggle("relations"),
     relationsOpen: bar.open === "relations",
@@ -544,8 +589,7 @@ export function EntryPage() {
       : undefined,
     changes: editable
       ? {
-          onRename: startRename,
-          onMove: startMove,
+          ...(canWrite ? { onRename: startRename, onMove: startMove } : {}),
           onHistory: () => openPanel("history"),
           onExport: () => openPanel("export"),
           offline,
@@ -553,6 +597,7 @@ export function EntryPage() {
       : undefined,
   };
 
+  const byline = lastVersionText(ent.lastVersion);
   const moved = ent.rename !== null && dirname(ent.rename.to) !== dirname(ent.path);
   const renamed = ent.rename !== null && stem(ent.rename.to) !== stem(ent.path);
 
@@ -680,6 +725,14 @@ export function EntryPage() {
               )}
             </p>
           )}
+          {byline && (
+            <p className="people-byline" data-testid="last-version">
+              {byline}
+              {fromDevice && <span> (as of this copy)</span>}
+            </p>
+          )}
+          <ReadingNow people={readers} />
+          <OthersNotice people={others} />
           <Fields fields={ent.fields} />
           <CustomFields text={ent.text} links={ent.links} />
           {canTalk && (ent.fields.type === "person" || ent.fields.type === "deity") && (
@@ -689,11 +742,17 @@ export function EntryPage() {
               </Link>
             </p>
           )}
-          {openComments > 0 && !ent.readOnly && (
+          {openComments > 0 && (
             <p className="on-maps">
-              <Link to={`${editUrl(ent.path)}?comments=1`}>
-                {openComments} open {openComments === 1 ? "comment" : "comments"}
-              </Link>
+              {mayEdit ? (
+                <Link to={`${editUrl(ent.path)}?comments=1`}>
+                  {openComments} open {openComments === 1 ? "comment" : "comments"}
+                </Link>
+              ) : (
+                <button type="button" className="plain" onClick={() => openPanel("comments")}>
+                  {openComments} open {openComments === 1 ? "comment" : "comments"}
+                </button>
+              )}
             </p>
           )}
           {ent.maps.length > 0 && (
@@ -720,7 +779,9 @@ export function EntryPage() {
               ))}
             </p>
           )}
-          {ent.state === "published" && !ent.readOnly && <ProposeFields path={ent.path} />}
+          {canWrite && ent.state === "published" && !ent.readOnly && (
+            <ProposeFields path={ent.path} />
+          )}
         </header>
 
         <div className="prose" ref={prose}>
@@ -734,9 +795,12 @@ export function EntryPage() {
         </div>
 
         <HoverPreview scope=".prose" />
+        {!fromDevice && !offline && (
+          <SelectionComment root={prose} text={ent.text} onComment={startComment} />
+        )}
 
         {/* Keyed by the entry, so what was done in one (a Link it, an AI answer) is not carried to the next. */}
-        <FromHere key={path} path={path} title={name} data={here} ai={aiOn} />
+        <FromHere key={path} path={path} title={name} data={here} ai={canTalk} />
         <FolderNeighbours path={path} data={here} />
         <BacklinksLine backlinks={ent.backlinks} />
       </article>

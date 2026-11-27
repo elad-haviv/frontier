@@ -1,15 +1,20 @@
 /**
  * Fills an empty data folder from the backup.
  *
- *   npm run restore -w apps/server            from the latest copy
- *   npm run restore -w apps/server -- 2026-11-20    from that night's copy
+ *   npm run restore -w apps/server                          everything, from the latest copy
+ *   npm run restore -w apps/server -- 2026-11-20            everything, from that night's copy
+ *   npm run restore -w apps/server -- --project avalymia    one project (its address or id)
+ *
+ * Everything is the first project and the server's own files (accounts, settings, the project
+ * list), which share the old layout, and every project made since, each from its own prefix in
+ * the backup. One project needs the project list to be here already (restore everything first
+ * on a new disk), and its folders to be empty.
  *
  * Uses the same environment variables as the server. Run it while the server is stopped.
  */
-import { restore } from "../backup/backup.js";
+import { restoreEverything, restoreProject } from "../backup/restoreProjects.js";
 import { FolderTarget, S3Target } from "../backup/targets.js";
 import { loadConfig } from "../config.js";
-import { backupSources } from "../app.js";
 import { applySampleMode } from "../sample.js";
 
 applySampleMode(process.env);
@@ -19,9 +24,21 @@ const target =
     ? new FolderTarget(config.backup.dir)
     : new S3Target(config.backup.s3);
 
+const args = process.argv.slice(2);
+const at = args.indexOf("--project");
+const wanted = at >= 0 ? args[at + 1] : undefined;
+const from = args.find((a, i) => !a.startsWith("--") && i !== at + 1) ?? "latest";
+const setup = { dataDir: config.dataDir, own: config.library === "own", target, from };
+
 try {
-  const result = await restore(target, backupSources(config.dataDir), process.argv[2] ?? "latest");
-  console.error(`Restored ${result.files} files from ${result.from} into ${config.dataDir}.`);
+  if (at >= 0 && !wanted) throw new Error("Say which project: --project <address>.");
+  if (wanted === undefined) {
+    const files = await restoreEverything(setup);
+    console.error(`Restored ${files} files from ${from} into ${config.dataDir}.`);
+  } else {
+    const done = await restoreProject(setup, wanted);
+    console.error(`Restored ${done.files} files of "${done.name}" from ${from}.`);
+  }
 } catch (err) {
   console.error(`Nothing was restored. ${(err as Error).message}`);
   process.exit(1);

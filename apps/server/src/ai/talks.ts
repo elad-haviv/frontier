@@ -1,8 +1,14 @@
 /**
- * Conversations with characters (stage 27), kept as working files in `/data/state/talks/`, one
- * file each. They are not lore: not in the library, its history or any export. A conversation
- * belongs to a character by the entry's id, so it follows the entry when it is renamed or moved.
- * All are kept until the author deletes them.
+ * Conversations with characters (stage 27, numbered 27 on main), kept as working files in
+ * `/data/state/talks/<person id>/`, one file each. They are not lore: not in the library, its
+ * history or any export. A conversation belongs to a character by the entry's id, so it follows
+ * the entry when it is renamed or moved. All are kept until the person who had it deletes it.
+ *
+ * Each person's conversations are theirs alone, like lore conversations (stage 31): no route
+ * answers with another person's, and a conversation id of someone else is `not_found`. A server
+ * from before projects kept them straight in `talks/`; those belong to the project's first owner
+ * (`legacyOwner`), read from there until the conversation is saved again, which moves it to their
+ * folder.
  */
 import { randomBytes } from "node:crypto";
 import { readdir } from "node:fs/promises";
@@ -74,42 +80,52 @@ export class Talks {
   constructor(
     stateDir: string,
     private readonly files: StateFiles,
+    private readonly legacyOwner: () => string | null = () => null,
   ) {
     this.dir = join(stateDir, "talks");
   }
 
-  private file(id: string): string {
+  private file(person: string, id: string): string {
+    if (!/^[A-Za-z0-9-]{1,64}$/.test(person)) throw new Error("Not a person id.");
+    return join(this.dir, person, `${id}.json`);
+  }
+
+  private legacyFile(id: string): string {
     return join(this.dir, `${id}.json`);
   }
 
-  async get(id: string): Promise<Talk | null> {
+  async get(person: string, id: string): Promise<Talk | null> {
     if (!ID.test(id)) return null;
-    return this.files.readJson(this.file(id), Talk);
+    const own = await this.files.readJson(this.file(person, id), Talk);
+    if (own || person !== this.legacyOwner()) return own;
+    return this.files.readJson(this.legacyFile(id), Talk);
   }
 
-  /** A character's conversations, the latest spoken in first. */
-  async forEntry(entry: string): Promise<Talk[]> {
-    let names: string[] = [];
-    try {
-      names = await readdir(this.dir);
-    } catch {
-      return [];
+  /** A character's conversations of one person, the latest spoken in first. */
+  async forEntry(person: string, entry: string): Promise<Talk[]> {
+    const names = async (dir: string) => {
+      try {
+        return (await readdir(dir)).filter((n) => n.endsWith(".json") && ID.test(n.slice(0, -5)));
+      } catch {
+        return [];
+      }
+    };
+    const ids = new Set((await names(join(this.dir, person))).map((n) => n.slice(0, -5)));
+    if (person === this.legacyOwner()) {
+      for (const n of await names(this.dir)) ids.add(n.slice(0, -5));
     }
-    const all = await Promise.all(
-      names
-        .filter((n) => n.endsWith(".json") && ID.test(n.slice(0, -5)))
-        .map((n) => this.get(n.slice(0, -5))),
-    );
+    const all = await Promise.all([...ids].map((id) => this.get(person, id)));
     return all
       .filter((t): t is Talk => t !== null && t.entry === entry)
       .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
   }
 
   /**
-   * Changes a conversation, or starts one when `id` is null. `work` gets the conversation as it
-   * is and answers it as it should be.
+   * Changes a conversation of `person`, or starts one when `id` is null. `work` gets the
+   * conversation as it is and answers it as it should be.
    */
   change(
+    person: string,
     id: string | null,
     start: { entry: string; moment: Talk["moment"] },
     work: (talk: Talk) => Talk,
@@ -129,21 +145,24 @@ export class Talks {
           lines: [],
         };
       } else {
-        const found = await this.get(id);
+        const found = await this.get(person, id);
         if (!found || found.entry !== start.entry) {
           throw new ApiError("not_found", "That conversation is not there any more.");
         }
         talk = found;
       }
       const next = Talk.parse(work(talk));
-      await this.files.writeJson(this.file(next.id), next);
+      await this.files.writeJson(this.file(person, next.id), next);
+      if (person === this.legacyOwner()) await this.files.remove(this.legacyFile(next.id));
       return next;
     });
     this.queue = run.catch(() => undefined);
     return run;
   }
 
-  async remove(id: string): Promise<void> {
-    if (ID.test(id)) await this.files.remove(this.file(id));
+  async remove(person: string, id: string): Promise<void> {
+    if (!ID.test(id)) return;
+    await this.files.remove(this.file(person, id));
+    if (person === this.legacyOwner()) await this.files.remove(this.legacyFile(id));
   }
 }

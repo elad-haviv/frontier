@@ -1,12 +1,13 @@
 import { Grid2x2, List, Plus, Search, X } from "lucide-react";
 import { type KeyboardEvent, useMemo, useRef, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "../nav.tsx";
 import { api, mapUrl } from "../api.ts";
 import { useDialogs } from "../components/Dialogs.tsx";
 import { MapArt } from "../components/maps/MapArt.tsx";
 import { isDark, KIND_PICTURES } from "../components/maps/KindPictures.tsx";
 import { type MapActions, MapCard, MapRowItem } from "../components/maps/MapItems.tsx";
 import { NewMapDialog } from "../components/maps/NewMapDialog.tsx";
+import { useCanWrite } from "../components/projectContext.ts";
 import { useRefresh } from "../components/Shell.tsx";
 import { Problem } from "../components/ui/Problem.tsx";
 import { Progress } from "../components/ui/Progress.tsx";
@@ -33,9 +34,9 @@ import {
   toolsFor,
 } from "../map/mapsList.ts";
 import { useNeedsConnection } from "../sync/connection.ts";
-import { queue } from "../sync/queue.ts";
 import { failureOf, useAsync } from "../useAsync.ts";
 import "./Maps.css";
+import { projectWork } from "../projectWork.ts";
 
 /**
  * The library of maps (stage 23). Each map is one card with a picture; a map that has maps lying
@@ -74,13 +75,17 @@ export function MapsPage() {
     if (!search.current) return false;
     search.current.focus();
   });
-  useShortcut("maps.new", () => setMaking("flat"));
+  // Making, editing, renaming and deleting maps are writers' (stage 31c).
+  const canWrite = useCanWrite();
+  useShortcut("maps.new", () => (canWrite ? setMaking("flat") : false));
 
   const actions: MapActions = {
     offline,
     onEdit: (r) => navigate(`${mapUrl(r.id)}?edit=1`),
     onStack: (r) => navigate(`/stack/${r.id}`),
     onRename: async (r) => {
+      // The project the map is in, taken before the dialog: the person may switch while it is open.
+      const work = projectWork();
       const title = await dialogs.prompt({
         title: `Rename the map "${r.title}"`,
         label: "Title",
@@ -89,17 +94,19 @@ export function MapsPage() {
       });
       if (!title?.trim() || title.trim() === r.title) return;
       // Saved like any change to a map: kept on this device until the server has it.
-      const made = await api.map(r.id);
-      await queue.put(
+      const made = await work.api.map(r.id);
+      await work.queue.put(
         `map:${r.id}`,
         { ...made.map, title: title.trim() },
         { draftId: "", revision: made.revision, baseBlob: made.blob, base: made.map, delay: 0 },
       );
-      await queue.sendNow(`map:${r.id}`);
+      await work.queue.sendNow(`map:${r.id}`);
+      if (!work.open()) return;
       refresh();
       maps.retry();
     },
     onDelete: async (r) => {
+      const work = projectWork();
       const under = rows.filter((x) => x.under === r.id).length;
       const ok = await dialogs.confirm({
         title: `Delete the map "${r.title}"?`,
@@ -110,8 +117,9 @@ export function MapsPage() {
         danger: true,
       });
       if (!ok) return;
-      await queue.drop(`map:${r.id}`);
-      await api.deleteMap(r.id).catch(() => undefined);
+      await work.queue.drop(`map:${r.id}`);
+      await work.api.deleteMap(r.id).catch(() => undefined);
+      if (!work.open()) return;
       refresh();
       maps.retry();
     },
@@ -194,10 +202,12 @@ export function MapsPage() {
             ))}
           </div>
         )}
-        <button type="button" className="primary maps-new" onClick={() => setMaking("flat")}>
-          <Plus size={18} aria-hidden="true" />
-          <span className="maps-new-label">New map</span>
-        </button>
+        {canWrite && (
+          <button type="button" className="primary maps-new" onClick={() => setMaking("flat")}>
+            <Plus size={18} aria-hidden="true" />
+            <span className="maps-new-label">New map</span>
+          </button>
+        )}
       </header>
       <p className="muted lede">
         A map is drawn over an image of yours, or, for a star map or a system model, in open space.
@@ -334,9 +344,11 @@ export function MapsPage() {
             Draw a world over an image of yours, or place stars and planets in open space. Each
             map's markers point at entries.
           </p>
-          <button type="button" className="primary" onClick={() => setMaking("flat")}>
-            <Plus size={18} aria-hidden="true" /> Make the first map
-          </button>
+          {canWrite && (
+            <button type="button" className="primary" onClick={() => setMaking("flat")}>
+              <Plus size={18} aria-hidden="true" /> Make the first map
+            </button>
+          )}
         </div>
       )}
 
@@ -396,7 +408,7 @@ export function MapsPage() {
           {shown.map((r) => (
             <MapCard key={r.id} row={r} rows={rows} query={filters.query} actions={actions} />
           ))}
-          {!filtering && tools.newTile && (
+          {canWrite && !filtering && tools.newTile && (
             <li className="map-newtile">
               <button type="button" onClick={() => setMaking("flat")}>
                 <Plus size={20} aria-hidden="true" />
@@ -440,7 +452,7 @@ export function MapsPage() {
         </div>
       )}
 
-      {making && <NewMapDialog initialKind={making} onClose={() => setMaking(null)} />}
+      {making && canWrite && <NewMapDialog initialKind={making} onClose={() => setMaking(null)} />}
     </article>
   );
 }

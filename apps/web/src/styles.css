@@ -10,6 +10,8 @@
   --accent: #9a3b1c;
   --accent-soft: #f0ddd2;
   --warn: #a12a22;
+  /* The fill of a button that does something that cannot be undone: white text on it passes AA. */
+  --danger-solid: #8a2c14;
   --shadow: 0 12px 40px rgba(35, 32, 27, 0.18);
   --serif: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif;
   --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
@@ -46,6 +48,16 @@
 
   /* What marks the selected and the hovered feature on a map, over the map's own image. */
   --map-select: #c2410c;
+
+  /* The letter marks of projects (stage 31b): mid-tones that read with white text, 5:1 or more. */
+  --project-0: #9a3b1c;
+  --project-1: #1f6f6b;
+  --project-2: #3f5fa0;
+  --project-3: #7b4a8c;
+  --project-4: #5b7424;
+  --project-5: #a13d62;
+  --project-6: #4a5f73;
+  --project-7: #8a6a14;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -60,8 +72,18 @@
     --accent: #e08a5f;
     --accent-soft: #3a261d;
     --warn: #f08c82;
+    --danger-solid: #b5402e;
     --shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
     --map-select: #fb923c;
+    /* Still mid-tones, so white text keeps 4.5:1 or more on the dark paper. */
+    --project-0: #b4502c;
+    --project-1: #237a76;
+    --project-2: #5372b8;
+    --project-3: #9360a6;
+    --project-4: #5f7a28;
+    --project-5: #bb4f78;
+    --project-6: #5f778c;
+    --project-7: #8c6c14;
   }
 }
 
@@ -201,6 +223,75 @@ button.plain {
 .login-card .error {
   margin: 0;
   font-size: 0.9rem;
+}
+
+.login-form {
+  display: grid;
+  gap: 0.6rem;
+}
+
+/* The passkey is the first way in, so it is the filled button; the password form is the second. */
+.login-card button.login-passkey {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  margin-top: 0;
+}
+.login-card button.secondary {
+  border: 1px solid var(--rule);
+  background: transparent;
+  color: var(--ink);
+}
+.login-card button.login-google {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  margin-top: 0;
+}
+/* A plain "G" mark for "Continue with Google": no logo is fetched from anywhere. */
+.gm {
+  display: inline-grid;
+  place-items: center;
+  width: 1.2rem;
+  height: 1.2rem;
+  border-radius: 50%;
+  border: 1px solid var(--rule);
+  background: var(--paper-raised);
+  color: #3a7bd5;
+  font: 700 0.75rem var(--sans);
+}
+.login-or {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin: 0.4rem 0 0;
+  color: var(--ink-faint);
+  font-size: 0.85rem;
+}
+.login-or::before,
+.login-or::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--rule);
+}
+.login-hint {
+  margin: -0.2rem 0 0;
+  color: var(--ink-faint);
+  font-size: 0.85rem;
+}
+.login-card .login-forgot {
+  margin: -0.2rem 0 0;
+  font-size: 0.85rem;
+}
+.login-card .login-note {
+  margin: 0.8rem 0 0;
+  font-family: var(--sans);
+  font-size: 0.85rem;
+  font-style: normal;
+  text-align: center;
 }
 
 /* ---- Shell -------------------------------------------------------------------------------- */
@@ -2436,8 +2527,9 @@ input.map-title {
   padding: 0.5rem 1rem;
 }
 .dialog-actions .danger-solid {
-  border-color: #8a2c14;
-  background: #8a2c14;
+  border-color: var(--danger-solid);
+  background: var(--danger-solid);
+  color: #fff;
 }
 
 /* ---- Chronicles ---------------------------------------------------------------------------- */
@@ -3773,6 +3865,59 @@ input.map-title {
 }
 .comment-actions button {
   min-height: 2.5rem;
+}
+/* Comments between people (stage 31e): who wrote what, replies, resolved threads. */
+.comment-who {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.85rem;
+}
+.comment-edited {
+  font-size: 0.78rem;
+  font-style: italic;
+}
+.comment-replies {
+  margin: 0.2rem 0 0 0.9rem;
+  padding: 0 0 0 0.7rem;
+  border-left: 2px solid var(--rule);
+  list-style: none;
+}
+.comment-replies > li {
+  padding: 0.3rem 0;
+}
+.comment-write {
+  margin: 0.3rem 0;
+}
+.comment-write textarea {
+  width: 100%;
+  padding: 0.4rem 0.6rem;
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  background: var(--paper);
+  color: var(--ink);
+  font: inherit;
+}
+.comment-hint {
+  margin-left: auto;
+  font-size: 0.78rem;
+}
+.comment-thread.is-resolved {
+  opacity: 0.75;
+}
+.comment-resolved-list {
+  margin-top: 0.6rem;
+  border-top: 1px solid var(--rule);
+}
+.comment-resolved-list > button {
+  min-height: 2.5rem;
+}
+@media (max-width: 47.99rem) {
+  /* On a phone the hint about Ctrl+Enter has no key to point at. */
+  .comment-hint {
+    display: none;
+  }
 }
 
 /* Talking with a character (stage 27) */

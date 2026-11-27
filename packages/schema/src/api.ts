@@ -1,22 +1,46 @@
 import { z } from "zod";
 import { DraftKind, Id, Origin, ProposalOperation, VaultPath } from "./state.js";
-import { AiProviderView, ModelPrice } from "./ai.js";
+import { ModelPrice } from "./ai.js";
+import { EmailInfo } from "./email.js";
+import { AccountEmail } from "./people.js";
 import { KeepGoingSettings } from "./keepGoingSettings.js";
 
 const Ok = z.object({ ok: z.literal(true) });
 
 // ---- Session -------------------------------------------------------------------------------
 
-export const LoginRequest = z.object({ password: z.string().min(1) });
+/** The email may be empty only for the one account that has none yet (stage 31a). */
+export const LoginRequest = z.object({
+  email: z.string().trim().max(200).default(""),
+  password: z.string().min(1),
+});
 export const LoginResponse = Ok;
 export const LogoutResponse = Ok;
 export const SessionResponse = z.object({
   loggedIn: z.boolean(),
+  /** Who is logged in; null when nobody is. */
+  person: z
+    .object({
+      id: z.string(),
+      name: z.string(),
+      email: z.string(),
+      /** Stage 32: what the banner needs. */
+      emailInfo: EmailInfo.optional(),
+    })
+    .nullable()
+    .default(null),
+  /** True while the only account has no email, so the login page can say to leave it empty. */
+  emailless: z.boolean().default(false),
   /** Whether a passkey exists, so the login page can offer it. */
   passkeys: z.boolean(),
   /** False when the password is switched off. */
   password: z.boolean(),
+  /** Whether this server offers "Continue with Google" (stage 31c); the app hides the button when false. */
+  google: z.boolean().default(false),
+  /** Stage 32: whether this server sends mail. False hides every email feature (Forgot password, the banner, the invite field). */
+  mail: z.boolean().default(false),
 });
+export type SessionResponse = z.infer<typeof SessionResponse>;
 
 // ---- Tree and entries ----------------------------------------------------------------------
 
@@ -24,10 +48,29 @@ export const SessionResponse = z.object({
 export const EntryState = z.enum(["published", "unpublished", "conflict", "quarantined"]);
 export type EntryState = z.infer<typeof EntryState>;
 
+/** Who made a saved version, or whose unsaved change this is: the person's id, and the name to show. */
+export const AuthorRef = z.object({
+  /** The person's id; null for a version Git alone says something about (an older one, a bot, an outside push). */
+  id: z.string().nullable(),
+  name: z.string(),
+});
+export type AuthorRef = z.infer<typeof AuthorRef>;
+
+/** Someone else in the project who has unsaved changes to an entry (stage 31d). Never their text. */
+export const OtherUnsaved = z.object({
+  id: z.string(),
+  name: z.string(),
+  /** When their unsaved changes to the entry began. */
+  since: z.string().datetime(),
+});
+export type OtherUnsaved = z.infer<typeof OtherUnsaved>;
+
 export const TreeNote = z.object({
   path: VaultPath,
   title: z.string(),
   state: EntryState,
+  /** Someone else in the project has unsaved changes to this entry: the tree shows a dot (stage 31d). Writers and owners only. */
+  othersUnsaved: z.boolean().optional(),
   /** Where the entry still is while a rename moves it here: its link opens this path. */
   moved: VaultPath.optional(),
   /** Words of body text, for the stub mark; sent for published entries. */
@@ -154,6 +197,16 @@ export const EntryResponse = z.object({
    * one: a second rename or move replaces it.
    */
   rename: z.object({ id: Id, to: VaultPath }).nullable(),
+  /**
+   * The other people in the project who have unsaved changes to this entry (stage 31d): who and
+   * since when, never what. Writers and owners get the list; a reader always gets an empty one.
+   */
+  othersUnsaved: z.array(OtherUnsaved).optional(),
+  /** Who made the entry's last saved version, and when; absent for an entry with none. */
+  lastVersion: z
+    .object({ commit: z.string(), at: z.string(), by: AuthorRef })
+    .nullable()
+    .optional(),
 });
 export type EntryResponse = z.infer<typeof EntryResponse>;
 
@@ -204,6 +257,26 @@ export type DraftVersionsResponse = z.infer<typeof DraftVersionsResponse>;
 
 /** `POST /api/drafts/:id/merge-versions` and `POST /api/drafts/:id/resolve` */
 export const DraftTextRequest = z.object({ text: z.string() });
+
+/**
+ * `POST /api/drafts/:id/resolve` (stage 31d): the person's text, and `theirsBlob`, the blob of the
+ * saved version the compare screen showed as "theirs" (from the plan's conflict or merge, or the
+ * compare answer; `null` when it showed no file, as for an entry that was deleted). The text is
+ * rebuilt on exactly that version, and refused (`saved_by_other`) when the saved version is another
+ * one by now, so a version saved while the person was comparing is never overwritten unseen. Left
+ * out, as by the web app before 31d: it is accepted only when the saved version is the one the
+ * server last compared for this change.
+ */
+export const DraftResolveRequest = z.object({
+  text: z.string(),
+  theirsBlob: z.string().nullable().optional(),
+  /**
+   * The revision of the unsaved change the compare screen showed as "mine" (from the plan or the
+   * compare answer). Refused with `stale_revision`, text untouched, when the change has been
+   * written to since (another tab or device). Left out, the rule is as before.
+   */
+  revision: z.number().int().optional(),
+});
 
 export const DeleteResponse = Ok;
 
@@ -262,6 +335,13 @@ export const PlannedMerge = z.object({
   mergedText: z.string(),
   mainText: z.string(),
   baseText: z.string(),
+  /** Who saved `mainText`, and when (stage 31d). */
+  theirsBy: AuthorRef.nullable().optional(),
+  theirsAt: z.string().nullable().optional(),
+  /** The blob `mainText` was read from: send it back when resolving (stage 31d). */
+  theirsBlob: z.string().nullable().optional(),
+  /** The revision of the unsaved change this was worked out for: send it back when resolving. */
+  revision: z.number().int().optional(),
 });
 
 export const ConflictReason = z.enum([
@@ -284,6 +364,12 @@ export const ConflictReason = z.enum([
   "biomes_changed_on_both",
   /** The pins file changed here and in the library on the same pins. */
   "pins_changed_on_both",
+  /**
+   * Someone else in the project saved a newer version of this entry than the one this change was
+   * made from (stage 31d, decision C). Compare `mine`, `theirs` and `base`; `theirsBy` and
+   * `theirsAt` say who and when.
+   */
+  "saved_by_other",
   /** The trees file changed here and in the library on the same trees. */
   "trees_changed_on_both",
 ]);
@@ -296,6 +382,24 @@ export const PlannedConflict = z.object({
   mine: z.string(),
   theirs: z.string().nullable(),
   base: z.string().nullable(),
+  /**
+   * Who saved the version `theirs` is, and when (stage 31d): the person (or the name Git has) behind
+   * the last saved version of the file. Absent when it cannot be told.
+   */
+  theirsBy: AuthorRef.nullable().optional(),
+  theirsAt: z.string().nullable().optional(),
+  /**
+   * The blob `theirs` was read from, `null` when there is no file (stage 31d). Resolving sends it
+   * back, so the person's text is rebuilt on exactly the version they compared.
+   */
+  theirsBlob: z.string().nullable().optional(),
+  /** The revision of the unsaved change this was worked out for: send it back when resolving. */
+  revision: z.number().int().optional(),
+  /**
+   * With `saved_by_other`, when the two changes merge cleanly: the merged text, for the compare
+   * screen to offer as a pre-filled "merged" choice (stage 31d). Absent when they do not merge.
+   */
+  mergedText: z.string().optional(),
 });
 
 export const PublishPlan = z.object({
@@ -319,7 +423,85 @@ export const PublishConfirmRequest = z.object({
   confirmedMergeIds: z.array(z.string()),
   message: z.string().trim().min(1).max(2000),
 });
-export const PublishConfirmResponse = z.object({ commit: z.string() });
+export const PublishConfirmResponse = z.object({
+  commit: z.string(),
+  /**
+   * The notes whose own text was just published. The browser that published asks for field
+   * proposals for them with its own AI key, when the settings ask for it (stage 31f).
+   */
+  published: z.array(VaultPath).default([]),
+  /**
+   * Entries of this save that were refused because someone else saved a newer version of them
+   * between the plan and the confirm (stage 31d). They stay unsaved changes; the others went in.
+   */
+  conflicts: z.array(PlannedConflict).default([]),
+});
+export type PublishConfirmResponse = z.infer<typeof PublishConfirmResponse>;
+
+/**
+ * `GET /api/drafts/:id/compare` (stage 31d): what a compare screen needs for one unsaved change,
+ * without making a plan. `outcome` is what saving it now would do: `ready`, a `merge` to confirm,
+ * a `conflict`, or `none` (nothing differs from the saved version any more).
+ */
+export const DraftCompareResponse = z.object({
+  draftId: Id,
+  path: VaultPath,
+  outcome: z.enum(["ready", "merge", "conflict", "none"]),
+  conflict: PlannedConflict.optional(),
+  merge: PlannedMerge.optional(),
+  /**
+   * The blob of the saved version at the path now, `null` when there is none (stage 31d): the same
+   * as the conflict's or merge's `theirsBlob`, and given when `outcome` is `ready` or `none` too.
+   */
+  theirsBlob: z.string().nullable().optional(),
+  /** The revision of the unsaved change the answer is for: send it back when resolving. */
+  revision: z.number().int().optional(),
+  /** The person's own text as it is now (empty for an image), whatever the outcome. */
+  mine: z.string().optional(),
+});
+export type DraftCompareResponse = z.infer<typeof DraftCompareResponse>;
+
+// ---- Who is reading (stage 31d) --------------------------------------------------------------
+
+/**
+ * `PUT /api/presence`: this device says which entry it has open (`path`), or that it has none
+ * (`null`). `client` names the device or tab, so one person's two tabs are told apart; it is
+ * optional (one anonymous client per person). Repeat every 25 seconds or so: it lapses after 60.
+ */
+export const PresenceRequest = z.object({
+  path: VaultPath.refine((p) => p.length <= 1024, "A path of reasonable length.").nullable(),
+  client: z
+    .string()
+    .min(1)
+    .max(64)
+    .regex(/^[A-Za-z0-9_-]+$/)
+    .optional(),
+});
+export type PresenceRequest = z.infer<typeof PresenceRequest>;
+
+/** One person reading one entry now, as the status stream tells writers and owners. */
+export const Reading = z.object({
+  id: z.string(),
+  name: z.string(),
+  path: VaultPath,
+  since: z.string().datetime(),
+});
+export type Reading = z.infer<typeof Reading>;
+
+// ---- Saved versions and who made them (stage 31d) --------------------------------------------
+
+/** One saved version in `GET /api/history`. */
+export const HistoryVersion = z.object({
+  commit: z.string(),
+  at: z.string(),
+  message: z.string(),
+  paths: z.array(z.string()),
+  /** Who saved it. Never an email. */
+  by: AuthorRef,
+});
+export type HistoryVersion = z.infer<typeof HistoryVersion>;
+export const HistoryResponse = z.object({ versions: z.array(HistoryVersion) });
+export type HistoryResponse = z.infer<typeof HistoryResponse>;
 
 // ---- Renames -------------------------------------------------------------------------------
 
@@ -588,44 +770,87 @@ export const OperationDecision = z.object({
   type: z.string().min(1).optional(),
 });
 
+/** `GET /api/me`: the logged-in person, and the ways their account signs in. No secret in it. */
+export const MeResponse = z.object({
+  id: z.string(),
+  name: z.string(),
+  email: z.string(),
+  admin: z.boolean(),
+  /** The name or the email is still missing, so the app asks for them. */
+  needsProfile: z.boolean(),
+  passkeys: z.array(z.object({ id: z.string(), name: z.string(), addedAt: z.string() })),
+  /** Whether the account has a password at all. */
+  passwordSet: z.boolean(),
+  passwordOff: z.boolean(),
+  /** How this session logged in. Switching the password off needs a passkey session. */
+  method: z.enum(["password", "passkey", "google"]),
+  /** The ways this account signs in, for Settings → You → Signing in (stage 31c). */
+  signingIn: z
+    .object({
+      password: z.object({ set: z.boolean(), off: z.boolean() }),
+      passkeys: z.array(z.object({ id: z.string(), name: z.string(), addedAt: z.string() })),
+      /** The linked Google account's email, or null when none is linked. */
+      google: z.object({ email: z.string(), addedAt: z.string() }).nullable(),
+      /** Whether this server offers Google sign-on at all, so Settings can offer to link it. */
+      googleAvailable: z.boolean(),
+    })
+    .optional(),
+  /**
+   * An email to offer in Settings → Profile when the account has none: the commit author's, which
+   * is usually the same person. Only a suggestion; nothing is saved until the person saves.
+   */
+  suggestedEmail: z.string().default(""),
+  /** Stage 32: the state of the address, for the banner and Settings → You → Signing in. */
+  emailInfo: EmailInfo.optional(),
+  /** The address of the project the person used last, if they are still in it; null before they used one. */
+  lastProject: z.string().nullable().optional(),
+});
+export type MeResponse = z.infer<typeof MeResponse>;
+
+/** `PUT /api/me` */
+export const ProfileRequest = z.object({
+  name: z.string().trim().min(1, "Give a name.").max(80, "Use 80 characters or fewer."),
+  email: AccountEmail,
+});
+export type ProfileRequest = z.infer<typeof ProfileRequest>;
+
+/** `PUT /api/me/password`. `current` is needed when the account already has a password. */
+export const PasswordRequest = z.object({
+  current: z.string().optional(),
+  password: z.string().min(12, "Use at least 12 characters.").max(500),
+});
+export type PasswordRequest = z.infer<typeof PasswordRequest>;
+
 /** `GET /api/settings`. No secret is ever part of it. */
 export const SettingsResponse = z.object({
   ai: z.object({
-    /** `keySet`, `keyFrom` and `keyLast4` are about the OpenRouter key, as before stage 18. */
-    keySet: z.boolean(),
-    /** Where the key in use comes from. */
-    keyFrom: z.enum(["settings", "environment", "none"]),
-    keyLast4: z.string().nullable(),
-    /** Every connected provider, stored or given in the server's environment. */
-    providers: z.array(AiProviderView),
     /** Prices the author entered, by provider-qualified model id. */
     modelPrices: z.record(z.string(), ModelPrice),
-    /** False when SECRETS_KEY is not set, so a key cannot be stored here. */
-    canStoreKey: z.boolean(),
     models: z.object({
       extraction: z.string().nullable(),
       conversation: z.string().nullable(),
       art: z.string().nullable(),
     }),
     artStyle: z.string(),
-    monthlyCapUsd: z.number(),
     proposeOnPublish: z.boolean(),
     spentUsd: z.number(),
   }),
+  /**
+   * Kept for devices still on the build before stage 31a, whose Settings page reads it and would
+   * crash without it. The current app reads `GET /api/me` instead. Remove once none are left.
+   */
   signIn: z.object({
     passkeys: z.array(z.object({ id: z.string(), name: z.string(), addedAt: z.string() })),
     passwordOff: z.boolean(),
-    /** How this session logged in. Switching the password off needs a passkey session. */
-    method: z.enum(["password", "passkey"]),
+    method: z.enum(["password", "passkey", "google"]),
   }),
   /** Stage 25: which needs-love rules are on. */
   keepGoing: KeepGoingSettings,
 });
 export type SettingsResponse = z.infer<typeof SettingsResponse>;
 
-/** `PUT /api/settings/ai`. `key: null` removes the stored key. */
+/** `PUT /api/settings/ai`. */
 export const AiSettingsRequest = z.object({
-  key: z.string().min(8).nullable().optional(),
   models: z
     .object({
       extraction: z.string().min(1).nullable().optional(),
@@ -634,23 +859,8 @@ export const AiSettingsRequest = z.object({
     })
     .optional(),
   artStyle: z.string().trim().min(1).max(600).optional(),
-  monthlyCapUsd: z.number().min(0).max(10_000).optional(),
   proposeOnPublish: z.boolean().optional(),
 });
-
-/** `GET /api/proposals/job` */
-export const FieldJobState = z.object({
-  state: z.enum(["none", "running", "done", "cancelled", "stopped"]),
-  folder: z.string().optional(),
-  done: z.number().optional(),
-  total: z.number().optional(),
-  /** Operations proposed so far. */
-  made: z.number().optional(),
-  failed: z.array(z.object({ path: VaultPath, message: z.string() })).optional(),
-  /** Why the job stopped early. */
-  stoppedBy: z.string().optional(),
-});
-export type FieldJobState = z.infer<typeof FieldJobState>;
 
 // ---- Pictures for entries (stage 29) ---------------------------------------------------------
 
@@ -679,8 +889,6 @@ export const PicturesResponse = z.object({
   style: z.string(),
   /** What one picture has cost lately with the chosen model, when known. */
   perPictureUsd: z.number().nullable(),
-  /** What is left of this month's cap. */
-  leftUsd: z.number(),
   tries: z.array(PictureTry),
 });
 export type PicturesResponse = z.infer<typeof PicturesResponse>;

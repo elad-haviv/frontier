@@ -1,4 +1,4 @@
-import type { FastifyInstance } from "fastify";
+import type { RouteApp } from "../projects/facade.js";
 import {
   LIBRARY_FILE_NAMES,
   type LibraryFileResponse,
@@ -11,7 +11,7 @@ import type { Services } from "../app.js";
 const NameParam = z.object({ name: z.enum(LIBRARY_FILE_NAMES as [string, ...string[]]) });
 
 /** The routes every library item file shares, by its name in the table. */
-export function libraryFileRoutes(app: FastifyInstance, s: Services): void {
+export function libraryFileRoutes(app: RouteApp, s: Services): void {
   const changed = () => s.status.drafts(s.drafts.count(), 0);
 
   app.get("/api/library-files/:name", async (request): Promise<LibraryFileResponse> => {

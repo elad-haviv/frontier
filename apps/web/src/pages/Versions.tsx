@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import { ActionButton } from "../components/ui/ActionButton.tsx";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { useParams } from "react-router-dom";
+import { Link, useNavigate } from "../nav.tsx";
 import { chronicleIdOf, itemShapeOf, type KeptCopyText, mapIdOf } from "@frontier/schema";
 import { api, ApiFailure, chronicleUrl, mapUrl } from "../api.ts";
 import { compareItems, nowLabel } from "../offline/itemCompare.ts";
 import { CodeEditor } from "../components/CodeEditor.tsx";
 import { Diff } from "../components/Diff.tsx";
-import { useRefresh } from "../components/Shell.tsx";
+import { useRefresh, useWords } from "../components/Shell.tsx";
 import { usePageTitle } from "../components/shell/panels.tsx";
 import { queue } from "../sync/queue.ts";
 import "./Versions.css";
@@ -152,6 +153,7 @@ export function VersionsPage() {
   const { id = "" } = useParams();
   const navigate = useNavigate();
   const refresh = useRefresh();
+  const words = useWords();
   const [data, setData] = useState<{
     path: string;
     current: string;
@@ -169,7 +171,15 @@ export function VersionsPage() {
         text.current = v.current.text;
         setData({ path: v.path ?? "", current: v.current.text, others: v.others });
       },
-      (err: unknown) => setError(err instanceof ApiFailure ? err.message : "Could not load."),
+      (err: unknown) =>
+        setError(
+          // A draft the server does not have was saved or discarded elsewhere: it is gone.
+          err instanceof ApiFailure && err.status === 404
+            ? "This change is not here any more. It may have been saved or discarded on another device."
+            : err instanceof ApiFailure
+              ? err.message
+              : "Could not load.",
+        ),
     );
   }, [id]);
 
@@ -186,7 +196,16 @@ export function VersionsPage() {
     }
   }
 
-  if (error && !data) return <p className="center error">{error}</p>;
+  if (error && !data) {
+    return (
+      <div className="center">
+        <p className="error">{error}</p>
+        <p>
+          <Link to="/unpublished">{words.title}</Link>
+        </p>
+      </div>
+    );
+  }
   if (!data) return <p className="center muted">Loading…</p>;
   // An item file's other side is shown item by item, read only (stage 15c).
   const server = data.others.find((o) => o.source === "server");

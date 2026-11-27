@@ -1,4 +1,4 @@
-import { expect, type Page, test } from "@playwright/test";
+import { expect, type Page, test } from "./test.ts";
 import {
   answerDialog,
   AUTH_FILE,
@@ -149,7 +149,7 @@ test("keeps unsent text across a reload, and sends it once the server takes it",
 }) => {
   await openEditor(page, "01 Places/Marsh/The Marsh.md");
   // The server cannot be reached for saves: they fail as with no connection.
-  await page.route("**/api/drafts", (route) => route.abort("internetdisconnected"));
+  await page.route("**/api/p/*/drafts", (route) => route.abort("internetdisconnected"));
   await page.keyboard.type("\nTyped while saves could not get through.\n");
   await expect(page.locator(".save-offline")).toHaveText("Unsent: kept on this device", {
     timeout: 15_000,
@@ -164,7 +164,7 @@ test("keeps unsent text across a reload, and sends it once the server takes it",
   await expect(page.locator(".unsent")).toContainText("The Marsh");
   await page.keyboard.press("Escape");
 
-  await page.unroute("**/api/drafts");
+  await page.unroute("**/api/p/*/drafts");
   await page.locator(".cm-content").click();
   await page.keyboard.press("Control+s");
   await expect(page.locator(".save-saved")).toBeVisible({ timeout: 15_000 });
@@ -219,7 +219,7 @@ test("CUJ 3: two devices, one entry: the late text is kept to compare, and nothi
   await openEditor(phone, path);
   await phone.keyboard.type("\nA line from the phone.\n");
   await saved(phone);
-  await phone.route("**/api/drafts", (route) => route.abort("internetdisconnected"));
+  await phone.route("**/api/p/*/drafts", (route) => route.abort("internetdisconnected"));
   await phone.keyboard.type("Typed on the train, unsent.\n");
   await expect(phone.locator(".save-offline")).toBeVisible({ timeout: 15_000 });
 
@@ -234,7 +234,7 @@ test("CUJ 3: two devices, one entry: the late text is kept to compare, and nothi
   await laptop.goto(entry(path));
 
   // The phone gets a connection again.
-  await phone.unroute("**/api/drafts");
+  await phone.unroute("**/api/p/*/drafts");
   await phone.locator(".cm-content").click();
   await phone.keyboard.press("Control+s");
   await expect(phone.locator(".save-stale")).toHaveText("Two texts to compare", {

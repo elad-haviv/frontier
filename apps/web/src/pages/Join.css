@@ -1,0 +1,113 @@
+/* The join page (stage 31c): the login card, wider, with the project and the role on it. */
+.join-card {
+  width: min(30rem, 100%);
+  gap: 0.75rem;
+}
+.join-wordmark {
+  font-size: 1.4rem;
+  text-decoration: none;
+  color: var(--ink);
+}
+.join-eyebrow {
+  font-size: 0.7rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent);
+  font-weight: 600;
+}
+.join-title {
+  margin: 0;
+  font-family: var(--serif);
+  font-size: 1.35rem;
+  line-height: 1.25;
+}
+.join-project {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  background: var(--paper);
+}
+.join-project-text {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 0.1rem;
+}
+.join-project-text b {
+  font-family: var(--serif);
+  font-size: 1.05rem;
+}
+.login-card .join-project-text small {
+  margin: 0;
+  font-style: normal;
+  font-family: var(--sans);
+  font-size: 0.8rem;
+}
+.join-allows {
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 0.9rem;
+}
+.login-card .join-note {
+  margin: 0.2rem 0 0;
+  font-family: var(--sans);
+  font-style: normal;
+  font-size: 0.82rem;
+}
+.login-card button.join-link {
+  display: inline;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.join-form .field-error,
+.join-form em.muted {
+  font-size: 0.82rem;
+  font-style: normal;
+  margin: -0.3rem 0 0;
+}
+.join-form .field-error {
+  color: var(--warn);
+}
+.login-card button.join-google {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  margin-top: 0;
+}
+.login-or {
+  text-align: center;
+}
+.join-login {
+  display: grid;
+  gap: 0.75rem;
+}
+.join-login p {
+  margin: 0;
+}
+.login-card .join-switched {
+  padding: 0.5rem 0.7rem;
+  border-left: 3px solid var(--accent);
+  background: var(--paper);
+  font-family: var(--sans);
+  font-style: normal;
+}
+.join-form em.join-email-hint {
+  margin: -0.3rem 0 0;
+  font-size: 0.82rem;
+  font-style: normal;
+  color: var(--ink-faint);
+}
+.join-login p.join-forgot {
+  margin: -0.2rem 0 0;
+  font-size: 0.85rem;
+}

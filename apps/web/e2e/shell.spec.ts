@@ -1,5 +1,5 @@
-import { expect, type Page, test } from "@playwright/test";
-import { discardDraft, entry, noSidewaysScroll, openEditor, saved } from "./helpers.ts";
+import { expect, type Page, test } from "./test.ts";
+import { discardDraft, entry, noSidewaysScroll, openEditor, saved, proj } from "./helpers.ts";
 
 const side = (page: Page) => page.locator(".side");
 /** The library pane, beside the side bar. */
@@ -43,7 +43,7 @@ test("the side bar folds to a rail that keeps the counts and the connection", as
   await page.keyboard.press("Control+\\");
   await expect(side(page)).toHaveClass(/is-rail/);
   expect((await side(page).boundingBox())!.width).toBeLessThanOrEqual(49);
-  const waiting = side(page).getByRole("link", { name: /^Unpublished/ });
+  const waiting = side(page).getByRole("link", { name: /^Your unpublished changes/ });
   await expect(waiting.locator(".badge")).toHaveText(/^[1-9]\d*$/);
   await expect(
     side(page)
@@ -62,7 +62,7 @@ test("the side bar folds to a rail that keeps the counts and the connection", as
   await side(page).getByRole("button", { name: "Unfold the side bar" }).click();
   await expect(pane(page).locator(".tree")).toBeVisible();
 
-  await page.goto("/edit/" + ["03 Things", "Ledger.md"].map(encodeURIComponent).join("/"));
+  await page.goto(proj("/edit/") + ["03 Things", "Ledger.md"].map(encodeURIComponent).join("/"));
   await discardDraft(page);
 });
 

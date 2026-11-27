@@ -1,11 +1,11 @@
-import type { FastifyInstance } from "fastify";
+import type { RouteApp } from "../projects/facade.js";
 import { BranchDecision, BranchFileDecision, type InboxResponse } from "@frontier/schema";
 import { z } from "zod";
 import type { Services } from "../app.js";
 
 const FileQuery = z.object({ branch: z.string(), path: z.string() });
 
-export function inboxRoutes(app: FastifyInstance, s: Services): void {
+export function inboxRoutes(app: RouteApp, s: Services): void {
   app.get("/api/inbox", async (): Promise<InboxResponse> => {
     // Opening the inbox looks for new branches. Without a connection it shows the last known ones.
     await s.sync().catch(() => undefined);

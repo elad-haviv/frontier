@@ -1,13 +1,16 @@
+import { projectKey } from "../projectStorage.ts";
 import * as Popover from "@radix-ui/react-popover";
 import { Flag, Map as MapIcon, Plus, Redo2, Undo2 } from "lucide-react";
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { useParams, useSearchParams } from "react-router-dom";
+import { Link, useNavigate } from "../nav.tsx";
 import { type ChronicleFile, mergeChronicles } from "@frontier/schema";
 import { allSpanPoints, formatYears, placeable } from "@frontier/time";
-import { api, ApiFailure, chronicleUrl, mapUrl } from "../api.ts";
+import { ApiFailure, chronicleUrl, mapUrl } from "../api.ts";
 import { AddEvent } from "../components/chronicle/AddEvent.tsx";
 import { CompareView } from "../components/chronicle/CompareView.tsx";
-import { Details, type OnMap } from "../components/chronicle/Details.tsx";
+import { Details, type OnMap, ReadDetails } from "../components/chronicle/Details.tsx";
+import { useCanWrite } from "../components/projectContext.ts";
 import { typeWhen } from "../components/chronicle/edit.ts";
 import { Flags, redCount } from "../components/chronicle/Flags.tsx";
 import { UnitList } from "../components/chronicle/Lists.tsx";
@@ -37,8 +40,9 @@ import { useItemFile } from "../hooks/useItemFile.ts";
 import { useShortcut } from "../keys.ts";
 import { markOpened, servedFromDevice } from "../offline/copy.ts";
 import { useNeedsConnection } from "../sync/connection.ts";
-import { type QueueKey, queue } from "../sync/queue.ts";
+import { type QueueKey } from "../sync/queue.ts";
 import "./ChroniclePage.css";
+import { useProjectWork } from "../projectWork.ts";
 
 const NARROW = "(max-width: 34rem)";
 
@@ -70,9 +74,9 @@ const store = {
     }
   },
 };
-const OFFER_KEY = (id: string) => `frontier.chronicle.placeOffer.${id}`;
-const YEAR_KEY = (id: string) => `frontier.chronicle.mapYear.${id}`;
-const FOLD_KEY = (id: string) => `frontier.chronicle.folded.${id}`;
+const OFFER_KEY = (id: string) => projectKey(`frontier.chronicle.placeOffer.${id}`);
+const YEAR_KEY = (id: string) => projectKey(`frontier.chronicle.mapYear.${id}`);
+const FOLD_KEY = (id: string) => projectKey(`frontier.chronicle.folded.${id}`);
 
 /** One chronicle, shown as a timeline (stage 17). */
 export function ChroniclePage() {
@@ -104,6 +108,7 @@ function Sheet(p: { title: string; onClose: () => void; children: ReactNode }) {
 }
 
 function Chronicle({ id }: { id: string }) {
+  const proj = useProjectWork();
   const navigate = useNavigate();
   const refresh = useRefresh();
   const dialogs = useDialogs();
@@ -174,7 +179,7 @@ function Chronicle({ id }: { id: string }) {
   const file = useItemFile<ChronicleFile>({
     key,
     load: async () => {
-      const loaded = await api.chronicle(id);
+      const loaded = await proj.api.chronicle(id);
       setOfflineAt(servedFromDevice(loaded));
       setEntries(loaded.entries);
       setOnMaps(loaded.onMaps ?? {});
@@ -195,7 +200,7 @@ function Chronicle({ id }: { id: string }) {
           Object.fromEntries(Object.entries(now).filter(([span]) => links.current.has(span))),
         );
         if (unlinked.length > 0) setNotice(unlinked.map((u) => u.reason).join(" "));
-        void api.chronicle(id).then(
+        void proj.api.chronicle(id).then(
           (r) => {
             setEntries(r.entries);
             setOnMaps(r.onMaps ?? {});
@@ -235,15 +240,20 @@ function Chronicle({ id }: { id: string }) {
   const worked = useMemo(() => (chronicle ? work(chronicle) : null), [chronicle]);
   // Every change runs through the ties, so what is tied follows what it is tied to.
   const fileChange = file.change;
+  // A chronicle is read by everyone and changed by writers (stage 31c): for a reader nothing
+  // changes it, and nothing is queued for the server, which would refuse it.
+  const canWrite = useCanWrite();
   const change = useCallback<Change>(
-    (fn, tag) => fileChange((c) => withTies(fn(c)), tag),
-    [fileChange],
+    (fn, tag) => {
+      if (canWrite) fileChange((c) => withTies(fn(c)), tag);
+    },
+    [fileChange, canWrite],
   );
   // A merge with another device's copy, or a copy that predates a move, can leave a tied number
   // behind: it is worked out again and saved.
   useEffect(() => {
-    if (chronicle && withTies(chronicle) !== chronicle) fileChange(withTies, "ties");
-  }, [chronicle, fileChange]);
+    if (canWrite && chronicle && withTies(chronicle) !== chronicle) fileChange(withTies, "ties");
+  }, [chronicle, fileChange, canWrite]);
   const offers = useMemo(() => (chronicle ? placeable(chronicle) : []), [chronicle]);
   const [offerSeen, setOfferSeen] = useState(() => store.get(OFFER_KEY(id)) !== null);
   const answerOffer = () => {
@@ -253,14 +263,14 @@ function Chronicle({ id }: { id: string }) {
   // Opened from the device's copy: the server's copy is taken in once it answers, unless a change
   // waits here, which the queue's merge brings together with it.
   useReadAgain(offlineAt, `/api/chronicles/${id}`, () => {
-    void queue.get(key).then((r) => (r ? undefined : file.reload()));
+    void proj.queue.get(key).then((r) => (r ? undefined : file.reload()));
   });
 
   // The maps, for "Open map at…": read once; offline the button is simply not offered.
   const [maps, setMaps] = useState<{ id: string; title: string }[]>([]);
   useEffect(() => {
     let live = true;
-    api.maps().then(
+    proj.api.maps().then(
       (r) => live && setMaps(r.maps.map((m) => ({ id: m.id, title: m.title }))),
       () => undefined,
     );
@@ -289,10 +299,10 @@ function Chronicle({ id }: { id: string }) {
     };
   }, [under, chronicle]);
 
-  useShortcut("chronicle.undo", file.undo);
-  useShortcut("chronicle.redo", file.redo);
+  useShortcut("chronicle.undo", () => (canWrite ? file.undo() : false));
+  useShortcut("chronicle.redo", () => (canWrite ? file.redo() : false));
   useShortcut("chronicle.add", () => {
-    if (!chronicle) return false;
+    if (!chronicle || !canWrite) return false;
     setAdding(laneFor());
     return true;
   });
@@ -404,7 +414,7 @@ function Chronicle({ id }: { id: string }) {
     });
     if (!ok) return;
     try {
-      await api.deleteChronicle(id);
+      await proj.api.deleteChronicle(id);
     } catch (err) {
       setNotice(err instanceof ApiFailure ? err.message : "The chronicle could not be deleted.");
       return;
@@ -415,7 +425,7 @@ function Chronicle({ id }: { id: string }) {
 
   async function copy() {
     try {
-      const made = await api.copyChronicle(id);
+      const made = await proj.api.copyChronicle(id);
       refresh();
       navigate(chronicleUrl(made.id));
     } catch (err) {
@@ -425,7 +435,7 @@ function Chronicle({ id }: { id: string }) {
 
   async function makeMain() {
     try {
-      await api.makeMainChronicle(id);
+      await proj.api.makeMainChronicle(id);
       // The server wrote the mark itself, so the page takes in what the server now holds.
       await file.reload();
       refresh();
@@ -436,7 +446,7 @@ function Chronicle({ id }: { id: string }) {
 
   async function showUnder() {
     try {
-      const list = (await api.chronicles()).chronicles.filter((c) => c.id !== id);
+      const list = (await proj.api.chronicles()).chronicles.filter((c) => c.id !== id);
       setOthers(list.map((c) => ({ id: c.id, title: c.title })));
     } catch {
       setNotice("The other chronicles could not be read.");
@@ -496,7 +506,25 @@ function Chronicle({ id }: { id: string }) {
     );
   };
 
-  const details = span && (
+  const details = span && !canWrite && (
+    <ReadDetails
+      key={span.id}
+      chronicle={chronicle}
+      worked={worked}
+      span={span}
+      onSelect={selectOne}
+      onMaps={onMaps[span.id] ?? []}
+      entry={
+        span.entry === null
+          ? { state: "none" }
+          : entries[span.entry]
+            ? { state: "linked", ...entries[span.entry]! }
+            : { state: "gone" }
+      }
+      second={false}
+    />
+  );
+  const writerDetails = span && canWrite && (
     <Details
       key={span.id}
       chronicle={chronicle}
@@ -570,7 +598,7 @@ function Chronicle({ id }: { id: string }) {
             <span className="ch-pill is-main" title="Maps that change with time read this one">
               ★ Main · maps use this
             </span>
-          ) : (
+          ) : !canWrite ? null : (
             <button
               type="button"
               className="ch-pill"
@@ -581,8 +609,8 @@ function Chronicle({ id }: { id: string }) {
               Make main
             </button>
           ))}
-        <SaveStatus state={saving.state} variant="chronicle" />
-        {red > 0 && fits}
+        {canWrite && <SaveStatus state={saving.state} variant="chronicle" />}
+        {canWrite && red > 0 && fits}
         {!narrow && maps.length === 1 && mapYear !== null && (
           <Link className="ch-pill is-map" to={mapLink(maps[0]!.id)}>
             🗺 Open map at {yearText}
@@ -600,29 +628,37 @@ function Chronicle({ id }: { id: string }) {
         <Menu label="More actions" className="ch-more-menu">
           {narrow && (
             <>
-              <MenuItem disabled={!file.canUndo} onSelect={file.undo}>
-                Undo
-              </MenuItem>
-              <MenuItem disabled={!file.canRedo} onSelect={file.redo}>
-                Redo
-              </MenuItem>
+              {canWrite && (
+                <>
+                  <MenuItem disabled={!file.canUndo} onSelect={file.undo}>
+                    Undo
+                  </MenuItem>
+                  <MenuItem disabled={!file.canRedo} onSelect={file.redo}>
+                    Redo
+                  </MenuItem>
+                </>
+              )}
               <MenuItem onSelect={() => timeline.current?.fit()}>Fit everything</MenuItem>
               <MenuSeparator />
             </>
           )}
-          <MenuItem onSelect={() => void rename()}>Rename</MenuItem>
-          <MenuItem onSelect={() => void addGroup()}>Add a group</MenuItem>
-          <MenuItem onSelect={() => setDialog("units")}>Units…</MenuItem>
-          <MenuItem onSelect={() => setDialog("compare")}>
-            Compare lengths with real history…
-          </MenuItem>
-          <MenuSeparator />
+          {canWrite && (
+            <>
+              <MenuItem onSelect={() => void rename()}>Rename</MenuItem>
+              <MenuItem onSelect={() => void addGroup()}>Add a group</MenuItem>
+              <MenuItem onSelect={() => setDialog("units")}>Units…</MenuItem>
+              <MenuItem onSelect={() => setDialog("compare")}>
+                Compare lengths with real history…
+              </MenuItem>
+              <MenuSeparator />
+            </>
+          )}
           {narrow && chronicle.main && (
             <MenuItem disabled onSelect={() => undefined}>
               ★ Main · maps use this
             </MenuItem>
           )}
-          {narrow && !chronicle.main && (
+          {narrow && canWrite && !chronicle.main && (
             <MenuItem
               disabled={offline !== undefined}
               disabledReason={offlineReason}
@@ -638,13 +674,15 @@ function Chronicle({ id }: { id: string }) {
                 🗺 Open {m.title} at {yearText}
               </MenuLink>
             ))}
-          <MenuItem
-            disabled={offline !== undefined}
-            disabledReason={offlineReason}
-            onSelect={() => void copy()}
-          >
-            Copy, to try another version
-          </MenuItem>
+          {canWrite && (
+            <MenuItem
+              disabled={offline !== undefined}
+              disabledReason={offlineReason}
+              onSelect={() => void copy()}
+            >
+              Copy, to try another version
+            </MenuItem>
+          )}
           {under ? (
             <MenuItem onSelect={() => setUnder(null)}>
               Stop showing {under.title} underneath
@@ -658,15 +696,19 @@ function Chronicle({ id }: { id: string }) {
               Show another version underneath…
             </MenuItem>
           )}
-          <MenuSeparator />
-          <MenuItem
-            danger
-            disabled={offline !== undefined}
-            disabledReason={offlineReason}
-            onSelect={() => void remove()}
-          >
-            Delete the chronicle
-          </MenuItem>
+          {canWrite && (
+            <>
+              <MenuSeparator />
+              <MenuItem
+                danger
+                disabled={offline !== undefined}
+                disabledReason={offlineReason}
+                onSelect={() => void remove()}
+              >
+                Delete the chronicle
+              </MenuItem>
+            </>
+          )}
         </Menu>
       </header>
       <OfflineCopy at={offlineAt} className="chronicle-offline" />
@@ -678,7 +720,7 @@ function Chronicle({ id }: { id: string }) {
           </button>
         </p>
       )}
-      {offers.length > 0 && !offerSeen && (
+      {canWrite && offers.length > 0 && !offerSeen && (
         <p className="banner ch-offer-banner" role="status">
           {offers.length === 1
             ? "1 event can be placed from what you said."
@@ -713,7 +755,7 @@ function Chronicle({ id }: { id: string }) {
                 const pick = e.target.value;
                 setOthers(null);
                 if (!pick) return;
-                api.chronicle(pick).then(
+                proj.api.chronicle(pick).then(
                   (r) => setUnder(r.chronicle),
                   () => setNotice("That chronicle could not be read."),
                 );
@@ -743,7 +785,7 @@ function Chronicle({ id }: { id: string }) {
       )}
 
       <div className="ch-tools" role="toolbar" aria-label="Timeline tools">
-        {!narrow && (
+        {!narrow && canWrite && (
           <button
             type="button"
             className="primary"
@@ -778,7 +820,7 @@ function Chronicle({ id }: { id: string }) {
             Fit
           </button>
         )}
-        {!narrow && (
+        {!narrow && canWrite && (
           <>
             <IconButton
               label="Undo"
@@ -874,6 +916,7 @@ function Chronicle({ id }: { id: string }) {
                 }))
               }
               ghost={ghost}
+              readOnly={!canWrite}
             />
           ) : (
             <ListView
@@ -887,12 +930,15 @@ function Chronicle({ id }: { id: string }) {
           {chronicle.spans.length === 0 && (
             <div className="ch-start">
               <p>
-                Lay out a history. Add the events you know, rough dates are fine. Year 0 is whatever
-                you place first.
+                {canWrite
+                  ? "Lay out a history. Add the events you know, rough dates are fine. Year 0 is whatever you place first."
+                  : "Nothing has been laid out in this chronicle yet."}
               </p>
-              <button type="button" className="primary" onClick={() => setAdding(laneFor())}>
-                + Add the first event
-              </button>
+              {canWrite && (
+                <button type="button" className="primary" onClick={() => setAdding(laneFor())}>
+                  + Add the first event
+                </button>
+              )}
             </div>
           )}
           <p className="ch-note muted">
@@ -920,12 +966,12 @@ function Chronicle({ id }: { id: string }) {
                 Close
               </button>
             </header>
-            {details}
+            {details || writerDetails}
           </aside>
         )}
       </div>
 
-      {narrow && !span && (
+      {narrow && canWrite && !span && (
         <button
           type="button"
           className="ch-fab"
@@ -937,7 +983,7 @@ function Chronicle({ id }: { id: string }) {
         </button>
       )}
 
-      {adding && (
+      {adding && canWrite && (
         <AddEvent
           chronicle={chronicle}
           lane={adding}

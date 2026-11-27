@@ -1,0 +1,51 @@
+/* A project's letter on its colour: the white letter reads on every one of the eight tokens. */
+.ui-project-mark {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 0.4rem;
+  background: var(--project-0);
+  color: #fff;
+  font-family: var(--serif);
+  font-weight: 700;
+  line-height: 1;
+  user-select: none;
+}
+.ui-project-mark-sm {
+  width: 1.5rem;
+  height: 1.5rem;
+  font-size: 0.85rem;
+  border-radius: 0.35rem;
+}
+.ui-project-mark-md {
+  width: 2rem;
+  height: 2rem;
+  font-size: 1.05rem;
+}
+.ui-project-mark-lg {
+  width: 2.75rem;
+  height: 2.75rem;
+  font-size: 1.4rem;
+  border-radius: 0.55rem;
+}
+.ui-project-mark.c1 {
+  background: var(--project-1);
+}
+.ui-project-mark.c2 {
+  background: var(--project-2);
+}
+.ui-project-mark.c3 {
+  background: var(--project-3);
+}
+.ui-project-mark.c4 {
+  background: var(--project-4);
+}
+.ui-project-mark.c5 {
+  background: var(--project-5);
+}
+.ui-project-mark.c6 {
+  background: var(--project-6);
+}
+.ui-project-mark.c7 {
+  background: var(--project-7);
+}

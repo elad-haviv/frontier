@@ -34,7 +34,12 @@ export interface TestRepo {
   /** Where the gateway under test keeps its working copy. Not created yet. */
   workdir: string;
   /** Makes a commit on the remote's `main` from outside, as Obsidian or an agent would. */
-  pushFromOutside(changes: Record<string, string | null>, message?: string): string;
+  pushFromOutside(
+    changes: Record<string, string | null>,
+    message?: string,
+    /** The commit's author, when it should not be the seed identity. May hold odd characters. */
+    author?: { name: string; email: string },
+  ): string;
   /**
    * Pushes a branch from outside, as an agent would. It starts from the current `main` unless the
    * branch exists already, in which case the commit is added to it.
@@ -82,7 +87,7 @@ export function makeTestRepo(): TestRepo {
     root,
     remote,
     workdir,
-    pushFromOutside(changes, message = "Outside change") {
+    pushFromOutside(changes, message = "Outside change", author) {
       git(outside, "pull", "--ff-only", "origin", "main");
       for (const [path, content] of Object.entries(changes)) {
         const full = join(outside, path);
@@ -93,7 +98,17 @@ export function makeTestRepo(): TestRepo {
         }
       }
       git(outside, "add", "-A");
-      git(outside, "commit", "-m", message);
+      if (author) {
+        execFileSync("git", [...IDENTITY, "commit", "-m", message], {
+          cwd: outside,
+          stdio: "ignore",
+          env: {
+            ...process.env,
+            GIT_AUTHOR_NAME: author.name,
+            GIT_AUTHOR_EMAIL: author.email,
+          },
+        });
+      } else git(outside, "commit", "-m", message);
       git(outside, "push", "origin", "main");
       return git(outside, "rev-parse", "HEAD");
     },

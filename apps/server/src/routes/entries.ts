@@ -1,4 +1,4 @@
-import type { FastifyInstance } from "fastify";
+import type { RouteApp } from "../projects/facade.js";
 import {
   type EntryResponse,
   type FolderFile,
@@ -44,7 +44,7 @@ function shown(links: IndexedLink[]): EntryResponse["links"] {
   }));
 }
 
-export function entryRoutes(app: FastifyInstance, s: Services): void {
+export function entryRoutes(app: RouteApp, s: Services): void {
   /** The structured fields of a text, with the links inside each date resolved. */
   const fieldsOf = (path: string, text: string): Pick<EntryResponse, "id" | "fields"> => {
     const fields = readFields(text);
@@ -95,7 +95,9 @@ export function entryRoutes(app: FastifyInstance, s: Services): void {
    * entry keeps its old path as its link until a version is saved), and the folder file's lines:
    * empty folders, icons, colours, order and type.
    */
-  app.get("/api/tree", async (): Promise<TreeResponse> => {
+  app.get("/api/tree", async (request): Promise<TreeResponse> => {
+    // What waits in quarantine is the writers' business; a reader sees published entries only.
+    const reader = request.project?.role === "reader";
     const root: TreeFolder = { path: "", folders: [], notes: [] };
     const folders = new Map<string, TreeFolder>([["", root]]);
     const folder = (path: string): TreeFolder => {
@@ -108,10 +110,13 @@ export function entryRoutes(app: FastifyInstance, s: Services): void {
     };
     const renames = s.drafts.listRenames();
     const after = (path: string) => renames.reduce((p, r) => movedPath(p, r.from, r.to) ?? p, path);
+    // The entries other people have unsaved changes to get a dot (writers and owners; never text).
+    const others = reader ? new Map() : s.drafts.othersUnsaved();
     const place = (note: TreeResponse["notes"][number]) => {
       const shown = after(note.path);
       // The entry is listed where it is going; its link opens it where it still is.
-      const entry = shown === note.path ? note : { ...note, path: shown, moved: note.path };
+      const marked = others.has(note.path) ? { ...note, othersUnsaved: true } : note;
+      const entry = shown === note.path ? marked : { ...marked, path: shown, moved: note.path };
       folder(dirname(shown)).notes.push(entry);
     };
     const { added, removed } = overlay(s);
@@ -123,7 +128,7 @@ export function entryRoutes(app: FastifyInstance, s: Services): void {
         words: factsOf(note).words,
         state: s.drafts.byPath(note.path)
           ? "unpublished"
-          : s.quarantine.waiting(note.path)
+          : !reader && s.quarantine.waiting(note.path)
             ? "quarantined"
             : "published",
       });
@@ -188,6 +193,26 @@ export function entryRoutes(app: FastifyInstance, s: Services): void {
     }
 
     const info = draft ? { id: draft.id, revision: draft.revision, kind: draft.kind } : null;
+    // Who else has unsaved changes to this entry, never what (a reader sees none), and who saved
+    // the last version.
+    const reader = request.project?.role === "reader";
+    const othersUnsaved = reader ? [] : (s.drafts.othersUnsaved().get(path) ?? []);
+    // From the map of every file's last version for the library's commit (no Git command per read once
+    // it is made), not a `git log` for each entry read under the lock that every save waits on.
+    const last = note
+      ? await (
+          s.index.commit === null
+            ? s.git.lastChange(path)
+            : s.git.lastChangeAt(path, s.index.commit)
+        ).catch(() => null)
+      : null;
+    const lastVersion = last
+      ? {
+          commit: last.commit,
+          at: last.at,
+          by: await s.authors.resolve(last.author),
+        }
+      : null;
     // The one rename waiting for this entry, if any; a folder's rename is the folder's own.
     const intent = s.drafts.listRenames().find((r) => r.from === path);
     const rename = intent ? { id: intent.id, to: intent.to } : null;
@@ -212,10 +237,12 @@ export function entryRoutes(app: FastifyInstance, s: Services): void {
         chronicles: await chroniclesOf(path),
         blob,
         rename,
+        othersUnsaved,
+        lastVersion,
       };
     }
 
-    const waiting = s.quarantine.waiting(note!.path);
+    const waiting = reader ? undefined : s.quarantine.waiting(note!.path);
     return {
       path: note!.path,
       text: note!.text,
@@ -234,6 +261,8 @@ export function entryRoutes(app: FastifyInstance, s: Services): void {
       chronicles: await chroniclesOf(note!.path),
       blob,
       rename,
+      othersUnsaved,
+      lastVersion,
     };
   });
 

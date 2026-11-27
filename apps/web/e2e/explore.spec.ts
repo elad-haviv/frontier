@@ -1,5 +1,5 @@
-import { expect, type Page, test } from "@playwright/test";
-import { setUpAi } from "./helpers.ts";
+import { expect, type Page, test } from "./test.ts";
+import { setUpAi, proj } from "./helpers.ts";
 import {
   cleanUp,
   makeMap,
@@ -83,7 +83,7 @@ async function openExplore(page: Page, title: string) {
     features: FEATURES,
     styles: [RIVER_STYLE, ROAD_STYLE],
   });
-  await page.goto(`/map/${id}`);
+  await page.goto(proj(`/map/${id}`));
   await expect(page.locator(".map-top")).toBeVisible();
   await expect(page).toHaveURL(/v=/);
   await page.waitForTimeout(300);
@@ -94,7 +94,7 @@ async function openExplore(page: Page, title: string) {
 function countAsks(page: Page) {
   const asked: { spots: { kind: string; lines: string[] }[] }[] = [];
   page.on("request", (r) => {
-    if (r.method() === "POST" && /\/api\/maps\/[a-z0-9]+\/discover$/.test(r.url())) {
+    if (r.method() === "POST" && /\/api\/p\/[^/]+\/maps\/[a-z0-9]+\/discover$/.test(r.url())) {
       asked.push(r.postDataJSON());
     }
   });

@@ -3,10 +3,11 @@ import { checkEntryName } from "@frontier/vault";
 import { libraryFileClient } from "../sync/libraryFile.ts";
 import { findFolder } from "./tree/model.ts";
 import { foldersOf, TOP } from "./folders.ts";
-import { useId, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import type { Loaded } from "../useAsync.ts";
 import { DialogFrame } from "./Dialogs.tsx";
 import { Combobox, type ComboboxOption } from "./ui/Combobox.tsx";
+import { useRole } from "./projectContext.ts";
 import { Problem } from "./ui/Problem.tsx";
 import { Progress } from "./ui/Progress.tsx";
 import "./NewEntry.css";
@@ -50,6 +51,11 @@ export function NewEntry({
   const [problem, setProblem] = useState<string | null>(null);
   const field = useRef<HTMLInputElement>(null);
   const folderLabel = useId();
+  // Made a reader while the dialog is open: it closes, since it could only make what is refused.
+  const { known, canWrite } = useRole();
+  useEffect(() => {
+    if (known && !canWrite) onClose();
+  }, [known, canWrite]);
 
   /** A folder made here, from the name typed into the folder list. */
   const [made, setMade] = useState<string | null>(null);

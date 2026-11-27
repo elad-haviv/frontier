@@ -5,16 +5,20 @@ import {
   expect,
   type Page,
   test,
-} from "@playwright/test";
+} from "./test.ts";
 import {
+  api,
   AUTH_FILE,
   discardDraft,
   edit,
   entry,
+  giveDeviceKeys,
+  keyOf,
   newEntry,
   newMapInForm,
   openMenu,
   openSideBar,
+  proj,
 } from "./helpers.ts";
 
 /**
@@ -25,7 +29,7 @@ import {
 
 /** Opens the app signed in and waits until its worker is active and the sign-in is noted. */
 async function install(page: Page): Promise<void> {
-  await page.goto("/");
+  await page.goto(proj("/"));
   await expect(page.locator(".home h1")).toBeVisible();
   await page.evaluate(() => navigator.serviceWorker.ready);
   await expect
@@ -120,7 +124,7 @@ test("Home with no connection: pins and recents from the device, the queue needs
   page,
   context,
 }) => {
-  const pin = await page.request.post("/api/pins", { data: { path: MIRA } });
+  const pin = await page.request.post(api("/pins"), { data: { path: MIRA } });
   expect(pin.ok(), await pin.text()).toBe(true);
   try {
     await install(page);
@@ -128,18 +132,22 @@ test("Home with no connection: pins and recents from the device, the queue needs
     await expect(page.locator(".home").getByRole("region", { name: "Working on" })).toContainText(
       "Mira",
     );
-    await page.evaluate((path) => {
-      localStorage.setItem(
-        "frontier.keepGoing.v1",
-        JSON.stringify({
-          recents: [{ path, title: "Mira", kind: "read", at: Date.now() - 600_000 }],
-          current: { path, title: "Mira" },
-          previous: null,
-          scroll: {},
-          cursor: {},
-        }),
-      );
-    }, MIRA);
+    const recentsKey = await keyOf(page, "frontier.keepGoing.v1");
+    await page.evaluate(
+      ({ path, key }) => {
+        localStorage.setItem(
+          key,
+          JSON.stringify({
+            recents: [{ path, title: "Mira", kind: "read", at: Date.now() - 600_000 }],
+            current: { path, title: "Mira" },
+            previous: null,
+            scroll: {},
+            cursor: {},
+          }),
+        );
+      },
+      { path: MIRA, key: recentsKey },
+    );
     await reloadOffline(page);
     const home = page.locator(".home");
     await expect(home.getByRole("region", { name: "Working on" })).toContainText("Mira");
@@ -154,7 +162,29 @@ test("Home with no connection: pins and recents from the device, the queue needs
     );
   } finally {
     await context.setOffline(false);
-    await page.request.delete(`/api/pins?path=${encodeURIComponent(MIRA)}`);
+    await page.request.delete(api(`/pins?path=${encodeURIComponent(MIRA)}`));
+  }
+});
+
+test("an invite link opens the app with no connection, and says it needs one", async ({
+  page,
+  context,
+}) => {
+  await install(page);
+  await context.setOffline(true);
+  try {
+    // A page address: the worker answers with the app, not the browser's error page.
+    await page.goto("/join/AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
+    await expect(
+      page.getByRole("heading", { name: "The invitation could not be opened" }),
+    ).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByRole("alert")).toContainText("connection");
+    // The connection returns: Try again asks the server, which has never heard of that link.
+    await context.setOffline(false);
+    await page.getByRole("button", { name: "Try again" }).click();
+    await expect(page.getByRole("heading", { name: "This link does not work" })).toBeVisible();
+  } finally {
+    await context.setOffline(false);
   }
 });
 
@@ -170,7 +200,7 @@ test("Log out needs a connection", async ({ page, context }) => {
 });
 
 test("the app can be installed: a manifest, icons and an Apple touch icon", async ({ page }) => {
-  await page.goto("/");
+  await page.goto(proj("/"));
   await expect(page.locator(".home h1")).toBeVisible();
   const links = await page.evaluate(() => ({
     manifest: [...document.querySelectorAll('link[rel="manifest"]')].map((l) =>
@@ -354,22 +384,22 @@ test("a map on the device opens with its image, and a marker added offline is se
 
   await context.setOffline(false);
   await allSent(page);
-  const map = (await (await page.request.get(`/api/maps/${id}`)).json()) as {
+  const map = (await (await page.request.get(api(`/maps/${id}`))).json()) as {
     map: { features: unknown[] };
   };
   expect(map.map.features).toHaveLength(1);
-  await page.request.delete(`/api/maps/${id}`);
+  await page.request.delete(api(`/maps/${id}`));
 });
 
 test("CUJ 8: the graph offline, drawn from the compact index", async ({ page }) => {
   await install(page);
-  await page.goto("/graph");
+  await page.goto(proj("/graph"));
   await expect(page.locator("canvas.graph-canvas")).toHaveAttribute("aria-busy", "false");
   const online = await page.locator("canvas.graph-canvas").getAttribute("aria-label");
   await kept(page, "/api/graph");
   await reloadOffline(page);
 
-  await page.goto(`/graph?focus=${encodeURIComponent(HARBOR)}`);
+  await page.goto(proj(`/graph?focus=${encodeURIComponent(HARBOR)}`));
   await expect(page.locator("canvas.graph-canvas")).toHaveAttribute("aria-busy", "false");
   await expect(page.locator("canvas.graph-canvas")).toHaveAttribute("aria-label", online!);
   await expect(page.locator(".offline-copy")).toContainText("Offline copy from");
@@ -392,10 +422,10 @@ const draftId = () =>
 
 /** Saves the given drafts as a version, from a device's requests. */
 async function saveVersion(request: APIRequestContext, draftIds: string[]): Promise<void> {
-  const plan = await request.post("/api/publish/plan", { data: { draftIds, renameIds: [] } });
+  const plan = await request.post(api("/publish/plan"), { data: { draftIds, renameIds: [] } });
   expect(plan.ok(), await plan.text()).toBe(true);
   const { planId, merges } = (await plan.json()) as { planId: string; merges: { id: string }[] };
-  const done = await request.post("/api/publish/confirm", {
+  const done = await request.post(api("/publish/confirm"), {
     data: { planId, confirmedMergeIds: merges.map((m) => m.id), message: "From the laptop" },
   });
   expect(done.ok(), await done.text()).toBe(true);
@@ -403,7 +433,7 @@ async function saveVersion(request: APIRequestContext, draftIds: string[]): Prom
 
 /** The number of drafts with kept copies, as the attention count has it. */
 const keptCopies = async (request: APIRequestContext) =>
-  ((await (await request.get("/api/status")).json()) as { attention: { keptCopies: number } })
+  ((await (await request.get(api("/status"))).json()) as { attention: { keptCopies: number } })
     .attention.keptCopies;
 
 test("CUJ 3: a new entry made offline, its path taken meanwhile, ends as two texts to compare", async ({
@@ -437,7 +467,7 @@ test("CUJ 3: a new entry made offline, its path taken meanwhile, ends as two tex
   // Meanwhile the laptop makes the same entry and saves a version.
   const laptop = await laptopOf(browser);
   const theirs = draftId();
-  const made = await laptop.put("/api/drafts", {
+  const made = await laptop.put(api("/drafts"), {
     data: {
       id: theirs,
       path,
@@ -462,10 +492,10 @@ test("CUJ 3: a new entry made offline, its path taken meanwhile, ends as two tex
 
   // Clean up: the draft goes, and the entry is taken out of the library again.
   const id = new URL(page.url()).pathname.split("/").pop()!;
-  await laptop.delete(`/api/drafts/${id}`);
+  await laptop.delete(api(`/drafts/${id}`));
   const opened = (await (await laptop.get(entryAnswer(path))).json()) as { blob: string };
   const gone = draftId();
-  await laptop.put("/api/drafts", {
+  await laptop.put(api("/drafts"), {
     data: { id: gone, path, kind: "delete", text: "", revision: 0, baseBlob: opened.blob },
   });
   await saveVersion(laptop, [gone]);
@@ -480,13 +510,13 @@ test("CUJ 4: a map changed on the train and at home keeps the other side, compar
   // A flat map with one marker, Lighthouse, in the middle of its image.
   const id = await page.evaluate(async (title) => {
     const json = { "content-type": "application/json" };
-    const made = await fetch("/api/maps", {
+    const made = await fetch(`${API}/maps`, {
       method: "POST",
       headers: json,
       body: JSON.stringify({ title, kind: "flat", image: "99 Appendices/Images/map one.png" }),
     });
     const { id } = (await made.json()) as { id: string };
-    const loaded = await (await fetch(`/api/maps/${id}`)).json();
+    const loaded = await (await fetch(`${API}/maps/${id}`)).json();
     const map = loaded.map;
     map.features = [
       {
@@ -500,14 +530,14 @@ test("CUJ 4: a map changed on the train and at home keeps the other side, compar
         child: null,
       },
     ];
-    await fetch(`/api/maps/${id}`, {
+    await fetch(`${API}/maps/${id}`, {
       method: "PUT",
       headers: json,
       body: JSON.stringify({ map, revision: loaded.revision, baseBlob: loaded.blob }),
     });
     return id;
   }, `Coast ${Date.now()}`);
-  await page.goto(`/map/${id}?edit=1`);
+  await page.goto(proj(`/map/${id}?edit=1`));
   await expect(page.locator(".map-canvas").first()).toHaveAttribute("data-images", "1");
   await kept(page, `/api/maps/${id}`);
 
@@ -549,13 +579,13 @@ test("CUJ 4: a map changed on the train and at home keeps the other side, compar
 
   // At home: the laptop renames it, and its save is sent first.
   const laptop = await laptopOf(browser);
-  const home = (await (await laptop.get(`/api/maps/${id}`)).json()) as {
+  const home = (await (await laptop.get(api(`/maps/${id}`))).json()) as {
     map: { features: { label: string }[] };
     revision: number;
     blob: string;
   };
   home.map.features[0]!.label = "Old Light";
-  const renamed = await laptop.put(`/api/maps/${id}`, {
+  const renamed = await laptop.put(api(`/maps/${id}`), {
     data: { map: home.map, revision: home.revision, baseBlob: home.blob },
   });
   expect(renamed.ok(), await renamed.text()).toBe(true);
@@ -580,7 +610,7 @@ test("CUJ 4: a map changed on the train and at home keeps the other side, compar
   await compare.getByRole("button", { name: "Dismiss" }).click();
   await expect(page).toHaveURL(new RegExp(`/map/${id}`));
   await expect.poll(() => keptCopies(laptop)).toBe(before);
-  await laptop.delete(`/api/maps/${id}`);
+  await laptop.delete(api(`/maps/${id}`));
 });
 
 /**
@@ -632,17 +662,29 @@ test("Offline copy shows in Settings with no connection, and the rest say they n
 }) => {
   await install(page);
   await read(page, HARBOR);
+  // A key is on this device already.
+  await giveDeviceKeys(page);
   await reloadOffline(page);
-  await page.goto("/settings");
+  await page.goto(proj("/settings"));
   // Every section is listed; those that need the server say so.
   const list = page.getByRole("navigation", { name: "Settings" });
-  await expect(list.getByRole("link", { name: /Providers/ })).toContainText("Needs a connection");
+  await expect(list.getByRole("link", { name: /AI models/ })).toContainText("Needs a connection");
   await expect(list.getByRole("link", { name: /Offline copy/ })).not.toContainText(
     "Needs a connection",
   );
+  await expect(list.getByRole("link", { name: /AI keys/ })).toContainText("1 key in this browser");
   await expect(page.locator(".settings-offline-banner")).toBeVisible();
-  // Opening one says why it is empty.
-  await list.getByRole("link", { name: /Models/ }).click();
+  // The keys are device state: their section opens with no connection, and only Test waits.
+  await list.getByRole("link", { name: /AI keys/ }).click();
+  await expect(page.getByRole("note")).toContainText("Your keys stay in this browser.");
+  const key = page.locator(".provider-row", { hasText: "OpenRouter" });
+  await expect(key).toContainText("key sk-…-key");
+  await expect(key.getByRole("button", { name: "Test", exact: true })).toBeDisabled();
+  await key.getByRole("button", { name: "Replace key" }).click();
+  await expect(key.getByRole("button", { name: "Test and keep on this device" })).toBeDisabled();
+  await page.goBack();
+  // Opening one that needs the server says why it is empty.
+  await list.getByRole("link", { name: /AI models/ }).click();
   await expect(page.locator(".settings-offline-card")).toContainText("Needs a connection");
   await page.locator(".settings-offline-card").getByRole("link", { name: "Offline copy" }).click();
   const block = page.locator(".on-this-device");
@@ -662,7 +704,7 @@ test("logout removes the worker and its caches, and the login page registers non
   await read(page, HARBOR);
   expect(await page.evaluate(() => caches.keys())).not.toEqual([]);
   // A change waiting, its send held back: logout warns before it loses it.
-  await page.route("**/api/drafts", () => undefined);
+  await page.route("**/api/p/*/drafts", () => undefined);
   await page.goto(edit(HARBOR));
   await page.locator(".cm-content").click();
   await page.keyboard.press("Control+End");
@@ -697,7 +739,7 @@ test("the server's answer for an entry read from the device keeps the reader's p
       `## Section ${i + 1}\n\n` +
       Array.from({ length: 6 }, () => "Salt and brine and the grey tide. ".repeat(20)).join("\n\n"),
   ).join("\n\n");
-  const made = await page.request.put("/api/drafts", {
+  const made = await page.request.put(api("/drafts"), {
     data: { id, path, kind: "create", text: `# Keep Going Reread\n\n${sections}\n`, revision: 0 },
   });
   expect(made.ok(), await made.text()).toBe(true);
@@ -719,13 +761,14 @@ test("the server's answer for an entry read from the device keeps the reader's p
     await page.waitForTimeout(700);
     // Not at the top again (the offline line going takes a few pixels of height with it).
     expect(await top()).toBeGreaterThan(1500);
+    const recentsKey = await keyOf(page, "frontier.keepGoing.v1");
     const stored = await page.evaluate(
-      (p) => JSON.parse(localStorage.getItem("frontier.keepGoing.v1")!).scroll[p].y as number,
-      path,
+      ({ p, key }) => JSON.parse(localStorage.getItem(key)!).scroll[p].y as number,
+      { p: path, key: recentsKey },
     );
     expect(stored).toBeGreaterThan(1500);
   } finally {
     await context.setOffline(false);
-    await page.request.delete(`/api/drafts/${id}`);
+    await page.request.delete(api(`/drafts/${id}`));
   }
 });

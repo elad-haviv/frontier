@@ -1,6 +1,6 @@
 import type { MapFile } from "@frontier/schema";
 import { Plus } from "lucide-react";
-import { Link } from "react-router-dom";
+import { Link } from "../../nav.tsx";
 import { entryUrl, mapUrl } from "../../api.ts";
 import {
   apart,

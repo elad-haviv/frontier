@@ -5,6 +5,7 @@ import { Unsent } from "../Unsent.tsx";
 import { IconButton } from "../ui/IconButton.tsx";
 import { SideLink, useCounts } from "./LeftBar.tsx";
 import { useShellStore } from "./panels.tsx";
+import { useProject } from "../projectContext.ts";
 import { useConnection } from "../../sync/connection.ts";
 import "./PhoneBar.css";
 
@@ -27,6 +28,7 @@ export function PhoneBar({
   onSearch: () => void;
   menuRef: Ref<HTMLButtonElement>;
 }) {
+  const project = useProject();
   const store = useShellStore();
   const counts = useCounts();
   const { state } = useConnection();
@@ -68,7 +70,7 @@ export function PhoneBar({
       </span>
       <IconButton
         className="find"
-        label="Search"
+        label={`Search ${project.name}`}
         icon={Search}
         shortcut="app.switcher"
         tipSide="bottom"

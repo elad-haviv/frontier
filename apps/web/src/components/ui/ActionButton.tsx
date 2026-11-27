@@ -1,4 +1,4 @@
-import type { ButtonHTMLAttributes, MouseEvent } from "react";
+import type { ComponentPropsWithRef, MouseEvent } from "react";
 import { useNeedsConnection } from "../../sync/connection.ts";
 import { Tip } from "./Tip.tsx";
 
@@ -12,7 +12,7 @@ export function ActionButton({
   disabled,
   type = "button",
   ...rest
-}: ButtonHTMLAttributes<HTMLButtonElement>) {
+}: ComponentPropsWithRef<"button">) {
   const reason = useNeedsConnection();
   if (!reason) return <button {...rest} type={type} disabled={disabled} onClick={onClick} />;
   const refuse = (e: MouseEvent<HTMLButtonElement>) => e.preventDefault();

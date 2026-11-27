@@ -127,8 +127,19 @@ const SAMPLE_MAP = `{
 export const SAMPLE_BRANCH = "proposal/sample-agent/harbor-keeper";
 
 /** Creates the sample remote if needed and returns its path. */
-export function ensureSampleRemote(dataDir: string, sampleDir = DEFAULT_SAMPLE): string {
-  const remote = join(dataDir, "sample-remote.git");
+/**
+ * The email given to commits when none is configured (a library of Frontier's own, and the
+ * sample). It is not anyone's address, so the first account never takes it as theirs.
+ */
+export const PLACEHOLDER_AUTHOR_EMAIL = "author@frontier.invalid";
+
+export function ensureSampleRemote(
+  dataDir: string,
+  sampleDir = DEFAULT_SAMPLE,
+  /** The name of the repository made in `dataDir`; a project's own is `library.git`. */
+  remoteName = "sample-remote.git",
+): string {
+  const remote = join(dataDir, remoteName);
   if (existsSync(remote)) return remote;
   mkdirSync(dataDir, { recursive: true });
   const work = mkdtempSync(join(tmpdir(), "frontier-sample-"));
@@ -243,7 +254,7 @@ export function applyLibraryMode(env: NodeJS.ProcessEnv): void {
   env["FRONTIER_LIBRARY"] = "own";
   env["VAULT_REMOTE_URL"] = ensureOwnLibrary(dataDir);
   env["COMMIT_AUTHOR_NAME"] ??= "Author";
-  env["COMMIT_AUTHOR_EMAIL"] ??= "author@frontier.invalid";
+  env["COMMIT_AUTHOR_EMAIL"] ??= PLACEHOLDER_AUTHOR_EMAIL;
   env["COMMIT_BOT_NAME"] ??= "frontier";
   env["COMMIT_BOT_EMAIL"] ??= "frontier@frontier.invalid";
   // Without a storage bucket the backup stays on the same disk, which the status page says.
@@ -258,7 +269,7 @@ export function applySampleMode(env: NodeJS.ProcessEnv): void {
   env["BACKUP_LOCAL_DIR"] ??= join(dataDir, "bucket");
   env["ICON_FOLDER"] ??= "99 Appendices/Icons";
   env["COMMIT_AUTHOR_NAME"] ??= "Sample Author";
-  env["COMMIT_AUTHOR_EMAIL"] ??= "author@frontier.invalid";
+  env["COMMIT_AUTHOR_EMAIL"] ??= PLACEHOLDER_AUTHOR_EMAIL;
   env["COMMIT_BOT_NAME"] ??= "frontier";
   env["COMMIT_BOT_EMAIL"] ??= "frontier@frontier.invalid";
 }

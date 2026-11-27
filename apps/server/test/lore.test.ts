@@ -1,12 +1,13 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { PublishPlan, serialiseMap, type MapFile, UnpublishedResponse } from "@frontier/schema";
 import { lookUp, plainForQuotes } from "../src/ai/lore.js";
-import { makeTestApp, type TestApp } from "./helpers/app.js";
+import { asAdmin, makeTestApp, type TestApp } from "./helpers/app.js";
 
 let t: TestApp;
 afterEach(() => t.close());
 
-const SECRETS = { SECRETS_KEY: Buffer.alloc(32, 3).toString("base64") };
+/** The key this test's "device" holds; it reaches the server only in the keys header. */
+const KEY = "sk-or-test-key-1234";
 const MODEL = "test/talker";
 const NIRANI = "04 Inhabitants/Nirani.md";
 const VAAKH = "01 Universe/Vaakh.md";
@@ -67,11 +68,12 @@ function provider(answers: object[]) {
 
 async function start(answers: object[], models: Record<string, string> = { conversation: MODEL }) {
   const p = provider(answers);
-  t = await makeTestApp(SECRETS, { fetch: p.fake, settleMs: 0 });
+  t = await makeTestApp({}, { fetch: p.fake, settleMs: 0 });
   await t.login();
   t.repo.pushFromOutside(NOTES);
   await t.services.sync();
-  const res = await t.put("/api/settings/ai", { key: "sk-or-test-key-1234", models });
+  t.keys = { openrouter: KEY };
+  const res = await t.put("/api/settings/ai", { models });
   expect(res.statusCode, res.body).toBe(200);
   return p;
 }
@@ -269,14 +271,12 @@ function streamingProvider(replies: StreamReply[] | ((n: number) => StreamReply)
 
 async function startStreaming(replies: Parameters<typeof streamingProvider>[0]) {
   const p = streamingProvider(replies);
-  t = await makeTestApp(SECRETS, { fetch: p.fake, settleMs: 0 });
+  t = await makeTestApp({}, { fetch: p.fake, settleMs: 0 });
   await t.login();
   t.repo.pushFromOutside(NOTES);
   await t.services.sync();
-  const res = await t.put("/api/settings/ai", {
-    key: "sk-or-test-key-1234",
-    models: { conversation: MODEL },
-  });
+  t.keys = { openrouter: KEY };
+  const res = await t.put("/api/settings/ai", { models: { conversation: MODEL } });
   expect(res.statusCode, res.body).toBe(200);
   return p;
 }
@@ -426,18 +426,16 @@ describe("asking the lore, step by step", () => {
         { headers: { "content-type": "text/event-stream" } },
       );
     };
-    t = await makeTestApp(SECRETS, { fetch: fake, settleMs: 0 });
+    t = await makeTestApp({}, { fetch: fake, settleMs: 0 });
     await t.login();
     t.repo.pushFromOutside(NOTES);
     await t.services.sync();
-    await t.put("/api/settings/ai", {
-      key: "sk-or-test-key-1234",
-      models: { conversation: MODEL },
-    });
+    t.keys = { openrouter: KEY };
+    await t.put("/api/settings/ai", { models: { conversation: MODEL } });
     const address = await t.app.listen({ port: 0, host: "127.0.0.1" });
     const res = await fetch(`${address}/api/lore/stream`, {
       method: "POST",
-      headers: { cookie: t.cookie, "content-type": "application/json" },
+      headers: t.base({ "content-type": "application/json" }),
       body: JSON.stringify({ question: "How do the Nirani keep time?" }),
     });
     const reader = res.body!.getReader();
@@ -453,7 +451,7 @@ describe("asking the lore, step by step", () => {
         const run = eventsOf(text).find((e) => e.event === "run")!.data.run;
         const stop = await fetch(`${address}/api/lore/runs/${run}/stop`, {
           method: "POST",
-          headers: { cookie: t.cookie },
+          headers: t.base(),
         });
         expect(stop.status).toBe(200);
       }
@@ -711,23 +709,23 @@ describe("writing help", () => {
         });
       });
     };
-    t = await makeTestApp(SECRETS, { fetch: fake, settleMs: 0 });
+    t = await makeTestApp({}, { fetch: fake, settleMs: 0 });
     await t.login();
     t.repo.pushFromOutside(NOTES);
     await t.services.sync();
-    await t.put("/api/settings/ai", {
-      key: "sk-or-test-key-1234",
-      models: { conversation: MODEL },
-    });
+    t.keys = { openrouter: KEY };
+    await t.put("/api/settings/ai", { models: { conversation: MODEL } });
     const stop = new AbortController();
-    const asked = t.services.writing.rewrite({
-      path: NIRANI,
-      passage: "Some words.",
-      before: "",
-      after: "",
-      how: "shorter",
-      signal: stop.signal,
-    });
+    const asked = asAdmin(t, { openrouter: KEY }, () =>
+      t.services.writing.rewrite({
+        path: NIRANI,
+        passage: "Some words.",
+        before: "",
+        after: "",
+        how: "shorter",
+        signal: stop.signal,
+      }),
+    );
     await vi.waitFor(() => expect(calls).toBe(1));
     stop.abort();
     await expect(asked).rejects.toThrow(/stopped/i);
@@ -1146,7 +1144,7 @@ describe("discovering what lies at a place", () => {
     // No price known: the calls are counted, the cost is not.
     let est = await t.post(`/api/maps/${MAP_ID}/discover/estimate`, { spots: seven });
     expect(est.statusCode, est.body).toBe(200);
-    expect(est.json()).toMatchObject({ calls: 2, usd: null, spentUsd: 0 });
+    expect(est.json()).toEqual({ calls: 2, usd: null });
     const priced = await t.put("/api/settings/ai/prices", {
       prices: { [MODEL]: { promptPrice: 3, completionPrice: 15 } },
     });

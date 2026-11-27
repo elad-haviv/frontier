@@ -4,6 +4,7 @@ import {
   FolderInput,
   History,
   type LucideIcon,
+  MessageSquare,
   Pencil,
   Pin,
   TableOfContents,
@@ -16,6 +17,7 @@ import { useWide } from "../../width.ts";
 import { IconButton, IconLink } from "../ui/IconButton.tsx";
 import { Menu, MenuItem, MenuSeparator } from "../ui/Menu.tsx";
 import { WideMenuItem } from "./WideMenuItem.tsx";
+import { commentsLabel } from "../comments/model.ts";
 import "./EntryActions.css";
 
 /** One of the entry's actions, drawn as an icon in the bar and as an item in its "⋯". */
@@ -28,6 +30,8 @@ interface Action {
   blocked?: string | undefined;
   /** Whether its panel is the one open. */
   pressed?: boolean;
+  /** A count shown on the icon, such as the open comments. */
+  badge?: number;
 }
 
 export interface EntryActionsProps {
@@ -38,6 +42,10 @@ export interface EntryActionsProps {
   outlineOpen: boolean;
   onGraph: () => void;
   graphOpen: boolean;
+  /** Opens or closes the Comments tab (every role); `open` threads wait for an answer. */
+  onComments?: (() => void) | undefined;
+  commentsOpen?: boolean;
+  openComments?: number;
   /** Opens or closes the Relations tab (stage 30); absent where it is not offered. */
   onRelations?: (() => void) | undefined;
   relationsOpen?: boolean;
@@ -50,11 +58,11 @@ export interface EntryActionsProps {
         blocked?: string | undefined;
       }
     | undefined;
-  /** Present for an entry that can be changed. */
+  /** Present for an entry that can be read with its history; rename and move only for a writer. */
   changes?:
     | {
-        onRename: () => void;
-        onMove: () => void;
+        onRename?: (() => void) | undefined;
+        onMove?: (() => void) | undefined;
         onHistory: () => void;
         onExport: () => void;
         /** Why renaming and moving cannot be done now. */
@@ -85,12 +93,32 @@ function actionsOf(p: EntryActionsProps): { main: Action[]; rest: Action[] } {
     });
   }
   main.push({ id: "graph", label: "Graph", icon: Waypoints, run: p.onGraph, pressed: p.graphOpen });
+  if (p.onComments) {
+    main.push({
+      id: "comments",
+      label: commentsLabel(p.openComments ?? 0),
+      icon: MessageSquare,
+      run: p.onComments,
+      pressed: p.commentsOpen ?? false,
+      badge: p.openComments ?? 0,
+    });
+  }
   const rest: Action[] = [];
   if (p.changes) {
     const c = p.changes;
+    if (c.onRename && c.onMove) {
+      rest.push(
+        {
+          id: "rename",
+          label: "Rename",
+          icon: TextCursorInput,
+          run: c.onRename,
+          blocked: c.offline,
+        },
+        { id: "move", label: "Move to…", icon: FolderInput, run: c.onMove, blocked: c.offline },
+      );
+    }
     rest.push(
-      { id: "rename", label: "Rename", icon: TextCursorInput, run: c.onRename, blocked: c.offline },
-      { id: "move", label: "Move to…", icon: FolderInput, run: c.onMove, blocked: c.offline },
       { id: "history", label: "History", icon: History, run: c.onHistory },
       { id: "export", label: "Export", icon: FileDown, run: c.onExport },
     );
@@ -99,6 +127,19 @@ function actionsOf(p: EntryActionsProps): { main: Action[]; rest: Action[] } {
 }
 
 function Tool({ action }: { action: Action }) {
+  return (
+    <span className="entry-tool-wrap">
+      <ToolButton action={action} />
+      {action.badge ? (
+        <span className="badge entry-tool-badge" aria-hidden="true">
+          {action.badge}
+        </span>
+      ) : null}
+    </span>
+  );
+}
+
+function ToolButton({ action }: { action: Action }) {
   return (
     <IconButton
       label={action.label}

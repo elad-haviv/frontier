@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./test.ts";
 import {
   commitCount,
   discardDraft,
@@ -12,6 +12,9 @@ import {
   newMapInForm,
   pickEntry,
   setUpAi,
+  DEVICE_KEY,
+  giveDeviceKeys,
+  proj,
 } from "./helpers.ts";
 
 // One test at a time changes the AI settings, which are shared by the whole server.
@@ -20,28 +23,50 @@ test.describe.configure({ mode: "serial" });
 test("CUJ 5: sets up the AI, asks for fields, corrects one and accepts it into a draft", async ({
   page,
 }, info) => {
-  test.skip(info.project.name !== "phone", "The AI settings are one per server.");
+  test.skip(
+    info.project.name !== "phone",
+    "These change the person's AI settings: run at one size only.",
+  );
   const note = "02 People/Shade.md";
   const before = commitCount();
 
-  // Nothing about AI is offered before a key and a model are set.
+  // No key on this device yet: Propose fields explains, takes a key in place, then carries on.
   await page.goto(entry(note));
   await expect(page.locator("h1")).toHaveText("Shade");
-  await expect(page.getByRole("button", { name: "Propose fields" })).toHaveCount(0);
+  await page.getByRole("button", { name: "Propose fields" }).click();
+  const explain = page.getByRole("dialog", { name: "Proposing fields runs on your own AI key" });
+  await expect(explain).toContainText("Frontier doesn't come with an AI account.");
+  await expect(explain).toContainText(
+    "Add a key from OpenRouter, Anthropic, OpenAI or Google and you pay them directly.",
+  );
+  await expect(explain).toContainText("The key is kept on this device only.");
+  await expect(explain).toContainText("Frontier's server never saves it");
+  // A key the provider refuses is said in the dialog and not kept.
+  await explain.getByLabel("Provider").selectOption("anthropic");
+  await explain.getByLabel("Key", { exact: true }).fill("sk-ant-wrong-key-0001");
+  await explain.getByRole("button", { name: "Test and keep on this device" }).click();
+  await expect(explain.getByRole("alert")).toContainText("(401)");
+  await explain.getByLabel("Provider").selectOption("openrouter");
+  await explain.getByLabel("Key", { exact: true }).fill(DEVICE_KEY);
+  await explain.getByRole("button", { name: "Test and keep on this device" }).click();
+  await expect(explain).toHaveCount(0);
+  // It carried on with what was asked. No model is chosen yet, so it says so.
+  await expect(page.locator(".propose .error")).toContainText("No model is chosen");
 
-  // Settings › Providers: the key is checked with the provider, then stored.
-  await page.goto("/settings/ai/providers");
-  await page.getByRole("button", { name: /^OpenRouter/ }).click();
-  await page.getByLabel("Key for OpenRouter").fill("sk-or-browser-test-key");
-  await page.getByRole("button", { name: "Check and save" }).click();
+  // Settings › AI keys: the key is on this device, tested for real, and shown only masked.
+  await page.goto(proj("/settings/device/ai-keys"));
+  await expect(page.getByRole("note")).toContainText("Your keys stay in this browser.");
   const row = page.locator(".provider-row", { hasText: "OpenRouter" });
-  await expect(row).toContainText("Connected");
+  await expect(row).toContainText("Working");
   await expect(row).toContainText("sk-…-key");
-  // The key itself never comes back to the browser.
-  expect(await page.content()).not.toContain("sk-or-browser-test-key");
+  await row.getByRole("button", { name: "Test" }).click();
+  await expect(row).toContainText("Working");
+  // The key itself never comes back to the page, and the server never has it.
+  expect(await page.content()).not.toContain(DEVICE_KEY);
+  expect(await (await page.request.get("/api/settings")).text()).not.toContain(DEVICE_KEY);
 
-  // Settings › Models: the picker, as a sheet on the phone.
-  await page.goto("/settings/ai/models/extraction");
+  // Settings › AI models: the picker, as a sheet on the phone.
+  await page.goto(proj("/settings/you/ai-models/extraction"));
   const sheet = page.getByRole("dialog", { name: "Model for Proposing fields" });
   await sheet.getByRole("combobox", { name: /Find a model/ }).fill("reader");
   await sheet.getByRole("option", { name: /Sample reader/ }).click();
@@ -51,11 +76,11 @@ test("CUJ 5: sets up the AI, asks for fields, corrects one and accepts it into a
   await task.getByRole("button", { name: "Try it" }).click();
   await expect(task.locator(".field-ok")).toContainText('The model answered "ok"');
 
-  // Settings › Spending: the cap saves on Enter.
-  await page.goto("/settings/ai/spending");
-  await page.getByLabel("Monthly cap in US dollars").fill("5");
-  await page.getByLabel("Monthly cap in US dollars").press("Enter");
-  await expect(page.locator(".saved-mark").first()).toContainText("Saved");
+  // Settings › Your AI spending: what was spent, and no cap.
+  await page.goto(proj("/settings/you/ai-spending"));
+  await expect(page.locator(".spend-line")).toContainText("spent this month");
+  await expect(page.getByLabel("Monthly cap in US dollars")).toHaveCount(0);
+  await expect(page.getByText(/\bcap\b/i)).toHaveCount(0);
 
   await page.goto(entry(note));
   await page.getByRole("button", { name: "Propose fields" }).click();
@@ -79,13 +104,18 @@ test("CUJ 5: sets up the AI, asks for fields, corrects one and accepts it into a
   expect(onMain(note)).toContain('when: "in the year of the long tide"');
   expect(lastBody()).toContain("Frontier-Model: openrouter:sample/reader");
 
-  await page.goto("/settings/ai/spending");
+  await page.goto(proj("/settings/you/ai-spending"));
   await expect(page.locator(".call-log")).toContainText("sample/reader");
   await expect(page.locator(".call-log")).toContainText("Proposed fields");
 });
 
 test("a rejected proposal is not made again", async ({ page }, info) => {
-  test.skip(info.project.name !== "phone", "The AI settings are one per server.");
+  test.skip(
+    info.project.name !== "phone",
+    "These change the person's AI settings: run at one size only.",
+  );
+  // The model was chosen above, on the server; the key is this browser's own.
+  await giveDeviceKeys(page);
   const note = "03 Things/Lantern.md";
   await page.goto(entry(note));
   await page.getByRole("button", { name: "Propose fields" }).click();
@@ -93,7 +123,7 @@ test("a rejected proposal is not made again", async ({ page }, info) => {
   // The reader marks it as proposed until it is decided.
   await page.reload();
   await expect(page.locator(".field-proposed")).toContainText("proposed");
-  await page.goto("/inbox");
+  await page.goto(proj("/inbox"));
   await page
     .locator(".proposal", { hasText: "Lantern" })
     .getByRole("button", { name: "Reject" })
@@ -108,11 +138,14 @@ test("a rejected proposal is not made again", async ({ page }, info) => {
 test("CUJ 11: asks the lore, reads cited answers, and keeps a drafted addition as a draft", async ({
   page,
 }, info) => {
-  test.skip(info.project.name !== "phone", "The AI settings are one per server.");
+  test.skip(
+    info.project.name !== "phone",
+    "These change the person's AI settings: run at one size only.",
+  );
   await page.setViewportSize({ width: 375, height: 740 });
   await setUpAi(page, { conversation: "sample/reader" });
 
-  await page.goto("/ask");
+  await page.goto(proj("/ask"));
   await page.getByLabel("A question").fill("Who is Shade?");
   await page.getByRole("button", { name: "Ask" }).click();
   await expect(page).toHaveURL(/\/ask\/[a-z0-9]{12}$/);
@@ -145,7 +178,7 @@ test("CUJ 11: asks the lore, reads cited answers, and keeps a drafted addition a
     page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
   ).resolves.toBe(true);
 
-  await page.goto("/unpublished");
+  await page.goto(proj("/unpublished"));
   const shade = page.locator(".changes li", { hasText: "02 People/Shade.md" });
   await expect(shade).toContainText("Holds an addition the AI drafted");
   await shade.getByRole("button", { name: "Discard" }).click();
@@ -156,7 +189,7 @@ test("CUJ 11: asks the lore, reads cited answers, and keeps a drafted addition a
     .catch(() => undefined);
 
   // The conversation is listed, and can be deleted.
-  await page.goto("/ask");
+  await page.goto(proj("/ask"));
   await expect(page.locator(".map-list li", { hasText: "Who is Shade?" })).toContainText(
     "2 questions",
   );
@@ -169,12 +202,15 @@ test("CUJ 11: asks the lore, reads cited answers, and keeps a drafted addition a
 test("shows the work while the lore is answered, step by step, and can stop it", async ({
   page,
 }, info) => {
-  test.skip(info.project.name !== "phone", "The AI settings are one per server.");
+  test.skip(
+    info.project.name !== "phone",
+    "These change the person's AI settings: run at one size only.",
+  );
   await page.setViewportSize({ width: 375, height: 740 });
   await setUpAi(page, { conversation: "sample/reader" });
 
   // The model asks for more once, then answers: each step shows as it happens.
-  await page.goto("/ask");
+  await page.goto(proj("/ask"));
   await page.getByLabel("A question").fill("Who is Shade? Look further.");
   await page.getByRole("button", { name: "Ask" }).click();
   const live = page.locator(".lore-live");
@@ -238,7 +274,10 @@ test("shows the work while the lore is answered, step by step, and can stop it",
 test("writing help on a phone: a card under the passage, and asking the lore about it", async ({
   page,
 }, info) => {
-  test.skip(info.project.name !== "phone", "The AI settings are one per server.");
+  test.skip(
+    info.project.name !== "phone",
+    "These change the person's AI settings: run at one size only.",
+  );
   await page.setViewportSize({ width: 375, height: 740 });
   await setUpAi(page, { conversation: "sample/reader" });
 
@@ -272,7 +311,10 @@ test("writing help on a phone: a card under the passage, and asking the lore abo
 });
 
 test("comments on a passage: one for the author, one the AI works on", async ({ page }, info) => {
-  test.skip(info.project.name !== "phone", "The AI settings are one per server.");
+  test.skip(
+    info.project.name !== "phone",
+    "These change the person's AI settings: run at one size only.",
+  );
   await page.setViewportSize({ width: 375, height: 740 });
   await setUpAi(page, { conversation: "sample/reader" });
 
@@ -301,17 +343,20 @@ test("comments on a passage: one for the author, one the AI works on", async ({ 
   await expect(page.locator(".cm-content")).toContainText("A rewritten passage (Do what");
   await expect(page.locator(".cm-comment")).toHaveCount(0);
 
-  // A comment for the author stays, and the entry's page counts it.
+  // A note on text that is not saved yet cannot be shared (stage 31e), so it is for the AI, which
+  // is the writer's alone; it stays, and the entry's page counts it.
   await page.locator(".cm-content").getByText("A rewritten passage").click();
   await pressTool(page, "Comment");
   await panel.getByLabel("Your comment").fill("Check her age");
+  await panel.getByLabel("For the AI").check();
   await panel.getByRole("button", { name: "Keep the comment" }).click();
   await expect(panel.locator(".comment-list > li")).toHaveCount(1);
   await panel.getByRole("button", { name: "Close" }).click();
   await page.getByRole("button", { name: "Done" }).click();
   await page.getByRole("link", { name: "1 open comment" }).click();
   await expect(panel.locator(".comment-text")).toHaveText("Check her age");
-  await panel.getByRole("button", { name: "Done" }).click();
+  // Done is now Resolve: the thread leaves the open list.
+  await panel.getByRole("button", { name: /^Resolve the comment/ }).click();
   await expect(panel.locator(".comment-list > li")).toHaveCount(0);
   await panel.getByRole("button", { name: "Close" }).click();
 
@@ -321,11 +366,14 @@ test("comments on a passage: one for the author, one the AI works on", async ({ 
 test("CUJ 12: drafts a character's profile, approves it, talks, and adds a line to the entry", async ({
   page,
 }, info) => {
-  test.skip(info.project.name !== "phone", "The AI settings are one per server.");
+  test.skip(
+    info.project.name !== "phone",
+    "These change the person's AI settings: run at one size only.",
+  );
   await page.setViewportSize({ width: 375, height: 740 });
   await setUpAi(page, { conversation: "sample/reader" });
 
-  await page.goto("/talk/02%20People/Shade.md");
+  await page.goto(proj("/talk/02%20People/Shade.md"));
   await expect(page.locator("h1")).toHaveText("Talk with Shade");
   await page.getByRole("button", { name: "Draft a profile from the entries" }).click();
   const traits = page.locator(".trait");
@@ -380,7 +428,7 @@ test("CUJ 12: drafts a character's profile, approves it, talks, and adds a line 
   ).resolves.toBe(true);
 
   // The profile, the id it needed, and the line are unsaved changes; they are thrown away here.
-  await page.goto("/unpublished");
+  await page.goto(proj("/unpublished"));
   await expect(page.locator(".changes")).toContainText(".frontier/profiles/");
   await expect(
     page
@@ -388,15 +436,18 @@ test("CUJ 12: drafts a character's profile, approves it, talks, and adds a line 
       .filter({ has: page.locator(".change-path", { hasText: /^02 People\/Shade\.md$/ }) }),
   ).toContainText("Holds an addition the AI drafted");
   await page.evaluate(async () => {
-    const un = await (await fetch("/api/unpublished")).json();
-    for (const d of un.drafts) await fetch(`/api/drafts/${d.id}`, { method: "DELETE" });
+    const un = await (await fetch(`${API}/unpublished`)).json();
+    for (const d of un.drafts) await fetch(`${API}/drafts/${d.id}`, { method: "DELETE" });
   });
 });
 
 test("CUJ 13: explores a map, makes concept art when asked, and keeps a discovery", async ({
   page,
 }, info) => {
-  test.skip(info.project.name !== "phone", "The AI settings are one per server.");
+  test.skip(
+    info.project.name !== "phone",
+    "These change the person's AI settings: run at one size only.",
+  );
   await page.setViewportSize({ width: 375, height: 740 });
   await setUpAi(page, { conversation: "sample/reader", art: "sample/painter" });
 
@@ -431,16 +482,51 @@ test("CUJ 13: explores a map, makes concept art when asked, and keeps a discover
   await expect(page.locator(".map-notice")).toContainText("02 People/Test Hollow.md");
   await expect(page.locator(".discovery-pin")).toHaveCount(0);
 
-  await page.goto("/unpublished");
+  await page.goto(proj("/unpublished"));
   const changes = page.locator(".changes");
   await expect(changes).toContainText("02 People/Test Hollow.md");
   await expect(changes).toContainText("Test Hollow.png");
 
   await page.evaluate(async () => {
-    const maps = await (await fetch("/api/maps")).json();
+    const maps = await (await fetch(`${API}/maps`)).json();
     for (const m of maps.maps)
-      if (m.title === "Explored coast") await fetch(`/api/maps/${m.id}`, { method: "DELETE" });
-    const un = await (await fetch("/api/unpublished")).json();
-    for (const d of un.drafts) await fetch(`/api/drafts/${d.id}`, { method: "DELETE" });
+      if (m.title === "Explored coast") await fetch(`${API}/maps/${m.id}`, { method: "DELETE" });
+    const un = await (await fetch(`${API}/unpublished`)).json();
+    for (const d of un.drafts) await fetch(`${API}/drafts/${d.id}`, { method: "DELETE" });
   });
+});
+
+test("the first time someone without a key asks, the explanation opens in place and the question goes on", async ({
+  page,
+}, info) => {
+  test.skip(
+    info.project.name !== "phone",
+    "These change the person's AI settings: run at one size only.",
+  );
+  await setUpAi(page, { conversation: "sample/reader" }, { key: false });
+  await page.goto(proj("/ask"));
+  await page.getByLabel("A question").fill("Who is Shade?");
+  await page.getByRole("button", { name: "Ask" }).click();
+
+  const explain = page.getByRole("dialog", { name: "Ask runs on your own AI key" });
+  await expect(explain).toContainText("Frontier doesn't come with an AI account.");
+  await expect(explain).toContainText("The key is kept on this device only.");
+  // Not now leaves the question unasked.
+  await explain.getByRole("button", { name: "Not now" }).click();
+  await expect(explain).toHaveCount(0);
+  await expect(page).toHaveURL(/\/ask$/);
+
+  await page.getByRole("button", { name: "Ask" }).click();
+  await expect(explain).toBeVisible();
+  await explain.getByLabel("Key", { exact: true }).fill(DEVICE_KEY);
+  await explain.getByRole("button", { name: "Test and keep on this device" }).click();
+  // The key is kept, and the question carries on to its answer.
+  await expect(page).toHaveURL(/\/ask\/[a-z0-9]{12}$/);
+  await expect(page.locator(".turn").first().locator(".turn-question")).toHaveText("Who is Shade?");
+  // Asked again, it does not explain again.
+  await page.goto(proj("/ask"));
+  await page.getByLabel("A question").fill("Who is Shade?");
+  await page.getByRole("button", { name: "Ask" }).click();
+  await expect(page).toHaveURL(/\/ask\/[a-z0-9]{12}$/);
+  await expect(page.getByRole("dialog")).toHaveCount(0);
 });

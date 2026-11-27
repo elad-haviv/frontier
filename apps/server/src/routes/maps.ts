@@ -1,4 +1,4 @@
-import type { FastifyInstance } from "fastify";
+import type { RouteApp } from "../projects/facade.js";
 import {
   ClashKeys,
   Id,
@@ -33,7 +33,7 @@ const Save = z.object({
 });
 const Resolve = z.object({ keep: z.enum(["mine", "theirs"]) });
 
-export function mapRoutes(app: FastifyInstance, s: Services): void {
+export function mapRoutes(app: RouteApp, s: Services): void {
   const changed = () => s.status.drafts(s.drafts.count(), 0);
 
   app.get("/api/maps", async () => {

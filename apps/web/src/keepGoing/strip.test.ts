@@ -99,6 +99,8 @@ describe("the next steps after Publish", () => {
   });
 });
 
+const P = { id: "projecta01", slug: "alpha" };
+
 describe("what a publish does to the entries this device remembers", () => {
   const memory = () => {
     const data = new Map<string, string>();
@@ -120,20 +122,28 @@ describe("what a publish does to the entries this device remembers", () => {
 
   it("follows an entry that was renamed, with its new name", () => {
     const { recents } = memory();
-    followPublish(recents, {
-      renames: [{ from: "Places/Old.md", to: "Places/New.md" }],
-      deleted: [],
-    });
+    followPublish(
+      P,
+      {
+        renames: [{ from: "Places/Old.md", to: "Places/New.md" }],
+        deleted: [],
+      },
+      recents,
+    );
     expect(recents.snapshot().recents.find((e) => e.path === "Places/New.md")?.title).toBe("New");
     expect(paths(recents)).not.toContain("Places/Old.md");
   });
 
   it("follows every entry of a folder that was renamed, keeping their names", () => {
     const { recents } = memory();
-    followPublish(recents, {
-      renames: [{ from: "Places/Harbor", to: "Places/Port" }],
-      deleted: [],
-    });
+    followPublish(
+      P,
+      {
+        renames: [{ from: "Places/Harbor", to: "Places/Port" }],
+        deleted: [],
+      },
+      recents,
+    );
     expect(paths(recents)).toContain("Places/Port/Quay.md");
     expect(recents.snapshot().recents.find((e) => e.path === "Places/Port/Quay.md")?.title).toBe(
       "Quay",
@@ -143,7 +153,7 @@ describe("what a publish does to the entries this device remembers", () => {
 
   it("forgets an entry that was deleted, and keeps the others", () => {
     const { recents, data } = memory();
-    followPublish(recents, { renames: [], deleted: ["People/Mira.md"] });
+    followPublish(P, { renames: [], deleted: ["People/Mira.md"] }, recents);
     expect(paths(recents)).toEqual(["Places/Harbor/Quay.md", "Places/Old.md"]);
     // It was the one open, so nothing is open now; the one before it is still the last.
     expect(recents.snapshot().current).toBeNull();

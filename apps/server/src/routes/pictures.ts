@@ -1,4 +1,4 @@
-import type { FastifyInstance } from "fastify";
+import type { RouteApp } from "../projects/facade.js";
 import { InsertPictureRequest, MakePictureRequest, type PicturesResponse } from "@frontier/schema";
 import { z } from "zod";
 import { ApiError } from "../errors.js";
@@ -9,7 +9,7 @@ const TryParam = z.object({ id: z.string().regex(/^[a-z0-9]{12}$/) });
 const Width = z.object({ w: z.coerce.number().int().min(16).max(4096).optional() });
 
 /** Pictures made for entries (stage 29): see ai/pictures.ts. */
-export function pictureRoutes(app: FastifyInstance, s: Services): void {
+export function pictureRoutes(app: RouteApp, s: Services): void {
   app.get("/api/pictures", async (request): Promise<PicturesResponse> => {
     const { entry } = EntryQuery.parse(request.query);
     return s.pictures.status(entry);

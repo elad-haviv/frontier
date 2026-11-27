@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { AiProviderEntry, ModelPrice, qualifyModelId } from "./ai.js";
+import { ModelPrice, qualifyModelId } from "./ai.js";
 import { KeepGoingSettings } from "./keepGoingSettings.js";
 
 /** Ids are 12 characters from lower-case letters and digits. Draft ids are made by the browser. */
@@ -57,6 +57,19 @@ export const DraftRecord = z.object({
   origins: z.array(Origin).default([]),
   /** The `op` of the last save the server accepted, so a retry of it writes nothing. */
   lastOp: z.string().optional(),
+  /**
+   * The id of the person whose unsaved change this is (stage 31d). A record from before people
+   * has none, and belongs to the project's first owner (see `state/drafts.ts`, "the move").
+   */
+  person: z.string().optional(),
+  /** When the person's unsaved change to this file began; absent from a record made before 31d. */
+  startedAt: z.string().datetime().optional(),
+  /**
+   * The id the person's device made for this draft, when it was another person's draft id already
+   * and the draft got a new id of its own (stage 31d): the device goes on using its id, which names
+   * this draft for that person.
+   */
+  clientId: Id.optional(),
 });
 export type DraftRecord = z.infer<typeof DraftRecord>;
 
@@ -96,11 +109,10 @@ export const RenameIntent = z.object({
   from: VaultPath,
   to: VaultPath,
   createdAt: z.string().datetime(),
+  /** The person whose rename it is (stage 31d); absent from one made before, which is the first owner's. */
+  person: z.string().optional(),
 });
 export type RenameIntent = z.infer<typeof RenameIntent>;
-
-export const Encrypted = z.object({ iv: z.string(), data: z.string(), tag: z.string() });
-export type Encrypted = z.infer<typeof Encrypted>;
 
 const ModelChoice = z
   .string()
@@ -109,55 +121,44 @@ const ModelChoice = z
   // Ids written before there was more than one provider are OpenRouter's.
   .transform((id) => (id === null || id.trim() === "" ? null : qualifyModelId(id)));
 
-export const AiSettings = z
-  .object({
-    /**
-     * The OpenRouter key of settings written before stage 18, encrypted with the key from the
-     * SECRETS_KEY variable. Read into `providers` and never written again.
-     */
-    key: Encrypted.nullable().default(null),
-    /** The providers the author connected, each with its key encrypted like the old one. */
-    providers: z.array(AiProviderEntry).default([]),
-    /**
-     * One provider-qualified model id per task ("anthropic:claude-…"). Null until the author picks
-     * one; the task is off until then.
-     */
-    models: z
-      .object({
-        extraction: ModelChoice,
-        conversation: ModelChoice,
-        art: ModelChoice,
-      })
-      .default({}),
-    /** Prices the author entered for models whose provider does not publish them, by model id. */
-    modelPrices: z.record(z.string(), ModelPrice).default({}),
-    /** The look given to concept art, added to every picture's description. */
-    artStyle: z
-      .string()
-      .default(
-        "Pencil and ink sketch on aged paper: hand-drawn, fine linework, light sepia washes, like a page of an explorer's field notebook.",
-      ),
-    /** Frontier stops calling the providers when this month's spending reaches it. */
-    monthlyCapUsd: z.number().min(0).default(10),
-    /** Propose fields for the notes of each Publish. */
-    proposeOnPublish: z.boolean().default(false),
-  })
-  .transform((ai) => {
-    if (!ai.key) return ai;
-    // The old single key becomes the OpenRouter connection, unless one is stored already.
-    const has = ai.providers.some((p) => p.id === "openrouter");
-    const openrouter: AiProviderEntry = {
-      id: "openrouter",
-      kind: "openrouter",
-      name: null,
-      key: ai.key,
-      baseUrl: null,
-      enabled: true,
-      addedAt: null,
-      check: null,
-    };
-    return { ...ai, key: null, providers: has ? ai.providers : [openrouter, ...ai.providers] };
-  });
+export const AiSettings = z.object({
+  /**
+   * One provider-qualified model id per task ("anthropic:claude-…"). Null until the author picks
+   * one; the task is off until then.
+   */
+  models: z
+    .object({
+      extraction: ModelChoice,
+      conversation: ModelChoice,
+      art: ModelChoice,
+    })
+    .default({}),
+  /** Prices the author entered for models whose provider does not publish them, by model id. */
+  modelPrices: z.record(z.string(), ModelPrice).default({}),
+  /** The look given to concept art, added to every picture's description. */
+  artStyle: z
+    .string()
+    .default(
+      "Pencil and ink sketch on aged paper: hand-drawn, fine linework, light sepia washes, like a page of an explorer's field notebook.",
+    ),
+  /** Propose fields for the notes of each Publish. */
+  proposeOnPublish: z.boolean().default(false),
+  /**
+   * Set once at start when the settings file still held AI keys from before they moved to each
+   * device (stage 31f): the keys were deleted, and the web app says so once.
+   */
+  keysRemoved: z
+    .object({
+      at: z.string(),
+      providers: z.array(z.string()),
+      /** Provider key variables still set in the server's environment, which are not read. */
+      environment: z.array(z.string()).default([]),
+    })
+    .nullable()
+    .default(null),
+  /** Set once the owner was told about provider key variables in the environment. */
+  envKeysNoticed: z.boolean().default(false),
+});
 export type AiSettings = z.infer<typeof AiSettings>;
 
 /**
@@ -178,16 +179,48 @@ export const Passkey = z.object({
 export type Passkey = z.infer<typeof Passkey>;
 
 export const Settings = z.object({
-  /** Empty when no password is set. */
+  /**
+   * The password, passkeys and switch below belong to the one account that existed before stage
+   * 31a. At the first start after it they are copied into the people store (`people.json`) and
+   * are no longer read; the file keeps them as they were.
+   */
   passwordHash: z.string(),
   ai: AiSettings.default({}),
   passkeys: z.array(Passkey).default([]),
   /** When true the password no longer logs in; only a passkey does. */
   passwordOff: z.boolean().default(false),
+  /**
+   * Set once the people store (`people.json`) has been made. From then on the fields above are
+   * never read again, so a deleted people file cannot bring an old password back.
+   */
+  migratedToPeople: z.boolean().default(false),
   /** Stage 25: which needs-love rules are on. */
   keepGoing: KeepGoingSettings.default({}),
 });
 export type Settings = z.infer<typeof Settings>;
+/**
+ * What belongs to one person (stage 31b review): the models they chose, the prices they entered,
+ * the look of their concept art, whether Publish proposes fields, and their Keep going rules.
+ * Kept in `/data/state/person-settings.json` by person id. A person with no entry has the
+ * defaults, but for the admin, whose entry is what `settings.json` held before there were people.
+ */
+export const PersonSettings = z.object({
+  ai: AiSettings.pick({
+    models: true,
+    modelPrices: true,
+    artStyle: true,
+    proposeOnPublish: true,
+  }).default({}),
+  keepGoing: KeepGoingSettings.default({}),
+});
+export type PersonSettings = z.infer<typeof PersonSettings>;
+
+/** `/data/state/person-settings.json` */
+export const PersonSettingsFile = z.object({
+  people: z.record(z.string(), PersonSettings).default({}),
+});
+export type PersonSettingsFile = z.infer<typeof PersonSettingsFile>;
+
 /** What a caller may pass when writing: the password, and any other part it wants to set. */
 export type SettingsInput = z.input<typeof Settings>;
 

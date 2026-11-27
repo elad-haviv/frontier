@@ -1,12 +1,23 @@
 import { useEffect, useRef, useState } from "react";
-import { Link, useLocation, useNavigate } from "react-router-dom";
-import { api, ApiFailure, entryUrl, historyUrl, newDraftId, type Version } from "../api.ts";
+import { Link, useLocation, useNavigate } from "../nav.tsx";
+import {
+  api,
+  ApiFailure,
+  entryUrl,
+  historyUrl,
+  libraryZipUrl,
+  newDraftId,
+  type Version,
+} from "../api.ts";
 import { Diff } from "../components/Diff.tsx";
 import { useRefresh } from "../components/Shell.tsx";
-import { queue } from "../sync/queue.ts";
 import { Problem } from "../components/ui/Problem.tsx";
 import { Progress } from "../components/ui/Progress.tsx";
 import { failureOf, useAsync } from "../useAsync.ts";
+import { projectWork } from "../projectWork.ts";
+import { useCanWrite } from "../components/projectContext.ts";
+import { byText } from "../people/model.ts";
+import "../people/People.css";
 
 const when = (at: string) =>
   new Date(at).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
@@ -32,6 +43,8 @@ function VersionRow({
   const [texts, setTexts] = useState<{ text: string; before: string | null } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // Restoring a version writes to the project: writers' (stage 31c).
+  const canWrite = useCanWrite();
 
   function load(open: boolean) {
     if (!open || texts) return;
@@ -46,23 +59,25 @@ function VersionRow({
     if (!texts) return;
     setBusy(true);
     setError(null);
+    // The project the entry is in: the person may switch while it is read and saved.
+    const work = projectWork();
     try {
-      const entry = await api.entry(current);
+      const entry = await work.api.entry(current);
       const key = `entry:${current}` as const;
-      if (entry.draft || (await queue.get(key))) {
+      if (entry.draft || (await work.queue.get(key))) {
         setError("This entry has unsaved changes. Save or discard them first.");
         return;
       }
       // The restored text is a change like any other: it goes through the save queue.
-      await queue.put(key, texts.text, {
+      await work.queue.put(key, texts.text, {
         kind: "edit",
         draftId: newDraftId(),
         revision: 0,
         baseBlob: entry.blob,
         delay: 0,
       });
-      await queue.sendNow(key);
-      const left = await queue.get(key);
+      await work.queue.sendNow(key);
+      const left = await work.queue.get(key);
       if (left?.state === "attention") {
         setError(left.error ?? "The version could not be restored.");
         return;
@@ -87,6 +102,7 @@ function VersionRow({
     <li ref={row}>
       <p className="change-head">
         <span className="version-when">{when(version.at)}</span>
+        {byText(version.by) && <span className="people-by">{byText(version.by)}</span>}
         <span className="change-path">{version.message}</span>
       </p>
       {then !== current && <p className="muted">Then named {then}.</p>}
@@ -95,7 +111,7 @@ function VersionRow({
         {error && <p className="error">{error}</p>}
         {!texts && !error && <p className="muted">Loading…</p>}
         {texts && <Diff before={texts.before ?? ""} after={texts.text} />}
-        {texts && !latest && (
+        {texts && !latest && canWrite && (
           <p className="change-actions">
             <button type="button" className="quiet" disabled={busy} onClick={restore}>
               Restore this version
@@ -169,7 +185,7 @@ export function LibraryHistoryPage() {
         <h1>Versions</h1>
         <p className="muted lede">
           The last hundred saved versions of the library.{" "}
-          <a href="/api/export/library.zip">Export the library as a zip</a>
+          <a href={libraryZipUrl()}>Export the library as a zip</a>
         </p>
       </header>
       {history.state === "loading" && <p className="muted">Loading…</p>}
@@ -183,6 +199,7 @@ export function LibraryHistoryPage() {
             <li key={v.commit}>
               <p className="change-head">
                 <span className="version-when">{when(v.at)}</span>
+                {byText(v.by) && <span className="people-by">{byText(v.by)}</span>}
                 <span className="change-path">{v.message}</span>
               </p>
               <details>

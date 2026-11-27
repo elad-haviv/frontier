@@ -3,6 +3,7 @@
  * found from what is drawn now, the filters, the road or river explored along, the places chosen
  * and what asking about them would cost. Everything but the cost and the asking works offline.
  */
+import { projectKey } from "../../projectStorage.ts";
 import { makeView, type Position, type ViewState } from "@frontier/geo";
 import type { MapFeature, MapFile, MapStyle } from "@frontier/schema";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -32,7 +33,7 @@ interface Prefs {
   day: DayMode;
 }
 const DEFAULT_PREFS: Prefs = { overlay: true, off: [], day: "horse" };
-const prefsKey = (id: string) => `frontier.explore.${id}`;
+const prefsKey = (id: string) => projectKey(`frontier.explore.${id}`);
 
 /** The filters, remembered per map on this device. */
 function readPrefs(id: string): Prefs {
@@ -63,8 +64,6 @@ export interface Estimate {
   key: string;
   calls: number;
   usd: number | null;
-  spentUsd: number;
-  capUsd: number;
 }
 
 export function useExplore(o: {

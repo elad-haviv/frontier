@@ -1,5 +1,5 @@
 import { CircleAlert } from "lucide-react";
-import { Link } from "react-router-dom";
+import { Link } from "../../nav.tsx";
 import { Icon } from "./Icon.tsx";
 import "./Problem.css";
 
@@ -7,10 +7,13 @@ import "./Problem.css";
 export function Problem({
   reason,
   onRetry,
+  retryLabel = "Retry",
   href,
 }: {
   reason: string;
   onRetry?: () => void;
+  /** The words of the button that tries again. */
+  retryLabel?: string;
   /** Where the problem is put right, such as a section of Settings. */
   href?: string | undefined;
 }) {
@@ -28,7 +31,7 @@ export function Problem({
       </p>
       {onRetry && (
         <button type="button" className="quiet" onClick={onRetry}>
-          Retry
+          {retryLabel}
         </button>
       )}
     </div>

@@ -1,5 +1,5 @@
-import type { FastifyInstance } from "fastify";
-import { ImageFromUrlRequest, ImageQuery } from "@frontier/schema";
+import type { RouteApp } from "../projects/facade.js";
+import { ImageFromUrlRequest, ImageQuery, roleAtLeast } from "@frontier/schema";
 import { isExcluded, isImage } from "@frontier/vault";
 import sharp from "sharp";
 import { ApiError } from "../errors.js";
@@ -10,7 +10,7 @@ import { cleanImageName, saveImage } from "../images/save.js";
 /** The one answer to every failed fetch: what went wrong is for the server log, not the page. */
 const FETCH_FAILED = "Frontier could not get an image from that address.";
 
-export function imageRoutes(app: FastifyInstance, s: Services): void {
+export function imageRoutes(app: RouteApp, s: Services): void {
   /**
    * Every image of the library, with the entries that show or link it, and the images uploaded
    * but not yet published, marked.
@@ -48,6 +48,13 @@ export function imageRoutes(app: FastifyInstance, s: Services): void {
   app.get("/api/images", async (request, reply) => {
     const { path, w, branch } = ImageQuery.parse(request.query);
     if (branch !== undefined) {
+      // An inbox branch holds what someone has not published yet: for people who can write.
+      if (!request.project || !roleAtLeast(request.project.role, "writer")) {
+        throw new ApiError(
+          "role_too_low",
+          "You can read and comment here. You cannot change the text.",
+        );
+      }
       const shown = await s.images.serve(await s.branches.image(branch, path), w);
       return reply
         .header("content-type", shown.contentType)

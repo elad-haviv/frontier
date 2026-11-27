@@ -1,5 +1,5 @@
-import { expect, test } from "@playwright/test";
-import { commitCount, entry, onMain, publish, pushToMain, review } from "./helpers.ts";
+import { expect, test } from "./test.ts";
+import { commitCount, entry, onMain, publish, pushToMain, review, proj } from "./helpers.ts";
 
 test("a note pushed straight to the vault waits for the author, who reverts it", async ({
   page,
@@ -19,7 +19,7 @@ test("a note pushed straight to the vault waits for the author, who reverts it",
   );
 
   // Opening the inbox fetches the vault, which brings the note and the list.
-  await page.goto("/inbox");
+  await page.goto(proj("/inbox"));
   await expect(page.locator(".changes > li", { hasText: note })).toBeVisible();
   await page.goto(entry(note));
   await expect(page.locator(".quarantine-note")).toContainText("pushed by hermes-agent");

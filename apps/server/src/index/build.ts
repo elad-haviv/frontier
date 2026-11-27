@@ -233,8 +233,13 @@ export class VaultIndex {
     return [...this.notes.values()];
   }
 
+  /** The files as a set, for `hasFile`; made again when `files` is another list than the one it was made from. */
+  private fileSet: { of: string[]; set: Set<string> } | null = null;
+
   hasFile(path: string): boolean {
-    return this.files.includes(path);
+    if (this.fileSet?.of !== this.files)
+      this.fileSet = { of: this.files, set: new Set(this.files) };
+    return this.fileSet.set.has(path);
   }
 
   backlinks(path: string): Backlink[] {
@@ -247,7 +252,20 @@ export class VaultIndex {
     return this.notes.get(path)?.lineEnding === "mixed";
   }
 
+  /** What `attention` found, kept for the build it was worked out from: it is asked for on every status event. */
+  private attentionAt: {
+    generation: number;
+    found: ReturnType<VaultIndex["findAttention"]>;
+  } | null = null;
+
   attention() {
+    if (this.attentionAt?.generation !== this.generation) {
+      this.attentionAt = { generation: this.generation, found: this.findAttention() };
+    }
+    return this.attentionAt.found;
+  }
+
+  private findAttention() {
     const notes = this.allNotes();
     const ambiguousLinks: { path: string; raw: string; candidates: string[] }[] = [];
     const brokenAppendixLinks: { path: string; raw: string }[] = [];

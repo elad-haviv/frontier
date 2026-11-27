@@ -5,7 +5,6 @@ import { makeTestApp, type TestApp } from "./helpers/app.js";
 let t: TestApp;
 afterEach(() => t?.close());
 
-const SECRETS = { SECRETS_KEY: Buffer.alloc(32, 3).toString("base64") };
 const MODEL = "test/talker";
 const NIRANI = "04 Inhabitants/Nirani.md";
 const VAAKH = "01 Universe/Vaakh.md";
@@ -33,11 +32,13 @@ function provider(answers: object[]) {
 
 async function start(answers: object[], models: Record<string, string> = { conversation: MODEL }) {
   const p = provider(answers);
-  t = await makeTestApp(SECRETS, { fetch: p.fake, settleMs: 0 });
+  t = await makeTestApp({}, { fetch: p.fake, settleMs: 0 });
   await t.login();
+  // The key is this device's own: it goes with each request (stage 31f).
+  t.keys = { openrouter: "sk-or-test-key-1234" };
   t.repo.pushFromOutside(NOTES);
   await t.services.sync();
-  const res = await t.put("/api/settings/ai", { key: "sk-or-test-key-1234", models });
+  const res = await t.put("/api/settings/ai", { models });
   expect(res.statusCode, res.body).toBe(200);
   return p;
 }

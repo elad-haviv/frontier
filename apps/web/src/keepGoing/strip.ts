@@ -4,7 +4,8 @@
  */
 import type { AfterPublishStep, NeedsLoveRule } from "@frontier/schema";
 import { dirname, stem } from "@frontier/vault";
-import type { Recents } from "./recents.ts";
+import type { ProjectRef } from "../project.ts";
+import { type Recents, recentsOf } from "./recents.ts";
 
 /** How many entries the backlinks line names before "and n more". */
 export const BACKLINKS_NAMED = 3;
@@ -92,8 +93,9 @@ export function stepWords(step: AfterPublishStep): {
  * the `renames` are paths as the publish plan gives them.
  */
 export function followPublish(
-  recents: Pick<Recents, "snapshot" | "renamed" | "forget">,
+  project: ProjectRef,
   change: { renames: readonly { from: string; to: string }[]; deleted: readonly string[] },
+  recents: Pick<Recents, "snapshot" | "renamed" | "forget"> = recentsOf(project),
 ): void {
   for (const r of change.renames) {
     for (const entry of recents.snapshot().recents) {

@@ -1,8 +1,9 @@
-import { expect, type Page, test } from "@playwright/test";
-import { discardDraft, edit } from "./helpers.ts";
+import { expect, type Page, test } from "./test.ts";
+import { discardDraft, edit, giveDeviceKeys, resetPerson } from "./helpers.ts";
 
 // Writing help in the editor at desktop size (stage 17): a card under the passage. The AI
-// settings are one per server, so these take turns and put the model back as they found it.
+// settings are the signed-in person's (one account here), so these take turns, and each starts
+// from a clean slate.
 test.describe.configure({ mode: "serial" });
 
 const NOTE = "02 People/Twin.md";
@@ -10,9 +11,11 @@ const PICTURES = Number(process.env.E2E_PORT ?? 3987) + 100;
 
 async function conversationModel(page: Page, model: string | null) {
   const res = await page.request.put("/api/settings/ai", {
-    data: { ...(model ? { key: "sk-or-browser-test-key" } : {}), models: { conversation: model } },
+    data: { models: { conversation: model } },
   });
   expect(res.ok(), await res.text()).toBe(true);
+  // The key is on this device, not on the server.
+  await giveDeviceKeys(page);
 }
 
 let before: string | null = null;
@@ -25,6 +28,11 @@ test.beforeAll(async ({ browser }, info) => {
   before = ((await res.json()) as { ai: { models: { conversation: string | null } } }).ai.models
     .conversation;
   await page.close();
+});
+// A spec before this one may have chosen another model, or left a draft of the entry.
+test.beforeEach(async ({ page }, info) => {
+  if (info.project.name !== "desktop") return;
+  await resetPerson(page, [NOTE]);
 });
 test.afterAll(async ({ browser }, info) => {
   if (info.project.name !== "desktop") return;
@@ -42,7 +50,10 @@ async function cursorIn(page: Page, words: string) {
 }
 
 test("with no model chosen, Help says how to turn it on", async ({ page }, info) => {
-  test.skip(info.project.name !== "desktop", "The AI settings are one per server.");
+  test.skip(
+    info.project.name !== "desktop",
+    "These change the person's AI settings: run at one size only.",
+  );
   await conversationModel(page, null);
   await page.goto(edit(NOTE));
   await cursorIn(page, "The person.");
@@ -53,13 +64,16 @@ test("with no model chosen, Help says how to turn it on", async ({ page }, info)
   await expect(page.locator(".cm-help-passage")).toContainText("The person.");
   await card.getByRole("link", { name: "Open Settings" }).click();
   // Straight to the model for lore conversations and writing help.
-  await expect(page).toHaveURL(/\/settings\/ai\/models\/conversation$/);
+  await expect(page).toHaveURL(/\/settings\/you\/ai-models\/conversation$/);
 });
 
 test("Help from the keyboard: a ready-made request, Keep and Undo, Try again, Discard", async ({
   page,
 }, info) => {
-  test.skip(info.project.name !== "desktop", "The AI settings are one per server.");
+  test.skip(
+    info.project.name !== "desktop",
+    "These change the person's AI settings: run at one size only.",
+  );
   await conversationModel(page, "sample/reader");
   await page.goto(edit(NOTE));
   await cursorIn(page, "The person.");
@@ -113,7 +127,10 @@ test("Help from the keyboard: a ready-made request, Keep and Undo, Try again, Di
 });
 
 test("own words, Stop, and the passage changing while the card is open", async ({ page }, info) => {
-  test.skip(info.project.name !== "desktop", "The AI settings are one per server.");
+  test.skip(
+    info.project.name !== "desktop",
+    "These change the person's AI settings: run at one size only.",
+  );
   await conversationModel(page, "sample/reader");
   await page.goto(edit(NOTE));
   await cursorIn(page, "The person.");

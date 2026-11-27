@@ -6,21 +6,44 @@ import { randomBytes } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
+import { ApiError } from "../errors.js";
 import type { ZodType, ZodTypeDef } from "zod";
 
 export class StateFiles {
   private listeners: (() => void)[] = [];
+  private closed = false;
+
+  /**
+   * The project these files belong to is gone. From now on a write is refused, so a request that
+   * was already running cannot make the project's folder again.
+   */
+  close(): void {
+    this.closed = true;
+  }
 
   /** Registers a function called after every write or removal. The backup uses it. */
-  onChange(listener: () => void): void {
+  onChange(listener: () => void): () => void {
     this.listeners.push(listener);
+    return () => {
+      this.listeners = this.listeners.filter((l) => l !== listener);
+    };
+  }
+
+  /** Says that something this store's folder holds changed, for a writer that is not this class (the AI log). */
+  touch(): void {
+    this.changed();
   }
 
   private changed(): void {
     for (const l of this.listeners) l();
   }
 
-  async write(path: string, data: Buffer | string): Promise<void> {
+  /**
+   * Writes a file. A `quiet` write does not tell the listeners (so does not arm the backup): for a
+   * note that costs nothing if it waits for the next backup, such as when someone was last active.
+   */
+  async write(path: string, data: Buffer | string, quiet = false): Promise<void> {
+    if (this.closed) throw new ApiError("no_project", "This project has been deleted.");
     await mkdir(dirname(path), { recursive: true });
     const temp = `${path}.${randomBytes(6).toString("hex")}.tmp`;
     try {
@@ -30,11 +53,11 @@ export class StateFiles {
       await rm(temp, { force: true });
       throw err;
     }
-    this.changed();
+    if (!quiet) this.changed();
   }
 
-  async writeJson(path: string, value: unknown): Promise<void> {
-    await this.write(path, JSON.stringify(value, null, 2) + "\n");
+  async writeJson(path: string, value: unknown, quiet = false): Promise<void> {
+    await this.write(path, JSON.stringify(value, null, 2) + "\n", quiet);
   }
 
   /** Reads and checks a JSON file. Returns null when the file does not exist. */

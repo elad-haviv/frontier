@@ -1,10 +1,11 @@
 import { Plus } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "../nav.tsx";
 import type { TreeLine, TreeLook, TreesFile } from "@frontier/schema";
 import { treeUrl } from "../api.ts";
 import { DialogFrame } from "../components/Dialogs.tsx";
 import { EntryCombobox } from "../components/EntryCombobox.tsx";
+import { useCanWrite } from "../components/projectContext.ts";
 import { usePhone } from "../components/Shell.tsx";
 import { usePageTitle } from "../components/shell/panels.tsx";
 import { TreeShape } from "../components/trees/TreeDrawing.tsx";
@@ -66,10 +67,15 @@ export function TreesPage() {
   const relations = useRelations();
   const phone = usePhone();
   const navigate = useNavigate();
+  // A reader opens the trees and the relations; making and changing them is for writers.
+  const canWrite = useCanWrite();
   const [making, setMaking] = useState<{ start?: string } | null>(null);
   usePageTitle("Trees");
   useScope("trees");
-  useShortcut("trees.new", () => setMaking({}));
+  useShortcut("trees.new", () => {
+    if (!canWrite) return false;
+    setMaking({});
+  });
 
   if (trees.state === "failed")
     return <Problem reason={trees.error ?? "The trees could not be read."} />;
@@ -100,7 +106,7 @@ export function TreesPage() {
           <span className="tr-muted">{list.length === 1 ? "1 tree" : `${list.length} trees`}</span>
         )}
         <span className="tr-spacer" />
-        {list.length > 0 && !phone && (
+        {canWrite && list.length > 0 && !phone && (
           <button type="button" className="primary" onClick={() => setMaking({})}>
             <Icon icon={Plus} size="sm" /> New tree <kbd>N</kbd>
           </button>
@@ -126,15 +132,24 @@ export function TreesPage() {
             pantheon, a chain of command. The relations are written on the entries, so every tree
             that shows them stays in step.
           </p>
-          <button type="button" className="primary" onClick={() => setMaking({})}>
-            New tree
-          </button>
-          {family && g && (
-            <button type="button" onClick={() => void quick()}>
-              Make a tree from {title(g, family.start)} · {family.size} people already related
-            </button>
+          {canWrite ? (
+            <>
+              <button type="button" className="primary" onClick={() => setMaking({})}>
+                New tree
+              </button>
+              {family && g && (
+                <button type="button" onClick={() => void quick()}>
+                  Make a tree from {title(g, family.start)} · {family.size} people already related
+                </button>
+              )}
+              <p className="tr-muted">Or open someone&rsquo;s entry and use its Relations tab.</p>
+            </>
+          ) : (
+            <p className="tr-muted">
+              A writer or an owner of the project can make one. Open someone&rsquo;s entry and use
+              its Relations tab to see how they relate.
+            </p>
           )}
-          <p className="tr-muted">Or open someone&rsquo;s entry and use its Relations tab.</p>
         </div>
       ) : (
         <ul className="tr-grid">
@@ -143,7 +158,7 @@ export function TreesPage() {
               <TreeCard tree={t} g={g} />
             </li>
           ))}
-          {!phone && (
+          {canWrite && !phone && (
             <li>
               <button type="button" className="tr-new-tile" onClick={() => setMaking({})}>
                 + New tree
@@ -152,7 +167,7 @@ export function TreesPage() {
           )}
         </ul>
       )}
-      {phone && list.length > 0 && (
+      {canWrite && phone && list.length > 0 && (
         <button
           type="button"
           className="tr-fab"
@@ -162,7 +177,7 @@ export function TreesPage() {
           <Icon icon={Plus} />
         </button>
       )}
-      {making && (
+      {making && canWrite && (
         <NewTree
           onCancel={() => setMaking(null)}
           onMake={async (line) => {

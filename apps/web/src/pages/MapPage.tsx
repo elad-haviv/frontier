@@ -44,7 +44,8 @@ import {
   useRef,
   useState,
 } from "react";
-import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { useParams, useSearchParams } from "react-router-dom";
+import { Link, useNavigate } from "../nav.tsx";
 import { entryUrl, mapUrl } from "../api.ts";
 import { useDialogs } from "../components/Dialogs.tsx";
 import { OfflineCopy } from "../components/OfflineCopy.tsx";
@@ -113,6 +114,7 @@ import { useSnapSetting, useSnapTargets } from "../map/snap.ts";
 import { nearestOnPath } from "../map/joins.ts";
 import { useReliefSetting } from "../map/reliefSetting.ts";
 import { useDiscovery } from "../map/useDiscovery.ts";
+import { useCanWrite } from "../components/projectContext.ts";
 import { sendable, useExplore } from "../map/spots/useExplore.ts";
 import type { Spot } from "../map/spots/spots.ts";
 import { useMapDraw } from "../map/useMapDraw.ts";
@@ -166,7 +168,10 @@ export function MapPage() {
   const [notice, setNotice] = useState<string | null>(null);
   const [hidden, setHidden] = useState<Set<string>>(new Set());
   const [shownImages, setShownImages] = useState<Set<string>>(new Set());
-  const [editing, setEditing] = useState(params.get("edit") === "1");
+  // Editing is for writers: a reader opening `?edit=1` simply reads (stage 31c).
+  const canWrite = useCanWrite();
+  const [wantsEdit, setEditing] = useState(params.get("edit") === "1");
+  const editing = wantsEdit && canWrite;
   const [tool, setTool] = useState<Tool>("select");
   const [selected, setSelected] = useState<string | null>(null);
   const [vertex, setVertex] = useState<number | null>(null);
@@ -331,7 +336,7 @@ export function MapPage() {
     biomes: drawBiomes,
   });
   const { titleOf } = draw;
-  const discovery = useDiscovery(id, { ...time, setNotice });
+  const discovery = useDiscovery(id, { ...time, setNotice, enabled: canWrite });
   /** The moment the map is seen at, which what the AI proposes must fit. */
   const moment = {
     chronicle: time.timeOn ? time.chronicleId : null,
@@ -339,7 +344,12 @@ export function MapPage() {
   };
   const { found, openFound, setOpenFound } = discovery;
   // Exploring: the points of interest along the roads and rivers drawn now, and the places chosen.
-  const exploring = discovery.exploring && !editing;
+  // Asking the AI to explore is a writer's: a demotion while the map is open turns it off.
+  const exploring = discovery.exploring && !editing && canWrite;
+  const { setExploring } = discovery;
+  useEffect(() => {
+    if (!canWrite && discovery.exploring) setExploring(false);
+  }, [canWrite, discovery.exploring, setExploring]);
   const explore = useExplore({
     id,
     map,
@@ -388,9 +398,9 @@ export function MapPage() {
     activeLayer,
     focusing,
     setFocusing,
-    exploring: discovery.exploring,
+    exploring: discovery.exploring && canWrite,
     explore: (position, screen, how) => {
-      if (!position) return;
+      if (!position || !canWrite) return;
       const done = explore.tapAt(
         position,
         screen,
@@ -424,6 +434,7 @@ export function MapPage() {
   const copyPlace = (feature: string) => copy(placeLink(feature), "this place");
   const copyView = () => copy(viewLink(), "this view");
   const startEditing = (feature: string | null = null) => {
+    if (!canWrite) return;
     setEditing(true);
     setTool("select");
     setSketch([]);
@@ -673,7 +684,12 @@ export function MapPage() {
       : null,
   );
   useShortcut("map.explore", () => {
-    if (editing || !found.ready || !focusIsFree(document.activeElement, frame.current)) {
+    if (
+      !canWrite ||
+      editing ||
+      !found.ready ||
+      !focusIsFree(document.activeElement, frame.current)
+    ) {
       return false;
     }
     toggleExploring();
@@ -881,7 +897,7 @@ export function MapPage() {
             !!menuFeature && reorderFeature(map.features, menuFeature.id, 1) !== map.features,
           back: !!menuFeature && reorderFeature(map.features, menuFeature.id, -1) !== map.features,
         },
-        canExplore: found.ready,
+        canExplore: found.ready && canWrite,
         openEntry: (path) => navigate(entryUrl(path)),
         openChild: (f) =>
           f.child && navigate(mapUrl(f.child) + (time.carry ? `?${time.carry}` : "")),
@@ -889,7 +905,7 @@ export function MapPage() {
         editFeature: (f) => startEditing(f.id),
         copyView,
         explore: () => {
-          if (!menuAt.at) return;
+          if (!menuAt.at || !canWrite) return;
           if (!discovery.exploring) toggleExploring();
           explore.chooseHere(menuAt.at);
           openExplore(menuAt.at);
@@ -1296,8 +1312,8 @@ export function MapPage() {
           });
         }}
         onCopyView={copyView}
-        canExplore={found.ready}
-        exploring={discovery.exploring}
+        canExplore={found.ready && canWrite}
+        exploring={exploring}
         onExplore={toggleExploring}
         hasTime={time.chronicles.length > 0}
         timeOn={time.timeOn}

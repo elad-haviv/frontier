@@ -1,11 +1,12 @@
 import { biomeById, type MapFeature } from "@frontier/schema";
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link } from "../../nav.tsx";
 import { api, ApiFailure, entryUrl, mapUrl } from "../../api.ts";
 import { NEEDS_CONNECTION } from "../../sync/connection.ts";
 import type { Names } from "../../map/useMapFile.ts";
 import { useBiomes } from "../../map/useBiomes.ts";
 import { biomeMeaning } from "./BiomeFields.tsx";
+import { useCanWrite } from "../projectContext.ts";
 
 /** What a tap on a feature shows while reading: its name, the start of its entry, where it leads. */
 export function FeatureCard({
@@ -34,6 +35,7 @@ export function FeatureCard({
   onClose: () => void;
 }) {
   const entry = feature.entry ? names[feature.entry] : undefined;
+  const canWrite = useCanWrite();
   const { custom } = useBiomes();
   const biome = feature.kind === "zone" ? biomeById(feature.biome, custom) : null;
   const [text, setText] = useState<string | null>(null);
@@ -81,9 +83,11 @@ export function FeatureCard({
         <button type="button" className="quiet" onClick={onCopyLink}>
           Copy a link to this place
         </button>
-        <button type="button" className="quiet" onClick={onEdit}>
-          Edit this feature
-        </button>
+        {canWrite && (
+          <button type="button" className="quiet" onClick={onEdit}>
+            Edit this feature
+          </button>
+        )}
       </p>
     </aside>
   );

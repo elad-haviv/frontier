@@ -21,7 +21,7 @@ import {
   Waypoints,
 } from "lucide-react";
 import { type ReactNode, type Ref, type TouchEvent, useEffect, useRef, useState } from "react";
-import { Link, NavLink } from "react-router-dom";
+import { NavLink } from "../../nav.tsx";
 import { entryUrl } from "../../api.ts";
 import { shortcutText } from "../../keys.ts";
 import { usePins } from "../../keepGoing/pins.ts";
@@ -33,7 +33,9 @@ import { Unsent } from "../Unsent.tsx";
 import { Icon } from "../ui/Icon.tsx";
 import { IconButton } from "../ui/IconButton.tsx";
 import { Tip } from "../ui/Tip.tsx";
-import { AppMenu } from "./AppMenu.tsx";
+import { PersonRow } from "./PersonRow.tsx";
+import { ProjectMenu } from "./ProjectMenu.tsx";
+import { useCanWrite, useIsReader, useProject } from "../projectContext.ts";
 import { LibraryBody, LibraryTools } from "./LibraryBody.tsx";
 import { isSwipeBack, type Point } from "./swipe.ts";
 import "./LeftBar.css";
@@ -55,7 +57,8 @@ export function useCounts() {
   const { snapshot: status } = useConnection();
   const own = status?.library === "own";
   return {
-    waitingLabel: own ? "Unsaved" : "Unpublished",
+    // Each person has their own unsaved changes in a project (stage 31b).
+    waitingLabel: own ? "Your unsaved changes" : "Your unpublished changes",
     waiting: status?.unpublished ?? 0,
     inbox: status ? status.inbox.branches + status.inbox.operations + status.inbox.quarantined : 0,
     compare: status?.attention.keptCopies ?? 0,
@@ -108,6 +111,8 @@ export function SideLink({
 /** What waits for the author, each in a place of its own so nothing moves when a count appears. */
 export function WaitingLinks({ rail = false }: { rail?: boolean }) {
   const counts = useCounts();
+  // Unsaved changes, the inbox and texts to compare are writers' (stage 31c).
+  if (!useCanWrite()) return null;
   return (
     <>
       <SideLink
@@ -339,6 +344,9 @@ export function LeftBar({
   /** A control for the top of the bar, such as the drawer's Close. */
   top?: ReactNode;
 }) {
+  const project = useProject();
+  const canWrite = useCanWrite();
+  const reader = useIsReader();
   const libraryRow = useRef<HTMLButtonElement>(null);
   const libraryBack = useRef<HTMLButtonElement>(null);
   const wasOpen = useRef(library);
@@ -381,9 +389,7 @@ export function LeftBar({
   const bar = (
     <div className={`left-bar${drawer ? " is-drawer" : ""}`}>
       <div className="left-head">
-        <Link to="/" className="wordmark small">
-          Frontier
-        </Link>
+        <ProjectMenu />
         {onCollapse && (
           <IconButton
             label="Fold the side bar"
@@ -399,7 +405,7 @@ export function LeftBar({
       <div className="left-actions">
         {!drawer && (
           <IconButton
-            label="Search"
+            label={`Search ${project.name}`}
             icon={Search}
             showLabel
             shortcut="app.switcher"
@@ -408,10 +414,12 @@ export function LeftBar({
             onClick={onSearch}
           />
         )}
-        <button type="button" className="new-entry" onClick={onNewEntry}>
-          <Icon icon={Plus} size="sm" />
-          New entry
-        </button>
+        {canWrite && (
+          <button type="button" className="new-entry" onClick={onNewEntry}>
+            <Icon icon={Plus} size="sm" />
+            New entry
+          </button>
+        )}
         <IconButton
           label="Random entry"
           icon={Dices}
@@ -428,15 +436,21 @@ export function LeftBar({
         <PinnedList />
       </div>
       <div className="left-foot">
-        <nav className="left-waiting" aria-label="Waiting for you">
-          <WaitingLinks />
-        </nav>
+        {reader && (
+          <p className="left-reader-note" role="note">
+            You can read, comment and ask here. You cannot change the text.
+          </p>
+        )}
+        {canWrite && (
+          <nav className="left-waiting" aria-label="Waiting for you">
+            <WaitingLinks />
+          </nav>
+        )}
         <div className="left-status">
           <ConnectionMark words tipSide="top" />
           <Unsent />
-          <span className="left-status-gap" />
-          <AppMenu onKeys={onKeys} onLogout={onLogout} />
         </div>
+        <PersonRow onKeys={onKeys} onLogout={onLogout} />
       </div>
     </div>
   );

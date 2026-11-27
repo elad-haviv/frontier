@@ -1,11 +1,14 @@
 import { ActionButton } from "../components/ui/ActionButton.tsx";
 import { type FormEvent, useEffect, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { useParams } from "react-router-dom";
+import { Link, useNavigate } from "../nav.tsx";
 import { api, ApiFailure, askUrl, entryUrl, type LoreConversation, type LoreTurn } from "../api.ts";
 import { Diff } from "../components/Diff.tsx";
 import { useDialogs } from "../components/Dialogs.tsx";
 import { LiveTurn, TurnWork, useLoreAsk } from "../components/LoreWork.tsx";
+import { useCanWrite } from "../components/projectContext.ts";
 import { useRefresh } from "../components/Shell.tsx";
+import { projectWork } from "../projectWork.ts";
 
 const titleOf = (path: string) => path.split("/").pop()!.replace(/\.md$/i, "");
 const failed = (err: unknown, fallback: string) =>
@@ -140,6 +143,8 @@ function Answer(p: {
   onChange: (c: LoreConversation) => void;
 }) {
   const { answer } = p.turn;
+  // Drafting text into an entry is for writers (stage 31c); a reader asks and reads.
+  const canWrite = useCanWrite();
   const [drafting, setDrafting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const supported = answer.paragraphs.some((x) => x.grounded);
@@ -198,7 +203,7 @@ function Answer(p: {
               <span className="muted">The AI says it lacks: {answer.missing}</span>
             )}
           </p>
-          {!p.turn.addition && (
+          {canWrite && !p.turn.addition && (
             <p className="change-actions">
               <ActionButton
                 type="button"
@@ -217,7 +222,9 @@ function Answer(p: {
           )}
         </div>
       )}
-      {p.turn.addition && <Addition id={p.id} n={p.n} turn={p.turn} onChange={p.onChange} />}
+      {canWrite && p.turn.addition && (
+        <Addition id={p.id} n={p.n} turn={p.turn} onChange={p.onChange} />
+      )}
       {answer.related.length > 0 && (
         <p className="related">
           <span className="muted">Also related:</span>{" "}
@@ -290,6 +297,7 @@ export function ConversationPage() {
   }
 
   async function remove() {
+    const work = projectWork();
     const ok = await dialogs.confirm({
       title: "Delete this conversation?",
       body: "Its questions and answers are removed. Additions you kept stay among your drafts.",
@@ -297,8 +305,8 @@ export function ConversationPage() {
       danger: true,
     });
     if (!ok) return;
-    await api.deleteConversation(id).catch(() => undefined);
-    navigate(askUrl());
+    await work.api.deleteConversation(id).catch(() => undefined);
+    if (work.open()) navigate(askUrl());
   }
 
   if (!conversation) {

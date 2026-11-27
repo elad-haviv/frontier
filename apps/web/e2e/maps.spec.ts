@@ -1,4 +1,4 @@
-import { expect, type Page, test } from "@playwright/test";
+import { expect, type Page, test } from "./test.ts";
 import {
   answerDialog,
   chooseMapImage,
@@ -16,7 +16,7 @@ const makeMap = newMapInForm;
 /** Throws the open map away, so the next test finds nothing unpublished. */
 async function discardMap(page: Page) {
   await page.evaluate(async () => {
-    await fetch(`/api/maps/${location.pathname.split("/").pop()}`, { method: "DELETE" });
+    await fetch(`${API}/maps/${location.pathname.split("/").pop()}`, { method: "DELETE" });
   });
 }
 
@@ -148,7 +148,7 @@ test("draws a path and a zone, hides a layer, and undoes", async ({ page }, info
   const count = () =>
     page.evaluate(async () => {
       const id = location.pathname.split("/").pop();
-      const res = await fetch(`/api/maps/${id}`);
+      const res = await fetch(`${API}/maps/${id}`);
       return ((await res.json()) as { map: { features: unknown[] } }).map.features.length;
     });
   await expect.poll(count).toBe(2);
@@ -195,7 +195,7 @@ test("CUJ 10: measures on a globe of unknown size, then with a radius", async ({
 const stored = (page: Page) =>
   page.evaluate(async () => {
     const id = location.pathname.split("/").pop();
-    const res = await fetch(`/api/maps/${id}`);
+    const res = await fetch(`${API}/maps/${id}`);
     return (
       (await res.json()) as {
         map: {

@@ -12,6 +12,7 @@ import { entriesIn } from "../tree/model.ts";
 import { Icon } from "../ui/Icon.tsx";
 import { IconButton } from "../ui/IconButton.tsx";
 import { Problem } from "../ui/Problem.tsx";
+import { useCanWrite } from "../projectContext.ts";
 
 /** The folders, or why they cannot be shown yet. */
 function TreeBody({
@@ -58,7 +59,8 @@ export const isEmptyTree = (tree: Async<TreeResponse>): boolean =>
 
 /**
  * The top bar's new entry and new folder buttons: only once the library is read and has something
- * in it (an empty library has its own New entry button).
+ * in it (an empty library has its own New entry button), and only for someone who can write: a
+ * reader's library has no control that changes anything.
  */
 export function LibraryTools({
   tree,
@@ -71,7 +73,8 @@ export function LibraryTools({
   onNewFolder: () => void;
   tipSide: "bottom" | "right";
 }) {
-  if (tree.state !== "ready" || isEmptyTree(tree)) return null;
+  const canWrite = useCanWrite();
+  if (!canWrite || tree.state !== "ready" || isEmptyTree(tree)) return null;
   return (
     <>
       {/* A new entry at the top of the library, whatever entry is in view. */}
@@ -159,6 +162,7 @@ export function LibraryBody({
   onFocusTaken?: (() => void) | undefined;
 }) {
   const body = useRef<HTMLDivElement>(null);
+  const canWrite = useCanWrite();
   useShowCurrent(body, active, tree.state === "ready", current);
   return (
     <div ref={body} className="library-body">
@@ -166,10 +170,12 @@ export function LibraryBody({
         (isEmptyTree(tree) ? (
           <div className="library-empty">
             <p>No entries yet.</p>
-            <button type="button" className="new-entry" onClick={() => onNewEntryIn("")}>
-              <Icon icon={Plus} size="sm" />
-              New entry
-            </button>
+            {canWrite && (
+              <button type="button" className="new-entry" onClick={() => onNewEntryIn("")}>
+                <Icon icon={Plus} size="sm" />
+                New entry
+              </button>
+            )}
           </div>
         ) : (
           <TreeBody

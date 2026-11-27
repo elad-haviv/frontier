@@ -1,6 +1,6 @@
 import * as Popover from "@radix-ui/react-popover";
 import { CloudOff } from "lucide-react";
-import { Link } from "react-router-dom";
+import { Link } from "../nav.tsx";
 import { chronicleUrl, editUrl, mapUrl } from "../api.ts";
 import {
   nameOf,
@@ -10,9 +10,13 @@ import {
   subject,
   useUnsent,
 } from "../sync/queue.ts";
+import { textOfChange } from "../pages/projects/AllProjects.tsx";
 import { useDialogs } from "./Dialogs.tsx";
+import { useCopyText } from "./CopyText.tsx";
 import { Icon } from "./ui/Icon.tsx";
+import { useUnsentOpen } from "./unsentPanel.ts";
 import "./Unsent.css";
+import { useProjectWork } from "../projectWork.ts";
 
 /** Where a file is changed: the editor for an entry, the page of a map or chronicle. */
 function pageOf(key: QueueKey): string | null {
@@ -33,6 +37,8 @@ function age(since: number): string {
 
 function Row({ record }: { record: QueueRecord }) {
   const dialogs = useDialogs();
+  // This row is a record of the project the list was drawn for.
+  const work = useProjectWork();
   const href = pageOf(record.key);
   const name = nameOf(record);
   async function discard() {
@@ -42,8 +48,9 @@ function Row({ record }: { record: QueueRecord }) {
       action: "Throw it away",
       danger: true,
     });
-    if (ok) await queue.drop(record.key);
+    if (ok) await work.queue.drop(record.key);
   }
+  const { copy, box } = useCopyText(name);
   return (
     <li className={`unsent-row${record.state === "attention" ? " needs-attention" : ""}`}>
       <p className="unsent-name">
@@ -54,14 +61,26 @@ function Row({ record }: { record: QueueRecord }) {
       {record.error && <p className="unsent-error">{record.error}</p>}
       {record.state === "attention" && (
         <p className="unsent-actions">
-          <button type="button" className="quiet" onClick={() => void queue.retry(record.key)}>
-            Retry
-          </button>
+          {record.refused ? (
+            // Refused for want of a role: sending it again would only be refused again.
+            <button type="button" className="quiet" onClick={() => void copy(textOfChange(record))}>
+              Copy the text
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="quiet"
+              onClick={() => void work.queue.retry(record.key)}
+            >
+              Retry
+            </button>
+          )}
           <button type="button" className="quiet danger" onClick={() => void discard()}>
             Discard
           </button>
         </p>
       )}
+      {box}
     </li>
   );
 }
@@ -72,11 +91,12 @@ function Row({ record }: { record: QueueRecord }) {
  */
 export function Unsent({ compact = false }: { compact?: boolean }) {
   const records = useUnsent();
+  const [open, setOpen] = useUnsentOpen();
   if (records.length === 0) return null;
   const attention = records.filter((r) => r.state === "attention").length;
   const kept = queue.kept;
   return (
-    <Popover.Root>
+    <Popover.Root open={open} onOpenChange={setOpen}>
       <Popover.Trigger asChild>
         <button
           type="button"

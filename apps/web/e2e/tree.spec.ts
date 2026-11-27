@@ -1,5 +1,5 @@
-import { expect, type Locator, type Page, test } from "@playwright/test";
-import { entry, onMain, openEditor, openLibrary, publish, review, saved } from "./helpers.ts";
+import { expect, type Locator, type Page, test } from "./test.ts";
+import { api, entry, onMain, openEditor, openLibrary, publish, review, saved } from "./helpers.ts";
 
 /** The tree's row for a folder or an entry, by its name. */
 const row = (page: Page, name: string): Locator =>
@@ -56,7 +56,7 @@ async function sent(page: Page, text: string): Promise<void> {
   await expect
     .poll(
       async () =>
-        JSON.stringify((await (await page.request.get("/api/library-files/folders")).json()).file),
+        JSON.stringify((await (await page.request.get(api("/library-files/folders"))).json()).file),
       { timeout: 15_000 },
     )
     .toContain(text);
@@ -64,9 +64,9 @@ async function sent(page: Page, text: string): Promise<void> {
 
 /** Throws away every unpublished change, so the next test starts from the library. */
 async function discardAll(page: Page): Promise<void> {
-  const un = await (await page.request.get("/api/unpublished")).json();
-  for (const r of un.renames) await page.request.delete(`/api/renames/${r.id}`);
-  for (const d of un.drafts) await page.request.delete(`/api/drafts/${d.id}`);
+  const un = await (await page.request.get(api("/unpublished"))).json();
+  for (const r of un.renames) await page.request.delete(api(`/renames/${r.id}`));
+  for (const d of un.drafts) await page.request.delete(api(`/drafts/${d.id}`));
 }
 
 test("CUJ 1: makes a folder, styles it, fills it, and saves it as a version", async ({
@@ -174,7 +174,7 @@ test("CUJ 2: moves a folder with its entries, and Undo puts it back", async ({
 
   // Back where it was, and nothing waits to be saved.
   await expect(page.locator(".tree-mark", { hasText: "moved" })).toHaveCount(0);
-  const un = await (await page.request.get("/api/unpublished")).json();
+  const un = await (await page.request.get(api("/unpublished"))).json();
   expect(un.renames).toEqual([]);
   await expect(row(page, "Harbor")).toBeVisible();
   expect((await row(page, "Harbor").boundingBox())!.y).toBeLessThan(
@@ -286,7 +286,7 @@ test("CUJ 7: a folder with an unpublished change is not deleted; then it is, unt
   expect(count).toBeGreaterThanOrEqual(3);
   await ask.getByRole("button", { name: "Delete", exact: true }).click();
   await expect(row(page, "02 People")).toHaveCount(0);
-  const un = await (await page.request.get("/api/unpublished")).json();
+  const un = await (await page.request.get(api("/unpublished"))).json();
   expect(un.drafts.filter((d: { kind: string }) => d.kind === "delete")).toHaveLength(count);
 
   // Discard in the unpublished list takes it back.

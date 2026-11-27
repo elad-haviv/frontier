@@ -1,17 +1,17 @@
 import { ActionButton } from "./ui/ActionButton.tsx";
 import { useState } from "react";
-import { Link } from "react-router-dom";
+import { Link } from "../nav.tsx";
 import { api, ApiFailure } from "../api.ts";
-import { useRefresh, useStatus } from "./Shell.tsx";
+import { useRefresh } from "./Shell.tsx";
 
-/** Asks the AI for the dates and type the entry's published text states. Shown only when AI is set up. */
+/**
+ * Asks the AI for the dates and type the entry's published text states. Someone with no AI key on
+ * this device is asked for one in place first, then the proposals are made.
+ */
 export function ProposeFields({ path }: { path: string }) {
-  const status = useStatus();
   const refresh = useRefresh();
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<{ made: number } | { error: string } | null>(null);
-
-  if (!status?.ai.on) return null;
 
   async function run() {
     setBusy(true);

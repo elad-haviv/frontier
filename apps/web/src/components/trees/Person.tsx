@@ -110,8 +110,10 @@ export function PersonDetails({
   fine: string[];
   trees: string[];
   onGo: (key: string) => void;
-  onAdd: (where: AddWhere, at: DOMRect) => void;
-  onFine: (key: string) => void;
+  /** Absent for someone who cannot write: no + Add beside a section. */
+  onAdd?: ((where: AddWhere, at: DOMRect) => void) | undefined;
+  /** Absent for someone who cannot write: no "It's right" on a warning. */
+  onFine?: ((key: string) => void) | undefined;
   actions: ReactNode;
   compact?: boolean;
 }) {
@@ -137,9 +139,11 @@ export function PersonDetails({
           <strong>⚠ Doesn&rsquo;t fit</strong>
           <span>{w.text}</span>
           <div>
-            <button type="button" className="quiet" onClick={() => onFine(w.key)}>
-              It&rsquo;s right
-            </button>
+            {onFine && (
+              <button type="button" className="quiet" onClick={() => onFine(w.key)}>
+                It&rsquo;s right
+              </button>
+            )}
           </div>
         </div>
       ))}
@@ -156,7 +160,7 @@ export function PersonDetails({
               {s.title}
               {s.worked && <span className="tr-worked"> · worked out</span>}
             </span>
-            {s.where && !stub && (
+            {s.where && !stub && onAdd && (
               <button
                 type="button"
                 className="tr-add-link"

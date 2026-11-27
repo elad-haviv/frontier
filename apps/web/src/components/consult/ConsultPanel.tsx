@@ -7,7 +7,7 @@ import { undo } from "@codemirror/commands";
 import { EditorView } from "@codemirror/view";
 import { Check, Scale } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link } from "../../nav.tsx";
 import {
   api,
   ApiFailure,
@@ -380,7 +380,7 @@ export function ConsultPanel(p: {
         <p className="consult-note">
           Consult needs an AI model. Choose one once in Settings and it works in every entry.
         </p>
-        <Link className="consult-go" to="/settings/ai/models/conversation">
+        <Link className="consult-go" to="/settings/you/ai-models/conversation">
           Open Settings
         </Link>
       </>

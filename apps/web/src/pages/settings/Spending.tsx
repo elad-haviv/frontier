@@ -1,6 +1,7 @@
 /**
- * AI › Spending: this month against the cap, by provider with how each cost is known, and the
- * log of calls with a month switch. The cap saves on blur or Enter.
+ * You › Your AI spending: this month's total, by provider with how each cost is known, and the
+ * log of calls with a month switch. There is no cap: each person pays their own provider, and a
+ * hard limit is set there.
  */
 import {
   AI_PROVIDER_KINDS,
@@ -8,14 +9,14 @@ import {
   type AiProviderKind,
   splitModelId,
 } from "@frontier/schema";
-import { useEffect, useRef, useState } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { useState } from "react";
+import { useSearchParams } from "react-router-dom";
+import { Link } from "../../nav.tsx";
 import { api, entryUrl } from "../../api.ts";
 import { Problem } from "../../components/ui/Problem.tsx";
 import { Progress } from "../../components/ui/Progress.tsx";
-import { useRefresh } from "../../components/Shell.tsx";
 import { useAsync } from "../../useAsync.ts";
-import { Saved, taskTitle, useAutoSave, useSettingsData } from "./shared.tsx";
+import { taskTitle, useSettingsData } from "./shared.tsx";
 
 const thisMonth = () => new Date().toISOString().slice(0, 7);
 const shift = (month: string, by: number) => {
@@ -29,6 +30,9 @@ const monthName = (month: string, withYear = true) =>
     ...(withYear ? { year: "numeric" } : {}),
     timeZone: "UTC",
   });
+
+/** The providers whose billing page is linked, the ones most people use. */
+const BILLING: AiProviderKind[] = ["openrouter", "anthropic", "openai", "google", "xai"];
 
 const dollars = (n: number) => (n > 0 && n < 0.01 ? "under $0.01" : `$${n.toFixed(2)}`);
 
@@ -77,101 +81,28 @@ function Cost({ call }: { call: AiLogResponse["calls"][number] }) {
   );
 }
 
-function Cap() {
-  const { settings, reload } = useSettingsData();
-  const refresh = useRefresh();
-  const saving = useAutoSave();
-  const stored = settings?.ai.monthlyCapUsd ?? 0;
-  const [cap, setCap] = useState(String(stored));
-  const [error, setError] = useState<string | null>(null);
-  const field = useRef<HTMLInputElement>(null);
-  useEffect(() => setCap(String(stored)), [stored]);
-  // Arriving from "the cap is reached", the field is ready to change.
-  useEffect(() => {
-    if (window.location.hash === "#cap") field.current?.focus();
-  }, []);
+/** This month's total. */
+function Total() {
+  const { settings } = useSettingsData();
   if (!settings) return null;
-  const spent = settings.ai.spentUsd;
-
-  function save() {
-    const n = Number(cap);
-    if (cap.trim() === "" || !Number.isFinite(n) || n < 0 || n > 10_000) {
-      setError("The cap is an amount in dollars, such as 10.");
-      return;
-    }
-    setError(null);
-    if (n === stored) return;
-    void saving
-      .run(() => api.saveAi({ monthlyCapUsd: n }))
-      .then(async (ok) => {
-        if (!ok) setCap(String(stored));
-        await reload();
-        refresh();
-      });
-  }
-
-  const next = shift(thisMonth(), 1);
-  const below = Number(cap) < spent;
   return (
-    <div className="spend-cap">
-      <p className="spend-line">
-        <strong>{dollars(spent)}</strong> of a{" "}
-        <label className="cap-field">
-          <span className="sr-only">Monthly cap in US dollars</span>$
-          <input
-            ref={field}
-            id="cap"
-            type="text"
-            inputMode="decimal"
-            value={cap}
-            aria-invalid={error ? true : undefined}
-            onChange={(e) => setCap(e.target.value)}
-            onBlur={save}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                e.preventDefault();
-                save();
-              }
-            }}
-          />
-        </label>{" "}
-        cap · {monthName(thisMonth())} <Saved at={saving.savedAt} />
-      </p>
-      <div
-        className="meter"
-        role="meter"
-        aria-valuemin={0}
-        aria-valuemax={stored}
-        aria-valuenow={spent}
-        aria-label="Spent of the cap"
-      >
-        <i style={{ width: `${stored > 0 ? Math.min(100, (spent / stored) * 100) : 100}%` }} />
-      </div>
-      <p className="muted small">Resets 1 {monthName(next, false)}.</p>
-      {error && <p className="field-error">{error}</p>}
-      {saving.error && <p className="field-error">{saving.error}</p>}
-      {!error && below && cap.trim() !== "" && (
-        <p className="field-warn">
-          This is below the {dollars(spent)} already spent, so AI stops until{" "}
-          {monthName(next, false)}.
-        </p>
-      )}
-    </div>
+    <p className="spend-line">
+      <strong>{dollars(settings.ai.spentUsd)}</strong> spent this month ({monthName(thisMonth())}),
+      by the AI work you started with your own keys.
+    </p>
   );
 }
 
 export function Spending() {
-  const { settings } = useSettingsData();
   const [params, setParams] = useSearchParams();
   const month = params.get("month") ?? thisMonth();
   const [failedOnly, setFailedOnly] = useState(false);
   const log = useAsync(() => api.aiLog(month), `ai-log-${month}`);
-  const names = new Map((settings?.ai.providers ?? []).map((p) => [p.id, p.name]));
   const go = (m: string) => setParams(m === thisMonth() ? {} : { month: m }, { replace: true });
 
   return (
     <section className="settings-block">
-      <Cap />
+      <Total />
       <h2>By provider</h2>
       {log.state === "failed" && <Problem reason={log.error.message} onRetry={log.retry} />}
       {log.state === "ready" && (
@@ -217,22 +148,16 @@ export function Spending() {
         </>
       )}
       <p className="muted small">
-        The cap is Frontier's own. Also set a hard limit with each provider
-        {(settings?.ai.providers ?? []).some((p) => AI_PROVIDER_KINDS[p.kind].billingUrl) && ": "}
-        {(settings?.ai.providers ?? [])
-          .filter((p) => AI_PROVIDER_KINDS[p.kind].billingUrl)
-          .map((p, i) => (
-            <span key={p.id}>
-              {i > 0 && ", "}
-              <a
-                href={AI_PROVIDER_KINDS[p.kind].billingUrl!}
-                target="_blank"
-                rel="noreferrer noopener"
-              >
-                {p.name}
-              </a>
-            </span>
-          ))}
+        Frontier puts no limit on what you spend: your provider charges you directly. Set a hard
+        limit with them:{" "}
+        {BILLING.map((k, i) => (
+          <span key={k}>
+            {i > 0 && ", "}
+            <a href={AI_PROVIDER_KINDS[k].billingUrl!} target="_blank" rel="noreferrer noopener">
+              {AI_PROVIDER_KINDS[k].label}
+            </a>
+          </span>
+        ))}
         .
       </p>
 
@@ -284,7 +209,6 @@ export function Spending() {
                 <tbody>
                   {calls.map((c, i) => {
                     const { model } = splitModelId(c.model);
-                    const kind = settings?.ai.providers.find((p) => p.id === c.provider)?.kind;
                     return (
                       <tr key={i} className={c.ok ? "" : "failed"}>
                         <td className="call-when">{when(c.at)}</td>
@@ -294,11 +218,7 @@ export function Spending() {
                         <td className="call-model">
                           {model}{" "}
                           <span className="muted">
-                            {names.get(c.provider) ??
-                              (kind
-                                ? AI_PROVIDER_KINDS[kind].label
-                                : (AI_PROVIDER_KINDS[c.provider as AiProviderKind]?.label ??
-                                  c.provider))}
+                            {AI_PROVIDER_KINDS[c.provider as AiProviderKind]?.label ?? c.provider}
                           </span>
                         </td>
                         <td className="num call-tokens">

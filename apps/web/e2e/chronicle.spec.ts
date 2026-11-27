@@ -1,21 +1,21 @@
-import { expect, type Page, test } from "@playwright/test";
-import { noSidewaysScroll } from "./helpers.ts";
+import { expect, type Page, test } from "./test.ts";
+import { noSidewaysScroll, proj } from "./helpers.ts";
 
 const SHOTS = process.env.CH_SHOTS;
 
 /** Makes a chronicle through the API with the stage 17 example, and opens it. */
 async function makeExample(page: Page, title: string) {
-  await page.goto("/chronicles");
+  await page.goto(proj("/chronicles"));
   const id = await page.evaluate(async (title) => {
     const json = { "content-type": "application/json" };
     const made = await (
-      await fetch("/api/chronicles", {
+      await fetch(`${API}/chronicles`, {
         method: "POST",
         headers: json,
         body: JSON.stringify({ title }),
       })
     ).json();
-    const { chronicle, revision } = await (await fetch(`/api/chronicles/${made.id}`)).json();
+    const { chronicle, revision } = await (await fetch(`${API}/chronicles/${made.id}`)).json();
     const humans = chronicle.lanes[0].id;
     chronicle.lanes[0].name = "Humans";
     chronicle.lanes.push({ id: "nirani01", name: "Nirani", color: "#2f6f73", clock: "ezob" });
@@ -56,14 +56,14 @@ async function makeExample(page: Page, title: string) {
       { id: "rel00001", a: "fading01", kind: "starts_with", b: "landing1" },
       { id: "rel00002", a: "war00001", kind: "during", b: "kingdom1" },
     ];
-    await fetch(`/api/chronicles/${made.id}`, {
+    await fetch(`${API}/chronicles/${made.id}`, {
       method: "PUT",
       headers: json,
       body: JSON.stringify({ chronicle, revision }),
     });
     return made.id as string;
   }, title);
-  await page.goto(`/chronicle/${id}`);
+  await page.goto(proj(`/chronicle/${id}`));
   await expect(page.locator(".ch-bar h1")).toHaveText(title);
   return id;
 }
@@ -72,10 +72,10 @@ async function makeExample(page: Page, title: string) {
 const cleanUp = (page: Page, chronicles: string[], maps: string[] = []) =>
   page.evaluate(
     async ({ chronicles, maps }) => {
-      for (const id of maps) await fetch(`/api/maps/${id}`, { method: "DELETE" });
-      for (const id of chronicles) await fetch(`/api/chronicles/${id}`, { method: "DELETE" });
-      const un = await (await fetch("/api/unpublished")).json();
-      for (const d of un.drafts) await fetch(`/api/drafts/${d.id}`, { method: "DELETE" });
+      for (const id of maps) await fetch(`${API}/maps/${id}`, { method: "DELETE" });
+      for (const id of chronicles) await fetch(`${API}/chronicles/${id}`, { method: "DELETE" });
+      const un = await (await fetch(`${API}/unpublished`)).json();
+      for (const d of un.drafts) await fetch(`${API}/drafts/${d.id}`, { method: "DELETE" });
     },
     { chronicles, maps },
   );
@@ -86,7 +86,7 @@ const here = (page: Page) => page.url().split("/chronicle/")[1]!.split("?")[0]!;
 async function stored(page: Page) {
   await expect(page.locator(".ch-saving")).toHaveText("Saved as a draft");
   return page.evaluate(async (id) => {
-    const r = await (await fetch(`/api/chronicles/${id}`)).json();
+    const r = await (await fetch(`${API}/chronicles/${id}`)).json();
     return r.chronicle as {
       origin: string | null;
       spans: {
@@ -159,7 +159,7 @@ test("CUJ 14 on the timeline: what is too quick and what is too slow", async ({ 
   const phone = info.project.name === "phone";
   if (phone) await page.setViewportSize({ width: 375, height: 740 });
   const title = `Ezob trial ${info.project.name}`;
-  await page.goto("/chronicles");
+  await page.goto(proj("/chronicles"));
   await page.locator(".new-map input[type=text]").fill(title);
   await page.getByRole("button", { name: "Make the chronicle" }).click();
   await expect(page.locator(".ch-bar h1")).toHaveText(title);
@@ -427,13 +427,13 @@ test("the map and the timeline open each other at the same year", async ({ page 
   const id = await makeExample(page, `Bridge ${info.project.name}`);
   const map = await page.evaluate(async (title) => {
     const json = { "content-type": "application/json" };
-    const made = await fetch("/api/maps", {
+    const made = await fetch(`${API}/maps`, {
       method: "POST",
       headers: json,
       body: JSON.stringify({ title, kind: "flat", image: "99 Appendices/Images/map one.png" }),
     });
     const { id } = (await made.json()) as { id: string };
-    const loaded = await (await fetch(`/api/maps/${id}`)).json();
+    const loaded = await (await fetch(`${API}/maps/${id}`)).json();
     const m = loaded.map;
     m.features = [
       {
@@ -448,7 +448,7 @@ test("the map and the timeline open each other at the same year", async ({ page 
         icon: null,
       },
     ];
-    await fetch(`/api/maps/${id}`, {
+    await fetch(`${API}/maps/${id}`, {
       method: "PUT",
       headers: json,
       body: JSON.stringify({ map: m, revision: loaded.revision, baseBlob: loaded.blob }),
@@ -456,7 +456,7 @@ test("the map and the timeline open each other at the same year", async ({ page 
     return id;
   }, `Bridge map ${info.project.name}`);
 
-  await page.goto(`/map/${map}?t=290&c=${id}`);
+  await page.goto(proj(`/map/${map}?t=290&c=${id}`));
   await page.getByRole("link", { name: "Open timeline ↗" }).click();
   await expect(page.locator(".ch-bar h1")).toHaveText(`Bridge ${info.project.name}`);
   await expect(page.locator(".tl-mapflag")).toHaveText("Maps: 290");
@@ -511,7 +511,7 @@ test("an event added by an entry's name is linked, and the entry lists the chron
   const phone = info.project.name === "phone";
   if (phone) await page.setViewportSize({ width: 375, height: 740 });
   const title = `Linked ${info.project.name}`;
-  await page.goto("/chronicles");
+  await page.goto(proj("/chronicles"));
   await page.locator(".new-map input[type=text]").fill(title);
   await page.getByRole("button", { name: "Make the chronicle" }).click();
 
@@ -549,7 +549,7 @@ test("typing in an event while its link is being saved keeps both the link and t
 }, info) => {
   const phone = info.project.name === "phone";
   if (phone) await page.setViewportSize({ width: 375, height: 740 });
-  await page.goto("/chronicles");
+  await page.goto(proj("/chronicles"));
   await page.locator(".new-map input[type=text]").fill(`Slow link ${info.project.name}`);
   await page.getByRole("button", { name: "Make the chronicle" }).click();
   await addEvent(page, phone, "Shade's years");
@@ -557,7 +557,7 @@ test("typing in an event while its link is being saved keeps both the link and t
 
   // Saves that carry a link are held for a moment, as on a slow connection.
   let held = 0;
-  await page.route("**/api/chronicles/*", async (route) => {
+  await page.route("**/api/p/*/chronicles/*", async (route) => {
     const body = route.request().postData() ?? "";
     if (route.request().method() === "PUT" && body.includes('"link":[{')) {
       held += 1;
@@ -574,7 +574,7 @@ test("typing in an event while its link is being saved keeps both the link and t
   // While the link is on its way, a note is typed into the same event.
   await details(page).getByLabel("Note").fill("Written during the save");
   await expect(page.locator(".ch-saving")).toHaveText("Saved as a draft", { timeout: 15_000 });
-  await page.unroute("**/api/chronicles/*");
+  await page.unroute("**/api/p/*/chronicles/*");
 
   const saved = await stored(page);
   expect(saved.spans[0]!.note).toBe("Written during the save");

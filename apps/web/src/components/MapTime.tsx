@@ -1,6 +1,6 @@
 import type { ChronicleSpan, MapFeature } from "@frontier/schema";
 import { useState } from "react";
-import { Link } from "react-router-dom";
+import { Link } from "../nav.tsx";
 import { chronicleUrl } from "../api.ts";
 import { type MapTime, changeYears, shapeStart, spanFor } from "../map/time.ts";
 import { useDialogs } from "./Dialogs.tsx";

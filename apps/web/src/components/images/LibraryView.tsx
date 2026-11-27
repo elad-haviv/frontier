@@ -1,6 +1,6 @@
 import { Check } from "lucide-react";
 import { useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link } from "../../nav.tsx";
 import { entryUrl, type GalleryImage, imageUrl } from "../../api.ts";
 import { useLightbox } from "../Lightbox.tsx";
 import { Icon } from "../ui/Icon.tsx";

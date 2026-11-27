@@ -42,6 +42,18 @@
 .ui-menu-item.is-danger .ui-icon {
   color: var(--warn);
 }
+.ui-menu-heading {
+  display: grid;
+  padding: 0.4rem 0.7rem 0.2rem;
+  overflow-wrap: anywhere;
+  color: var(--ink-faint);
+  font-size: 0.8rem;
+}
+.ui-menu-heading strong {
+  color: var(--ink);
+  font-size: 0.92rem;
+  font-weight: 600;
+}
 .ui-menu-separator {
   height: 1px;
   margin: 0.3rem 0.2rem;

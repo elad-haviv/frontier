@@ -1,11 +1,13 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./test.ts";
 import {
+  api,
   commitCount,
   entry,
   entryAction,
   noSidewaysScroll,
   onMain,
   openMenu,
+  proj,
   publish,
 } from "./helpers.ts";
 
@@ -44,7 +46,7 @@ test("CUJ 3: renames an entry and rewrites the links to it in one commit", async
   );
   await expect(page.locator(".draft-note")).toContainText("renamed from Lantern");
 
-  await page.goto("/unpublished");
+  await page.goto(proj("/unpublished"));
   await expect(page.locator(".changes > li")).toContainText(
     "03 Things/Lantern.md → 03 Things/Storm Lantern.md",
   );
@@ -65,7 +67,7 @@ test("refuses a rename onto an existing entry, and one in an append-only folder"
   page,
 }) => {
   // The old address of the rename page opens the entry, where renaming is now.
-  await page.goto("/rename/" + ["02 People", "Mira.md"].map(encodeURIComponent).join("/"));
+  await page.goto(proj("/rename/") + ["02 People", "Mira.md"].map(encodeURIComponent).join("/"));
   await expect(page).toHaveURL(/\/e\/02%20People\/Mira\.md$/);
   await entryAction(page, "Rename");
   const field = page.getByRole("textbox", { name: "New name for Mira" });
@@ -90,7 +92,7 @@ test("CUJ 2: renames and moves an entry in place, as one pending rename, with Un
   const from = "01 Places/Harbor/Old Quay.md";
   const renames = async () =>
     (
-      (await (await page.request.get("/api/unpublished")).json()) as {
+      (await (await page.request.get(api("/unpublished"))).json()) as {
         renames: { from: string; to: string }[];
       }
     ).renames.filter((r) => r.from === from);

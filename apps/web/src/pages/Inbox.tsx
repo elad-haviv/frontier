@@ -1,13 +1,14 @@
 import { ActionButton } from "../components/ui/ActionButton.tsx";
 import type { BranchFile, InboxBranch, InboxProposal, InboxQuarantined } from "@frontier/schema";
 import { useCallback, useEffect, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "../nav.tsx";
 import { api, ApiFailure, branchImageUrl, editUrl, entryUrl } from "../api.ts";
 import { Diff } from "../components/Diff.tsx";
 import { useRefresh } from "../components/Shell.tsx";
 import { useDialogs } from "../components/Dialogs.tsx";
 import { Problem } from "../components/ui/Problem.tsx";
 import { Progress } from "../components/ui/Progress.tsx";
+import { projectWork } from "../projectWork.ts";
 
 const KIND: Record<BranchFile["kind"], string> = {
   added: "New",
@@ -428,13 +429,14 @@ export function InboxPage() {
                   className="plain danger"
                   disabled={busy}
                   onClick={async () => {
+                    const work = projectWork();
                     const ok = await dialogs.confirm({
                       title: "Reject everything left?",
                       body: `Every undecided file on "${b.name}" is rejected and the branch is removed.`,
                       action: "Reject all",
                       danger: true,
                     });
-                    if (ok) void act(() => api.decideBranch(b.name, b.tip, "reject"));
+                    if (ok) void act(() => work.api.decideBranch(b.name, b.tip, "reject"));
                   }}
                 >
                   Reject all that is left

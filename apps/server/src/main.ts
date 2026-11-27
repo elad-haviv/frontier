@@ -2,10 +2,11 @@ import { mkdir } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { buildApp } from "./app.js";
-import { hashPassword } from "./auth/password.js";
+import { startAccounts } from "./auth/accounts.js";
 import { ConfigError, loadConfig } from "./config.js";
-import { startPolling } from "./git/poll.js";
+import { claimForAdmin } from "./projects/guard.js";
 import { applyLibraryMode } from "./sample.js";
+import { closeOnSignals } from "./shutdown.js";
 
 async function main(): Promise<void> {
   applyLibraryMode(process.env);
@@ -15,21 +16,24 @@ async function main(): Promise<void> {
     process.env["WEB_DIR"] ?? join(dirname(fileURLToPath(import.meta.url)), "../../web/dist");
   const { app, services } = await buildApp(config, { logger: true, webDir });
 
-  // A first password can be given through the environment. It is used only while none is stored.
-  const initial = process.env["FRONTIER_INITIAL_PASSWORD"]?.trim();
-  if (initial && (await services.settings.read()) === null) {
-    await services.settings.write({ passwordHash: await hashPassword(initial) });
-    app.log.info("Stored the initial password from FRONTIER_INITIAL_PASSWORD.");
-  }
+  // The first account: moved from the one password and passkeys of earlier versions, or made
+  // from FRONTIER_INITIAL_PASSWORD. Only while there is no account.
+  await startAccounts({
+    people: services.server.people,
+    settings: services.settings,
+    env: process.env,
+    say: (message) => app.log.info(message),
+  });
 
-  await services.git.ensureClone();
-  await services.sync();
-  services.backup.startNightly();
-  // Only a library that others write to has anything new to fetch.
-  if (config.library === "github") {
-    startPolling(services.sync, (err) => app.log.error({ err }, "Timer fetch failed"));
-  }
+  // A server from before accounts has its first account only now; it owns the first project.
+  const admin = (await services.server.people.all()).find((p) => p.admin);
+  if (admin) await claimForAdmin(services.server, admin);
 
+  // Clones the library when it is new, reads it, starts the nightly backup, and for a GitHub
+  // library the timer fetch. Projects made since are brought up when first used.
+  await services.bringUp();
+
+  closeOnSignals(app, process);
   const port = Number(process.env["PORT"] ?? 3000);
   await app.listen({ host: "0.0.0.0", port });
 }

@@ -1,13 +1,14 @@
 import { isStub } from "@frontier/schema";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
-import { api, ApiFailure, entryUrl } from "../api.ts";
+import { useLocation, useNavigate } from "../nav.tsx";
+import { ApiFailure, entryUrl } from "../api.ts";
 import { lastEntry, useRecents } from "../keepGoing/recents.ts";
 import { useRandom } from "../keepGoing/useRandom.ts";
 import { useConnection } from "../sync/connection.ts";
 import { currentEntryPath } from "./shell/entryPath.ts";
 import { Problem } from "./ui/Problem.tsx";
 import "./Switcher.css";
+import { projectWork } from "../projectWork.ts";
 
 interface Row {
   path: string;
@@ -84,6 +85,8 @@ export function Switcher({ onClose }: { onClose: () => void }) {
       return;
     }
     let live = true;
+    // Both reads go to the project the switcher is in, whichever is open when the timer ends.
+    const work = projectWork();
     const wait = window.setTimeout(async () => {
       const q = query.trim();
       let lost = false;
@@ -91,10 +94,10 @@ export function Switcher({ onClose }: { onClose: () => void }) {
         if (err instanceof ApiFailure && err.status === 0) lost = true;
         return { results: [] };
       };
-      const names = await api.names(q).catch(none);
+      const names = await work.api.names(q).catch(none);
       const text =
         q.length >= 2 && !offline
-          ? await api.search(q).catch(() => ({ results: [] }))
+          ? await work.api.search(q).catch(() => ({ results: [] }))
           : { results: [] };
       if (!live) return;
       setUnreachable(lost);

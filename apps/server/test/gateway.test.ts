@@ -401,5 +401,52 @@ describe("the log of changes (stage 25)", () => {
     const g = new GitGateway({ dir, remoteUrl: repo.remote, author: AUTHOR, committer: BOT });
     expect(await g.changeLog()).toEqual([]);
     expect(await g.wordChanges("2000-01-01")).toEqual([]);
+    expect(await g.lastChange("02 People/Mira.md")).toBeNull();
+  });
+});
+
+describe("who made a version (stage 31d)", () => {
+  const WREN = { name: "Wren Writer", email: "wren@example.com" };
+
+  it("gives the author of each saved version in the history", async () => {
+    const commit = await git.commit(
+      {
+        writes: [{ path: "02 People/Mira.md", content: Buffer.from("# Mira\n\nChanged.\n") }],
+        deletes: [],
+      },
+      "Wren changes Mira",
+      WREN,
+    );
+    await git.push(commit);
+    await git.fetch();
+    const versions = await git.history();
+    expect(versions[0]).toMatchObject({ commit, message: "Wren changes Mira", author: WREN });
+    expect(versions.at(-1)!.author).toEqual({ name: "Seed", email: "seed@example.com" });
+    expect((await git.history("02 People/Mira.md"))[0]!.author).toEqual(WREN);
+  });
+
+  it("names the last version that touched a file, even one that deleted it, and none for an untouched path", async () => {
+    const edit = await git.commit(
+      {
+        writes: [{ path: "02 People/Mira.md", content: Buffer.from("# Mira\n\nChanged.\n") }],
+        deletes: [],
+      },
+      "Edit",
+      WREN,
+    );
+    await git.push(edit);
+    await git.fetch();
+    const last = await git.lastChange("02 People/Mira.md");
+    expect(last).toMatchObject({ commit: edit, author: WREN });
+    expect(Date.parse(last!.at)).not.toBeNaN();
+    const removed = await git.commit(
+      { writes: [], deletes: ["02 People/Mira.md"] },
+      "Remove",
+      AUTHOR,
+    );
+    await git.push(removed);
+    await git.fetch();
+    expect((await git.lastChange("02 People/Mira.md"))!.author).toEqual(AUTHOR);
+    expect(await git.lastChange("No/Such/File.md")).toBeNull();
   });
 });

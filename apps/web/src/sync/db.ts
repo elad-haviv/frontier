@@ -8,7 +8,7 @@
  * `answers` (successful reads, by address) and `items` (the entries, maps and chronicles opened
  * lately). In memory the device copy is off: nothing is kept.
  */
-import { type DBSchema, type IDBPDatabase, openDB } from "idb";
+import { type DBSchema, deleteDB, type IDBPDatabase, openDB } from "idb";
 import type { DraftKind, LibraryFileName } from "@frontier/schema";
 
 /** An entry, a map, a chronicle, or a library item file (such as the folder file) by its name. */
@@ -50,6 +50,11 @@ export interface QueueRecord {
   state: "waiting" | "sending" | "attention";
   /** Why the last send failed, in words. */
   error?: string;
+  /**
+   * The server refused it because the person's role no longer allows changes (stage 31c). It is
+   * not sent again; it is offered to copy out or discard, as a change in a project that is gone.
+   */
+  refused?: "role_too_low";
   tries: number;
   /** When it may be sent next, in milliseconds since 1970. */
   nextTry: number;
@@ -125,6 +130,8 @@ export interface Store {
   removeItem(key: string): Promise<void>;
   /** Empties `answers` and `items`; the queue and `meta` stay. */
   clearDevice(): Promise<void>;
+  /** Removes the whole database (a project's own one, once the project is gone). */
+  destroy(): Promise<void>;
 }
 
 export const DB_NAME = "frontier";
@@ -199,6 +206,11 @@ class IdbStore implements Store {
   clearMeta() {
     return this.db.clear("meta");
   }
+  async destroy() {
+    const name = this.db.name;
+    this.db.close();
+    await deleteDB(name);
+  }
 }
 
 class MemoryStore implements Store {
@@ -272,6 +284,10 @@ class MemoryStore implements Store {
         /* nothing to remove */
       }
     }
+  }
+  async destroy() {
+    this.records.clear();
+    this.values.clear();
   }
   async clearMeta() {
     this.values.clear();

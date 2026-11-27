@@ -1,13 +1,13 @@
 /**
- * Several providers through the server: adding and checking keys, the catalogue across them,
- * prices and estimated costs, removing a provider in use, and settings written before stage 18.
+ * Several providers through the server, each with the key the device sends: checking keys, the
+ * catalogue across them, prices and estimated costs, and the keys that older settings files held.
  */
 import { existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { ModelsResponse, ProvidersResponse, SettingsResponse } from "@frontier/schema";
-import { encrypt } from "../src/state/secrets.js";
-import { makeTestApp, type TestApp } from "./helpers/app.js";
+import { ModelsResponse, SettingsResponse } from "@frontier/schema";
+import { buildApp } from "../src/app.js";
+import { asAdmin, makeTestApp, type TestApp } from "./helpers/app.js";
 
 let t: TestApp;
 afterEach(async () => {
@@ -15,9 +15,9 @@ afterEach(async () => {
   await t.close();
 });
 
-const SECRET = Buffer.alloc(32, 3);
-const SECRETS = { SECRETS_KEY: SECRET.toString("base64") };
 const GOOD_ANT = "sk-ant-good-key-0001";
+const GOOD_OR = "sk-or-good-0002";
+const OPENAI = "sk-openai-5555";
 
 interface Sent {
   url: URL;
@@ -129,19 +129,16 @@ function providers() {
   return { fake, sent };
 }
 
-async function start(env: Record<string, string> = {}) {
+async function start() {
   const p = providers();
-  t = await makeTestApp({ ...SECRETS, ...env }, { fetch: p.fake, settleMs: 0 });
+  t = await makeTestApp({}, { fetch: p.fake, settleMs: 0 });
   await t.login();
   return p;
 }
 
 const settings = async () => SettingsResponse.parse((await t.get("/api/settings")).json()).ai;
-const list = async () => ProvidersResponse.parse((await t.get("/api/ai/providers")).json());
 const models = async (query = "") =>
   ModelsResponse.parse((await t.get(`/api/ai/models${query}`)).json());
-const patch = (url: string, payload: object) =>
-  t.app.inject({ method: "PATCH", url, headers: { cookie: t.cookie }, payload });
 const logLines = () => {
   const dir = join(t.services.config.dataDir, "state", "ai-log");
   if (!existsSync(dir)) return [];
@@ -152,172 +149,105 @@ const logLines = () => {
       .map((l) => JSON.parse(l) as Record<string, unknown>),
   );
 };
+const settingsFile = () => join(t.services.config.dataDir, "state", "settings.json");
 
-describe("settings written before stage 18", () => {
-  it("read the one key as the OpenRouter provider and bare model ids as OpenRouter's", async () => {
+describe("keys an earlier version stored on the server", () => {
+  const stored = { iv: "aXY=", data: "ZGF0YQ==", tag: "dGFn" };
+
+  it("are deleted at start, with one notice, and the cap and the providers go with them", async () => {
     await start();
-    const file = join(t.services.config.dataDir, "state", "settings.json");
-    const old = JSON.parse(readFileSync(file, "utf8"));
+    const old = JSON.parse(readFileSync(settingsFile(), "utf8"));
     old.ai = {
-      key: encrypt(SECRET, "sk-or-v1-old-key-7777"),
-      models: { extraction: "test/model", conversation: null, art: null },
+      key: stored,
+      providers: [
+        { id: "anthropic", kind: "anthropic", key: stored, enabled: true },
+        { id: "custom", kind: "custom", name: "Home server", key: stored, baseUrl: "https://h/v1" },
+        { id: "openai", kind: "openai", key: null },
+      ],
+      models: { extraction: "test/model", conversation: "custom:llama", art: null },
       monthlyCapUsd: 4,
+      artStyle: "Charcoal.",
     };
-    writeFileSync(file, JSON.stringify(old));
+    writeFileSync(settingsFile(), JSON.stringify(old));
 
-    const ai = await settings();
-    expect(ai.models).toEqual({
+    // A server starting on this data folder removes them and remembers to say so once.
+    const again = await buildApp(t.services.config, { fetch: providers().fake });
+    expect(again.services.status.snapshot().notices.keysRemoved).toEqual({
+      at: expect.any(String),
+      providers: ["OpenRouter", "Anthropic", "Home server"],
+      environment: [],
+    });
+    const file = readFileSync(settingsFile(), "utf8");
+    expect(file).not.toContain(stored.data);
+    expect(file).not.toContain('"kind"');
+    expect(file).not.toContain("monthlyCapUsd");
+    const now = JSON.parse(file);
+    expect(now.passwordHash).toBe("");
+    expect(now.ai.artStyle).toBe("Charcoal.");
+    // Bare ids are OpenRouter's; a model of the removed endpoint is off until another is chosen.
+    expect(now.ai.models).toEqual({
       extraction: "openrouter:test/model",
       conversation: null,
       art: null,
     });
-    expect(ai).toMatchObject({
-      keySet: true,
-      keyFrom: "settings",
-      keyLast4: "7777",
-      monthlyCapUsd: 4,
-    });
-    expect(ai.providers).toEqual([
-      expect.objectContaining({
-        id: "openrouter",
-        kind: "openrouter",
-        keyFrom: "settings",
-        keyHint: "sk-…7777",
-        stored: true,
-        usedFor: ["extraction"],
-      }),
-    ]);
-    expect(await t.services.ai.ready("extraction")).toBe(true);
-    // The next write stores the new form, and the old field is gone.
-    await t.put("/api/settings/ai", { monthlyCapUsd: 5 });
-    const now = JSON.parse(readFileSync(file, "utf8"));
-    expect(now.ai.key).toBeNull();
-    expect(now.ai.providers[0].id).toBe("openrouter");
-    expect(now.ai.models.extraction).toBe("openrouter:test/model");
+    expect(now.ai.keysRemoved.providers).toEqual(["OpenRouter", "Anthropic", "Home server"]);
+    await again.app.close();
+
+    // Seen once, it is cleared and not made again; a clean file is left alone.
+    expect((await t.services.settings.read())?.ai.keysRemoved?.providers).toHaveLength(3);
+    expect((await t.del("/api/notices/keys-removed")).statusCode).toBe(200);
+    expect((await t.services.settings.read())?.ai.keysRemoved).toBeNull();
+    expect(await t.services.settings.removeStoredKeys()).toBeNull();
+    expect((await t.get("/api/status")).json().notices.keysRemoved).toBeNull();
+  });
+
+  it("leave no notice when only keyless entries were there, and nothing at all in a clean file", async () => {
+    await start();
+    expect(await t.services.settings.removeStoredKeys()).toBeNull();
+    const before = readFileSync(settingsFile(), "utf8");
+    const old = JSON.parse(before);
+    old.ai = { providers: [{ id: "openai", kind: "openai", key: null }], monthlyCapUsd: 7 };
+    writeFileSync(settingsFile(), JSON.stringify(old));
+    expect(await t.services.settings.removeStoredKeys()).toBeNull();
+    expect(readFileSync(settingsFile(), "utf8")).not.toContain("monthlyCapUsd");
+    expect((await t.services.settings.read())?.ai.keysRemoved).toBeNull();
   });
 });
 
-describe("providers", () => {
-  it("checks a key before storing it, never sends it back, and scrubs it from the provider's words", async () => {
+describe("keys sent with a request", () => {
+  it("are checked with the provider, never stored, and scrubbed from the provider's words", async () => {
     await start();
-    const bad = await t.post("/api/ai/providers", {
-      kind: "anthropic",
-      key: "sk-ant-bad-key-9999",
-    });
+    const before = readFileSync(settingsFile(), "utf8");
+    t.keys = { anthropic: "sk-ant-bad-key-9999" };
+    const bad = await t.post("/api/ai/keys/anthropic/check");
     expect(bad.statusCode, bad.body).toBe(200);
-    expect(bad.json()).toMatchObject({ ok: false, saved: false, refused: true, provider: null });
+    expect(bad.json()).toMatchObject({ ok: false, refused: true });
     expect(bad.json().message).toContain("(401)");
     expect(bad.body).not.toContain("sk-ant-bad-key-9999");
-    expect((await list()).providers).toEqual([]);
 
-    const good = (await t.post("/api/ai/providers", { kind: "anthropic", key: GOOD_ANT })).json();
-    expect(good).toMatchObject({ ok: true, saved: true, models: 1 });
-    expect(good.provider).toMatchObject({
-      id: "anthropic",
-      keyHint: "sk-…0001",
-      keyFrom: "settings",
-      check: { ok: true },
-    });
-    const raw = (await t.get("/api/ai/providers")).body + (await t.get("/api/settings")).body;
-    expect(raw).not.toContain(GOOD_ANT);
-    // Stored encrypted.
-    const file = readFileSync(join(t.services.config.dataDir, "state", "settings.json"), "utf8");
-    expect(file).not.toContain(GOOD_ANT);
-
-    // A second Anthropic is refused; its key is replaced instead, checked the same way.
-    const again = await t.post("/api/ai/providers", { kind: "anthropic", key: GOOD_ANT });
-    expect(again.statusCode).toBe(400);
-    const replaced = (
-      await t.put("/api/ai/providers/anthropic/key", { key: "sk-ant-wrong-0003" })
-    ).json();
-    expect(replaced).toMatchObject({ ok: false, saved: false });
-    expect((await list()).providers[0]!.keyHint).toBe("sk-…0001");
-
-    // Switched off, it is not used and not listed.
-    await patch("/api/ai/providers/anthropic", { enabled: false });
-    expect((await list()).providers[0]!.enabled).toBe(false);
-    expect((await models()).providers).toEqual([]);
-  });
-
-  it("keeps the OpenRouter key field of the earlier page working through the provider list", async () => {
-    await start();
-    await t.put("/api/settings/ai", {
-      key: "sk-or-good-0002",
-      models: { conversation: "test/model" },
-    });
-    expect((await list()).providers).toEqual([
-      expect.objectContaining({ id: "openrouter", keyHint: "sk-…0002", usedFor: ["conversation"] }),
-    ]);
-    const check = (await t.post("/api/ai/providers/openrouter/check")).json();
-    expect(check).toMatchObject({ ok: true, provider: { check: { ok: true } } });
-    await t.put("/api/settings/ai", { key: null });
-    expect((await settings()).keySet).toBe(false);
-  });
-
-  it("refuses an endpoint on a private address, and saves one it cannot reach only when asked", async () => {
-    await start();
-    const internal = await t.post("/api/ai/providers", {
-      kind: "custom",
-      baseUrl: "https://10.0.0.8/v1",
-    });
-    expect(internal.json()).toMatchObject({ ok: false, refused: true, saved: false });
-    expect(internal.json().message).toMatch(/private or local/);
-    const plain = await t.post("/api/ai/providers", {
-      kind: "custom",
-      baseUrl: "http://llm.invalid/v1",
-    });
-    expect(plain.statusCode).toBe(400);
-    const away = (
-      await t.post("/api/ai/providers", {
-        kind: "custom",
-        baseUrl: "https://llm.invalid/v1",
-        name: "Home server",
-      })
-    ).json();
-    expect(away).toMatchObject({ ok: false, refused: false, saved: false });
-    const anyway = (
-      await t.post("/api/ai/providers", {
-        kind: "custom",
-        baseUrl: "https://llm.invalid/v1",
-        name: "Home server",
-        saveAnyway: true,
-      })
-    ).json();
-    expect(anyway).toMatchObject({
-      saved: true,
-      provider: { id: "custom", name: "Home server", keySet: false },
-    });
-    const second = (
-      await t.post("/api/ai/providers", {
-        kind: "custom",
-        baseUrl: "https://llm2.invalid/v1",
-        saveAnyway: true,
-      })
-    ).json();
-    expect(second.provider.id).toBe("custom-2");
-  });
-
-  it("refuses to remove a provider a task uses unless confirmed, then turns that task off", async () => {
-    await start();
-    await t.post("/api/ai/providers", { kind: "anthropic", key: GOOD_ANT });
-    expect(
-      (await t.put("/api/settings/ai", { models: { conversation: "anthropic:claude-sonnet-5-5" } }))
-        .statusCode,
-    ).toBe(200);
-    expect((await t.del("/api/ai/providers/anthropic")).statusCode).toBe(400);
-    expect((await t.del("/api/ai/providers/anthropic?force=1")).json()).toEqual({
+    t.keys = { anthropic: GOOD_ANT };
+    expect((await t.post("/api/ai/keys/anthropic/check")).json()).toMatchObject({
       ok: true,
-      turnedOff: ["conversation"],
+      refused: false,
+      models: 1,
     });
-    expect((await settings()).models.conversation).toBeNull();
-    expect((await list()).providers).toEqual([]);
+    expect(readFileSync(settingsFile(), "utf8")).toBe(before);
+    expect((await t.get("/api/settings")).body).not.toContain(GOOD_ANT);
+  });
+
+  it("say a provider could not be reached apart from one that refused the key", async () => {
+    await start();
+    t.keys = { xai: "xai-nobody-1234" };
+    const away = (await t.post("/api/ai/keys/xai/check")).json();
+    expect(away).toMatchObject({ ok: false, refused: false, models: null });
   });
 });
 
 describe("the catalogue and costs across providers", () => {
-  it("prices direct models from OpenRouter's list, and recommends", async () => {
-    await start({ OPENAI_API_KEY: "sk-env-openai-5555" });
-    await t.post("/api/ai/providers", { kind: "anthropic", key: GOOD_ANT });
+  it("lists only the providers the request has keys for, pricing direct models from OpenRouter's list", async () => {
+    await start();
+    expect((await models()).providers).toEqual([]);
+    t.keys = { anthropic: GOOD_ANT, openai: OPENAI };
     const all = await models();
     expect(all.providers.map((p) => [p.id, p.ok])).toEqual([
       ["anthropic", true],
@@ -340,18 +270,14 @@ describe("the catalogue and costs across providers", () => {
     const unlisted = all.models.find((m) => m.id === "openai:gpt-unlisted-9")!;
     expect(unlisted).toMatchObject({ promptPrice: null, priceFrom: null, checked: false });
     expect(all.typical.conversation).toEqual({ promptTokens: 14000, completionTokens: 1200 });
-    // The environment's key shows, masked, and cannot be removed.
-    expect((await list()).providers.find((p) => p.id === "openai")).toMatchObject({
-      keyFrom: "environment",
-      keyHint: "sk-…5555",
-      stored: false,
-    });
-    expect((await t.del("/api/ai/providers/openai")).statusCode).toBe(404);
+    // Another person's keys are another list: one with only Anthropic's sees no OpenAI model.
+    t.keys = { anthropic: GOOD_ANT };
+    expect((await models()).providers.map((p) => p.id)).toEqual(["anthropic"]);
   });
 
-  it("estimates an unreported cost from prices and counts it against the cap", async () => {
-    await start({ OPENAI_API_KEY: "sk-env-openai-5555" });
-    await t.post("/api/ai/providers", { kind: "anthropic", key: GOOD_ANT });
+  it("estimates an unreported cost from prices", async () => {
+    await start();
+    t.keys = { anthropic: GOOD_ANT };
     await t.put("/api/settings/ai", { models: { conversation: "anthropic:claude-sonnet-5-5" } });
     const tried = (await t.post("/api/settings/ai/test", { task: "conversation" })).json();
     expect(tried).toMatchObject({ ok: true, message: 'The model answered "ok".' });
@@ -382,32 +308,31 @@ describe("the catalogue and costs across providers", () => {
     ]);
   });
 
-  it("refuses a model with no known price until the author types one", async () => {
-    await start({ OPENAI_API_KEY: "sk-env-openai-5555" });
-    const refused = await t.put("/api/settings/ai", {
+  it("lets a model with no known price be chosen: its calls count as unknown until a price is typed", async () => {
+    await start();
+    t.keys = { openai: OPENAI };
+    const chosen = await t.put("/api/settings/ai", {
       models: { extraction: "openai:gpt-unlisted-9" },
     });
-    expect(refused.statusCode).toBe(400);
-    expect(refused.json().error.message).toMatch(/No price is known/);
+    expect(chosen.statusCode).toBe(200);
+    const unpriced = (await t.post("/api/settings/ai/test", { task: "extraction" })).json();
+    expect(unpriced).toMatchObject({ ok: true, costUsd: 0 });
+    expect(logLines()[0]).toMatchObject({ costKind: "unknown", costUsd: 0 });
     await t.put("/api/settings/ai/prices", {
-      prices: { "openai:gpt-unlisted-9": { promptPrice: 0, completionPrice: 0 } },
+      prices: { "openai:gpt-unlisted-9": { promptPrice: 2, completionPrice: 4 } },
     });
-    expect(
-      (await t.put("/api/settings/ai", { models: { extraction: "openai:gpt-unlisted-9" } }))
-        .statusCode,
-    ).toBe(200);
     expect((await models("?q=unlisted")).models[0]).toMatchObject({
-      promptPrice: 0,
+      promptPrice: 2,
       priceFrom: "author",
     });
-    const tried = (await t.post("/api/settings/ai/test", { task: "extraction" })).json();
-    expect(tried).toMatchObject({ ok: true, costUsd: 0 });
-    expect(logLines()[0]).toMatchObject({ costKind: "estimated", costUsd: 0 });
+    const priced = (await t.post("/api/settings/ai/test", { task: "extraction" })).json();
+    expect(priced.costUsd).toBeGreaterThan(0);
+    expect(logLines()[1]).toMatchObject({ costKind: "estimated" });
   });
 
   it("can try a model before it is chosen", async () => {
     await start();
-    await t.put("/api/settings/ai", { key: "sk-or-good-0002" });
+    t.keys = { openrouter: GOOD_OR };
     const tried = (
       await t.post("/api/settings/ai/test", {
         task: "conversation",
@@ -425,28 +350,36 @@ describe("calls", () => {
     t.repo.pushFromOutside({ "01 Places/Vel.md": "# Vel\n\nVel was founded.\n" });
     await t.services.sync();
     await t.put("/api/settings/ai", { models: { extraction: "test/model" } });
-    const off = (await t.post("/api/proposals/fields", { path: "01 Places/Vel.md" })).json();
-    expect(off.error).toMatchObject({ code: "ai_off", href: "/settings/ai/providers" });
-    await t.put("/api/settings/ai", { key: "sk-or-good-0002", models: { extraction: null } });
-    const noModel = (await t.post("/api/proposals/fields", { path: "01 Places/Vel.md" })).json();
-    expect(noModel.error).toMatchObject({ code: "ai_off", href: "/settings/ai/models/extraction" });
+    const propose = async () =>
+      (await t.post("/api/proposals/fields", { path: "01 Places/Vel.md" })).json();
+    // No key on the device: the web app is told which provider, and where to add one.
+    expect((await propose()).error).toMatchObject({
+      code: "ai_key_missing",
+      provider: "openrouter",
+      href: "/settings/device/ai-keys",
+    });
+    t.keys = { openrouter: GOOD_OR };
+    await t.put("/api/settings/ai", { models: { extraction: null } });
+    expect((await propose()).error).toMatchObject({
+      code: "ai_off",
+      href: "/settings/you/ai-models/extraction",
+    });
   });
 
   it("stream text and thinking, and log the call when the stream ends", async () => {
     const p = await start();
-    await t.put("/api/settings/ai", {
-      key: "sk-or-good-0002",
-      models: { conversation: "test/model" },
+    await t.put("/api/settings/ai", { models: { conversation: "test/model" } });
+    const events: { type: string }[] = [];
+    await asAdmin(t, { openrouter: GOOD_OR }, async () => {
+      for await (const e of t.services.ai.stream({
+        task: "conversation",
+        system: "s",
+        user: "u",
+        entry: "e.md",
+      })) {
+        events.push(e);
+      }
     });
-    const events = [];
-    for await (const e of t.services.ai.stream({
-      task: "conversation",
-      system: "s",
-      user: "u",
-      entry: "e.md",
-    })) {
-      events.push(e);
-    }
     expect(events.map((e) => e.type)).toEqual(["reasoning", "text", "text", "done"]);
     expect(p.sent.at(-1)!.body).toMatchObject({ model: "test/model", stream: true });
     expect(logLines()).toEqual([
@@ -460,24 +393,41 @@ describe("calls", () => {
     ]);
   });
 
-  it("give every provider room to think, and say when the answer was cut off at the limit", async () => {
+  it("do nothing outside a request that carries a key", async () => {
     const p = await start();
-    await t.post("/api/ai/providers", { kind: "anthropic", key: GOOD_ANT });
-    await t.put("/api/settings/ai", { models: { conversation: "anthropic:claude-sonnet-5-5" } });
-    const warned: object[] = [];
-    t.services.ai.logFailuresTo({ warn: (details) => warned.push(details) });
-    const ask = () =>
+    await t.put("/api/settings/ai", { models: { conversation: "test/model" } });
+    await expect(
       t.services.ai.complete({
         task: "conversation",
         system: "s",
         user: "u",
-        maxTokens: 2500,
-        schema: {
-          name: "reply",
-          json: { type: "object" },
-          check: { safeParse: (v: unknown) => ({ success: v !== undefined, data: v }) } as never,
-        },
-      });
+        schema: { name: "x", json: {}, check: { safeParse: () => ({ success: true }) } as never },
+      }),
+    ).rejects.toMatchObject({ code: "ai_key_missing" });
+    expect(p.sent.filter((s) => s.body !== null)).toEqual([]);
+    expect(logLines()).toEqual([]);
+  });
+
+  it("give every provider room to think, and say when the answer was cut off at the limit", async () => {
+    const p = await start();
+    t.keys = { anthropic: GOOD_ANT };
+    await t.put("/api/settings/ai", { models: { conversation: "anthropic:claude-sonnet-5-5" } });
+    const warned: object[] = [];
+    t.services.ai.logFailuresTo({ warn: (details) => warned.push(details) });
+    const ask = () =>
+      asAdmin(t, { anthropic: GOOD_ANT }, () =>
+        t.services.ai.complete({
+          task: "conversation",
+          system: "s",
+          user: "u",
+          maxTokens: 2500,
+          schema: {
+            name: "reply",
+            json: { type: "object" },
+            check: { safeParse: (v: unknown) => ({ success: v !== undefined, data: v }) } as never,
+          },
+        }),
+      );
     anthropicReply = {
       type: "message",
       content: [{ type: "text", text: '{"reply":"o' }],
@@ -485,7 +435,7 @@ describe("calls", () => {
       usage: { input_tokens: 10, output_tokens: 10500 },
     };
     await expect(ask()).rejects.toThrow("The model ran out of room");
-    const sent = p.sent.at(-1)!.body!;
+    const sent = p.sent.filter((x) => x.body !== null).at(-1)!.body!;
     expect(sent.max_tokens).toBe(2500 + 8000);
     // Brief thinking by default, through the provider's own setting.
     expect(sent).toMatchObject({
@@ -499,22 +449,21 @@ describe("calls", () => {
 
   it("stream a fixed-form answer piece by piece, and log a call the author stopped without warning", async () => {
     await start();
-    await t.put("/api/settings/ai", {
-      key: "sk-or-good-0002",
-      models: { conversation: "test/model" },
-    });
+    await t.put("/api/settings/ai", { models: { conversation: "test/model" } });
     const pieces: object[] = [];
-    const answer = await t.services.ai.complete({
-      task: "conversation",
-      system: "s",
-      user: "u",
-      onStream: (piece) => pieces.push(piece),
-      schema: {
-        name: "reply",
-        json: { type: "object" },
-        check: { safeParse: (v: unknown) => ({ success: true, data: v }) } as never,
-      },
-    });
+    const answer = await asAdmin(t, { openrouter: GOOD_OR }, () =>
+      t.services.ai.complete({
+        task: "conversation",
+        system: "s",
+        user: "u",
+        onStream: (piece) => pieces.push(piece),
+        schema: {
+          name: "reply",
+          json: { type: "object" },
+          check: { safeParse: (v: unknown) => ({ success: true, data: v }) } as never,
+        },
+      }),
+    );
     expect(answer).toEqual({ reply: "ok" });
     expect(pieces).toEqual([{ reasoning: "Hm." }, { content: '{"reply":' }, { content: '"ok"}' }]);
 
@@ -523,14 +472,16 @@ describe("calls", () => {
     const stop = new AbortController();
     stop.abort();
     await expect(
-      t.services.ai.complete({
-        task: "conversation",
-        system: "s",
-        user: "u",
-        signal: stop.signal,
-        onStream: () => undefined,
-        schema: { name: "x", json: {}, check: { safeParse: () => ({ success: true }) } as never },
-      }),
+      asAdmin(t, { openrouter: GOOD_OR }, () =>
+        t.services.ai.complete({
+          task: "conversation",
+          system: "s",
+          user: "u",
+          signal: stop.signal,
+          onStream: () => undefined,
+          schema: { name: "x", json: {}, check: { safeParse: () => ({ success: true }) } as never },
+        }),
+      ),
     ).rejects.toMatchObject({ code: "ai_stopped" });
     expect(warned).toEqual([]);
     expect(logLines().at(-1)).toMatchObject({ ok: false, error: "Stopped by the author." });

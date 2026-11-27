@@ -1,4 +1,5 @@
-import { type CDPSession, expect, type Page, test } from "@playwright/test";
+import { type CDPSession, expect, type Page, test } from "./test.ts";
+import { proj, withoutProject } from "./helpers.ts";
 
 /**
  * Reading a map by pointing (stage 13b): hover, the selection, the right-click menu, the map's
@@ -17,13 +18,13 @@ const makeMap = (page: Page, title: string) =>
   page.evaluate(
     async ({ title, image, harbor }) => {
       const json = { "content-type": "application/json" };
-      const made = await fetch("/api/maps", {
+      const made = await fetch(`${API}/maps`, {
         method: "POST",
         headers: json,
         body: JSON.stringify({ title, kind: "sphere", image }),
       });
       const { id } = (await made.json()) as { id: string };
-      const loaded = await (await fetch(`/api/maps/${id}`)).json();
+      const loaded = await (await fetch(`${API}/maps/${id}`)).json();
       const map = loaded.map;
       const layer = map.layers[0].id;
       const plain = { layer, entry: null, label: null, child: null };
@@ -53,7 +54,7 @@ const makeMap = (page: Page, title: string) =>
         },
         { id: "harbor01", kind: "marker", ...plain, at: [0, 10], icon: null },
       ];
-      await fetch(`/api/maps/${id}`, {
+      await fetch(`${API}/maps/${id}`, {
         method: "PUT",
         headers: json,
         body: JSON.stringify({
@@ -71,15 +72,15 @@ const makeMap = (page: Page, title: string) =>
 /** Throws the map away, so the next test finds nothing unpublished. */
 const cleanUp = (page: Page, id: string) =>
   page.evaluate(async (id) => {
-    await fetch(`/api/maps/${id}`, { method: "DELETE" });
-    const un = await (await fetch("/api/unpublished")).json();
-    for (const d of un.drafts) await fetch(`/api/drafts/${d.id}`, { method: "DELETE" });
+    await fetch(`${API}/maps/${id}`, { method: "DELETE" });
+    const un = await (await fetch(`${API}/unpublished`)).json();
+    for (const d of un.drafts) await fetch(`${API}/drafts/${d.id}`, { method: "DELETE" });
   }, id);
 
 const stored = (page: Page) =>
   page.evaluate(async () => {
     const id = location.pathname.split("/").pop();
-    return ((await (await fetch(`/api/maps/${id}`)).json()) as { map: Stored }).map;
+    return ((await (await fetch(`${API}/maps/${id}`)).json()) as { map: Stored }).map;
   });
 
 const viewOf = (page: Page) =>
@@ -103,9 +104,9 @@ async function onGlobe(page: Page, lon: number, lat: number): Promise<Point> {
 
 /** Opens the map, viewing or editing, once its view is laid out and its features drawn. */
 async function openMap(page: Page, title: string, edit = false) {
-  await page.goto("/maps");
+  await page.goto(proj("/maps"));
   const id = await makeMap(page, title);
-  await page.goto(`/map/${id}${edit ? "?edit=1" : ""}`);
+  await page.goto(proj(`/map/${id}${edit ? "?edit=1" : ""}`));
   await expect(page.locator(".map-top")).toBeVisible();
   await expect(page).toHaveURL(/v=/);
   // The names of linked entries arrive with the map; give the first draw a moment.
@@ -211,7 +212,7 @@ test.describe("with a mouse", () => {
     await expect(page.getByText("Copied a link to this place.")).toBeVisible();
     const link = await page.evaluate(() => navigator.clipboard.readText());
     const url = new URL(link);
-    expect(url.pathname).toBe(`/map/${id}`);
+    expect(withoutProject(url.pathname)).toBe(`/map/${id}`);
     expect(url.searchParams.get("f")).toBe("harbor01");
     expect(url.searchParams.get("v")).toBeNull();
 

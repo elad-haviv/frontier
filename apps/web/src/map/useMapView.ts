@@ -5,7 +5,7 @@
 import { centreOn, initialView, type Position, type ViewState, zoomAt } from "@frontier/geo";
 import { type MapFeature, type MapFile, planarSpace } from "@frontier/schema";
 import { type RefObject, useEffect, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate } from "../nav.tsx";
 import { mapUrl } from "../api.ts";
 import type { TimeState } from "./useMapTime.ts";
 import { readView, writeView } from "./viewUrl.ts";

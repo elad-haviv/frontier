@@ -5,7 +5,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { imageUrl } from "../api.ts";
 import { openStore, type QueueRecord, type Store } from "../sync/db.ts";
 import { bodyUrl, DEVICE_SCHEMA, DeviceCopy, type Shape } from "./device.ts";
-import { Keeper, type KeeperReads } from "./keeper.ts";
+import { Keeper, type KeeperReads, snapshotForDevice } from "./keeper.ts";
+import { setCurrentProject } from "../project.ts";
+
+// Every test runs in one project: its calls go to `/api/p/avalymia/...`.
+setCurrentProject({ id: "avalymia01", slug: "avalymia" });
 
 let store: Store;
 let records: QueueRecord[];
@@ -259,6 +263,49 @@ describe("the device keeper", () => {
     await vi.waitFor(() => expect(graphRead).toHaveBeenCalledTimes(2));
     expect(meta.get("snapshot")).toEqual({ ...snapshot, drafts: 8 });
     keeper.stop();
+  });
+
+  it("does not read or write again for who reads or who has unsaved changes (stage 31d)", async () => {
+    const snapshot = { indexCommit: "c1", unpublished: 2, drafts: 7 } as StatusSnapshot;
+    connection.snapshot = snapshot;
+    const graphRead = vi.fn(async () => graph);
+    reads.graph = graphRead;
+    const keeper = makeKeeper();
+    keeper.start();
+    await vi.waitFor(() => expect(graphRead).toHaveBeenCalledTimes(1));
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    const writes = vi.spyOn(store, "setMeta");
+    const before = writes.mock.calls.filter(([key]) => key === "snapshot").length;
+    for (let i = 0; i < 5; i++) {
+      connection.snapshot = {
+        ...snapshot,
+        presence: [{ id: `p${i}`, name: "Wren", path: "a.md", since: "2026-11-27T10:00:00.000Z" }],
+        othersUnsaved: [
+          {
+            path: "a.md",
+            people: [{ id: `p${i}`, name: "Wren", since: "2026-11-27T10:00:00.000Z" }],
+          },
+        ],
+      };
+      for (const l of connectionListeners) l();
+    }
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    // Nothing was read again, and nothing about others was written to the device.
+    expect(graphRead).toHaveBeenCalledTimes(1);
+    // The first is stored (without the live parts); the four that follow change nothing kept.
+    expect(writes.mock.calls.filter(([key]) => key === "snapshot")).toHaveLength(before + 1);
+    expect(JSON.stringify(meta.get("snapshot"))).not.toContain("Wren");
+    keeper.stop();
+  });
+
+  it("keeps the device's snapshot without the live parts", () => {
+    const kept = snapshotForDevice({
+      indexCommit: "c1",
+      unpublished: 2,
+      othersUnsaved: [{ path: "a.md", people: [] }],
+      presence: [],
+    } as unknown as StatusSnapshot);
+    expect(kept).toEqual({ indexCommit: "c1", unpublished: 2 });
   });
 
   it("reads nothing while offline", async () => {

@@ -27,7 +27,9 @@
     "argon2": "^0.41.0",
     "fastify": "^5.0.0",
     "ipaddr.js": "^2.5.0",
+    "jose": "^6.2.18",
     "minisearch": "^7.2.0",
+    "nodemailer": "^10.6.1",
     "rehype-sanitize": "^6.0.0",
     "rehype-stringify": "^10.0.1",
     "remark-gfm": "^4.0.1",
@@ -42,6 +44,7 @@
     "zod": "^3.23.0"
   },
   "devDependencies": {
+    "@types/nodemailer": "^8.0.2",
     "@types/yauzl": "^3.4.0",
     "@types/yazl": "^3.3.1"
   }

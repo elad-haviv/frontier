@@ -393,11 +393,6 @@ export function askReason(x: Explore, seeking: boolean): string | null {
     return "Asking needs a connection. The points of interest work offline; choose now and ask when you are back.";
   }
   if (seeking) return "Asking…";
-  const e = x.estimate;
-  if (e && e.capUsd > 0 && e.spentUsd + (e.usd ?? 0) > e.capUsd) {
-    return `This would pass this month's cap: $${e.spentUsd.toFixed(2)} of $${e.capUsd.toFixed(2)} spent.`;
-  }
-  if (e && e.capUsd === 0) return "The monthly cap is $0. Raise it on the settings page.";
   return null;
 }
 
@@ -739,7 +734,7 @@ function Tray({
                   e.usd === null
                     ? "the cost is not known for this model"
                     : `about ${money(e.usd)}`.replace("about under", "under")
-                } · $${e.spentUsd.toFixed(2)} of $${e.capUsd.toFixed(2)} spent this month`
+                }, charged by your AI provider`
               : `${calls === 1 ? "One call" : `${calls} calls`} · working out the cost…`}
         </p>
         {reason && x.online && reason !== "Asking…" && <p className="explore-why">{reason}</p>}

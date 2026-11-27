@@ -45,7 +45,7 @@ import {
   Tree as Arborist,
   type TreeApi,
 } from "react-arborist";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "../nav.tsx";
 import { api, ApiFailure, entryUrl } from "../api.ts";
 import { useNeedsConnection } from "../sync/connection.ts";
 import { useLibraryFile } from "../sync/libraryFile.ts";
@@ -53,6 +53,7 @@ import { queue } from "../sync/queue.ts";
 import { useAsync } from "../useAsync.ts";
 import { useDialogs } from "./Dialogs.tsx";
 import { FolderSettings, type FolderStyle } from "./FolderSettings.tsx";
+import { useCanWrite } from "./projectContext.ts";
 import { MoveTo } from "./MoveTo.tsx";
 import { stubsIn } from "../keepGoing/homeModel.ts";
 import { useOpenFolders, useRevealDone, useRevealRequest } from "./shell/panels.tsx";
@@ -74,6 +75,10 @@ import { Icon } from "./ui/Icon.tsx";
 import { useToast } from "./ui/Toast.tsx";
 import "./FolderSettings.css";
 import "./Tree.css";
+import { projectWork } from "../projectWork.ts";
+import { othersAt, useOthersLookup } from "../people/live.ts";
+import { joinNames } from "../people/model.ts";
+import "../people/People.css";
 
 const SAVE_FIRST = "Save a version first";
 const WAIT = "Wait until your changes are sent";
@@ -193,6 +198,8 @@ export function Tree({
   const dialogs = useDialogs();
   const offline = useNeedsConnection();
   const touch = useTouch();
+  // A reader browses the folders: nothing in the tree changes them (stage 31c).
+  const canWrite = useCanWrite();
   const folders = useLibraryFile(FOLDERS);
   const file = folders.value;
   const types = useAsync(() => api.schema(), "schema");
@@ -280,6 +287,9 @@ export function Tree({
     async (row: Row, to: string, orders: Map<string, string> = new Map()) => {
       const folder = row.folder!;
       const from = folder.path;
+      // The project the folder is in: the Undo below is offered for a while, and the person may
+      // have moved to another project by then.
+      const work = projectWork();
       if (pending(row)) return refuse(`${SAVE_FIRST}: this folder is being moved.`);
       if (to === from) {
         if (orders.size > 0) await changeFile((f) => withOrders(f, orders));
@@ -308,7 +318,7 @@ export function Tree({
       if (unsentUnder(from)) return refuse(`${WAIT}, then move the folder.`);
       let made: { id: string; affected: string[] };
       try {
-        made = await api.rename(from, to);
+        made = await work.api.rename(from, to);
       } catch (err) {
         return refuse(err instanceof ApiFailure ? err.message : "The folder could not be moved.");
       }
@@ -327,7 +337,7 @@ export function Tree({
           run: () =>
             void (async () => {
               try {
-                await api.cancelRename(made.id);
+                await work.api.cancelRename(made.id);
                 if (keyed.size > 0 && before) await changeFile(() => before);
               } catch (err) {
                 refuse(err instanceof ApiFailure ? err.message : "The move could not be undone.");
@@ -344,6 +354,7 @@ export function Tree({
   const moveNote = useCallback(
     async (row: Row, folder: string) => {
       const note = row.note!;
+      const work = projectWork();
       const to = `${folder ? folder + "/" : ""}${nameOf(note.path)}`;
       if (to === note.path) return;
       if (offline) return refuse(`${offline}: moving an entry needs the server.`);
@@ -351,14 +362,14 @@ export function Tree({
         return refuse(`${WAIT}, then move the entry.`);
       }
       try {
-        const made = await api.rename(note.path, to);
+        const made = await work.api.rename(note.path, to);
         onChanged();
         const links = made.affected.length;
         toast({
           message: `Moved ${row.name}; links in ${links} other ${links === 1 ? "entry" : "entries"} will be updated when you save a version`,
           action: {
             label: "Undo",
-            run: () => void api.cancelRename(made.id).then(onChanged, onChanged),
+            run: () => void work.api.cancelRename(made.id).then(onChanged, onChanged),
           },
         });
       } catch (err) {
@@ -423,13 +434,14 @@ export function Tree({
 
   async function remove(row: Row) {
     const folder = row.folder!;
+    const work = projectWork();
     if (pending(row)) return refuse(`${SAVE_FIRST}: this folder is being moved.`);
     if (offline) return refuse(`${offline}: deleting a folder needs the server.`);
     if (unsentUnder(folder.path)) return refuse(`${WAIT}, then delete the folder.`);
     // A new line still on this device goes first, so the server knows the folder.
     if (queue.current().some((r) => r.key === FOLDERS.name)) await client.flush();
     try {
-      const counts = await api.deleteFolder(folder.path, true);
+      const counts = await work.api.deleteFolder(folder.path, true);
       const n = counts.entries;
       const entries = `${n} ${n === 1 ? "entry" : "entries"}`;
       const sub = counts.folders;
@@ -448,7 +460,7 @@ export function Tree({
         danger: true,
       });
       if (!ok) return;
-      await api.deleteFolder(folder.path);
+      await work.api.deleteFolder(folder.path);
       await client.reload();
       onChanged();
     } catch (err) {
@@ -476,7 +488,7 @@ export function Tree({
   useEffect(() => {
     if (newFolderAsked === asked.current) return;
     asked.current = newFolderAsked;
-    void newFolder("");
+    if (canWrite) void newFolder("");
   }, [newFolderAsked]);
 
   const actionsFor = (row: Row): Action[] => {
@@ -537,6 +549,8 @@ export function Tree({
     const node = t?.focusedNode;
     if (!t || !node || t.isEditing || (e.target as HTMLElement).closest("input")) return;
     const row = node.data;
+    // F2 and the menu key change things; a reader's tree has neither.
+    if (!canWrite && (e.key === "F2" || e.key === "ContextMenu" || e.key === "F10")) return;
     if (e.key === "Enter") {
       e.preventDefault();
       e.stopPropagation();
@@ -652,9 +666,12 @@ export function Tree({
     requestAnimationFrame(show);
   }, [reveal, revealDone, recount]);
 
+  // Someone else's unsaved changes to an entry (stage 31d): a dot, from the stream, never text.
+  const othersLookup = useOthersLookup();
   /** How each row is drawn now; rows read it through a context, so they are never remounted. */
   const draw = (props: NodeRendererProps<Row>) => {
     const { node } = props;
+    const note = node.data.kind === "note" ? node.data.note : node.data.own;
     return (
       <RowBody
         node={node}
@@ -666,7 +683,9 @@ export function Tree({
         onOpenCurrent={onOpenCurrent}
         menuOpen={menuFor === node.data.path}
         onMenu={(open) => setMenuFor(open ? node.data.path : null)}
-        actions={node.data.kind === "folder" ? actionsFor(node.data) : []}
+        actions={canWrite && node.data.kind === "folder" ? actionsFor(node.data) : []}
+        canWrite={canWrite}
+        others={note ? othersAt(othersLookup, note.path, note.othersUnsaved) : null}
         onNewEntry={onNewEntry}
         onRename={(name) => void rename(node.data, name)}
       />
@@ -697,9 +716,11 @@ export function Tree({
           indent={14}
           overscanCount={50}
           disableMultiSelection
-          disableEdit={(r) => r.kind !== "folder" || pending(r)}
-          disableDrag={(r) => touch || (r.kind === "folder" && pending(r))}
-          disableDrop={({ parentNode }) => !parentNode.isRoot && parentNode.data.kind !== "folder"}
+          disableEdit={(r) => !canWrite || r.kind !== "folder" || pending(r)}
+          disableDrag={(r) => !canWrite || touch || (r.kind === "folder" && pending(r))}
+          disableDrop={({ parentNode }) =>
+            !canWrite || (!parentNode.isRoot && parentNode.data.kind !== "folder")
+          }
           onMove={onMove}
           onRename={({ node, name }) => void rename(node.data, name)}
           onToggle={toggled}
@@ -774,6 +795,8 @@ function RowBody({
   menuOpen,
   onMenu,
   actions,
+  canWrite,
+  others,
   onNewEntry,
   onRename,
 }: {
@@ -787,6 +810,10 @@ function RowBody({
   menuOpen: boolean;
   onMenu: (open: boolean) => void;
   actions: Action[];
+  /** Whether the person may change the folders: a reader has no buttons and no menu on a row. */
+  canWrite: boolean;
+  /** Who else has unsaved changes to this entry: names, true when only a flag says so, or null. */
+  others: { name: string }[] | true | null;
   onNewEntry: (folder: string) => void;
   onRename: (name: string) => void;
 }) {
@@ -827,6 +854,13 @@ function RowBody({
         </span>,
       );
     }
+  }
+  if (others) {
+    const who = others === true ? "Someone else" : joinNames(others.map((o) => o.name));
+    const label = `${who} ${others !== true && others.length > 1 ? "have" : "has"} unsaved changes to this entry`;
+    marks.push(
+      <span key="others" className="tree-others" role="img" aria-label={label} title={label} />,
+    );
   }
   const draft = row.note?.state === "unpublished" || !!row.note?.moved || !!folder?.unpublished;
 
@@ -911,7 +945,7 @@ function RowBody({
       )}
       {name}
       {marks}
-      {folder && !node.isEditing && (
+      {folder && canWrite && !node.isEditing && (
         <span className="tree-actions">
           <button
             type="button"
@@ -959,7 +993,7 @@ function RowBody({
 
   const withSettings = body;
 
-  if (!folder) return withSettings;
+  if (!folder || !canWrite) return withSettings;
   return (
     <ContextMenuPrimitive.Root>
       <ContextMenuPrimitive.Trigger asChild>{withSettings}</ContextMenuPrimitive.Trigger>

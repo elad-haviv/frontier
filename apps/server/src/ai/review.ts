@@ -388,7 +388,7 @@ export class EditReviewer {
   constructor(private readonly d: ReviewDeps) {}
 
   private async model(): Promise<string> {
-    const model = (await this.d.settings.read())?.ai.models.conversation;
+    const model = (await this.d.settings.current()).ai.models.conversation;
     if (!model) {
       throw new ApiError(
         "ai_off",

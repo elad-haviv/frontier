@@ -13,6 +13,7 @@ import { isExcluded, stem } from "@frontier/vault";
 import sharp from "sharp";
 import { z } from "zod";
 import { ApiError } from "../errors.js";
+import { currentPersonId } from "../projects/view.js";
 import { cleanImageName, saveImage } from "../images/save.js";
 import type { StateFiles } from "../state/files.js";
 import type { SettingsStore } from "../state/settings.js";
@@ -30,7 +31,18 @@ const ASPECT: Record<PictureShape, "1:1" | "3:2" | "2:3"> = {
 
 const EXTENSIONS: Record<string, PictureTry["ext"]> = { png: "png", jpeg: "jpg", webp: "webp" };
 
-const TriesFile = z.object({ tries: z.array(PictureTry) });
+/**
+ * A try as it is kept: with the person it was made for. Tries are each person's own, like their
+ * unsaved changes: nobody sees, fetches or inserts another person's. (A try from before people
+ * has no person and is nobody's; it is dropped after its seven days.)
+ */
+const StoredTry = PictureTry.extend({ person: z.string().default("") });
+type StoredTry = z.infer<typeof StoredTry>;
+const TriesFile = z.object({ tries: z.array(StoredTry) });
+
+/** The person whose request is being served; outside a request, nobody in particular. */
+const who = (): string => currentPersonId() ?? "";
+const shown = (t: StoredTry): PictureTry => PictureTry.parse(t);
 
 export interface EntryPicturesDeps {
   /** The folder the tries and their list are kept in. */
@@ -40,7 +52,6 @@ export interface EntryPicturesDeps {
   log: AiLog;
   provider: {
     connections: Connections;
-    spending(): Promise<{ spentUsd: number; capUsd: number }>;
     image(
       prompt: string,
       entry?: string,
@@ -75,7 +86,7 @@ export class EntryPictures {
   }
 
   /** The tries still kept, the ones over seven days old dropped with their pictures. */
-  private async all(): Promise<PictureTry[]> {
+  private async all(): Promise<StoredTry[]> {
     const read = (await this.d.files.readJson(this.listFile, TriesFile).catch(() => null))?.tries;
     const list = read ?? [];
     const since = this.now().getTime() - KEEP_TRIES_MS;
@@ -93,22 +104,25 @@ export class EntryPictures {
     return next;
   }
 
-  /** Why a picture cannot be made now, or null when it can. */
+  /**
+   * Why a picture cannot be made now, or null when it can: no picture model is chosen, or this
+   * device has no key for its provider (each person sends their own, see `keyring.ts`).
+   */
   private async off(): Promise<PicturesResponse["off"]> {
-    const chosen = (await this.d.settings.read())?.ai.models.art ?? null;
+    const chosen = (await this.d.settings.current()).ai.models.art ?? null;
     if (!chosen) {
       return {
         message:
-          "Pictures need a picture model. Choose one in Settings › Models, under Concept art.",
-        href: "/settings/ai/models/art",
+          "Pictures need a picture model. Choose one in Settings › AI models, under Concept art.",
+        href: "/settings/you/ai-models/art",
       };
     }
-    const c = this.d.provider.connections;
-    const p = await c.get(splitModelId(chosen).provider);
-    if (!p || !c.usable(p)) {
+    const kind = splitModelId(chosen).provider;
+    if (!this.d.provider.connections.get(kind)) {
       return {
-        message: `The picture model's provider is not connected or has no key. Connect it in Settings › AI providers.`,
-        href: "/settings/ai/providers",
+        message:
+          "There is no key on this device for the picture model's provider. Add one under AI keys.",
+        href: "/settings/device/ai-keys",
       };
     }
     return null;
@@ -116,14 +130,18 @@ export class EntryPictures {
 
   /** What a picture has cost lately: the middle of the last five that worked with this model. */
   private async perPicture(): Promise<number | null> {
-    const chosen = (await this.d.settings.read())?.ai.models.art;
+    const chosen = (await this.d.settings.current()).ai.models.art;
     if (!chosen) return null;
     const now = this.now();
     const before = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1));
+    const person = currentPersonId();
+    const mine = <T extends { person?: string | undefined }>(c: T) =>
+      person === null || c.person === person;
     const calls = [
       ...(await this.d.log.calls(monthOf(before))),
       ...(await this.d.log.calls(monthOf(now))),
     ]
+      .filter(mine)
       .filter((c) => c.task === "art" && c.ok && c.model === chosen && c.costKind !== "unknown")
       .slice(-5)
       .map((c) => c.costUsd)
@@ -133,13 +151,14 @@ export class EntryPictures {
   }
 
   async status(entry: string): Promise<PicturesResponse> {
-    const { spentUsd, capUsd } = await this.d.provider.spending();
     return {
       off: await this.off(),
-      style: (await this.d.settings.read())?.ai.artStyle ?? "",
+      style: (await this.d.settings.current()).ai.artStyle ?? "",
       perPictureUsd: await this.perPicture(),
-      leftUsd: Math.max(0, capUsd - spentUsd),
-      tries: (await this.all()).filter((t) => t.entry === entry).reverse(),
+      tries: (await this.all())
+        .filter((t) => t.entry === entry && t.person === who())
+        .map(shown)
+        .reverse(),
     };
   }
 
@@ -164,7 +183,8 @@ export class EntryPictures {
     const ext = format ? EXTENSIONS[format] : undefined;
     if (!ext)
       throw new ApiError("ai_failed", "The picture model sent something that is not a picture.");
-    const made: PictureTry = {
+    const made: StoredTry = {
+      person: who(),
       id: makeId(randomBytes),
       entry: input.entry,
       prompt,
@@ -176,12 +196,12 @@ export class EntryPictures {
     await this.d.files.write(this.file(made), bytes);
     return this.change(async () => {
       await this.d.files.writeJson(this.listFile, { tries: [...(await this.all()), made] });
-      return made;
+      return shown(made);
     });
   }
 
-  private async find(id: string): Promise<PictureTry> {
-    const found = (await this.all()).find((t) => t.id === id);
+  private async find(id: string): Promise<StoredTry> {
+    const found = (await this.all()).find((t) => t.id === id && t.person === who());
     if (!found) throw new ApiError("not_found", "That picture is no longer kept.");
     return found;
   }

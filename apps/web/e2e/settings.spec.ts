@@ -1,43 +1,47 @@
-import { expect, type Page, test } from "@playwright/test";
-import { answerDialog, noSidewaysScroll, setUpAi } from "./helpers.ts";
+import { expect, type Page, test } from "./test.ts";
+import { answerDialog, AUTH_FILE, noSidewaysScroll, setUpAi, proj } from "./helpers.ts";
 
-// The AI settings are one per server: these tests take turns and put back what they change.
+// The AI settings are the signed-in person's (one account here): these tests take turns and put back what they change.
 test.describe.configure({ mode: "serial" });
 
 const isPhone = (name: string) => name === "phone";
 
+/** Takes the Anthropic key off this device, if it holds one. */
 async function removeAnthropic(page: Page) {
-  await page.goto("/settings/ai/providers");
+  await page.goto(proj("/settings/device/ai-keys"));
   const row = page.locator(".provider-row", { hasText: "Anthropic" });
-  if ((await row.count()) === 0) return;
-  await row.getByRole("button", { name: "Remove" }).click();
+  // The row is always listed; wait for it before looking for what it offers.
+  await expect(row).toBeVisible();
+  const remove = row.getByRole("button", { name: "Remove from this device" });
+  if ((await remove.count()) === 0) return;
+  await remove.click();
   await answerDialog(page, "Remove");
-  await expect(row).toHaveCount(0);
+  await expect(row).toContainText("No key on this device");
 }
 
 test("the menu: a rail on a wide screen, a list to drill into on a phone, and deep links", async ({
   page,
 }, info) => {
   await setUpAi(page, { conversation: "sample/reader" });
-  await page.goto("/settings");
+  await page.goto(proj("/settings"));
   const menu = page.getByRole("navigation", { name: "Settings" });
   if (isPhone(info.project.name)) {
     // The list, each row with its state; a row opens its section, and Back comes home.
     await expect(page).toHaveURL(/\/settings$/);
-    await expect(menu.getByRole("link", { name: /Providers/ })).toContainText(
-      "Connected: OpenRouter",
+    await expect(menu.getByRole("link", { name: /AI keys/ })).toContainText(
+      "1 key in this browser",
     );
-    await menu.getByRole("link", { name: /Spending/ }).click();
-    await expect(page).toHaveURL(/\/settings\/ai\/spending$/);
-    await expect(page.getByRole("heading", { level: 1 })).toHaveText("Spending");
+    await menu.getByRole("link", { name: /Your AI spending/ }).click();
+    await expect(page).toHaveURL(/\/settings\/you\/ai-spending$/);
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText("Your AI spending");
     await page.getByRole("link", { name: "Settings", exact: true }).click();
     await expect(page).toHaveURL(/\/settings$/);
     await page.goBack();
-    await expect(page).toHaveURL(/\/settings\/ai\/spending$/);
+    await expect(page).toHaveURL(/\/settings\/you\/ai-spending$/);
     await noSidewaysScroll(page);
   } else {
     // `/settings` opens a section; the rail marks it.
-    await expect(page).toHaveURL(/\/settings\/ai\/(providers|models)$/);
+    await expect(page).toHaveURL(/\/settings\/you\/ai-models$/);
     await menu.getByRole("link", { name: "Signing in" }).click();
     await expect(page).toHaveURL(/\/settings\/account$/);
     await expect(menu.getByRole("link", { name: "Signing in" })).toHaveAttribute(
@@ -47,44 +51,72 @@ test("the menu: a rail on a wide screen, a list to drill into on a phone, and de
     await expect(page.getByRole("button", { name: "Log out" })).toBeVisible();
   }
   // A deep link to a task opens its picker.
-  await page.goto("/settings/ai/models/conversation");
+  await page.goto(proj("/settings/you/ai-models/conversation"));
   await expect(
     page.getByRole("combobox", { name: "Find a model for Lore conversations" }),
   ).toBeFocused();
   await page.keyboard.press("Escape");
-  await expect(page).toHaveURL(/\/settings\/ai\/models$/);
+  await expect(page).toHaveURL(/\/settings\/you\/ai-models$/);
   await expect(page.getByRole("combobox")).toHaveCount(0);
   // An unknown section goes back to Settings.
-  await page.goto("/settings/nowhere");
-  await expect(page).toHaveURL(/\/settings(\/ai\/(providers|models))?$/);
+  await page.goto(proj("/settings/nowhere"));
+  await expect(page).toHaveURL(/\/settings(\/you\/ai-models)?$/);
 });
 
-test("adds a provider: a refused key is said under the field, a good one is checked and stored", async ({
+test("the old addresses of the AI sections lead to where they are now", async ({ page }) => {
+  for (const [old, now] of [
+    ["/settings/ai/providers", "/settings/device/ai-keys"],
+    ["/settings/ai/models", "/settings/you/ai-models"],
+    ["/settings/ai/models/extraction", "/settings/you/ai-models/extraction"],
+    ["/settings/ai/spending", "/settings/you/ai-spending"],
+    ["/settings/ai/folder-run", "/settings/you/folder-run"],
+    ["/settings/device", "/settings/device/offline"],
+  ] as const) {
+    await page.goto(old);
+    await expect(page, old).toHaveURL(new RegExp(`${now}$`));
+  }
+});
+
+test("adds a key: a refused key is said under the field, a good one is tested and kept on this device", async ({
   page,
 }, info) => {
   test.skip(isPhone(info.project.name), "One server: the phone runs the picker test instead.");
+  await setUpAi(page, { conversation: "sample/reader" });
   await removeAnthropic(page);
-  await page.goto("/settings/ai/providers");
-  await page.getByRole("button", { name: /^Anthropic/ }).click();
-  const key = page.getByLabel("Key for Anthropic");
-  await key.fill("sk-ant-wrong-key-0001");
-  await page.getByRole("button", { name: "Check and save" }).click();
-  const offer = page.locator(".provider-offers li.open");
-  await expect(offer.locator(".field-error")).toContainText("(401)");
-  // The field keeps its text, to fix a typo; nothing was stored.
-  await expect(key).toHaveValue("sk-ant-wrong-key-0001");
-  await expect(page.locator(".provider-row", { hasText: "Anthropic" })).toHaveCount(0);
-
-  await key.fill("sk-ant-good-key-0002");
-  await page.getByRole("button", { name: "Check and save" }).click();
+  await page.goto(proj("/settings/device/ai-keys"));
   const row = page.locator(".provider-row", { hasText: "Anthropic" });
-  await expect(row).toContainText("Connected");
+  await expect(row).toContainText("No key on this device");
+  await row.getByRole("button", { name: "Add a key" }).click();
+  const key = row.getByLabel("Key", { exact: true });
+  await key.fill("sk-ant-wrong-key-0001");
+  await row.getByRole("button", { name: "Test and keep on this device" }).click();
+  await expect(row.getByRole("alert")).toContainText("(401)");
+  // The field keeps its text, to fix a typo; nothing was kept.
+  await expect(key).toHaveValue("sk-ant-wrong-key-0001");
+  await page.reload();
+  await expect(page.locator(".provider-row", { hasText: "Anthropic" })).toContainText(
+    "No key on this device",
+  );
+
+  await page
+    .locator(".provider-row", { hasText: "Anthropic" })
+    .getByRole("button", { name: "Add a key" })
+    .click();
+  await key.fill("sk-ant-good-key-0002");
+  await row.getByRole("button", { name: "Test and keep on this device" }).click();
+  await expect(row).toContainText("Working");
   await expect(row).toContainText("sk-…0002");
-  await expect(row).toContainText("costs estimated from prices");
   expect(await page.content()).not.toContain("sk-ant-good-key-0002");
+  // It stays through a reload, as the device holds it.
+  await page.reload();
+  await expect(page.locator(".provider-row", { hasText: "Anthropic" })).toContainText("Working");
+  // And the server never had it.
+  expect(await (await page.request.get("/api/settings")).text()).not.toContain(
+    "sk-ant-good-key-0002",
+  );
 
   // Its model is listed, priced from OpenRouter's list, and can be chosen.
-  await page.goto("/settings/ai/models/extraction");
+  await page.goto(proj("/settings/you/ai-models/extraction"));
   const search = page.getByRole("combobox", { name: "Find a model for Proposing fields" });
   await search.fill("claude");
   // Listed twice: directly, and through OpenRouter under its own name.
@@ -94,18 +126,83 @@ test("adds a provider: a refused key is said under the field, a good one is chec
   await expect(page.locator(".mp-details")).toContainText("Estimated from the price");
   await expect(page.locator(".mp-details")).toContainText("(OpenRouter's list)");
 
+  // Removed from this device, it is gone from the list of models too.
   await removeAnthropic(page);
+  await page.goto(proj("/settings/you/ai-models/extraction"));
+  await page.getByRole("combobox", { name: "Find a model for Proposing fields" }).fill("claude");
+  await expect(page.getByRole("option", { name: /^Claude Sample 1/ })).toHaveCount(0);
+});
+
+test("keys stay on the device: another device has none, and a key removed is gone", async ({
+  page,
+  browser,
+}, info) => {
+  test.skip(isPhone(info.project.name), "One server: the phone runs the picker test instead.");
+  await setUpAi(page, { conversation: "sample/reader" });
+  await page.goto(proj("/settings/device/ai-keys"));
+  await expect(page.getByRole("note")).toContainText("Your keys stay in this browser.");
+  await expect(page.getByRole("note")).toContainText(
+    "The server never saves them and other members never see them.",
+  );
+  await expect(page.getByRole("note")).toContainText(
+    "You pay your provider directly for what you use.",
+  );
+  await expect(page.getByRole("note")).toContainText(
+    "On another phone or computer add the key again, and clearing this browser's data removes it.",
+  );
+  await expect(page.getByRole("note")).toContainText(
+    "Logging out keeps your keys on this device for your next login. On a shared computer, remove them before you leave.",
+  );
+  await expect(page.locator(".settings-section")).toContainText(
+    "AI work happens only while you have Frontier open. Field proposals are made right after you save a version, and for a folder only while its page is open; the question of the day is made when you ask for it.",
+  );
+  const row = page.locator(".provider-row", { hasText: "OpenRouter" });
+  await expect(row).toContainText("key sk-…-key");
+
+  // Another device, signed in the same way, has no key.
+  const other = await browser.newContext({
+    storageState: AUTH_FILE,
+    serviceWorkers: "block",
+    baseURL: `http://localhost:${process.env.E2E_PORT ?? 3987}`,
+  });
+  const second = await other.newPage();
+  await second.goto(proj("/settings/device/ai-keys"));
+  await expect(second.locator(".provider-row", { hasText: "OpenRouter" })).toContainText(
+    "No key on this device",
+  );
+  await expect(second.locator(".provider-row", { hasText: "OpenRouter" })).toContainText(
+    "Used for",
+  );
+  await other.close();
+
+  // Remove from this device asks first, then takes the key off.
+  await row.getByRole("button", { name: "Remove from this device" }).click();
+  await answerDialog(page, "Remove");
+  await expect(row).toContainText("No key on this device");
+  await page.reload();
+  await expect(page.locator(".provider-row", { hasText: "OpenRouter" })).toContainText(
+    "No key on this device",
+  );
+  // Filed under the person, so look through everything this device keeps about AI keys.
+  expect(
+    await page.evaluate(() =>
+      Object.keys(localStorage)
+        .filter((k) => k.startsWith("frontier.aiKeys"))
+        .map((k) => localStorage.getItem(k))
+        .join(""),
+    ),
+  ).not.toContain("sk-or-browser-test-key");
 });
 
 test("chooses a model through the picker with search, keys and details, then undoes it", async ({
   page,
 }, info) => {
   await setUpAi(page, { conversation: "sample/reader" });
-  await page.goto("/settings/ai/models");
+  await page.goto(proj("/settings/you/ai-models"));
   const row = page.locator("#task-conversation");
   await expect(row.locator(".model-chip")).toContainText("Sample reader");
   await row.getByRole("button", { name: "Change", exact: true }).click();
-  await expect(page).toHaveURL(/\/settings\/ai\/models\/conversation$/);
+  await expect(page).toHaveURL(/\/settings\/you\/ai-models\/conversation$/);
   const search = page.getByRole("combobox", { name: "Find a model for Lore conversations" });
   // A missing letter is forgiven.
   await search.fill("wrter");
@@ -134,7 +231,7 @@ test("chooses a model through the picker with search, keys and details, then und
     await expect(page.locator(".mp-details")).toContainText(
       "A larger model for lore conversations.",
     );
-    await expect(page.locator(".mp-details")).toContainText("Your cap of");
+    await expect(page.locator(".mp-details")).toContainText("charges you");
     await search.press("Enter");
   }
   await expect(row.locator(".model-chip")).toContainText("Sample writer");
