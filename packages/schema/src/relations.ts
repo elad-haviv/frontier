@@ -1,5 +1,5 @@
 /**
- * Relations between entries and the trees that draw them (stage 29). The relations themselves
+ * Relations between entries and the trees that draw them (stage 30). The relations themselves
  * are written on the entries (`relations:` in the frontmatter); this file holds the kinds of
  * relation, the trees file (`.frontier/trees.json`, one saved view per line) and the shape of
  * `/api/relations`, which gathers every entry's relations into one list of facts.

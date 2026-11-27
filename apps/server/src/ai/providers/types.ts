@@ -78,6 +78,8 @@ export type StreamEvent =
 export interface ImageRequest {
   model: string;
   prompt: string;
+  /** The shape asked for, as a ratio of width to height; a model that takes no size ignores it. */
+  aspect?: "1:1" | "3:2" | "2:3";
   signal: AbortSignal;
 }
 

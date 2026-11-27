@@ -1,5 +1,5 @@
 /**
- * Gathers every entry's relations into one list of facts (stage 29). Each entry's own text is
+ * Gathers every entry's relations into one list of facts (stage 30). Each entry's own text is
  * read, its draft's when it has one, so a relation added a moment ago is in the tree at once.
  * A fact written on both entries (`child: Nessa` on Wren, `parent: Wren` on Nessa) becomes one
  * fact with two sources; if the two disagree on `how` or `when`, the fact says so.

@@ -26,7 +26,7 @@ const UNREADABLE =
   "The relations of this entry cannot be read. Correct them in the text first, under Properties.";
 
 /**
- * Relations between entries (stage 29): every entry's `relations` gathered into facts, and the
+ * Relations between entries (stage 30): every entry's `relations` gathered into facts, and the
  * two changes a tree or the Relations tab makes, each to one entry only: add an item, or take one
  * off. A new name can also be made an entry, in the folder of the entry it is written on.
  */

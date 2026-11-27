@@ -458,6 +458,12 @@ keys.register(
     label: "Writing help on the selection or paragraph",
   },
   {
+    id: "editor.generateImage",
+    keys: ["Mod-Alt-i"],
+    scope: "editor",
+    label: "Generate an image for this entry",
+  },
+  {
     id: "editor.consult",
     keys: ["Mod-Alt-r"],
     scope: "editor",
@@ -779,7 +785,7 @@ keys.register(
   { id: "graph.zoomIn", keys: ["="], scope: "graph", label: "Zoom in" },
   { id: "graph.zoomOut", keys: ["-"], scope: "graph", label: "Zoom out" },
 
-  // Trees (stage 29). The drawing takes its own arrow keys while it has the focus.
+  // Trees (stage 30). The drawing takes its own arrow keys while it has the focus.
   { id: "trees.new", keys: ["n"], scope: "trees", label: "New tree" },
   { id: "tree.find", keys: ["/"], scope: "tree", label: "Find someone in the tree" },
   { id: "tree.add", keys: ["a"], scope: "tree", label: "Add to the selected card" },
@@ -1033,6 +1039,9 @@ export function editorKeymap(registry = keys): Extension {
     // The browser's own Ctrl+J (its downloads) never opens from the editor.
     ...bind("editor.help", runBound("editor.help", registry), { preventDefault: true }),
     ...bind("editor.consult", runBound("editor.consult", registry), { preventDefault: true }),
+    ...bind("editor.generateImage", runBound("editor.generateImage", registry), {
+      preventDefault: true,
+    }),
     // In a list Tab nests the item; elsewhere it indents the line.
     ...bind("editor.indent", (v) => command(indentListItem)(v) || indentMore(v)),
     ...bind("editor.outdent", (v) => command(outdentListItem)(v) || indentLess(v)),

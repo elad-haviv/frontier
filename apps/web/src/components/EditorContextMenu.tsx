@@ -54,7 +54,9 @@ export function EditorContextMenu({
   const offline = useNeedsConnection();
   const list = tools(handlers);
   const assist = list.filter((t) => t.group === "assist");
-  const insert = list.filter((t) => t.id === "link" || t.id === "image");
+  const insert = list.filter(
+    (t) => t.id === "link" || t.id === "image" || t.id === "generateImage",
+  );
 
   /** Runs an action on the text, with the selection it had when the menu was opened. */
   const on = (fn: (v: EditorView) => void | Promise<void>) => () => {
@@ -176,7 +178,8 @@ export function EditorContextMenu({
       {insert.map((t) => (
         <ContextMenuItem
           key={t.id}
-          icon={t.id === "link" ? Brackets : ImagePlus}
+          icon={t.id === "link" ? Brackets : t.id === "image" ? ImagePlus : t.icon}
+          keys={shortcutText(t.shortcut)}
           disabled={t.online === true && offline !== undefined}
           disabledReason={t.online && offline ? (t.offlineReason ?? offline) : undefined}
           onSelect={on(t.act)}

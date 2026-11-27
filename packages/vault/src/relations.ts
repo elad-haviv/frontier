@@ -1,5 +1,5 @@
 /**
- * An entry's relations (stage 29): who it is related to and how, as readable text in the
+ * An entry's relations (stage 30): who it is related to and how, as readable text in the
  * frontmatter, beside its dates. Each item names a kind (`what`) and an entry (`who`, usually a
  * wikilink), with an optional other parent (`with`), manner (`how`) and time (`when`). Nothing
  * here knows the kinds; the reader of the index does.

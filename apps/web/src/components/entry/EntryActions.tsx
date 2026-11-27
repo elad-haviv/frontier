@@ -38,7 +38,7 @@ export interface EntryActionsProps {
   outlineOpen: boolean;
   onGraph: () => void;
   graphOpen: boolean;
-  /** Opens or closes the Relations tab (stage 29); absent where it is not offered. */
+  /** Opens or closes the Relations tab (stage 30); absent where it is not offered. */
   onRelations?: (() => void) | undefined;
   relationsOpen?: boolean;
   /** Pin to "Working on"; absent where the entry cannot be pinned. */

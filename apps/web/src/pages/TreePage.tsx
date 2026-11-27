@@ -52,7 +52,7 @@ function wayWords(g: Graph, t: TreeLine) {
   return { down: "Everything below", up: "Everything above" };
 }
 
-/** One tree (stage 29): drawn from the relations on the entries, saved as a view in the trees file. */
+/** One tree (stage 30): drawn from the relations on the entries, saved as a view in the trees file. */
 export function TreePage() {
   const { id } = useParams();
   const trees = useTrees();

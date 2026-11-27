@@ -262,7 +262,10 @@ export class GoogleAdapter implements ProviderAdapter {
       headers: this.headers(),
       body: JSON.stringify({
         contents: [{ role: "user", parts: [{ text: req.prompt }] }],
-        generationConfig: { responseModalities: ["TEXT", "IMAGE"] },
+        generationConfig: {
+          responseModalities: ["TEXT", "IMAGE"],
+          ...(req.aspect ? { imageConfig: { aspectRatio: req.aspect } } : {}),
+        },
       }),
       signal: req.signal,
     });

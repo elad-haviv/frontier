@@ -69,6 +69,13 @@ One place for what is being built, what is waiting, and ideas. The design in
   stay in the Comments panel); the editor could start with the pane closed if that matters more.
 - Known: the folded library state is kept in session memory only (`ShellStore.openFolders`), not on disk.
 
+## Done: stage 29 (2026-11-27)
+
+- [x] 29 Pictures for entries: a Generate tab in the image dialog (and "Generate an image…", Ctrl+Alt+I)
+      that makes one picture at a time from the selection or the entry's opening, in the art style from
+      Settings, and inserts the chosen one as an unpublished image. Tries are kept for 7 days.
+      [Design](designs/stage-29-entry-pictures.md)
+
 ## Now: stages 11 to 15, the interface and offline work
 
 Design: [stage 11](designs/stage-11-foundations-shell-tree.md), approved after a five-stage review.

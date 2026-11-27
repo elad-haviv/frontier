@@ -478,6 +478,24 @@ export function insertEmbeds(state: EditorState, names: string[]): Edit {
   return insertText(state, names.map((n) => `![[${n}]]`).join("\n"));
 }
 
+/**
+ * Embeds under the selected text, as a paragraph of their own after its last line, leaving the
+ * text in place: a picture made from the selection belongs beside it, not instead of it. With no
+ * selection they go where the cursor is, as `insertEmbeds`.
+ */
+export function insertEmbedsAfter(state: EditorState, names: string[]): Edit {
+  const { from, to } = state.selection.main;
+  if (from === to) return insertEmbeds(state, names);
+  // A selection of whole lines ends at the start of the next one: it belongs to the line above.
+  const line = state.doc.lineAt(state.doc.lineAt(to).from === to ? to - 1 : to);
+  const next = line.number < state.doc.lines ? state.doc.line(line.number + 1) : null;
+  const embeds = names.map((n) => `![[${n}]]`).join("\n");
+  // A line of text right below gets a blank line between, so it stays a paragraph of its own.
+  const text = `\n\n${embeds}${next && next.text.trim() !== "" ? "\n" : ""}`;
+  const changes = state.changes({ from: line.to, insert: text });
+  return { changes, selection: state.selection.replaceRange(rangeOf(line.to + 2 + embeds.length)) };
+}
+
 /** What an embed or a link names a file by: its name when no other file has it, else its path. */
 export function linkName(path: string, others: Iterable<string>, keepExtension: boolean): string {
   const base = path.split("/").pop() ?? path;

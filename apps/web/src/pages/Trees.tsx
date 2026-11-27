@@ -60,7 +60,7 @@ const LOOKS: {
   },
 ];
 
-/** The Trees page (stage 29): a card for each saved tree, and the New tree dialog. */
+/** The Trees page (stage 30): a card for each saved tree, and the New tree dialog. */
 export function TreesPage() {
   const trees = useTrees();
   const relations = useRelations();

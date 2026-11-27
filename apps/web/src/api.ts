@@ -21,6 +21,9 @@ import type {
   AiProviderKind,
   AiProviderView,
   AiTaskName,
+  PictureShape,
+  PictureTry,
+  PicturesResponse,
   PinsResponse,
   ProviderCheckResponse,
   ProvidersResponse,
@@ -325,7 +328,7 @@ export const api = {
   tree: () => call<TreeResponse>("/api/tree"),
   /** Every entry and every link between two entries, with the top-level folders' colours. */
   graph: () => call<GraphResponse>("/api/graph"),
-  /** Every entry's relations as facts, with the kinds of relation (stage 29). */
+  /** Every entry's relations as facts, with the kinds of relation (stage 30). */
   relations: () => call<RelationsResponse>("/api/relations"),
   /** Writes one relation on one entry; `made` is the new entry's path when one was made. */
   addRelation: (body: AddRelationRequest) =>
@@ -359,6 +362,16 @@ export const api = {
   /** Has the server take an image from a web address; it is kept as an upload. */
   imageFromUrl: (url: string) =>
     post<{ path: string; embed: string }>("/api/images/from-url", { url }),
+  /** Stage 29: whether pictures can be made for an entry, their cost, and the entry's tries. */
+  pictures: (entry: string) =>
+    call<PicturesResponse>(`/api/pictures?entry=${encodeURIComponent(entry)}`),
+  /** Makes one picture; it is kept as a try until inserted or a week has passed. */
+  makePicture: (input: { entry: string; prompt: string; style: string; shape: PictureShape }) =>
+    post<{ try: PictureTry }>("/api/pictures", input),
+  /** Keeps a try as an unpublished image, as an upload. */
+  insertPicture: (id: string, name: string) =>
+    post<{ path: string; embed: string }>(`/api/pictures/${id}/insert`, { name }),
+  pictureUrl: (id: string, w?: number) => `/api/pictures/${id}${w ? `?w=${w}` : ""}`,
   rename: (from: string, to: string) => post<CreateRenameResponse>("/api/renames", { from, to }),
 
   /** Pages save through the queue (`sync/queue.ts`), which calls this. */

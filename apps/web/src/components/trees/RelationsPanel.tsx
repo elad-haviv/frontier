@@ -30,7 +30,7 @@ function kindFor(g: Graph, path: string): string {
 }
 
 /**
- * The entry's Relations tab (stage 29): the entry in the middle of its relatives, then its own
+ * The entry's Relations tab (stage 30): the entry in the middle of its relatives, then its own
  * `relations` rows as written, with + Add a relation, and the trees it is in.
  */
 export function RelationsPanel({

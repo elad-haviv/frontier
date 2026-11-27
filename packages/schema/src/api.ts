@@ -651,3 +651,49 @@ export const FieldJobState = z.object({
   stoppedBy: z.string().optional(),
 });
 export type FieldJobState = z.infer<typeof FieldJobState>;
+
+// ---- Pictures for entries (stage 29) ---------------------------------------------------------
+
+/** The shape a picture is asked for in; a model that takes no size ignores it. */
+export const PictureShape = z.enum(["square", "wide", "tall"]);
+export type PictureShape = z.infer<typeof PictureShape>;
+
+/** One picture made for an entry and not yet inserted. Kept on the server for seven days. */
+export const PictureTry = z.object({
+  id: z.string().regex(/^[a-z0-9]{12}$/),
+  entry: z.string(),
+  prompt: z.string(),
+  style: z.string(),
+  shape: PictureShape,
+  /** The file extension the picture is kept with, from its bytes: png, jpg or webp. */
+  ext: z.enum(["png", "jpg", "webp"]),
+  at: z.string(),
+});
+export type PictureTry = z.infer<typeof PictureTry>;
+
+/** `GET /api/pictures?entry=…`: whether pictures can be made, what they cost, and the tries. */
+export const PicturesResponse = z.object({
+  /** Null when a picture can be made; otherwise why not and where to fix it. */
+  off: z.object({ message: z.string(), href: z.string().nullable() }).nullable(),
+  /** The art style from the settings, added to every prompt unless changed for one picture. */
+  style: z.string(),
+  /** What one picture has cost lately with the chosen model, when known. */
+  perPictureUsd: z.number().nullable(),
+  /** What is left of this month's cap. */
+  leftUsd: z.number(),
+  tries: z.array(PictureTry),
+});
+export type PicturesResponse = z.infer<typeof PicturesResponse>;
+
+/** `POST /api/pictures`: makes one picture for an entry. */
+export const MakePictureRequest = z.object({
+  entry: z.string().min(1).max(1000),
+  prompt: z.string().trim().min(1, "Describe the picture first.").max(4000),
+  style: z.string().max(2000).default(""),
+  shape: PictureShape.default("square"),
+});
+export type MakePictureRequest = z.infer<typeof MakePictureRequest>;
+
+/** `POST /api/pictures/:id/insert`: keeps a try as an unpublished image, named as asked. */
+export const InsertPictureRequest = z.object({ name: z.string().max(120).default("") });
+export type InsertPictureRequest = z.infer<typeof InsertPictureRequest>;

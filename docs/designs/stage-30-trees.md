@@ -1,4 +1,4 @@
-# Stage 29: Trees, how entries relate
+# Stage 30: Trees, how entries relate
 
 - **Author:** Elad Haviv
 - **Status:** Approved on 2026-11-27, with every recommendation in "Decisions", D as revised after
