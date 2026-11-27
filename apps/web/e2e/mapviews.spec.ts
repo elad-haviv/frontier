@@ -1,6 +1,6 @@
 import { expect, type Page, test } from "@playwright/test";
 import sharp from "sharp";
-import { newMapInForm } from "./helpers.ts";
+import { newMapInForm, at } from "./helpers.ts";
 
 const IMAGE = "99 Appendices/Images/map one.png";
 
@@ -38,12 +38,12 @@ const viewOf = (url: string) => decodeURIComponent(new URL(url).searchParams.get
 test("CUJ 18: steps down to a layer under a globe at the same place, and back up", async ({
   page,
 }, info) => {
-  await page.goto("/maps");
+  await page.goto(at("/maps"));
   const top = await makeMap(page, `Surface ${info.project.name}`, "sphere");
   const layer = await makeMap(page, `Labyrinth ${info.project.name}`, "sphere");
 
   // The layer is set to lie under the surface.
-  await page.goto(`/map/${layer}?edit=1`);
+  await page.goto(at(`/map/${layer}?edit=1`));
   await page.getByRole("button", { name: "Layers" }).click();
   await page.getByRole("combobox", { name: "This map lies under" }).click();
   await page.getByPlaceholder("Find a map").fill(`Surface ${info.project.name}`);
@@ -54,7 +54,7 @@ test("CUJ 18: steps down to a layer under a globe at the same place, and back up
   await expect(page.locator(".save-saved")).toBeVisible();
 
   // The list says so.
-  await page.goto("/maps");
+  await page.goto(at("/maps"));
   const row = (title: string) =>
     page.locator(".map-card").filter({ has: page.getByRole("link", { name: title, exact: true }) });
   await expect(row(`Labyrinth ${info.project.name}`)).toContainText(
@@ -63,7 +63,7 @@ test("CUJ 18: steps down to a layer under a globe at the same place, and back up
   await expect(row(`Surface ${info.project.name}`)).toContainText("1 layer below");
 
   // From the surface, turned to some place, Down keeps the place.
-  await page.goto(`/map/${top}?v=g,40,10,200`);
+  await page.goto(at(`/map/${top}?v=g,40,10,200`));
   await expect(page.locator(".map-top")).toBeVisible();
   const c = await centre(page);
   await page.mouse.move(c.x, c.y);
@@ -111,7 +111,7 @@ test("CUJ 18: steps down to a layer under a globe at the same place, and back up
 test("CUJ 19: a world on a schematic map revolves as the years move, and there is no measuring", async ({
   page,
 }, info) => {
-  await page.goto("/chronicles");
+  await page.goto(at("/chronicles"));
   const chronicle = await page.evaluate(async (title) => {
     const json = { "content-type": "application/json" };
     const made = await (
@@ -197,9 +197,9 @@ test("CUJ 19: a world on a schematic map revolves as the years move, and there i
 test("CUJ 17: lays a globe flat in Robinson, turns it, tilts it and focuses on a region", async ({
   page,
 }, info) => {
-  await page.goto("/maps");
+  await page.goto(at("/maps"));
   const id = await makeMap(page, `Atlas ${info.project.name}`, "sphere");
-  await page.goto(`/map/${id}`);
+  await page.goto(at(`/map/${id}`));
   await expect(page.locator(".map-top")).toBeVisible();
   await expect(page).toHaveURL(/v=g/);
 

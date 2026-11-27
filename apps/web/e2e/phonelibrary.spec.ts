@@ -1,5 +1,5 @@
 import { expect, type Page, test } from "@playwright/test";
-import { entry, noSidewaysScroll, openSideBar } from "./helpers.ts";
+import { entry, noSidewaysScroll, openSideBar, at } from "./helpers.ts";
 
 // Stage 26: on a phone the library is a row in the drawer's menu and opens as a panel over it.
 
@@ -468,7 +468,7 @@ test("revealing a folder from Home and closing the drawer gives the focus back",
   isMobile,
 }) => {
   test.skip(!isMobile, "The drawer is the phone's side bar.");
-  await page.goto("/");
+  await page.goto(at("/"));
   const folder = page.getByRole("button", { name: "01 Places", exact: true });
   await folder.click();
   await expect(panel(page)).toBeVisible();

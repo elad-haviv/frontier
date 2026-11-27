@@ -1,11 +1,11 @@
 import { expect, type Page, test } from "@playwright/test";
-import { noSidewaysScroll } from "./helpers.ts";
+import { noSidewaysScroll, at } from "./helpers.ts";
 
 const SHOTS = process.env.CH_SHOTS;
 
 /** Makes a chronicle through the API with the stage 17 example, and opens it. */
 async function makeExample(page: Page, title: string) {
-  await page.goto("/chronicles");
+  await page.goto(at("/chronicles"));
   const id = await page.evaluate(async (title) => {
     const json = { "content-type": "application/json" };
     const made = await (
@@ -63,7 +63,7 @@ async function makeExample(page: Page, title: string) {
     });
     return made.id as string;
   }, title);
-  await page.goto(`/chronicle/${id}`);
+  await page.goto(at(`/chronicle/${id}`));
   await expect(page.locator(".ch-bar h1")).toHaveText(title);
   return id;
 }
@@ -159,7 +159,7 @@ test("CUJ 14 on the timeline: what is too quick and what is too slow", async ({ 
   const phone = info.project.name === "phone";
   if (phone) await page.setViewportSize({ width: 375, height: 740 });
   const title = `Ezob trial ${info.project.name}`;
-  await page.goto("/chronicles");
+  await page.goto(at("/chronicles"));
   await page.locator(".new-map input[type=text]").fill(title);
   await page.getByRole("button", { name: "Make the chronicle" }).click();
   await expect(page.locator(".ch-bar h1")).toHaveText(title);
@@ -456,7 +456,7 @@ test("the map and the timeline open each other at the same year", async ({ page 
     return id;
   }, `Bridge map ${info.project.name}`);
 
-  await page.goto(`/map/${map}?t=290&c=${id}`);
+  await page.goto(at(`/map/${map}?t=290&c=${id}`));
   await page.getByRole("link", { name: "Open timeline ↗" }).click();
   await expect(page.locator(".ch-bar h1")).toHaveText(`Bridge ${info.project.name}`);
   await expect(page.locator(".tl-mapflag")).toHaveText("Maps: 290");
@@ -511,7 +511,7 @@ test("an event added by an entry's name is linked, and the entry lists the chron
   const phone = info.project.name === "phone";
   if (phone) await page.setViewportSize({ width: 375, height: 740 });
   const title = `Linked ${info.project.name}`;
-  await page.goto("/chronicles");
+  await page.goto(at("/chronicles"));
   await page.locator(".new-map input[type=text]").fill(title);
   await page.getByRole("button", { name: "Make the chronicle" }).click();
 
@@ -549,7 +549,7 @@ test("typing in an event while its link is being saved keeps both the link and t
 }, info) => {
   const phone = info.project.name === "phone";
   if (phone) await page.setViewportSize({ width: 375, height: 740 });
-  await page.goto("/chronicles");
+  await page.goto(at("/chronicles"));
   await page.locator(".new-map input[type=text]").fill(`Slow link ${info.project.name}`);
   await page.getByRole("button", { name: "Make the chronicle" }).click();
   await addEvent(page, phone, "Shade's years");

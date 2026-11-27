@@ -8,6 +8,7 @@ import {
   openEditor,
   rightPanel,
   saved,
+  at,
 } from "./helpers.ts";
 
 // Canvas pixels are not read: the tests act through ?focus=, which centres a node, so once the
@@ -15,7 +16,7 @@ import {
 
 const HARBOR = "01 Places/Harbor/Harbor.md";
 const MIRA = "02 People/Mira.md";
-const graphOn = (path: string) => `/graph?focus=${encodeURIComponent(path)}`;
+const graphOn = (path: string) => at(`/graph?focus=${encodeURIComponent(path)}`);
 const canvas = (page: Page) => page.locator("canvas.graph-canvas");
 const card = (page: Page) => page.getByRole("region", { name: "Selected entry" });
 
@@ -30,7 +31,7 @@ async function middle(page: Page): Promise<{ x: number; y: number }> {
 
 test("CUJ 1: the whole library, hover, select and open", async ({ page, isMobile }) => {
   test.skip(isMobile, "Hover and the keyboard are for a desktop.");
-  await page.goto("/");
+  await page.goto(at("/"));
   await goTo(page, "Graph");
   await expect(page).toHaveURL(/\/graph$/);
   await settled(page);
@@ -65,7 +66,7 @@ test("CUJ 1: the whole library, hover, select and open", async ({ page, isMobile
 
 test("CUJ 2: find an entry with the keyboard", async ({ page, isMobile }) => {
   test.skip(isMobile, "The keyboard's way is for a desktop.");
-  await page.goto("/graph");
+  await page.goto(at("/graph"));
   await settled(page);
   await page.keyboard.press("/");
   await expect(page.getByPlaceholder("Find an entry")).toBeFocused();
@@ -80,7 +81,7 @@ test("CUJ 2: find an entry with the keyboard", async ({ page, isMobile }) => {
   await expect(page).toHaveURL(entry("01 Places/Harbor/Old Quay.md"));
 
   // The Entries tab: down one, Enter selects it, Enter again opens it.
-  await page.goto("/graph");
+  await page.goto(at("/graph"));
   await settled(page);
   const panel = await rightPanel(page, "Entries");
   const list = panel.getByRole("listbox", { name: "Entries on the graph" });
@@ -96,7 +97,7 @@ test("CUJ 2: find an entry with the keyboard", async ({ page, isMobile }) => {
 });
 
 test("CUJ 3: narrow it down by folder", async ({ page }) => {
-  await page.goto("/graph");
+  await page.goto(at("/graph"));
   await settled(page);
   let panel = await rightPanel(page, "Filters");
   await panel.getByRole("checkbox", { name: "03 Things" }).uncheck();
@@ -112,7 +113,7 @@ test("CUJ 5: on a phone, tap to select and tap again to open, pinch to zoom", as
   isMobile,
 }) => {
   test.skip(!isMobile, "Touch is for a phone.");
-  await page.goto("/");
+  await page.goto(at("/"));
   await goTo(page, "Graph");
   await expect(page).toHaveURL(/\/graph$/);
 

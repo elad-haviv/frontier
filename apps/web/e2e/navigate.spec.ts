@@ -7,6 +7,7 @@ import {
   onMain,
   openMenu,
   publish,
+  at,
 } from "./helpers.ts";
 
 test("jumps to an entry by name or alias with the switcher", async ({ page }) => {
@@ -44,7 +45,7 @@ test("CUJ 3: renames an entry and rewrites the links to it in one commit", async
   );
   await expect(page.locator(".draft-note")).toContainText("renamed from Lantern");
 
-  await page.goto("/unpublished");
+  await page.goto(at("/unpublished"));
   await expect(page.locator(".changes > li")).toContainText(
     "03 Things/Lantern.md → 03 Things/Storm Lantern.md",
   );
@@ -65,7 +66,7 @@ test("refuses a rename onto an existing entry, and one in an append-only folder"
   page,
 }) => {
   // The old address of the rename page opens the entry, where renaming is now.
-  await page.goto("/rename/" + ["02 People", "Mira.md"].map(encodeURIComponent).join("/"));
+  await page.goto(at("/rename/") + ["02 People", "Mira.md"].map(encodeURIComponent).join("/"));
   await expect(page).toHaveURL(/\/e\/02%20People\/Mira\.md$/);
   await entryAction(page, "Rename");
   const field = page.getByRole("textbox", { name: "New name for Mira" });

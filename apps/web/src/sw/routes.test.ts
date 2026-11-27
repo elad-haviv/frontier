@@ -7,7 +7,14 @@ const page = (path: string) => at(path, "GET", "navigate");
 
 describe("what the service worker answers", () => {
   it("answers every page address with the app", () => {
-    for (const path of ["/", "/e/02%20People/Mira.md", "/map/x", "/login", "/settings?x=1"]) {
+    for (const path of [
+      "/",
+      "/p/avalymia/e/02%20People/Mira.md",
+      "/p/avalymia/map/x",
+      "/projects",
+      "/login",
+      "/settings?x=1",
+    ]) {
       expect(page(path), path).toBe("shell");
     }
   });
@@ -22,12 +29,15 @@ describe("what the service worker answers", () => {
   });
 
   it("answers images of the library, and only those", () => {
-    expect(at("/api/images?path=99%20Appendices%2Fa.png&w=640", "GET", "no-cors")).toBe("image");
-    expect(at("/api/images?path=a.png")).toBe("image");
-    expect(at("/api/images?path=a.png&w=640&branch=frontier%2Fx")).toBe("none");
-    expect(at("/api/images?branch=frontier%2Fx")).toBe("none");
-    expect(at("/api/images/find?name=a.png&from=b.md")).toBe("none");
-    expect(page("/api/images?path=a.png&w=640")).toBe("none");
+    const images = "/api/p/avalymia/images";
+    expect(at(`${images}?path=99%20Appendices%2Fa.png&w=640`, "GET", "no-cors")).toBe("image");
+    expect(at(`${images}?path=a.png`)).toBe("image");
+    expect(at(`${images}?path=a.png&w=640&branch=frontier%2Fx`)).toBe("none");
+    expect(at(`${images}?branch=frontier%2Fx`)).toBe("none");
+    expect(at("/api/p/avalymia/images/find?name=a.png&from=b.md")).toBe("none");
+    expect(page(`${images}?path=a.png&w=640`)).toBe("none");
+    // The old address of the images, from before projects, is not answered.
+    expect(at("/api/images?path=a.png")).toBe("none");
   });
 
   it("never answers data, writes, the session, the status or its own files", () => {
@@ -36,10 +46,11 @@ describe("what the service worker answers", () => {
       "/api/login",
       "/api/passkeys/login/options",
       "/api/settings",
-      "/api/status",
-      "/api/status/events",
-      "/api/entries?path=a.md",
-      "/api/tree",
+      "/api/p/avalymia/status",
+      "/api/p/avalymia/status/events",
+      "/api/p/avalymia/entries?path=a.md",
+      "/api/p/avalymia/tree",
+      "/api/projects",
       "/health",
       "/sw.js",
       "/build.json",
@@ -51,13 +62,16 @@ describe("what the service worker answers", () => {
       expect(at("/api/drafts", method)).toBe("none");
       expect(at("/assets/a-1.js", method)).toBe("none");
       expect(at("/", method, "navigate")).toBe("none");
-      expect(at("/api/images?path=a.png", method)).toBe("none");
+      expect(at("/api/p/avalymia/images?path=a.png", method)).toBe("none");
     }
   });
 
   it("reads the image an address shows", () => {
     const base = "https://frontier.example.com";
-    expect(imagePath(new URL("/api/images?path=a%2Fb.png&w=320", base))).toBe("a/b.png");
-    expect(imagePath(new URL("/api/tree?path=a", base))).toBeNull();
+    const one = imagePath(new URL("/api/p/avalymia/images?path=a%2Fb.png&w=320", base));
+    expect(one).toBe(imagePath(new URL("/api/p/avalymia/images?path=a%2Fb.png&w=1280", base)));
+    // The same path in another project is another image.
+    expect(one).not.toBe(imagePath(new URL("/api/p/other/images?path=a%2Fb.png&w=320", base)));
+    expect(imagePath(new URL("/api/p/avalymia/tree?path=a", base))).toBeNull();
   });
 });

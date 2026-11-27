@@ -14,6 +14,7 @@ import {
   REMOTE,
   review,
   saved,
+  at,
 } from "./helpers.ts";
 
 test("adds an image through the image dialog's Upload…, shows it before publishing, then publishes it", async ({
@@ -41,7 +42,7 @@ test("adds an image through the image dialog's Upload…, shows it before publis
   await expect(shown).toBeVisible();
   expect(await shown.evaluate((img: HTMLImageElement) => img.naturalWidth)).toBeGreaterThan(0);
 
-  await page.goto("/unpublished");
+  await page.goto(at("/unpublished"));
   await expect(page.locator(".change-image")).toBeVisible();
   await review(page);
   await publish(page, `Add the ledger cover at ${info.project.name} size`);

@@ -1,5 +1,5 @@
 import { expect, type Page, test } from "@playwright/test";
-import { edit, entry, noSidewaysScroll, review, setUpAi } from "./helpers.ts";
+import { at, edit, entry, noSidewaysScroll, review, setUpAi } from "./helpers.ts";
 
 /**
  * Stage 25, the entry's half: back to last, resume position, pins, "From here", next and previous
@@ -525,7 +525,7 @@ test.describe("What's missing (AI)", () => {
     await expect(card.getByRole("alert")).toContainText("No model is chosen");
     await expect(card.getByRole("link", { name: "Open Settings" })).toHaveAttribute(
       "href",
-      "/settings/you/ai-models/conversation",
+      at("/settings/you/ai-models/conversation"),
     );
     await card.getByRole("button", { name: "Retry" }).click();
     await expect(card.getByRole("alert")).toBeVisible();

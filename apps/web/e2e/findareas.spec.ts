@@ -3,6 +3,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, type Page, test } from "@playwright/test";
 import type { Position } from "@frontier/geo";
+import { at } from "./helpers.ts";
 
 /**
  * Find areas (stage 19): zones made from the map's own picture. The pictures are made by
@@ -23,7 +24,7 @@ type Stored = { space: { kind: string }; features: Feature[] };
 
 /** Uploads a fixture picture and makes a map of it; returns the map's id. */
 async function makeMap(page: Page, title: string, picture: string, kind: "flat" | "sphere") {
-  if (!page.url().startsWith("http")) await page.goto("/maps");
+  if (!page.url().startsWith("http")) await page.goto(at("/maps"));
   const bytes = readFileSync(join(here, "fixtures", picture)).toString("base64");
   return page.evaluate(
     async ({ title, picture, bytes, kind }) => {
@@ -73,7 +74,7 @@ async function onMap(page: Page, [x, y]: Position) {
 }
 
 async function open(page: Page, id: string) {
-  await page.goto(`/map/${id}?edit=1`);
+  await page.goto(at(`/map/${id}?edit=1`));
   await expect(page.locator(".map-top")).toBeVisible();
   await expect(page).toHaveURL(/v=/);
   await page.waitForTimeout(300);

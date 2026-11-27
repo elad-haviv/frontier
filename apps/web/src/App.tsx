@@ -11,7 +11,8 @@ import { LoginDialog } from "./components/LoginDialog.tsx";
 import { OutsideShell } from "./components/OutsideShell.tsx";
 import { ProjectScope } from "./components/ProjectScope.tsx";
 import { AllProjects } from "./pages/projects/AllProjects.tsx";
-import { movedInto, projectRoot, withoutProject } from "./project.ts";
+import { Navigate as ProjectNavigate, useLocation as useProjectLocation } from "./nav.tsx";
+import { movedInto, projectRoot } from "./project.ts";
 import { fileUnfiled } from "./projectStorage.ts";
 import {
   clearProjects,
@@ -110,9 +111,8 @@ function OneMap() {
 
 /** Renaming happens on the entry's own page now; an old address opens the entry. */
 function RenameRedirect() {
-  const { pathname } = useLocation();
-  const { rest } = withoutProject(pathname);
-  return <Navigate to={"/e/" + rest.slice("/rename/".length)} replace />;
+  const { pathname } = useProjectLocation();
+  return <ProjectNavigate to={pathname.replace(/^\/rename\//, "/e/")} replace />;
 }
 
 /**
@@ -196,7 +196,7 @@ function ProjectPages() {
         <Route path="/conflict/:id" element={<ConflictPage />} />
         <Route path="/versions/:id" element={<VersionsPage />} />
         <Route path="/status" element={<StatusPage />} />
-        <Route path="/login" element={<Navigate to="/" replace />} />
+        <Route path="/login" element={<ProjectNavigate to="/" replace />} />
         <Route
           path="*"
           element={<p className="center muted">There is no page at this address.</p>}

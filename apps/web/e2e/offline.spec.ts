@@ -16,6 +16,7 @@ import {
   newMapInForm,
   openMenu,
   openSideBar,
+  at,
 } from "./helpers.ts";
 
 /**
@@ -26,7 +27,7 @@ import {
 
 /** Opens the app signed in and waits until its worker is active and the sign-in is noted. */
 async function install(page: Page): Promise<void> {
-  await page.goto("/");
+  await page.goto(at("/"));
   await expect(page.locator(".home h1")).toBeVisible();
   await page.evaluate(() => navigator.serviceWorker.ready);
   await expect
@@ -171,7 +172,7 @@ test("Log out needs a connection", async ({ page, context }) => {
 });
 
 test("the app can be installed: a manifest, icons and an Apple touch icon", async ({ page }) => {
-  await page.goto("/");
+  await page.goto(at("/"));
   await expect(page.locator(".home h1")).toBeVisible();
   const links = await page.evaluate(() => ({
     manifest: [...document.querySelectorAll('link[rel="manifest"]')].map((l) =>
@@ -364,13 +365,13 @@ test("a map on the device opens with its image, and a marker added offline is se
 
 test("CUJ 8: the graph offline, drawn from the compact index", async ({ page }) => {
   await install(page);
-  await page.goto("/graph");
+  await page.goto(at("/graph"));
   await expect(page.locator("canvas.graph-canvas")).toHaveAttribute("aria-busy", "false");
   const online = await page.locator("canvas.graph-canvas").getAttribute("aria-label");
   await kept(page, "/api/graph");
   await reloadOffline(page);
 
-  await page.goto(`/graph?focus=${encodeURIComponent(HARBOR)}`);
+  await page.goto(at(`/graph?focus=${encodeURIComponent(HARBOR)}`));
   await expect(page.locator("canvas.graph-canvas")).toHaveAttribute("aria-busy", "false");
   await expect(page.locator("canvas.graph-canvas")).toHaveAttribute("aria-label", online!);
   await expect(page.locator(".offline-copy")).toContainText("Offline copy from");
@@ -508,7 +509,7 @@ test("CUJ 4: a map changed on the train and at home keeps the other side, compar
     });
     return id;
   }, `Coast ${Date.now()}`);
-  await page.goto(`/map/${id}?edit=1`);
+  await page.goto(at(`/map/${id}?edit=1`));
   await expect(page.locator(".map-canvas").first()).toHaveAttribute("data-images", "1");
   await kept(page, `/api/maps/${id}`);
 
@@ -636,7 +637,7 @@ test("Offline copy shows in Settings with no connection, and the rest say they n
   // A key is on this device already.
   await giveDeviceKeys(page);
   await reloadOffline(page);
-  await page.goto("/settings");
+  await page.goto(at("/settings"));
   // Every section is listed; those that need the server say so.
   const list = page.getByRole("navigation", { name: "Settings" });
   await expect(list.getByRole("link", { name: /AI models/ })).toContainText("Needs a connection");

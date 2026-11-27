@@ -110,8 +110,25 @@ export const hasBranch = (branch: string): boolean => {
 };
 export const lastBody = () => git(REMOTE, "log", "-1", "--format=%B", "main");
 
-export const entry = (path: string) => "/e/" + path.split("/").map(encodeURIComponent).join("/");
-export const edit = (path: string) => "/edit/" + path.split("/").map(encodeURIComponent).join("/");
+/**
+ * The e2e server's first project: it is named from the sample, so its address is `sample`. Every
+ * page of the app is under `/p/<slug>/` (stage 27b); the specs write addresses as the app's pages
+ * know them (`/maps`, `/e/...`) and put them through `at`.
+ */
+export const PROJECT = "sample";
+
+/** The address of a page of the first project: `at("/maps")` is `/p/sample/maps`. */
+export const at = (path: string, project = PROJECT): string =>
+  path === "/" ? `/p/${project}` : `/p/${project}${path}`;
+
+/** The same page without its project, as the app's own patterns see it. */
+export const withoutProject = (url: string): string =>
+  url.replace(/^(https?:\/\/[^/]+)?\/p\/[^/?#]+/, "$1") || "/";
+
+export const entry = (path: string) =>
+  at("/e/" + path.split("/").map(encodeURIComponent).join("/"));
+export const edit = (path: string) =>
+  at("/edit/" + path.split("/").map(encodeURIComponent).join("/"));
 
 /** Opens a file in the editor and puts the cursor at the very end. */
 export async function openEditor(page: Page, path: string): Promise<void> {
@@ -126,7 +143,7 @@ export async function saved(page: Page): Promise<void> {
 
 /** Reviews every unpublished change and stops at the plan, before Publish. */
 export async function review(page: Page): Promise<void> {
-  await page.goto("/unpublished");
+  await page.goto(at("/unpublished"));
   await expect(page.locator(".changes > li").first()).toBeVisible();
   await page.locator("button.big").click();
   await expect(page.locator(".plan")).toBeVisible();
@@ -329,7 +346,7 @@ export async function newMapInForm(
   space: "flat" | "sphere" | "schematic",
   image = "map one.png",
 ): Promise<void> {
-  await page.goto("/maps");
+  await page.goto(at("/maps"));
   await openNewMap(page);
   await page.locator(".new-map input[type=text]").fill(title);
   await chooseKind(page, space === "sphere" ? "Globe" : "Flat map");

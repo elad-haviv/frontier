@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { answerDialog, EMAIL, keepSession, PASSWORD } from "./helpers.ts";
+import { answerDialog, EMAIL, keepSession, PASSWORD, at } from "./helpers.ts";
 
 test("adds a passkey, logs in with it, and switches the password off and on again", async ({
   page,
@@ -33,7 +33,7 @@ test("adds a passkey, logs in with it, and switches the password off and on agai
     });
   });
 
-  await page.goto("/settings/account");
+  await page.goto(at("/settings/account"));
   await page.getByLabel("Add a passkey on this device").fill("Test phone");
   await page.getByRole("button", { name: "Add a passkey" }).click();
   const again = page.getByRole("dialog");
@@ -52,7 +52,7 @@ test("adds a passkey, logs in with it, and switches the password off and on agai
   await page.getByRole("button", { name: "Use a passkey" }).click();
   // In: the shell's search is there, in the side bar or on the phone's top line.
   await expect(page.getByRole("button", { name: "Search", exact: true })).toBeVisible();
-  await page.goto("/settings/account");
+  await page.goto(at("/settings/account"));
   await expect(page.locator(".passkeys")).toContainText("Test phone");
 
   await page.getByLabel(/Switch the password off/).click();

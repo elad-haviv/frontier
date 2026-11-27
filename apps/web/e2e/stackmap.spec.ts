@@ -1,5 +1,5 @@
 import { expect, type Page, test } from "@playwright/test";
-import { rightPanel } from "./helpers.ts";
+import { rightPanel, at } from "./helpers.ts";
 
 /** Three globes that lie one under the other, with places straight above one another and passages. */
 async function seed(page: Page, tag: string) {
@@ -83,9 +83,9 @@ const labelsOf = (page: Page, id: string) =>
 test("a map with globes under it opens as a stack of layers, with straight above and below and passages", async ({
   page,
 }, info) => {
-  await page.goto("/maps");
+  await page.goto(at("/maps"));
   const ids = await seed(page, info.project.name);
-  await page.goto(`/map/${ids.lab}`);
+  await page.goto(at(`/map/${ids.lab}`));
   await page.getByRole("link", { name: "Layers stacked" }).first().click();
   await expect(page.locator(".stack-page .star-canvas")).toBeVisible();
   await expect(page.getByRole("heading", { level: 1 })).toContainText("what lies under it");
@@ -110,9 +110,9 @@ test("a map with globes under it opens as a stack of layers, with straight above
 test("places are renamed and removed in the stack, and a removed place takes its passages with it", async ({
   page,
 }, info) => {
-  await page.goto("/maps");
+  await page.goto(at("/maps"));
   const ids = await seed(page, info.project.name);
-  await page.goto(`/stack/${ids.lab}?edit=1`);
+  await page.goto(at(`/stack/${ids.lab}?edit=1`));
   await expect(page.locator(".stack-page .star-canvas")).toBeVisible();
   const layers = await rightPanel(page, "Layers");
   await layers
@@ -145,9 +145,9 @@ test("places are renamed and removed in the stack, and a removed place takes its
 test("a marker is put on the layer being worked on, and a passage joins two layers", async ({
   page,
 }, info) => {
-  await page.goto("/maps");
+  await page.goto(at("/maps"));
   const ids = await seed(page, info.project.name);
-  await page.goto(`/stack/${ids.lab}?edit=1`);
+  await page.goto(at(`/stack/${ids.lab}?edit=1`));
   const canvas = page.locator(".stack-page .star-canvas");
   await expect(canvas).toBeVisible();
   const name = page.getByRole("textbox", { name: "Name" });

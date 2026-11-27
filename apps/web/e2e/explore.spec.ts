@@ -1,5 +1,5 @@
 import { expect, type Page, test } from "@playwright/test";
-import { setUpAi } from "./helpers.ts";
+import { setUpAi, at } from "./helpers.ts";
 import {
   cleanUp,
   makeMap,
@@ -83,7 +83,7 @@ async function openExplore(page: Page, title: string) {
     features: FEATURES,
     styles: [RIVER_STYLE, ROAD_STYLE],
   });
-  await page.goto(`/map/${id}`);
+  await page.goto(at(`/map/${id}`));
   await expect(page.locator(".map-top")).toBeVisible();
   await expect(page).toHaveURL(/v=/);
   await page.waitForTimeout(300);

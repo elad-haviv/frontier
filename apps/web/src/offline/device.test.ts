@@ -386,3 +386,51 @@ describe("unsent changes laid over the index and the tree", () => {
     expect(servedFromDevice(t)).toBe(clock);
   });
 });
+
+describe("one device copy for each project", () => {
+  it("reads a project's address as the copy's own, and nothing else", () => {
+    expect(splitProjectUrl("/api/p/avalymia/entries?path=A.md")).toEqual({
+      slug: "avalymia",
+      bare: "/api/entries?path=A.md",
+    });
+    expect(splitProjectUrl("/api/p/a%20b/tree")).toEqual({ slug: "a b", bare: "/api/tree" });
+    expect(splitProjectUrl("/api/projects")).toBeNull();
+    expect(splitProjectUrl("/api/entries?path=A.md")).toBeNull();
+  });
+
+  it("empties only its own project's images from the cache they all share", async () => {
+    const mine = new Request("https://x.example/api/p/avalymia/images?path=a.png");
+    const other = new Request("https://x.example/api/p/other/images?path=a.png");
+    const kept = new Map([mine, other].map((r) => [r.url, r]));
+    const cache = {
+      keys: async () => [...kept.values()],
+      delete: async (r: Request) => kept.delete(r.url),
+    };
+    const copy = new DeviceCopy({
+      store: async () => store,
+      records: () => [],
+      online: () => true,
+      unreachable: () => undefined,
+      caches: { open: async () => cache as unknown as Cache },
+      imagePrefix: "/api/p/avalymia/images",
+    });
+    await copy.clear();
+    expect([...kept.keys()]).toEqual([other.url]);
+  });
+
+  it("says when its copy starts and when it is emptied, for the switcher's mark", async () => {
+    const told: boolean[] = [];
+    const copy = new DeviceCopy({
+      store: async () => store,
+      records: () => [],
+      online: () => true,
+      unreachable: () => undefined,
+      onDevice: (on) => told.push(on),
+    });
+    await copy.keep("/api/graph", { kind: "stored", shape: "graph" }, INDEX);
+    await copy.keep("/api/tree", { kind: "stored", shape: "tree" }, TREE);
+    expect(told).toEqual([true]);
+    await copy.clear();
+    expect(told).toEqual([true, false]);
+  });
+});

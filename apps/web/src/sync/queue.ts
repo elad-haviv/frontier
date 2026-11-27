@@ -1143,10 +1143,10 @@ export class QueueHub {
     this.senderListeners.add(listener);
     return () => this.senderListeners.delete(listener);
   }
-  database(): Promise<Store> {
+  async database(): Promise<Store> {
     return this.open().database();
   }
-  put(key: QueueKey, value: unknown, meta?: PutMeta): Promise<void> {
+  async put(key: QueueKey, value: unknown, meta?: PutMeta): Promise<void> {
     return this.open().put(key, value, meta);
   }
   get(key: QueueKey): Promise<QueueRecord | undefined> {
@@ -1169,13 +1169,13 @@ export class QueueHub {
   private listChanged(): void {
     for (const l of [...this.listListeners]) l();
   }
-  retry(key: QueueKey): Promise<void> {
+  async retry(key: QueueKey): Promise<void> {
     return this.open().retry(key);
   }
-  drop(key: QueueKey): Promise<void> {
+  async drop(key: QueueKey): Promise<void> {
     return this.open().drop(key);
   }
-  sendNow(key: QueueKey, timeoutMs?: number): Promise<void> {
+  async sendNow(key: QueueKey, timeoutMs?: number): Promise<void> {
     return this.open().sendNow(key, timeoutMs);
   }
 

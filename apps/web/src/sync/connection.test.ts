@@ -134,4 +134,40 @@ describe("the connection service", () => {
     await c.probe();
     expect(c.state).toBe("online");
   });
+
+  it("listens to the project that is open, and shows none of the last one's counts", () => {
+    const { c } = make(vi.fn() as never);
+    c.start();
+    const [first] = FakeSource.made;
+    first!.open();
+    first!.send("status", { unpublished: 4 });
+    expect(c.snapshot).toEqual({ unpublished: 4 });
+    // Another project opens: the counts go, and its own stream starts.
+    slug = "beta";
+    c.projectChanged();
+    expect(first!.readyState).toBe(2);
+    expect(c.snapshot).toBeNull();
+    expect(FakeSource.made.at(-1)!.url).toBe("/api/p/beta/status/events");
+    FakeSource.made.at(-1)!.open();
+    FakeSource.made.at(-1)!.send("status", { unpublished: 0 });
+    expect(c.snapshot).toEqual({ unpublished: 0 });
+    // The same project again opens nothing new.
+    const count = FakeSource.made.length;
+    c.projectChanged();
+    expect(FakeSource.made).toHaveLength(count);
+    c.stop();
+  });
+
+  it("listens to nothing outside a project, and asks who is in instead", async () => {
+    const fetch = vi.fn(() => answer(200, { id: "p" }));
+    const { c } = make(fetch as never);
+    slug = null;
+    c.start();
+    expect(FakeSource.made).toHaveLength(0);
+    await c.probe();
+    expect(fetch).toHaveBeenCalledWith("/api/me", { credentials: "same-origin" });
+    expect(c.state).toBe("online");
+    expect(c.snapshot).toBeNull();
+    c.stop();
+  });
 });

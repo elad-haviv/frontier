@@ -1,11 +1,11 @@
 import { expect, type Page, test } from "@playwright/test";
-import { newMapInForm, pickEntry } from "./helpers.ts";
+import { newMapInForm, pickEntry, at } from "./helpers.ts";
 
 const IMAGE = "map one.png";
 
 /** Makes the main chronicle of CUJ 16 through the API and returns the ids of its spans. */
 async function makeChronicle(page: Page, title: string, entryPath: string) {
-  await page.goto("/chronicles");
+  await page.goto(at("/chronicles"));
   return page.evaluate(
     async ({ title, entryPath }) => {
       const json = { "content-type": "application/json" };

@@ -1,6 +1,6 @@
 import { expect, type Page, test } from "@playwright/test";
 import type { Position } from "@frontier/geo";
-import { drawn, setUpAi as setUpAiAs } from "./helpers.ts";
+import { drawn, setUpAi as setUpAiAs, at } from "./helpers.ts";
 
 /**
  * The map tools of stage 16d: labels, snapping, making a feature's entry from its entry list,
@@ -26,7 +26,7 @@ type Stored = { space: { width: number; height: number }; features: Feature[] };
  * the map's width and height, and returns its id.
  */
 async function makeMap(page: Page, title: string, features: Record<string, unknown>[] = []) {
-  if (!page.url().startsWith("http")) await page.goto("/maps");
+  if (!page.url().startsWith("http")) await page.goto(at("/maps"));
   return page.evaluate(
     async ({ title, image, features }) => {
       const json = { "content-type": "application/json" };
@@ -91,7 +91,7 @@ async function onMap(page: Page, [fx, fy]: Position) {
 }
 
 async function open(page: Page, id: string, query = "edit=1") {
-  await page.goto(`/map/${id}?${query}`);
+  await page.goto(at(`/map/${id}?${query}`));
   await expect(page.locator(".map-top")).toBeVisible();
   await expect(page).toHaveURL(/v=/);
   await page.waitForTimeout(300);

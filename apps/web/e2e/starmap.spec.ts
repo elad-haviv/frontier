@@ -1,5 +1,5 @@
 import { expect, type Page, test } from "@playwright/test";
-import { chooseKind, openNewMap, rightPanel } from "./helpers.ts";
+import { chooseKind, openNewMap, rightPanel, at } from "./helpers.ts";
 
 /** Throws the open map away, so the next test finds nothing unpublished. */
 async function discardMap(page: Page) {
@@ -9,7 +9,7 @@ async function discardMap(page: Page) {
 }
 
 async function newStarMap(page: Page, title: string) {
-  await page.goto("/maps");
+  await page.goto(at("/maps"));
   await openNewMap(page);
   await page.locator(".new-map input[type=text]").fill(title);
   await chooseKind(page, "Star map");
@@ -89,7 +89,7 @@ test("a star map is made without an image, with stars placed on the plane, joine
 test("the New map form hides the image for a star map and shows it again for a flat map", async ({
   page,
 }) => {
-  await page.goto("/maps");
+  await page.goto(at("/maps"));
   await openNewMap(page);
   const image = page.locator(".new-map .field:has(.chosen-image)");
   await expect(image).toBeVisible();
@@ -160,7 +160,7 @@ test("a star slides level when dragged, rises with its handle, and undo takes ea
 });
 
 test("a star map made in parsecs keeps that unit", async ({ page }, info) => {
-  await page.goto("/maps");
+  await page.goto(at("/maps"));
   await openNewMap(page);
   await page.locator(".new-map input[type=text]").fill(`Parsecs ${info.project.name}`);
   await chooseKind(page, "Star map");

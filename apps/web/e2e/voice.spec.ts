@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { setUpAi } from "./helpers.ts";
+import { setUpAi, at } from "./helpers.ts";
 
 // One test at a time changes the AI settings, which are shared by the whole server.
 test.describe.configure({ mode: "serial" });
@@ -57,7 +57,7 @@ test("dictates an idea, drafts an entry, edits and decides, then keeps it as an 
   await page.addInitScript(FAKE_SPEECH);
   await setUpAi(page, { conversation: "sample/reader" });
   await removeOurs(page);
-  await page.goto("/ask");
+  await page.goto(at("/ask"));
 
   // Tap to start, tap to stop; the words land in the box and stay editable.
   const box = page.getByLabel("A question or an idea");
@@ -99,7 +99,7 @@ test("dictates an idea, drafts an entry, edits and decides, then keeps it as an 
 
   // It waits under Unpublished as a new entry, written as edited.
   try {
-    await page.goto("/unpublished");
+    await page.goto(at("/unpublished"));
     await expect(page.getByText("Harbor Warden").first()).toBeVisible();
     const mine = (await ours(page))[0]!;
     expect(mine.kind).toBe("create");
@@ -116,7 +116,7 @@ test("says so when this browser cannot dictate, and the box still works", async 
     Object.assign(window, { SpeechRecognition: undefined, webkitSpeechRecognition: undefined });
   });
   await setUpAi(page, { conversation: "sample/reader" });
-  await page.goto("/ask");
+  await page.goto(at("/ask"));
   await expect(page.getByRole("button", { name: "Dictate" })).toHaveCount(0);
   await expect(page.getByText("Dictation is not available in this browser.")).toBeVisible();
   await page.getByLabel("A question or an idea").fill("typed instead");

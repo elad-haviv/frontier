@@ -1,5 +1,5 @@
 import { expect, type Page, test } from "@playwright/test";
-import { answerDialog, AUTH_FILE, noSidewaysScroll, setUpAi } from "./helpers.ts";
+import { answerDialog, AUTH_FILE, noSidewaysScroll, setUpAi, at } from "./helpers.ts";
 
 // The AI settings are one per server: these tests take turns and put back what they change.
 test.describe.configure({ mode: "serial" });
@@ -8,7 +8,7 @@ const isPhone = (name: string) => name === "phone";
 
 /** Takes the Anthropic key off this device, if it holds one. */
 async function removeAnthropic(page: Page) {
-  await page.goto("/settings/device/ai-keys");
+  await page.goto(at("/settings/device/ai-keys"));
   const row = page.locator(".provider-row", { hasText: "Anthropic" });
   // The row is always listed; wait for it before looking for what it offers.
   await expect(row).toBeVisible();
@@ -23,7 +23,7 @@ test("the menu: a rail on a wide screen, a list to drill into on a phone, and de
   page,
 }, info) => {
   await setUpAi(page, { conversation: "sample/reader" });
-  await page.goto("/settings");
+  await page.goto(at("/settings"));
   const menu = page.getByRole("navigation", { name: "Settings" });
   if (isPhone(info.project.name)) {
     // The list, each row with its state; a row opens its section, and Back comes home.
@@ -51,7 +51,7 @@ test("the menu: a rail on a wide screen, a list to drill into on a phone, and de
     await expect(page.getByRole("button", { name: "Log out" })).toBeVisible();
   }
   // A deep link to a task opens its picker.
-  await page.goto("/settings/you/ai-models/conversation");
+  await page.goto(at("/settings/you/ai-models/conversation"));
   await expect(
     page.getByRole("combobox", { name: "Find a model for Lore conversations" }),
   ).toBeFocused();
@@ -59,7 +59,7 @@ test("the menu: a rail on a wide screen, a list to drill into on a phone, and de
   await expect(page).toHaveURL(/\/settings\/you\/ai-models$/);
   await expect(page.getByRole("combobox")).toHaveCount(0);
   // An unknown section goes back to Settings.
-  await page.goto("/settings/nowhere");
+  await page.goto(at("/settings/nowhere"));
   await expect(page).toHaveURL(/\/settings(\/you\/ai-models)?$/);
 });
 
@@ -83,7 +83,7 @@ test("adds a key: a refused key is said under the field, a good one is tested an
   test.skip(isPhone(info.project.name), "One server: the phone runs the picker test instead.");
   await setUpAi(page, { conversation: "sample/reader" });
   await removeAnthropic(page);
-  await page.goto("/settings/device/ai-keys");
+  await page.goto(at("/settings/device/ai-keys"));
   const row = page.locator(".provider-row", { hasText: "Anthropic" });
   await expect(row).toContainText("No key on this device");
   await row.getByRole("button", { name: "Add a key" }).click();
@@ -116,7 +116,7 @@ test("adds a key: a refused key is said under the field, a good one is tested an
   );
 
   // Its model is listed, priced from OpenRouter's list, and can be chosen.
-  await page.goto("/settings/you/ai-models/extraction");
+  await page.goto(at("/settings/you/ai-models/extraction"));
   const search = page.getByRole("combobox", { name: "Find a model for Proposing fields" });
   await search.fill("claude");
   // Listed twice: directly, and through OpenRouter under its own name.
@@ -128,7 +128,7 @@ test("adds a key: a refused key is said under the field, a good one is tested an
 
   // Removed from this device, it is gone from the list of models too.
   await removeAnthropic(page);
-  await page.goto("/settings/you/ai-models/extraction");
+  await page.goto(at("/settings/you/ai-models/extraction"));
   await page.getByRole("combobox", { name: "Find a model for Proposing fields" }).fill("claude");
   await expect(page.getByRole("option", { name: /^Claude Sample 1/ })).toHaveCount(0);
 });
@@ -139,7 +139,7 @@ test("keys stay on the device: another device has none, and a key removed is gon
 }, info) => {
   test.skip(isPhone(info.project.name), "One server: the phone runs the picker test instead.");
   await setUpAi(page, { conversation: "sample/reader" });
-  await page.goto("/settings/device/ai-keys");
+  await page.goto(at("/settings/device/ai-keys"));
   await expect(page.getByRole("note")).toContainText("Your keys stay in this browser.");
   await expect(page.getByRole("note")).toContainText(
     "The server never saves them and other members never see them.",
@@ -166,7 +166,7 @@ test("keys stay on the device: another device has none, and a key removed is gon
     baseURL: `http://localhost:${process.env.E2E_PORT ?? 3987}`,
   });
   const second = await other.newPage();
-  await second.goto("/settings/device/ai-keys");
+  await second.goto(at("/settings/device/ai-keys"));
   await expect(second.locator(".provider-row", { hasText: "OpenRouter" })).toContainText(
     "No key on this device",
   );
@@ -198,7 +198,7 @@ test("chooses a model through the picker with search, keys and details, then und
   page,
 }, info) => {
   await setUpAi(page, { conversation: "sample/reader" });
-  await page.goto("/settings/you/ai-models");
+  await page.goto(at("/settings/you/ai-models"));
   const row = page.locator("#task-conversation");
   await expect(row.locator(".model-chip")).toContainText("Sample reader");
   await row.getByRole("button", { name: "Change", exact: true }).click();

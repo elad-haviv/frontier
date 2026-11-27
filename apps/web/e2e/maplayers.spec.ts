@@ -1,5 +1,5 @@
 import { expect, type Locator, type Page, test } from "@playwright/test";
-import { drawn, rightPanel } from "./helpers.ts";
+import { drawn, rightPanel, at } from "./helpers.ts";
 
 /**
  * The Layers tab as a tree (stage 16c): adding layers and sublayers, dragging one into another,
@@ -71,9 +71,9 @@ const cleanUp = (page: Page, id: string) =>
   }, id);
 
 async function openMap(page: Page, title: string, sublayer = false) {
-  await page.goto("/maps");
+  await page.goto(at("/maps"));
   const id = await makeMap(page, title, sublayer);
-  await page.goto(`/map/${id}?edit=1`);
+  await page.goto(at(`/map/${id}?edit=1`));
   await expect(page.locator(".map-top")).toBeVisible();
   await expect(page).toHaveURL(/v=/);
   await page.waitForTimeout(300);

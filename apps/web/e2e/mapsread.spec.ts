@@ -1,4 +1,5 @@
 import { type CDPSession, expect, type Page, test } from "@playwright/test";
+import { at, withoutProject } from "./helpers.ts";
 
 /**
  * Reading a map by pointing (stage 13b): hover, the selection, the right-click menu, the map's
@@ -103,9 +104,9 @@ async function onGlobe(page: Page, lon: number, lat: number): Promise<Point> {
 
 /** Opens the map, viewing or editing, once its view is laid out and its features drawn. */
 async function openMap(page: Page, title: string, edit = false) {
-  await page.goto("/maps");
+  await page.goto(at("/maps"));
   const id = await makeMap(page, title);
-  await page.goto(`/map/${id}${edit ? "?edit=1" : ""}`);
+  await page.goto(at(`/map/${id}${edit ? "?edit=1" : ""}`));
   await expect(page.locator(".map-top")).toBeVisible();
   await expect(page).toHaveURL(/v=/);
   // The names of linked entries arrive with the map; give the first draw a moment.
@@ -211,7 +212,7 @@ test.describe("with a mouse", () => {
     await expect(page.getByText("Copied a link to this place.")).toBeVisible();
     const link = await page.evaluate(() => navigator.clipboard.readText());
     const url = new URL(link);
-    expect(url.pathname).toBe(`/map/${id}`);
+    expect(withoutProject(url.pathname)).toBe(`/map/${id}`);
     expect(url.searchParams.get("f")).toBe("harbor01");
     expect(url.searchParams.get("v")).toBeNull();
 

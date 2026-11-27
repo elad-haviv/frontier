@@ -1,5 +1,5 @@
 import { expect, type Page, test } from "@playwright/test";
-import { rightPanel } from "./helpers.ts";
+import { rightPanel, at } from "./helpers.ts";
 
 /**
  * Feature groups (stage 19): three islands picked and grouped as one realm, named, selected as one
@@ -41,9 +41,9 @@ const cleanUp = (page: Page, id: string) =>
   }, id);
 
 async function openMap(page: Page, title: string) {
-  await page.goto("/maps");
+  await page.goto(at("/maps"));
   const id = await makeMap(page, title);
-  await page.goto(`/map/${id}?edit=1`);
+  await page.goto(at(`/map/${id}?edit=1`));
   await expect(page.locator(".map-top")).toBeVisible();
   await expect(page).toHaveURL(/v=/);
   await page.waitForTimeout(300);
