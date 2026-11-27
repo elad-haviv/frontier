@@ -237,10 +237,9 @@ test("pins the entry from the bar, the phone's top line, and the p key", async (
 test("p twice quickly makes one change, and a pin made elsewhere shows when the page returns", async ({
   page,
 }) => {
-  const asked: string[] = [];
-  page.on("request", (r) => {
-    if (r.method() !== "GET" && r.url().includes("/pins")) asked.push(r.method());
-  });
+  // The page's own calls to the pins, counted inside the page (see below), not by Playwright.
+  const asked = () =>
+    page.evaluate(() => (window as unknown as { __pinWrites: string[] }).__pinWrites ?? []);
   const clean = async () => {
     await page.request.delete(api(`/pins?path=${encodeURIComponent(HARBOR)}`));
     const { drafts } = (await (await page.request.get(api("/unpublished"))).json()) as {
@@ -255,19 +254,34 @@ test("p twice quickly makes one change, and a pin made elsewhere shows when the 
     const pin = page.getByRole("button", { name: "Pin to Working on" });
     await expect(pin).toHaveAttribute("aria-pressed", "false");
     // The first change is held on its way, so the second press always comes while it is under
-    // way, however fast this machine is.
-    await page.route("**/api/p/*/pins", async (route) => {
-      if (route.request().method() === "POST") await new Promise((r) => setTimeout(r, 150));
-      await route.continue();
+    // way, however fast this machine is. The hold, and the count of the calls that change the
+    // pins, are in the page's own `fetch`, not in a Playwright route or request listener: those
+    // were found to miss requests the page really sent (the page's fetch log showed the POST, and
+    // the server had the pin, while neither a route handler nor the "request" event ever fired),
+    // which made this test fail one run in fifty for a reason that was not the app's.
+    await page.evaluate(() => {
+      const w = window as unknown as { __pinWrites: string[] };
+      w.__pinWrites = [];
+      const original = window.fetch;
+      window.fetch = async (input, init) => {
+        const method = init?.method ?? (input instanceof Request ? input.method : "GET");
+        if (
+          method !== "GET" &&
+          String(input instanceof Request ? input.url : input).includes("/pins")
+        ) {
+          w.__pinWrites.push(method);
+          if (method === "POST") await new Promise((r) => setTimeout(r, 150));
+        }
+        return original(input, init);
+      };
     });
     await page.keyboard.press("p");
     await page.keyboard.press("p");
     await expect(pin).toHaveAttribute("aria-pressed", "true");
-    await expect.poll(() => asked).toEqual(["POST"]);
+    await expect.poll(asked).toEqual(["POST"]);
     // Nothing more follows: the second press made no change.
     await page.waitForTimeout(300);
-    expect(asked).toEqual(["POST"]);
-    await page.unroute("**/api/p/*/pins");
+    expect(await asked()).toEqual(["POST"]);
     await page.request.delete(api(`/pins?path=${encodeURIComponent(HARBOR)}`));
 
     // Another device unpinned it; this page hears of it when it is shown again after a while.
