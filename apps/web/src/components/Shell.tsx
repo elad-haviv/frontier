@@ -32,7 +32,7 @@ import { useRandom } from "../keepGoing/useRandom.ts";
 import { currentEntryPath } from "./shell/entryPath.ts";
 import { LeftBar } from "./shell/LeftBar.tsx";
 import { LibraryPane } from "./shell/LibraryPane.tsx";
-import { readLibraryOpen, useLibraryFloating, writeLibraryOpen } from "./shell/libraryState.ts";
+import { useLibraryFloating } from "./shell/libraryState.ts";
 import { Rail } from "./shell/Rail.tsx";
 import { PhoneBar } from "./shell/PhoneBar.tsx";
 import { BottomSheet, RightBar } from "./shell/RightBar.tsx";
@@ -285,40 +285,66 @@ export function Shell({ children }: { children: ReactNode }) {
     [kind],
   );
 
-  // The library pane on a desktop. Docked, its open or closed is the device's, kept as left. On a
-  // narrow window it floats over the page and is closed on every visit, as entries are picked and
-  // on Escape, so those closings are not kept: the choice made for a wide window stays.
-  const floating = useLibraryFloating();
+  // The library pane on a desktop. Docked, its open or closed is the device's, kept per kind of
+  // screen (maps start without it). It floats over the page when the main panel has no room for it
+  // beside a page of a fair width; a floating pane is closed on every visit, as entries are picked
+  // and on Escape, so those closings are not kept: the choice made while docked stays.
+  const [mainEl, setMainEl] = useState<HTMLDivElement | null>(null);
+  const { floating, measured } = useLibraryFloating(mainEl);
   const floatingNow = useRef(floating);
   floatingNow.current = floating;
-  const [libraryOpen, setLibraryOpen] = useState(() => !floating && readLibraryOpen());
+  const kindNow = useRef(kind);
+  kindNow.current = kind;
+  const [libraryOpen, setLibraryOpen] = useState(() => !floating && readPrefs(kind).library);
   const libraryOpenNow = useRef(libraryOpen);
   libraryOpenNow.current = libraryOpen;
   const pane = useRef<HTMLElement>(null);
-  /** The pane was opened by the author, so the focus goes into it. */
-  const paneFocus = useRef(false);
+  // The author's opening (a click or a key) asks once for the focus to go into the pane:
+  // `focusAsk` rises with each ask and `focusTaken` catches up when the pane has given it. Nothing else asks,
+  // so a tree that reloads or an empty library that fills never takes the focus from the page.
+  const [focusAsk, setFocusAsk] = useState(0);
+  const [focusTaken, setFocusTaken] = useState(0);
+  const focusAskNow = useRef(0);
+  focusAskNow.current = focusAsk;
+  const spendFocusAsk = useCallback(() => setFocusTaken(focusAskNow.current), []);
   const showLibrary = useCallback((focus: boolean) => {
-    paneFocus.current = focus;
+    if (focus) setFocusAsk((n) => n + 1);
     setLibraryOpen(true);
-    if (!floatingNow.current) writeLibraryOpen(true);
+    if (!floatingNow.current) writePrefs(kindNow.current, { library: true });
   }, []);
   /** Closes the pane; the focus goes back to the Library place, unless it was elsewhere. */
-  const hideLibrary = useCallback((refocus: "always" | "inside") => {
-    const inside = pane.current?.contains(document.activeElement) ?? false;
-    setLibraryOpen(false);
-    if (!floatingNow.current) writeLibraryOpen(false);
-    if (refocus === "always" || inside) {
-      requestAnimationFrame(() =>
-        document.querySelector<HTMLElement>("[data-library-toggle]")?.focus(),
-      );
-    }
-  }, []);
+  const hideLibrary = useCallback(
+    (refocus: "always" | "inside") => {
+      const inside = pane.current?.contains(document.activeElement) ?? false;
+      spendFocusAsk();
+      setLibraryOpen(false);
+      if (!floatingNow.current) writePrefs(kindNow.current, { library: false });
+      if (refocus === "always" || inside) {
+        requestAnimationFrame(() =>
+          document.querySelector<HTMLElement>("[data-library-toggle]")?.focus(),
+        );
+      }
+    },
+    [spendFocusAsk],
+  );
   const toggleLibrary = useCallback(
     () => (libraryOpenNow.current ? hideLibrary("always") : showLibrary(true)),
     [hideLibrary, showLibrary],
   );
-  // A window that changes between narrow and wide takes the state of its new kind.
-  useEffect(() => setLibraryOpen(!floating && readLibraryOpen()), [floating]);
+  // A new kind of screen, the first measure of the room, or a change between docked and floating
+  // takes the state kept for the new case: a pane left open comes back docked as the device had
+  // it, and is not thrown over the page (dimming it) as a side bar is dragged or the right bar
+  // opens. The focus ask of the old case is dropped with it.
+  const seen = useRef({ floating, kind, measured });
+  useEffect(() => {
+    const before = seen.current;
+    if (before.kind === kind && before.measured === measured && before.floating === floating) {
+      return;
+    }
+    seen.current = { floating, kind, measured };
+    setLibraryOpen(!floating && readPrefs(kind).library);
+    spendFocusAsk();
+  }, [floating, kind, measured, spendFocusAsk]);
   // A floating pane closes when a page is picked, and on Escape from within it or the side bar.
   useEffect(() => {
     if (phone || !floatingNow.current || !libraryOpenNow.current) return;
@@ -356,10 +382,14 @@ export function Shell({ children }: { children: ReactNode }) {
     if (overlayOpen()) return false;
     void navigate("/");
   });
-  useShortcut("app.library", () => {
-    if (phone || overlayOpen()) return false;
-    toggleLibrary();
-  });
+  useShortcut(
+    "app.library",
+    () => {
+      if (overlayOpen()) return false;
+      toggleLibrary();
+    },
+    !phone,
+  );
   useShortcut("app.random", () => {
     if (overlayOpen()) return false;
     void roll();
@@ -537,7 +567,7 @@ export function Shell({ children }: { children: ReactNode }) {
                     />
                   </>
                 )}
-                <Panel id="main" minSize="30%" className="shell-main">
+                <Panel id="main" minSize="30%" className="shell-main" elementRef={setMainEl}>
                   {libraryShown && (
                     <>
                       {floating && (
@@ -551,7 +581,8 @@ export function Shell({ children }: { children: ReactNode }) {
                         tree={tree}
                         current={current}
                         floating={floating}
-                        focus={paneFocus.current}
+                        focus={focusAsk !== focusTaken}
+                        onFocusTaken={spendFocusAsk}
                         paneRef={pane}
                         onClose={() => hideLibrary("always")}
                         onRetry={refresh}

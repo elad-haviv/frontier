@@ -65,6 +65,11 @@ export interface Shortcut {
   handledBy?: string;
   /** For a screen with a viewing and an editing mode: the one mode the key acts in, if only one. */
   when?: "viewing" | "editing";
+  /**
+   * Listed in the sheet only while something is bound to it, for a key that works on some screens
+   * only (a desktop's, say): the screen that has it binds it, and the sheet shows it from then on.
+   */
+  listWhenBound?: boolean;
 }
 
 type Action = () => boolean | void;
@@ -348,7 +353,10 @@ export function createRegistry() {
         scope,
         name: SCOPE_NAMES[scope],
         items: [...shortcuts.values()].filter(
-          (s) => s.scope === scope && (active.has(scope) || (scope === "dialog" && s.handledBy)),
+          (s) =>
+            s.scope === scope &&
+            (active.has(scope) || (scope === "dialog" && s.handledBy)) &&
+            (!s.listWhenBound || (bound.get(s.id)?.length ?? 0) > 0),
         ),
       })).filter((g) => g.items.length > 0);
     },
@@ -375,7 +383,14 @@ keys.register(
   { id: "app.home", keys: ["g h"], scope: "app", label: "Go to Home" },
   { id: "app.random", keys: ["g r"], scope: "app", label: "Open a random entry" },
   // Stage 28: the library pane on a desktop (on a phone the Library is a panel in the drawer).
-  { id: "app.library", keys: ["g l"], scope: "app", label: "Show or hide the Library" },
+  {
+    id: "app.library",
+    keys: ["g l"],
+    scope: "app",
+    label: "Show or hide the Library",
+    // The library is a pane on a desktop only; a phone has no such key.
+    listWhenBound: true,
+  },
   {
     id: "app.sidebar",
     keys: ["Mod-\\"],

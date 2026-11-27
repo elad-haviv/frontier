@@ -23,6 +23,7 @@ function TreeBody({
   replaceNav = false,
   onOpenCurrent,
   focusCurrent = false,
+  onFocusTaken,
 }: {
   tree: Async<TreeResponse>;
   current: string;
@@ -32,6 +33,7 @@ function TreeBody({
   replaceNav?: boolean;
   onOpenCurrent?: () => void;
   focusCurrent?: boolean;
+  onFocusTaken?: (() => void) | undefined;
 }) {
   if (tree.state === "loading") return <p className="muted pad">Loading…</p>;
   if (tree.state === "failed") return <Problem reason={tree.error.message} onRetry={onRetry} />;
@@ -44,6 +46,7 @@ function TreeBody({
       newFolderAsked={asked}
       replaceNav={replaceNav}
       focusCurrent={focusCurrent}
+      {...(onFocusTaken ? { onFocusTaken } : {})}
       {...(onOpenCurrent ? { onOpenCurrent } : {})}
     />
   );
@@ -138,6 +141,7 @@ export function LibraryBody({
   replaceNav = false,
   onOpenCurrent,
   focusCurrent = false,
+  onFocusTaken,
 }: {
   tree: Async<TreeResponse>;
   current: string;
@@ -151,6 +155,8 @@ export function LibraryBody({
   onOpenCurrent?: () => void;
   /** The tree takes the focus as it is drawn. */
   focusCurrent?: boolean;
+  /** The focus went in: the ask is spent. */
+  onFocusTaken?: (() => void) | undefined;
 }) {
   const body = useRef<HTMLDivElement>(null);
   useShowCurrent(body, active, tree.state === "ready", current);
@@ -174,6 +180,7 @@ export function LibraryBody({
             asked={asked}
             replaceNav={replaceNav}
             focusCurrent={focusCurrent}
+            {...(onFocusTaken ? { onFocusTaken } : {})}
             {...(onOpenCurrent ? { onOpenCurrent } : {})}
           />
         ))}

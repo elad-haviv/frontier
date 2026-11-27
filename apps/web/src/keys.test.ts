@@ -450,3 +450,16 @@ describe("the sheet", () => {
     }
   });
 });
+
+describe("the Library key", () => {
+  it("is listed in the sheet only while a screen binds it (a phone does not)", () => {
+    const r = createRegistry();
+    r.register(...keys.all().filter((s) => s.id === "app.library" || s.id === "app.keys"));
+    const listed = () => r.sheet().flatMap((g) => g.items.map((s) => s.id));
+    expect(listed()).not.toContain("app.library");
+    const off = r.bind("app.library", { current: () => undefined });
+    expect(listed()).toContain("app.library");
+    off();
+    expect(listed()).not.toContain("app.library");
+  });
+});

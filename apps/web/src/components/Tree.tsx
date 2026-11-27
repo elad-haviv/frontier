@@ -165,12 +165,15 @@ export function Tree({
   replaceNav = false,
   onOpenCurrent,
   focusCurrent = false,
+  onFocusTaken,
 }: {
   tree: TreeResponse;
   /** The entry in view, by its path in the library. */
   current: string;
   /** Takes the focus as it is drawn: the row of the entry in view, else the first row. */
   focusCurrent?: boolean;
+  /** Called once the focus was given, so the ask is spent and a later mount does not repeat it. */
+  onFocusTaken?: () => void;
   /** Opens the new-entry dialog in a folder. */
   onNewEntry: (folder: string) => void;
   /** Reads the tree again after a change the server made. */
@@ -616,6 +619,7 @@ export function Tree({
       const node = t.visibleNodes.find((n) => n.data.path === row.dataset.path);
       if (node) t.focus(node.id);
       row.closest<HTMLElement>("[role=treeitem]")?.focus();
+      onFocusTaken?.();
     };
     frame = requestAnimationFrame(take);
     return () => cancelAnimationFrame(frame);

@@ -18,6 +18,7 @@ export function LibraryPane({
   current,
   floating,
   focus,
+  onFocusTaken,
   onClose,
   onRetry,
   onNewEntryIn,
@@ -27,6 +28,8 @@ export function LibraryPane({
   current: string;
   floating: boolean;
   focus: boolean;
+  /** The focus went in: the shell spends the ask, so nothing later takes the focus again. */
+  onFocusTaken: () => void;
   /** Closes the pane: the × button. */
   onClose: () => void;
   onRetry: () => void;
@@ -41,11 +44,12 @@ export function LibraryPane({
   const noRows = tree.state === "failed" || isEmptyTree(tree);
   useEffect(() => {
     if (!focus || !noRows) return;
-    const frame = requestAnimationFrame(() =>
-      paneRef.current?.querySelector<HTMLElement>(".library-body button")?.focus(),
-    );
+    const frame = requestAnimationFrame(() => {
+      paneRef.current?.querySelector<HTMLElement>(".library-body button")?.focus();
+      onFocusTaken();
+    });
     return () => cancelAnimationFrame(frame);
-  }, [focus, noRows, paneRef]);
+  }, [focus, noRows, paneRef, onFocusTaken]);
 
   return (
     <section
@@ -68,6 +72,7 @@ export function LibraryPane({
         current={current}
         active
         focusCurrent={focus}
+        onFocusTaken={onFocusTaken}
         asked={asked}
         onRetry={onRetry}
         onNewEntryIn={onNewEntryIn}

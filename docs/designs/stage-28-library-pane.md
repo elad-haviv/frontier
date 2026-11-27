@@ -49,11 +49,26 @@ respects reduced motion.
   AI while editing, the page's `g` wins, as for `g h` and `g r`.)
 - **Where it lives.** The pane is drawn inside the page area, to the right of the side bar's splitter (and
   of the rail), so the side bar's width is still the device's and the pane never counts in it.
-- **Open or closed** is kept per device (`frontier.shell.library`) and is open the first time. It is kept only
-  from a docked window: on a floating one it starts closed on every visit, and closing it by picking an
-  entry, Esc or a click on the dimmed page is not remembered, so the choice made on a wide window stays.
-- **1100 px** is one constant, `LIBRARY_DOCK_MIN` in `shell/libraryState.ts`; the shell reads it through
-  `useLibraryFloating()` and puts `is-floating` on the pane, so CSS has no second copy of the number.
-- **Focus.** Opening by click or key puts the focus on the entry in view in the tree (the first row, or the
-  first button when the library is empty or unread); closing by ×, the Library place or `g l` puts it back on
-  the place (or the rail's icon). Opening to show a folder (from Home) lets the tree focus that folder.
+- **Open or closed** is kept per kind of screen on this device, beside the side bar prefs of that kind
+  (`library` in `ScreenPrefs`, `shell/panels.tsx`). Maps, chronicles and the graph start with it closed (they
+  start with the rail too); entries and other pages start open. The one per-device value the first build kept
+  (`frontier.shell.library`) is the default for entries and other pages, so nobody loses a choice. It is kept
+  only from a docked window: on a floating one it starts closed on every visit, and closing it by picking an
+  entry, Esc or a click on the dimmed page is not remembered, so the choice made while docked stays.
+- **Floating** is decided by the room, not the window: the shell measures the main panel (the room right of
+  the side bar, with a ResizeObserver) and the pane floats when it is under 17 rem plus 560 px
+  (`LIBRARY_PANE_REM`, `LIBRARY_PAGE_MIN`, `libraryFloats` in `shell/libraryState.ts`), so a wide side bar or
+  an open right bar floats it, and a splitter dragged across the line switches it. Before the first
+  measurement the window's width stands in (`LIBRARY_DOCK_MIN`, 1100 px) so nothing flickers. The shell puts
+  `is-floating` on the pane, so CSS has no copy of the number. A change between docked and floating takes
+  the state of its new case: a pane left open closes (it is not thrown over the page, dimming it, as a side
+  bar is dragged or the right bar opens) and comes back docked, as the device left it, when there is room
+  again. The Library place still opens it floating while there is no room.
+- **Focus.** Opening by click or key asks once for the focus to go in: the shell's `focusAsk` counter rises
+  only on that open and the tree (or the empty or failed state's first button) takes the focus and marks the
+  ask spent (`onFocusTaken`). Nothing else gives it: a tree that loads again after a failure, a library that
+  stops being empty, a window that docks the pane again, or opening to show a folder (from Home) lets the tree
+  focus that folder only. Closing by ×, the Library place or `g l` puts the focus back on the place (or the
+  rail's icon) and spends any ask.
+- **The key sheet** lists `g l` only where the key works (`listWhenBound` in the keys registry): on a phone
+  it is not bound, so it is not listed.

@@ -1,5 +1,5 @@
 import { expect, type Locator, type Page, test } from "@playwright/test";
-import { entry, openSideBar } from "./helpers.ts";
+import { edit, entry, openEditor, openSideBar, rightPanel, saved } from "./helpers.ts";
 
 // Stage 28: on a desktop the library is a pane beside the side bar, opened from a Library place in
 // the side bar (or the rail), docked on a wide window and floating over the page on a narrow one.
@@ -329,4 +329,214 @@ test("on a phone there is no Library pane, and the Library row of the drawer sti
   await expect(pane(page)).toBeVisible();
   await expect(pane(page).getByRole("tree")).toBeVisible();
   await expect(page.locator(".library-pane")).toHaveCount(0);
+});
+
+// The focus goes into the pane once, when the author opens it. A tree that loads again, a library
+// that stops being empty or a window that widens never take it from the page.
+const inEditor = (page: Page) =>
+  page.evaluate(() => !!document.activeElement?.closest(".cm-content"));
+
+test("a tree that comes back after a failure does not take the focus from the editor", async ({
+  page,
+}) => {
+  let failing = true;
+  await page.route("**/api/tree", (route) =>
+    failing
+      ? route.fulfill({ status: 500, json: { error: "The library could not be read." } })
+      : route.fallback(),
+  );
+  await page.goto(edit(HARBOR));
+  await expect(pane(page).getByRole("button", { name: "Retry" })).toBeVisible();
+  // The author closes the pane and opens it by a click: the focus goes in, once.
+  await toggle(page).click();
+  await expect(pane(page)).toHaveCount(0);
+  await toggle(page).click();
+  await expect(pane(page).getByRole("button", { name: "Retry" })).toBeFocused();
+  // Back in the editor, the connection returns and the next save loads the tree again.
+  await page.locator(".cm-content").click();
+  await page.keyboard.press("Control+End");
+  failing = false;
+  await page.keyboard.type("\nA line while the tree was away.\n");
+  await saved(page);
+  await expect(pane(page).locator(".tree")).toBeVisible();
+  await page.waitForTimeout(400);
+  expect(await inEditor(page)).toBe(true);
+  await page.keyboard.type("more");
+  await expect(page.locator(".cm-content")).toContainText("more");
+  await discardAll(page);
+});
+
+test("the first entry saved in an empty library does not take the focus from the editor", async ({
+  page,
+}) => {
+  let empty = true;
+  await page.route("**/api/tree", (route) =>
+    empty ? route.fulfill({ json: { folders: [], notes: [] } }) : route.fallback(),
+  );
+  await page.goto(edit(HARBOR));
+  await expect(pane(page).getByText("No entries yet.")).toBeVisible();
+  await toggle(page).click();
+  await expect(pane(page)).toHaveCount(0);
+  await toggle(page).click();
+  await expect(pane(page).getByRole("button", { name: "New entry", exact: true })).toBeFocused();
+  await page.locator(".cm-content").click();
+  await page.keyboard.press("Control+End");
+  empty = false;
+  await page.keyboard.type("\nThe first line.\n");
+  await saved(page);
+  await expect(pane(page).locator(".tree")).toBeVisible();
+  await page.waitForTimeout(400);
+  expect(await inEditor(page)).toBe(true);
+  await discardAll(page);
+});
+
+test("widening the window to dock the pane again does not take the focus from the editor", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1000, height: 800 });
+  await page.goto(edit(HARBOR));
+  await expect(page.locator(".cm-content")).toBeVisible();
+  await toggle(page).click();
+  await expect(pane(page)).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(pane(page)).toHaveCount(0);
+  await page.locator(".cm-content").click();
+  await page.keyboard.press("Control+End");
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await expect(pane(page)).toBeVisible();
+  await expect(pane(page)).not.toHaveClass(/is-floating/);
+  await expect(pane(page).locator(".tree")).toBeVisible();
+  await page.waitForTimeout(400);
+  expect(await inEditor(page)).toBe(true);
+});
+
+// The pane docks only where the page keeps room beside it.
+test("with a wide side bar and the right bar open the pane floats, the page keeping its width", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto(edit(HARBOR));
+  // The right bar is opened and remembered by the page's own control; the side bar is widest.
+  await rightPanel(page, "Properties");
+  await page.evaluate(() => localStorage.setItem("frontier.shell.left", "480"));
+  await page.reload();
+  await expect(page.getByRole("tabpanel")).toBeVisible();
+  // Floating pane: closed on every visit, then opened by the Library place.
+  await expect(pane(page)).toHaveCount(0);
+  const before = (await page.locator(".content").boundingBox())!;
+  await toggle(page).click();
+  await expect(pane(page)).toBeVisible();
+  await expect(pane(page)).toHaveClass(/is-floating/);
+  expect((await page.locator(".content").boundingBox())!.width).toBe(before.width);
+});
+
+test("the pane switches between docked and floating as the side bar is resized, staying open", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await openEditor(page, HARBOR);
+  await expect(pane(page)).toBeVisible();
+  await expect(pane(page)).not.toHaveClass(/is-floating/);
+  expect((await page.locator(".content").boundingBox())!.width).toBeGreaterThanOrEqual(560);
+  const grip = page.getByRole("separator", { name: "Side bar width" });
+  await grip.focus();
+  await page.keyboard.press("End");
+  // Too little room for the pane beside a fair page: it floats, so it is not drawn over the page
+  // as the bar is dragged; the choice stays, and the focus is unmoved.
+  await expect(pane(page)).toHaveCount(0);
+  await expect(grip).toBeFocused();
+  // The Library place opens it floating, over the page, which keeps its width.
+  const narrow = (await page.locator(".content").boundingBox())!.width;
+  await toggle(page).click();
+  await expect(pane(page)).toHaveClass(/is-floating/);
+  expect((await page.locator(".content").boundingBox())!.width).toBe(narrow);
+  await page.keyboard.press("Escape");
+  await expect(pane(page)).toHaveCount(0);
+  await grip.focus();
+  await page.keyboard.press("Home");
+  // Room again: the pane is docked as the device left it, and the focus is still on the grip.
+  await expect(pane(page)).toBeVisible();
+  await expect(pane(page)).not.toHaveClass(/is-floating/);
+  await expect(grip).toBeFocused();
+  expect((await page.locator(".content").boundingBox())!.width).toBeGreaterThanOrEqual(560);
+});
+
+test("the pane is not open on a first visit to a map, a chronicle or the graph, and keeps its own choice for each kind", async ({
+  page,
+}) => {
+  await page.goto("/graph");
+  await expect(toggle(page)).toBeVisible();
+  await expect(pane(page)).toHaveCount(0);
+  await page.goto("/map/nosuchmap");
+  await expect(toggle(page)).toBeVisible();
+  await expect(pane(page)).toHaveCount(0);
+  await page.goto("/chronicle/nosuchchronicle");
+  await expect(toggle(page)).toBeVisible();
+  await expect(pane(page)).toHaveCount(0);
+  // Entries still start with it open.
+  await open(page);
+  await expect(pane(page)).toBeVisible();
+  // Opening it on the graph is remembered for the graph only.
+  await page.goto("/graph");
+  await toggle(page).click();
+  await expect(pane(page)).toBeVisible();
+  await page.reload();
+  await expect(pane(page)).toBeVisible();
+  await page.goto("/map/nosuchmap");
+  await expect(toggle(page)).toBeVisible();
+  await expect(pane(page)).toHaveCount(0);
+  await open(page);
+  await expect(pane(page)).toBeVisible();
+  // Closing it on an entry leaves the graph's choice alone.
+  await toggle(page).click();
+  await expect(pane(page)).toHaveCount(0);
+  await page.goto("/graph");
+  await expect(pane(page)).toBeVisible();
+});
+
+test("a choice kept before the pane was kept per kind is the default for entries", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    if (!sessionStorage.getItem("seeded")) {
+      sessionStorage.setItem("seeded", "1");
+      localStorage.clear();
+      localStorage.setItem("frontier.shell.library", "closed");
+    }
+  });
+  await open(page);
+  await expect(toggle(page)).toHaveAttribute("aria-pressed", "false");
+  await expect(pane(page)).toHaveCount(0);
+});
+
+test("Escape in a dialog, a context menu or the switcher leaves a floating pane open", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1000, height: 800 });
+  await open(page);
+  await toggle(page).click();
+  await expect(pane(page)).toBeVisible();
+  await expect(pane(page)).toHaveClass(/is-floating/);
+
+  await pane(page).getByRole("button", { name: "New entry", exact: true }).click();
+  await expect(page.getByRole("dialog")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(pane(page)).toBeVisible();
+
+  await row(page, "02 People").click({ button: "right" });
+  await expect(page.getByRole("menu")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("menu")).toHaveCount(0);
+  await expect(pane(page)).toBeVisible();
+
+  await page.keyboard.press("Control+k");
+  await expect(page.getByRole("dialog")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(pane(page)).toBeVisible();
+
+  // With nothing else open, Escape closes it.
+  await page.keyboard.press("Escape");
+  await expect(pane(page)).toHaveCount(0);
 });
