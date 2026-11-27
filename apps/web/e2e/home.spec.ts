@@ -18,12 +18,17 @@ async function seedRecents(page: Page): Promise<void> {
   await page.evaluate(
     ({ harbor, mira, flats }) => {
       const now = Date.now();
+      // Midnight at the start of yesterday: always a calendar day back and more than 24 hours
+      // ago, so "yesterday" is what the page says whatever the hour the test runs at.
+      const yesterday = new Date(now);
+      yesterday.setHours(0, 0, 0, 0);
+      yesterday.setDate(yesterday.getDate() - 1);
       localStorage.setItem(
         "frontier.keepGoing.v1",
         JSON.stringify({
           recents: [
             { path: flats, title: "Salt Flats", kind: "read", at: now - 2 * 3_600_000 },
-            { path: mira, title: "Mira", kind: "edited", at: now - 26 * 3_600_000 },
+            { path: mira, title: "Mira", kind: "edited", at: yesterday.getTime() },
             { path: harbor, title: "Harbor", kind: "read", at: now - 3 * 86_400_000 },
           ],
           current: { path: flats, title: "Salt Flats" },
