@@ -258,7 +258,8 @@ export function draftRoutes(app: RouteApp, s: Services): void {
     const device = deviceOf(request);
     try {
       const record = await saveEntry(input, device);
-      return { id: record.id, revision: record.revision };
+      // A device is answered with the id it uses (see `DraftStore.save`).
+      return { id: record.clientId ?? record.id, revision: record.revision };
     } finally {
       // A kept copy raises the attention count, so every open page hears of it too.
       s.status.drafts(s.drafts.count(), 0);

@@ -159,11 +159,12 @@ export class Publisher {
       }
     });
     if (applied.length > 0) {
+      const done = new Set(applied.map((a) => a.intent.id));
       await this.d.drafts.eachPerson(async () => {
         for (const { intent } of applied) {
           for (const draft of this.d.drafts.list()) {
             const moved = movedPath(draft.path, intent.from, intent.to);
-            if (moved !== null) await this.d.drafts.movePath(draft.id, moved);
+            if (moved !== null) await this.followRename(draft, moved);
           }
           // A file that names paths, such as the folder file, names the new ones from now on.
           for (const kind of FOLLOWING) {
@@ -175,11 +176,21 @@ export class Publisher {
               await this.d.drafts.serverChange(draft.id, followed);
             }
           }
+          // A rename someone else is still waiting to save, of a file this one moved, now starts from
+          // where the file is (the plan would otherwise say the file is not there).
+          for (const waiting of this.d.drafts.listRenames()) {
+            if (done.has(waiting.id) || has(waiting.from)) continue;
+            const from = movedPath(waiting.from, intent.from, intent.to);
+            if (from === null || !has(from)) continue;
+            // It would end where the file already is: nothing is left of it to do.
+            if (from === waiting.to) await quietly(() => this.d.drafts.removeRename(waiting.id));
+            else await this.d.drafts.retargetRename(waiting.id, from);
+          }
         }
       });
       for (const { intent, owner } of applied) {
         await this.d.onRenamed?.(intent.from, intent.to);
-        await this.d.drafts.as(owner, () => this.d.drafts.removeRename(intent.id));
+        await quietly(() => this.d.drafts.as(owner, () => this.d.drafts.removeRename(intent.id)));
       }
     }
     await this.d.drafts.eachPerson(async () => {
@@ -187,19 +198,41 @@ export class Publisher {
         const file = join(this.d.vaultDir, draft.path);
         const onMain = existsSync(file) ? readFileSync(file) : null;
         if (draft.kind === "delete") {
-          if (onMain === null) await this.d.drafts.discard(draft.id);
+          if (onMain === null) await quietly(() => this.d.drafts.discard(draft.id));
           continue;
         }
         if (onMain === null) continue;
         const bytes = draft.binary
-          ? await this.d.drafts.bytes(draft.id)
-          : Buffer.from(restoreLineEndings(await this.d.drafts.text(draft.id), draft.lineEnding));
+          ? await this.d.drafts.bytes(draft.id).catch(() => null)
+          : Buffer.from(
+              restoreLineEndings(
+                await this.d.drafts.text(draft.id).catch(() => ""),
+                draft.lineEnding,
+              ),
+            );
+        // Gone meanwhile (discarded by the person): nothing to clear.
+        if (bytes === null || !this.d.drafts.get(draft.id)) continue;
         if (bytes.equals(onMain) && !this.d.drafts.hasDeviceCopies(draft.id)) {
-          await this.d.drafts.discard(draft.id);
+          await quietly(() => this.d.drafts.discard(draft.id));
         }
       }
     });
     this.d.status.drafts(this.d.drafts.count(), 0);
+  }
+
+  /**
+   * Moves a draft to where its file went with a saved rename. A person never has two drafts at one
+   * path: when they have another at the new one, its text (and the texts it kept) become kept copies
+   * of this draft, for them to compare, so nothing they wrote is lost.
+   */
+  private async followRename(draft: DraftRecord, moved: string): Promise<void> {
+    const there = this.d.drafts.byPath(moved);
+    if (there && there.id !== draft.id) {
+      // An uploaded image cannot be a kept copy of a note: this one stays where it is, to be settled.
+      if (there.binary || draft.binary) return;
+      await this.d.drafts.absorb(draft.id, there.id);
+    }
+    await this.d.drafts.movePath(draft.id, moved);
   }
 
   // ---- Sorting one draft ---------------------------------------------------------------------
@@ -930,7 +963,9 @@ export class Publisher {
     await this.d.onPushed?.(commit);
     this.d.status.pushed(new Date(this.now()));
     this.plans.delete(planId);
-    await this.d.sync();
+    // The push went through: a fetch that fails now (the network, or a clearing that met another's)
+    // must not turn the save into an error. The next fetch catches up.
+    await this.d.sync().catch(() => undefined);
     this.noteLeftOver(stored, refused);
     onPublished?.(
       publishing
@@ -974,6 +1009,15 @@ export class Publisher {
   private async movedByUs(from: string): Promise<boolean> {
     const between = await this.d.git.commitsBetween(from, "HEAD").catch(() => null);
     return between !== null && between.length > 0 && between.every((c) => this.own.has(c.commit));
+  }
+}
+
+/** Runs `work`, and goes on when what it meant to remove was removed already (by a request that came in between). */
+async function quietly(work: () => Promise<void> | void): Promise<void> {
+  try {
+    await work();
+  } catch (err) {
+    if (!(err instanceof ApiError && err.code === "not_found")) throw err;
   }
 }
 

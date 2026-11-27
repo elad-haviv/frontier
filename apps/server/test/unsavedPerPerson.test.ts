@@ -146,28 +146,15 @@ describe("each person's unsaved changes are their own", () => {
   it("answers not_found when another person's draft is reached by its id", async () => {
     const w = await edit(wren, MIRA, "# Mira\n\nWren's text.\n");
     const intruder = (suffix: string) => `${base}/drafts/${w}${suffix}`;
-    // Overwrite by id (the same path, and another path).
+    // Saving with the id of another's draft is answered as for an id nobody has (stage 27d review):
+    // nothing tells it from a free one, and nothing of Wren's is reached.
     for (const path of [MIRA, SHADE]) {
-      const res = await rex.put(`${base}/drafts`, {
-        id: w,
-        path,
-        kind: "edit",
-        text: "Rex was here.",
-        revision: 1,
-      });
-      expect(res.statusCode, res.body).toBe(404);
-      expect(res.json().error.code).toBe("not_found");
+      const body = { path, kind: "edit", text: "Rex was here.", revision: 1 };
+      const taken = await rex.put(`${base}/drafts`, { id: w, ...body });
+      const free = await rex.put(`${base}/drafts`, { id: "freeidfreeid", ...body });
+      expect(taken.statusCode).toBe(free.statusCode);
+      expect(taken.json()).toEqual(free.json());
     }
-    // Create with the id of another's draft: refused the same way, and nothing is written there.
-    const create = await rex.put(`${base}/drafts`, {
-      id: w,
-      path: "New.md",
-      kind: "create",
-      text: "# New\n",
-      revision: 0,
-      baseBlob: "",
-    });
-    expect(create.statusCode).toBe(404);
     expect((await rex.del(intruder(""))).statusCode).toBe(404);
     expect((await rex.get(intruder("/versions"))).statusCode).toBe(404);
     expect((await rex.del(intruder("/versions/server"))).statusCode).toBe(404);

@@ -294,6 +294,327 @@ describe("the stage 27d review: saved versions and who made them", () => {
     });
   });
 
+  // ---- Item 2: an unsent save naming a draft id that is someone else's --------------------------
+
+  describe("a device that names another person's draft id", () => {
+    const body = (path: string, blob: string, text: string, revision = 0) => ({
+      path,
+      kind: "edit",
+      text,
+      revision,
+      baseBlob: blob,
+    });
+
+    it("is answered as for an id nobody has, and gets a draft of its own", async () => {
+      const w = await edit(wren, MIRA, "# Mira\n\nWren's text.\n");
+      const blob = (await entry(rex, SHADE)).blob;
+      const taken = await rex.put(`${base}/drafts`, {
+        id: w,
+        ...body(SHADE, blob, "# Shade\n\nRex's text.\n"),
+      });
+      const free = await t.put(`${base}/drafts`, {
+        id: "freeidfreeid",
+        ...body("03 Things/Plain.md", (await entry(t, "03 Things/Plain.md")).blob, "# Plain\n"),
+      });
+      expect(taken.statusCode).toBe(200);
+      expect(taken.json()).toEqual({ id: w, revision: 1 });
+      expect(free.json()).toEqual({ id: "freeidfreeid", revision: 1 });
+      // Rex's text is his, under his own draft; Wren's is whole.
+      const rexList = (await rex.get(`${base}/unpublished`)).json().drafts;
+      expect(rexList).toHaveLength(1);
+      expect(rexList[0]).toMatchObject({ path: SHADE, text: "# Shade\n\nRex's text.\n" });
+      expect(rexList[0].id).not.toBe(w);
+      const wrenList = (await wren.get(`${base}/unpublished`)).json().drafts;
+      expect(wrenList).toMatchObject([{ id: w, path: MIRA, text: "# Mira\n\nWren's text.\n" }]);
+      // The id his device uses goes on naming his draft: it saves again, and Wren's is not touched.
+      const again = await rex.put(`${base}/drafts`, {
+        id: w,
+        ...body(SHADE, blob, "# Shade\n\nRex, again.\n", 1),
+      });
+      expect(again.json()).toEqual({ id: w, revision: 2 });
+      expect((await entry(rex, SHADE)).text).toBe("# Shade\n\nRex, again.\n");
+      expect((await entry(wren, MIRA)).text).toBe("# Mira\n\nWren's text.\n");
+      // And it is his to discard by that id; Wren's survives.
+      expect((await rex.del(`${base}/drafts/${w}`)).statusCode).toBe(200);
+      expect((await rex.get(`${base}/unpublished`)).json().drafts).toEqual([]);
+      expect((await wren.get(`${base}/unpublished`)).json().drafts).toHaveLength(1);
+      // Reading what he sent through the id also stays his.
+      expect((await rex.del(`${base}/drafts/${w}`)).statusCode).toBe(404);
+    });
+
+    it("keeps its text as a kept copy and answers stale_revision, as for a free id", async () => {
+      const w = await edit(wren, SHADE, "# Shade\n\nWren's text.\n");
+      const old = (await entry(rex, SHADE)).blob as string;
+      // Someone saved Shade since Rex's device read it.
+      t.repo.pushFromOutside({ [SHADE]: "# Shade\n\nNewer.\n" });
+      await t.services.sync();
+      const taken = await rex.put(`${base}/drafts`, {
+        id: w,
+        ...body(SHADE, old, "# Shade\n\nRex's unsent text.\n"),
+      });
+      const free = await rex.put(`${base}/drafts`, {
+        id: "freeidfreeid",
+        ...body(SHADE, old, "# Shade\n\nRex's unsent text.\n"),
+      });
+      expect(taken.statusCode).toBe(409);
+      expect(taken.json().error.code).toBe("stale_revision");
+      // The same shape for both; the id in it is one Rex's device goes on with.
+      expect(free.statusCode).toBe(409);
+      expect(Object.keys(free.json().error).sort()).toEqual(Object.keys(taken.json().error).sort());
+      expect(taken.json().error.message).toBe(free.json().error.message);
+      const draftId = taken.json().error.id ?? taken.json().error.details?.id;
+      expect(draftId).toBeDefined();
+      // His text is kept beside a draft of the saved version; Wren's draft is whole.
+      const versions = (await rex.get(`${base}/drafts/${draftId}/versions`)).json();
+      expect(versions.others.map((o: { text: string }) => o.text)).toContain(
+        "# Shade\n\nRex's unsent text.\n",
+      );
+      expect((await entry(wren, SHADE)).text).toBe("# Shade\n\nWren's text.\n");
+    });
+
+    it("finds the pre-27d draft a person's own device still knows by its old id", async () => {
+      // A draft from before people belongs to the first owner (the admin), whatever device made it.
+      const legacy = "legacyidxxxx";
+      await t.services.drafts.saveFrom({
+        id: legacy,
+        path: SHADE,
+        kind: "edit",
+        content: "# Shade\n\nThe admin's.\n",
+        baseBlob: (await entry(t, SHADE)).blob,
+        lineEnding: "lf",
+      });
+      // Wren's browser profile queued an unsent save of a draft with that id.
+      const sent = await wren.put(`${base}/drafts`, {
+        id: legacy,
+        path: SHADE,
+        kind: "edit",
+        text: "# Shade\n\nWren's unsent.\n",
+        revision: 3,
+        baseBlob: (await entry(wren, SHADE)).blob,
+      });
+      expect(sent.statusCode, sent.body).toBe(200);
+      expect((await wren.get(`${base}/unpublished`)).json().drafts).toMatchObject([
+        { path: SHADE, text: "# Shade\n\nWren's unsent.\n" },
+      ]);
+      expect((await t.get(`${base}/unpublished`)).json().drafts).toMatchObject([
+        { id: legacy, text: "# Shade\n\nThe admin's.\n" },
+      ]);
+    });
+  });
+
+  // ---- Item 3: whose a draft from before people is --------------------------------------------
+
+  describe("the first owner", () => {
+    it("is an owner of the project: the admin only when the admin is one, else the earliest owner", async () => {
+      const res = await t.post("/api/projects", {
+        name: "Northwind",
+        slug: "northwind",
+        start: "empty",
+      });
+      expect(res.statusCode, res.body).toBe(201);
+      const made = res.json() as { id: string };
+      const owner = await addPerson(t, "Olive Owner", "olive@example.com");
+      const early = new Date(Date.now() - 86_400_000).toISOString();
+      await t.server.projects.update(made.id, (p) => ({
+        ...p,
+        members: [...p.members, { personId: owner.id, role: "owner" as const, addedAt: early }],
+      }));
+      // The admin is only a writer here now.
+      await t.server.projects.setRole(made.id, (await t.server.people.all())[0]!.id, "writer");
+      await t.server.registry.close(made.id);
+      const record = (await t.server.projects.get(made.id))!;
+      const folder = `${t.services.config.dataDir}/projects/${made.id}/state/drafts/oldoldoldold`;
+      const { mkdirSync, writeFileSync, readFileSync } = await import("node:fs");
+      mkdirSync(folder, { recursive: true });
+      writeFileSync(`${folder}/content`, "# Old\n");
+      writeFileSync(
+        `${folder}/record.json`,
+        JSON.stringify({
+          id: "oldoldoldold",
+          revision: 1,
+          path: "Old.md",
+          kind: "create",
+          baseBlob: "",
+          lineEnding: "lf",
+          binary: false,
+          updatedAt: new Date().toISOString(),
+          origins: [],
+        }),
+      );
+      await t.server.registry.open(record);
+      const stamped = JSON.parse(readFileSync(`${folder}/record.json`, "utf8"));
+      expect(stamped.person).toBe(owner.id);
+    });
+  });
+
+  // ---- Item 6: renames of other people --------------------------------------------------------
+
+  describe("a rename that someone else saved", () => {
+    const MIRRA = "02 People/Mirra.md";
+    const MIRELA = "02 People/Mirela.md";
+    const rename = async (c: Who, from: string, to: string) => {
+      const res = await c.post(`${base}/renames`, { from, to });
+      expect(res.statusCode, res.body).toBe(200);
+      return res.json().id as string;
+    };
+
+    it("moves another person's waiting rename of the same file to where it is now", async () => {
+      const rexRename = await rename(rex, MIRA, MIRELA);
+      const wrenRename = await rename(wren, MIRA, MIRRA);
+      expect((await confirm(wren, (await plan(wren, [], [wrenRename])).planId)).statusCode).toBe(
+        200,
+      );
+      expect(main(MIRRA)).not.toBeNull();
+      // Rex's rename now starts from where the file is, and can be saved.
+      const intents = (await rex.get(`${base}/unpublished`)).json().renames;
+      expect(intents).toMatchObject([{ id: rexRename, from: MIRRA, to: MIRELA }]);
+      const p = await plan(rex, [], [rexRename]);
+      expect(p.conflicts).toEqual([]);
+      expect((await confirm(rex, p.planId)).statusCode).toBe(200);
+      expect(main(MIRELA)).not.toBeNull();
+      expect(main(MIRRA)).toBeNull();
+    });
+
+    it("drops another person's rename that would end where the file already is", async () => {
+      const rexRename = await rename(rex, MIRA, MIRRA);
+      const wrenRename = await rename(wren, MIRA, MIRRA);
+      expect((await confirm(wren, (await plan(wren, [], [wrenRename])).planId)).statusCode).toBe(
+        200,
+      );
+      expect((await rex.get(`${base}/unpublished`)).json().renames).toEqual([]);
+      expect(rexRename).toBeDefined();
+    });
+
+    it("never leaves a person with two drafts at one path: the other text is kept beside", async () => {
+      const moved = await edit(rex, MIRA, "# Mira\n\nRex edits Mira.\n");
+      const there = newId();
+      expect(
+        (
+          await rex.put(`${base}/drafts`, {
+            id: there,
+            path: MIRRA,
+            kind: "create",
+            text: "# Mirra\n\nRex's other text.\n",
+            revision: 0,
+            baseBlob: "",
+          })
+        ).statusCode,
+      ).toBe(200);
+      const wrenRename = await rename(wren, MIRA, MIRRA);
+      expect((await confirm(wren, (await plan(wren, [], [wrenRename])).planId)).statusCode).toBe(
+        200,
+      );
+      const drafts = (await rex.get(`${base}/unpublished`)).json().drafts as {
+        id: string;
+        path: string;
+        text: string;
+      }[];
+      expect(drafts.map((d) => d.path)).toEqual([MIRRA]);
+      expect(drafts[0]).toMatchObject({ id: moved, text: "# Mira\n\nRex edits Mira.\n" });
+      const versions = (await rex.get(`${base}/drafts/${moved}/versions`)).json();
+      expect(versions.others.map((o: { text: string }) => o.text)).toEqual([
+        "# Mirra\n\nRex's other text.\n",
+      ]);
+    });
+
+    it("lets a repeated clearing of what was saved finish without an error", async () => {
+      const wrenRename = await rename(wren, MIRA, MIRRA);
+      t.repo.pushFromOutside({ [MIRRA]: main(MIRA)!, [MIRA]: null });
+      const r = await t.services.git.fetch();
+      t.services.index.build(r.current);
+      const p = t.services.publisher;
+      // Two clearings at once, as a poll and a webhook could: the second finds the first's work done.
+      await expect(Promise.all([p.clearPublished(), p.clearPublished()])).resolves.toBeDefined();
+      expect((await wren.get(`${base}/unpublished`)).json().renames).toEqual([]);
+      expect(wrenRename).toBeDefined();
+    });
+  });
+
+  // ---- Item 7: one sync at a time, and a limit on the network --------------------------------
+
+  describe("fetching", () => {
+    it("runs one sync at a time, and a call made during one gets a run that starts after it", async () => {
+      const real = t.services.publisher.clearPublished.bind(t.services.publisher);
+      let active = 0;
+      let peak = 0;
+      let runs = 0;
+      t.services.publisher.clearPublished = async () => {
+        runs++;
+        peak = Math.max(peak, ++active);
+        await new Promise((r) => setTimeout(r, 60));
+        await real();
+        active--;
+      };
+      try {
+        await Promise.all([
+          t.services.sync(),
+          t.services.sync(),
+          t.services.sync(),
+          t.services.sync(),
+        ]);
+        expect(peak).toBe(1);
+        // The first, and one that started after the other three asked: not four.
+        expect(runs).toBe(2);
+        // A failing run does not stop the next one.
+        const failing = t.services.git.fetch.bind(t.services.git);
+        let first = true;
+        t.services.git.fetch = async () => {
+          if (first) {
+            first = false;
+            throw new Error("network down");
+          }
+          return failing();
+        };
+        const results = await Promise.allSettled([t.services.sync(), t.services.sync()]);
+        expect(results.map((r) => r.status)).toEqual(["rejected", "fulfilled"]);
+        t.services.git.fetch = failing;
+      } finally {
+        t.services.publisher.clearPublished = real;
+      }
+    });
+
+    it("stops a fetch that hangs, so it does not hold the lock for everyone", async () => {
+      const { mkdtempSync, rmSync } = await import("node:fs");
+      const { tmpdir } = await import("node:os");
+      const { join } = await import("node:path");
+      const { GitGateway } = await import("../src/git/gateway.js");
+      const dir = mkdtempSync(join(tmpdir(), "frontier-hang-"));
+      const git = (...args: string[]) =>
+        execFileSync("git", ["-c", "user.name=T", "-c", "user.email=t@x", ...args], { cwd: dir });
+      git("init", "--initial-branch=main");
+      git("commit", "--allow-empty", "-m", "start");
+      git("remote", "add", "origin", "ssh://localhost/never");
+      const before = process.env.GIT_SSH_COMMAND;
+      // Every ssh connection of this process "hangs" for half a minute.
+      process.env.GIT_SSH_COMMAND = "sleep 30 #";
+      try {
+        const gateway = new GitGateway({
+          dir,
+          remoteUrl: "ssh://localhost/never",
+          author: { name: "A", email: "a@x" },
+          committer: { name: "A", email: "a@x" },
+          remoteTimeoutMs: 400,
+        });
+        const started = Date.now();
+        await expect(gateway.fetch()).rejects.toMatchObject({
+          code: "git_failed",
+          message: expect.stringContaining("took longer than"),
+        });
+        await expect(gateway.push("0".repeat(40))).rejects.toMatchObject({ code: "git_failed" });
+        expect(Date.now() - started).toBeLessThan(10_000);
+        // The lock is free again: a read is answered at once.
+        expect(await gateway.head()).toMatch(/^[0-9a-f]{40}$/);
+        await expect(gateway.deleteProposalBranch("proposal/x")).rejects.toMatchObject({
+          code: "git_failed",
+        });
+      } finally {
+        if (before === undefined) delete process.env.GIT_SSH_COMMAND;
+        else process.env.GIT_SSH_COMMAND = before;
+        rmSync(dir, { recursive: true, force: true });
+      }
+    });
+  });
+
   // ---- Item 11: no one can write another's address -----------------------------------------
 
   describe("the stand-in address", () => {

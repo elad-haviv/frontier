@@ -253,20 +253,23 @@ export async function buildServices(
   const files = new StateFiles();
   const { settings, ai, aiLog, models, imageFetcher } = server;
   const images = new ImageServer(vaultDir, paths.root);
-  // The accounts are read before anything asks who the first owner is (see `firstOwner`).
+  // The accounts and the project's members are read before anything asks who the first owner is (see
+  // `firstOwner`): an empty list of members that is only not read yet must never name anyone.
   await server.people.all();
+  await server.projects.all();
   /**
    * Whose a draft or rename without an owner is, and whom a call outside any request speaks for: the
-   * server's first account when it is in the project, else the project's first owner. A project with
-   * no member at all (before the first request claims it) is the first account's.
+   * server's first account when it is an owner of the project, else the project's earliest owner by
+   * date joined. A project with no owner to name (no member yet, before the first request claims it)
+   * has none, and what needs one waits.
    */
   const firstOwner = (): string | null => {
-    const members = server.projects.membersSync(record.id);
-    const admin = server.people.adminIdSync();
-    if (admin && (members.length === 0 || members.some((m) => m.personId === admin))) return admin;
-    const owners = members
+    const owners = server.projects
+      .membersSync(record.id)
       .filter((m) => m.role === "owner")
       .sort((a, b) => a.addedAt.localeCompare(b.addedAt));
+    const admin = server.people.adminIdSync();
+    if (admin && owners.some((m) => m.personId === admin)) return admin;
     return owners[0]?.personId ?? null;
   };
   const drafts = new DraftStore(stateDir, files, { legacyOwner: firstOwner, roleOf, nameOf });
@@ -426,6 +429,32 @@ export async function buildServices(
     drafts
       .tidyAway(isMember)
       .catch((err: unknown) => console.error("Sweep of unsaved changes failed", err));
+  let running: Promise<void> | null = null;
+  let queued: Promise<void> | null = null;
+  /** Fetches `main`, rebuilds the index and clears what reached it: see `services.sync`. */
+  const runSync = async (): Promise<void> => {
+    const result = await git.fetch();
+    status.fetched(result.current);
+    if (index.commit !== result.current) index.build(result.current);
+    await quarantine.noteFetched(result.previous ?? result.current, result.current);
+    await quarantine.refresh();
+    maps.refresh();
+    chronicles.refresh();
+    libraryFiles.refresh();
+    await services.publisher.clearPublished();
+    await quarantine.prune();
+    status.quarantine(quarantine.count(), [
+      ...(quarantine.problem ? [quarantine.problem] : []),
+      ...maps.problems.map((p) => `${p.path} is not shown as a map. ${p.message}`),
+      ...chronicles.problems.map((p) => `${p.path} is not shown as a chronicle. ${p.message}`),
+      ...libraryFiles.problems.map((p) => `${p.path} cannot be read. ${p.message}`),
+    ]);
+    await proposals.prune();
+    status.inbox(await services.branches.count());
+    status.indexed();
+    // The project list counts from this small file, so it never has to open the project.
+    await summary.noteIndexed(services);
+  };
   const services: Services = {
     config,
     git,
@@ -500,28 +529,23 @@ export async function buildServices(
       unwatchServer();
       summary.close();
     },
-    async sync() {
-      const result = await git.fetch();
-      status.fetched(result.current);
-      if (index.commit !== result.current) index.build(result.current);
-      await quarantine.noteFetched(result.previous ?? result.current, result.current);
-      await quarantine.refresh();
-      maps.refresh();
-      chronicles.refresh();
-      libraryFiles.refresh();
-      await services.publisher.clearPublished();
-      await quarantine.prune();
-      status.quarantine(quarantine.count(), [
-        ...(quarantine.problem ? [quarantine.problem] : []),
-        ...maps.problems.map((p) => `${p.path} is not shown as a map. ${p.message}`),
-        ...chronicles.problems.map((p) => `${p.path} is not shown as a chronicle. ${p.message}`),
-        ...libraryFiles.problems.map((p) => `${p.path} cannot be read. ${p.message}`),
-      ]);
-      await proposals.prune();
-      status.inbox(await services.branches.count());
-      status.indexed();
-      // The project list counts from this small file, so it never has to open the project.
-      await summary.noteIndexed(services);
+    sync() {
+      // One at a time: the clearing of finished work and the rebuild of the index must not run twice
+      // at once (polling, a webhook, an import and a save all ask). A call made while one is running
+      // waits for a run that starts after the call, since the running one may have fetched before
+      // whatever made the call (a push) happened; calls that arrive together share that one run.
+      if (!running) {
+        running = runSync().finally(() => (running = null));
+        return running;
+      }
+      queued ??= running
+        .catch(() => undefined)
+        .then(() => {
+          queued = null;
+          running = runSync().finally(() => (running = null));
+          return running;
+        });
+      return queued;
     },
   };
   services.branches = new BranchInbox({

@@ -38,6 +38,13 @@ export interface GatewayOptions {
   committer: Identity;
   /** How long an operation may wait for the lock. */
   lockTimeoutMs?: number;
+  /**
+   * How long a fetch or a push may take before it is stopped (default 90 seconds), and a first clone
+   * (default 10 minutes). A command that talks to the remote holds the one lock, so one that hangs
+   * would otherwise make every other read and save wait until it gave up.
+   */
+  remoteTimeoutMs?: number;
+  cloneTimeoutMs?: number;
   /** Called with the arguments of every Git command. Used by tests. */
   onCommand?: (args: readonly string[]) => void;
 }
@@ -94,6 +101,8 @@ interface RunOptions {
   /** Exit codes that are returned to the caller, not thrown. */
   allow?: (code: number) => boolean;
   remote?: boolean;
+  /** Stops the command after this long (for those that talk to the remote). */
+  timeoutMs?: number;
 }
 
 interface RunResult {
@@ -103,6 +112,11 @@ interface RunResult {
 }
 
 const MAX_BUFFER = 256 * 1024 * 1024;
+
+/** A fetch or a push that takes longer than this is stopped: 90 seconds, far more than a healthy one needs. */
+export const REMOTE_TIMEOUT_MS = 90_000;
+/** A first clone may be a large library: 10 minutes. */
+export const CLONE_TIMEOUT_MS = 10 * 60_000;
 
 /** Only branches under this name are read as proposals from agents. */
 export const PROPOSAL_PREFIX = "proposal/";
@@ -240,9 +254,13 @@ function parseWordChanges(out: string): WordCommit[] {
 export class GitGateway {
   private tail: Promise<unknown> = Promise.resolve();
   private readonly lockTimeoutMs: number;
+  private readonly remoteTimeoutMs: number;
+  private readonly cloneTimeoutMs: number;
 
   constructor(private readonly opts: GatewayOptions) {
     this.lockTimeoutMs = opts.lockTimeoutMs ?? 60_000;
+    this.remoteTimeoutMs = opts.remoteTimeoutMs ?? REMOTE_TIMEOUT_MS;
+    this.cloneTimeoutMs = opts.cloneTimeoutMs ?? CLONE_TIMEOUT_MS;
   }
 
   /** Runs `fn` when every earlier operation has finished. Fails with `git_busy` if the wait is too long. */
@@ -302,9 +320,27 @@ export class GitGateway {
       const child = execFile(
         "git",
         ["-c", "core.quotepath=off", ...args],
-        { cwd: options.cwd ?? this.opts.dir, env, encoding: "buffer", maxBuffer: MAX_BUFFER },
+        {
+          cwd: options.cwd ?? this.opts.dir,
+          env,
+          encoding: "buffer",
+          maxBuffer: MAX_BUFFER,
+          // Killed outright: Git's helpers (ssh, the HTTPS transport) ignore a polite stop.
+          ...(options.timeoutMs !== undefined
+            ? { timeout: options.timeoutMs, killSignal: "SIGKILL" as const }
+            : {}),
+        },
         (error, stdout, stderr) => {
-          const err = error as (Error & { code?: number | string }) | null;
+          const err = error as (Error & { code?: number | string; killed?: boolean }) | null;
+          if (err?.killed && options.timeoutMs !== undefined) {
+            reject(
+              new GitError(
+                "git_failed",
+                `git ${args[0]} took longer than ${Math.round(options.timeoutMs / 1000)} seconds and was stopped.`,
+              ),
+            );
+            return;
+          }
           const code = err === null ? 0 : typeof err.code === "number" ? err.code : -1;
           const result = { code, stdout, stderr: stderr.toString("utf8") };
           if (code === 0 || options.allow?.(code)) resolve(result);
@@ -332,6 +368,7 @@ export class GitGateway {
       await this.run(["clone", "--branch", "main", this.opts.remoteUrl, this.opts.dir], {
         cwd: tmpdir(),
         remote: true,
+        timeoutMs: this.cloneTimeoutMs,
       });
     });
   }
@@ -357,7 +394,7 @@ export class GitGateway {
         "+refs/heads/main:refs/remotes/origin/main",
         `+refs/heads/${PROPOSAL_PREFIX}*:refs/remotes/origin/${PROPOSAL_PREFIX}*`,
       ],
-      { remote: true },
+      { remote: true, timeoutMs: this.remoteTimeoutMs },
     );
     const current = await this.text(["rev-parse", "origin/main"]);
     await this.run(["reset", "--hard", "origin/main"]);
@@ -452,6 +489,7 @@ export class GitGateway {
       const r = await this.run(["push", "--porcelain", "origin", `:refs/heads/${name}`], {
         remote: true,
         allow: () => true,
+        timeoutMs: this.remoteTimeoutMs,
       });
       const out = r.stdout.toString("utf8") + r.stderr;
       // Already gone on the remote counts as removed.
@@ -842,6 +880,7 @@ export class GitGateway {
       const r = await this.run(["push", "--porcelain", "origin", `${commit}:refs/heads/main`], {
         remote: true,
         allow: () => true,
+        timeoutMs: this.remoteTimeoutMs,
       });
       if (r.code === 0) return;
       const out = r.stdout.toString("utf8") + r.stderr;

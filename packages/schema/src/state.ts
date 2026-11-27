@@ -64,6 +64,12 @@ export const DraftRecord = z.object({
   person: z.string().optional(),
   /** When the person's unsaved change to this file began; absent from a record made before 27d. */
   startedAt: z.string().datetime().optional(),
+  /**
+   * The id the person's device made for this draft, when it was another person's draft id already
+   * and the draft got a new id of its own (stage 27d): the device goes on using its id, which names
+   * this draft for that person.
+   */
+  clientId: Id.optional(),
 });
 export type DraftRecord = z.infer<typeof DraftRecord>;
 

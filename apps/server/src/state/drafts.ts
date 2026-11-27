@@ -176,6 +176,13 @@ export class DraftStore {
    * the web app before 27d relies on when it resolves without saying which version it compared.
    */
   private compared = new Map<string, string | null>();
+  /**
+   * The ids a person's devices use for a draft whose own id is different, by person and device id.
+   * A device may name an id of a draft someone else has (a draft from before people, shared by the
+   * browser profile); its text then goes to a draft of its own under a new id, and the id the device
+   * used keeps working as a name for it, so a device cannot tell that the id was taken.
+   */
+  private aliases = new Map<string, string>();
   /** When each person who is no longer in the project was seen leaving it, by person id. */
   private away: Record<string, string> = {};
 
@@ -236,12 +243,14 @@ export class DraftStore {
 
   /** Notes the saved version an unsaved change of the person was just compared with. */
   noteCompared(id: string, blob: string | null): void {
-    if (this.owned(id)) this.compared.set(id, blob);
+    const record = this.owned(id);
+    if (record) this.compared.set(record.id, blob);
   }
 
   /** The saved version the change was last compared with: its blob, null for none, undefined if never. */
   comparedBlob(id: string): string | null | undefined {
-    return this.owned(id) ? this.compared.get(id) : undefined;
+    const record = this.owned(id);
+    return record ? this.compared.get(record.id) : undefined;
   }
 
   /** Notes that the server itself changed a draft of the person being served. */
@@ -253,10 +262,22 @@ export class DraftStore {
     return this.serverChangeCounts.get(this.me()) ?? 0;
   }
 
-  /** A person's own record by id; another's is "not found", as if it were not there. */
+  /**
+   * A person's own record by the id they use: the draft's own id, or the id their device made when
+   * that was another person's already (see `save`). Another's is "not found", as if it were not
+   * there. Whatever calls this must go on with the record's `id`, never the one it was asked with,
+   * which for an alias names someone else's folder.
+   */
   private owned(id: string): DraftRecord | undefined {
-    const record = this.records.get(id);
+    const direct = this.records.get(id);
+    if (direct && this.isMine(direct)) return direct;
+    const alias = this.aliases.get(this.aliasKey(this.me(), id));
+    const record = alias === undefined ? undefined : this.records.get(alias);
     return record && this.isMine(record) ? record : undefined;
+  }
+
+  private aliasKey(person: string, clientId: string): string {
+    return `${person}\u0000${clientId}`;
   }
 
   /**
@@ -295,6 +316,7 @@ export class DraftStore {
     this.serverKept.clear();
     this.renamed = [];
     this.away = {};
+    this.aliases.clear();
     if (!existsSync(this.dir)) return;
     this.renamed =
       (await this.files.readJson(this.renamedFile(), RenamedLog).catch(() => null)) ?? [];
@@ -310,6 +332,8 @@ export class DraftStore {
         this.countKept(record.id);
       }
     }
+    // The aliases are read after every record is: the person of a record from before is not known yet.
+    this.indexAliases();
     const renameDir = join(this.dir, "renames");
     if (existsSync(renameDir)) {
       for (const name of await readdir(renameDir)) {
@@ -351,6 +375,15 @@ export class DraftStore {
     return stamped;
   }
 
+  /** Builds the alias table from the records that say which id their device uses. */
+  private indexAliases(): void {
+    this.aliases.clear();
+    for (const r of this.records.values()) {
+      if (r.clientId !== undefined)
+        this.aliases.set(this.aliasKey(this.ownerOf(r), r.clientId), r.id);
+    }
+  }
+
   /** The unsaved changes of the person being served, by path. A reader has none. */
   list(): DraftRecord[] {
     if (savedViewOnly()) return [];
@@ -371,19 +404,19 @@ export class DraftStore {
   }
 
   async text(id: string): Promise<string> {
-    this.require(id);
+    id = this.require(id).id;
     return readFile(join(this.folder(id), "content"), "utf8");
   }
 
   /** As `text`, read at once; for the few readers that cannot wait, such as the schema. */
   textNow(id: string): string {
-    this.require(id);
+    id = this.require(id).id;
     return readFileSync(join(this.folder(id), "content"), "utf8");
   }
 
   /** The stored content as bytes. For an image draft this is the image itself. */
   async bytes(id: string): Promise<Buffer> {
-    this.require(id);
+    id = this.require(id).id;
     return readFile(join(this.folder(id), "content"));
   }
 
@@ -474,6 +507,7 @@ export class DraftStore {
   ): Promise<DraftRecord> {
     const existing = this.owned(id);
     if (!existing) throw new ApiError("not_found", "This draft no longer exists.");
+    id = existing.id;
     const { origin, op } = extra;
     if (op !== undefined && existing.lastOp === op) return existing;
     const known = (o: Origin) => origin && o.kind === origin.kind && o.ref === origin.ref;
@@ -507,12 +541,14 @@ export class DraftStore {
   }
 
   hasKeptCopies(id: string): boolean {
-    return this.owned(id) !== undefined && this.kept.has(id);
+    const record = this.owned(id);
+    return record !== undefined && this.kept.has(record.id);
   }
 
   /** Whether the draft keeps the other side of an item clash. */
   hasServerCopy(id: string): boolean {
-    return this.owned(id) !== undefined && this.serverKept.has(id);
+    const record = this.owned(id);
+    return record !== undefined && this.serverKept.has(record.id);
   }
 
   /**
@@ -520,9 +556,9 @@ export class DraftStore {
    * item clash is only shown, so it holds nothing back: saving the draft as a version clears it.
    */
   hasDeviceCopies(id: string): boolean {
-    return (
-      this.owned(id) !== undefined && (this.kept.get(id) ?? 0) > (this.serverKept.has(id) ? 1 : 0)
-    );
+    const record = this.owned(id);
+    if (record === undefined) return false;
+    return (this.kept.get(record.id) ?? 0) > (this.serverKept.has(record.id) ? 1 : 0);
   }
 
   /** The drafts that have kept copies, and how many each has. */
@@ -539,7 +575,7 @@ export class DraftStore {
 
   /** Keeps a device's text beside a draft. A second copy from the same device replaces the first. */
   private async keep(id: string, device: Device, text: string, now: Date): Promise<void> {
-    this.require(id);
+    id = this.require(id).id;
     // The route lets only an id through; this guards the file name all the same.
     const name =
       DEVICE_NAME.test(device.id) && device.id !== EARLIER && device.id !== SERVER_SLOT
@@ -554,7 +590,7 @@ export class DraftStore {
 
   /** Every kept copy of a draft, oldest first. */
   async keptCopies(id: string): Promise<KeptCopyText[]> {
-    this.require(id);
+    id = this.require(id).id;
     const out: KeptCopyText[] = [];
     const old = join(this.folder(id), "content.v2");
     if (existsSync(old)) {
@@ -596,6 +632,7 @@ export class DraftStore {
    */
   async keepOther(id: string, text: string, clashes: string[], at = new Date()): Promise<void> {
     const record = this.require(id);
+    id = record.id;
     const dir = this.versionsDir(id);
     const earlier = await this.files
       .readJson(join(dir, `${SERVER_SLOT}.json`), KeptCopy)
@@ -630,7 +667,7 @@ export class DraftStore {
    * a slot. Removing one that is not there does nothing.
    */
   async dropKept(id: string, slot?: string): Promise<void> {
-    this.require(id);
+    id = this.require(id).id;
     if (slot === undefined || slot === EARLIER) {
       await this.files.remove(join(this.folder(id), "content.v2"));
       await this.files.remove(join(this.folder(id), "record.v2.json"));
@@ -658,7 +695,17 @@ export class DraftStore {
     await this.files.write(join(this.folder(record.id), "content"), text);
     await this.files.writeJson(join(this.folder(record.id), "record.json"), record);
     this.records.set(record.id, record);
+    if (record.clientId !== undefined) {
+      this.aliases.set(this.aliasKey(this.ownerOf(record), record.clientId), record.id);
+    }
     this.bump();
+  }
+
+  /** Forgets the id a device used for a draft that is gone. */
+  private dropAlias(record: DraftRecord): void {
+    if (record.clientId !== undefined) {
+      this.aliases.delete(this.aliasKey(this.ownerOf(record), record.clientId));
+    }
   }
 
   /**
@@ -683,11 +730,21 @@ export class DraftStore {
     device: Device = UNKNOWN_DEVICE,
     now = new Date(),
   ): Promise<DraftRecord> {
-    // Another person's draft with this id is none of this person's business: the same answer as for
-    // an id nobody has. (A new draft with such an id is refused by `put`, in the same words.)
-    const taken = this.records.get(input.id);
-    if (taken && !this.isMine(taken)) throw new ApiError("not_found", "There is no such draft.");
-    const existing = taken ?? this.byPath(input.path);
+    // The id this device uses is the draft's own, or an alias for it (see below). An id that is
+    // another person's draft is no business of this person's, and is told by nothing: it is treated
+    // exactly as an id nobody has, except that the draft they make is under a new id of its own,
+    // which their device's id then names (`clientId`). The device sees the answers it would for a
+    // free id, so it cannot learn that the id is someone else's.
+    const clientId = input.id;
+    let id = this.owned(clientId)?.id ?? clientId;
+    let alias: string | undefined;
+    const taken = this.records.get(id);
+    if (taken && !this.isMine(taken)) {
+      id = makeId(randomBytes);
+      alias = clientId;
+    }
+    input = { ...input, id };
+    const existing = this.owned(id) ?? this.byPath(input.path);
     if (existing && input.op !== undefined && existing.lastOp === input.op) return existing;
     const op = input.op !== undefined ? { lastOp: input.op } : {};
     if (!existing) {
@@ -710,10 +767,11 @@ export class DraftStore {
             binary: false,
             origins: [],
             updatedAt: now.toISOString(),
+            ...(alias !== undefined ? { clientId: alias } : {}),
           };
           await this.put(record, published.text ?? "");
           await this.keep(record.id, device, input.text, now);
-          throw this.stale(record.id);
+          throw this.stale(record.id, alias);
         }
         // Otherwise the old draft was discarded elsewhere, and this text starts a new one.
       }
@@ -727,6 +785,7 @@ export class DraftStore {
         binary: false,
         origins: [],
         updatedAt: now.toISOString(),
+        ...(alias !== undefined ? { clientId: alias } : {}),
         ...op,
       };
       await this.put(record, input.text);
@@ -740,14 +799,14 @@ export class DraftStore {
       // The draft this device knew was renamed or moved on another device: the text is kept
       // beside it where it is now, never refused and never written back at the old path.
       await this.keep(existing.id, device, input.text, now);
-      throw this.stale(existing.id);
+      throw this.stale(existing.id, existing.clientId);
     }
     if (existing.id === input.id && input.revision > existing.revision) {
       throw new ApiError("invalid", "This draft is newer than the server's copy. Reload the page.");
     }
     if (existing.id !== input.id || input.revision < existing.revision) {
       await this.keep(existing.id, device, input.text, now);
-      throw this.stale(existing.id);
+      throw this.stale(existing.id, existing.clientId);
     }
 
     const record: DraftRecord = {
@@ -794,11 +853,12 @@ export class DraftStore {
     throw this.stale(draft.id);
   }
 
-  private stale(id: string): ApiError {
+  /** `stale_revision` for a draft, named by the id its device uses when that is not its own. */
+  private stale(id: string, as?: string): ApiError {
     return new ApiError(
       "stale_revision",
       "This file was changed from another device. Both texts are kept for you to compare.",
-      { id },
+      { id: as ?? id },
     );
   }
 
@@ -821,6 +881,7 @@ export class DraftStore {
   /** Replaces the draft with the text the author merged by hand and drops every kept copy. */
   async mergeVersions(id: string, text: string, now = new Date()): Promise<DraftRecord> {
     const record = this.require(id);
+    id = record.id;
     const next = { ...record, revision: record.revision + 1, updatedAt: now.toISOString() };
     await this.put(next, text);
     await this.dropKept(id);
@@ -839,6 +900,7 @@ export class DraftStore {
     now = new Date(),
   ): Promise<DraftRecord> {
     const record = this.require(id);
+    id = record.id;
     const next = {
       ...record,
       baseBlob,
@@ -850,9 +912,48 @@ export class DraftStore {
     return next;
   }
 
+  /**
+   * Makes another draft of the person's a kept copy of this one, and removes it: for two drafts that
+   * would be at one path. Its text, and the texts it kept itself, are kept beside this draft's, each
+   * in a slot of its own, so nothing is lost. A draft that deletes has no text to keep.
+   */
+  async absorb(intoId: string, fromId: string, now = new Date()): Promise<void> {
+    const into = this.require(intoId);
+    const from = this.require(fromId);
+    if (into.binary || from.binary || into.id === from.id) {
+      throw new ApiError("invalid", "These cannot be put together.");
+    }
+    if (from.kind !== "delete") {
+      await this.keep(
+        into.id,
+        { id: from.id, name: "your other change at this path" },
+        await this.text(from.id),
+        now,
+      );
+    }
+    for (const copy of await this.keptCopies(from.id)) {
+      const slot = `${from.id.slice(0, 6)}${copy.device.replace(/[^a-z0-9]/g, "").slice(0, 6)}`;
+      await this.keep(into.id, { id: slot, name: copy.deviceName }, copy.text, now);
+    }
+    await this.discard(from.id);
+  }
+
+  /** Points a rename waiting to be saved at where its file is now, after another rename moved it. */
+  async retargetRename(id: string, from: string): Promise<void> {
+    const intent = this.renames.get(id);
+    if (!intent || !this.isMine(intent)) {
+      throw new ApiError("not_found", "There is no such rename.");
+    }
+    const next = { ...intent, from };
+    await this.files.writeJson(join(this.dir, "renames", `${id}.json`), next);
+    this.renames.set(id, next);
+    this.conflictCounts.delete(this.me());
+  }
+
   /** Points a draft at a new path, after the rename of its file has been published. */
   async movePath(id: string, path: string): Promise<DraftRecord> {
     const record = this.require(id);
+    id = record.id;
     const next = { ...record, path };
     await this.files.writeJson(join(this.folder(id), "record.json"), next);
     this.records.set(id, next);
@@ -861,7 +962,8 @@ export class DraftStore {
   }
 
   async discard(id: string): Promise<void> {
-    this.require(id);
+    id = this.require(id).id;
+    this.dropAlias(this.records.get(id)!);
     this.records.delete(id);
     this.compared.delete(id);
     this.bump();
@@ -1062,6 +1164,7 @@ export class DraftStore {
   private async removeAllOf(personId: string): Promise<void> {
     for (const [id, r] of [...this.records]) {
       if (this.ownerOf(r) !== personId) continue;
+      this.dropAlias(r);
       this.records.delete(id);
       this.compared.delete(id);
       this.kept.delete(id);
