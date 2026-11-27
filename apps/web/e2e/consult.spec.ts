@@ -46,7 +46,7 @@ test("with no model chosen, Consult says how to turn it on", async ({ page }, in
   const panel = page.getByRole("complementary", { name: "Consult" });
   await expect(panel).toContainText("Consult needs an AI model");
   await panel.getByRole("link", { name: "Open Settings" }).click();
-  await expect(page).toHaveURL(/\/settings\/ai\/models\/conversation$/);
+  await expect(page).toHaveURL(/\/settings\/you\/ai-models\/conversation$/);
 });
 
 test("reads the whole entry, jumps to a passage, applies a suggestion and undoes it", async ({
