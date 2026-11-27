@@ -44,7 +44,7 @@ export const TASKS: { task: AiTaskName; title: string; about: string }[] = [
   {
     task: "extraction",
     title: "Proposing fields",
-    about: "Reads an entry and suggests dates and types for the inbox.",
+    about: "Reads an entry and suggests dates, types and relations for the inbox.",
   },
   {
     task: "conversation",

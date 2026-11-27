@@ -1,5 +1,5 @@
 import { X } from "lucide-react";
-import { useId, useMemo, useState } from "react";
+import { useId, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { findKind, type RelKind, type TreesFile } from "@frontier/schema";
 import { readRelations } from "@frontier/vault";
@@ -11,7 +11,14 @@ import {
   useRelations,
   useTrees,
 } from "../../trees/data.ts";
-import { downs, type Graph, layoutTree, partners, ups } from "../../trees/model.ts";
+import { downs, type Graph, layoutTree, makeGraph, partners, ups } from "../../trees/model.ts";
+import {
+  isClear,
+  ProposedRelation,
+  type RelProposal,
+  useAcceptClear,
+  useMarkInProse,
+} from "./ProposedRelation.tsx";
 import { useDialogs } from "../Dialogs.tsx";
 import { EntryCombobox } from "../EntryCombobox.tsx";
 import { usePhone } from "../Shell.tsx";
@@ -20,6 +27,8 @@ import { useToast } from "../ui/Toast.tsx";
 import { AddPicker } from "./AddPicker.tsx";
 import { OnePerson } from "./Person.tsx";
 import "../../pages/TreePage.css";
+
+const titleOf = (p: string) => p.split("/").pop()!.replace(/\.md$/i, "");
 
 /** The kind to show an entry by: a family when it has one, or else the first it is part of. */
 function kindFor(g: Graph, path: string): string {
@@ -59,8 +68,21 @@ export function RelationsPanel({
   const [error, setError] = useState<string | null>(null);
   const [picker, setPicker] = useState<{ where: AddWhere; at: DOMRect } | null>(null);
   const g = relations.graph;
+  // Stage 31: what the AI proposed from this entry's text, and from others that name it.
+  const response = relations.response;
+  const proposed = useMemo(() => response?.proposed ?? [], [response]);
+  const asRel = (p: (typeof proposed)[number]): RelProposal => ({ ...p, applies: true });
+  const mine = proposed.filter((p) => p.path === path).map(asRel);
+  const naming = proposed.filter((p) => p.path !== path && p.whoPath === path).map(asRel);
+  const gAll = useMemo(
+    () => (response && proposed.length > 0 ? makeGraph(response, { proposed: true }) : g),
+    [response, proposed.length, g],
+  );
+  const acceptClear = useAcceptClear();
+  const list = useRef<HTMLDivElement>(null);
+  useMarkInProse(mine.map((p) => p.quote));
 
-  if (relations.state === "loading" || !g)
+  if (relations.state === "loading" || !g || !gAll)
     return <p className="tr-muted">Loading the relations…</p>;
   const k = kindFor(g, path);
   const inTrees = (trees.value?.trees ?? []).filter((t) => layoutTree(g, t).nodes.has(path));
@@ -120,7 +142,13 @@ export function RelationsPanel({
   return (
     <div className="tr-rel-panel">
       <OnePerson
-        g={g}
+        g={gAll}
+        onProposal={(i) => {
+          const op = proposed[i]?.op;
+          const el = list.current?.querySelector<HTMLElement>(`[data-op="${op}"]`);
+          el?.scrollIntoView({ block: "nearest" });
+          el?.querySelector<HTMLButtonElement>('[data-act="accept"]')?.focus();
+        }}
         kindName={k}
         id={path}
         onGo={(key) => {
@@ -129,6 +157,58 @@ export function RelationsPanel({
         }}
         {...(editable ? { onAdd: (where: AddWhere, at: DOMRect) => setPicker({ where, at }) } : {})}
       />
+      {(mine.length > 0 || naming.length > 0) && (
+        <div ref={list} className="tr-proposals">
+          {mine.length > 0 && (
+            <section className="tr-sec">
+              <h3>
+                <span>Proposed from the text · {mine.length}</span>
+                {editable && mine.filter(isClear).length > 1 && (
+                  <button
+                    type="button"
+                    className="tr-add-link"
+                    onClick={async () => {
+                      await acceptClear(mine);
+                      onChanged();
+                    }}
+                  >
+                    Accept the {mine.filter(isClear).length} clear ones
+                  </button>
+                )}
+              </h3>
+              <ul className="tr-plist">
+                {mine.map((p) => (
+                  <li key={p.op}>
+                    <ProposedRelation p={p} tag={false} compact onDecided={() => onChanged()} />
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+          {naming.length > 0 && (
+            <section className="tr-sec">
+              <h3>Proposed in other entries · {naming.length}</h3>
+              <ul className="tr-plist">
+                {naming.map((p) => (
+                  <li key={p.op}>
+                    <ProposedRelation
+                      p={p}
+                      tag={false}
+                      compact
+                      heading={
+                        <p className="tr-muted">
+                          From <Link to={entryUrl(p.path)}>{titleOf(p.path)}</Link>&rsquo;s text
+                        </p>
+                      }
+                      onDecided={() => onChanged()}
+                    />
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+        </div>
+      )}
       <section className="tr-sec">
         <h3>As written in this entry</h3>
         {written.problems.length > 0 ? (

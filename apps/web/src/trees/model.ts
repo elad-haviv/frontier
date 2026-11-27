@@ -20,6 +20,8 @@ export interface Edge {
   how: string | null;
   when: string | null;
   fact: RelFact;
+  /** Set for a relation the AI proposed (stage 31): its place in `proposed`. */
+  proposed?: number;
 }
 
 export interface Graph {
@@ -46,7 +48,11 @@ const inner = (m: Map<string, Map<string, Edge[]>>, k: string) => {
   return x;
 };
 
-export function makeGraph(r: RelationsResponse): Graph {
+/**
+ * The relations as a graph. With `proposed`, the AI's proposals are in it too, marked, for
+ * drawing; checks and kinship are worked out on a graph without them.
+ */
+export function makeGraph(r: RelationsResponse, opts: { proposed?: boolean } = {}): Graph {
   const people = new Map(r.people.map((p) => [p.key, p]));
   const edges: Edge[] = [];
   const upMap = new Map<string, Map<string, Edge[]>>();
@@ -71,6 +77,23 @@ export function makeGraph(r: RelationsResponse): Graph {
   // "child: Nessa, with: Garrow" on Wren also says Garrow is Nessa's parent.
   for (const f of r.facts) {
     if (f.with) add({ kind: f.kind, a: f.with, b: f.b, how: f.how, when: f.when, fact: f });
+  }
+  if (opts.proposed) {
+    (r.proposed ?? []).forEach((p, i) => {
+      const fact: RelFact = {
+        kind: p.kind,
+        a: p.a,
+        b: p.b,
+        with: p.with,
+        how: p.how,
+        when: p.when,
+        sources: [{ path: p.path, index: 0, word: p.word }],
+        disagree: null,
+      };
+      add({ kind: p.kind, a: p.a, b: p.b, how: p.how, when: p.when, fact, proposed: i });
+      if (p.with && p.with !== p.a)
+        add({ kind: p.kind, a: p.with, b: p.b, how: p.how, when: p.when, fact, proposed: i });
+    });
   }
   return { people, kinds: r.kinds, facts: r.facts, edges, upMap, downMap, symMap };
 }
@@ -164,6 +187,8 @@ export interface LaidEdge {
   kd: number;
   dashed: boolean;
   ended: boolean;
+  /** A proposed relation (stage 31): its place in the response's `proposed`. */
+  proposal: number | null;
 }
 
 export interface Layout {
@@ -305,6 +330,7 @@ export function layoutTree(g: Graph, t: TreeLine, root?: string): Layout {
         kd: 0,
         dashed: false,
         ended: !!e?.how && /ended|divorc|separat|widow/i.test(e.how),
+        proposal: e?.proposed ?? null,
       });
     }
     const me = nodes.get(n.id)!;
@@ -326,6 +352,7 @@ export function layoutTree(g: Graph, t: TreeLine, root?: string): Layout {
           kd: up ? kidNode.d + SD : kidNode.d,
           dashed: !!e?.how && /adopt|foster/i.test(e.how),
           ended: false,
+          proposal: e?.proposed ?? null,
         });
       }
     }

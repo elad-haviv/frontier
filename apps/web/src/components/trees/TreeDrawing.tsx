@@ -1,6 +1,7 @@
 import {
   forwardRef,
   type KeyboardEvent,
+  type ReactElement,
   type PointerEvent,
   useCallback,
   useEffect,
@@ -80,6 +81,12 @@ export const TreeDrawing = forwardRef<
     onFold: (key: string) => void;
     /** What a screen reader hears about the selected card. */
     said: string;
+    /** The graph without proposals, for checks (stage 31). */
+    checks?: Graph;
+    /** Words for each proposed relation drawn, by its place, for its ? mark. */
+    proposalLabel?: (i: number) => string;
+    selectedProposal?: number | null;
+    onProposal?: (i: number) => void;
   }
 >(function TreeDrawing(props, ref) {
   const { g, tree, layout: L, selected, compare, matches, fine, phone } = props;
@@ -92,7 +99,11 @@ export const TreeDrawing = forwardRef<
 
   const apply = useCallback(() => {
     const v = view.current;
-    if (v && svg.current) svg.current.setAttribute("viewBox", `${v.x} ${v.y} ${v.w} ${v.h}`);
+    if (v && svg.current) {
+      svg.current.setAttribute("viewBox", `${v.x} ${v.y} ${v.w} ${v.h}`);
+      // Zoomed far out, many ? marks give way to the count in the banner.
+      svg.current.toggleAttribute("data-far", v.w > 1500);
+    }
   }, []);
 
   const size = () => {
@@ -307,6 +318,47 @@ export const TreeDrawing = forwardRef<
 
   const onPath = new Set(compare?.path ?? []);
   const lit = (a: string, b: string) => onPath.has(a) && onPath.has(b);
+  const checks = props.checks ?? g;
+  /**
+   * The ? on a proposed line: a button reached with Tab, which opens the proposal. Drawn on a
+   * layer above the cards, so a card's + never covers it.
+   */
+  const marks: ReactElement[] = [];
+  const mark = (i: number, x: number, y: number): null => {
+    marks.push(markAt(i, x, y));
+    return null;
+  };
+  const markAt = (i: number, x: number, y: number) => (
+    <g
+      key={`q${i}-${x}-${y}`}
+      className={`tr-q${props.selectedProposal === i ? " is-selected" : ""}`}
+      data-tool="proposal"
+      tabIndex={0}
+      role="button"
+      aria-label={props.proposalLabel?.(i) ?? "Proposed relation"}
+      onClick={() => props.onProposal?.(i)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          e.stopPropagation();
+          props.onProposal?.(i);
+        }
+      }}
+    >
+      <circle cx={x} cy={y} r={9} />
+      <text x={x} y={y + 4} textAnchor="middle">
+        ?
+      </text>
+    </g>
+  );
+  // Someone in the tree only through proposals says so on their card.
+  const confirmedKeys = new Set<string>([L.root]);
+  for (const e of L.edges) {
+    if (e.proposal === null) {
+      confirmedKeys.add(e.from);
+      confirmedKeys.add(e.to);
+    }
+  }
 
   const lines = L.edges.map((e, i) => {
     if (e.type === "couple") {
@@ -320,6 +372,14 @@ export const TreeDrawing = forwardRef<
       const [x2, y2] = L.at(hi, dd);
       const [mx, my] = L.at((lo + hi) / 2, dd);
       const cls = lit(e.from, e.to) ? " is-path" : "";
+      if (e.proposal !== null) {
+        return (
+          <g key={`c${i}`} className="tr-couple is-proposed">
+            <path className="tr-line" d={`M${x1},${y1} L${x2},${y2}`} />
+            {mark(e.proposal, mx, my)}
+          </g>
+        );
+      }
       return (
         <g key={`c${i}`} className={`tr-couple${cls}`}>
           <path className="tr-line" d={`M${x1},${y1} L${x2},${y2}`} />
@@ -342,13 +402,15 @@ export const TreeDrawing = forwardRef<
     const [c2x, c2y] = L.at(e.kb, m);
     const [x1, y1] = L.at(e.kb, e.kd);
     const path = lit(e.from, e.to) ? " is-path" : "";
+    const [qx, qy] = L.at((e.ab + e.kb) / 2, m);
     return (
-      <g key={`d${i}`} className={`tr-down${path}`}>
+      <g key={`d${i}`} className={`tr-down${path}${e.proposal !== null ? " is-proposed" : ""}`}>
         <path
           className={`tr-line${e.dashed ? " is-dashed" : ""}`}
           d={`M${x0},${y0} C${c1x},${c1y} ${c2x},${c2y} ${x1},${y1}`}
         />
         <circle className="tr-dot" cx={x1} cy={y1} r={3} />
+        {e.proposal !== null && mark(e.proposal, qx, qy)}
       </g>
     );
   });
@@ -376,7 +438,7 @@ export const TreeDrawing = forwardRef<
     const p = g.people.get(n.key);
     const stub = !p?.path;
     const { x, y } = L.rect(n.key);
-    const warn = warningsOf(g, k, n.key, fine);
+    const warn = warningsOf(checks, k, n.key, fine);
     const hiddenUp = ups(g, n.key, k).filter((u) => !L.nodes.has(u));
     const adopted = /adopt|foster/i.test(edgeOf(g, k, ups(g, n.key, k)[0] ?? "", n.key)?.how ?? "");
     const sub = [
@@ -386,6 +448,7 @@ export const TreeDrawing = forwardRef<
           ? "No entry yet"
           : (p?.type ?? ""),
       adopted ? "adopted" : "",
+      confirmedKeys.has(n.key) ? "" : "proposed",
     ]
       .filter(Boolean)
       .join(" · ");
@@ -506,6 +569,7 @@ export const TreeDrawing = forwardRef<
       <svg
         ref={svg}
         className={`tr-svg${compare ? " is-comparing" : ""}`}
+        data-many={L.edges.filter((e) => e.proposal !== null).length > 15 ? "" : undefined}
         tabIndex={0}
         role="application"
         aria-roledescription="tree"
@@ -522,6 +586,7 @@ export const TreeDrawing = forwardRef<
         <g className="tr-lines">{lines}</g>
         <g className="tr-overlays">{overlay}</g>
         <g className="tr-cards">{cards}</g>
+        <g className="tr-marks">{marks}</g>
       </svg>
       <div className="sr-only" role="status" aria-live="polite">
         {props.said}

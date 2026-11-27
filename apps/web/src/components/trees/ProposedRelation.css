@@ -26,7 +26,7 @@
   gap: 0.35rem;
   margin: 0;
 }
-.rp-tag {
+.rp-line .rp-tag {
   border-color: var(--proposed);
   color: var(--proposed);
 }
@@ -199,4 +199,9 @@
 }
 .proposal-head .spacer {
   flex: 1;
+}
+
+::highlight(rel-proposed) {
+  background-color: color-mix(in srgb, var(--proposed) 16%, transparent);
+  text-decoration: underline dashed var(--proposed);
 }

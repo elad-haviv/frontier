@@ -1,4 +1,4 @@
-import { type ReactNode, useId, useState } from "react";
+import { type ReactNode, useEffect, useId, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, ApiFailure, entryUrl } from "../../api.ts";
 import { reloadRelations } from "../../trees/data.ts";
@@ -386,4 +386,57 @@ export function useAcceptClear(): (items: RelProposal[]) => Promise<void> {
       toast({ message: err instanceof ApiFailure ? err.message : "They could not be saved." });
     }
   };
+}
+
+const unlink = (s: string) =>
+  s.replace(
+    /\[\[([^\]|#]*)(?:#[^\]|]*)?(?:\|([^\]]*))?\]\]/g,
+    (_m, t: string, shown?: string) => shown ?? t,
+  );
+const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/**
+ * Marks the sentences proposals came from in the entry's text on the page (the reader's
+ * `.prose`), while the component that asks is shown. Uses the browser's highlights, so the text
+ * itself is not changed; where they are not supported nothing is marked.
+ */
+export function useMarkInProse(quotes: string[]): void {
+  const key = quotes.join("\n");
+  useEffect(() => {
+    const registry = typeof CSS !== "undefined" ? CSS.highlights : undefined;
+    const root = document.querySelector(".prose");
+    if (!registry || typeof Highlight === "undefined" || !root || quotes.length === 0) return;
+    const nodes: { node: Text; start: number }[] = [];
+    let all = "";
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    while (walker.nextNode()) {
+      const node = walker.currentNode as Text;
+      nodes.push({ node, start: all.length });
+      all += node.data;
+    }
+    const at = (offset: number) => {
+      for (let i = nodes.length - 1; i >= 0; i--) {
+        if (nodes[i]!.start <= offset)
+          return { node: nodes[i]!.node, offset: offset - nodes[i]!.start };
+      }
+      return null;
+    };
+    const ranges: Range[] = [];
+    for (const q of quotes) {
+      const pattern = escapeRe(unlink(q).trim()).replace(/\s+/g, "\\s+");
+      if (!pattern) continue;
+      const m = new RegExp(pattern).exec(all);
+      if (!m) continue;
+      const a = at(m.index);
+      const b = at(m.index + m[0].length);
+      if (!a || !b) continue;
+      const range = document.createRange();
+      range.setStart(a.node, a.offset);
+      range.setEnd(b.node, Math.min(b.offset, b.node.length));
+      ranges.push(range);
+    }
+    if (ranges.length === 0) return;
+    registry.set("rel-proposed", new Highlight(...ranges));
+    return () => void registry.delete("rel-proposed");
+  }, [key]);
 }

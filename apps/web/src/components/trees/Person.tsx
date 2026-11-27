@@ -25,7 +25,8 @@ export interface Section {
   title: string;
   where?: AddWhere;
   worked?: boolean;
-  items: { key: string; tag?: string }[];
+  /** `proposal`: a relation the AI proposed (stage 31), by its place in the response. */
+  items: { key: string; tag?: string; proposal?: number }[];
 }
 
 /** The people round one person, by kind: parents, partners, children, siblings, rivals. */
@@ -34,10 +35,18 @@ export function sectionsOf(g: Graph, kindName: string, id: string): Section[] {
   const k = kind?.name ?? kindName;
   const out: Section[] = [];
   const tag = (a: string, b: string, kk = k) => edgeOf(g, kk, a, b)?.how ?? undefined;
+  const prop = (a: string, b: string, kk = k) => {
+    const n = edgeOf(g, kk, a, b)?.proposed;
+    return n === undefined ? {} : { proposal: n };
+  };
   out.push({
     title: kind?.family ? "Parents" : `${k[0]!.toUpperCase()}${k.slice(1)}`,
     where: "up",
-    items: ups(g, id, k).map((u) => ({ key: u, ...(tag(u, id) ? { tag: tag(u, id)! } : {}) })),
+    items: ups(g, id, k).map((u) => ({
+      key: u,
+      ...(tag(u, id) ? { tag: tag(u, id)! } : {}),
+      ...prop(u, id),
+    })),
   });
   if (kind?.family) {
     const couple = g.kinds.find((x) => x.couple);
@@ -47,7 +56,11 @@ export function sectionsOf(g: Graph, kindName: string, id: string): Section[] {
       items: partners(g, id).map((p) => {
         const e = couple ? edgeOf(g, couple.name, id, p) : undefined;
         const t = e?.when ?? e?.how ?? undefined;
-        return { key: p, ...(t ? { tag: t } : {}) };
+        return {
+          key: p,
+          ...(t ? { tag: t } : {}),
+          ...(e?.proposed !== undefined ? { proposal: e.proposed } : {}),
+        };
       }),
     });
   }
@@ -58,7 +71,11 @@ export function sectionsOf(g: Graph, kindName: string, id: string): Section[] {
         ? `${kind.reverse[0]!.toUpperCase()}${kind.reverse.slice(1)}`
         : "Below",
     where: "down",
-    items: downs(g, id, k).map((c) => ({ key: c, ...(tag(id, c) ? { tag: tag(id, c)! } : {}) })),
+    items: downs(g, id, k).map((c) => ({
+      key: c,
+      ...(tag(id, c) ? { tag: tag(id, c)! } : {}),
+      ...prop(id, c),
+    })),
   });
   const sibs = new Set<string>();
   for (const p of ups(g, id, k)) for (const c of downs(g, p, k)) if (c !== id) sibs.add(c);
@@ -103,6 +120,8 @@ export function PersonDetails({
   onFine,
   actions,
   compact = false,
+  checks,
+  onProposal,
 }: {
   g: Graph;
   kindName: string;
@@ -114,10 +133,13 @@ export function PersonDetails({
   onFine: (key: string) => void;
   actions: ReactNode;
   compact?: boolean;
+  /** The graph without proposals, for the checks (stage 31). */
+  checks?: Graph;
+  onProposal?: (i: number) => void;
 }) {
   const p = g.people.get(id);
   const stub = !p?.path;
-  const warnings = warningsOf(g, kindName, id, fine);
+  const warnings = warningsOf(checks ?? g, kindName, id, fine);
   const sections = sectionsOf(g, kindName, id).filter((s) => !compact || s.items.length > 0);
   return (
     <div className={`tr-person${compact ? " is-compact" : ""}`}>
@@ -175,9 +197,16 @@ export function PersonDetails({
                   <button
                     type="button"
                     className={`tr-rel${s.worked ? " is-worked" : ""}`}
-                    onClick={() => onGo(it.key)}
+                    onClick={() =>
+                      it.proposal !== undefined && onProposal
+                        ? onProposal(it.proposal)
+                        : onGo(it.key)
+                    }
                   >
                     {title(g, it.key)}
+                    {it.proposal !== undefined && (
+                      <span className="tr-tag-pill is-proposed">? proposed</span>
+                    )}
                     {it.tag && <span className="tr-tag-pill">{it.tag}</span>}
                     {!g.people.get(it.key)?.path && <span className="tr-tag-pill">no entry</span>}
                   </button>
@@ -209,25 +238,38 @@ export function OnePerson({
   id,
   onGo,
   onAdd,
+  onProposal,
 }: {
   g: Graph;
   kindName: string;
   id: string;
   onGo: (key: string) => void;
   onAdd?: (where: AddWhere, at: DOMRect) => void;
+  /** Opens a relation the AI proposed (stage 31), by its place in the response. */
+  onProposal?: (i: number) => void;
 }) {
   const kind = kindNamed(g, kindName);
   const k = kind?.name ?? kindName;
   const stub = !g.people.get(id)?.path;
+  const coupleName = g.kinds.find((x) => x.couple)?.name;
+  /** The proposal that relates this person to the one in the middle, if that is all that does. */
+  const proposalFor = (key: string): number | undefined => {
+    for (const e of g.edges) {
+      if (e.proposed === undefined || (e.kind !== k && e.kind !== coupleName)) continue;
+      if ((e.a === id && e.b === key) || (e.a === key && e.b === id)) return e.proposed;
+    }
+    return undefined;
+  };
   const card = (key: string, me = false) => {
     const p = g.people.get(key);
+    const prop = me ? undefined : proposalFor(key);
     return (
       <button
         key={key}
         type="button"
-        className={`tr-pc${me ? " is-me" : ""}${p?.path ? "" : " is-stub"}`}
+        className={`tr-pc${me ? " is-me" : ""}${p?.path ? "" : " is-stub"}${prop !== undefined ? " is-proposed" : ""}`}
         aria-current={me ? "true" : undefined}
-        onClick={() => onGo(key)}
+        onClick={() => (prop !== undefined && onProposal ? onProposal(prop) : onGo(key))}
       >
         <b>{title(g, key)}</b>
         <small>
@@ -236,6 +278,7 @@ export function OnePerson({
             : p?.path
               ? (p.type ?? "")
               : "No entry yet"}
+          {prop !== undefined ? `${p?.dates || p?.type || !p?.path ? " · " : ""}? proposed` : ""}
         </small>
       </button>
     );
