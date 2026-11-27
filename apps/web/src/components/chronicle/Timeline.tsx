@@ -323,6 +323,9 @@ export function Timeline(p: Props) {
       return;
     }
     cancelHold();
+    // A reader's press and hold drags nothing (the map-year line aside): no hold is armed, so the
+    // finger keeps panning the timeline, and a tap still selects.
+    if (p.readOnly && d.kind !== "line") return;
     hold.current = window.setTimeout(() => {
       hold.current = null;
       const now = dragRef.current;

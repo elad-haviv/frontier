@@ -3,7 +3,7 @@
  * about places chosen (docs/designs/stage-21-explore-points-of-interest.md). A click only
  * chooses; asking is a separate step, up to six places a call.
  */
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { projectKey } from "../projectStorage.ts";
 import { api, ApiFailure, type Discovery, type SpotAsk } from "../api.ts";
 
@@ -67,6 +67,9 @@ export function useDiscovery(
       () => setFound((f) => ({ ...f, ready: f.ready || rememberedReady() })),
     );
   }, [id, enabled]);
+  // Whether the person may still ask: a demotion while the map is open stops what is running.
+  const mayAsk = useRef(enabled);
+  mayAsk.current = enabled;
   const setExploring = (on: boolean) => {
     setExploringNow(on);
     setFailed(null);
@@ -74,13 +77,19 @@ export function useDiscovery(
 
   /** Asks what is found at the places, six a call; true when every call answered. */
   async function ask(spots: SpotAsk[]): Promise<boolean> {
-    if (spots.length === 0 || seeking) return false;
+    if (spots.length === 0 || seeking || !mayAsk.current) return false;
     setSeeking(true);
     setFailed(null);
     const calls = Math.ceil(spots.length / PLACES_PER_CALL);
     let first: string | null = null;
     try {
       for (let i = 0; i < spots.length; i += PLACES_PER_CALL) {
+        // The role was lowered meanwhile: the calls still to make would be refused.
+        if (!mayAsk.current) {
+          setNotice(null);
+          if (first) setOpenFound(first);
+          return false;
+        }
         setNotice(
           calls > 1
             ? `Asking about ${spots.length} places, call ${i / PLACES_PER_CALL + 1} of ${calls}…`

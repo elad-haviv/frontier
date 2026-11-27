@@ -344,7 +344,12 @@ export function MapPage() {
   };
   const { found, openFound, setOpenFound } = discovery;
   // Exploring: the points of interest along the roads and rivers drawn now, and the places chosen.
-  const exploring = discovery.exploring && !editing;
+  // Asking the AI to explore is a writer's: a demotion while the map is open turns it off.
+  const exploring = discovery.exploring && !editing && canWrite;
+  const { setExploring } = discovery;
+  useEffect(() => {
+    if (!canWrite && discovery.exploring) setExploring(false);
+  }, [canWrite, discovery.exploring, setExploring]);
   const explore = useExplore({
     id,
     map,
@@ -393,9 +398,9 @@ export function MapPage() {
     activeLayer,
     focusing,
     setFocusing,
-    exploring: discovery.exploring,
+    exploring: discovery.exploring && canWrite,
     explore: (position, screen, how) => {
-      if (!position) return;
+      if (!position || !canWrite) return;
       const done = explore.tapAt(
         position,
         screen,
@@ -679,7 +684,12 @@ export function MapPage() {
       : null,
   );
   useShortcut("map.explore", () => {
-    if (editing || !found.ready || !focusIsFree(document.activeElement, frame.current)) {
+    if (
+      !canWrite ||
+      editing ||
+      !found.ready ||
+      !focusIsFree(document.activeElement, frame.current)
+    ) {
       return false;
     }
     toggleExploring();
@@ -887,7 +897,7 @@ export function MapPage() {
             !!menuFeature && reorderFeature(map.features, menuFeature.id, 1) !== map.features,
           back: !!menuFeature && reorderFeature(map.features, menuFeature.id, -1) !== map.features,
         },
-        canExplore: found.ready,
+        canExplore: found.ready && canWrite,
         openEntry: (path) => navigate(entryUrl(path)),
         openChild: (f) =>
           f.child && navigate(mapUrl(f.child) + (time.carry ? `?${time.carry}` : "")),
@@ -895,7 +905,7 @@ export function MapPage() {
         editFeature: (f) => startEditing(f.id),
         copyView,
         explore: () => {
-          if (!menuAt.at) return;
+          if (!menuAt.at || !canWrite) return;
           if (!discovery.exploring) toggleExploring();
           explore.chooseHere(menuAt.at);
           openExplore(menuAt.at);
@@ -1302,8 +1312,8 @@ export function MapPage() {
           });
         }}
         onCopyView={copyView}
-        canExplore={found.ready}
-        exploring={discovery.exploring}
+        canExplore={found.ready && canWrite}
+        exploring={exploring}
         onExplore={toggleExploring}
         hasTime={time.chronicles.length > 0}
         timeOn={time.timeOn}
