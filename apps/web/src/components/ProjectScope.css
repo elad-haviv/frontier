@@ -22,3 +22,8 @@
   align-items: center;
   gap: var(--space-4);
 }
+.project-note button.plain {
+  color: var(--accent);
+  font: inherit;
+  text-decoration: underline;
+}

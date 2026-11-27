@@ -35,6 +35,7 @@ import { Link } from "../nav.tsx";
 import { useToast } from "./ui/Toast.tsx";
 import { OutsideShell } from "./OutsideShell.tsx";
 import { ProjectContext, type ProjectInfo, ROLE_NAMES } from "./projectContext.ts";
+import { showUnsent } from "./unsentPanel.ts";
 import { rememberRole, resolveRole } from "./projectRole.ts";
 import { Shell } from "./Shell.tsx";
 import { Problem } from "./ui/Problem.tsx";
@@ -260,11 +261,20 @@ export function ProjectScope({ children }: { children: ReactNode }) {
     const was = before.current;
     before.current = { id: ref.id, role };
     if (!was || was.id !== ref.id || was.role === role) return;
+    const lowered = ROLE_RANK[role] < ROLE_RANK[was.role];
+    const article = role === "owner" ? "an" : "a";
+    // Changes that were waiting to be sent are not lost, but they will not be saved: said where
+    // they can be copied from.
+    const unsent = lowered && role === "reader" && queue.current().length > 0;
     toast({
-      message:
-        ROLE_RANK[role] < ROLE_RANK[was.role]
-          ? `You are now ${role === "owner" ? "an" : "a"} ${ROLE_NAMES[role]} here.${role === "reader" ? " You can read and ask, but not change the project." : ""}`
-          : `You are now ${role === "owner" ? "an" : "a"} ${ROLE_NAMES[role]} here.`,
+      message: `You are now ${article} ${ROLE_NAMES[role]} here.${
+        lowered && role === "reader" ? " You can read and ask, but not change the project." : ""
+      }${
+        unsent
+          ? " Your last changes were not saved. They are kept on this device, in Not sent yet."
+          : ""
+      }`,
+      ...(unsent ? { action: { label: "Open Not sent yet", run: showUnsent } } : {}),
     });
   }, [ref?.id, role]);
   const info: ProjectInfo | null = useMemo(() => {

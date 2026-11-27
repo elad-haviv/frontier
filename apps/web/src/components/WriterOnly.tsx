@@ -4,6 +4,8 @@ import { Link, useLocation } from "../nav.tsx";
 import { ROLE_NAMES, useProject, useRole } from "./projectContext.ts";
 import { currentEntryPath } from "./shell/entryPath.ts";
 import { Progress } from "./ui/Progress.tsx";
+import { useUnsent } from "../sync/queue.ts";
+import { showUnsent } from "./unsentPanel.ts";
 import "./ProjectScope.css";
 
 /**
@@ -16,10 +18,13 @@ export function WriterOnly({ what, children }: { what: string; children: ReactNo
   const { known, canWrite, role } = useRole();
   const project = useProject();
   const { pathname } = useLocation();
+  const unsent = useUnsent();
   if (!known) return <Progress label="Opening" />;
   if (canWrite) return <>{children}</>;
   const entry = currentEntryPath(pathname);
   const name = entry ? (entry.split("/").pop() ?? entry).replace(/\.md$/i, "") : "";
+  // Text typed here that the server has not taken: it is kept on this device, and said so.
+  const kept = entry !== "" && unsent.some((r) => r.key === `entry:${entry}`);
   return (
     <div className="project-note" role="status">
       <h1>You can read this, not change it</h1>
@@ -28,6 +33,19 @@ export function WriterOnly({ what, children }: { what: string; children: ReactNo
         Only writers and owners can {what}. An owner can change your role in Settings, under
         Members.
       </p>
+      {kept && (
+        <p role="alert">
+          <b>
+            Your last changes to {name} were not saved, because your role changed while you were
+            writing.
+          </b>{" "}
+          They are still kept on this device. Copy the text from{" "}
+          <button type="button" className="plain" onClick={showUnsent}>
+            Not sent yet
+          </button>
+          , or leave it there until an owner makes you a writer again.
+        </p>
+      )}
       <p className="project-note-actions">
         {entry && (
           <Link to={entryUrl(entry)} className="primary">

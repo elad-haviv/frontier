@@ -25,13 +25,17 @@ vi.mock("./Shell.tsx", () => ({
   },
 }));
 // What a person has not sent yet is the queue's; here only that it is asked to send again.
-const { resumeRefused, forgetProjectCopy } = vi.hoisted(() => ({
+const { resumeRefused, forgetProjectCopy, held } = vi.hoisted(() => ({
+  held: { records: [] as unknown[] },
   resumeRefused: vi.fn(async () => undefined),
   forgetProjectCopy: vi.fn(async (_ref: { id: string; slug: string }) => undefined),
 }));
 vi.mock("../sync/queue.ts", async (original) => {
   const real = await original<typeof import("../sync/queue.ts")>();
-  return { ...real, queue: Object.assign(Object.create(real.queue), { resumeRefused }) };
+  return {
+    ...real,
+    queue: Object.assign(Object.create(real.queue), { resumeRefused, current: () => held.records }),
+  };
 });
 vi.mock("../offline/copy.ts", async (original) => ({
   ...(await original<typeof import("../offline/copy.ts")>()),
@@ -98,6 +102,7 @@ beforeEach(async () => {
   await signInWithProjects();
   resumeRefused.mockClear();
   forgetProjectCopy.mockClear();
+  held.records = [];
 });
 afterEach(async () => {
   await mounted?.unmount();
@@ -171,6 +176,20 @@ describe("a project's page (stage 27c)", () => {
     await act(async () => connection.accessMayHaveChanged());
     await m.settle();
     expect((document.body.textContent ?? "").match(/You are now a Reader here/g)).toHaveLength(1);
+  });
+
+  it("says where the changes are when the role is lowered while the device holds some", async () => {
+    let role = "writer";
+    serve({ alpha: () => answer(record(ALPHA, "Alpha", role)) });
+    const m = await open("/p/alpha");
+    held.records = [{ key: "entry:01 Places/Harbor.md" }];
+    role = "reader";
+    await act(async () => connection.accessMayHaveChanged());
+    await m.settle();
+    expect(document.body.textContent).toContain(
+      "Your last changes were not saved. They are kept on this device, in Not sent yet.",
+    );
+    expect(m.withText("button", "Open Not sent yet")).not.toBeNull();
   });
 
   it("sends refused saves again when the role is writer again", async () => {
