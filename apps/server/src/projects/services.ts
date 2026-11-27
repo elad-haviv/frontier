@@ -322,7 +322,13 @@ export async function buildServices(
   });
   const search = new SearchIndex(index);
   const conversations = new Conversations(stateDir, files, legacyOwner);
-  const comments = new CommentStore(stateDir, files);
+  const comments = new CommentStore(stateDir, files, {
+    legacyOwner: firstOwner,
+    nameOf,
+    // Open pages are told that an entry's comments changed, never what they say.
+    onChange: (path) => status.commentsChanged(path),
+  });
+  await comments.load();
   const consults = new ConsultStore(stateDir, files);
   const chronicles = new ChronicleStore({ vaultDir, git, index, drafts, changer });
   const characters = new CharacterTalk({

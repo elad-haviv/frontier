@@ -108,7 +108,8 @@ describe("a reader gets the last saved version only", () => {
       ["PUT", `${base}/drafts`],
       ["POST", `${base}/import`],
       ["POST", `${base}/publish/plan`],
-      ["GET", `${base}/comments`],
+      // Stage 27e: comments are read by every role, so `GET /comments` is no longer closed here.
+      ["POST", `${base}/comments/aaaaaaaaaaaa/work`],
     ] as const) {
       const res = await t.app.inject({
         method,

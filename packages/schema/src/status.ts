@@ -42,6 +42,12 @@ export const StatusSnapshot = z.object({
   /** Rises each time the server itself changes a draft, so an open editor can reload it. */
   serverDraftChanges: z.number().int().min(0),
   /**
+   * Stage 27e. Rises each time an entry's shared comments change (a comment, a reply, an edit, a
+   * resolve, a delete), and names the entry, so an open page reads that entry's comments again.
+   * No text, no author: comments are read from their own routes, by the role that may.
+   */
+  comments: z.object({ changes: z.number().int().min(0), path: VaultPath.nullable() }).optional(),
+  /**
    * Rises on every draft save, server change and discard, from any device, so a device keeping
    * copies for offline reading reads them again even when the unpublished count stays the same.
    */

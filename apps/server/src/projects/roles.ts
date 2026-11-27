@@ -11,7 +11,7 @@ import type { ProjectRole } from "@frontier/schema";
  *            pins and conversations; exports
  *   writer   anything that changes the library or the unsaved changes: drafts, saving versions,
  *            uploads, imports, maps, chronicles, folders, inbox, quarantine, AI writing help;
- *            comments for now (see below)
+ *            comments for the AI
  *   owner    the project's settings, and deleting it; its members and invitation links (stage 27c).
  *            Backups are automatic and have no route yet.
  *
@@ -25,8 +25,11 @@ import type { ProjectRole } from "@frontier/schema";
  * have open (`PUT /presence`) so writers can see who is reading, and is told nothing of other people's
  * work in progress or of who is reading.
  *
- * Comments are writer-only until stage 27e: until then they are one person's private notes ("for
- * me", "for the AI"), which a reader must not read or add to.
+ * Comments (stage 27e) are between people: every role reads the comments on saved entries and adds
+ * comments and replies. Changing or deleting is the author's (an owner may delete anyone's), and
+ * resolving is the author's, a writer's or an owner's: those rules are in `comments/rules.ts`,
+ * checked in the route, as a route's role is only the least any caller needs. A comment for the AI
+ * is its writer's alone.
  */
 export const ROUTE_ROLES: Record<string, ProjectRole> = {
   // The project itself
@@ -178,12 +181,20 @@ export const ROUTE_ROLES: Record<string, ProjectRole> = {
   "POST /quarantine": "writer",
   "DELETE /quarantine/:id": "writer",
 
-  // Comments (see above)
-  "GET /comments": "writer",
-  "GET /comments/count": "writer",
-  "POST /comments": "writer",
-  "PATCH /comments/:id": "writer",
-  "DELETE /comments/:id": "writer",
+  // Comments between people (stage 27e): every role reads, comments and replies. Whose to change,
+  // delete or resolve is decided in the route from `comments/rules.ts`; a reader's call that needs
+  // more answers `role_too_low` there.
+  "GET /comments": "reader",
+  "GET /comments/count": "reader",
+  "POST /comments": "reader",
+  "PATCH /comments/:id": "reader",
+  "DELETE /comments/:id": "reader",
+  "POST /comments/:id/resolve": "reader",
+  "POST /comments/:id/reopen": "reader",
+  "POST /comments/:id/replies": "reader",
+  "PATCH /comments/:id/replies/:rid": "reader",
+  "DELETE /comments/:id/replies/:rid": "reader",
+  // The writing help works on a comment for the AI, which only a writer has.
   "POST /comments/:id/work": "writer",
 };
 
