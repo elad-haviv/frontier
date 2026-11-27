@@ -1,6 +1,9 @@
 import type { JoinInfo } from "@frontier/schema";
+import { browserSupportsWebAuthn } from "@simplewebauthn/browser";
 import { Fingerprint } from "lucide-react";
-import { type FormEvent, useEffect, useId, useRef, useState } from "react";
+import { type FormEvent, type KeyboardEvent, useEffect, useId, useRef, useState } from "react";
+import { rememberJoined } from "../access.ts";
+import { keysOwner } from "../aiKeys.ts";
 import { api, ApiFailure, googleStartUrl } from "../api.ts";
 import { useLogoutAction } from "../components/useLogoutAction.ts";
 import { Icon } from "../components/ui/Icon.tsx";
@@ -25,7 +28,7 @@ import "./Join.css";
 
 type Load =
   | { state: "loading" }
-  | { state: "ready"; info: JoinInfo; person: { name: string; email: string } | null }
+  | { state: "ready"; info: JoinInfo; person: { id: string; name: string; email: string } | null }
   | { state: "dead"; code: string; inviter: string | undefined }
   | { state: "failed"; code: string; message: string };
 
@@ -40,18 +43,37 @@ const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
  */
 export function JoinPage({
   code,
-  onSignedIn,
+  load: loadAddress = (to) => window.location.assign(to),
 }: {
   code: string;
-  /** Called once a session was started here, so the app opens as logged in. */
-  onSignedIn?: (() => void) | undefined;
+  /**
+   * Loads an address afresh, the whole app again. Used after a session was started here, so
+   * nothing the browser still holds for someone logged in before can be used by the new person:
+   * their AI keys, their queue, their list of projects.
+   */
+  load?: ((to: string) => void) | undefined;
 }) {
   const [load, setLoad] = useState<Load>({ state: "loading" });
   const [attempt, setAttempt] = useState(0);
   const navigate = useNavigate();
   const toast = useToast();
-  const search = useLocation().search;
-  const problem = new URLSearchParams(search).get("problem");
+  const location = useLocation();
+  // The reason a Google trip came back is said once, and taken off the address.
+  const [problem] = useState(() => new URLSearchParams(location.search).get("problem"));
+  useEffect(() => {
+    if (!new URLSearchParams(location.search).has("problem")) return;
+    void navigate(
+      { pathname: location.pathname, search: "", hash: location.hash },
+      { replace: true },
+    );
+  }, []);
+
+  useEffect(() => {
+    document.title =
+      load.state === "ready"
+        ? `Join ${load.info.project.name} · Frontier`
+        : "Invitation · Frontier";
+  }, [load]);
 
   useEffect(() => {
     let live = true;
@@ -84,7 +106,12 @@ export function JoinPage({
     };
   }, [code, attempt]);
 
-  /** In: the project opens. A session started here is told to the app first. */
+  /**
+   * In: the project opens. A session started here (a new account, or a login) is followed by a
+   * full load of the project, never by moving inside this page: the app that is running may be
+   * the one of someone who was logged in before. Someone who was logged in already and is not
+   * the person the app is set up for (the session changed in another tab) gets the same.
+   */
   async function done(
     slug: string,
     role: string,
@@ -92,11 +119,24 @@ export function JoinPage({
     started: boolean,
     already = false,
   ) {
-    if (started) onSignedIn?.();
-    else void loadProjects();
+    const there = `/p/${encodeURIComponent(slug)}`;
+    const words = `You joined ${project} as ${withArticle(role)}.`;
+    const person = load.state === "ready" ? load.person : null;
+    const otherPerson = person !== null && keysOwner() !== null && keysOwner() !== person.id;
+    if (started || otherPerson) {
+      if (!already) rememberJoined(words);
+      loadAddress(there);
+      return;
+    }
+    void loadProjects();
     // Someone who was in the project already is simply taken to it.
-    if (!already) toast({ message: `You joined ${project} as ${withArticle(role)}.` });
-    void navigate(`/p/${encodeURIComponent(slug)}`, { replace: true });
+    if (!already) toast({ message: words });
+    void navigate(there, { replace: true });
+  }
+
+  /** The link stopped working while the page was open: the page says so, as on opening it. */
+  function dead(failure: ApiFailure) {
+    setLoad({ state: "dead", code: failure.code, inviter: failure.inviter });
   }
 
   return (
@@ -125,6 +165,8 @@ export function JoinPage({
             person={load.person}
             problem={problem}
             onJoined={done}
+            onDead={dead}
+            reload={loadAddress}
           />
         )}
       </div>
@@ -152,10 +194,12 @@ function Invitation({
   person,
   problem,
   onJoined,
+  onDead,
+  reload,
 }: {
   code: string;
   info: JoinInfo;
-  person: { name: string; email: string } | null;
+  person: { id: string; name: string; email: string } | null;
   problem: string | null;
   onJoined: (
     slug: string,
@@ -164,6 +208,8 @@ function Invitation({
     started: boolean,
     already?: boolean,
   ) => Promise<void>;
+  onDead: (failure: ApiFailure) => void;
+  reload: (to: string) => void;
 }) {
   const name = info.project.name;
   const role = info.role;
@@ -174,8 +220,10 @@ function Invitation({
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState<null | "passkey" | "password" | "accept" | "login">(null);
-  const [error, setError] = useState<string | null>(
-    googleProblem(problem) ?? (problem === "account_exists" ? ACCOUNT_EXISTS : null),
+  const [error, setError] = useState<string | null>(googleProblem(problem));
+  // Why the page turned into a login form, when it did by itself.
+  const [switched, setSwitched] = useState<string | null>(
+    problem === "account_exists" ? ACCOUNT_EXISTS : null,
   );
   const [fieldErrors, setFieldErrors] = useState<{
     name?: string;
@@ -185,6 +233,20 @@ function Invitation({
   const logout = useLogoutAction(`/join/${code}`);
   const accepted = useRef(false);
   const ids = { name: useId(), email: useId(), password: useId() };
+  const nameField = useRef<HTMLInputElement>(null);
+  const emailField = useRef<HTMLInputElement>(null);
+  const passwordField = useRef<HTMLInputElement>(null);
+  // A passkey is made by the browser: without it there is nothing to offer.
+  const passkeys = browserSupportsWebAuthn();
+  // Focus goes somewhere sensible when the page changes: the login form's first field on its own
+  // (see `LoginToJoin`), the name when the person comes back to joining.
+  const comingBack = useRef(false);
+  useEffect(() => {
+    if (mode === "join" && comingBack.current) {
+      comingBack.current = false;
+      nameField.current?.focus();
+    }
+  }, [mode]);
 
   // Opened by someone already in the project: nothing to accept, the project opens.
   useEffect(() => {
@@ -206,6 +268,10 @@ function Invitation({
         await onJoined(err.project, role, name, false, true).catch(() => undefined);
         return;
       }
+      if (err instanceof ApiFailure && deadLink(err.code, err.inviter)) {
+        onDead(err);
+        return;
+      }
       setBusy(null);
       const failure = err instanceof ApiFailure ? err : null;
       setError(
@@ -214,7 +280,10 @@ function Invitation({
     }
   }
 
-  /** What the name and email must be before any way of joining is tried. */
+  /**
+   * What the name and email must be before any way of joining is tried. The first field that is
+   * not right is said (and announced) beside it and takes the focus.
+   */
   function check(needPassword: boolean): boolean {
     const found: typeof fieldErrors = {};
     if (typedName.trim() === "") found.name = "Give your name.";
@@ -222,6 +291,14 @@ function Invitation({
     else if (!EMAIL.test(email.trim())) found.email = "This is not an email address.";
     if (needPassword && password.length < 12) found.password = "Use at least 12 characters.";
     setFieldErrors(found);
+    const first = found.name
+      ? nameField
+      : found.email
+        ? emailField
+        : found.password
+          ? passwordField
+          : null;
+    first?.current?.focus();
     return Object.keys(found).length === 0;
   }
 
@@ -229,7 +306,9 @@ function Invitation({
   function failed(err: unknown, fallback: string) {
     setBusy(null);
     if (err instanceof ApiFailure && err.code === "account_exists") {
+      // The page turns into the login form: it says why, and keeps the name and email typed.
       setError(null);
+      setSwitched(ACCOUNT_EXISTS);
       setMode("login");
       return;
     }
@@ -239,7 +318,7 @@ function Invitation({
     }
     if (err instanceof ApiFailure && deadLink(err.code, err.inviter)) {
       // The link died while the form was open: the page says so.
-      window.location.reload();
+      onDead(err);
       return;
     }
     setError(err instanceof ApiFailure ? joinFailure(err.code, err.message) : fallback);
@@ -277,14 +356,38 @@ function Invitation({
     }
   }
 
-  /** Log in with the existing account, then take the invitation into it. */
+  /**
+   * Enter in the name or the email moves on, and does not join with a password nobody has typed:
+   * to the next field that is empty (the password last).
+   */
+  function enter(e: KeyboardEvent<HTMLInputElement>) {
+    if (e.key !== "Enter" || password !== "") return;
+    e.preventDefault();
+    const next =
+      typedName.trim() === "" ? nameField : email.trim() === "" ? emailField : passwordField;
+    next.current?.focus();
+  }
+
+  /**
+   * Log in with the existing account, then take the invitation into it. A session was started
+   * here, so whatever happens next the app is loaded afresh: the project when it worked, this
+   * page again (which now knows who is logged in, and shows a dead link as one) when it did not.
+   */
   async function logInAndAccept(how: () => Promise<unknown>) {
     setBusy("login");
     setError(null);
     try {
       await how();
-      // The invitation goes into the account first; the app is told of the session with the move
-      // into the project, so this page is not replaced while it is still working.
+    } catch (err) {
+      setBusy(null);
+      setError(
+        err instanceof ApiFailure
+          ? joinFailure(err.code, err.message)
+          : "That did not work. Try again.",
+      );
+      return;
+    }
+    try {
       const joined = await api.acceptInvite(code);
       await onJoined(joined.project, joined.role, name, true);
     } catch (err) {
@@ -292,12 +395,7 @@ function Invitation({
         await onJoined(err.project, role, name, true, true);
         return;
       }
-      setBusy(null);
-      setError(
-        err instanceof ApiFailure
-          ? joinFailure(err.code, err.message)
-          : "That did not work. Try again.",
-      );
+      reload(`/join/${encodeURIComponent(code)}`);
     }
   }
 
@@ -357,10 +455,14 @@ function Invitation({
         onEmail={setEmail}
         busy={busy === "login"}
         error={error}
+        notice={switched}
         google={info.google}
+        passkeysHere={passkeys}
         onBack={() => {
+          comingBack.current = true;
           setMode("join");
           setError(null);
+          setSwitched(null);
         }}
         onLogin={(how) => void logInAndAccept(how)}
         keyNote={keyNote}
@@ -368,6 +470,7 @@ function Invitation({
     );
   }
 
+  const invalid = (field: "name" | "email" | "password") => (fieldErrors[field] ? true : undefined);
   return (
     <>
       {head}
@@ -375,41 +478,36 @@ function Invitation({
         <label htmlFor={ids.name}>Your name</label>
         <input
           id={ids.name}
+          ref={nameField}
           autoComplete="name"
           value={typedName}
-          aria-invalid={fieldErrors.name ? true : undefined}
+          aria-invalid={invalid("name")}
           aria-describedby={fieldErrors.name ? `${ids.name}-e` : undefined}
           onChange={(e) => setTypedName(e.target.value)}
+          onKeyDown={enter}
         />
         {fieldErrors.name && (
-          <em id={`${ids.name}-e`} className="field-error">
+          <em id={`${ids.name}-e`} className="field-error" role="alert">
             {fieldErrors.name}
           </em>
         )}
         <label htmlFor={ids.email}>Email</label>
         <input
           id={ids.email}
+          ref={emailField}
           type="email"
           autoComplete="email"
           value={email}
-          aria-invalid={fieldErrors.email ? true : undefined}
+          aria-invalid={invalid("email")}
           aria-describedby={fieldErrors.email ? `${ids.email}-e` : undefined}
           onChange={(e) => setEmail(e.target.value)}
+          onKeyDown={enter}
         />
         {fieldErrors.email && (
-          <em id={`${ids.email}-e`} className="field-error">
+          <em id={`${ids.email}-e`} className="field-error" role="alert">
             {fieldErrors.email}
           </em>
         )}
-        <button
-          type="button"
-          className="login-passkey"
-          disabled={busy !== null}
-          onClick={() => void withPasskey()}
-        >
-          <Icon icon={Fingerprint} size="md" />
-          {busy === "passkey" ? "Waiting for your device…" : "Join with a passkey on this device"}
-        </button>
         {info.google && (
           <button
             type="button"
@@ -423,18 +521,34 @@ function Invitation({
             Continue with Google
           </button>
         )}
+        {passkeys && (
+          <button
+            type="button"
+            className="login-passkey"
+            disabled={busy !== null}
+            onClick={() => void withPasskey()}
+          >
+            <Icon icon={Fingerprint} size="md" />
+            {busy === "passkey" ? "Waiting for your device…" : "Join with a passkey on this device"}
+          </button>
+        )}
         <p className="login-or">or with a password</p>
         <label htmlFor={ids.password}>Password</label>
         <input
           id={ids.password}
+          ref={passwordField}
           type="password"
           autoComplete="new-password"
           value={password}
-          aria-invalid={fieldErrors.password ? true : undefined}
+          aria-invalid={invalid("password")}
           aria-describedby={`${ids.password}-e`}
           onChange={(e) => setPassword(e.target.value)}
         />
-        <em id={`${ids.password}-e`} className={fieldErrors.password ? "field-error" : "muted"}>
+        <em
+          id={`${ids.password}-e`}
+          className={fieldErrors.password ? "field-error" : "muted"}
+          role={fieldErrors.password ? "alert" : undefined}
+        >
           {fieldErrors.password ?? "At least 12 characters."}
         </em>
         {problemLine}
@@ -444,7 +558,14 @@ function Invitation({
       </form>
       <p className="muted join-note">
         Have an account?{" "}
-        <button type="button" className="join-link" onClick={() => setMode("login")}>
+        <button
+          type="button"
+          className="join-link"
+          onClick={() => {
+            setSwitched(null);
+            setMode("login");
+          }}
+        >
           Log in to join
         </button>
       </p>
@@ -461,7 +582,9 @@ function LoginToJoin({
   onEmail,
   busy,
   error,
+  notice,
   google,
+  passkeysHere,
   onBack,
   onLogin,
   keyNote,
@@ -472,7 +595,10 @@ function LoginToJoin({
   onEmail: (email: string) => void;
   busy: boolean;
   error: string | null;
+  /** Why this form is here, when the page turned into it by itself. */
+  notice: string | null;
   google: boolean;
+  passkeysHere: boolean;
   onBack: () => void;
   onLogin: (how: () => Promise<unknown>) => void;
   keyNote: React.ReactNode;
@@ -480,19 +606,32 @@ function LoginToJoin({
   const [password, setPassword] = useState("");
   const [ways, setWays] = useState({ passkeys: false, password: true });
   const id = useId();
+  const root = useRef<HTMLDivElement>(null);
   useEffect(() => {
     api.session().then(
       (s) => setWays({ passkeys: s.passkeys, password: s.password }),
       () => undefined,
     );
   }, []);
+  // The form's first field has the focus when it appears, and again if the ways in change which
+  // one that is.
+  useEffect(() => {
+    const first =
+      root.current?.querySelector<HTMLElement>("input") ??
+      root.current?.querySelector<HTMLElement>("button.login-passkey, button.join-google");
+    first?.focus();
+  }, [ways.password, ways.passkeys]);
+  const showPasskey = ways.passkeys && passkeysHere;
   return (
-    <>
+    <div ref={root} className="join-login">
       {head}
-      <p role="status">
-        Log in with your account, and this invitation goes into it. Nothing is made twice.
-      </p>
-      {ways.passkeys && (
+      {notice && (
+        <p className="join-switched" role="status">
+          {notice}
+        </p>
+      )}
+      <p>Log in with your account, and this invitation goes into it. Nothing is made twice.</p>
+      {showPasskey && (
         <button
           type="button"
           className="login-passkey"
@@ -562,6 +701,6 @@ function LoginToJoin({
         </button>
       </p>
       {keyNote}
-    </>
+    </div>
   );
 }

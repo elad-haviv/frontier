@@ -29,9 +29,11 @@ export function googleProblem(problem: string | null): string | null {
   return GOOGLE[problem] ?? null;
 }
 
-/** `account_exists` on a join trip that started with Google: the account is not linked to that Google identity. */
-export const ACCOUNT_EXISTS =
-  "You may already have an account here: log in to join. Your name and email are kept for the invitation.";
+/**
+ * Said when the join page turns into the login form by itself: the email (or the Google account)
+ * already belongs to an account here, which the invitation can go into once they log in.
+ */
+export const ACCOUNT_EXISTS = "You may already have an account: log in to join.";
 
 /** The sentence for a link that does not work, with who to ask. */
 export interface DeadLink {

@@ -15,7 +15,7 @@ import {
 } from "react-router-dom";
 import { ROLE_RANK } from "@frontier/schema";
 import { api, apiFor, ApiFailure } from "../api.ts";
-import { isLeaving, noteAccessLost, unmarkLeaving } from "../access.ts";
+import { isLeaving, noteAccessLost, takeJoined, unmarkLeaving } from "../access.ts";
 import { forgetProjectCopy } from "../offline/copy.ts";
 import { resumeProposals } from "../proposeAfterPublish.ts";
 import { currentProject, projectRoot, setCurrentProject, withoutProject } from "../project.ts";
@@ -252,6 +252,14 @@ export function ProjectScope({ children }: { children: ReactNode }) {
     // Saves that were refused while the role was lower go back to waiting.
     void queue.resumeRefused();
   }, [opened, mayWrite]);
+
+  // Joined from the join page, which loaded the project afresh: said once, here.
+  const joinedToast = useToast();
+  useEffect(() => {
+    if (opened === null) return;
+    const words = takeJoined();
+    if (words) joinedToast({ message: words });
+  }, [opened]);
 
   // A role that changed while the project is open is said once; the shell follows it by itself.
   const toast = useToast();

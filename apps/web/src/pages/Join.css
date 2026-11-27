@@ -87,3 +87,17 @@
 .login-or {
   text-align: center;
 }
+.join-login {
+  display: grid;
+  gap: 0.75rem;
+}
+.join-login p {
+  margin: 0;
+}
+.login-card .join-switched {
+  padding: 0.5rem 0.7rem;
+  border-left: 3px solid var(--accent);
+  background: var(--paper);
+  font-family: var(--sans);
+  font-style: normal;
+}

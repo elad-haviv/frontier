@@ -93,9 +93,9 @@ const VersionsPage = lazy(() =>
 );
 
 /** `/join/<code>`: the page an invite link opens, for someone logged in or not. */
-function JoinRoute({ onSignedIn }: { onSignedIn?: () => void }) {
+function JoinRoute() {
   const { code = "" } = useParams();
-  return <JoinPage key={code} code={code} onSignedIn={onSignedIn} />;
+  return <JoinPage key={code} code={code} />;
 }
 
 /** A different map gets a fresh page: its own view, drawing surface and history. */
@@ -348,7 +348,7 @@ export function App() {
     return (
       <Routes>
         <Route path="/login" element={<Login onLoggedIn={enter} />} />
-        <Route path="/join/:code" element={<JoinRoute onSignedIn={enter} />} />
+        <Route path="/join/:code" element={<JoinRoute />} />
         <Route
           path="*"
           element={

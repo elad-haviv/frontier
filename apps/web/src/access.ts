@@ -61,3 +61,31 @@ export function useAccessNotice(): string | null {
     () => notice,
   );
 }
+
+// ---- Joining a project with a session started on the join page ---------------------------------
+
+const JOINED = "frontier.joinedNote";
+
+/**
+ * A session started on the join page is followed by a full load of the project, so what the
+ * browser held for someone before cannot reach the new person. The words that say they joined
+ * would be lost with the old page, so they wait in this tab for the next one.
+ */
+export function rememberJoined(words: string): void {
+  try {
+    sessionStorage.setItem(JOINED, words);
+  } catch {
+    /* the toast is a courtesy */
+  }
+}
+
+/** The words left by `rememberJoined`, once; null when there are none. */
+export function takeJoined(): string | null {
+  try {
+    const words = sessionStorage.getItem(JOINED);
+    sessionStorage.removeItem(JOINED);
+    return words;
+  } catch {
+    return null;
+  }
+}
