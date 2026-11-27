@@ -1,0 +1,322 @@
+/* The World Wizard (stage 34): the world's view beside the open part's controls. */
+.ww {
+  container: ww / inline-size;
+}
+.ww-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem 0.8rem;
+}
+.ww-head h1 {
+  margin: 0;
+}
+.ww-seed {
+  color: var(--ink-faint);
+  font-size: 0.85rem;
+}
+.ww-seed b {
+  font-family: var(--mono);
+  color: var(--ink-soft);
+}
+.ww-grow {
+  flex: 1;
+}
+.ww-parts {
+  display: flex;
+  gap: 0.3rem;
+  margin: 0.9rem 0 1rem;
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+.ww-parts button {
+  flex: 1 0 auto;
+  min-width: 5.5rem;
+  padding: 0.35rem 0.2rem 0.2rem 0;
+  border: 0;
+  border-top: 3px solid var(--rule);
+  background: none;
+  text-align: left;
+  font-size: 0.82rem;
+  color: var(--ink-faint);
+  white-space: nowrap;
+}
+.ww-parts button.is-done {
+  border-color: var(--ink-soft);
+  color: var(--ink-soft);
+}
+.ww-parts button[aria-current] {
+  border-color: var(--accent);
+  color: var(--ink);
+  font-weight: 600;
+}
+.ww-body {
+  display: grid;
+  gap: 1rem;
+  align-items: start;
+}
+/* By the room the page has, not the window: the library pane may be open beside it. */
+@container ww (min-width: 50rem) {
+  .ww-body {
+    grid-template-columns: minmax(0, 1fr) 20rem;
+    gap: 1.5rem;
+  }
+  .ww-view {
+    position: sticky;
+    top: 0.75rem;
+  }
+}
+
+/* The view is dark in both themes, as a map's image is. */
+.ww-view {
+  position: relative;
+  display: grid;
+  place-items: center;
+  min-width: 0;
+  border-radius: 8px;
+  background: #14161c;
+  overflow: hidden;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.ww-canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+  touch-action: none;
+}
+.ww-canvas.is-globe {
+  width: min(100%, 30rem);
+  cursor: grab;
+}
+.ww-canvas.is-painting {
+  cursor: crosshair;
+}
+.ww-corner {
+  position: absolute;
+  top: 0.5rem;
+  left: 0.5rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+.ww-seg {
+  display: inline-flex;
+  border: 1px solid #3a3d48;
+  border-radius: 6px;
+  overflow: hidden;
+  background: rgb(20 22 28 / 0.82);
+}
+.ww-seg button {
+  border: 0;
+  background: none;
+  padding: 0.3rem 0.75rem;
+  font-size: 0.85rem;
+  color: #c9cbd3;
+}
+.ww-seg button[aria-pressed="true"] {
+  background: #e9e2d3;
+  color: #23201b;
+  font-weight: 600;
+}
+
+.ww-panel {
+  display: grid;
+  gap: 0.9rem;
+  min-width: 0;
+  align-content: start;
+}
+.ww-panel h2 {
+  margin: 0;
+  font-family: var(--serif);
+  font-size: 1.25rem;
+}
+.ww-panel h2:focus {
+  outline: none;
+}
+.ww-sub {
+  margin: -0.5rem 0 0;
+  color: var(--ink-soft);
+  font-size: 0.9rem;
+}
+.ww-group {
+  display: grid;
+  gap: 0.35rem;
+}
+.ww-label {
+  font-size: 0.82rem;
+  color: var(--ink-soft);
+}
+.ww-chips,
+.ww-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  align-items: center;
+}
+.ww-chip {
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  background: var(--paper-raised);
+  padding: 0.28rem 0.75rem;
+  font-size: 0.85rem;
+  color: var(--ink);
+}
+.ww-chip[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  font-weight: 600;
+}
+.ww-slider {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0 0.6rem;
+  align-items: center;
+  font-size: 0.82rem;
+  color: var(--ink-soft);
+}
+.ww-says {
+  color: var(--ink);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.ww-slider input {
+  grid-column: 1 / -1;
+  width: 100%;
+  margin: 0.15rem 0 0;
+  accent-color: var(--accent);
+}
+.ww-facts {
+  display: grid;
+  gap: 0.35rem;
+  padding: 0.6rem 0.7rem;
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  background: var(--paper-raised);
+  font-size: 0.86rem;
+}
+.ww-facts b {
+  font-variant-numeric: tabular-nums;
+}
+.ww-swatch {
+  width: 1.75rem;
+  height: 1.75rem;
+  padding: 0;
+  border: 2px solid transparent;
+  border-radius: 4px;
+}
+.ww-swatch[aria-pressed="true"] {
+  border-color: var(--ink);
+  outline: 2px solid var(--paper);
+  outline-offset: -4px;
+}
+.ww-drift {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.9rem;
+  align-items: start;
+}
+.ww-drift-sliders {
+  flex: 1;
+  min-width: 9rem;
+  display: grid;
+  gap: 0.6rem;
+}
+.ww-compass {
+  display: grid;
+  grid-template-columns: repeat(3, 2.1rem);
+  gap: 0.15rem;
+}
+.ww-compass button {
+  height: 2.1rem;
+  padding: 0;
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  background: var(--paper-raised);
+  color: var(--ink);
+}
+.ww-compass button[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.ww-key {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 0.5rem;
+  align-items: center;
+  font-size: 0.78rem;
+  color: var(--ink-faint);
+}
+.ww-key i {
+  height: 0.6rem;
+  border-radius: 999px;
+  border: 1px solid var(--rule);
+}
+.ww-legend {
+  display: grid;
+  gap: 0.1rem;
+}
+.ww-legend button {
+  display: grid;
+  grid-template-columns: 1rem 1fr auto;
+  gap: 0.55rem;
+  align-items: center;
+  padding: 0.2rem 0.35rem;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: none;
+  text-align: left;
+  font-size: 0.86rem;
+  color: var(--ink);
+}
+.ww-legend button[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.ww-legend i {
+  width: 1rem;
+  height: 1rem;
+  border: 1px solid rgb(0 0 0 / 0.25);
+  border-radius: 3px;
+}
+.ww-share {
+  color: var(--ink-faint);
+  font-variant-numeric: tabular-nums;
+}
+.ww-makes {
+  display: grid;
+  gap: 0.6rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.9rem;
+}
+.ww-makes li {
+  display: grid;
+  gap: 0.05rem;
+}
+.ww-makes span {
+  color: var(--ink-soft);
+}
+.ww-made,
+.ww-busy {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--ink-soft);
+}
+.ww-foot {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding-top: 0.8rem;
+  border-top: 1px solid var(--rule);
+}
+/* On a phone the way on stays in reach under a long list of controls. */
+@media (max-width: 40rem) {
+  .ww-foot {
+    position: sticky;
+    bottom: 0;
+    padding-bottom: 0.6rem;
+    background: var(--paper);
+  }
+}

@@ -1,4 +1,4 @@
-import { Grid2x2, List, Plus, Search, X } from "lucide-react";
+import { Globe2, Grid2x2, List, Plus, Search, X } from "lucide-react";
 import { type KeyboardEvent, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "../nav.tsx";
 import { api, mapUrl } from "../api.ts";
@@ -201,6 +201,17 @@ export function MapsPage() {
               </button>
             ))}
           </div>
+        )}
+        {canWrite && (
+          <Link
+            to="/world"
+            className="maps-world"
+            aria-label="New world"
+            title="Build a world step by step and get its map"
+          >
+            <Globe2 size={18} aria-hidden="true" />
+            <span className="maps-new-label">New world…</span>
+          </Link>
         )}
         {canWrite && (
           <button type="button" className="primary maps-new" onClick={() => setMaking("flat")}>

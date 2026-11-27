@@ -8,10 +8,14 @@ import { loadProjects } from "../../projects.ts";
 import { useSlugCheck } from "./useSlugCheck.ts";
 import "./NewProjectDialog.css";
 
-type Start = "empty" | "zip" | "sample";
+type Start = "empty" | "wizard" | "zip" | "sample";
 
 const START_WORDS: Record<Start, { title: string; about: string }> = {
   empty: { title: "An empty library", about: "One welcome entry to begin with." },
+  wizard: {
+    title: "The World Wizard",
+    about: "Build a world step by step (land, plates, heights, climate, biomes) and get its map.",
+  },
   zip: {
     title: "A vault zip",
     about: "Notes and pictures from a folder you zipped, such as an Obsidian vault.",
@@ -84,7 +88,8 @@ export function NewProjectDialog({ onClose }: { onClose: () => void }) {
   async function open(target: string) {
     await loadProjects();
     onClose();
-    void navigate(projectRoot(target));
+    // The World Wizard (stage 34) is a page of the new project: the project is made empty first.
+    void navigate(projectRoot(target) + (start === "wizard" ? "/world" : ""));
   }
 
   async function make() {
@@ -234,7 +239,11 @@ export function NewProjectDialog({ onClose }: { onClose: () => void }) {
           Cancel
         </button>
         <button type="submit" className="primary" disabled={!ready}>
-          {working ? "Making it…" : "Make the project"}
+          {working
+            ? "Making it…"
+            : start === "wizard"
+              ? "Make it and start the wizard"
+              : "Make the project"}
         </button>
       </p>
     </DialogFrame>

@@ -59,6 +59,9 @@ const SystemMapPage = lazy(() =>
 const StackPage = lazy(() =>
   import("./pages/StackPage.tsx").then((m) => ({ default: m.StackPage })),
 );
+const WorldWizardPage = lazy(() =>
+  import("./pages/world/WorldWizard.tsx").then((m) => ({ default: m.WorldWizardPage })),
+);
 const TreePage = lazy(() => import("./pages/TreePage.tsx").then((m) => ({ default: m.TreePage })));
 const ChroniclePage = lazy(() =>
   import("./pages/ChroniclePage.tsx").then((m) => ({ default: m.ChroniclePage })),
@@ -215,6 +218,16 @@ function ProjectPages() {
         <Route path="/history/*" element={<HistoryPage />} />
         <Route path="/versions" element={<LibraryHistoryPage />} />
         <Route path="/maps" element={<MapsPage />} />
+        <Route
+          path="/world"
+          element={
+            <WriterOnly what="build a world">
+              <Suspense fallback={<Progress />}>
+                <WorldWizardPage />
+              </Suspense>
+            </WriterOnly>
+          }
+        />
         <Route path="/map/:id" element={<OneMap />} />
         <Route
           path="/stack/:id"

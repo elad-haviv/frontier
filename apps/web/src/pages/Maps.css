@@ -137,6 +137,25 @@
 .maps-page .lede {
   margin: -0.4rem 0 0;
 }
+/* The way into the World Wizard (stage 34): a quiet neighbour of New map. */
+.maps-world {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-height: 2.4rem;
+  align-self: center;
+  padding: 0.45rem 0.9rem;
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  color: var(--ink-soft);
+  font-size: 0.9rem;
+  font-weight: 600;
+  text-decoration: none;
+}
+.maps-world:hover {
+  border-color: var(--accent);
+  color: var(--ink);
+}
 .maps-new {
   display: inline-flex;
   align-items: center;
@@ -766,7 +785,8 @@ mark {
   .maps-search kbd {
     display: none;
   }
-  .maps-new {
+  .maps-new,
+  .maps-world {
     width: 2.5rem;
     height: 2.5rem;
     padding: 0;

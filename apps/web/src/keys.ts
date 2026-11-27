@@ -32,6 +32,7 @@ export const SCOPES = [
   "chronicle",
   "map",
   "maps",
+  "world",
   "graph",
   "trees",
   "tree",
@@ -48,6 +49,7 @@ export const SCOPE_NAMES: Record<Scope, string> = {
   chronicle: "Chronicle",
   map: "Map",
   maps: "List of maps",
+  world: "World Wizard",
   graph: "Graph",
   trees: "List of trees",
   tree: "Tree",
@@ -779,6 +781,12 @@ keys.register(
   // The list of maps
   { id: "maps.find", keys: ["/"], scope: "maps", label: "Find a map" },
   { id: "maps.new", keys: ["n"], scope: "maps", label: "New map" },
+
+  // The World Wizard
+  { id: "world.view", keys: ["v"], scope: "world", label: "Globe or flat" },
+  { id: "world.play", keys: ["p"], scope: "world", label: "Play or pause the plates' drift" },
+  { id: "world.smaller", keys: ["["], scope: "world", label: "A smaller brush" },
+  { id: "world.larger", keys: ["]"], scope: "world", label: "A larger brush" },
 
   // The graph
   { id: "graph.find", keys: ["/"], scope: "graph", label: "Find an entry in the graph" },

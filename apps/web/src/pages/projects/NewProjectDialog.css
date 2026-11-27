@@ -1,5 +1,9 @@
 .dialog.new-project {
   width: min(30rem, 100%);
+  /* Four ways to start and a zip's file field are taller than a phone: the dialog scrolls, so its
+     buttons are always in reach. */
+  max-height: calc(100dvh - 2rem);
+  overflow-y: auto;
 }
 .new-project-note {
   display: grid;

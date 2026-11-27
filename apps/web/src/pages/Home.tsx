@@ -42,7 +42,9 @@ import { type Pin, togglePin, usePins } from "../keepGoing/pins.ts";
 import { RANDOM_KINDS, type RandomKind } from "../keepGoing/random.ts";
 import { useRecents } from "../keepGoing/recents.ts";
 import { useRandom } from "../keepGoing/useRandom.ts";
+import { useProjectWork } from "../projectWork.ts";
 import { useNeedsConnection } from "../sync/connection.ts";
+import { type KeptWorld, loadWorld, PART_NAMES } from "../world/store.ts";
 import { type Async, failureOf, useAsync } from "../useAsync.ts";
 import "./Home.css";
 
@@ -89,6 +91,39 @@ function Card({
       </h2>
       {children}
     </section>
+  );
+}
+
+/**
+ * A world waiting in the World Wizard on this device (stage 34): where it was left, and the way
+ * back. Gone once its map is made.
+ */
+function WorldInProgress() {
+  const work = useProjectWork();
+  const canWrite = useCanWrite();
+  const project = work.ref.id;
+  const [kept, setKept] = useState<KeptWorld | null>(null);
+  useEffect(() => {
+    let gone = false;
+    void loadWorld(project).then((k) => {
+      if (!gone) setKept(k && !k.made ? k : null);
+    });
+    return () => {
+      gone = true;
+    };
+  }, [project]);
+  if (!kept || !canWrite) return null;
+  return (
+    <Card id="world" title="World Wizard">
+      <p className="home-meta">
+        {kept.title || "Your world"} is waiting at {PART_NAMES[kept.part] ?? "the start"}.
+      </p>
+      <div className="home-actions">
+        <Link to="/world" className="home-btn is-primary">
+          Carry on
+        </Link>
+      </div>
+    </Card>
   );
 }
 
@@ -694,6 +729,7 @@ export function Home() {
         )}
       </header>
 
+      <WorldInProgress />
       {brandNew ? (
         <Card id="first" title={canWrite ? "Write your first entry" : "Nothing written yet"}>
           <p className="home-meta">

@@ -86,6 +86,19 @@ One place for what is being built, what is waiting, and ideas. The design in
 - [x] 32 Email: invitations, address confirmation, forgot password.
       [Design](designs/stage-32-email.md)
 
+## Now: stage 34, the World Wizard
+
+[Design](designs/stage-34-world-wizard.md), approved 2026-11-27.
+
+- [x] Release 1: the world in six parts (basics, land and sea, plates and their drift, heights,
+      climate, biomes) on a globe or flat, and Make it: a globe map with its height map and biome
+      zones. From New project ("Start with") and from Maps ("New world…").
+- [ ] Release 2: the star system, the calendar from the orbit and the moons, rivers and lakes
+- [ ] Release 3: life and lore (suggested places, species and life as entries with markers), the
+      World brief
+- Known: plates slide along the grid, so drift near the poles is distorted; a world in progress is
+  kept on the device only.
+
 ## Now: stages 11 to 15, the interface and offline work
 
 Design: [stage 11](designs/stage-11-foundations-shell-tree.md), approved after a five-stage review.
