@@ -666,7 +666,8 @@ describe("the history of a library", () => {
 });
 
 describe("what a reader is told of comments", () => {
-  it("is nothing: the work queue and from-here count none for a reader", async () => {
+  // Stage 27e: comments are shared, so the open count is told to a reader as to anyone.
+  it("is the open count: the work queue and from-here count them for a reader too", async () => {
     const t = await app();
     await t.login();
     const first = await firstProject(t);
@@ -698,11 +699,12 @@ describe("what a reader is told of comments", () => {
         .filter((r) => r.path === path)
         .flatMap((r) => r.reasons.map((x) => x.rule));
     expect(await reasons(t)).toContain("openComments");
-    expect(await reasons(reader)).not.toContain("openComments");
+    expect(await reasons(reader)).toContain("openComments");
     const fromHere = async (who: { get: Client["get"] }) =>
       (await who.get(`/api/p/${first.slug}/keep-going/from-here?path=${encodeURIComponent(path)}`))
         .body;
-    expect(await fromHere(reader)).not.toContain("openComments");
+    // From-here lists neighbours' reasons the same way for a reader as for anyone.
+    expect(await fromHere(reader)).toBe(await fromHere(t));
   });
 });
 
