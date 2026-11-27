@@ -433,7 +433,10 @@ export async function buildServices(
       return brought;
     },
     async close() {
-      backup.stop();
+      // First of all: a request still running must not write into a folder about to be moved.
+      files.close();
+      images.close();
+      backup.retire();
       stopPolling();
       unwatchServer();
     },

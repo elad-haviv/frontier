@@ -60,11 +60,11 @@ export function discoverRoutes(app: RouteApp, s: Services): void {
           .filter((f) => f !== "" && !f.startsWith("99 Appendices") && !f.startsWith(".")),
       ),
     ].sort((a, b) => a.localeCompare(b));
-    const settings = await s.settings.read();
+    const settings = await s.settings.current();
     return {
       discoveries: await s.discoverer.list(id),
       ready: await s.ai.modelChosen("conversation"),
-      art: Boolean(settings?.ai.models.art),
+      art: Boolean(settings.ai.models.art),
       folders,
     };
   });

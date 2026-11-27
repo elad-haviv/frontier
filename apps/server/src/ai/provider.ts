@@ -192,7 +192,7 @@ export class AiProvider {
 
   /** The prices of the model chosen for a task, to estimate a call before it is made. */
   async priceForTask(task: AiTask): Promise<ModelPrice | null> {
-    const chosen = (await this.d.settings.read())?.ai.models[task];
+    const chosen = (await this.d.settings.current()).ai.models[task];
     if (!chosen) return null;
     const { provider, model } = splitModelId(chosen);
     return this.priceOf(`${provider}:${model}`);
@@ -200,7 +200,7 @@ export class AiProvider {
 
   /** Whether a model is chosen for a task. Whether this device has the key for it shows on use. */
   async modelChosen(task: AiTask): Promise<boolean> {
-    return Boolean((await this.d.settings.read())?.ai.models[task]);
+    return Boolean((await this.d.settings.current()).ai.models[task]);
   }
 
   /** Says why a task cannot run for this request, if it cannot: no model, or no key on the device. */
@@ -213,7 +213,7 @@ export class AiProvider {
    * about keys first, with the field to add one, since a model cannot be tried without one.
    */
   async chosenModel(task: AiTask, what: string): Promise<string> {
-    const chosen = (await this.d.settings.read())?.ai.models[task] ?? null;
+    const chosen = (await this.d.settings.current()).ai.models[task];
     if (chosen) return chosen;
     if (this.connections.list().length === 0) throw keyMissing("openrouter");
     throw new ApiError(
@@ -243,7 +243,7 @@ export class AiProvider {
 
   /** Prices to estimate a cost with: the author's, else the provider's list. */
   private async priceOf(id: string): Promise<ModelPrice | null> {
-    const own = (await this.d.settings.read())?.ai.modelPrices[id];
+    const own = (await this.d.settings.current()).ai.modelPrices[id];
     if (own) return own;
     const listed = await this.catalog?.find(id);
     return listed && listed.promptPrice !== null && listed.completionPrice !== null

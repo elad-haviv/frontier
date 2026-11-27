@@ -8,14 +8,8 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { AI_KEYS_HEADER, encodeDeviceKeys } from "@frontier/schema";
 import { buildApp } from "../src/app.js";
-import {
-  deviceKey,
-  deviceKeys,
-  outsideRequest,
-  requestPerson,
-  withDeviceKeys,
-} from "../src/ai/keyring.js";
-import { addMember, makeTestApp, seedAccount, type TestApp } from "./helpers/app.js";
+import { deviceKey, deviceKeys, outsideRequest, requestPerson } from "../src/ai/keyring.js";
+import { addMember, asAdmin, makeTestApp, seedAccount, type TestApp } from "./helpers/app.js";
 
 let t: TestApp;
 afterEach(() => t.close());
@@ -126,7 +120,7 @@ describe("a key sent with a request", () => {
     const question = await t.post("/api/keep-going/question", {});
     expect(question.statusCode).toBe(200);
     note(question);
-    await withDeviceKeys({ openrouter: SECRET }, async () => {
+    await asAdmin(t, { openrouter: SECRET }, async () => {
       for await (const e of t.services.ai.stream({
         task: "conversation",
         system: "s",
@@ -284,6 +278,8 @@ describe("one person's key checks, spending and notice", () => {
   const asSecond = async () => {
     t.cookie = "";
     expect((await t.login(SECOND.password, SECOND.email)).statusCode).toBe(200);
+    // Models are each person's own: this person chooses theirs.
+    await t.put("/api/settings/ai", { models: { extraction: "test/model" } });
   };
 
   it("limits key checks for each person, not for the whole server", async () => {

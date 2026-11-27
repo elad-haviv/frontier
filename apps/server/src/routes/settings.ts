@@ -100,7 +100,8 @@ export function settingsRoutes(app: FastifyInstance, s: Server): void {
   const connections = s.ai.connections;
 
   app.get("/api/settings", async (request): Promise<SettingsResponse> => {
-    const settings = (await s.settings.read())!;
+    // Models, prices, art style, propose-on-publish and Keep going are the person's own.
+    const settings = await s.settings.ofPerson(personOf(request).id);
     const { spentUsd } = await s.ai.spending(viewerOf(request));
     return {
       ai: {
@@ -124,11 +125,10 @@ export function settingsRoutes(app: FastifyInstance, s: Server): void {
     };
   });
 
-  // The rules for Keep going are the person's setting, not a project's: they are kept with the
-  // server's settings.
+  // The rules for Keep going are the person's setting, not a project's and not the server's.
   app.put("/api/settings/keep-going", async (request) => {
     const input = KeepGoingSettingsRequest.parse(request.body);
-    const next = await s.settings.update((now) => ({
+    const next = await s.settings.updatePerson(personOf(request).id, (now) => ({
       ...now,
       keepGoing: {
         needsLove: NeedsLoveRules.parse({
@@ -142,7 +142,7 @@ export function settingsRoutes(app: FastifyInstance, s: Server): void {
 
   app.put("/api/settings/ai", async (request) => {
     const input = AiSettingsRequest.parse(request.body);
-    await s.settings.update((now) => ({
+    await s.settings.updatePerson(personOf(request).id, (now) => ({
       ...now,
       ai: {
         ...now.ai,
@@ -172,7 +172,7 @@ export function settingsRoutes(app: FastifyInstance, s: Server): void {
 
   app.put("/api/settings/ai/prices", async (request) => {
     const { prices } = ModelPricesRequest.parse(request.body);
-    await s.settings.update((now) => {
+    await s.settings.updatePerson(personOf(request).id, (now) => {
       const next = { ...now.ai.modelPrices };
       for (const [id, price] of Object.entries(prices)) {
         const q = qualifyModelId(id);

@@ -115,7 +115,7 @@ export class FieldProposer {
 
   /** A rough cost for a run over these notes, in US dollars, or null when the price is unknown. */
   async estimate(paths: string[]): Promise<number | null> {
-    const model = (await this.d.settings.read())?.ai.models.extraction;
+    const model = (await this.d.settings.current()).ai.models.extraction;
     const info = model ? await this.d.models.find(model) : undefined;
     if (!info || info.promptPrice === null) return null;
     let chars = 0;

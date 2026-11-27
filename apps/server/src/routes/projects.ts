@@ -111,9 +111,11 @@ export function projectRoutes(app: RouteApp, s: Services): void {
       throw new ApiError("project_not_deletable", "The last project cannot be deleted.");
     }
     const from = projectFolder(s.server.config.dataDir, record.id);
-    await s.server.registry.close(record.id);
-    // Out of the list first: from then on no request can open it again.
+    // In this order, so a request that is running meets "no such project" and never a half-moved
+    // folder: out of the list (the guard finds nothing), marked gone (nothing can open it, and
+    // what is open stops writing), the services closed, and only then the folder moved.
     await s.server.projects.remove(record.id);
+    await s.server.registry.retire(record.id);
     const stamp = new Date().toISOString().replace(/[:.]/g, "-");
     const to = join(s.server.config.dataDir, "trash", `${record.id}-${stamp}`);
     await mkdir(join(s.server.config.dataDir, "trash"), { recursive: true });

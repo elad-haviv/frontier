@@ -6,10 +6,20 @@ import { randomBytes } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
+import { ApiError } from "../errors.js";
 import type { ZodType, ZodTypeDef } from "zod";
 
 export class StateFiles {
   private listeners: (() => void)[] = [];
+  private closed = false;
+
+  /**
+   * The project these files belong to is gone. From now on a write is refused, so a request that
+   * was already running cannot make the project's folder again.
+   */
+  close(): void {
+    this.closed = true;
+  }
 
   /** Registers a function called after every write or removal. The backup uses it. */
   onChange(listener: () => void): () => void {
@@ -29,6 +39,7 @@ export class StateFiles {
   }
 
   async write(path: string, data: Buffer | string): Promise<void> {
+    if (this.closed) throw new ApiError("no_project", "This project has been deleted.");
     await mkdir(dirname(path), { recursive: true });
     const temp = `${path}.${randomBytes(6).toString("hex")}.tmp`;
     try {

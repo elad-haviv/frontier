@@ -7,8 +7,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { ModelsResponse, SettingsResponse } from "@frontier/schema";
 import { buildApp } from "../src/app.js";
-import { withDeviceKeys } from "../src/ai/keyring.js";
-import { makeTestApp, type TestApp } from "./helpers/app.js";
+import { asAdmin, makeTestApp, type TestApp } from "./helpers/app.js";
 
 let t: TestApp;
 afterEach(async () => {
@@ -371,7 +370,7 @@ describe("calls", () => {
     const p = await start();
     await t.put("/api/settings/ai", { models: { conversation: "test/model" } });
     const events: { type: string }[] = [];
-    await withDeviceKeys({ openrouter: GOOD_OR }, async () => {
+    await asAdmin(t, { openrouter: GOOD_OR }, async () => {
       for await (const e of t.services.ai.stream({
         task: "conversation",
         system: "s",
@@ -416,7 +415,7 @@ describe("calls", () => {
     const warned: object[] = [];
     t.services.ai.logFailuresTo({ warn: (details) => warned.push(details) });
     const ask = () =>
-      withDeviceKeys({ anthropic: GOOD_ANT }, () =>
+      asAdmin(t, { anthropic: GOOD_ANT }, () =>
         t.services.ai.complete({
           task: "conversation",
           system: "s",
@@ -452,7 +451,7 @@ describe("calls", () => {
     await start();
     await t.put("/api/settings/ai", { models: { conversation: "test/model" } });
     const pieces: object[] = [];
-    const answer = await withDeviceKeys({ openrouter: GOOD_OR }, () =>
+    const answer = await asAdmin(t, { openrouter: GOOD_OR }, () =>
       t.services.ai.complete({
         task: "conversation",
         system: "s",
@@ -473,7 +472,7 @@ describe("calls", () => {
     const stop = new AbortController();
     stop.abort();
     await expect(
-      withDeviceKeys({ openrouter: GOOD_OR }, () =>
+      asAdmin(t, { openrouter: GOOD_OR }, () =>
         t.services.ai.complete({
           task: "conversation",
           system: "s",

@@ -52,7 +52,12 @@ export interface ServerOptions {
 export function makeServer(config: Config, options: ServerOptions = {}): Server {
   const stateDir = join(config.dataDir, "state");
   const files = new StateFiles();
-  const settings = new SettingsStore(stateDir, files);
+  const people = new PeopleStore(stateDir, files);
+  const settings = new SettingsStore(
+    stateDir,
+    files,
+    async (id) => (await people.get(id))?.admin === true,
+  );
   // The spending log is written by many requests; the backup of the folder it lives in is told.
   const aiLog = new AiLog(stateDir, () => files.touch());
   const ai = new AiProvider({
@@ -70,7 +75,7 @@ export function makeServer(config: Config, options: ServerOptions = {}): Server 
   return {
     config,
     files,
-    people: new PeopleStore(stateDir, files),
+    people,
     loginLimit: new LoginLimiter(config.loginAttempts),
     projects: new ProjectStore(stateDir, files),
     settings,

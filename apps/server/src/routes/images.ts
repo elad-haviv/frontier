@@ -1,5 +1,5 @@
 import type { RouteApp } from "../projects/facade.js";
-import { ImageFromUrlRequest, ImageQuery } from "@frontier/schema";
+import { ImageFromUrlRequest, ImageQuery, roleAtLeast } from "@frontier/schema";
 import { isExcluded, isImage } from "@frontier/vault";
 import sharp from "sharp";
 import { ApiError } from "../errors.js";
@@ -48,6 +48,13 @@ export function imageRoutes(app: RouteApp, s: Services): void {
   app.get("/api/images", async (request, reply) => {
     const { path, w, branch } = ImageQuery.parse(request.query);
     if (branch !== undefined) {
+      // An inbox branch holds what someone has not published yet: for people who can write.
+      if (!request.project || !roleAtLeast(request.project.role, "writer")) {
+        throw new ApiError(
+          "role_too_low",
+          "You can read and comment here. You cannot change the text.",
+        );
+      }
       const shown = await s.images.serve(await s.branches.image(branch, path), w);
       return reply
         .header("content-type", shown.contentType)
