@@ -1,10 +1,17 @@
 name: CI
 
+# Once per push: a pull request shows the checks of its branch's latest push, so a
+# `pull_request` trigger would only run everything a second time.
 on:
   push:
-  pull_request:
+
+# A newer push to a branch cancels the run still going for the older one. Runs on main all finish.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
+  # Lint, formatting, types and unit tests, beside the browser tests rather than before them.
   check:
     runs-on: ubuntu-latest
     steps:
@@ -23,7 +30,38 @@ jobs:
       # The checks against the real vault run by hand, because the vault is a separate private repository:
       #   VAULT_PATH=<checkout> npm test -w packages/vault
       - run: npm test
+
+  # Browser tests, on the built server and the sample vault, at phone and desktop size. They are
+  # split by file into four jobs, each with its own server and vault, so they run side by side
+  # while the tests inside one job still take turns.
+  e2e:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    name: e2e (${{ matrix.shard }}/4)
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      # The export test downloads a real Word file, which the server makes with pandoc.
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends pandoc
+      - run: npm ci
       - run: npm run build
-      # Browser tests, on the built server and the sample vault, at phone and desktop size.
-      - run: npx playwright install --with-deps chromium
-      - run: npm run e2e
+      # Chromium is kept between runs, keyed by the Playwright version; its system libraries are
+      # installed every time, as they live outside the cache.
+      - id: playwright
+        run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
+      - id: browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}
+      - if: steps.browsers.outputs.cache-hit != 'true'
+        run: npx playwright install --with-deps chromium
+      - if: steps.browsers.outputs.cache-hit == 'true'
+        run: npx playwright install-deps chromium
+      - run: npx playwright test --shard=${{ matrix.shard }}/4

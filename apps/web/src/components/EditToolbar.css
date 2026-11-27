@@ -230,3 +230,9 @@
     display: flex;
   }
 }
+
+/* Tools offered only in menus (Generate an image…, Ask the lore) keep the "⋯" on every width. */
+.edit-toolbar.has-menu-only .edit-toolbar-more-button,
+.edit-toolbar-more-group[data-group="menu-only"] {
+  display: flex;
+}
