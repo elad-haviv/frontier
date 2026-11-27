@@ -471,6 +471,11 @@ test("a join with an address that has an account offers Forgot password, and the
   await noSidewaysScroll(rhea.page);
   await rhea.page.getByRole("link", { name: "Forgot password?" }).click();
   await expect(rhea.page).toHaveURL(/\/forgot-password$/);
+  // The address changes before the page does: until this page's own heading (and its field, with
+  // the focus) is there, the Email field that holds the address is still the join page's, and an
+  // Enter pressed in it would not be a submit of this form.
+  await expect(rhea.page.getByRole("heading", { name: "Reset your password" })).toBeVisible();
+  await expect(rhea.page.getByLabel("Email")).toBeFocused();
   await expect(rhea.page.getByLabel("Email")).toHaveValue(address);
   await rhea.page.getByLabel("Email").press("Enter");
   await expect(
