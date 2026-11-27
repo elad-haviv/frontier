@@ -43,8 +43,10 @@ test("relations read from the text: decide in the inbox and the tree, and undo",
   await page.goto("/");
   await publishFamily(page);
   await setUpAi(page, { extraction: "openrouter:sample/reader" });
-  const made = await page.request.post("/api/proposals/fields", { data: { path: ADA } });
-  expect(made.ok(), await made.text()).toBe(true);
+  // Proposed through the app, which sends this device's AI key with the request (stage 31f).
+  await page.goto("/e/Zz%20Kin/Ada%20Rook.md");
+  await page.getByRole("button", { name: "Propose fields" }).click();
+  await expect(page.locator(".propose")).toContainText("proposed");
 
   // The inbox: the relation, how its person was matched, and the words that state it.
   await page.goto("/inbox");

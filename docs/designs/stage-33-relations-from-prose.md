@@ -123,3 +123,12 @@ run in Settings › Propose for a folder), and a summary with Review in the inbo
 - **Not built.**
   - The run's summary says how many proposals in all, not relations and dates apart.
   - The Trees page's card pictures show written relations only.
+- **With people and projects (stage 31), merged before this stage:**
+  - The proposer's wiring is in each project's services (`projects/services.ts`).
+  - `POST /proposals/:id/relations` and `POST /proposals/undo` are a writer's in the role table.
+  - Undo remembers the last Accept per person.
+  - Find relations uses the browser-driven folder run of stage 31f: this device's key, one entry
+    at a time, only while the dialog is open. What is left can be continued in Settings › Propose
+    for a folder. The cost line names the model, not a monthly cap, which stage 31f removed.
+  - A reader sees proposals in trees, the panel and the Relations tab, but not the buttons that
+    decide them, and no Find relations.
