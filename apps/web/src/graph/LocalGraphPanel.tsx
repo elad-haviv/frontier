@@ -4,9 +4,10 @@
  * Under the drawing, the neighbours as links are the keyboard's and screen reader's way. Loaded
  * only when the tab is opened, so an entry page that never opens it loads none of the graph.
  */
+import { onProjectChange } from "../project.ts";
 import { byName } from "@frontier/schema";
 import { useMemo, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "../nav.tsx";
 import { entryUrl } from "../api.ts";
 import { Problem } from "../components/ui/Problem.tsx";
 import { Progress } from "../components/ui/Progress.tsx";
@@ -24,6 +25,7 @@ import "./LocalGraphPanel.css";
  * settled, and the depth switch or a refetch restarts it warm. Another entry starts afresh.
  */
 let kept: { path: string; layout: Layout } | null = null;
+onProjectChange(() => (kept = null));
 function layoutFor(path: string): Layout {
   if (kept?.path !== path) kept = { path, layout: new Layout() };
   return kept.layout;

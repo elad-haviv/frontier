@@ -1,7 +1,7 @@
 import * as Dropdown from "@radix-ui/react-dropdown-menu";
 import { ChevronDown, Ellipsis, type LucideIcon } from "lucide-react";
 import { type ReactNode, useRef } from "react";
-import { Link } from "react-router-dom";
+import { Link } from "../../nav.tsx";
 import { Icon } from "./Icon.tsx";
 import { IconButton } from "./IconButton.tsx";
 import { Tip } from "./Tip.tsx";
@@ -38,6 +38,7 @@ export function Menu({
   portal = true,
   onPointerDown,
   onClosed,
+  trigger,
   children,
 }: {
   label: string;
@@ -50,6 +51,11 @@ export function Menu({
   portal?: boolean;
   onPointerDown?: (e: React.PointerEvent) => void;
   onClosed?: () => void;
+  /**
+   * A button of the caller's own, in place of the "⋯" or the text trigger, such as the project
+   * switcher's. It must be a single element that takes a ref and props, like a `<button>`.
+   */
+  trigger?: ReactNode;
   children: ReactNode;
 }) {
   const content = useRef<HTMLDivElement>(null);
@@ -76,7 +82,9 @@ export function Menu({
   return (
     <Dropdown.Root>
       <Dropdown.Trigger asChild>
-        {text === undefined ? (
+        {trigger ? (
+          trigger
+        ) : text === undefined ? (
           <IconButton
             label={label}
             icon={icon}
@@ -141,6 +149,7 @@ export function MenuItem({
   disabled = false,
   disabledReason,
   checked,
+  textValue,
 }: {
   children: ReactNode;
   onSelect: () => void;
@@ -153,12 +162,15 @@ export function MenuItem({
   disabledReason?: string | undefined;
   /** Marks the item that is the current choice, as in a style picker. */
   checked?: boolean;
+  /** What typing a letter matches, when the item's own words are more than its name. */
+  textValue?: string;
 }) {
   return (
     <Dropdown.Item
       className={`ui-menu-item${danger ? " is-danger" : ""}`}
       disabled={disabled}
       onSelect={onSelect}
+      {...(textValue !== undefined ? { textValue } : {})}
       {...(checked !== undefined ? { "aria-current": checked || undefined } : {})}
     >
       {icon && <Icon icon={icon} size="sm" />}

@@ -1,6 +1,7 @@
 import { startAuthentication, startRegistration } from "@simplewebauthn/browser";
 import { AI_KEYS_HEADER, type AiProviderKind, CLIENT_API } from "@frontier/schema";
 import { keysHeaderValue, recordCheck } from "./aiKeys.ts";
+import { currentSlug } from "./project.ts";
 import { connection } from "./sync/connection.ts";
 import { randomId } from "./sync/db.ts";
 import type {
@@ -28,6 +29,11 @@ import type {
   InboxResponse,
   KeepGoingSettings,
   KeepGoingSettingsRequest,
+  CreateProjectRequest,
+  ProjectResponse,
+  ProjectsResponse,
+  SlugFreeResponse,
+  UpdateProjectRequest,
   LibraryFileName,
   LinkItResponse,
   LinkItUndo,
@@ -71,6 +77,29 @@ export class ApiFailure extends Error {
   provider?: AiProviderKind;
 }
 
+/**
+ * The one place a project's address is made (stage 27b): `/api/p/<slug>` and then the path the
+ * server's route has inside a project (`/entries?path=…`). Everything that belongs to a library
+ * goes through here, with the open project's address or the one a queued save belongs to. The
+ * server's old unprefixed addresses are for builds from before projects and are never made here
+ * (`api.projects.test.ts` checks).
+ */
+export function projectUrl(path: string, slug: string = requireSlug()): string {
+  return `/api/p/${encodeURIComponent(slug)}${path}`;
+}
+
+/** The open project's address; a call made with no project open is a mistake in the code. */
+export function requireSlug(): string {
+  const slug = currentSlug();
+  if (slug === null) throw new ApiFailure(0, "no_project", "No project is open.");
+  return slug;
+}
+
+/** An address of a project's call with its `/api/p/<slug>` taken off: `/api/entries?path=…`. */
+export function bareUrl(url: string): string {
+  return url.replace(/^\/api\/p\/[^/?]+/, "/api");
+}
+
 /** This device, as the save queue knows it; sent with every request once known. */
 let device: { id: string; name: string } | null = null;
 
@@ -89,7 +118,7 @@ const OPEN = /^\/api\/(session|login|passkeys\/login\/)/;
 const AI_REQUEST =
   /^\/api\/(lore|write|characters|keep-going\/(?:whats-missing|question)|ai\/models|settings\/ai\/test|proposals\/(fields|job)|maps\/[^/?]+\/(discover|generate|discoveries\/[^/?]+\/art)|comments\/[^/?]+\/work)(?:[/?]|$)/;
 
-export const needsAiKeys = (url: string): boolean => AI_REQUEST.test(url);
+export const needsAiKeys = (url: string): boolean => AI_REQUEST.test(bareUrl(url));
 
 /**
  * Every request's headers: the shape of writes this build sends, and, once known, the device and
@@ -149,7 +178,8 @@ export function fromServer<T>(read: () => Promise<T>): Promise<T> {
 }
 
 /** Which feature a request is for, in the words of "<Feature> runs on your own AI key". */
-export function featureOf(url: string): string {
+export function featureOf(address: string): string {
+  const url = bareUrl(address);
   if (/^\/api\/keep-going\/question/.test(url)) return "The question of the day";
   if (/^\/api\/keep-going\/whats-missing/.test(url)) return "What's missing here";
   if (/^\/api\/lore\/draft/.test(url)) return "Drafting an entry";
@@ -205,7 +235,7 @@ async function keyWasAdded(err: unknown, url: string): Promise<boolean> {
   });
 }
 
-async function call<T>(url: string, init?: RequestInit, quiet = false): Promise<T> {
+async function baseCall<T>(url: string, init?: RequestInit, quiet = false): Promise<T> {
   try {
     return await callOnce<T>(url, init);
   } catch (err) {
@@ -296,7 +326,7 @@ export function eventsIn(text: string): {
  * the `done` event's data is returned. An `error` event, or a refusal before the stream starts, is
  * thrown as an ApiFailure. `signal` stops reading, not the work on the server.
  */
-async function streamed<T>(
+async function baseStreamed<T>(
   url: string,
   body: unknown,
   onEvent: (event: string, data: unknown) => void,
@@ -402,16 +432,16 @@ async function streamedOnce<T>(
   return result.done;
 }
 
-const send = <T>(method: string, url: string, body?: unknown) =>
-  call<T>(url, {
+const baseSend = <T>(method: string, url: string, body?: unknown) =>
+  baseCall<T>(url, {
     method,
     ...(body === undefined
       ? {}
       : { headers: { "content-type": "application/json" }, body: JSON.stringify(body) }),
   });
 
-const post = <T>(url: string, body?: unknown, signal?: AbortSignal) =>
-  call<T>(url, {
+const basePost = <T>(url: string, body?: unknown, signal?: AbortSignal) =>
+  baseCall<T>(url, {
     method: "POST",
     ...(signal ? { signal } : {}),
     ...(body === undefined
@@ -419,404 +449,48 @@ const post = <T>(url: string, body?: unknown, signal?: AbortSignal) =>
       : { headers: { "content-type": "application/json" }, body: JSON.stringify(body) }),
   });
 
-export const api = {
-  session: () => call<SessionResponse>("/api/session"),
+const serverApi = {
+  session: () => baseCall<SessionResponse>("/api/session"),
   /** The person logged in, with the ways their account signs in. */
-  me: () => call<MeResponse>("/api/me"),
+  me: () => baseCall<MeResponse>("/api/me"),
   saveProfile: (profile: { name: string; email: string }) =>
-    send<MeResponse>("PUT", "/api/me", profile),
+    baseSend<MeResponse>("PUT", "/api/me", profile),
   /** `current` is needed when the account already has a password. */
   setPassword: (password: string, current?: string) =>
-    send<{ ok: true }>("PUT", "/api/me/password", { password, ...(current ? { current } : {}) }),
+    baseSend<{ ok: true }>("PUT", "/api/me/password", {
+      password,
+      ...(current ? { current } : {}),
+    }),
   /** Registers a passkey on this device, under a name the author gives it. */
   addPasskey: async (name: string) => {
-    const optionsJSON = await post<Parameters<typeof startRegistration>[0]["optionsJSON"]>(
+    const optionsJSON = await basePost<Parameters<typeof startRegistration>[0]["optionsJSON"]>(
       "/api/passkeys/register/options",
     );
     const response = await startRegistration({ optionsJSON });
-    return post<{ ok: true }>("/api/passkeys/register/verify", { name, response });
+    return basePost<{ ok: true }>("/api/passkeys/register/verify", { name, response });
   },
   loginWithPasskey: async () => {
-    const optionsJSON = await post<Parameters<typeof startAuthentication>[0]["optionsJSON"]>(
+    const optionsJSON = await basePost<Parameters<typeof startAuthentication>[0]["optionsJSON"]>(
       "/api/passkeys/login/options",
     );
     const response = await startAuthentication({ optionsJSON });
-    return post<{ ok: true }>("/api/passkeys/login/verify", { response });
+    return basePost<{ ok: true }>("/api/passkeys/login/verify", { response });
   },
   removePasskey: (id: string) =>
-    send<{ ok: true }>("DELETE", `/api/passkeys/${encodeURIComponent(id)}`),
-  passwordOff: (off: boolean) => send<{ ok: true }>("PUT", "/api/settings/password-off", { off }),
-  login: (email: string, password: string) => post<{ ok: true }>("/api/login", { email, password }),
-  logout: () => post<{ ok: true }>("/api/logout"),
-  tree: () => call<TreeResponse>("/api/tree"),
-  /** Every entry and every link between two entries, with the top-level folders' colours. */
-  graph: () => call<GraphResponse>("/api/graph"),
-  entry: (path: string) => call<EntryResponse>(`/api/entries?path=${encodeURIComponent(path)}`),
-  status: () => call<StatusSnapshot>("/api/status"),
-  attention: () => call<AttentionResponse>("/api/attention"),
-  schema: () => call<SchemaResponse>("/api/schema"),
-  names: (query = "") =>
-    call<{
-      results: { path: string; title: string; alias?: string; shared?: boolean; words?: number }[];
-    }>(`/api/switcher${query ? `?q=${encodeURIComponent(query)}` : ""}`),
-  search: (query: string) =>
-    call<{ results: { path: string; title: string; snippet: string; words?: number }[] }>(
-      `/api/search?q=${encodeURIComponent(query)}`,
-    ),
-  preview: (path: string) =>
-    call<{ path: string; text: string }>(`/api/preview?path=${encodeURIComponent(path)}`),
-  /** The image an embed in the note `from` points at, or null when there is none. */
-  findImage: (name: string, from: string) =>
-    call<{ path: string | null }>(
-      `/api/images/find?name=${encodeURIComponent(name)}&from=${encodeURIComponent(from)}`,
-    ),
-  upload: async (file: File) => {
-    const form = new FormData();
-    form.append("file", file, file.name);
-    return call<{ path: string; embed: string }>("/api/images", { method: "POST", body: form });
-  },
-  /** Has the server take an image from a web address; it is kept as an upload. */
-  imageFromUrl: (url: string) =>
-    post<{ path: string; embed: string }>("/api/images/from-url", { url }),
-  rename: (from: string, to: string) => post<CreateRenameResponse>("/api/renames", { from, to }),
-
-  /** Pages save through the queue (`sync/queue.ts`), which calls this. */
-  saveDraft: (draft: {
-    id: string;
-    path: string;
-    kind: DraftKind;
-    text: string;
-    revision: number;
-    baseBlob?: string;
-    op?: string;
-  }) => send<{ id: string; revision: number }>("PUT", "/api/drafts", draft),
-  discardDraft: (id: string) => send<{ ok: true }>("DELETE", `/api/drafts/${id}`),
-  versions: (id: string) => call<DraftVersionsResponse>(`/api/drafts/${id}/versions`),
-  /** Dismisses the other side of an item clash kept beside a draft (stage 15c). */
-  dismissKept: (id: string) => send<{ ok: true }>("DELETE", `/api/drafts/${id}/versions/server`),
-  mergeVersions: (id: string, text: string) =>
-    post<{ id: string; revision: number }>(`/api/drafts/${id}/merge-versions`, { text }),
-  resolve: (id: string, text: string) =>
-    post<{ id: string; revision: number }>(`/api/drafts/${id}/resolve`, { text }),
-  unpublished: () => call<UnpublishedResponse>("/api/unpublished"),
-  maps: () =>
-    call<{
-      maps: {
-        id: string;
-        title: string;
-        space: MapFile["space"];
-        under: string | null;
-        features: number;
-        state: string;
-        /** When it last changed, and a small preview for its card (stage 23). */
-        edited?: string | null;
-        preview?: MapPreview | null;
-        /** The version mark the device compares (stage 15b). */
-        v?: string;
-      }[];
-      problems: { path: string; message: string }[];
-    }>("/api/maps"),
-  map: (id: string) => call<LoadedMap>(`/api/maps/${id}`),
-  createMap: (title: string, kind: "sphere" | "flat" | "stars" | "system", image?: string) =>
-    post<{ id: string }>("/api/maps", { title, kind, ...(image ? { image } : {}) }),
-  /** Pages save through the queue (`sync/queue.ts`), which calls this. */
-  saveMap: (
-    id: string,
-    map: MapFile,
-    revision: number,
-    link: { feature: string; path: string }[],
-    sent: { baseBlob?: string; op?: string; clashes?: string[] } = {},
-  ) =>
-    send<{
-      map: MapFile;
-      revision: number;
-      unlinked: { feature: string; reason: string }[];
-      /** The draft the other side of a clash was kept beside (stage 15c). */
-      kept?: string;
-    }>("PUT", `/api/maps/${id}`, { map, revision, link, ...sent }),
-  resolveMap: (id: string, keep: "mine" | "theirs") =>
-    post<{ ok: true }>(`/api/maps/${id}/resolve`, { keep }),
-  deleteMap: (id: string) => send<{ ok: true }>("DELETE", `/api/maps/${id}`),
-  markerSets: () =>
-    call<{ sets: { name: string; icons: { name: string; path: string }[] }[] }>("/api/marker-sets"),
-  chronicles: () =>
-    call<{
-      chronicles: {
-        id: string;
-        title: string;
-        main: boolean;
-        spans: number;
-        state: string;
-        /** The version mark the device compares (stage 15b). */
-        v?: string;
-      }[];
-      problems: { path: string; message: string }[];
-    }>("/api/chronicles"),
-  chronicle: (id: string) =>
-    call<{
-      chronicle: ChronicleFile;
-      revision: number;
-      state: string;
-      blob: string;
-      entries: Record<string, { path: string; title: string }>;
-      /** Which spans something on a map follows (stage 17); absent from an older server. */
-      onMaps?: Record<string, { map: string; title: string; features: number }[]>;
-    }>(`/api/chronicles/${id}`),
-  createChronicle: (title: string) => post<{ id: string }>("/api/chronicles", { title }),
-  copyChronicle: (copyOf: string) => post<{ id: string }>("/api/chronicles", { copyOf }),
-  /** Pages save through the queue (`sync/queue.ts`), which calls this. */
-  saveChronicle: (
-    id: string,
-    chronicle: ChronicleFile,
-    revision: number,
-    link: { span: string; path: string }[] = [],
-    sent: { baseBlob?: string; op?: string; clashes?: string[] } = {},
-  ) =>
-    send<{
-      chronicle: ChronicleFile;
-      revision: number;
-      unlinked: { span: string; reason: string }[];
-      kept?: string;
-    }>("PUT", `/api/chronicles/${id}`, { chronicle, revision, link, ...sent }),
-  makeMainChronicle: (id: string) => post<{ ok: true }>(`/api/chronicles/${id}/main`, {}),
-  resolveChronicle: (id: string, keep: "mine" | "theirs") =>
-    post<{ ok: true }>(`/api/chronicles/${id}/resolve`, { keep }),
-  deleteChronicle: (id: string) => send<{ ok: true }>("DELETE", `/api/chronicles/${id}`),
-  gallery: () =>
-    call<{
-      images: GalleryImage[];
-    }>("/api/gallery"),
-  history: (path?: string) =>
-    call<{ versions: Version[] }>(`/api/history${path ? `?path=${encodeURIComponent(path)}` : ""}`),
-  versionText: (path: string, commit: string) =>
-    call<{ text: string; before: string | null }>(
-      `/api/history/version?path=${encodeURIComponent(path)}&commit=${commit}`,
-    ),
-  importFiles: async (files: File[], folder: string, existing: "ask" | "replace" | "both") => {
-    const form = new FormData();
-    // Fields first: the server reads the folder before the first file.
-    form.append("folder", folder);
-    form.append("existing", existing);
-    for (const file of files) form.append("files", file, file.name);
-    return call<ImportResult>("/api/import", { method: "POST", body: form });
-  },
-  importVault: async (zip: File, message: string) => {
-    const form = new FormData();
-    form.append("message", message);
-    form.append("files", zip, zip.name);
-    return call<{ files: number; commit: string }>("/api/import/vault", {
-      method: "POST",
-      body: form,
-    });
-  },
-  inbox: () => call<InboxResponse>("/api/inbox"),
-  /** `quiet`: for proposals made by themselves, which never open the key dialog. */
-  proposeFields: (path: string, quiet = false) =>
-    call<{ made: number }>(
-      "/api/proposals/fields",
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ path }),
-      },
-      quiet,
-    ),
-  decideOperation: (
-    id: string,
-    op: string,
-    body: {
-      decision: "accept" | "reject" | "dismiss";
-      what?: string;
-      when?: string;
-      type?: string;
-    },
-  ) => post<{ draftId?: string }>(`/api/proposals/${id}/operations/${op}`, body),
-  settings: () => call<SettingsResponse>("/api/settings"),
-  conversations: () =>
-    call<{
-      conversations: { id: string; title: string; at: string; turns: number }[];
-      ready: boolean;
-    }>("/api/lore"),
-  conversation: (id: string) =>
-    call<{ conversation: LoreConversation; gone: string[] }>(`/api/lore/${id}`),
-  ask: (question: string, conversation?: string) =>
-    post<{ conversation: LoreConversation; gone: string[] }>("/api/lore", {
-      question,
-      ...(conversation ? { conversation } : {}),
-    }),
-  /**
-   * Asks as `ask` does, telling each step of the work as it happens. Stopping the reading does not
-   * stop the work: `stopAsking` does.
-   */
-  askStreamed: (
-    question: string,
-    conversation: string | undefined,
-    onEvent: (event: LoreEvent) => void,
-    signal?: AbortSignal,
-  ) =>
-    streamed<{ conversation: LoreConversation; gone: string[] }>(
-      "/api/lore/stream",
-      { question, ...(conversation ? { conversation } : {}) },
-      (type, data) => onEvent({ ...(data as object), type } as LoreEvent),
-      signal,
-    ),
-  stopAsking: (run: string) => post<{ ok: true }>(`/api/lore/runs/${run}/stop`),
-  /** A passage rewritten as asked; `signal` stops the request, and the server's call with it. */
-  rewrite: (
-    body: {
-      path: string;
-      passage: string;
-      before: string;
-      after: string;
-      how: string;
-      previous?: string[];
-      refine?: { suggestion: string; how: string };
-    },
-    signal?: AbortSignal,
-  ) => post<{ text: string }>("/api/write/rewrite", body, signal),
-  /** An opinion of the entry in the editor (stage 24); nothing is saved or changed. */
-  consult: (
-    body: {
-      path: string;
-      text: string;
-      focus: "edits" | "content";
-      passage?: string;
-      looks?: string[];
-      how?: string;
-    },
-    signal?: AbortSignal,
-  ) => post<ConsultReview>("/api/write/review", body, signal),
-  /** The saved consultations of an entry, newest first. */
-  consultReviews: (path: string) =>
-    call<{ reviews: ConsultReview[] }>(`/api/write/reviews?path=${encodeURIComponent(path)}`),
-  /** Keeps what the author did with a finding. */
-  consultChange: (id: string, finding: string, change: ConsultChange) =>
-    send<{ review: ConsultReview }>(
-      "PATCH",
-      `/api/write/reviews/${id}/findings/${finding}`,
-      change,
-    ),
-  consultDelete: (id: string) => send<{ ok: true }>("DELETE", `/api/write/reviews/${id}`),
-  consultClear: (path: string) =>
-    send<{ ok: true }>("DELETE", `/api/write/reviews?path=${encodeURIComponent(path)}`),
-  /** A follow-up about one finding of a consultation. */
-  consultAsk: (
-    body: {
-      path: string;
-      text: string;
-      question: string;
-      finding: { kind: string; anchor: string; comment: string };
-    },
-    signal?: AbortSignal,
-  ) =>
-    post<{ text: string; sources: { path: string; title: string; quote: string }[] }>(
-      "/api/write/review/ask",
-      body,
-      signal,
-    ),
-  /** A new entry drafted from what the author said; nothing is saved. `signal` stops it. */
-  draftEntry: (said: string, signal?: AbortSignal) =>
-    post<{ draft: EntryProposal }>("/api/lore/draft", { said }, signal),
-  /** One changed paragraph of a draft entry, checked against the lore again. */
-  checkEntryDraft: (
-    body: { title: string; paragraphs: string[]; changed: number },
-    signal?: AbortSignal,
-  ) => post<EntryDraftCheck>("/api/lore/draft/check", body, signal),
-  /** Keeps a draft entry as an unsaved change: a new entry that waits to be published. */
-  keepEntryDraft: (body: {
-    title: string;
-    folder: string;
-    paragraphs: string[];
-    againstLore: { paragraph: number; path: string }[];
-  }) => post<{ draft: string; path: string }>("/api/lore/draft/keep", body),
-  comments: (path: string) =>
-    call<{ comments: PassageComment[] }>(`/api/comments?path=${encodeURIComponent(path)}`),
-  commentCount: (path: string) =>
-    call<{ open: number }>(`/api/comments/count?path=${encodeURIComponent(path)}`),
-  addComment: (body: Omit<PassageComment, "id" | "at">) =>
-    post<{ comment: PassageComment }>("/api/comments", body),
-  changeComment: (id: string, change: { text?: string; for?: "me" | "ai" }) =>
-    send<{ comment: PassageComment }>("PATCH", `/api/comments/${id}`, change),
-  removeComment: (id: string) => send<{ ok: true }>("DELETE", `/api/comments/${id}`),
-  workOnComment: (
-    id: string,
-    around: { before: string; after: string; previous?: string[] },
-    signal?: AbortSignal,
-  ) => post<{ text: string }>(`/api/comments/${id}/work`, around, signal),
-  characterProfile: (path: string) =>
-    call<{ profile: CharacterProfile | null }>(
-      `/api/characters/profile?path=${encodeURIComponent(path)}`,
-    ),
-  proposeProfile: (path: string) =>
-    post<{ name: string; traits: (Trait & { supported: boolean })[] }>("/api/characters/propose", {
-      path,
-    }),
-  approveProfile: (path: string, traits: Trait[], moment: { words: string; year: number | null }) =>
-    post<{ profile: CharacterProfile; draft: string }>("/api/characters/approve", {
-      path,
-      traits,
-      moment,
-    }),
-  say: (path: string, message: string, history: { who: "author" | "character"; text: string }[]) =>
-    post<{ lines: CharacterLine[] }>("/api/characters/say", { path, message, history }),
-  keepLine: (path: string, text: string) =>
-    post<{ draft: string | null }>("/api/characters/line", { path, text }),
-  discoveries: (map: string) =>
-    call<{ discoveries: Discovery[]; ready: boolean; art: boolean; folders: string[] }>(
-      `/api/maps/${map}/discoveries`,
-    ),
-  /** Asks what is found at up to six places, in one AI call. */
-  discover: (map: string, spots: SpotAsk[], chronicle: string | null, year: number | null) =>
-    post<{ discoveries: Discovery[] }>(`/api/maps/${map}/discover`, { spots, chronicle, year }),
-  /** What asking about places would cost; nothing is sent to the AI. */
-  estimateDiscovery: (
-    map: string,
-    spots: SpotAsk[],
-    chronicle: string | null,
-    year: number | null,
-  ) =>
-    post<{ calls: number; usd: number | null }>(`/api/maps/${map}/discover/estimate`, {
-      spots,
-      chronicle,
-      year,
-    }),
-  generateFeatures: (map: string, ask: GenerateAsk) =>
-    post<{ items: GeneratedFeature[] }>(`/api/maps/${map}/generate`, ask),
-  discoveryArt: (map: string, id: string) =>
-    post<{ discovery: Discovery }>(`/api/maps/${map}/discoveries/${id}/art`, {}),
-  keepDiscovery: (map: string, id: string, folder: string) =>
-    post<{ path: string }>(`/api/maps/${map}/discoveries/${id}/keep`, { folder }),
-  dropDiscovery: (map: string, id: string) =>
-    send<{ ok: true }>("DELETE", `/api/maps/${map}/discoveries/${id}`),
-  exportFolders: () => call<{ folders: string[] }>("/api/export/folders"),
-  exportPreview: (pick: ExportPick) =>
-    post<{ entries: { path: string; title: string }[]; unsaved: string[]; skipped: string[] }>(
-      "/api/export/preview",
-      pick,
-    ),
-  deleteConversation: (id: string) => send<{ ok: true }>("DELETE", `/api/lore/${id}`),
-  draftAddition: (id: string, turn: number, again = false) =>
-    post<{ addition: LoreAddition; conversation: LoreConversation }>(
-      `/api/lore/${id}/turns/${turn}/addition`,
-      { again },
-    ),
-  previewAddition: (id: string, turn: number, path: string) =>
-    post<{ path: string; isNew: boolean; before: string; after: string; base: string }>(
-      `/api/lore/${id}/turns/${turn}/addition/preview`,
-      { path },
-    ),
-  keepAddition: (id: string, turn: number, path: string, base: string) =>
-    post<{ draft: string | null; conversation: LoreConversation }>(
-      `/api/lore/${id}/turns/${turn}/addition/keep`,
-      { path, base },
-    ),
+    baseSend<{ ok: true }>("DELETE", `/api/passkeys/${encodeURIComponent(id)}`),
+  passwordOff: (off: boolean) =>
+    baseSend<{ ok: true }>("PUT", "/api/settings/password-off", { off }),
+  login: (email: string, password: string) =>
+    basePost<{ ok: true }>("/api/login", { email, password }),
+  logout: () => basePost<{ ok: true }>("/api/logout"),
+  settings: () => baseCall<SettingsResponse>("/api/settings"),
   saveAi: (body: {
     models?: { extraction?: string | null; conversation?: string | null; art?: string | null };
     artStyle?: string;
     proposeOnPublish?: boolean;
-  }) => send<{ ok: true }>("PUT", "/api/settings/ai", body),
+  }) => baseSend<{ ok: true }>("PUT", "/api/settings/ai", body),
   testAi: (body: { task?: AiTaskName; model?: string } = {}) =>
-    post<{ ok: boolean; costUsd: number; message: string; image?: string }>(
+    basePost<{ ok: boolean; costUsd: number; message: string; image?: string }>(
       "/api/settings/ai/test",
       body,
     ),
@@ -827,10 +501,10 @@ export const api = {
     if (query.q) params.set("q", query.q);
     if (query.refresh) params.set("refresh", "1");
     const qs = params.toString();
-    return call<ModelsResponse>(`/api/ai/models${qs ? `?${qs}` : ""}`);
+    return baseCall<ModelsResponse>(`/api/ai/models${qs ? `?${qs}` : ""}`);
   },
   aiLog: (month?: string) =>
-    call<AiLogResponse>(`/api/ai/log${month ? `?month=${encodeURIComponent(month)}` : ""}`),
+    baseCall<AiLogResponse>(`/api/ai/log${month ? `?month=${encodeURIComponent(month)}` : ""}`),
   /**
    * A real check of a key through the server: the key travels in this one request, which lists the
    * provider's models with it. Nothing is kept on the server.
@@ -843,112 +517,578 @@ export const api = {
       headers: { [AI_KEYS_HEADER]: keysHeaderValue({ [kind]: key }) ?? "" },
     }),
   /** Says the notice about keys deleted from the server was seen. */
-  keysNoticeSeen: () => send<{ ok: true }>("DELETE", "/api/notices/keys-removed"),
+  keysNoticeSeen: () => baseSend<{ ok: true }>("DELETE", "/api/notices/keys-removed"),
+  // ---- Projects (stage 27b): the server's own, not a project's --------------------------
+
+  /** The projects the person is in, and whether they may make one. */
+  projects: () => baseCall<ProjectsResponse>("/api/projects"),
+  createProject: (body: CreateProjectRequest) => basePost<ProjectResponse>("/api/projects", body),
+  /** Whether an address can be taken; the reason in words when it cannot. */
+  slugFree: (slug: string, signal?: AbortSignal) =>
+    baseCall<SlugFreeResponse>(`/api/projects/slug-free?slug=${encodeURIComponent(slug)}`, {
+      ...(signal ? { signal } : {}),
+    }),
+  /** Remembers the project the person opened, so the next login opens it. */
+  setLastProject: (slug: string) => baseSend<{ ok: true }>("PUT", "/api/projects/last", { slug }),
   /** The author's prices per million tokens; null removes one. */
   savePrices: (prices: Record<string, { promptPrice: number; completionPrice: number } | null>) =>
-    send<{ ok: true }>("PUT", "/api/settings/ai/prices", { prices }),
-  /** The entries a run over a folder would read, and what it would cost; nothing is read yet. */
-  listJob: (folder: string) =>
-    post<{ paths: string[]; entries: number; estimateUsd: number | null }>("/api/proposals/job", {
-      folder,
-    }),
-  branchFile: (branch: string, path: string) =>
-    call<{ before: string | null; after: string | null }>(
-      `/api/inbox/branch-file?branch=${encodeURIComponent(branch)}&path=${encodeURIComponent(path)}`,
-    ),
-  decideFile: (branch: string, path: string, blob: string, decision: "accept" | "reject") =>
-    post<{ draftId?: string; branchRemoved: boolean }>("/api/inbox/branch-file", {
-      branch,
-      path,
-      blob,
-      decision,
-    }),
-  decideBranch: (branch: string, tip: string, decision: "reject" | "remove") =>
-    post<{ branchRemoved: boolean }>("/api/inbox/branch", { branch, tip, decision }),
-  plan: (draftIds: string[], renameIds: string[], decisionIds: string[] = []) =>
-    post<PublishPlan>("/api/publish/plan", { draftIds, renameIds, decisionIds }),
-  decideQuarantine: (path: string, commit: string, decision: "accept" | "revert") =>
-    post<{ id: string; draftId?: string }>("/api/quarantine", { path, commit, decision }),
-  withdrawDecision: (id: string) => send<{ ok: true }>("DELETE", `/api/quarantine/${id}`),
-  confirm: (planId: string, confirmedMergeIds: string[], message: string) =>
-    post<{ commit: string; published: string[] }>("/api/publish/confirm", {
-      planId,
-      confirmedMergeIds,
-      message,
-    }),
-  cancelRename: (id: string) => send<{ ok: true }>("DELETE", `/api/renames/${id}`),
-  /** A library item file, such as the folder file, as the author sees it. */
-  libraryFile: (name: LibraryFileName) =>
-    call<{ file: unknown; revision: number; blob: string }>(`/api/library-files/${name}`),
-  /** Pages save through the queue (`sync/queue.ts`), which calls this. */
-  saveLibraryFile: (
-    name: LibraryFileName,
-    file: unknown,
-    revision: number,
-    sent: { baseBlob?: string; op?: string; clashes?: string[] } = {},
-  ) =>
-    send<{ file: unknown; revision: number; kept?: string }>("PUT", `/api/library-files/${name}`, {
-      file,
-      revision,
-      ...sent,
-    }),
-  resolveLibraryFile: (name: LibraryFileName, keep: "mine" | "theirs") =>
-    post<{ ok: true }>(`/api/library-files/${name}/resolve`, { keep }),
-  /** Marks a folder and everything under it for deletion; with `dryRun`, only checks and counts. */
-  deleteFolder: (path: string, dryRun = false) =>
-    post<{ entries: number; folders: number }>("/api/folders/delete", { path, dryRun }),
-  applyType: (path: string) => post<{ made: number }>("/api/folders/apply-type", { path }),
-
-  // ---- Keep going (stage 25) -------------------------------------------------------------
-
-  /** Home's work queue: needs love, wanted, orphans, dead ends and folder stub counts. */
-  keepGoingQueue: () => call<QueueResponse>("/api/keep-going/queue"),
-  /** This week's numbers and "on this day"; `tz` is minutes east of UTC. */
-  keepGoingWeek: (tz = -new Date().getTimezoneOffset()) =>
-    call<WeekResponse>(`/api/keep-going/week?tz=${tz}`),
-  /** The "From here" strip at the foot of an entry. */
-  fromHere: (path: string) =>
-    call<FromHereResponse>(`/api/keep-going/from-here?path=${encodeURIComponent(path)}`),
-  /** Links the first unlinked mention in `path` to `target`, as an unpublished draft of `path`. */
-  linkIt: (path: string, target: string) =>
-    post<LinkItResponse>("/api/keep-going/link-it", { path, target }),
-  /** Takes a Link it back, with the `undo` its answer carried. */
-  undoLinkIt: (undo: LinkItUndo) => post<{ ok: true }>("/api/keep-going/link-it/undo", undo),
-  /** A random entry of a kind; `entry` is null when none fits. */
-  randomEntry: (query: RandomQuery = {}) => {
-    const q = new URLSearchParams();
-    if (query.kind) q.set("kind", query.kind);
-    if (query.folder) q.set("folder", query.folder);
-    if (query.not) q.set("not", query.not);
-    const text = q.toString();
-    return call<RandomResponse>(`/api/keep-going/random${text ? `?${text}` : ""}`);
-  },
-  /** Up to three next steps after publishing the entries at `paths`. */
-  afterPublish: (paths: string[]) =>
-    post<AfterPublishResponse>("/api/keep-going/after-publish", { paths }),
-  /** The entries an entry implies and the questions it leaves open (AI; nothing is saved). */
-  whatsMissing: (path: string, signal?: AbortSignal) =>
-    post<WhatsMissingResponse>("/api/keep-going/whats-missing", { path }, signal),
-  /** Today's question if one was made; never makes one (AI). */
-  todaysQuestion: (tz = -new Date().getTimezoneOffset()) =>
-    call<QuestionResponse>(`/api/keep-going/question?tz=${tz}`),
-  /** Makes today's question, or with `another` a different one in its place (AI). */
-  makeQuestion: (another = false, signal?: AbortSignal) =>
-    post<QuestionResponse>(
-      "/api/keep-going/question",
-      { another, tz: -new Date().getTimezoneOffset() },
-      signal,
-    ),
-  /** The pinned entries that still exist, in order; kept on the device for reading offline. */
-  pins: () => call<PinsResponse>("/api/pins"),
-  pin: (path: string) => post<PinsResponse>("/api/pins", { path }),
-  unpin: (path: string) =>
-    send<PinsResponse>("DELETE", `/api/pins?path=${encodeURIComponent(path)}`),
-  reorderPins: (paths: string[]) => send<PinsResponse>("PUT", "/api/pins", { paths }),
+    baseSend<{ ok: true }>("PUT", "/api/settings/ai/prices", { prices }),
   /** Which needs-love rules are on; the rules left out stay as they are. */
   setKeepGoingSettings: (change: KeepGoingSettingsRequest) =>
-    send<KeepGoingSettings>("PUT", "/api/settings/keep-going", change),
+    baseSend<KeepGoingSettings>("PUT", "/api/settings/keep-going", change),
 };
+
+/** The calls that belong to one project: each goes to `/api/p/<slug>/...` (`projectUrl`). */
+function projectCalls(slugOf: () => string) {
+  const url = (path: string) => projectUrl(path, slugOf());
+  const call = async <T>(path: string, init?: RequestInit, quiet = false) =>
+    baseCall<T>(url(path), init, quiet);
+  const send = async <T>(method: string, path: string, body?: unknown) =>
+    baseSend<T>(method, url(path), body);
+  const post = async <T>(path: string, body?: unknown, signal?: AbortSignal) =>
+    basePost<T>(url(path), body, signal);
+  const streamed = async <T>(
+    path: string,
+    body: unknown,
+    onEvent: (event: string, data: unknown) => void,
+    signal?: AbortSignal,
+  ) => baseStreamed<T>(url(path), body, onEvent, signal);
+  return {
+    /** The project's own record; `movedFrom` says the address used was an old one. */
+    project: () => call<ProjectResponse>("/project"),
+    updateProject: (change: UpdateProjectRequest) =>
+      send<ProjectResponse>("PUT", "/project", change),
+    /** The name is typed again, so a stray press cannot delete a project. */
+    deleteProject: (name: string) => send<{ ok: true }>("DELETE", "/project", { name }),
+    tree: () => call<TreeResponse>("/tree"),
+    /** Every entry and every link between two entries, with the top-level folders' colours. */
+    graph: () => call<GraphResponse>("/graph"),
+    entry: (path: string) => call<EntryResponse>(`/entries?path=${encodeURIComponent(path)}`),
+    status: () => call<StatusSnapshot>("/status"),
+    attention: () => call<AttentionResponse>("/attention"),
+    schema: () => call<SchemaResponse>("/schema"),
+    names: (query = "") =>
+      call<{
+        results: {
+          path: string;
+          title: string;
+          alias?: string;
+          shared?: boolean;
+          words?: number;
+        }[];
+      }>(`/switcher${query ? `?q=${encodeURIComponent(query)}` : ""}`),
+    search: (query: string) =>
+      call<{ results: { path: string; title: string; snippet: string; words?: number }[] }>(
+        `/search?q=${encodeURIComponent(query)}`,
+      ),
+    preview: (path: string) =>
+      call<{ path: string; text: string }>(`/preview?path=${encodeURIComponent(path)}`),
+    /** The image an embed in the note `from` points at, or null when there is none. */
+    findImage: (name: string, from: string) =>
+      call<{ path: string | null }>(
+        `/images/find?name=${encodeURIComponent(name)}&from=${encodeURIComponent(from)}`,
+      ),
+    upload: async (file: File) => {
+      const form = new FormData();
+      form.append("file", file, file.name);
+      return call<{ path: string; embed: string }>("/images", { method: "POST", body: form });
+    },
+    /** Has the server take an image from a web address; it is kept as an upload. */
+    imageFromUrl: (url: string) =>
+      post<{ path: string; embed: string }>("/images/from-url", { url }),
+    rename: (from: string, to: string) => post<CreateRenameResponse>("/renames", { from, to }),
+
+    /** Pages save through the queue (`sync/queue.ts`), which calls this. */
+    saveDraft: (draft: {
+      id: string;
+      path: string;
+      kind: DraftKind;
+      text: string;
+      revision: number;
+      baseBlob?: string;
+      op?: string;
+    }) => send<{ id: string; revision: number }>("PUT", "/drafts", draft),
+    discardDraft: (id: string) => send<{ ok: true }>("DELETE", `/drafts/${id}`),
+    versions: (id: string) => call<DraftVersionsResponse>(`/drafts/${id}/versions`),
+    /** Dismisses the other side of an item clash kept beside a draft (stage 15c). */
+    dismissKept: (id: string) => send<{ ok: true }>("DELETE", `/drafts/${id}/versions/server`),
+    mergeVersions: (id: string, text: string) =>
+      post<{ id: string; revision: number }>(`/drafts/${id}/merge-versions`, { text }),
+    resolve: (id: string, text: string) =>
+      post<{ id: string; revision: number }>(`/drafts/${id}/resolve`, { text }),
+    unpublished: () => call<UnpublishedResponse>("/unpublished"),
+    maps: () =>
+      call<{
+        maps: {
+          id: string;
+          title: string;
+          space: MapFile["space"];
+          under: string | null;
+          features: number;
+          state: string;
+          /** When it last changed, and a small preview for its card (stage 23). */
+          edited?: string | null;
+          preview?: MapPreview | null;
+          /** The version mark the device compares (stage 15b). */
+          v?: string;
+        }[];
+        problems: { path: string; message: string }[];
+      }>("/maps"),
+    map: (id: string) => call<LoadedMap>(`/maps/${id}`),
+    createMap: (title: string, kind: "sphere" | "flat" | "stars" | "system", image?: string) =>
+      post<{ id: string }>("/maps", { title, kind, ...(image ? { image } : {}) }),
+    /** Pages save through the queue (`sync/queue.ts`), which calls this. */
+    saveMap: (
+      id: string,
+      map: MapFile,
+      revision: number,
+      link: { feature: string; path: string }[],
+      sent: { baseBlob?: string; op?: string; clashes?: string[] } = {},
+    ) =>
+      send<{
+        map: MapFile;
+        revision: number;
+        unlinked: { feature: string; reason: string }[];
+        /** The draft the other side of a clash was kept beside (stage 15c). */
+        kept?: string;
+      }>("PUT", `/maps/${id}`, { map, revision, link, ...sent }),
+    resolveMap: (id: string, keep: "mine" | "theirs") =>
+      post<{ ok: true }>(`/maps/${id}/resolve`, { keep }),
+    deleteMap: (id: string) => send<{ ok: true }>("DELETE", `/maps/${id}`),
+    markerSets: () =>
+      call<{ sets: { name: string; icons: { name: string; path: string }[] }[] }>("/marker-sets"),
+    chronicles: () =>
+      call<{
+        chronicles: {
+          id: string;
+          title: string;
+          main: boolean;
+          spans: number;
+          state: string;
+          /** The version mark the device compares (stage 15b). */
+          v?: string;
+        }[];
+        problems: { path: string; message: string }[];
+      }>("/chronicles"),
+    chronicle: (id: string) =>
+      call<{
+        chronicle: ChronicleFile;
+        revision: number;
+        state: string;
+        blob: string;
+        entries: Record<string, { path: string; title: string }>;
+        /** Which spans something on a map follows (stage 17); absent from an older server. */
+        onMaps?: Record<string, { map: string; title: string; features: number }[]>;
+      }>(`/chronicles/${id}`),
+    createChronicle: (title: string) => post<{ id: string }>("/chronicles", { title }),
+    copyChronicle: (copyOf: string) => post<{ id: string }>("/chronicles", { copyOf }),
+    /** Pages save through the queue (`sync/queue.ts`), which calls this. */
+    saveChronicle: (
+      id: string,
+      chronicle: ChronicleFile,
+      revision: number,
+      link: { span: string; path: string }[] = [],
+      sent: { baseBlob?: string; op?: string; clashes?: string[] } = {},
+    ) =>
+      send<{
+        chronicle: ChronicleFile;
+        revision: number;
+        unlinked: { span: string; reason: string }[];
+        kept?: string;
+      }>("PUT", `/chronicles/${id}`, { chronicle, revision, link, ...sent }),
+    makeMainChronicle: (id: string) => post<{ ok: true }>(`/chronicles/${id}/main`, {}),
+    resolveChronicle: (id: string, keep: "mine" | "theirs") =>
+      post<{ ok: true }>(`/chronicles/${id}/resolve`, { keep }),
+    deleteChronicle: (id: string) => send<{ ok: true }>("DELETE", `/chronicles/${id}`),
+    gallery: () =>
+      call<{
+        images: GalleryImage[];
+      }>("/gallery"),
+    history: (path?: string) =>
+      call<{ versions: Version[] }>(`/history${path ? `?path=${encodeURIComponent(path)}` : ""}`),
+    versionText: (path: string, commit: string) =>
+      call<{ text: string; before: string | null }>(
+        `/history/version?path=${encodeURIComponent(path)}&commit=${commit}`,
+      ),
+    importFiles: async (files: File[], folder: string, existing: "ask" | "replace" | "both") => {
+      const form = new FormData();
+      // Fields first: the server reads the folder before the first file.
+      form.append("folder", folder);
+      form.append("existing", existing);
+      for (const file of files) form.append("files", file, file.name);
+      return call<ImportResult>("/import", { method: "POST", body: form });
+    },
+    importVault: async (zip: File, message: string) => {
+      const form = new FormData();
+      form.append("message", message);
+      form.append("files", zip, zip.name);
+      return call<{ files: number; commit: string }>("/import/vault", {
+        method: "POST",
+        body: form,
+      });
+    },
+    inbox: () => call<InboxResponse>("/inbox"),
+    /** `quiet`: for proposals made by themselves, which never open the key dialog. */
+    proposeFields: (path: string, quiet = false) =>
+      call<{ made: number }>(
+        "/proposals/fields",
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ path }),
+        },
+        quiet,
+      ),
+    decideOperation: (
+      id: string,
+      op: string,
+      body: {
+        decision: "accept" | "reject" | "dismiss";
+        what?: string;
+        when?: string;
+        type?: string;
+      },
+    ) => post<{ draftId?: string }>(`/proposals/${id}/operations/${op}`, body),
+    conversations: () =>
+      call<{
+        conversations: { id: string; title: string; at: string; turns: number }[];
+        ready: boolean;
+      }>("/lore"),
+    conversation: (id: string) =>
+      call<{ conversation: LoreConversation; gone: string[] }>(`/lore/${id}`),
+    ask: (question: string, conversation?: string) =>
+      post<{ conversation: LoreConversation; gone: string[] }>("/lore", {
+        question,
+        ...(conversation ? { conversation } : {}),
+      }),
+    /**
+     * Asks as `ask` does, telling each step of the work as it happens. Stopping the reading does not
+     * stop the work: `stopAsking` does.
+     */
+    askStreamed: (
+      question: string,
+      conversation: string | undefined,
+      onEvent: (event: LoreEvent) => void,
+      signal?: AbortSignal,
+    ) =>
+      streamed<{ conversation: LoreConversation; gone: string[] }>(
+        "/lore/stream",
+        { question, ...(conversation ? { conversation } : {}) },
+        (type, data) => onEvent({ ...(data as object), type } as LoreEvent),
+        signal,
+      ),
+    stopAsking: (run: string) => post<{ ok: true }>(`/lore/runs/${run}/stop`),
+    /** A passage rewritten as asked; `signal` stops the request, and the server's call with it. */
+    rewrite: (
+      body: {
+        path: string;
+        passage: string;
+        before: string;
+        after: string;
+        how: string;
+        previous?: string[];
+        refine?: { suggestion: string; how: string };
+      },
+      signal?: AbortSignal,
+    ) => post<{ text: string }>("/write/rewrite", body, signal),
+    /** An opinion of the entry in the editor (stage 24); nothing is saved or changed. */
+    consult: (
+      body: {
+        path: string;
+        text: string;
+        focus: "edits" | "content";
+        passage?: string;
+        looks?: string[];
+        how?: string;
+      },
+      signal?: AbortSignal,
+    ) => post<ConsultReview>("/write/review", body, signal),
+    /** The saved consultations of an entry, newest first. */
+    consultReviews: (path: string) =>
+      call<{ reviews: ConsultReview[] }>(`/write/reviews?path=${encodeURIComponent(path)}`),
+    /** Keeps what the author did with a finding. */
+    consultChange: (id: string, finding: string, change: ConsultChange) =>
+      send<{ review: ConsultReview }>("PATCH", `/write/reviews/${id}/findings/${finding}`, change),
+    consultDelete: (id: string) => send<{ ok: true }>("DELETE", `/write/reviews/${id}`),
+    consultClear: (path: string) =>
+      send<{ ok: true }>("DELETE", `/write/reviews?path=${encodeURIComponent(path)}`),
+    /** A follow-up about one finding of a consultation. */
+    consultAsk: (
+      body: {
+        path: string;
+        text: string;
+        question: string;
+        finding: { kind: string; anchor: string; comment: string };
+      },
+      signal?: AbortSignal,
+    ) =>
+      post<{ text: string; sources: { path: string; title: string; quote: string }[] }>(
+        "/write/review/ask",
+        body,
+        signal,
+      ),
+    /** A new entry drafted from what the author said; nothing is saved. `signal` stops it. */
+    draftEntry: (said: string, signal?: AbortSignal) =>
+      post<{ draft: EntryProposal }>("/lore/draft", { said }, signal),
+    /** One changed paragraph of a draft entry, checked against the lore again. */
+    checkEntryDraft: (
+      body: { title: string; paragraphs: string[]; changed: number },
+      signal?: AbortSignal,
+    ) => post<EntryDraftCheck>("/lore/draft/check", body, signal),
+    /** Keeps a draft entry as an unsaved change: a new entry that waits to be published. */
+    keepEntryDraft: (body: {
+      title: string;
+      folder: string;
+      paragraphs: string[];
+      againstLore: { paragraph: number; path: string }[];
+    }) => post<{ draft: string; path: string }>("/lore/draft/keep", body),
+    comments: (path: string) =>
+      call<{ comments: PassageComment[] }>(`/comments?path=${encodeURIComponent(path)}`),
+    commentCount: (path: string) =>
+      call<{ open: number }>(`/comments/count?path=${encodeURIComponent(path)}`),
+    addComment: (body: Omit<PassageComment, "id" | "at">) =>
+      post<{ comment: PassageComment }>("/comments", body),
+    changeComment: (id: string, change: { text?: string; for?: "me" | "ai" }) =>
+      send<{ comment: PassageComment }>("PATCH", `/comments/${id}`, change),
+    removeComment: (id: string) => send<{ ok: true }>("DELETE", `/comments/${id}`),
+    workOnComment: (
+      id: string,
+      around: { before: string; after: string; previous?: string[] },
+      signal?: AbortSignal,
+    ) => post<{ text: string }>(`/comments/${id}/work`, around, signal),
+    characterProfile: (path: string) =>
+      call<{ profile: CharacterProfile | null }>(
+        `/characters/profile?path=${encodeURIComponent(path)}`,
+      ),
+    proposeProfile: (path: string) =>
+      post<{ name: string; traits: (Trait & { supported: boolean })[] }>("/characters/propose", {
+        path,
+      }),
+    approveProfile: (
+      path: string,
+      traits: Trait[],
+      moment: { words: string; year: number | null },
+    ) =>
+      post<{ profile: CharacterProfile; draft: string }>("/characters/approve", {
+        path,
+        traits,
+        moment,
+      }),
+    say: (
+      path: string,
+      message: string,
+      history: { who: "author" | "character"; text: string }[],
+    ) => post<{ lines: CharacterLine[] }>("/characters/say", { path, message, history }),
+    keepLine: (path: string, text: string) =>
+      post<{ draft: string | null }>("/characters/line", { path, text }),
+    discoveries: (map: string) =>
+      call<{ discoveries: Discovery[]; ready: boolean; art: boolean; folders: string[] }>(
+        `/maps/${map}/discoveries`,
+      ),
+    /** Asks what is found at up to six places, in one AI call. */
+    discover: (map: string, spots: SpotAsk[], chronicle: string | null, year: number | null) =>
+      post<{ discoveries: Discovery[] }>(`/maps/${map}/discover`, { spots, chronicle, year }),
+    /** What asking about places would cost; nothing is sent to the AI. */
+    estimateDiscovery: (
+      map: string,
+      spots: SpotAsk[],
+      chronicle: string | null,
+      year: number | null,
+    ) =>
+      post<{ calls: number; usd: number | null }>(`/maps/${map}/discover/estimate`, {
+        spots,
+        chronicle,
+        year,
+      }),
+    generateFeatures: (map: string, ask: GenerateAsk) =>
+      post<{ items: GeneratedFeature[] }>(`/maps/${map}/generate`, ask),
+    discoveryArt: (map: string, id: string) =>
+      post<{ discovery: Discovery }>(`/maps/${map}/discoveries/${id}/art`, {}),
+    keepDiscovery: (map: string, id: string, folder: string) =>
+      post<{ path: string }>(`/maps/${map}/discoveries/${id}/keep`, { folder }),
+    dropDiscovery: (map: string, id: string) =>
+      send<{ ok: true }>("DELETE", `/maps/${map}/discoveries/${id}`),
+    exportFolders: () => call<{ folders: string[] }>("/export/folders"),
+    exportPreview: (pick: ExportPick) =>
+      post<{ entries: { path: string; title: string }[]; unsaved: string[]; skipped: string[] }>(
+        "/export/preview",
+        pick,
+      ),
+    deleteConversation: (id: string) => send<{ ok: true }>("DELETE", `/lore/${id}`),
+    draftAddition: (id: string, turn: number, again = false) =>
+      post<{ addition: LoreAddition; conversation: LoreConversation }>(
+        `/lore/${id}/turns/${turn}/addition`,
+        { again },
+      ),
+    previewAddition: (id: string, turn: number, path: string) =>
+      post<{ path: string; isNew: boolean; before: string; after: string; base: string }>(
+        `/lore/${id}/turns/${turn}/addition/preview`,
+        { path },
+      ),
+    keepAddition: (id: string, turn: number, path: string, base: string) =>
+      post<{ draft: string | null; conversation: LoreConversation }>(
+        `/lore/${id}/turns/${turn}/addition/keep`,
+        { path, base },
+      ),
+    /** The entries a run over a folder would read, and what it would cost; nothing is read yet. */
+    listJob: (folder: string) =>
+      post<{ paths: string[]; entries: number; estimateUsd: number | null }>("/proposals/job", {
+        folder,
+      }),
+    branchFile: (branch: string, path: string) =>
+      call<{ before: string | null; after: string | null }>(
+        `/inbox/branch-file?branch=${encodeURIComponent(branch)}&path=${encodeURIComponent(path)}`,
+      ),
+    decideFile: (branch: string, path: string, blob: string, decision: "accept" | "reject") =>
+      post<{ draftId?: string; branchRemoved: boolean }>("/inbox/branch-file", {
+        branch,
+        path,
+        blob,
+        decision,
+      }),
+    decideBranch: (branch: string, tip: string, decision: "reject" | "remove") =>
+      post<{ branchRemoved: boolean }>("/inbox/branch", { branch, tip, decision }),
+    plan: (draftIds: string[], renameIds: string[], decisionIds: string[] = []) =>
+      post<PublishPlan>("/publish/plan", { draftIds, renameIds, decisionIds }),
+    decideQuarantine: (path: string, commit: string, decision: "accept" | "revert") =>
+      post<{ id: string; draftId?: string }>("/quarantine", { path, commit, decision }),
+    withdrawDecision: (id: string) => send<{ ok: true }>("DELETE", `/quarantine/${id}`),
+    confirm: (planId: string, confirmedMergeIds: string[], message: string) =>
+      post<{ commit: string; published: string[] }>("/publish/confirm", {
+        planId,
+        confirmedMergeIds,
+        message,
+      }),
+    cancelRename: (id: string) => send<{ ok: true }>("DELETE", `/renames/${id}`),
+    /** A library item file, such as the folder file, as the author sees it. */
+    libraryFile: (name: LibraryFileName) =>
+      call<{ file: unknown; revision: number; blob: string }>(`/library-files/${name}`),
+    /** Pages save through the queue (`sync/queue.ts`), which calls this. */
+    saveLibraryFile: (
+      name: LibraryFileName,
+      file: unknown,
+      revision: number,
+      sent: { baseBlob?: string; op?: string; clashes?: string[] } = {},
+    ) =>
+      send<{ file: unknown; revision: number; kept?: string }>("PUT", `/library-files/${name}`, {
+        file,
+        revision,
+        ...sent,
+      }),
+    resolveLibraryFile: (name: LibraryFileName, keep: "mine" | "theirs") =>
+      post<{ ok: true }>(`/library-files/${name}/resolve`, { keep }),
+    /** Marks a folder and everything under it for deletion; with `dryRun`, only checks and counts. */
+    deleteFolder: (path: string, dryRun = false) =>
+      post<{ entries: number; folders: number }>("/folders/delete", { path, dryRun }),
+    applyType: (path: string) => post<{ made: number }>("/folders/apply-type", { path }),
+
+    // ---- Keep going (stage 25) -------------------------------------------------------------
+
+    /** Home's work queue: needs love, wanted, orphans, dead ends and folder stub counts. */
+    keepGoingQueue: () => call<QueueResponse>("/keep-going/queue"),
+    /** This week's numbers and "on this day"; `tz` is minutes east of UTC. */
+    keepGoingWeek: (tz = -new Date().getTimezoneOffset()) =>
+      call<WeekResponse>(`/keep-going/week?tz=${tz}`),
+    /** The "From here" strip at the foot of an entry. */
+    fromHere: (path: string) =>
+      call<FromHereResponse>(`/keep-going/from-here?path=${encodeURIComponent(path)}`),
+    /** Links the first unlinked mention in `path` to `target`, as an unpublished draft of `path`. */
+    linkIt: (path: string, target: string) =>
+      post<LinkItResponse>("/keep-going/link-it", { path, target }),
+    /** Takes a Link it back, with the `undo` its answer carried. */
+    undoLinkIt: (undo: LinkItUndo) => post<{ ok: true }>("/keep-going/link-it/undo", undo),
+    /** A random entry of a kind; `entry` is null when none fits. */
+    randomEntry: (query: RandomQuery = {}) => {
+      const q = new URLSearchParams();
+      if (query.kind) q.set("kind", query.kind);
+      if (query.folder) q.set("folder", query.folder);
+      if (query.not) q.set("not", query.not);
+      const text = q.toString();
+      return call<RandomResponse>(`/keep-going/random${text ? `?${text}` : ""}`);
+    },
+    /** Up to three next steps after publishing the entries at `paths`. */
+    afterPublish: (paths: string[]) =>
+      post<AfterPublishResponse>("/keep-going/after-publish", { paths }),
+    /** The entries an entry implies and the questions it leaves open (AI; nothing is saved). */
+    whatsMissing: (path: string, signal?: AbortSignal) =>
+      post<WhatsMissingResponse>("/keep-going/whats-missing", { path }, signal),
+    /** Today's question if one was made; never makes one (AI). */
+    todaysQuestion: (tz = -new Date().getTimezoneOffset()) =>
+      call<QuestionResponse>(`/keep-going/question?tz=${tz}`),
+    /** Makes today's question, or with `another` a different one in its place (AI). */
+    makeQuestion: (another = false, signal?: AbortSignal) =>
+      post<QuestionResponse>(
+        "/keep-going/question",
+        { another, tz: -new Date().getTimezoneOffset() },
+        signal,
+      ),
+    /** The pinned entries that still exist, in order; kept on the device for reading offline. */
+    pins: () => call<PinsResponse>("/pins"),
+    pin: (path: string) => post<PinsResponse>("/pins", { path }),
+    unpin: (path: string) => send<PinsResponse>("DELETE", `/pins?path=${encodeURIComponent(path)}`),
+    reorderPins: (paths: string[]) => send<PinsResponse>("PUT", "/pins", { paths }),
+  };
+}
+
+/** Everything the app asks of the server: the server's own calls, and the open project's. */
+export const api = { ...serverApi, ...projectCalls(requireSlug) };
+
+/** The project calls for one project, whichever is open: for work that belongs to it (a queued save). */
+export const apiFor = (slug: string) => projectCalls(() => slug);
+
+/**
+ * Brings a vault zip into a project, telling how much has gone up (`fetch` cannot tell). The
+ * project is named, not the open one: a new project is filled before the app moves into it.
+ */
+export function uploadVault(
+  slug: string,
+  zip: File,
+  message: string,
+  onProgress: (sent: number, total: number) => void,
+): Promise<{ files: number; commit: string }> {
+  return new Promise((resolve, reject) => {
+    const form = new FormData();
+    form.append("message", message);
+    form.append("files", zip, zip.name);
+    const request = new XMLHttpRequest();
+    const address = projectUrl("/import/vault", slug);
+    request.open("POST", address);
+    request.withCredentials = true;
+    for (const [name, value] of Object.entries(headers(undefined, address))) {
+      request.setRequestHeader(name, value);
+    }
+    request.upload.onprogress = (e) => {
+      if (e.lengthComputable) onProgress(e.loaded, e.total);
+    };
+    request.onerror = () => {
+      connection.unreachable();
+      reject(unreachable());
+    };
+    request.onload = () => {
+      let body: unknown = null;
+      try {
+        body = JSON.parse(request.responseText);
+      } catch {
+        /* not JSON: a gateway's page */
+      }
+      if (request.status >= 200 && request.status < 300 && body) {
+        resolve(body as { files: number; commit: string });
+      } else if (GATEWAY.has(request.status) && !isErrorBody(body)) {
+        reject(unreachable());
+      } else {
+        const error = isErrorBody(body) ? body.error : null;
+        reject(
+          new ApiFailure(
+            request.status,
+            error?.code ?? "unknown",
+            error?.message ?? `The server answered with status ${request.status}.`,
+          ),
+        );
+      }
+    };
+    request.send(form);
+  });
+}
 
 /** A new draft id: 12 lower-case letters and digits, made in the browser. */
 export const newDraftId = randomId;
@@ -964,13 +1104,15 @@ export function entryUrl(path: string, heading?: string | null): string {
 }
 
 /** The address of a vault image, scaled to a width the server offers. */
-export function imageUrl(path: string, width?: 320 | 640 | 1280): string {
-  return `/api/images?path=${encodeURIComponent(path)}${width ? `&w=${width}` : ""}`;
+export function imageUrl(path: string, width?: 320 | 640 | 1280, slug?: string): string {
+  return projectUrl(`/images?path=${encodeURIComponent(path)}${width ? `&w=${width}` : ""}`, slug);
 }
 
 /** The address of a new image on an agent's branch, for the inbox. */
 export function branchImageUrl(branch: string, path: string): string {
-  return `/api/images?branch=${encodeURIComponent(branch)}&path=${encodeURIComponent(path)}&w=640`;
+  return projectUrl(
+    `/images?branch=${encodeURIComponent(branch)}&path=${encodeURIComponent(path)}&w=640`,
+  );
 }
 
 /** A map as the server gives it: the map, its draft revision, and the names its features need. */
@@ -985,8 +1127,8 @@ export interface LoadedMap {
 }
 
 /** The address of a map image at the size maps ask for: 4096, or 2560 on a small or modest device. */
-export function mapImageUrl(path: string, size: 2560 | 4096): string {
-  return `/api/images?path=${encodeURIComponent(path)}&w=${size}`;
+export function mapImageUrl(path: string, size: 2560 | 4096, slug?: string): string {
+  return projectUrl(`/images?path=${encodeURIComponent(path)}&w=${size}`, slug);
 }
 
 export const chronicleUrl = (id: string): string => `/chronicle/${id}`;
@@ -1157,7 +1299,10 @@ export interface SpotAsk {
   features: string[];
 }
 export const discoveryArtUrl = (map: string, id: string): string =>
-  `/api/maps/${map}/discoveries/${id}/art`;
+  projectUrl(`/maps/${map}/discoveries/${id}/art`);
+
+/** The whole library as a zip of the vault. */
+export const libraryZipUrl = (): string => projectUrl("/export/library.zip");
 
 export interface PassageComment {
   id: string;
@@ -1181,11 +1326,12 @@ export interface ExportPick {
 /** Makes an export and saves it as a file, under the name the server gives it. */
 export async function downloadExport(kind: ExportKind, pick: ExportPick): Promise<void> {
   let res: Response;
+  const address = projectUrl(`/export/${kind}`);
   try {
-    res = await fetch(`/api/export/${kind}`, {
+    res = await fetch(address, {
       method: "POST",
       credentials: "same-origin",
-      headers: headers({ headers: { "content-type": "application/json" } }, `/api/export/${kind}`),
+      headers: headers({ headers: { "content-type": "application/json" } }, address),
       body: JSON.stringify(pick),
     });
   } catch {

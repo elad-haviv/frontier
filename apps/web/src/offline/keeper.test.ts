@@ -6,6 +6,10 @@ import { imageUrl } from "../api.ts";
 import { openStore, type QueueRecord, type Store } from "../sync/db.ts";
 import { bodyUrl, DEVICE_SCHEMA, DeviceCopy, type Shape } from "./device.ts";
 import { Keeper, type KeeperReads } from "./keeper.ts";
+import { setCurrentProject } from "../project.ts";
+
+// Every test runs in one project: its calls go to `/api/p/avalymia/...`.
+setCurrentProject({ id: "avalymia01", slug: "avalymia" });
 
 let store: Store;
 let records: QueueRecord[];

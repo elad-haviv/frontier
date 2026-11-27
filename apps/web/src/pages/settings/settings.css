@@ -525,3 +525,63 @@ div.field-ok p {
     color: var(--ink-faint);
   }
 }
+
+/* ---- General (stage 27b) ------------------------------------------------------------------ */
+
+.general-form {
+  display: grid;
+  gap: var(--space-3);
+  max-width: 34rem;
+}
+.general-form .field {
+  display: grid;
+  gap: 0.25rem;
+}
+.general-form .field span,
+.general-danger .field span {
+  font-size: 0.85rem;
+  color: var(--ink-soft);
+}
+.general-form input,
+.general-form textarea,
+.general-danger input {
+  width: 100%;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  background: var(--paper-raised);
+  color: var(--ink);
+  font: inherit;
+}
+.general-note {
+  margin: -0.4rem 0 0;
+  font-size: 0.82rem;
+  overflow-wrap: anywhere;
+}
+.general-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin: 0;
+}
+.general-members {
+  margin: 0;
+  padding-left: 1.2rem;
+}
+.general-danger {
+  margin-top: var(--space-6);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--rule);
+  max-width: 34rem;
+}
+.general-danger h2 {
+  color: var(--warn);
+}
+.general-danger .danger-solid {
+  border-color: #8a2c14;
+  background: #8a2c14;
+  color: #fff;
+}
+.general-danger .danger-solid:disabled {
+  opacity: 0.5;
+}

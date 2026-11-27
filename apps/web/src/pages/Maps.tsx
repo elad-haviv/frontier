@@ -1,6 +1,6 @@
 import { Grid2x2, List, Plus, Search, X } from "lucide-react";
 import { type KeyboardEvent, useMemo, useRef, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "../nav.tsx";
 import { api, mapUrl } from "../api.ts";
 import { useDialogs } from "../components/Dialogs.tsx";
 import { MapArt } from "../components/maps/MapArt.tsx";

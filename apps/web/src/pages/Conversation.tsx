@@ -1,6 +1,7 @@
 import { ActionButton } from "../components/ui/ActionButton.tsx";
 import { type FormEvent, useEffect, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { useParams } from "react-router-dom";
+import { Link, useNavigate } from "../nav.tsx";
 import { api, ApiFailure, askUrl, entryUrl, type LoreConversation, type LoreTurn } from "../api.ts";
 import { Diff } from "../components/Diff.tsx";
 import { useDialogs } from "../components/Dialogs.tsx";

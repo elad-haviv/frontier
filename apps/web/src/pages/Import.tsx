@@ -1,7 +1,7 @@
 import { ActionButton } from "../components/ui/ActionButton.tsx";
 import { useState } from "react";
-import { Link } from "react-router-dom";
-import { api, ApiFailure, entryUrl, type ImportResult } from "../api.ts";
+import { Link } from "../nav.tsx";
+import { api, ApiFailure, entryUrl, type ImportResult, libraryZipUrl } from "../api.ts";
 import { useRefresh, useWords } from "../components/Shell.tsx";
 import { Problem } from "../components/ui/Problem.tsx";
 import { failureOf, useAsync } from "../useAsync.ts";
@@ -78,8 +78,8 @@ export function ImportPage() {
       <header className="entry-head">
         <h1>Import</h1>
         <p className="muted lede">
-          Bring notes and media into the library. <a href="/api/export/library.zip">Export</a> gives
-          the whole library back as a zip that opens in Obsidian.
+          Bring notes and media into the library. <a href={libraryZipUrl()}>Export</a> gives the
+          whole library back as a zip that opens in Obsidian.
         </p>
       </header>
       {error && (

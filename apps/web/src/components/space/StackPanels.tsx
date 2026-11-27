@@ -1,5 +1,5 @@
 import type { MapFeature, MapFile } from "@frontier/schema";
-import { Link } from "react-router-dom";
+import { Link } from "../../nav.tsx";
 import { entryUrl, mapUrl } from "../../api.ts";
 import { type Link as PassageLink, leadsFrom, neighbour, type Place } from "../../map/stack.ts";
 import type { Names } from "../../map/useMapFile.ts";

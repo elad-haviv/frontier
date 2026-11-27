@@ -1,6 +1,6 @@
 import { ActionButton } from "../components/ui/ActionButton.tsx";
 import { type FormEvent, useEffect, useState } from "react";
-import { Link, useLocation } from "react-router-dom";
+import { Link, useLocation } from "../nav.tsx";
 import {
   api,
   ApiFailure,

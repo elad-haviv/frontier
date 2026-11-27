@@ -1,3 +1,4 @@
+import { onProjectChange, withoutProject } from "../project.ts";
 import { type CSSProperties, type ReactNode, useEffect, useRef, useState } from "react";
 import { api, ApiFailure } from "../api.ts";
 import { NEEDS_CONNECTION } from "../sync/connection.ts";
@@ -9,10 +10,13 @@ interface Shown {
 }
 
 const cache = new Map<string, string>();
+// Another project has other entries under the same path.
+onProjectChange(() => cache.clear());
 
 /** The vault path a reader link points at, or null for any other link. */
 function pathOf(anchor: HTMLAnchorElement): string | null {
-  const href = anchor.getAttribute("href") ?? "";
+  // The link's address names the project it is in: `/p/<slug>/e/...`.
+  const href = withoutProject(anchor.getAttribute("href") ?? "").rest;
   if (!href.startsWith("/e/")) return null;
   return href
     .slice(3)

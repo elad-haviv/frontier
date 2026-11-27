@@ -4,16 +4,18 @@
  * chooses; asking is a separate step, up to six places a call.
  */
 import { useEffect, useState } from "react";
+import { projectKey } from "../projectStorage.ts";
 import { api, ApiFailure, type Discovery, type SpotAsk } from "../api.ts";
 
 /** Places asked about in one call; more are asked in turn. */
 export const PLACES_PER_CALL = 6;
 /** Whether discovery was ready when last asked, for a map opened with no connection. */
 const READY_KEY = "frontier.discovery.ready";
+const readyKey = () => projectKey(READY_KEY);
 
 function rememberedReady(): boolean {
   try {
-    return localStorage.getItem(READY_KEY) === "1";
+    return localStorage.getItem(readyKey()) === "1";
   } catch {
     return false;
   }
@@ -49,7 +51,7 @@ export function useDiscovery(
       (r) => {
         setFound({ items: r.discoveries, ready: r.ready, art: r.art, folders: r.folders });
         try {
-          localStorage.setItem(READY_KEY, r.ready ? "1" : "0");
+          localStorage.setItem(readyKey(), r.ready ? "1" : "0");
         } catch {
           // Remembered only for opening a map offline.
         }

@@ -4,6 +4,7 @@
  * queue, which sends it, merges it with another device's copy when that one was saved first, and
  * keeps it on the device until the server has it.
  */
+import { onProjectChange } from "../project.ts";
 import { useEffect, useSyncExternalStore } from "react";
 import type { LibraryFileKind, LibraryFileName } from "@frontier/schema";
 import { api, ApiFailure } from "../api.ts";
@@ -105,6 +106,8 @@ export class LibraryFileClient<F> {
 }
 
 const clients = new Map<string, LibraryFileClient<unknown>>();
+// The folder file and the rest are a project's own: a new project reads its own.
+onProjectChange(() => clients.clear());
 
 /** The one client of a kind in this tab. */
 export function libraryFileClient<F>(kind: LibraryFileKind<F>): LibraryFileClient<F> {

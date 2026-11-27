@@ -1,6 +1,6 @@
 import { ActionButton } from "../components/ui/ActionButton.tsx";
 import { type FormEvent, type KeyboardEvent, useRef, useState } from "react";
-import { Link, useLocation, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "../nav.tsx";
 import { api, askUrl, type EntryProposal } from "../api.ts";
 import { DictateButton, ListeningBar } from "../components/DictateButton.tsx";
 import { EntryDraft } from "../components/EntryDraft.tsx";

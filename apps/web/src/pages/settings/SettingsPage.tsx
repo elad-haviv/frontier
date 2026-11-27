@@ -7,7 +7,7 @@
 import type { MeResponse, SettingsResponse } from "@frontier/schema";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
-import { Link, Navigate, useLocation } from "react-router-dom";
+import { Link, Navigate, useLocation } from "../../nav.tsx";
 import { api, ApiFailure } from "../../api.ts";
 import { useDeviceKeys } from "../../aiKeys.ts";
 import { Icon } from "../../components/ui/Icon.tsx";
@@ -17,6 +17,8 @@ import { missing, useMe } from "../../me.ts";
 import { Account } from "./Account.tsx";
 import { AiKeys } from "./AiKeys.tsx";
 import { Backups } from "./Backups.tsx";
+import { General } from "./General.tsx";
+import { useProjectOrNull } from "../../components/projectContext.ts";
 import { Device } from "./Device.tsx";
 import { FolderRun } from "./FolderRun.tsx";
 import { KeepGoing } from "./KeepGoing.tsx";
@@ -25,8 +27,8 @@ import { Profile } from "./Profile.tsx";
 import {
   movedSection,
   NeedsConnection,
-  SECTIONS,
   type Section,
+  sectionsFor,
   SettingsDataProvider,
   useWide,
 } from "./shared.tsx";
@@ -111,7 +113,10 @@ function Menu({
   offline,
   keys,
   list,
+  sections,
 }: {
+  /** The sections that can open here: the project's only inside a project. */
+  sections: Section[];
   current: string | null;
   settings: SettingsResponse | null;
   offline: boolean;
@@ -119,38 +124,43 @@ function Menu({
   /** Drawn as the phone's list of rows rather than the rail. */
   list: boolean;
 }) {
-  const groups = [...new Set(SECTIONS.map((s) => s.group))];
+  const groups = [...new Set(sections.map((s) => s.group))];
   const me = useMe();
+  const project = useProjectOrNull();
   return (
     <nav className={list ? "settings-list" : "settings-rail"} aria-label="Settings">
       {!list && <h1>Settings</h1>}
       {groups.map((g) => (
         <div key={g} className="settings-group">
-          <h2 className="settings-group-name">{g}</h2>
+          <h2 className="settings-group-name">
+            {g === "This project" && project ? `This project · ${project.name}` : g}
+          </h2>
           <ul>
-            {SECTIONS.filter((s) => s.group === g).map((s) => {
-              const state = stateOf(s, settings, offline, me, keys);
-              const on = current === s.path;
-              return (
-                <li key={s.path}>
-                  <Link
-                    to={`/settings/${s.path}`}
-                    className={on ? "on" : undefined}
-                    aria-current={on ? "page" : undefined}
-                  >
-                    <span className="settings-link-text">
-                      <span>{s.title}</span>
-                      {state && (list || state.problem) && (
-                        <small className={state.problem ? "problem" : undefined}>
-                          {state.text}
-                        </small>
-                      )}
-                    </span>
-                    {list && <Icon icon={ChevronRight} size="sm" className="settings-chevron" />}
-                  </Link>
-                </li>
-              );
-            })}
+            {sections
+              .filter((s) => s.group === g)
+              .map((s) => {
+                const state = stateOf(s, settings, offline, me, keys);
+                const on = current === s.path;
+                return (
+                  <li key={s.path}>
+                    <Link
+                      to={`/settings/${s.path}`}
+                      className={on ? "on" : undefined}
+                      aria-current={on ? "page" : undefined}
+                    >
+                      <span className="settings-link-text">
+                        <span>{s.title}</span>
+                        {state && (list || state.problem) && (
+                          <small className={state.problem ? "problem" : undefined}>
+                            {state.text}
+                          </small>
+                        )}
+                      </span>
+                      {list && <Icon icon={ChevronRight} size="sm" className="settings-chevron" />}
+                    </Link>
+                  </li>
+                );
+              })}
           </ul>
         </div>
       ))}
@@ -168,11 +178,13 @@ function Open({ section }: { section: Section }) {
       return <FolderRun />;
     case "device/ai-keys":
       return <AiKeys />;
-    case "library/types":
+    case "general":
+      return <General />;
+    case "types":
       return <Types />;
-    case "library/keep-going":
+    case "you/keep-going":
       return <KeepGoing />;
-    case "library/backups":
+    case "backups":
       return <Backups />;
     case "device/offline":
       return <Device />;
@@ -186,6 +198,8 @@ function Open({ section }: { section: Section }) {
 export function SettingsPage() {
   const { pathname } = useLocation();
   const wide = useWide();
+  const project = useProjectOrNull();
+  const sections = sectionsFor(project !== null);
   const offline = useNeedsConnection() !== undefined;
   const [settings, setSettings] = useState<SettingsResponse | null>(null);
   const [error, setError] = useState<ApiFailure | null>(null);
@@ -212,7 +226,7 @@ export function SettingsPage() {
 
   const me = useMe();
   const rest = pathname.replace(/^\/settings\/?/, "").replace(/\/+$/, "");
-  const section = SECTIONS.find((s) => rest === s.path || rest.startsWith(`${s.path}/`)) ?? null;
+  const section = sections.find((s) => rest === s.path || rest.startsWith(`${s.path}/`)) ?? null;
 
   // Sections that moved keep working at their old addresses.
   const moved = movedSection(rest);
@@ -221,6 +235,8 @@ export function SettingsPage() {
   if (rest === "" && wide) {
     return <Navigate to={`/settings/${firstSection(settings, me, keys)}`} replace />;
   }
+  // Settings with no project shows what is yours and the device's: the project's sections
+  // need one, and the account menu of All projects is how this page is reached.
 
   const body = !section ? null : section.offline || settings ? (
     <Open section={section} />
@@ -251,6 +267,7 @@ export function SettingsPage() {
               settings={settings}
               offline={offline}
               keys={keys}
+              sections={sections}
               list={false}
             />
             <article className="settings settings-section">
@@ -269,7 +286,14 @@ export function SettingsPage() {
         ) : (
           <div className="settings settings-home">
             <h1>Settings</h1>
-            <Menu current={null} settings={settings} offline={offline} keys={keys} list />
+            <Menu
+              current={null}
+              settings={settings}
+              offline={offline}
+              keys={keys}
+              sections={sections}
+              list
+            />
           </div>
         )}
       </div>

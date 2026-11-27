@@ -1,6 +1,6 @@
 import { Fingerprint } from "lucide-react";
 import { type FormEvent, useEffect, useState } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "../nav.tsx";
 import { api, ApiFailure } from "../api.ts";
 import { Icon } from "../components/ui/Icon.tsx";
 

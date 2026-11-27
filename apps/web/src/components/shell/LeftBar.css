@@ -19,6 +19,7 @@
   flex: 1;
 }
 .left-bar.is-rail .left-head {
+  flex-direction: column;
   justify-content: center;
   padding: var(--space-1) 0;
 }
@@ -196,10 +197,19 @@
 .left-person-link:hover {
   background: var(--accent-soft);
 }
+.left-person-text {
+  display: grid;
+  min-width: 0;
+  line-height: 1.25;
+}
 .left-person-name {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.left-person-role {
+  color: var(--ink-faint);
+  font-size: 0.78rem;
 }
 .left-nudge {
   padding: 0 var(--space-2);

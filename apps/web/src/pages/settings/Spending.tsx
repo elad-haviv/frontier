@@ -10,7 +10,8 @@ import {
   splitModelId,
 } from "@frontier/schema";
 import { useState } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { useSearchParams } from "react-router-dom";
+import { Link } from "../../nav.tsx";
 import { api, entryUrl } from "../../api.ts";
 import { Problem } from "../../components/ui/Problem.tsx";
 import { Progress } from "../../components/ui/Progress.tsx";

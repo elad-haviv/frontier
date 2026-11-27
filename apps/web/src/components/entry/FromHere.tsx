@@ -1,7 +1,7 @@
 import type { FromHereResponse, LinkItUndo, UnlinkedMention } from "@frontier/schema";
 import { CircleCheck } from "lucide-react";
 import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "../../nav.tsx";
 import { api, ApiFailure, editUrl, entryUrl } from "../../api.ts";
 import {
   backlinksLine,

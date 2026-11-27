@@ -6,7 +6,7 @@
  * Only acting on it clears it for good; "Later" and closing leave it for the next time.
  */
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate } from "../nav.tsx";
 import { api } from "../api.ts";
 import { DialogFrame } from "./Dialogs.tsx";
 import { useMe } from "../me.ts";

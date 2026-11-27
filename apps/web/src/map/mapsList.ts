@@ -4,6 +4,7 @@
  * decided here, so the page only draws.
  */
 import type { MapPreview } from "@frontier/schema";
+import { projectKey } from "../projectStorage.ts";
 
 export type Kind = "sphere" | "flat" | "stars" | "system";
 export type State = "new" | "unpublished" | "published";
@@ -239,13 +240,15 @@ export function stateText(s: State): string {
 // ---- Recently opened (kept on this device) -----------------------------------------------------
 
 const RECENT_KEY = "frontier.maps.recent";
+/** Kept per project: the maps of one library are not the other's. */
+const recentKey = () => projectKey(RECENT_KEY);
 
 /** Notes that a map was opened. */
 export function noteOpened(id: string, now = Date.now()): void {
   try {
     const list = recentList().filter((r) => r.id !== id);
     list.unshift({ id, at: now });
-    localStorage.setItem(RECENT_KEY, JSON.stringify(list.slice(0, 20)));
+    localStorage.setItem(recentKey(), JSON.stringify(list.slice(0, 20)));
   } catch {
     // Without storage nothing is remembered, and the page still works.
   }
@@ -253,7 +256,7 @@ export function noteOpened(id: string, now = Date.now()): void {
 
 export function recentList(): { id: string; at: number }[] {
   try {
-    const raw = JSON.parse(localStorage.getItem(RECENT_KEY) ?? "[]") as unknown;
+    const raw = JSON.parse(localStorage.getItem(recentKey()) ?? "[]") as unknown;
     return Array.isArray(raw)
       ? raw.filter(
           (r): r is { id: string; at: number } =>

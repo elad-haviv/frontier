@@ -13,7 +13,7 @@ import {
 } from "@frontier/schema";
 import { BookOpen, Dices, PenLine, PinOff } from "lucide-react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "../nav.tsx";
 import { api, ApiFailure, editUrl, entryUrl } from "../api.ts";
 import { NewEntry } from "../components/NewEntry.tsx";
 import { useRevealInTree } from "../components/shell/panels.tsx";

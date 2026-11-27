@@ -1,7 +1,7 @@
 import type { EntryFields, EntryResponse } from "@frontier/schema";
 import { customProperties, linkOf } from "@frontier/vault";
 import { useMemo } from "react";
-import { Link } from "react-router-dom";
+import { Link } from "../nav.tsx";
 import { entryUrl } from "../api.ts";
 
 const WIKI = /\[\[([^[\]\n]+?)\]\]/g;

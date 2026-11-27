@@ -1,5 +1,5 @@
-import { Link } from "react-router-dom";
-import { api } from "../../api.ts";
+import { Link } from "../../nav.tsx";
+import { api, libraryZipUrl } from "../../api.ts";
 import { Problem } from "../../components/ui/Problem.tsx";
 import { useAsync } from "../../useAsync.ts";
 
@@ -36,7 +36,7 @@ export function Backups() {
           <span className="muted"> as Markdown files, a web page or a PDF.</span>
         </li>
         <li>
-          <a href="/api/export/library.zip">Download the whole library</a>
+          <a href={libraryZipUrl()}>Download the whole library</a>
           <span className="muted"> as a zip of the vault.</span>
         </li>
         <li>

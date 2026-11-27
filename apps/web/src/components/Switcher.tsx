@@ -1,6 +1,6 @@
 import { isStub } from "@frontier/schema";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "../nav.tsx";
 import { api, ApiFailure, entryUrl } from "../api.ts";
 import { lastEntry, useRecents } from "../keepGoing/recents.ts";
 import { useRandom } from "../keepGoing/useRandom.ts";

@@ -2,6 +2,10 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { resetKeysForTests } from "./aiKeys.ts";
 import { forgetRun, runFolder, runLeft } from "./folderRun.ts";
+import { setCurrentProject } from "./project.ts";
+
+// Every test runs in one project: its calls go to `/api/p/avalymia/...`.
+setCurrentProject({ id: "avalymia01", slug: "avalymia" });
 
 const start = { folder: "01 Places", total: 3, done: 0, made: 0, failed: [] };
 

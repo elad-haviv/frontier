@@ -6,7 +6,7 @@
  */
 import { AI_PROVIDER_KINDS, AiProviderKind, maskKey, splitModelId } from "@frontier/schema";
 import { useState } from "react";
-import { Link } from "react-router-dom";
+import { Link } from "../../nav.tsx";
 import { api, ApiFailure } from "../../api.ts";
 import { recordCheck, removeDeviceKey, useDeviceKeys } from "../../aiKeys.ts";
 import { AiKeyForm } from "../../components/AiKeyForm.tsx";

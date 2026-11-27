@@ -15,6 +15,7 @@ import {
   useState,
 } from "react";
 import { entryUrl } from "../api.ts";
+import { appUrl } from "../project.ts";
 import { HoverPreview } from "../components/HoverPreview.tsx";
 import { nodeColours, useTheme } from "./colours.ts";
 import { drawGraph, type Palette, readPalette, screenRadius } from "./draw.ts";
@@ -331,7 +332,7 @@ export function GraphCanvas({
           ref={link}
           key={hovered.path}
           className="link-resolved graph-hit"
-          href={entryUrl(hovered.path)}
+          href={appUrl(entryUrl(hovered.path))}
           tabIndex={-1}
           aria-hidden="true"
           draggable={false}

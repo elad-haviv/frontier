@@ -3,6 +3,10 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { CLIENT_API } from "@frontier/schema";
 import { api, ApiFailure, eventsIn, setDevice } from "./api.ts";
 import { connection } from "./sync/connection.ts";
+import { setCurrentProject } from "./project.ts";
+
+// Every test runs in one project: its calls go to `/api/p/avalymia/...`.
+setCurrentProject({ id: "avalymia01", slug: "avalymia" });
 
 /** Answers every request with `res`, and keeps what was asked. */
 function answer(res: () => Response) {
@@ -171,25 +175,29 @@ describe("keep going", () => {
   it("reads the queue, the week, From here and the question", async () => {
     const asked = answer(() => json(200, {}));
     await api.keepGoingQueue();
-    expect(last(asked)).toMatchObject({ method: "GET", url: "/api/keep-going/queue" });
+    expect(last(asked)).toMatchObject({ method: "GET", url: "/api/p/avalymia/keep-going/queue" });
     await api.keepGoingWeek(120);
-    expect(last(asked).url).toBe("/api/keep-going/week?tz=120");
+    expect(last(asked).url).toBe("/api/p/avalymia/keep-going/week?tz=120");
     await api.keepGoingWeek();
-    expect(last(asked).url).toMatch(/^\/api\/keep-going\/week\?tz=-?\d+$/);
+    expect(last(asked).url).toMatch(/^\/api\/p\/avalymia\/keep-going\/week\?tz=-?\d+$/);
     await api.fromHere("01 Places/Old Quay.md");
-    expect(last(asked).url).toBe("/api/keep-going/from-here?path=01%20Places%2FOld%20Quay.md");
+    expect(last(asked).url).toBe(
+      "/api/p/avalymia/keep-going/from-here?path=01%20Places%2FOld%20Quay.md",
+    );
     await api.todaysQuestion(-60);
-    expect(last(asked).url).toBe("/api/keep-going/question?tz=-60");
+    expect(last(asked).url).toBe("/api/p/avalymia/keep-going/question?tz=-60");
     await api.todaysQuestion();
-    expect(last(asked).url).toMatch(/^\/api\/keep-going\/question\?tz=-?\d+$/);
+    expect(last(asked).url).toMatch(/^\/api\/p\/avalymia\/keep-going\/question\?tz=-?\d+$/);
   });
 
   it("asks for a random entry of a kind", async () => {
     const asked = answer(() => json(200, { entry: null }));
     await api.randomEntry();
-    expect(last(asked).url).toBe("/api/keep-going/random");
+    expect(last(asked).url).toBe("/api/p/avalymia/keep-going/random");
     await api.randomEntry({ kind: "folder", folder: "01 Places", not: "A B.md" });
-    expect(last(asked).url).toBe("/api/keep-going/random?kind=folder&folder=01+Places&not=A+B.md");
+    expect(last(asked).url).toBe(
+      "/api/p/avalymia/keep-going/random?kind=folder&folder=01+Places&not=A+B.md",
+    );
   });
 
   it("links a mention, takes it back, and asks for the next steps", async () => {
@@ -197,14 +205,14 @@ describe("keep going", () => {
     await api.linkIt("A.md", "B.md");
     expect(last(asked)).toEqual({
       method: "POST",
-      url: "/api/keep-going/link-it",
+      url: "/api/p/avalymia/keep-going/link-it",
       body: { path: "A.md", target: "B.md" },
     });
     const undo = { token: "abcdefghijklmnopqrstuvwx" };
     await api.undoLinkIt(undo);
     expect(last(asked)).toEqual({
       method: "POST",
-      url: "/api/keep-going/link-it/undo",
+      url: "/api/p/avalymia/keep-going/link-it/undo",
       body: undo,
     });
     await api.afterPublish(["A.md"]);
@@ -217,7 +225,7 @@ describe("keep going", () => {
     await api.whatsMissing("A.md", stop.signal);
     expect(last(asked)).toEqual({
       method: "POST",
-      url: "/api/keep-going/whats-missing",
+      url: "/api/p/avalymia/keep-going/whats-missing",
       body: { path: "A.md" },
     });
     expect(asked.at(-1)!.init.signal).toBe(stop.signal);
@@ -230,15 +238,22 @@ describe("keep going", () => {
   it("pins, unpins and orders entries, and changes the rules", async () => {
     const asked = answer(() => json(200, { pins: [] }));
     await api.pins();
-    expect(last(asked)).toMatchObject({ method: "GET", url: "/api/pins" });
+    expect(last(asked)).toMatchObject({ method: "GET", url: "/api/p/avalymia/pins" });
     await api.pin("A.md");
-    expect(last(asked)).toEqual({ method: "POST", url: "/api/pins", body: { path: "A.md" } });
+    expect(last(asked)).toEqual({
+      method: "POST",
+      url: "/api/p/avalymia/pins",
+      body: { path: "A.md" },
+    });
     await api.unpin("A B.md");
-    expect(last(asked)).toMatchObject({ method: "DELETE", url: "/api/pins?path=A%20B.md" });
+    expect(last(asked)).toMatchObject({
+      method: "DELETE",
+      url: "/api/p/avalymia/pins?path=A%20B.md",
+    });
     await api.reorderPins(["B.md", "A.md"]);
     expect(last(asked)).toEqual({
       method: "PUT",
-      url: "/api/pins",
+      url: "/api/p/avalymia/pins",
       body: { paths: ["B.md", "A.md"] },
     });
     await api.setKeepGoingSettings({ needsLove: { stub: false } });

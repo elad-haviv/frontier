@@ -1,4 +1,4 @@
-import { Link } from "react-router-dom";
+import { Link } from "../../nav.tsx";
 import { api, historyUrl } from "../../api.ts";
 import { failureOf, useAsync } from "../../useAsync.ts";
 import { Problem } from "../ui/Problem.tsx";

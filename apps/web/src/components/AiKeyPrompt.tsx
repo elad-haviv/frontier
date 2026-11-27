@@ -9,7 +9,7 @@
  */
 import { AI_PROVIDER_KINDS, type AiProviderKind } from "@frontier/schema";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link } from "../nav.tsx";
 import { setKeyPrompt, type KeyAsk } from "../api.ts";
 import { KeyAsks } from "../keyAsks.ts";
 import { DialogFrame } from "./Dialogs.tsx";

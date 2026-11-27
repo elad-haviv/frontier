@@ -22,28 +22,35 @@ import { Icon } from "../../components/ui/Icon.tsx";
 export interface Section {
   path: string;
   title: string;
-  group: "You" | "Library" | "This device";
+  group: "This project" | "You" | "This device";
   /** Whether it shows with no connection. */
   offline: boolean;
 }
 
 /**
- * The AI sections follow the people-and-projects design (stage 27f): what is yours (which models,
- * what you spent) is under "You", and what only this device holds (the keys, the offline copy) is
- * under "This device". The sections of the library keep their place.
+ * Settings, regrouped (stage 27b). What belongs to the project (its name and address, its types
+ * and dates, its backups) is under "This project", which only shows inside a project; what is
+ * yours (the profile, how you sign in, which models you use, what you spent) is under "You";
+ * and what only this device holds (the keys, the offline copy) is under "This device". "You" and
+ * "This device" open with or without a project, at `/settings/...` and at `/p/<slug>/settings/...`.
  */
 export const SECTIONS: Section[] = [
+  { path: "general", title: "General", group: "This project", offline: false },
+  { path: "types", title: "Types and dates", group: "This project", offline: false },
+  { path: "backups", title: "Backups and export", group: "This project", offline: false },
   { path: "profile", title: "Profile", group: "You", offline: false },
   { path: "account", title: "Signing in", group: "You", offline: false },
   { path: "you/ai-models", title: "AI models", group: "You", offline: false },
   { path: "you/ai-spending", title: "Your AI spending", group: "You", offline: false },
   { path: "you/folder-run", title: "Propose for a folder", group: "You", offline: false },
-  { path: "library/types", title: "Types and dates", group: "Library", offline: false },
-  { path: "library/keep-going", title: "Keep going", group: "Library", offline: false },
-  { path: "library/backups", title: "Backups and export", group: "Library", offline: false },
+  { path: "you/keep-going", title: "Keep going", group: "You", offline: false },
   { path: "device/ai-keys", title: "AI keys", group: "This device", offline: true },
   { path: "device/offline", title: "Offline copy", group: "This device", offline: true },
 ];
+
+/** The sections that can open: those of the project only where a project is open. */
+export const sectionsFor = (inProject: boolean): Section[] =>
+  SECTIONS.filter((s) => inProject || s.group !== "This project");
 
 /** Addresses of sections that moved, to where they are now (old bookmarks and links still work). */
 export function movedSection(rest: string): string | null {
@@ -51,6 +58,10 @@ export function movedSection(rest: string): string | null {
   if (rest === "ai/spending") return "you/ai-spending";
   if (rest === "ai/folder-run") return "you/folder-run";
   if (rest === "device") return "device/offline";
+  // The library's sections became the project's, and Keep going is yours (stage 27b).
+  if (rest === "library/types") return "types";
+  if (rest === "library/backups") return "backups";
+  if (rest === "library/keep-going") return "you/keep-going";
   const models = /^ai\/models(\/(?:extraction|conversation|art))?$/.exec(rest);
   if (models) return `you/ai-models${models[1] ?? ""}`;
   return null;

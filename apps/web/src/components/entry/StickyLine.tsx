@@ -1,6 +1,6 @@
 import { ChevronLeft } from "lucide-react";
 import type { ReactNode } from "react";
-import { Link } from "react-router-dom";
+import { Link } from "../../nav.tsx";
 import { entryUrl } from "../../api.ts";
 import { shortcutText } from "../../keys.ts";
 import { Icon } from "../ui/Icon.tsx";

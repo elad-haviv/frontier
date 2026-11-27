@@ -1,6 +1,6 @@
 import type { MapFeature, MapFile } from "@frontier/schema";
 import { ArrowDown, ArrowUp, X } from "lucide-react";
-import { Link } from "react-router-dom";
+import { Link } from "../../nav.tsx";
 import { entryUrl, mapUrl } from "../../api.ts";
 import type { Names } from "../../map/useMapFile.ts";
 import { heightText, numberText, routeLength, travelDays } from "../../map/space3d.ts";

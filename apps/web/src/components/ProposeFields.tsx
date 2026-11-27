@@ -1,6 +1,6 @@
 import { ActionButton } from "./ui/ActionButton.tsx";
 import { useState } from "react";
-import { Link } from "react-router-dom";
+import { Link } from "../nav.tsx";
 import { api, ApiFailure } from "../api.ts";
 import { useRefresh } from "./Shell.tsx";
 

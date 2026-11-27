@@ -1,3 +1,4 @@
+import { onProjectChange } from "../project.ts";
 import type { Completion, CompletionContext, CompletionResult } from "@codemirror/autocomplete";
 import { api } from "../api.ts";
 
@@ -9,6 +10,8 @@ interface Name {
 }
 
 let cache: { at: number; names: Name[] } | null = null;
+// The names of one project are not offered in another.
+onProjectChange(() => (cache = null));
 
 /** Every entry name and alias. Read again after 30 seconds, so new entries show up. */
 async function names(): Promise<Name[]> {

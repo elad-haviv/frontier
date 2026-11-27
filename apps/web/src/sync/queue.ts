@@ -23,7 +23,9 @@ import {
   mergeMaps,
   unionClashes,
 } from "@frontier/schema";
-import { api, ApiFailure, fromServer, setDevice } from "../api.ts";
+import { api, apiFor, ApiFailure, fromServer, setDevice } from "../api.ts";
+import { inProject, onProjectChange, type ProjectRef } from "../project.ts";
+import { knownProjects } from "../projects.ts";
 import { type Connection, connection as appConnection } from "./connection.ts";
 import { migrateBuffers } from "./migrate.ts";
 import {
@@ -115,6 +117,15 @@ export interface QueueDeps {
    * earlier build kept elsewhere. It reads and puts through what it is given.
    */
   migrate?: (queue: Pick<Queue, "get" | "put">) => Promise<unknown>;
+  /**
+   * The storage that holds this device's id and name, when it is not `open`'s own: every
+   * project's queue has the same device (stage 27b).
+   */
+  identity?: () => Promise<Store>;
+  /** The Web Lock and the broadcast channel this queue uses; each project has its own. */
+  names?: { lock: string; channel: string };
+  /** Which project the queue's notices are about, so a notice from a background queue says so. */
+  project?: ProjectRef;
 }
 
 /** How long a page's changes wait for more before they are sent. */
@@ -265,7 +276,7 @@ export class Queue {
     this.starting ??= (async () => {
       const store = await this.storage();
       this.store = store;
-      this.device = await deviceOf(store);
+      this.device = await deviceOf(await this.identity(store));
       setDevice(this.device);
       for (const r of await store.all()) {
         // A send cut off by a reload is sent again with the same op.
@@ -291,7 +302,7 @@ export class Queue {
       if (!store.kept || !this.d.locks) this.becomeSender();
       else {
         void this.d.locks.request(
-          LOCK,
+          this.d.names?.lock ?? LOCK,
           () =>
             new Promise<void>((release) => {
               this.releaseLock = release;
@@ -333,6 +344,16 @@ export class Queue {
   onSender(listener: () => void): () => void {
     this.senderListeners.add(listener);
     return () => this.senderListeners.delete(listener);
+  }
+
+  /** The storage the device's id is kept in: the queue's own unless it is told another. */
+  private async identity(own: Store): Promise<Store> {
+    return this.d.identity ? this.d.identity() : own;
+  }
+
+  /** The project this queue belongs to, when it has one. */
+  get project(): ProjectRef | undefined {
+    return this.d.project;
   }
 
   /** The database the queue opened, which the device copy shares (`offline/device.ts`). */
@@ -533,7 +554,7 @@ export class Queue {
     this.listChanged();
     this.post({ type: "cleared" });
     // A new id from here on: nothing links what comes next to what this device did before.
-    this.device = await deviceOf(store);
+    this.device = await deviceOf(await this.identity(store));
     setDevice(this.device);
   }
 
@@ -951,22 +972,334 @@ export class Queue {
   }
 }
 
-/** The app's one queue. */
-export const queue = new Queue({
-  open: () => openStore(),
-  // A merge reads the server's copy, never one the device kept for reading offline.
-  api: {
-    ...api,
-    map: (id) => fromServer(() => api.map(id)),
-    chronicle: (id) => fromServer(() => api.chronicle(id)),
-    libraryFile: (name) => fromServer(() => api.libraryFile(name)),
-  },
-  connection: appConnection,
-  locks: typeof navigator !== "undefined" ? navigator.locks : undefined,
-  channel: () => (typeof BroadcastChannel === "undefined" ? null : new BroadcastChannel(CHANNEL)),
-  // The browser buffer of builds before the queue is moved in once, at start.
-  migrate: (q) => migrateBuffers(q),
+// ---- One queue for each project (stage 27b) -----------------------------------------------------
+
+/** The name of the database a project's queue and device copy are kept in. */
+export const projectDatabase = (id: string): string => `frontier-p-${id}`;
+
+/** What the hub needs to make a queue for a project. */
+export interface HubDeps {
+  /** The device's own storage, opened once: the first project's data and everything of the device. */
+  main: () => Promise<Store>;
+  /** Opens a project's own storage. */
+  openProject: (id: string) => Promise<Store>;
+  /** Makes the queue of a project over the storage `open` gives. */
+  make: (ref: ProjectRef, open: () => Promise<Store>) => Queue;
+  /** The projects the person is in, as last known: whose slugs a queue left over is sent to. */
+  known: () => ProjectRef[];
+}
+
+/**
+ * The app's queue as the pages see it: the open project's. Each project has a queue of its own,
+ * over a database of its own, so what is typed in one is never shown in another, and a change
+ * made in project A is sent to A even when the person has since gone to B (A's queue goes on
+ * sending in the background until it is empty). Which database a project uses is decided once:
+ * the first project takes over what an earlier build kept (the device's own database), and the
+ * others get one each.
+ */
+export class QueueHub {
+  private queues = new Map<string, Queue>();
+  private active: Queue | null = null;
+  private mainOpening: Promise<Store> | null = null;
+  private legacy: Promise<string> | null = null;
+  private readonly listListeners = new Set<() => void>();
+  private readonly noticeListeners = new Set<(notice: Notice) => void>();
+  private readonly clearedListeners = new Set<() => void>();
+  private readonly senderListeners = new Set<() => void>();
+  private readonly none: QueueRecord[] = [];
+  /** The listeners of the queue that is open, forwarded and taken off when another opens. */
+  private stops: (() => void)[] = [];
+
+  constructor(private readonly d: HubDeps) {}
+
+  private main(): Promise<Store> {
+    this.mainOpening ??= this.d.main();
+    return this.mainOpening;
+  }
+
+  /** The device's own storage, where its id is kept. */
+  mainStore(): Promise<Store> {
+    return this.main();
+  }
+
+  /** The project that uses the device's own database; `candidate` takes it when none does yet. */
+  legacyOf(candidate: string): Promise<string> {
+    return this.legacyProject(candidate);
+  }
+
+  /** The project whose data is in the device's own database: the first project, decided once. */
+  private async legacyProject(candidate: string): Promise<string> {
+    this.legacy ??= (async () => {
+      const main = await this.main();
+      const known = await main.meta<string>("legacyProject");
+      if (known) return known;
+      const first = this.d.known()[0]?.id ?? candidate;
+      await main.setMeta("legacyProject", first);
+      return first;
+    })();
+    return this.legacy;
+  }
+
+  /** The queue of a project, made and started on first use. */
+  queueOf(ref: ProjectRef): Queue {
+    let q = this.queues.get(ref.id);
+    if (!q) {
+      q = this.d.make(ref, async () => {
+        if ((await this.legacyProject(ref.id)) === ref.id) return this.main();
+        const main = await this.main();
+        const ids = (await main.meta<string[]>("projectDatabases")) ?? [];
+        if (!ids.includes(ref.id)) await main.setMeta("projectDatabases", [...ids, ref.id]);
+        return this.d.openProject(ref.id);
+      });
+      this.queues.set(ref.id, q);
+      // A notice names where to look, in its own project: the one open may be another by now.
+      q.onNotice((notice) => {
+        const said = notice.href ? { ...notice, href: inProject(notice.href, ref) } : notice;
+        this.noticeListeners.forEach((l) => l(said));
+      });
+      q.onCleared(() => this.clearedListeners.forEach((l) => l()));
+      q.subscribeList(() => this.settled(ref.id));
+      void q.start().catch(() => undefined);
+    }
+    return q;
+  }
+
+  /** A queue that is not open and has nothing left to send is let go. */
+  private settled(id: string): void {
+    const q = this.queues.get(id);
+    if (!q || q === this.active || q.current().length > 0) return;
+    q.stop();
+    this.queues.delete(id);
+    this.listChanged();
+  }
+
+  /**
+   * Opens a project's queue for the pages, or none. The one open before goes on sending what it
+   * holds, and is let go once it has nothing left.
+   */
+  use(ref: ProjectRef | null): void {
+    const before = this.active;
+    this.active = ref ? this.queueOf(ref) : null;
+    for (const stop of this.stops.splice(0)) stop();
+    if (this.active) {
+      const q = this.active;
+      this.stops.push(q.subscribeList(() => this.listChanged()));
+      this.stops.push(q.onSender(() => this.senderListeners.forEach((l) => l())));
+    }
+    if (before && before !== this.active) this.settledQueue(before);
+    this.listChanged();
+  }
+
+  private settledQueue(q: Queue): void {
+    const id = [...this.queues].find(([, v]) => v === q)?.[0];
+    if (id !== undefined) this.settled(id);
+  }
+
+  private open(): Queue {
+    if (!this.active) throw new ApiFailure(0, "no_project", "No project is open.");
+    return this.active;
+  }
+
+  /** Starts the device's storage, the open project's queue, and the sending of leftovers of others. */
+  async start(): Promise<void> {
+    await this.main();
+    await Promise.all([this.active?.start(), this.sendLeftovers()]);
+  }
+
+  /**
+   * Changes a project's queue held back on this device (the person went to another project, or
+   * closed the app, before they were sent) go on to their own project.
+   */
+  private async sendLeftovers(): Promise<void> {
+    const main = await this.main();
+    const ids = new Set([...((await main.meta<string[]>("projectDatabases")) ?? [])]);
+    const legacy = await main.meta<string>("legacyProject");
+    if (legacy) ids.add(legacy);
+    for (const ref of this.d.known()) {
+      if (!ids.has(ref.id) || this.queues.has(ref.id)) continue;
+      const store = ref.id === legacy ? main : await this.d.openProject(ref.id).catch(() => null);
+      if (!store) continue;
+      const waiting = (await store.all().catch(() => [])).length > 0;
+      if (waiting) this.queueOf(ref);
+    }
+  }
+
+  stop(): void {
+    for (const q of this.queues.values()) q.stop();
+  }
+
+  // ---- What the pages call: the open project's ------------------------------------------------
+
+  get kept(): boolean {
+    return this.active?.kept ?? true;
+  }
+  get isSender(): boolean {
+    return this.active?.isSender ?? false;
+  }
+  get device(): Device | null {
+    return this.active?.device ?? [...this.queues.values()].find((q) => q.device)?.device ?? null;
+  }
+  onSender(listener: () => void): () => void {
+    this.senderListeners.add(listener);
+    return () => this.senderListeners.delete(listener);
+  }
+  database(): Promise<Store> {
+    return this.open().database();
+  }
+  put(key: QueueKey, value: unknown, meta?: PutMeta): Promise<void> {
+    return this.open().put(key, value, meta);
+  }
+  get(key: QueueKey): Promise<QueueRecord | undefined> {
+    return this.active ? this.active.get(key) : Promise.resolve(undefined);
+  }
+  list(): Promise<QueueRecord[]> {
+    return this.active ? this.active.list() : Promise.resolve([]);
+  }
+  /** The open project's records as last known; none when no project is open. */
+  current(): QueueRecord[] {
+    return this.active ? this.active.current() : this.none;
+  }
+  subscribe(key: QueueKey, listener: (event: QueueEvent) => void): () => void {
+    return this.open().subscribe(key, listener);
+  }
+  subscribeList(listener: () => void): () => void {
+    this.listListeners.add(listener);
+    return () => this.listListeners.delete(listener);
+  }
+  private listChanged(): void {
+    for (const l of [...this.listListeners]) l();
+  }
+  retry(key: QueueKey): Promise<void> {
+    return this.open().retry(key);
+  }
+  drop(key: QueueKey): Promise<void> {
+    return this.open().drop(key);
+  }
+  sendNow(key: QueueKey, timeoutMs?: number): Promise<void> {
+    return this.open().sendNow(key, timeoutMs);
+  }
+
+  /**
+   * How many changes wait on this device in every project: the open one and those still being
+   * sent in the background. What logging out would lose.
+   */
+  total(): number {
+    let n = 0;
+    for (const q of this.queues.values()) n += q.current().length;
+    return n;
+  }
+
+  /** The projects other than the open one that still have changes waiting, with how many. */
+  waitingElsewhere(): { id: string; count: number }[] {
+    return [...this.queues]
+      .filter(([, q]) => q !== this.active && q.current().length > 0)
+      .map(([id, q]) => ({ id, count: q.current().length }));
+  }
+
+  // ---- The device's own: not a project's -------------------------------------------------------
+
+  /** A value this device keeps beside the queues, such as `signedIn`. */
+  async meta<T>(key: string): Promise<T | undefined> {
+    return (await this.main()).meta<T>(key);
+  }
+  async setMeta(key: string, value: unknown): Promise<void> {
+    await (await this.main()).setMeta(key, value);
+  }
+  async removeMeta(key: string): Promise<void> {
+    await (await this.main()).removeMeta(key);
+  }
+  onNotice(listener: (notice: Notice) => void): () => void {
+    this.noticeListeners.add(listener);
+    return () => this.noticeListeners.delete(listener);
+  }
+  onCleared(listener: () => void): () => void {
+    this.clearedListeners.add(listener);
+    return () => this.clearedListeners.delete(listener);
+  }
+
+  /** Every project's copy for reading offline is emptied; the queues' records are not touched. */
+  async clearDevice(): Promise<void> {
+    const main = await this.main();
+    await main.clearDevice();
+    for (const id of (await main.meta<string[]>("projectDatabases")) ?? []) {
+      const store = await this.d.openProject(id).catch(() => null);
+      await store?.clearDevice().catch(() => undefined);
+    }
+  }
+
+  /** Removes every record of every project and this device's id and name, as at logout. */
+  async clear(): Promise<void> {
+    const main = await this.main();
+    const ids = (await main.meta<string[]>("projectDatabases")) ?? [];
+    for (const id of ids) {
+      const store = await this.d.openProject(id).catch(() => null);
+      if (!store) continue;
+      await store.clear().catch(() => undefined);
+      await store.clearMeta().catch(() => undefined);
+      await store.clearDevice().catch(() => undefined);
+    }
+    for (const q of this.queues.values()) await q.clear();
+    // Whatever queue is not open yet: the device's own storage, last, so the id is made anew.
+    await main.clear();
+    await main.clearMeta();
+    this.legacy = null;
+    this.listChanged();
+  }
+}
+
+/** The app's queues: one for each project, as the pages see the open project's. */
+export const queue: QueueHub = new QueueHub({
+  main: () => openStore(),
+  openProject: (id) => openStore(projectDatabase(id)),
+  make: (ref, open): Queue =>
+    new Queue({
+      open,
+      identity: (): Promise<Store> => queue.mainStore(),
+      project: ref,
+      names: { lock: `${LOCK}:${ref.id}`, channel: `${CHANNEL}:${ref.id}` },
+      // A merge reads the server's copy, never one the device kept for reading offline; and a
+      // send goes to the project the change was made in, whichever is open now.
+      api: senderApiFor(ref),
+      connection: appConnection,
+      locks: typeof navigator !== "undefined" ? navigator.locks : undefined,
+      channel: () =>
+        typeof BroadcastChannel === "undefined"
+          ? null
+          : new BroadcastChannel(`${CHANNEL}:${ref.id}`),
+      // The browser buffer of builds before the queue is moved in once, at start, and only into
+      // the first project's: it is what that build kept for its one library.
+      migrate: async (q): Promise<void> => {
+        if ((await queue.legacyOf(ref.id)) === ref.id) await migrateBuffers(q);
+      },
+    }),
+  known: () => (knownProjects()?.projects ?? []).map((p) => ({ id: p.id, slug: p.slug })),
 });
+
+/** The sender's calls for one project's queue: its address is read when the call is made. */
+function senderApiFor(ref: ProjectRef): SenderApi {
+  const slug = () => queueSlug(ref);
+  const p = () => apiFor(slug());
+  return {
+    saveDraft: (...a) => p().saveDraft(...a),
+    saveMap: (...a) => p().saveMap(...a),
+    saveChronicle: (...a) => p().saveChronicle(...a),
+    saveLibraryFile: (...a) => p().saveLibraryFile(...a),
+    map: (id) => fromServer(() => p().map(id)),
+    chronicle: (id) => fromServer(() => p().chronicle(id)),
+    libraryFile: (name) => fromServer(() => p().libraryFile(name)),
+  };
+}
+
+/**
+ * The address a project's queue sends to: the one the list has now, since the owner may have
+ * renamed it since the queue was made.
+ */
+function queueSlug(ref: ProjectRef): string {
+  return knownProjects()?.projects.find((p) => p.id === ref.id)?.slug ?? ref.slug;
+}
+
+// The pages' queue follows the project the app has open.
+onProjectChange((next) => queue.use(next));
 
 /** Every record still on this device, kept up to date. */
 export function useUnsent(): QueueRecord[] {

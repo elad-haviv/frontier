@@ -1,0 +1,38 @@
+/* The frame of the pages outside any project: All projects, and Settings without a project. */
+.outside {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+}
+.outside-bar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 3.25rem;
+  padding: var(--space-1) var(--space-4);
+  padding-top: max(var(--space-1), env(safe-area-inset-top));
+  border-bottom: 1px solid var(--rule);
+  background: var(--paper);
+}
+.outside-bar .wordmark {
+  flex: 1;
+  font-size: 1.3rem;
+}
+.outside-account {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 2.5rem;
+  padding: 0 var(--space-1);
+  border: 0;
+  border-radius: 999px;
+  background: none;
+}
+.outside-account:hover {
+  background: var(--accent-soft);
+}
+.outside-main {
+  flex: 1;
+  min-width: 0;
+}

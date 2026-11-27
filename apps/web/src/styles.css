@@ -46,6 +46,16 @@
 
   /* What marks the selected and the hovered feature on a map, over the map's own image. */
   --map-select: #c2410c;
+
+  /* The letter marks of projects (stage 27b): mid-tones that read with white text, 5:1 or more. */
+  --project-0: #9a3b1c;
+  --project-1: #1f6f6b;
+  --project-2: #3f5fa0;
+  --project-3: #7b4a8c;
+  --project-4: #5b7424;
+  --project-5: #a13d62;
+  --project-6: #4a5f73;
+  --project-7: #8a6a14;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -62,6 +72,15 @@
     --warn: #f08c82;
     --shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
     --map-select: #fb923c;
+    /* Still mid-tones, so white text keeps 4.5:1 or more on the dark paper. */
+    --project-0: #b4502c;
+    --project-1: #237a76;
+    --project-2: #5372b8;
+    --project-3: #9360a6;
+    --project-4: #5f7a28;
+    --project-5: #bb4f78;
+    --project-6: #5f778c;
+    --project-7: #8c6c14;
   }
 }
 

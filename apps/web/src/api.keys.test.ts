@@ -3,6 +3,10 @@ import { AI_KEYS_HEADER, decodeDeviceKeys } from "@frontier/schema";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { checkOf, removeDeviceKey, resetKeysForTests, setDeviceKey } from "./aiKeys.ts";
 import { api, ApiFailure, featureOf, needsAiKeys, setKeyPrompt } from "./api.ts";
+import { setCurrentProject } from "./project.ts";
+
+// Every test runs in one project: its calls go to `/api/p/avalymia/...`.
+setCurrentProject({ id: "avalymia01", slug: "avalymia" });
 
 const json = (status: number, body: unknown) =>
   new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });

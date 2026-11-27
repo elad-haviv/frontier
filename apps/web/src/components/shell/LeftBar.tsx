@@ -22,7 +22,7 @@ import {
   Waypoints,
 } from "lucide-react";
 import { type ReactNode, type Ref, type TouchEvent, useEffect, useRef, useState } from "react";
-import { Link, NavLink } from "react-router-dom";
+import { NavLink } from "../../nav.tsx";
 import { entryUrl } from "../../api.ts";
 import { usePins } from "../../keepGoing/pins.ts";
 import { useConnection } from "../../sync/connection.ts";
@@ -36,6 +36,8 @@ import { IconButton } from "../ui/IconButton.tsx";
 import { Problem } from "../ui/Problem.tsx";
 import { Tip } from "../ui/Tip.tsx";
 import { PersonRow } from "./PersonRow.tsx";
+import { ProjectMenu } from "./ProjectMenu.tsx";
+import { useProject } from "../projectContext.ts";
 import { isSwipeBack, type Point } from "./swipe.ts";
 import "./LeftBar.css";
 import "./DrawerLibrary.css";
@@ -55,7 +57,8 @@ export function useCounts() {
   const { snapshot: status } = useConnection();
   const own = status?.library === "own";
   return {
-    waitingLabel: own ? "Unsaved" : "Unpublished",
+    // Each person has their own unsaved changes in a project (stage 27b).
+    waitingLabel: own ? "Your unsaved changes" : "Your unpublished changes",
     waiting: status?.unpublished ?? 0,
     inbox: status ? status.inbox.branches + status.inbox.operations + status.inbox.quarantined : 0,
     compare: status?.attention.keptCopies ?? 0,
@@ -420,6 +423,7 @@ export function LeftBar({
   /** A control for the top of the bar, such as the drawer's Close. */
   top?: ReactNode;
 }) {
+  const project = useProject();
   const libraryRow = useRef<HTMLButtonElement>(null);
   const libraryBack = useRef<HTMLButtonElement>(null);
   const wasOpen = useRef(library);
@@ -460,9 +464,7 @@ export function LeftBar({
   const bar = (
     <div className={`left-bar${drawer ? " is-drawer" : ""}`}>
       <div className="left-head">
-        <Link to="/" className="wordmark small">
-          Frontier
-        </Link>
+        <ProjectMenu />
         {onCollapse && (
           <IconButton
             label="Fold the side bar"
@@ -478,7 +480,7 @@ export function LeftBar({
       <div className="left-actions">
         {!drawer && (
           <IconButton
-            label="Search"
+            label={`Search ${project.name}`}
             icon={Search}
             showLabel
             shortcut="app.switcher"

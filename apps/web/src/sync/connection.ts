@@ -2,13 +2,14 @@
  * One connection state for the whole app: online, offline or signed out.
  *
  * It listens to the server's status stream, which also brings the status snapshot every page
- * reads. When the stream fails, or a request cannot reach the server, it asks `/api/status` once:
+ * reads. When the stream fails, or a request cannot reach the server, it asks the status once:
  * a 401 means signed out, a failure to connect means offline, and any other answer means online.
  * Any later answer from the server means online again. The browser's own online flag is only a
  * hint to try again at once.
  */
 import { useSyncExternalStore } from "react";
 import type { StatusSnapshot } from "@frontier/schema";
+import { currentSlug } from "../project.ts";
 
 export type ConnectionState = "online" | "offline" | "signed-out";
 
@@ -19,10 +20,14 @@ export interface ConnectionDeps {
   events?: Pick<Window, "addEventListener" | "removeEventListener">;
   /** The longest wait before the stream is opened again after it closed. */
   maxDelayMs?: number;
+  /** The address of the project the app has open, or null outside any project. */
+  project: () => string | null;
 }
 
-const STREAM = "/api/status/events";
-const STATUS = "/api/status";
+/** The status and its stream are a project's (stage 27b); outside one, `/api/me` says who is in. */
+const streamOf = (slug: string) => `/api/p/${encodeURIComponent(slug)}/status/events`;
+const statusOf = (slug: string | null) =>
+  slug === null ? "/api/me" : `/api/p/${encodeURIComponent(slug)}/status`;
 
 export class Connection {
   state: ConnectionState = "online";
@@ -100,8 +105,11 @@ export class Connection {
     clearTimeout(this.timer);
     this.source?.close();
     this.source = null;
-    if (!this.d.EventSource || !this.started) return;
-    const source = new this.d.EventSource(STREAM);
+    const slug = this.d.project();
+    // Outside a project there is nothing to listen to; the first project that opens starts it.
+    if (!this.d.EventSource || !this.started || slug === null) return;
+    const source = new this.d.EventSource(streamOf(slug));
+    this.openedFor = slug;
     this.source = source;
     source.onopen = () => {
       this.delay = this.firstDelay();
@@ -125,6 +133,20 @@ export class Connection {
     };
   }
 
+  /** The project the stream was opened for. */
+  private openedFor: string | null = null;
+
+  /**
+   * The app opened another project (or none): the status of the last is forgotten and the stream
+   * of the new one is opened, so no count of one project shows in another.
+   */
+  projectChanged(): void {
+    if (this.d.project() === this.openedFor && this.source) return;
+    this.delay = this.firstDelay();
+    this.set(this.state, null);
+    this.open();
+  }
+
   private reopenLater(): void {
     clearTimeout(this.timer);
     if (!this.started || this.state === "signed-out") return;
@@ -132,14 +154,17 @@ export class Connection {
     this.delay = Math.min(this.delay * 2, this.d.maxDelayMs ?? 30_000);
   }
 
-  /** Asks `/api/status` once, and takes the state from the answer. */
+  /** Asks the project's status once (`/api/me` outside a project), and takes the state from the answer. */
   probe(): Promise<void> {
     this.probing ??= (async () => {
       try {
-        const res = await this.d.fetch(STATUS, { credentials: "same-origin" });
+        const slug = this.d.project();
+        const res = await this.d.fetch(statusOf(slug), { credentials: "same-origin" });
         if (res.status === 401) this.set("signed-out");
         else if (res.ok) {
-          const snapshot = (await res.json().catch(() => null)) as StatusSnapshot | null;
+          // Only a project's status is a snapshot; who is in is not.
+          const snapshot =
+            slug === null ? null : ((await res.json().catch(() => null)) as StatusSnapshot | null);
           this.set("online", snapshot ?? this.snapshot);
         } else this.set("online");
       } catch {
@@ -194,6 +219,7 @@ export const connection = new Connection({
   fetch: (...args) => fetch(...args),
   EventSource: typeof EventSource === "undefined" ? undefined : EventSource,
   ...(typeof window === "undefined" ? {} : { events: window }),
+  project: currentSlug,
 });
 
 /** The connection state and the latest status snapshot, for any component. */

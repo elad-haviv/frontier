@@ -1,6 +1,7 @@
 import { aliasesOf, dirname, splitFrontmatter, stem } from "@frontier/vault";
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
-import { Link, useLocation, useNavigate, useNavigationType } from "react-router-dom";
+import { useNavigationType } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "../nav.tsx";
 import {
   api,
   ApiFailure,

@@ -7,7 +7,7 @@
  */
 import { Sparkles } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link } from "../nav.tsx";
 import { api, ApiFailure, entryUrl, type EntryDraftConflict, type EntryProposal } from "../api.ts";
 import { useDictation } from "../hooks/useDictation.ts";
 import { ActionButton } from "./ui/ActionButton.tsx";

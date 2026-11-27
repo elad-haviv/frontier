@@ -1,5 +1,5 @@
 import { useCallback } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "../nav.tsx";
 import type { RandomQuery } from "@frontier/schema";
 import { ApiFailure } from "../api.ts";
 import { currentEntryPath } from "../components/shell/entryPath.ts";

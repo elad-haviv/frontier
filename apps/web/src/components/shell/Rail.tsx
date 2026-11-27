@@ -3,8 +3,11 @@ import { ConnectionMark } from "../ConnectionMark.tsx";
 import { Unsent } from "../Unsent.tsx";
 import { IconButton } from "../ui/IconButton.tsx";
 import { PersonRow } from "./PersonRow.tsx";
+import { ProjectMenu } from "./ProjectMenu.tsx";
+import { useProject } from "../projectContext.ts";
 import { PLACES, SideLink, WaitingLinks } from "./LeftBar.tsx";
 import "./LeftBar.css";
+import "./ProjectMenu.css";
 import "./KeepGoing.css";
 
 /**
@@ -26,9 +29,11 @@ export function Rail({
   onKeys: () => void;
   onLogout: () => void;
 }) {
+  const project = useProject();
   return (
     <div className="left-bar is-rail">
       <div className="left-head">
+        <ProjectMenu rail />
         <IconButton
           label="Unfold the side bar"
           icon={PanelLeftOpen}
@@ -40,7 +45,7 @@ export function Rail({
       </div>
       <div className="left-actions">
         <IconButton
-          label="Search"
+          label={`Search ${project.name}`}
           icon={Search}
           shortcut="app.switcher"
           tipSide="right"

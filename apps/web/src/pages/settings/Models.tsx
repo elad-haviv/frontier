@@ -7,7 +7,7 @@
 import type { AiProviderKind, AiTaskName, CatalogModel, ModelsResponse } from "@frontier/schema";
 import { splitModelId } from "@frontier/schema";
 import { useCallback, useEffect, useState } from "react";
-import { Link, useLocation, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "../../nav.tsx";
 import { api } from "../../api.ts";
 import { useDeviceKeys } from "../../aiKeys.ts";
 import { ModelPicker, needsPrice, type Price } from "../../components/ModelPicker.tsx";

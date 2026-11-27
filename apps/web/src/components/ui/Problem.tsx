@@ -1,5 +1,5 @@
 import { CircleAlert } from "lucide-react";
-import { Link } from "react-router-dom";
+import { Link } from "../../nav.tsx";
 import { Icon } from "./Icon.tsx";
 import "./Problem.css";
 

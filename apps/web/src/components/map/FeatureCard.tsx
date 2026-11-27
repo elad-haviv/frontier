@@ -1,6 +1,6 @@
 import { biomeById, type MapFeature } from "@frontier/schema";
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link } from "../../nav.tsx";
 import { api, ApiFailure, entryUrl, mapUrl } from "../../api.ts";
 import { NEEDS_CONNECTION } from "../../sync/connection.ts";
 import type { Names } from "../../map/useMapFile.ts";

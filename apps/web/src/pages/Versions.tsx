@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ActionButton } from "../components/ui/ActionButton.tsx";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { useParams } from "react-router-dom";
+import { Link, useNavigate } from "../nav.tsx";
 import { chronicleIdOf, itemShapeOf, type KeptCopyText, mapIdOf } from "@frontier/schema";
 import { api, ApiFailure, chronicleUrl, mapUrl } from "../api.ts";
 import { compareItems, nowLabel } from "../offline/itemCompare.ts";

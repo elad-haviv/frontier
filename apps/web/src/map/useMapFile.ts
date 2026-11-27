@@ -4,7 +4,7 @@
  */
 import { type MapFeature, type MapFile, type MapGroup, mergeMaps } from "@frontier/schema";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate } from "../nav.tsx";
 import { api, ApiFailure, fromServer } from "../api.ts";
 import { useReadAgain } from "../components/OfflineCopy.tsx";
 import { markOpened, servedFromDevice } from "../offline/copy.ts";

@@ -1,5 +1,5 @@
 import { type ReactNode, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate } from "../../nav.tsx";
 import { api, ApiFailure, imageUrl, mapUrl } from "../../api.ts";
 import { type Kind, KIND_WORD, KINDS } from "../../map/mapsList.ts";
 import { queue } from "../../sync/queue.ts";

@@ -33,7 +33,10 @@ class FakeSource {
 const answer = (status: number, body: unknown = {}) =>
   Promise.resolve(new Response(JSON.stringify(body), { status }));
 
+let slug: string | null = "avalymia";
+
 function make(fetch: typeof globalThis.fetch) {
+  slug = "avalymia";
   FakeSource.made = [];
   const events = new EventTarget();
   const c = new Connection({
@@ -41,6 +44,7 @@ function make(fetch: typeof globalThis.fetch) {
     EventSource: FakeSource as unknown as typeof EventSource,
     events: events as unknown as Window,
     maxDelayMs: 10,
+    project: () => slug,
   });
   return { c, events };
 }
@@ -50,14 +54,14 @@ describe("the connection service", () => {
     const { c } = make(vi.fn());
     c.start();
     const [source] = FakeSource.made;
-    expect(source!.url).toBe("/api/status/events");
+    expect(source!.url).toBe("/api/p/avalymia/status/events");
     source!.send("status", { unpublished: 3 });
     expect(c.state).toBe("online");
     expect(c.snapshot).toEqual({ unpublished: 3 });
     c.stop();
   });
 
-  it("asks /api/status once when the stream fails: a 401 means signed out", async () => {
+  it("asks the project's status once when the stream fails: a 401 means signed out", async () => {
     const fetch = vi.fn(() => answer(401, { error: { code: "unauthenticated" } }));
     const { c } = make(fetch as unknown as typeof globalThis.fetch);
     c.start();
@@ -66,7 +70,7 @@ describe("the connection service", () => {
     c.unauthorised();
     await c.probe();
     expect(fetch).toHaveBeenCalledTimes(1);
-    expect(fetch.mock.calls[0]).toEqual(["/api/status", { credentials: "same-origin" }]);
+    expect(fetch.mock.calls[0]).toEqual(["/api/p/avalymia/status", { credentials: "same-origin" }]);
     expect(c.state).toBe("signed-out");
     // While signed out the stream is not opened again by itself.
     await new Promise((r) => setTimeout(r, 30));
@@ -118,7 +122,7 @@ describe("the connection service", () => {
     expect(c.state).toBe("offline");
     // The stream is started as usual, and the server is asked at once.
     expect(FakeSource.made).toHaveLength(1);
-    expect(fetch).toHaveBeenCalledWith("/api/status", { credentials: "same-origin" });
+    expect(fetch).toHaveBeenCalledWith("/api/p/avalymia/status", { credentials: "same-origin" });
     answerProbe(new Response(JSON.stringify({ unpublished: 2 }), { status: 200 }));
     await vi.waitFor(() => expect(c.state).toBe("online"));
     expect(c.snapshot).toEqual({ unpublished: 2 });

@@ -1,7 +1,9 @@
+import { projectKey } from "../projectStorage.ts";
 import * as Popover from "@radix-ui/react-popover";
 import { Flag, Map as MapIcon, Plus, Redo2, Undo2 } from "lucide-react";
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { useParams, useSearchParams } from "react-router-dom";
+import { Link, useNavigate } from "../nav.tsx";
 import { type ChronicleFile, mergeChronicles } from "@frontier/schema";
 import { allSpanPoints, formatYears, placeable } from "@frontier/time";
 import { api, ApiFailure, chronicleUrl, mapUrl } from "../api.ts";
@@ -70,9 +72,9 @@ const store = {
     }
   },
 };
-const OFFER_KEY = (id: string) => `frontier.chronicle.placeOffer.${id}`;
-const YEAR_KEY = (id: string) => `frontier.chronicle.mapYear.${id}`;
-const FOLD_KEY = (id: string) => `frontier.chronicle.folded.${id}`;
+const OFFER_KEY = (id: string) => projectKey(`frontier.chronicle.placeOffer.${id}`);
+const YEAR_KEY = (id: string) => projectKey(`frontier.chronicle.mapYear.${id}`);
+const FOLD_KEY = (id: string) => projectKey(`frontier.chronicle.folded.${id}`);
 
 /** One chronicle, shown as a timeline (stage 17). */
 export function ChroniclePage() {

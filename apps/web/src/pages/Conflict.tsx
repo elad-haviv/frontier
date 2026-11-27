@@ -1,7 +1,8 @@
 import { ActionButton } from "../components/ui/ActionButton.tsx";
 import type { PublishPlan } from "@frontier/schema";
 import { useRef, useState } from "react";
-import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
+import { useParams } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "../nav.tsx";
 import { api, ApiFailure } from "../api.ts";
 import { CodeEditor } from "../components/CodeEditor.tsx";
 import { Diff } from "../components/Diff.tsx";

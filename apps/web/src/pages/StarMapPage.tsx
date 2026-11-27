@@ -15,7 +15,8 @@ import {
   Undo2,
 } from "lucide-react";
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Link, useParams, useSearchParams } from "react-router-dom";
+import { useParams, useSearchParams } from "react-router-dom";
+import { Link } from "../nav.tsx";
 import { OfflineCopy } from "../components/OfflineCopy.tsx";
 import { type StarCanvasApi, StarCanvas, type StarTool } from "../components/space/StarCanvas.tsx";
 import { StarCard, StarEdit, StarLayers } from "../components/space/StarPanels.tsx";

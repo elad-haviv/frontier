@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link } from "../../nav.tsx";
 import { entryUrl, mapUrl } from "../../api.ts";
 import { EntryPicker } from "../EntryPicker.tsx";
 import type { ChronicleFile, ChronicleSpan } from "@frontier/schema";

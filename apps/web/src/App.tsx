@@ -8,7 +8,18 @@ import { noteOpened } from "./map/mapsList.ts";
 import { AiKeyPromptHost } from "./components/AiKeyPrompt.tsx";
 import { KeysRemovedNotice } from "./components/KeysRemovedNotice.tsx";
 import { LoginDialog } from "./components/LoginDialog.tsx";
-import { Shell } from "./components/Shell.tsx";
+import { OutsideShell } from "./components/OutsideShell.tsx";
+import { ProjectScope } from "./components/ProjectScope.tsx";
+import { AllProjects } from "./pages/projects/AllProjects.tsx";
+import { movedInto, projectRoot, withoutProject } from "./project.ts";
+import { fileUnfiled } from "./projectStorage.ts";
+import {
+  clearProjects,
+  homeProject,
+  knownProjects,
+  loadProjects,
+  useProjects,
+} from "./projects.ts";
 import { startDeviceCopy } from "./offline/copy.ts";
 import { noteSignedIn, openApp } from "./offline/start.ts";
 import { updates } from "./offline/updates.ts";
@@ -100,11 +111,104 @@ function OneMap() {
 /** Renaming happens on the entry's own page now; an old address opens the entry. */
 function RenameRedirect() {
   const { pathname } = useLocation();
-  return <Navigate to={"/e/" + pathname.slice("/rename/".length)} replace />;
+  const { rest } = withoutProject(pathname);
+  return <Navigate to={"/e/" + rest.slice("/rename/".length)} replace />;
+}
+
+/**
+ * An address from before projects (`/e/...`, `/maps`, `/`): it opens the same page in the project
+ * the person used last, or their first, keeping the rest of the path, the query and the hash. The
+ * start page, `/`, opens the project last used; with none remembered it opens the one project
+ * there is, or All projects when there are several or none.
+ */
+function OldAddress() {
+  const { list } = useProjects();
+  const location = useLocation();
+  if (!list) {
+    return (
+      <p className="center muted" role="status">
+        Frontier cannot read your projects without a connection yet. It will open when you are
+        connected.
+      </p>
+    );
+  }
+  const home = homeProject(list);
+  if (location.pathname === "/") {
+    const last = list.projects.find((p) => p.slug === list.last);
+    const target = last ?? (list.projects.length === 1 ? list.projects[0] : null);
+    return target ? (
+      <Navigate to={projectRoot(target.slug) + location.search + location.hash} replace />
+    ) : (
+      <Navigate to="/projects" replace />
+    );
+  }
+  if (!home) return <Navigate to="/projects" replace />;
+  return <Navigate to={movedInto(home.slug, location)} replace />;
+}
+
+/** Everything inside a project, at `/p/<slug>/...`. The addresses are as they were before projects. */
+function ProjectPages() {
+  return (
+    <Suspense fallback={<Progress />}>
+      <Routes>
+        <Route path="/" element={<Home />} />
+        <Route path="/e/*" element={<EntryPage />} />
+        <Route path="/edit/*" element={<EditPage />} />
+        <Route path="/rename/*" element={<RenameRedirect />} />
+        <Route path="/unpublished" element={<UnpublishedPage />} />
+        <Route path="/inbox" element={<InboxPage />} />
+        <Route path="/import" element={<ImportPage />} />
+        <Route path="/history/*" element={<HistoryPage />} />
+        <Route path="/versions" element={<LibraryHistoryPage />} />
+        <Route path="/maps" element={<MapsPage />} />
+        <Route path="/map/:id" element={<OneMap />} />
+        <Route
+          path="/stack/:id"
+          element={
+            <Suspense fallback={<Progress />}>
+              <StackPage />
+            </Suspense>
+          }
+        />
+        <Route path="/ask" element={<AskPage />} />
+        <Route path="/ask/:id" element={<ConversationPage />} />
+        <Route path="/talk/*" element={<TalkPage />} />
+        <Route path="/export" element={<ExportPage />} />
+        <Route path="/gallery" element={<GalleryPage />} />
+        <Route path="/chronicles" element={<ChroniclesPage />} />
+        <Route
+          path="/chronicle/:id"
+          element={
+            <Suspense fallback={<Progress />}>
+              <ChroniclePage />
+            </Suspense>
+          }
+        />
+        <Route
+          path="/graph"
+          element={
+            <Suspense fallback={<Progress />}>
+              <GraphPage />
+            </Suspense>
+          }
+        />
+        <Route path="/settings/*" element={<SettingsPage />} />
+        <Route path="/conflict/:id" element={<ConflictPage />} />
+        <Route path="/versions/:id" element={<VersionsPage />} />
+        <Route path="/status" element={<StatusPage />} />
+        <Route path="/login" element={<Navigate to="/" replace />} />
+        <Route
+          path="*"
+          element={<p className="center muted">There is no page at this address.</p>}
+        />
+      </Routes>
+    </Suspense>
+  );
 }
 
 export function App() {
   const [loggedIn, setLoggedIn] = useState<boolean | null>(null);
+  const [ready, setReady] = useState(false);
   const location = useLocation();
 
   // Signed in, signed in with the server out of reach, or the login page (`offline/start.ts`).
@@ -122,23 +226,44 @@ export function App() {
   // is registered only now, so a browser that is logged out never gets one back.
   useEffect(() => {
     // Who is logged in, for the left bar; forgotten when the login page is what shows.
-    if (loggedIn === false) clearMe();
+    if (loggedIn === false) {
+      clearMe();
+      clearProjects();
+    }
     if (!loggedIn) return;
-    // Proposals an earlier page left waiting (after a save) go on once the person is known,
-    // since the keys on this device are theirs.
-    const resume = () => void loadMe().then(() => resumeProposals());
-    resume();
+    // The person's projects, read before any page: the first of them takes what an earlier build
+    // kept on this device unfiled, and the address decides which opens.
+    let live = true;
+    const opened = (list: ReturnType<typeof knownProjects>) => {
+      const first = list?.projects[0];
+      if (first) fileUnfiled(first.id);
+      if (live) setReady(true);
+    };
+    // With a list kept from the last visit the app does not wait for the server to open.
+    const kept = knownProjects();
+    if (kept) opened(kept);
+    void loadProjects().then((list) => {
+      if (!kept) opened(list ?? knownProjects());
+      // Changes left in the queue of a project the person has since left go on to it.
+      void queue.start();
+    });
     // The person is read again whenever the connection comes back, since the first read may have
     // failed while it was down.
+    const resume = () => void loadMe().then(() => resumeProposals());
+    resume();
     let last = connection.state;
     const unsubscribe = connection.subscribe(() => {
-      if (connection.state === "online" && last !== "online") resume();
+      if (connection.state === "online" && last !== "online") {
+        resume();
+        void loadProjects();
+      }
       last = connection.state;
     });
     connection.start();
     void queue.start();
     void updates.register();
     return () => {
+      live = false;
       unsubscribe();
       connection.stop();
     };
@@ -164,71 +289,56 @@ export function App() {
         />
         <Route
           path="*"
-          element={<Navigate to="/login" replace state={{ from: location.pathname }} />}
+          element={
+            <Navigate
+              to="/login"
+              replace
+              state={{ from: location.pathname + location.search + location.hash }}
+            />
+          }
         />
       </Routes>
     );
   }
 
+  if (!ready) return <p className="center muted">Opening Frontier…</p>;
+
   return (
-    <Shell>
-      <Suspense fallback={<Progress />}>
-        <Routes>
-          <Route path="/" element={<Home />} />
-          <Route path="/e/*" element={<EntryPage />} />
-          <Route path="/edit/*" element={<EditPage />} />
-          <Route path="/rename/*" element={<RenameRedirect />} />
-          <Route path="/unpublished" element={<UnpublishedPage />} />
-          <Route path="/inbox" element={<InboxPage />} />
-          <Route path="/import" element={<ImportPage />} />
-          <Route path="/history/*" element={<HistoryPage />} />
-          <Route path="/versions" element={<LibraryHistoryPage />} />
-          <Route path="/maps" element={<MapsPage />} />
-          <Route path="/map/:id" element={<OneMap />} />
-          <Route
-            path="/stack/:id"
-            element={
+    <>
+      <Routes>
+        <Route
+          path="/projects"
+          element={
+            <OutsideShell>
+              <AllProjects />
+            </OutsideShell>
+          }
+        />
+        {/* The library's old sections moved into the project (stage 27b). */}
+        <Route path="/settings/library/*" element={<OldAddress />} />
+        <Route
+          path="/settings/*"
+          element={
+            <OutsideShell>
               <Suspense fallback={<Progress />}>
-                <StackPage />
+                <SettingsPage />
               </Suspense>
-            }
-          />
-          <Route path="/ask" element={<AskPage />} />
-          <Route path="/ask/:id" element={<ConversationPage />} />
-          <Route path="/talk/*" element={<TalkPage />} />
-          <Route path="/export" element={<ExportPage />} />
-          <Route path="/gallery" element={<GalleryPage />} />
-          <Route path="/chronicles" element={<ChroniclesPage />} />
-          <Route
-            path="/chronicle/:id"
-            element={
-              <Suspense fallback={<Progress />}>
-                <ChroniclePage />
-              </Suspense>
-            }
-          />
-          <Route
-            path="/graph"
-            element={
-              <Suspense fallback={<Progress />}>
-                <GraphPage />
-              </Suspense>
-            }
-          />
-          <Route path="/settings/*" element={<SettingsPage />} />
-          <Route path="/conflict/:id" element={<ConflictPage />} />
-          <Route path="/versions/:id" element={<VersionsPage />} />
-          <Route path="/status" element={<StatusPage />} />
-          <Route path="/login" element={<Navigate to="/" replace />} />
-          <Route
-            path="*"
-            element={<p className="center muted">There is no page at this address.</p>}
-          />
-        </Routes>
-      </Suspense>
+            </OutsideShell>
+          }
+        />
+        <Route
+          path="/p/:slug/*"
+          element={
+            <ProjectScope>
+              <ProjectPages />
+            </ProjectScope>
+          }
+        />
+        <Route path="*" element={<OldAddress />} />
+      </Routes>
       <LoginDialog />
       <AiKeyPromptHost />
       <KeysRemovedNotice />
-    </Shell>
+    </>
   );
 }

@@ -1,7 +1,7 @@
 import type { EntryLink } from "@frontier/schema";
 import { type ComponentProps, memo, type ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
-import { Link, useLocation, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "../nav.tsx";
 import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
 import remarkGfm from "remark-gfm";
 import { remarkUnderline } from "@frontier/vault";

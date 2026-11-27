@@ -10,18 +10,16 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "../nav.tsx";
 import { Group, Panel, Separator } from "react-resizable-panels";
 import { X } from "lucide-react";
 import type { StatusSnapshot } from "@frontier/schema";
-import { api, ApiFailure, editUrl } from "../api.ts";
-import { clearMe } from "../me.ts";
+import { api, editUrl } from "../api.ts";
 import { updates } from "../offline/updates.ts";
-import { wipeDevice } from "../offline/wipe.ts";
 import { connection, useConnection } from "../sync/connection.ts";
 import { queue } from "../sync/queue.ts";
 import { useAsync } from "../useAsync.ts";
-import { useDialogs } from "./Dialogs.tsx";
+import { useLogoutAction } from "./useLogoutAction.ts";
 import { useToast } from "./ui/Toast.tsx";
 import { overlayOpen } from "./overlay.ts";
 import { Switcher } from "./Switcher.tsx";
@@ -67,7 +65,7 @@ export function useWords() {
   return {
     own,
     waiting: own ? "Unsaved" : "Unpublished",
-    title: own ? "Unsaved changes" : "Unpublished changes",
+    title: own ? "Your unsaved changes" : "Your unpublished changes",
     act: own ? "Save a version" : "Publish",
     acting: own ? "Saving…" : "Publishing…",
     review: own ? "Review and save" : "Review and publish",
@@ -187,7 +185,6 @@ export function Shell({ children }: { children: ReactNode }) {
   const menuButton = useRef<HTMLButtonElement>(null);
   const rightSize = useRef<number | null>(null);
   const leftSize = useRef<number | null>(null);
-  const dialogs = useDialogs();
   const toast = useToast();
   const refresh = useCallback(() => {
     setVersion((v) => v + 1);
@@ -300,6 +297,10 @@ export function Shell({ children }: { children: ReactNode }) {
     if (overlayOpen()) return false;
     void navigate("/");
   });
+  useShortcut("app.projects", () => {
+    if (overlayOpen()) return false;
+    void navigate("/projects");
+  });
   useShortcut("app.random", () => {
     if (overlayOpen()) return false;
     void roll();
@@ -335,38 +336,7 @@ export function Shell({ children }: { children: ReactNode }) {
     // Only a new ask opens the bar.
   }, [reveal]);
 
-  async function logout() {
-    const unsent = queue.current().length;
-    if (unsent > 0) {
-      const ok = await dialogs.confirm({
-        title: unsent === 1 ? "1 change is not sent yet" : `${unsent} changes are not sent yet`,
-        body: "They are kept only on this device, and logging out removes them from it. Log out all the same?",
-        action: "Log out and lose them",
-        danger: true,
-      });
-      if (!ok) return;
-    }
-    // Only the server's answer removes the session cookie, so nothing is wiped without it.
-    try {
-      await api.logout();
-    } catch (err) {
-      const offline = !(err instanceof ApiFailure) || err.status === 0;
-      toast({
-        message: `Could not log out: ${offline ? "no connection." : (err as ApiFailure).message}`,
-      });
-      return;
-    }
-    // A borrowed device keeps nothing: the queue and this device's id go, then the app's caches
-    // and its service worker. The other tabs hear it and reload too.
-    await queue.clear();
-    clearMe();
-    await wipeDevice({
-      store: queue,
-      caches: typeof caches === "undefined" ? undefined : caches,
-      container: navigator.serviceWorker,
-    });
-    window.location.assign("/login");
-  }
+  const logout = useLogoutAction();
 
   // Another tab logged out: this one goes to the login page as well.
   useEffect(() => queue.onCleared(() => window.location.reload()), []);
@@ -396,7 +366,7 @@ export function Shell({ children }: { children: ReactNode }) {
       closeDrawer();
       setSheet(true);
     },
-    onLogout: () => void logout(),
+    onLogout: logout,
   };
   const rightOpen = !phone && store.open !== null;
   const leftOpen = !phone && !rail;
@@ -414,7 +384,7 @@ export function Shell({ children }: { children: ReactNode }) {
                     title={pageName(
                       pathname,
                       current,
-                      own ? "Unsaved changes" : "Unpublished changes",
+                      own ? "Your unsaved changes" : "Your unpublished changes",
                     )}
                     open={drawer}
                     onMenu={() => setDrawer(true)}

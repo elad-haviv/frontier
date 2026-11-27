@@ -1,6 +1,14 @@
 import { useEffect, useRef, useState } from "react";
-import { Link, useLocation, useNavigate } from "react-router-dom";
-import { api, ApiFailure, entryUrl, historyUrl, newDraftId, type Version } from "../api.ts";
+import { Link, useLocation, useNavigate } from "../nav.tsx";
+import {
+  api,
+  ApiFailure,
+  entryUrl,
+  historyUrl,
+  libraryZipUrl,
+  newDraftId,
+  type Version,
+} from "../api.ts";
 import { Diff } from "../components/Diff.tsx";
 import { useRefresh } from "../components/Shell.tsx";
 import { queue } from "../sync/queue.ts";
@@ -169,7 +177,7 @@ export function LibraryHistoryPage() {
         <h1>Versions</h1>
         <p className="muted lede">
           The last hundred saved versions of the library.{" "}
-          <a href="/api/export/library.zip">Export the library as a zip</a>
+          <a href={libraryZipUrl()}>Export the library as a zip</a>
         </p>
       </header>
       {history.state === "loading" && <p className="muted">Loading…</p>}

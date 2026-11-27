@@ -7,7 +7,7 @@ import { undo } from "@codemirror/commands";
 import type { EditorView } from "@codemirror/view";
 import { RotateCcw, Sparkles, X } from "lucide-react";
 import { type KeyboardEvent, useEffect, useMemo, useRef, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link } from "../../nav.tsx";
 import { api, ApiFailure } from "../../api.ts";
 import { useNeedsConnection } from "../../sync/connection.ts";
 import { wordChanges, WordDiff } from "../Diff.tsx";

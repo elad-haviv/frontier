@@ -1,6 +1,6 @@
 import { type FormEvent, useState } from "react";
 import { ActionButton } from "../components/ui/ActionButton.tsx";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "../nav.tsx";
 import { api, ApiFailure, chronicleUrl } from "../api.ts";
 import { useRefresh } from "../components/Shell.tsx";
 import { Problem } from "../components/ui/Problem.tsx";

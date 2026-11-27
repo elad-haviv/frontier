@@ -77,3 +77,18 @@ export async function clearDeviceCopy(): Promise<void> {
   loading ??= import("./device.ts");
   await (await device())?.clear();
 }
+
+/** The space each of these projects' copies takes on this device; null where nothing is kept. */
+export async function deviceSpaces(
+  refs: { id: string; slug: string }[],
+): Promise<{ id: string; bytes: number | null }[]> {
+  loading ??= import("./device.ts");
+  const d = await device();
+  return d ? d.spaces(refs) : refs.map((r) => ({ id: r.id, bytes: null }));
+}
+
+/** Empties the copy of one project, which need not be the open one. */
+export async function clearDeviceCopyOf(ref: { id: string; slug: string }): Promise<void> {
+  loading ??= import("./device.ts");
+  await (await device())?.clearProject(ref);
+}

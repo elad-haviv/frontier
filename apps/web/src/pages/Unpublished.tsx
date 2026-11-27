@@ -1,7 +1,7 @@
 import type { AfterPublishStep, PublishPlan, UnpublishedResponse } from "@frontier/schema";
 import { ActionButton } from "../components/ui/ActionButton.tsx";
 import { useCallback, useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link } from "../nav.tsx";
 import { chronicleIdOf, type LibraryFileName, libraryFileOf, mapIdOf } from "@frontier/schema";
 import { queue } from "../sync/queue.ts";
 import { libraryFileClient } from "../sync/libraryFile.ts";

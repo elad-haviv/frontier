@@ -1,5 +1,5 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link } from "../../nav.tsx";
 import { api, entryUrl } from "../../api.ts";
 import { useRefresh } from "../../components/Shell.tsx";
 import { eachFolder } from "../../components/tree/model.ts";

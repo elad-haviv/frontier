@@ -1,5 +1,5 @@
-import { Link } from "react-router-dom";
-import { api, entryUrl } from "../api.ts";
+import { Link } from "../nav.tsx";
+import { api, entryUrl, libraryZipUrl } from "../api.ts";
 import { Problem } from "../components/ui/Problem.tsx";
 import { Progress } from "../components/ui/Progress.tsx";
 import { useAsync } from "../useAsync.ts";
@@ -51,7 +51,7 @@ export function StatusPage() {
         <p className="banner" role="alert">
           The library lives on this server's disk and is backed up only to that same disk. Set up a
           storage bucket for backups, and export the library now and then.{" "}
-          <a href="/api/export/library.zip">Export the library</a>
+          <a href={libraryZipUrl()}>Export the library</a>
         </p>
       )}
       {s.problems.map((p) => (

@@ -1,6 +1,6 @@
 import * as Popover from "@radix-ui/react-popover";
 import { CloudOff } from "lucide-react";
-import { Link } from "react-router-dom";
+import { Link } from "../nav.tsx";
 import { chronicleUrl, editUrl, mapUrl } from "../api.ts";
 import {
   nameOf,

@@ -1,0 +1,72 @@
+/* The project switcher at the head of the left bar: the project's letter and name. */
+.project-button {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 2.5rem;
+  padding: var(--space-1) var(--space-2) var(--space-1) var(--space-1);
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  text-align: left;
+  font-family: var(--serif);
+  font-weight: 600;
+  font-size: 1.1rem;
+  color: var(--ink);
+}
+.project-button:hover,
+.project-button[data-state="open"] {
+  background: var(--accent-soft);
+}
+.project-button-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.project-button .ui-icon {
+  color: var(--ink-faint);
+}
+/* Folded to the rail, it is the letter alone. */
+.project-button.is-rail {
+  flex: none;
+  padding: var(--space-1);
+}
+
+.project-menu {
+  min-width: 17rem;
+}
+.project-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  min-width: 0;
+}
+.project-row-text {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+}
+.project-row-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+.project-row-detail {
+  color: var(--ink-faint);
+  font-size: 0.8rem;
+}
+.project-row-marks {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--ink-faint);
+}
+.project-row .is-open {
+  color: var(--accent);
+}

@@ -45,7 +45,7 @@ import {
   Tree as Arborist,
   type TreeApi,
 } from "react-arborist";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "../nav.tsx";
 import { api, ApiFailure, entryUrl } from "../api.ts";
 import { useNeedsConnection } from "../sync/connection.ts";
 import { useLibraryFile } from "../sync/libraryFile.ts";

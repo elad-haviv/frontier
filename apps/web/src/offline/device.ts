@@ -32,7 +32,9 @@ import {
   type Resolution,
   stem,
 } from "@frontier/vault";
-import { ApiFailure, type ReadThrough, setReadThrough } from "../api.ts";
+import { ApiFailure, projectUrl, type ReadThrough, setReadThrough } from "../api.ts";
+import { currentProject, onProjectChange, type ProjectRef } from "../project.ts";
+import { markOffDevice, markOnDevice, projectAt } from "../projects.ts";
 import { connection } from "../sync/connection.ts";
 import type { DeviceAnswer, DeviceItem, QueueRecord, Store } from "../sync/db.ts";
 import { queue } from "../sync/queue.ts";
@@ -127,7 +129,16 @@ export interface DeviceDeps {
   slowMs?: number;
   /** Told that an item was opened or kept, so the keeper can store its images and tidy up. */
   onChange?: () => void;
-  caches?: Pick<CacheStorage, "delete"> | undefined;
+  caches?: Pick<CacheStorage, "open"> | undefined;
+  /**
+   * The front of the addresses of this project's images in Cache Storage, which is shared by all
+   * projects: clearing this device copy removes only these.
+   */
+  imagePrefix?: string;
+  /** Told when the copy starts to exist (its compact index was kept) and when it is emptied. */
+  onDevice?: (on: boolean) => void;
+  /** Tells the pages a late answer replaced the device's; defaults to `announceFresh`. */
+  fresh?: (url: string) => void;
 }
 
 /** The Cache Storage cache of the images on this device, which the service worker reads. */
@@ -186,7 +197,7 @@ export class DeviceCopy implements ReadThrough {
     /** A late answer after the device answered: kept above, and announced. */
     const later = () =>
       void fromNetwork.then(
-        () => kept.then(() => announceFresh(url)),
+        () => kept.then(() => (this.d.fresh ?? announceFresh)(url)),
         (err: unknown) => this.gone(route, err),
       );
     const here = await this.fallback(url, route).catch(() => undefined);
@@ -388,6 +399,7 @@ export class DeviceCopy implements ReadThrough {
       if (!isFull(err) || !(await this.removeOldest())) return;
       await store.putAnswer(answer).catch(() => undefined);
     }
+    if (route.shape === "graph") this.d.onDevice?.(true);
     if (route.item) this.d.onChange?.();
   }
 
@@ -464,7 +476,19 @@ export class DeviceCopy implements ReadThrough {
     const store = await this.d.store();
     await store.clearDevice();
     await store.removeMeta("imageSizes");
-    await this.d.caches?.delete(IMAGES).catch(() => false);
+    this.d.onDevice?.(false);
+    // The images of the other projects stay: the cache is shared, and each has its own addresses.
+    try {
+      const cache = await this.d.caches?.open(IMAGES);
+      const prefix = this.d.imagePrefix;
+      for (const request of (await cache?.keys()) ?? []) {
+        if (prefix === undefined || new URL(request.url).pathname.startsWith(prefix)) {
+          await cache!.delete(request);
+        }
+      }
+    } catch {
+      /* Cache Storage is switched off: there is nothing in it */
+    }
   }
 }
 
@@ -567,38 +591,98 @@ export function overlayTree(tree: TreeResponse, records: QueueRecord[]): TreeRes
   return { folders: root.folders, notes: root.notes };
 }
 
-// ---- The app's one device copy ------------------------------------------------------------------
+// ---- One device copy for each project ---------------------------------------------------------
 
-let keeper: Keeper | null = null;
 const cacheStorage = typeof caches === "undefined" ? undefined : caches;
-
-export const device = new DeviceCopy({
-  store: () => queue.database(),
-  records: () => queue.current(),
-  online: () => connection.state === "online",
-  unreachable: () => connection.unreachable(),
-  onChange: () => keeper?.changed(),
-  caches: cacheStorage,
-});
 
 const standalone = () =>
   (navigator as { standalone?: boolean }).standalone === true ||
   (typeof matchMedia === "function" && matchMedia("(display-mode: standalone)").matches);
 
-let started: Promise<ReadThrough> | null = null;
+/** The address of a project's call as the device copy keys it: `/api/p/<slug>/x` is `/api/x`. */
+export function splitProjectUrl(url: string): { slug: string; bare: string } | null {
+  const m = /^\/api\/p\/([^/?]+)(.*)$/.exec(url);
+  if (!m) return null;
+  let slug = m[1]!;
+  try {
+    slug = decodeURIComponent(slug);
+  } catch {
+    /* used as it is */
+  }
+  return { slug, bare: `/api${m[2] ?? ""}` };
+}
 
-/** Puts the device copy in front of the app's reads and starts the keeper in the sending tab. */
-export function startDevice(): Promise<ReadThrough> {
-  started ??= (async () => {
-    await queue.start();
-    // An offline start shows the last counts the server sent.
-    const last = await queue.meta<StatusSnapshot>("snapshot").catch(() => undefined);
-    if (last) connection.remember(last);
-    keeper = new Keeper({
-      device,
-      queue,
+interface Held {
+  ref: ProjectRef;
+  copy: DeviceCopy;
+  keeper: Keeper | null;
+}
+
+/**
+ * The device copies of every project, answering each read from its own project's copy (a read's
+ * address names the project). Only the open project has a keeper that refreshes it; the others
+ * keep what they have, and are still read when the server cannot be reached.
+ */
+export class DeviceHub implements ReadThrough {
+  private held = new Map<string, Held>();
+  private activeId: string | null = null;
+
+  /** The copy of a project, made on first use over that project's queue's database. */
+  forRef(ref: ProjectRef): Held {
+    let h = this.held.get(ref.id);
+    if (!h) {
+      const q = queue.queueOf(ref);
+      const slug = () => projectAt(ref.slug)?.slug ?? ref.slug;
+      const copy = new DeviceCopy({
+        store: () => q.database(),
+        records: () => q.current(),
+        online: () => connection.state === "online",
+        unreachable: () => connection.unreachable(),
+        onChange: () => this.held.get(ref.id)?.keeper?.changed(),
+        caches: cacheStorage,
+        imagePrefix: projectUrl("/images", slug()),
+        onDevice: (on) => (on ? markOnDevice(ref.id) : markOffDevice(ref.id)),
+        // A late answer is told to the pages only while its project is the open one.
+        fresh: (url) => {
+          if (currentProject()?.id === ref.id) announceFresh(url);
+        },
+      });
+      h = { ref, copy, keeper: null };
+      this.held.set(ref.id, h);
+    }
+    return h;
+  }
+
+  /** The project a read's address names: the open one, or one the person is in. */
+  private refOf(slug: string): ProjectRef | null {
+    const open = currentProject();
+    if (open?.slug === slug) return open;
+    const known = projectAt(slug);
+    return known ? { id: known.id, slug: known.slug } : null;
+  }
+
+  read(url: string, network: () => Promise<unknown>, direct: boolean): Promise<unknown> | null {
+    const parts = splitProjectUrl(url);
+    if (!parts) return null;
+    const ref = this.refOf(parts.slug);
+    return ref ? this.forRef(ref).copy.read(parts.bare, network, direct) : null;
+  }
+
+  /** The open project's copy gets a keeper; the one before loses its. */
+  activate(ref: ProjectRef | null): void {
+    const before = this.activeId ? this.held.get(this.activeId) : undefined;
+    before?.keeper?.stop();
+    if (before) before.keeper = null;
+    this.activeId = ref?.id ?? null;
+    if (!ref) return;
+    const h = this.forRef(ref);
+    const q = queue.queueOf(ref);
+    h.keeper = new Keeper({
+      device: h.copy,
+      queue: q,
       connection,
       caches: cacheStorage,
+      slug: () => projectAt(ref.slug)?.slug ?? ref.slug,
       persist:
         typeof navigator !== "undefined" && navigator.storage?.persist
           ? () => navigator.storage.persist()
@@ -607,12 +691,70 @@ export function startDevice(): Promise<ReadThrough> {
       onFirstItem: () => window.dispatchEvent(new Event(FIRST_ITEM)),
       mapSize: () => (window.innerWidth < 700 ? 2560 : 4096),
       channel: () =>
-        typeof BroadcastChannel === "undefined" ? null : new BroadcastChannel("frontier-device"),
+        typeof BroadcastChannel === "undefined"
+          ? null
+          : new BroadcastChannel(`frontier-device:${ref.id}`),
     });
-    keeper.start();
+    h.keeper.start();
+  }
+
+  private active(): Held | null {
+    const open = currentProject();
+    return open ? this.forRef(open) : null;
+  }
+
+  /** Marks an item of the open project opened now, so it is among the recent ones kept. */
+  async opened(key: ItemKey): Promise<void> {
+    await this.active()?.copy.opened(key);
+  }
+
+  /** The space the open project's copy takes; null when nothing can be kept. */
+  async space(): Promise<number | null> {
+    return (await this.active()?.copy.space()) ?? null;
+  }
+
+  /** Empties the open project's copy. */
+  async clear(): Promise<void> {
+    await this.active()?.copy.clear();
+  }
+
+  /** The projects with a copy on this device, and the space each takes. */
+  async spaces(refs: ProjectRef[]): Promise<{ id: string; bytes: number | null }[]> {
+    return Promise.all(
+      refs.map(async (ref) => ({ id: ref.id, bytes: await this.forRef(ref).copy.space() })),
+    );
+  }
+
+  /** Empties one project's copy, whether or not it is the open one. */
+  async clearProject(ref: ProjectRef): Promise<void> {
+    await this.forRef(ref).copy.clear();
+  }
+}
+
+/** The app's device copies. */
+export const device = new DeviceHub();
+
+let started: Promise<ReadThrough> | null = null;
+
+/** Puts the device copies in front of the app's reads and starts the open project's keeper. */
+export function startDevice(): Promise<ReadThrough> {
+  started ??= (async () => {
+    await queue.start();
+    // The keeper follows the project that is open.
+    onProjectChange((next) => device.activate(next));
+    const open = currentProject();
+    if (open) {
+      // An offline start shows the last counts the server sent for this project.
+      const last = await queue
+        .queueOf(open)
+        .meta<StatusSnapshot>("snapshot")
+        .catch(() => undefined);
+      if (last) connection.remember(last);
+      device.activate(open);
+    }
     // Logout in another tab: nothing more is fetched or kept here.
     queue.onCleared(() => {
-      keeper?.stop();
+      device.activate(null);
       setReadThrough(null);
     });
     return device;

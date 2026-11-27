@@ -1,7 +1,7 @@
 import { ActionButton } from "../components/ui/ActionButton.tsx";
 import type { BranchFile, InboxBranch, InboxProposal, InboxQuarantined } from "@frontier/schema";
 import { useCallback, useEffect, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "../nav.tsx";
 import { api, ApiFailure, branchImageUrl, editUrl, entryUrl } from "../api.ts";
 import { Diff } from "../components/Diff.tsx";
 import { useRefresh } from "../components/Shell.tsx";
