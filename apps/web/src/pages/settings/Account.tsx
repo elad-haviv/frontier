@@ -3,6 +3,7 @@ import { api, ApiFailure, googleStartUrl } from "../../api.ts";
 import { useDialogs } from "../../components/Dialogs.tsx";
 import { askForRecentLogin, withRecentLogin } from "../../components/LoginDialog.tsx";
 import { useLogout } from "../../components/Shell.tsx";
+import { EmailAddress } from "../../email/EmailAddress.tsx";
 import { ActionButton } from "../../components/ui/ActionButton.tsx";
 import { loadMe, useMe } from "../../me.ts";
 import { useLocation, useNavigate } from "../../nav.tsx";
@@ -207,6 +208,7 @@ export function Account() {
           </ActionButton>
         </p>
       )}
+      <EmailAddress me={me} />
       {(googleAvailable || google) && (
         <>
           <h2>Google</h2>
