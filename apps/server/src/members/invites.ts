@@ -96,6 +96,8 @@ export class InviteStore {
     projectId: string;
     role: ProjectRole;
     createdBy: string;
+    /** Stage 28: the address the link is going to be emailed to. */
+    email?: string;
   }): Promise<{ invite: InviteRecord; code: string }> {
     const code = newInviteCode();
     return this.change(async (invites) => {
@@ -108,6 +110,7 @@ export class InviteStore {
         createdBy: input.createdBy,
         createdAt: at.toISOString(),
         expiresAt: new Date(at.getTime() + INVITE_DAYS * 86_400_000).toISOString(),
+        ...(input.email ? { email: input.email } : {}),
       };
       // Old dead links are dropped as new ones are made, so the file does not grow for ever.
       const cutoff = at.getTime() - KEEP_DEAD_DAYS * 86_400_000;
@@ -116,6 +119,57 @@ export class InviteStore {
       );
       return { invites: [...kept, invite], result: { invite, code } };
     });
+  }
+
+  /** One invitation of the project, whatever its state; null when it is not this project's. */
+  async find(projectId: string, id: string): Promise<InviteRecord | null> {
+    return (await this.all()).find((i) => i.id === id && i.projectId === projectId) ?? null;
+  }
+
+  /**
+   * Resend: cancels a waiting invitation and makes a new one with the same role and address, in
+   * one change, so there is never a moment with two good links or none. Only a waiting one can
+   * be replaced; the others answer as their state does.
+   */
+  replace(
+    projectId: string,
+    id: string,
+    createdBy: string,
+  ): Promise<{ invite: InviteRecord; code: string }> {
+    const code = newInviteCode();
+    return this.change(async (invites) => {
+      const old = invites.find((i) => i.id === id && i.projectId === projectId);
+      const at = this.now();
+      if (!old) throw new ApiError("not_found", "There is no such invitation.");
+      const state = stateOf(old, at);
+      if (state !== "waiting") throw new ApiError(`invite_${state}` as "invite_used", "Not valid.");
+      if (!old.email) throw new ApiError("invalid", "This invitation was not sent to an address.");
+      const invite: InviteRecord = {
+        id: randomUUID(),
+        projectId,
+        role: old.role,
+        codeHash: hashOf(code).toString("hex"),
+        createdBy,
+        createdAt: at.toISOString(),
+        expiresAt: new Date(at.getTime() + INVITE_DAYS * 86_400_000).toISOString(),
+        email: old.email,
+      };
+      return {
+        invites: [
+          ...invites.map((i) => (i.id === id ? { ...i, cancelledAt: at.toISOString() } : i)),
+          invite,
+        ],
+        result: { invite, code },
+      };
+    });
+  }
+
+  /** Records whether the relay took the mail for an invitation. */
+  setMail(id: string, mail: "sent" | "failed"): Promise<void> {
+    return this.change(async (invites) => ({
+      invites: invites.map((i) => (i.id === id ? { ...i, mail } : i)),
+      result: undefined,
+    }));
   }
 
   /** Cancels a waiting invitation of this project. A used one cannot be cancelled. */

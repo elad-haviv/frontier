@@ -5,6 +5,25 @@ import { emailKey, PeopleFile, type Person } from "@frontier/schema";
 import { ApiError } from "../errors.js";
 import type { StateFiles } from "./files.js";
 
+/**
+ * An account whose address nobody confirmed may give it up to a person Google has verified it
+ * for, so a mistyped or squatted address cannot keep the real owner out. Not when that would shut
+ * its person out: they must have a way in that needs no address (a passkey), and the server's
+ * first account (the admin) is never touched. An account linked to Google is not touched either.
+ */
+export const mayDisplace = (p: Person): boolean =>
+  p.emailConfirmedAt === null && !p.admin && p.identities.length === 0 && p.passkeys.length > 0;
+
+/** The account after it gave its address up: asked to add another, with no link left for the old one. */
+export const displaced = (p: Person): Person => ({
+  ...p,
+  email: "",
+  emailCode: null,
+  emailPending: null,
+  resetCode: null,
+  emailDisplaced: true,
+});
+
 /** What a new account starts from; the rest has its defaults. */
 export type NewPerson = Partial<Omit<Person, "id" | "createdAt" | "admin">>;
 
@@ -78,9 +97,24 @@ export class PeopleStore {
     return (await this.all()).find((p) => p.passkeys.some((k) => k.id === credentialId)) ?? null;
   }
 
-  /** Makes an account. The first one made is the admin. Refuses an email another account uses. */
-  create(input: NewPerson): Promise<Person> {
-    return this.change(async (people) => {
+  /**
+   * Makes an account. The first one made is the admin. Refuses an email another account uses,
+   * unless `displaceUnconfirmed` says an account whose address nobody confirmed gives it up to a
+   * person whose address Google verified (see `mayDisplace`); then that account is left with no
+   * address, in the same write.
+   */
+  create(
+    input: NewPerson,
+    options: { displaceUnconfirmed?: boolean; onDisplaced?: (before: Person) => void } = {},
+  ): Promise<Person> {
+    return this.change(async (all) => {
+      let people = all;
+      const key = emailKey(input.email ?? "");
+      const clash = key === "" ? undefined : people.find((p) => emailKey(p.email) === key);
+      if (clash && options.displaceUnconfirmed && mayDisplace(clash)) {
+        people = people.map((p) => (p.id === clash.id ? displaced(p) : p));
+        options.onDisplaced?.(clash);
+      }
       this.checkEmail(people, input.email ?? "", null);
       const person: Person = {
         passwordHash: "",
@@ -91,10 +125,16 @@ export class PeopleStore {
         lastProject: null,
         name: "",
         email: "",
+        emailConfirmedAt: null,
+        emailConfirmedBy: null,
+        emailCode: null,
+        emailPending: null,
+        resetCode: null,
+        emailDisplaced: false,
         ...input,
         id: randomUUID(),
         createdAt: new Date().toISOString(),
-        admin: people.length === 0,
+        admin: all.length === 0,
       };
       return { people: [...people, person], result: person };
     });
@@ -102,11 +142,16 @@ export class PeopleStore {
 
   /**
    * Takes an account away again. Only for undoing an account made a moment ago, when what it was
-   * made for (joining a project) failed; nothing else refers to it yet.
+   * made for (joining a project) failed; nothing else refers to it yet. `restore` is an account
+   * that gave up its address to this one (see `create`): it gets it back, as it was.
    */
-  remove(id: string): Promise<void> {
+  remove(id: string, restore?: Person): Promise<void> {
     return this.change(async (people) => ({
-      people: people.filter((p) => p.id !== id),
+      people: people
+        .filter((p) => p.id !== id)
+        .map((p) =>
+          restore && p.id === restore.id && p.email === "" && p.emailDisplaced ? restore : p,
+        ),
       result: undefined,
     }));
   }
@@ -127,6 +172,15 @@ export class PeopleStore {
     if (key !== "" && people.some((p) => p.id !== own && emailKey(p.email) === key)) {
       throw new ApiError("email_taken", "Another account already uses this email.");
     }
+  }
+
+  /**
+   * Runs any change to the accounts, after every one before it, in one write: what the confirm
+   * and reset links do, so a link is used by exactly one request and what it changes is written
+   * with it. The work gets the accounts as they are at that moment.
+   */
+  mutate<T>(work: (people: Person[]) => { people: Person[]; result: T }): Promise<T> {
+    return this.change(async (people) => work(people));
   }
 
   /** Runs a read-change-write after every one before it, and writes only what it returns. */

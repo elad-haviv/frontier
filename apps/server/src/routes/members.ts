@@ -1,5 +1,6 @@
 import {
   ChangeRoleRequest,
+  emailKey,
   CreateInviteRequest,
   type CreateInviteResponse,
   type InvitesResponse,
@@ -8,6 +9,8 @@ import {
 import { z } from "zod";
 import { personOf } from "../auth/session.js";
 import { ApiError } from "../errors.js";
+import { isUnconfirmed } from "../mail/accounts.js";
+import { checkInviteAddress, emailInvite } from "../mail/invite.js";
 import { displayName, nameOf } from "../members/names.js";
 import { tidyInvites } from "../members/tidy.js";
 import type { RouteApp } from "../projects/facade.js";
@@ -50,6 +53,7 @@ export function memberRoutes(app: RouteApp, s: Services): void {
           addedAt: m.addedAt,
           lastActiveAt: m.lastActiveAt ?? null,
           you: m.personId === me.id,
+          unconfirmed: owner ? isUnconfirmed(s.server, person) : null,
         };
       }),
     );
@@ -93,21 +97,24 @@ export function memberRoutes(app: RouteApp, s: Services): void {
           createdAt: i.createdAt,
           expiresAt: i.expiresAt,
           secondsLeft: Math.max(0, Math.floor((Date.parse(i.expiresAt) - at) / 1000)),
+          sentTo: i.email ?? null,
+          mail: i.email ? (i.mail ?? null) : null,
         })),
       ),
     };
   });
 
-  app.post("/api/invites", async (request, reply): Promise<CreateInviteResponse> => {
-    const project = here(request);
-    const { role } = CreateInviteRequest.parse(request.body);
-    const { invite, code } = await s.server.invites.create({
-      projectId: project.record.id,
-      role,
-      createdBy: personOf(request).id,
-    });
-    // The code appears in this answer and nowhere else, and is not logged.
-    reply.status(201).header("cache-control", "no-store");
+  /** The answer for a made link, with what became of its email. The code is only ever given here. */
+  const madeLink = (
+    invite: {
+      id: string;
+      role: CreateInviteResponse["role"];
+      expiresAt: string;
+      email?: string | undefined;
+    },
+    code: string,
+    mail: "sent" | "failed" | null,
+  ): CreateInviteResponse => {
     const path = `/join/${code}`;
     return {
       id: invite.id,
@@ -116,7 +123,48 @@ export function memberRoutes(app: RouteApp, s: Services): void {
       url: `${s.server.config.publicUrl.replace(/\/+$/, "")}${path}`,
       role: invite.role,
       expiresAt: invite.expiresAt,
+      sentTo: invite.email ?? null,
+      mail,
     };
+  };
+
+  app.post("/api/invites", async (request, reply): Promise<CreateInviteResponse> => {
+    const project = here(request);
+    const { role, email } = CreateInviteRequest.parse(request.body);
+    if (email !== undefined) checkInviteAddress(s.server, email, emailKey(email));
+    const { invite, code } = await s.server.invites.create({
+      projectId: project.record.id,
+      role,
+      createdBy: personOf(request).id,
+      ...(email !== undefined ? { email } : {}),
+    });
+    // The code appears in this answer and nowhere else, and is not logged.
+    reply.status(201).header("cache-control", "no-store");
+    const mail =
+      email !== undefined
+        ? await emailInvite(s.server, invite, code, (await current(project.record.id)).name)
+        : null;
+    return madeLink(invite, code, mail);
+  });
+
+  /**
+   * Resend: the old link is cancelled, a new one is made for the same role and address, and it is
+   * emailed. Only a link that was emailed and still waits can be resent.
+   */
+  app.post("/api/invites/:id/resend", async (request, reply): Promise<CreateInviteResponse> => {
+    const project = here(request);
+    const { id } = InviteParam.parse(request.params);
+    if (!s.server.mail.enabled) throw new ApiError("mail_off", "This server cannot send email.");
+    const old = await s.server.invites.find(project.record.id, id);
+    if (old?.email) s.server.mailLimit.attempt(emailKey(old.email));
+    const { invite, code } = await s.server.invites.replace(
+      project.record.id,
+      id,
+      personOf(request).id,
+    );
+    reply.status(201).header("cache-control", "no-store");
+    const mail = await emailInvite(s.server, invite, code, (await current(project.record.id)).name);
+    return madeLink(invite, code, mail);
   });
 
   app.delete("/api/invites/:id", async (request): Promise<{ ok: true }> => {

@@ -22,6 +22,7 @@ import { currentPerson, personOf, startSession } from "../auth/session.js";
 import { ApiError } from "../errors.js";
 import {
   accountExists,
+  confirmAfterJoin,
   joinAsExistingPerson,
   joinAsNewPerson,
   liveInvite,
@@ -80,6 +81,7 @@ export function joinRoutes(app: FastifyInstance, s: Server): void {
       role: invite.role,
       google: s.google !== null,
       alreadyMember: person !== null && project.members.some((m) => m.personId === person.id),
+      email: invite.email ?? null,
     };
   });
 
@@ -94,6 +96,7 @@ export function joinRoutes(app: FastifyInstance, s: Server): void {
     const passwordHash = await hashPassword(password);
     const joined = await joinAsNewPerson(s, code, { name, email, passwordHash });
     startSession(request, joined.person, "password");
+    confirmAfterJoin(s, joined.person);
     return answer(joined);
   });
 
@@ -172,6 +175,7 @@ export function joinRoutes(app: FastifyInstance, s: Server): void {
         ],
       });
       startSession(request, joined.person, "passkey");
+      confirmAfterJoin(s, joined.person);
       return answer(joined);
     },
   );

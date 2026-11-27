@@ -112,6 +112,7 @@ describe("the role table", () => {
       "DELETE /project",
       "GET /invites",
       "POST /invites",
+      "POST /invites/:id/resend",
       "PUT /members/:id",
       "PUT /project",
     ]);

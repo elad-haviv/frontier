@@ -5,6 +5,7 @@ import { ModelCatalogue } from "./ai/models.js";
 import { AiProvider } from "./ai/provider.js";
 import { GoogleSignOn } from "./auth/google.js";
 import { LoginLimiter } from "./auth/limit.js";
+import { Mail } from "./mail/mailer.js";
 import { InviteStore } from "./members/invites.js";
 import { Turn } from "./members/join.js";
 import { ImageFetcher, type FetchLimits, type Resolve } from "./images/fromUrl.js";
@@ -34,6 +35,15 @@ export interface Server {
   google: GoogleSignOn | null;
   /** Invitation links, kept as hashes (stage 27c). */
   invites: InviteStore;
+  /** Sending mail; `mail.enabled` is false when no relay is configured (stage 28). */
+  mail: Mail;
+  /** Mails per recipient address (confirm, invite, resend): a few an hour. */
+  mailLimit: LoginLimiter;
+  /** Resends of the confirm link, per account. */
+  resendLimit: LoginLimiter;
+  /** "Forgot password" requests, per network address and per typed address. */
+  forgotIpLimit: LoginLimiter;
+  forgotAddressLimit: LoginLimiter;
   /** Joins one after another: an invitation is used by one person even when two arrive together. */
   joins: Turn;
   /** The allowance of the public join and Google routes, counted by address, apart from logging in. */
@@ -61,6 +71,17 @@ export interface ServerOptions {
   /** Shorter limits for taking an image from a web address, for tests. */
   imageFetchLimits?: Partial<FetchLimits>;
 }
+
+const HOUR = 60 * 60 * 1000;
+/** An allowance per hour whose refusal reads the same for every address. */
+const mailLimiter = (max: number) =>
+  new LoginLimiter(
+    max,
+    HOUR,
+    Date.now,
+    undefined,
+    "Too many requests. Try again in a few minutes.",
+  );
 
 /** Makes what is the server's. `registry` is set by the caller, which knows how a project is built. */
 export function makeServer(config: Config, options: ServerOptions = {}): Server {
@@ -95,6 +116,11 @@ export function makeServer(config: Config, options: ServerOptions = {}): Server 
     google: config.google ? new GoogleSignOn(config.google, config.publicUrl) : null,
     invites: new InviteStore(stateDir, files),
     joins: new Turn(),
+    mail: Mail.from(config.mail),
+    mailLimit: mailLimiter(6),
+    resendLimit: mailLimiter(5),
+    forgotIpLimit: mailLimiter(10),
+    forgotAddressLimit: mailLimiter(3),
     joinLimit: new LoginLimiter(config.loginAttempts * 6),
     live: new LiveRequests(),
     settings,

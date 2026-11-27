@@ -4,9 +4,11 @@ import {
   LoginRequest,
   PasswordRequest,
   ProfileRequest,
+  type EmailInfo,
   type MeResponse,
   type Person,
 } from "@frontier/schema";
+import { emailInfo, sendConfirm } from "../mail/accounts.js";
 import { hashPassword, verifyPassword } from "../auth/password.js";
 import {
   currentPerson,
@@ -54,6 +56,7 @@ export function me(
   authorEmail = "",
   lastProject: string | null = null,
   googleAvailable = false,
+  info: EmailInfo | undefined = undefined,
 ): MeResponse {
   const google = googleOf(p);
   return {
@@ -74,6 +77,7 @@ export function me(
       googleAvailable,
     },
     lastProject,
+    ...(info ? { emailInfo: info } : {}),
   };
 }
 
@@ -97,7 +101,8 @@ export function authRoutes(app: FastifyInstance, s: Server): void {
     const person =
       emailKey(email) === ""
         ? (() => {
-            const none = people.filter((p) => emailKey(p.email) === "");
+            // An account whose address a Google sign-in took is not "the account with no email".
+            const none = people.filter((p) => emailKey(p.email) === "" && !p.emailDisplaced);
             return none.length === 1 ? none[0]! : null;
           })()
         : (people.find((p) => emailKey(p.email) === emailKey(email)) ?? null);
@@ -129,15 +134,22 @@ export function authRoutes(app: FastifyInstance, s: Server): void {
     const person = await currentPerson(request, s.people);
     return {
       loggedIn: person !== null,
-      person: person && { id: person.id, name: person.name, email: person.email },
+      person: person && {
+        id: person.id,
+        name: person.name,
+        email: person.email,
+        emailInfo: emailInfo(s, person),
+      },
       // The project the person used last, as its address; null until they have used one (stage 27b).
       lastProject: person ? await lastProjectSlug(s, person) : null,
       // Exactly one account has no email: a blank email at login means that account. (Every new
       // account is given one, so this is only an owner from before emails were asked for.)
-      emailless: people.filter((p) => emailKey(p.email) === "").length === 1,
+      emailless: people.filter((p) => emailKey(p.email) === "" && !p.emailDisplaced).length === 1,
       passkeys: people.some((p) => p.passkeys.length > 0),
       // Whether the server offers "Continue with Google"; the app hides the buttons when not.
       google: s.google !== null,
+      // Whether this server sends mail (stage 28): "Forgot password", the banner, the invite field.
+      mail: s.mail.enabled,
       // Before any account exists the form is shown, so the page says what is missing on use.
       password: people.length === 0 || people.some((p) => !p.passwordOff),
     };
@@ -150,22 +162,50 @@ export function authRoutes(app: FastifyInstance, s: Server): void {
       s.config.commitAuthor.email,
       await lastProjectSlug(s, personOf(request)),
       s.google !== null,
+      emailInfo(s, personOf(request)),
     ),
   );
 
   app.put("/api/me", async (request) => {
     const { name, email } = ProfileRequest.parse(request.body);
-    const person = await s.people.update(personOf(request).id, (p) => ({
+    const before = personOf(request);
+    const sameAddress = emailKey(email) === emailKey(before.email);
+    // With mail on, a different address replaces an existing one only through Change address,
+    // which confirms the new address first. The first address of an account that has none, and
+    // every address on a server without mail, are set at once as before.
+    if (!sameAddress && before.email.trim() !== "" && s.mail.enabled) {
+      throw new ApiError(
+        "use_change_address",
+        "To change your email address, use Change address under Settings, Signing in.",
+      );
+    }
+    const person = await s.people.update(before.id, (p) => ({
       ...p,
       name,
-      email,
+      ...(sameAddress
+        ? {}
+        : {
+            email,
+            emailConfirmedAt: null,
+            emailConfirmedBy: null,
+            emailCode: null,
+            emailPending: null,
+            resetCode: null,
+            emailDisplaced: false,
+          }),
     }));
+    if (!sameAddress && s.mail.enabled) {
+      s.mail.background(() =>
+        sendConfirm(s, person.id, person.email, { pending: false, quiet: true }),
+      );
+    }
     return me(
       person,
       request.session.get("method") ?? "password",
       s.config.commitAuthor.email,
       await lastProjectSlug(s, person),
       s.google !== null,
+      emailInfo(s, person),
     );
   });
 
@@ -217,6 +257,8 @@ export function authRoutes(app: FastifyInstance, s: Server): void {
         passwordHash,
         // A password set for the first time works at once.
         passwordOff: p.passwordHash === "" ? false : p.passwordOff,
+        // A reset link sent before is no longer needed, and must not be usable after this.
+        resetCode: null,
       }),
     );
     // Every other device is logged out; this one stays in.

@@ -37,6 +37,7 @@ export const ROUTE_ROLES: Record<string, ProjectRole> = {
   "POST /members/leave": "reader",
   "GET /invites": "owner",
   "POST /invites": "owner",
+  "POST /invites/:id/resend": "owner",
   "DELETE /invites/:id": "owner",
 
   // Reading

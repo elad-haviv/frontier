@@ -1,5 +1,12 @@
-import type { InviteRecord, Person, ProjectRecord, ProjectRole } from "@frontier/schema";
+import {
+  emailKey,
+  type InviteRecord,
+  type Person,
+  type ProjectRecord,
+  type ProjectRole,
+} from "@frontier/schema";
 import { ApiError } from "../errors.js";
+import { canDisplace, sendConfirm } from "../mail/accounts.js";
 import type { NewPerson } from "../state/people.js";
 import type { Server } from "../server.js";
 import { stateOf } from "./invites.js";
@@ -83,15 +90,40 @@ async function claim(server: Server, code: string, invite: InviteRecord): Promis
  * Makes an account for someone new and puts them in the invitation's project with its role, and
  * uses the invitation up: all or nothing, one after another with every other join. The email is
  * checked before the link is touched, so a refused email leaves the link as it was.
+ *
+ * Stage 28: an address counts as confirmed when Google verified it (`google`), or when the
+ * invitation was emailed to exactly this address. A Google-verified person whose address is an
+ * UNCONFIRMED account's takes it: that account is left with no address and asked to add another
+ * (only where it can still log in without one, see `mayDisplace`); a confirmed address, or an
+ * account that cannot be displaced, is still `account_exists`.
  */
-export function joinAsNewPerson(server: Server, code: string, account: NewPerson): Promise<Joined> {
+export function joinAsNewPerson(
+  server: Server,
+  code: string,
+  account: NewPerson,
+  options: { google?: boolean } = {},
+): Promise<Joined> {
   return server.joins.run(async () => {
     const { invite, project } = await liveInvite(server, code);
-    if (account.email && (await server.people.byEmail(account.email))) throw accountExists();
+    const existing = account.email ? await server.people.byEmail(account.email) : null;
+    const displace = options.google === true && existing !== null && canDisplace(server, existing);
+    if (existing && !displace) throw accountExists();
+    const now = new Date().toISOString();
+    const emailed =
+      !!invite.email && !!account.email && emailKey(invite.email) === emailKey(account.email);
+    const confirmed = options.google
+      ? ({ emailConfirmedAt: now, emailConfirmedBy: "google" } as const)
+      : emailed
+        ? ({ emailConfirmedAt: now, emailConfirmedBy: "invite" } as const)
+        : {};
     await claim(server, code, invite);
     let person: Person;
+    let gaveUp: Person | undefined;
     try {
-      person = await server.people.create(account);
+      person = await server.people.create(
+        { ...account, ...confirmed },
+        { displaceUnconfirmed: displace, onDisplaced: (before) => (gaveUp = before) },
+      );
     } catch (err) {
       await server.invites.release(invite.id).catch(() => undefined);
       throw err instanceof ApiError && err.code === "email_taken" ? accountExists() : err;
@@ -99,9 +131,9 @@ export function joinAsNewPerson(server: Server, code: string, account: NewPerson
     try {
       await server.projects.addMember(project.id, person.id, invite.role);
     } catch (err) {
-      // All or nothing: the account made a moment ago goes, and the link is given back. Neither
-      // step may hide the error that started this.
-      await server.people.remove(person.id).catch(() => undefined);
+      // All or nothing: the account made a moment ago goes (and the one that gave up its address
+      // gets it back), and the link is given back. No step may hide the error that started this.
+      await server.people.remove(person.id, gaveUp).catch(() => undefined);
       await server.invites.release(invite.id).catch(() => undefined);
       throw err;
     }
@@ -112,6 +144,17 @@ export function joinAsNewPerson(server: Server, code: string, account: NewPerson
       role: invite.role,
     };
   });
+}
+
+/**
+ * After someone joined with a password or a passkey: an address nobody has confirmed gets a
+ * confirm link. It goes on after the answer, and never fails the join.
+ */
+export function confirmAfterJoin(server: Server, person: Person): void {
+  if (!server.mail.enabled || person.email.trim() === "" || person.emailConfirmedAt) return;
+  server.mail.background(() =>
+    sendConfirm(server, person.id, person.email, { pending: false, quiet: true }),
+  );
 }
 
 /**

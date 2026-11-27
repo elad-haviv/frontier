@@ -18,7 +18,7 @@
  * invitation code the person already holds.
  */
 import type { FastifyInstance, FastifyReply } from "fastify";
-import { INVITE_CODE_PATTERN } from "@frontier/schema";
+import { emailKey, INVITE_CODE_PATTERN } from "@frontier/schema";
 import { z } from "zod";
 import { GoogleError, safeReturnTo, sameSecret } from "../auth/google.js";
 import { PUBLIC } from "../auth/openness.js";
@@ -193,7 +193,17 @@ export function googleRoutes(app: FastifyInstance, s: Server): void {
       if (linked && linked.id !== me.id) return page("google_taken", SETTINGS);
       if (googleOf(me)) return page("google_already_linked", SETTINGS);
       const now = await s.people.update(me.id, (p) =>
-        endOtherSessions({ ...p, identities: [...p.identities, identity] }),
+        endOtherSessions({
+          ...p,
+          identities: [...p.identities, identity],
+          // Google verified an address that is the account's own: that counts as confirmed.
+          ...(emailKey(p.email) !== "" && emailKey(p.email) === emailKey(profile.email)
+            ? {
+                emailConfirmedAt: p.emailConfirmedAt ?? new Date().toISOString(),
+                emailConfirmedBy: p.emailConfirmedBy ?? ("google" as const),
+              }
+            : {}),
+        }),
       );
       followEpoch(request, now);
       return go(reply, pending.returnTo ?? SETTINGS);
@@ -212,11 +222,14 @@ export function googleRoutes(app: FastifyInstance, s: Server): void {
     if (pending.invite) {
       const code = pending.invite;
       try {
-        const joined = await joinAsNewPerson(s, code, {
-          name: profile.name,
-          email: profile.email,
-          identities: [identity],
-        });
+        // Google verified the address: it counts as confirmed, and it wins over an account that
+        // only typed it (see `joinAsNewPerson`).
+        const joined = await joinAsNewPerson(
+          s,
+          code,
+          { name: profile.name, email: profile.email, identities: [identity] },
+          { google: true },
+        );
         startSession(request, joined.person, "google");
         return go(reply, `/p/${encodeURIComponent(joined.project.slug)}`);
       } catch (err) {
