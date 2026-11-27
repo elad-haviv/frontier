@@ -215,6 +215,9 @@ test("on a phone the dice is a round button; on a desktop it is not", async ({ p
 });
 
 test("pick up where you left off, recently, and what was read last", async ({ page }) => {
+  // "26 hours ago" is yesterday only in the afternoon; fix the clock so the test does not depend on
+  // the hour it runs at.
+  await page.clock.setFixedTime(new Date(2026, 10, 25, 15, 0, 0));
   await seedRecents(page);
   const pick = card(page, "Pick up where you left off");
   await expect(pick.getByRole("link", { name: /Last read: Salt Flats/ })).toBeVisible();
