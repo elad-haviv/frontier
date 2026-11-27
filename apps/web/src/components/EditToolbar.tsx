@@ -59,6 +59,7 @@ export function EditToolbar({
   // Images, comments and writing help go straight to the server, so they wait for a connection.
   const offline = useNeedsConnection();
   const list = tools(handlers);
+  const menuOnly = list.filter((t) => t.menuOnly);
   const current = BLOCK_STYLES.find((s) => s.style === style)!;
   const backToText = () => view.current?.focus();
   // Help keeps its name on the bar: among the assist tools where they fit, else first on the bar.
@@ -79,7 +80,7 @@ export function EditToolbar({
   return (
     <div
       ref={bar}
-      className={`edit-toolbar${inTable ? " has-table" : ""}`}
+      className={`edit-toolbar${inTable ? " has-table" : ""}${menuOnly.length ? " has-menu-only" : ""}`}
       role="toolbar"
       aria-label="Formatting"
     >
@@ -166,7 +167,7 @@ export function EditToolbar({
             <div key={group} className="edit-toolbar-more-group" data-group={group}>
               <span className="edit-toolbar-more-label">{label}</span>
               {list
-                .filter((t) => t.group === group)
+                .filter((t) => t.group === group && !t.menuOnly)
                 .map((t) => (
                   <MenuItem
                     key={t.id}
@@ -181,6 +182,24 @@ export function EditToolbar({
                 ))}
             </div>
           ))}
+          {/* Tools offered only in menus are always here, however wide the bar. */}
+          {menuOnly.length > 0 && (
+            <div className="edit-toolbar-more-group" data-group="menu-only">
+              <span className="edit-toolbar-more-label">More</span>
+              {menuOnly.map((t) => (
+                <MenuItem
+                  key={t.id}
+                  icon={t.icon}
+                  keys={shortcutText(t.shortcut)}
+                  disabled={t.online === true && offline !== undefined}
+                  disabledReason={t.online && offline ? (t.offlineReason ?? offline) : undefined}
+                  onSelect={act(t.act)}
+                >
+                  {t.menuLabel ?? t.label}
+                </MenuItem>
+              ))}
+            </div>
+          )}
         </Menu>
       </div>
     </div>
