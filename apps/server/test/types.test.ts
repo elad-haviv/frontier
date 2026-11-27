@@ -1,5 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { EntryResponse, SchemaResponse, type TypesFile } from "@frontier/schema";
+import {
+  EntryResponse,
+  parseTypes,
+  PublishPlan,
+  SchemaResponse,
+  serialiseTypes,
+  type TypesFile,
+  UnpublishedResponse,
+} from "@frontier/schema";
 import { makeTestApp, type TestApp } from "./helpers/app.js";
 
 let t: TestApp;
@@ -134,6 +142,72 @@ describe("the types file (stage 34)", () => {
       types: [{ name: "wasteland", entries: 1 }],
       what: [{ name: "crowned", entries: 1 }],
     });
+  });
+});
+
+describe("saving the types as a version (stage 34)", () => {
+  async function publishAll() {
+    const un = UnpublishedResponse.parse((await t.get("/api/unpublished")).json());
+    const plan = PublishPlan.parse(
+      (
+        await t.post("/api/publish/plan", {
+          draftIds: un.drafts.map((d) => d.id),
+          renameIds: un.renames.map((r) => r.id),
+        })
+      ).json(),
+    );
+    const res = await t.post("/api/publish/confirm", {
+      planId: plan.planId,
+      confirmedMergeIds: plan.merges.map((m) => m.id),
+      message: "Types",
+    });
+    return { plan, res };
+  }
+
+  it("writes the file into the library, and merges another change to a different type", async () => {
+    t.repo.pushFromOutside(SCHEMA);
+    await t.services.sync();
+    const { file } = await types();
+    const vessel = { name: "vessel", props: [{ key: "rig", kind: "text" as const }], dates: [] };
+    expect((await save({ ...file, types: [...file.types, vessel] })).statusCode).toBe(200);
+    const first = await publishAll();
+    expect(first.res.statusCode, first.res.body).toBe(200);
+    const onMain = parseTypes(t.repo.remoteFile(".frontier/types.json")!);
+    expect(onMain.ok && onMain.file.types.map((x) => x.name)).toEqual([
+      "person",
+      "place",
+      "vessel",
+    ]);
+    const after = await types();
+    expect(after.revision).toBe(0);
+    expect(after.blob).not.toBe("");
+    // The schema file is no longer what decides: the types file is.
+    expect((await schema()).types).toEqual(["person", "place", "vessel"]);
+
+    const mine = after.file;
+    await t.put("/api/library-files/types", {
+      file: {
+        ...mine,
+        types: mine.types.map((x) => (x.name === "vessel" ? { ...x, dates: ["born"] } : x)),
+      },
+      revision: 0,
+      baseBlob: after.blob,
+    });
+    t.repo.pushFromOutside({
+      ".frontier/types.json": serialiseTypes({
+        ...mine,
+        types: mine.types.map((x) => (x.name === "place" ? { ...x, dates: ["died"] } : x)),
+      }),
+    });
+    const second = await publishAll();
+    expect(second.plan.merges).toHaveLength(1);
+    expect(second.res.statusCode, second.res.body).toBe(200);
+    const merged = parseTypes(t.repo.remoteFile(".frontier/types.json")!);
+    expect(merged.ok && merged.file.types.map((x) => [x.name, x.dates])).toEqual([
+      ["person", []],
+      ["place", ["died"]],
+      ["vessel", ["born"]],
+    ]);
   });
 });
 

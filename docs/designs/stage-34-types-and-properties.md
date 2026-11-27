@@ -127,6 +127,8 @@ what the entry itself sets.
   moment (read-only, or waiting to be compared) keep the old word and show in the notice.
 - **Changing a property's kind does not convert what entries already wrote**; the field then shows
   the old value as the new kind reads it.
+- **Field proposals already read stay as they were.** The AI's answer for an entry is kept until
+  the entry's text changes, so a type added later is not proposed for an entry read before it.
 - **Two owners changing the date names at once:** types merge one by one, the date names do not;
   the later save's list of names wins.
 
