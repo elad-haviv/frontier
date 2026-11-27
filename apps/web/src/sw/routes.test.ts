@@ -19,6 +19,24 @@ describe("what the service worker answers", () => {
     }
   });
 
+  it("answers an invite link's page with the app, like the login page, and never the server's own redirects", () => {
+    // The join page is an app route (stage 27c): with no connection it opens, and says it needs one.
+    expect(page("/join/abcdefghijklmnopqrstuvwx")).toBe("shell");
+    expect(page("/join/abcdefghijklmnopqrstuvwx?problem=google_denied")).toBe("shell");
+    // The Google trip, the join calls and the callback are the server's: never answered stale, and
+    // a navigation to them (the browser being sent to Google, or back from it) is not the app.
+    for (const path of [
+      "/api/auth/google/start?invite=abc",
+      "/api/auth/google/start?link=1&returnTo=%2Fsettings%2Faccount",
+      "/api/auth/google/callback?code=x&state=y",
+      "/api/join/abcdefghijklmnopqrstuvwx",
+    ]) {
+      expect(page(path), path).toBe("none");
+      expect(at(path), path).toBe("none");
+    }
+    expect(at("/api/join/abcdefghijklmnopqrstuvwx/accept", "POST")).toBe("none");
+  });
+
   it("answers the built files from the precache", () => {
     expect(at("/assets/a-1.js", "GET", "no-cors")).toBe("precache");
     expect(at("/assets/index-x7ZW9OJt.css")).toBe("precache");

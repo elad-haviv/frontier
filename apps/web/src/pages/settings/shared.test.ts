@@ -42,10 +42,21 @@ describe("the settings sections", () => {
     expect(movedSection("library/types")).toBe("types");
     expect(movedSection("library/backups")).toBe("backups");
     expect(movedSection("library/keep-going")).toBe("you/keep-going");
+    // The server's own address for Signing in, where its Google trips come back (stage 27c).
+    expect(movedSection("you/signing-in")).toBe("account");
     expect(movedSection("device/ai-keys")).toBeNull();
     expect(movedSection("ai/models/nothing")).toBeNull();
     expect(movedSection("account")).toBeNull();
     expect(movedSection("")).toBeNull();
+  });
+
+  it("keeps the AI folder run from a reader, and nothing else of theirs", () => {
+    const paths = (canWrite: boolean) => sectionsFor(true, canWrite).map((s) => s.path);
+    expect(paths(true)).toContain("you/folder-run");
+    expect(paths(false)).not.toContain("you/folder-run");
+    // A reader keeps the project's read-only pages, Members first, and what is theirs.
+    expect(paths(false).slice(0, 4)).toEqual(["members", "general", "types", "backups"]);
+    expect(paths(false)).toEqual(expect.arrayContaining(["profile", "account", "device/ai-keys"]));
   });
 
   it("show the project's sections only inside a project", () => {

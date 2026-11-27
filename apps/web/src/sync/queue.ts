@@ -1351,7 +1351,12 @@ export class QueueHub {
         (r) => r.refused === "role_too_low",
       );
       if (records.length > 0) {
-        out.push({ id: ref.id, name: names[ref.id] ?? ref.slug, records, refused: true });
+        out.push({
+          id: ref.id,
+          name: names[ref.id] ?? ref.name ?? ref.slug,
+          records,
+          refused: true,
+        });
       }
     }
     return out;

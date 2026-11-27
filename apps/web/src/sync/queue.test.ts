@@ -321,6 +321,34 @@ describe("the save queue", () => {
   });
 });
 
+describe("a save refused for want of a role (stage 27c)", () => {
+  it("is not sent again, and is marked as refused for the role", async () => {
+    const api = fakeApi();
+    api.saveDraft = vi.fn(async () => {
+      throw new ApiFailure(403, "role_too_low", "Your role in this project does not allow this.");
+    });
+    const q = makeQueue(api);
+    await q.put(ENTRY, "typed as a writer", {
+      kind: "edit",
+      draftId: "draft0000001",
+      revision: 0,
+      baseBlob: "",
+    });
+    await q.sendNow(ENTRY);
+    const record = await q.get(ENTRY);
+    expect(record).toMatchObject({ state: "attention", refused: "role_too_low" });
+    // In words for the person, who cannot do anything about it but keep the text.
+    expect(record?.error).toContain("no longer lets you change it");
+    // No retry timer sends it again.
+    await new Promise((r) => setTimeout(r, 60));
+    expect(api.saveDraft).toHaveBeenCalledTimes(1);
+    // The text is still there to copy out, and it can be discarded.
+    expect(record?.value).toBe("typed as a writer");
+    await q.drop(ENTRY);
+    expect(await q.list()).toEqual([]);
+  });
+});
+
 describe("what the queue keeps beside its records", () => {
   it("reads and writes a value through its one database, without starting to send", async () => {
     const api = fakeApi();

@@ -78,6 +78,40 @@ describe("the connection service", () => {
     c.stop();
   });
 
+  it("says the person's access may have changed when the stream ends and the server still answers (27c)", async () => {
+    // The server closes a person's streams when their role changes or they are taken out.
+    const fetch = vi.fn(() => answer(200, { unpublished: 0 }));
+    const { c } = make(fetch as unknown as typeof globalThis.fetch);
+    const heard = vi.fn();
+    const stop = c.onAccessMayHaveChanged(heard);
+    c.start();
+    FakeSource.made[0]!.open();
+    expect(heard).not.toHaveBeenCalled();
+    FakeSource.made[0]!.fail(false);
+    await vi.waitFor(() => expect(heard).toHaveBeenCalledTimes(1));
+    // A request refused for want of a role says it directly; a listener taken off hears nothing.
+    c.accessMayHaveChanged();
+    expect(heard).toHaveBeenCalledTimes(2);
+    stop();
+    c.accessMayHaveChanged();
+    expect(heard).toHaveBeenCalledTimes(2);
+    c.stop();
+  });
+
+  it("does not say it when the stream ended because the server cannot be reached (27c)", async () => {
+    const fetch = vi.fn(() => Promise.reject(new TypeError("down")));
+    const { c } = make(fetch as unknown as typeof globalThis.fetch);
+    const heard = vi.fn();
+    c.onAccessMayHaveChanged(heard);
+    c.start();
+    FakeSource.made[0]!.fail(true);
+    await c.probe();
+    await new Promise((r) => setTimeout(r, 20));
+    expect(c.state).toBe("offline");
+    expect(heard).not.toHaveBeenCalled();
+    c.stop();
+  });
+
   it("says offline when the server cannot be reached, and online at its next answer", async () => {
     let up = false;
     const fetch = vi.fn(() =>

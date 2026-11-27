@@ -18,6 +18,8 @@ function makeHub(projects: () => KnownProject[]) {
   const state = { current: "offline" as ConnectionState };
   /** Projects the server now says are gone. */
   const gone = new Set<string>();
+  /** Projects where the person's role no longer allows a change (stage 27c). */
+  const denied = new Set<string>();
   const told: string[] = [];
   const listeners = new Set<() => void>();
   const connection = {
@@ -42,6 +44,9 @@ function makeHub(projects: () => KnownProject[]) {
           if (gone.has(ref.id)) {
             throw new ApiFailure(403, "no_project", "There is no project here that you can open.");
           }
+          if (denied.has(ref.id)) {
+            throw new ApiFailure(403, "role_too_low", "Your role does not allow this.");
+          }
           sent.push(`${person}:${ref.id}`);
           return { id: d.id, revision: d.revision + 1 };
         }),
@@ -61,7 +66,7 @@ function makeHub(projects: () => KnownProject[]) {
   hubs.push(hub);
   /** The device's own database, read directly: what an earlier build left there. */
   const raw = (name = "frontier") => openStore(`${prefix}${name}`);
-  return { hub, sent, go, raw, gone, told };
+  return { hub, sent, go, raw, gone, denied, told };
 }
 
 afterEach(() => {
@@ -248,6 +253,64 @@ describe("changes in a project that turns out to be gone", () => {
     const { hub } = makeHub(() => []);
     hub.setPerson("first");
     // No project is known and nothing says which is legacy: nothing is stranded.
+    expect(await hub.stranded()).toEqual([]);
+  });
+});
+
+describe("changes refused for want of a role (stage 27c)", () => {
+  it("are listed with the project, which stays open to read, and thrown away one by one", async () => {
+    const { hub, go, denied, sent } = makeHub(() => [A, B]);
+    hub.setPerson("first");
+    hub.use(B);
+    await hub.start();
+    // Changes the person made as a writer in beta, who is then made a reader there.
+    await put(hub, "entry:Salt.md", "typed as a writer");
+    await put(hub, "entry:Pepper.md", "also");
+    denied.add(B.id);
+    go("online");
+    await vi.waitFor(async () =>
+      expect((await hub.queueOf(B).list()).map((r) => r.state)).toEqual(["attention", "attention"]),
+    );
+    hub.use(A);
+    const stranded = await hub.stranded();
+    // The project is not called gone: it is listed as one the person can still read.
+    expect(
+      stranded.map((p) => [p.id, p.name, p.refused, p.records.map((r) => r.key).sort()]),
+    ).toEqual([[B.id, "Beta", true, ["entry:Pepper.md", "entry:Salt.md"]]]);
+    expect(stranded[0]!.records.every((r) => r.refused === "role_too_low")).toBe(true);
+    // Nothing was sent, and no retry sends it.
+    expect(sent).toEqual([]);
+    await hub.discardStranded(B.id, "entry:Salt.md");
+    expect((await hub.stranded())[0]!.records.map((r) => r.key)).toEqual(["entry:Pepper.md"]);
+    await hub.discardStranded(B.id);
+    expect(await hub.stranded()).toEqual([]);
+  });
+
+  it("include the legacy project's, which lives in the device's own database", async () => {
+    const { hub, go, denied } = makeHub(() => [A, B]);
+    hub.setPerson("first");
+    hub.use(A);
+    await hub.start();
+    await put(hub, "entry:Harbor.md", "typed");
+    denied.add(A.id);
+    go("online");
+    await vi.waitFor(async () =>
+      expect((await hub.queueOf(A).list()).map((r) => r.state)).toEqual(["attention"]),
+    );
+    hub.use(B);
+    const stranded = await hub.stranded();
+    expect(stranded.map((p) => [p.id, p.name, p.refused])).toEqual([[A.id, "Alpha", true]]);
+    await hub.discardStranded(A.id, "entry:Harbor.md");
+    expect(await hub.stranded()).toEqual([]);
+  });
+
+  it("do not list a project whose changes were refused for another reason", async () => {
+    const { hub } = makeHub(() => [A, B]);
+    hub.setPerson("first");
+    hub.use(B);
+    await hub.start();
+    await put(hub, "entry:Salt.md", "waiting, as any change waits");
+    hub.use(A);
     expect(await hub.stranded()).toEqual([]);
   });
 });

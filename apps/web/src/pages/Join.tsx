@@ -422,7 +422,7 @@ function Invitation({
           onChange={(e) => setPassword(e.target.value)}
         />
         <em id={`${ids.password}-e`} className={fieldErrors.password ? "field-error" : "muted"}>
-          At least 12 characters.
+          {fieldErrors.password ?? "At least 12 characters."}
         </em>
         {problemLine}
         <button type="submit" className="secondary" disabled={busy !== null}>
