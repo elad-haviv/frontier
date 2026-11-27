@@ -13,7 +13,9 @@ import {
   type Client,
   type TestApp,
 } from "./helpers/app.js";
-import { anon, clearMail, codeIn, mailTo, outbox } from "./helpers/mail.js";
+import { mailLimiters } from "../src/server.js";
+import { registerPasskey } from "./helpers/authenticator.js";
+import { anon, clearMail, codeIn, invitations, mailTo, outbox, proofIn } from "./helpers/mail.js";
 
 const LOG: string[] = [];
 let t: TestApp;
@@ -44,7 +46,15 @@ beforeAll(async () => {
   await addMember(t, pid, writer.id, "writer");
 });
 afterAll(() => t.close());
+/**
+ * The mail allowances as production has them (LOGIN_ATTEMPTS is fixed at 5 there). The tests
+ * here run on a server with a large LOGIN_ATTEMPTS, whose allowances are scaled up with it, so
+ * the tests of the allowances themselves swap the real ones in.
+ */
+const productionLimits = () =>
+  Object.assign(t.server, mailLimiters({ ...t.server.config, loginAttempts: 5 }));
 afterEach(() => {
+  Object.assign(t.server, mailLimiters(t.server.config));
   vi.useRealTimers();
   t.server.mail.outbox!.failNext = 0;
   t.server.mail.outbox!.delayMs = 0;
@@ -54,8 +64,8 @@ const invite = async (body: Record<string, unknown> = { role: "writer" }, by: Cl
   const res = await by.post(`${base()}/invites`, body);
   return { res, body: res.json() as CreateInviteResponse };
 };
-const join = (code: string, email: string, extra: Record<string, unknown> = {}) =>
-  anon(t, "POST", `/api/join/${code}`, {
+const join = (code: string, email: string, extra: Record<string, unknown> = {}, proof = "") =>
+  anon(t, "POST", `/api/join/${code}${proof ? `?m=${proof}` : ""}`, {
     name: "Nina New",
     email,
     password: "a long enough password",
@@ -272,13 +282,14 @@ describe("emailing an invitation", () => {
   });
 
   it("allows a few mails to one address an hour, and says so the same way for every address", async () => {
+    productionLimits();
     const to = fresh();
     for (let i = 0; i < 6; i++) {
       expect((await invite({ role: "writer", email: to })).res.statusCode).toBe(201);
     }
     const res = await owner.post(`${base()}/invites`, { role: "writer", email: to });
     expect(res.statusCode).toBe(429);
-    expect(res.json().error.message).toBe("Too many requests. Try again in a few minutes.");
+    expect(res.json().error.message).toBe("Too many requests. Try again later.");
     // Nothing was made by the refused request.
     const rows = (await owner.get(`${base()}/invites`))
       .json()
@@ -286,13 +297,93 @@ describe("emailing an invitation", () => {
     expect(rows).toHaveLength(6);
   });
 
-  it("joining with exactly the address it was emailed to confirms it, with no second email", async () => {
+  it("counts a mailbox once, whatever +tag is put in the address", async () => {
+    productionLimits();
+    const base_ = `tagged${++n}`;
+    for (let i = 0; i < 6; i++) {
+      const res = await invite({ role: "writer", email: `${base_}+t${i}@Example.org` });
+      expect(res.res.statusCode).toBe(201);
+    }
+    const res = await owner.post(`${base()}/invites`, {
+      role: "writer",
+      email: `${base_}@example.org`,
+    });
+    expect(res.statusCode).toBe(429);
+    // The same goes for forgot-password's own allowance per address.
+    const forgot = (email: string) => anon(t, "POST", "/api/forgot-password", { email });
+    const other = `forgotten${++n}`;
+    const answers = [];
+    for (const email of [
+      `${other}+a@example.org`,
+      `${other}+b@example.org`,
+      `${other}@example.org`,
+    ])
+      answers.push((await forgot(email)).statusCode);
+    answers.push((await forgot(`${other}+c@example.org`)).statusCode);
+    expect(answers).toEqual([200, 200, 200, 429]);
+  });
+
+  it("a person may send 20 emailed invitations an hour, new and resent together", async () => {
+    productionLimits();
+    const made = [];
+    for (let i = 0; i < 12; i++) {
+      made.push((await invite({ role: "writer", email: fresh() })).body);
+    }
+    for (let i = 0; i < 8; i++) {
+      expect((await owner.post(`${base()}/invites/${made[i]!.id}/resend`)).statusCode).toBe(201);
+    }
+    // Twenty were sent; the twenty-first, new or resent, is refused, and makes nothing.
+    const before = (await owner.get(`${base()}/invites`)).json().invites.length;
+    const refused = await owner.post(`${base()}/invites`, { role: "writer", email: fresh() });
+    expect(refused.statusCode).toBe(429);
+    expect(refused.json().error.message).toBe("Too many requests. Try again later.");
+    expect((await owner.post(`${base()}/invites/${made[9]!.id}/resend`)).statusCode).toBe(429);
+    expect((await owner.get(`${base()}/invites`)).json().invites).toHaveLength(before);
+    // Another person has their own allowance.
+    const other = await addPerson(t, "Otto Owner", `otto${++n}@example.com`);
+    await addMember(t, pid, other.id, "owner");
+    expect(
+      (await other.post(`${base()}/invites`, { role: "writer", email: fresh() })).statusCode,
+    ).toBe(201);
+  });
+
+  it("a resend that cannot be made takes nothing from the allowances", async () => {
+    productionLimits();
+    const to = fresh();
+    const first = (await invite({ role: "writer", email: to })).body;
+    await owner.del(`${base()}/invites/${first.id}`);
+    // Cancelled: every try is told so, and none of them counts against the address or the person.
+    for (let i = 0; i < 12; i++) {
+      const res = await owner.post(`${base()}/invites/${first.id}/resend`);
+      expect(res.json().error.code).toBe("invite_cancelled");
+    }
+    for (let i = 0; i < 12; i++) {
+      expect((await owner.post(`${base()}/invites/nonesuch/resend`)).json().error.code).toBe(
+        "not_found",
+      );
+    }
+    for (let i = 0; i < 4; i++) {
+      expect((await invite({ role: "writer", email: to })).res.statusCode).toBe(201);
+    }
+    // Five were made for the address; the sixth is allowed, and a resend would be the seventh.
+    const live = (await invite({ role: "writer", email: to })).body;
+    expect((await owner.post(`${base()}/invites/${live.id}/resend`)).statusCode).toBe(429);
+  });
+
+  it("joining with the emailed address AND the proof from the emailed link confirms it, with no second email", async () => {
     const to = fresh();
     const { body } = await invite({ role: "writer", email: to });
+    const [sent] = await mailTo(t, to);
+    const proof = proofIn(sent!);
+    expect(sent!.text).toContain(`http://localhost:3000/join/${body.code}?m=${proof}`);
     await clearMail(t);
-    const info = (await anon(t, "GET", `/api/join/${body.code}`)).json();
-    expect(info.email).toBe(to);
-    const res = await join(body.code, to.toUpperCase());
+    // The address is told to whoever brings the proof, and to nobody else.
+    expect((await anon(t, "GET", `/api/join/${body.code}?m=${proof}`)).json().email).toBe(to);
+    expect((await anon(t, "GET", `/api/join/${body.code}`)).json().email).toBeNull();
+    expect((await anon(t, "GET", `/api/join/${body.code}?m=${"x".repeat(32)}`)).json().email).toBe(
+      null,
+    );
+    const res = await join(body.code, to.toUpperCase(), {}, proof);
     expect(res.statusCode).toBe(200);
     expect(await outbox(t)).toHaveLength(0);
     const p = await person(to);
@@ -301,15 +392,136 @@ describe("emailing an invitation", () => {
     expect(await meOf(cookieOf(res))).toMatchObject({ emailInfo: { status: "confirmed" } });
   });
 
-  it("joining with another address sends a confirm link instead", async () => {
+  it("the owner, who has the link but not the proof, cannot make the invited address count as confirmed", async () => {
     const to = fresh();
     const { body } = await invite({ role: "writer", email: to });
     await clearMail(t);
+    // What the owner holds: the code, the path and the url. None has the proof.
+    expect(body.url).toBe(`http://localhost:3000/join/${body.code}`);
+    expect(body.path).toBe(`/join/${body.code}`);
+    const res = await join(body.code, to);
+    expect(res.statusCode).toBe(200);
+    const p = await person(to);
+    expect(p.emailConfirmedAt).toBeNull();
+    // It is asked to confirm like any other address.
+    const sent = await mailTo(t, to);
+    expect(sent).toHaveLength(1);
+    expect(sent[0]!.subject).toBe("Confirm your email address for Frontier");
+    expect(await meOf(cookieOf(res))).toMatchObject({ emailInfo: { status: "unconfirmed" } });
+  });
+
+  it("a wrong proof counts for nothing, and so does the right one with another address", async () => {
+    const to = fresh();
+    const { body } = await invite({ role: "writer", email: to });
+    const proof = proofIn((await mailTo(t, to))[0]!);
+    const wrong = await join(
+      body.code,
+      to,
+      {},
+      `${proof.slice(0, -1)}${proof.endsWith("A") ? "B" : "A"}`,
+    );
+    expect(wrong.statusCode).toBe(200);
+    expect((await person(to)).emailConfirmedAt).toBeNull();
+    const second = await invite({ role: "writer", email: to });
+    const proof2 = proofIn(invitations(await mailTo(t, to))[1]!);
     const other = fresh();
-    expect((await join(body.code, other)).statusCode).toBe(200);
-    expect(await mailTo(t, to)).toHaveLength(0);
-    expect(await mailTo(t, other)).toHaveLength(1);
+    expect((await join(second.body.code, other, {}, proof2)).statusCode).toBe(200);
     expect((await person(other)).emailConfirmedAt).toBeNull();
+  });
+
+  it("the proof is only in the email: never in an answer to the owner, nor in the file as itself", async () => {
+    const to = fresh();
+    const made = (await invite({ role: "writer", email: to })).body;
+    const proof = proofIn((await mailTo(t, to))[0]!);
+    const resent = await owner.post(`${base()}/invites/${made.id}/resend`);
+    const proof2 = proofIn(invitations(await mailTo(t, to)).at(-1)!);
+    expect(proof2).not.toBe(proof);
+    const list = await owner.get(`${base()}/invites`);
+    for (const res of [resent, list]) {
+      expect(res.body).not.toContain(proof);
+      expect(res.body).not.toContain(proof2);
+    }
+    expect(JSON.stringify(made)).not.toContain(proof);
+    expect(readFileSync(t.server.invites.file, "utf8")).not.toContain(proof2);
+    // The resent link has its own proof, and the earlier one's is dead with it.
+    const again = resent.json() as CreateInviteResponse;
+    expect((await anon(t, "GET", `/api/join/${again.code}?m=${proof2}`)).json().email).toBe(to);
+    expect((await anon(t, "GET", `/api/join/${again.code}?m=${proof}`)).json().email).toBeNull();
+  });
+
+  it("a passkey join carries the proof the same way", async () => {
+    const passkeyJoin = async (code: string, email: string, proof: string) => {
+      const q = proof ? `?m=${proof}` : "";
+      const options = await anon(t, "POST", `/api/join/${code}/passkey/options${q}`, {
+        name: "Pia Passkey",
+        email,
+      });
+      expect(options.statusCode, options.body).toBe(200);
+      const { response } = registerPasskey(options.json(), "http://localhost:3000");
+      const done = await anon(
+        t,
+        "POST",
+        `/api/join/${code}/passkey/verify${q}`,
+        { response },
+        { cookie: cookieOf(options) },
+      );
+      expect(done.statusCode, done.body).toBe(200);
+    };
+    const withProof = fresh();
+    const a = await invite({ role: "writer", email: withProof });
+    const proof = proofIn((await mailTo(t, withProof))[0]!);
+    await clearMail(t);
+    await passkeyJoin(a.body.code, withProof, proof);
+    expect((await person(withProof)).emailConfirmedBy).toBe("invite");
+    expect(await mailTo(t, withProof)).toHaveLength(0); // no confirm link
+    const without = fresh();
+    const b = await invite({ role: "writer", email: without });
+    await passkeyJoin(b.body.code, without, "");
+    expect((await person(without)).emailConfirmedAt).toBeNull();
+    expect((await mailTo(t, without)).map((m) => m.subject)).toContain(
+      "Confirm your email address for Frontier",
+    );
+  });
+
+  it("accepting while logged in confirms the person's unconfirmed address with the proof, and only then", async () => {
+    // Each person can accept once (then they are in the project), so each case has its own.
+    const accept = async (who: Client, invited: string, proof: "mail" | "wrong" | "none") => {
+      const { body } = await invite({ role: "reader", email: invited });
+      const p =
+        proof === "mail"
+          ? proofIn(invitations(await mailTo(t, invited)).at(-1)!)
+          : proof === "wrong"
+            ? "x".repeat(32)
+            : "";
+      const res = await who.post(`/api/join/${body.code}/accept${p ? `?m=${p}` : ""}`);
+      expect(res.statusCode, res.body).toBe(200);
+    };
+    const own = fresh();
+    const noProof = await addPerson(t, "No Proof", own);
+    await accept(noProof, own, "none");
+    expect((await t.server.people.get(noProof.id))!.emailConfirmedAt).toBeNull();
+    const wrong = fresh();
+    const wrongProof = await addPerson(t, "Wrong Proof", wrong);
+    await accept(wrongProof, wrong, "wrong");
+    expect((await t.server.people.get(wrongProof.id))!.emailConfirmedAt).toBeNull();
+    // The right proof, but the invitation went to another address than this person's.
+    const elsewhere = await addPerson(t, "Elsewhere", fresh());
+    await accept(elsewhere, fresh(), "mail");
+    expect((await t.server.people.get(elsewhere.id))!.emailConfirmedAt).toBeNull();
+    // The proof from the email sent to this very address: confirmed by the invitation.
+    const mine = fresh();
+    const right = await addPerson(t, "Right Proof", mine);
+    await accept(right, mine, "mail");
+    expect(await person(mine)).toMatchObject({ emailConfirmedBy: "invite" });
+    // An address that was confirmed already keeps how it was.
+    const done = await addPerson(t, "Done Already", fresh());
+    await t.server.people.update(done.id, (p) => ({
+      ...p,
+      emailConfirmedAt: new Date().toISOString(),
+      emailConfirmedBy: "link",
+    }));
+    await accept(done, (await t.server.people.get(done.id))!.email, "mail");
+    expect((await t.server.people.get(done.id))!.emailConfirmedBy).toBe("link");
   });
 
   it("an invitation not emailed shows no address, and joining by it asks to confirm", async () => {
@@ -358,9 +570,62 @@ describe("confirming an address", () => {
       status: "confirmed",
       confirmedBy: "link",
     });
+    // Opened again: the same person is told it is already confirmed, not that the link is dead.
     const again = await anon(t, "POST", `/api/confirm/${code}`);
-    expect(again.statusCode).toBe(410);
-    expect(again.json().error.code).toBe("link_invalid");
+    expect(again.statusCode).toBe(200);
+    expect(again.json()).toEqual({ ok: true, status: "already_confirmed", you: false });
+    expect((await meOf(cookie)).emailInfo).toMatchObject({ confirmedBy: "link" });
+  });
+
+  it("a used link says already confirmed until it would have run out anyway, then it is dead", async () => {
+    const { email, id } = await joined();
+    const code = codeIn((await mailTo(t, email))[0]!, "confirm");
+    expect((await anon(t, "POST", `/api/confirm/${code}`)).json().status).toBe("confirmed");
+    // Only the hash is kept, and the confirm time does not move.
+    const confirmedAt = (await person(email)).emailConfirmedAt;
+    expect(readFileSync(t.server.people.file, "utf8")).not.toContain(code);
+    expect((await t.server.people.get(id))!.emailUsed).toMatchObject({
+      codeHash: expect.stringMatching(/^[0-9a-f]{64}$/),
+    });
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(Date.now() + 23 * 3600_000);
+    expect((await anon(t, "POST", `/api/confirm/${code}`)).json().status).toBe("already_confirmed");
+    vi.setSystemTime(Date.now() + 2 * 3600_000);
+    const gone = await anon(t, "POST", `/api/confirm/${code}`);
+    expect(gone.statusCode).toBe(410);
+    vi.useRealTimers();
+    expect((await person(email)).emailConfirmedAt).toBe(confirmedAt);
+  });
+
+  it("a link for a change of address, opened again, is already confirmed and tells the old address once", async () => {
+    const a = await joined();
+    await t.server.people.update(a.id, (p) => ({
+      ...p,
+      emailConfirmedAt: new Date().toISOString(),
+      emailConfirmedBy: "link",
+    }));
+    const next = fresh();
+    expect(
+      (
+        await t.app.inject({
+          method: "POST",
+          url: "/api/me/email",
+          headers: { cookie: a.cookie },
+          payload: { email: next, password: "a long enough password" },
+        })
+      ).statusCode,
+    ).toBe(200);
+    const code = codeIn((await mailTo(t, next))[0]!, "confirm");
+    await clearMail(t);
+    const first = await anon(t, "POST", `/api/confirm/${code}`);
+    expect(first.json().status).toBe("changed");
+    const second = await anon(t, "POST", `/api/confirm/${code}`);
+    expect(second.json()).toMatchObject({ status: "already_confirmed" });
+    await t.server.mail.settled();
+    expect((await mailTo(t, a.email)).map((m) => m.subject)).toEqual([
+      "Your Frontier email address has been changed",
+    ]);
+    expect((await t.server.people.get(a.id))!.email).toBe(next);
   });
 
   it("says it is the person's own account when they are logged in as it", async () => {
@@ -383,7 +648,7 @@ describe("confirming an address", () => {
     expect(await meOf(b.cookie)).toMatchObject({ email: b.email });
   });
 
-  it("answers an unknown, a malformed, a used and an expired link the same way", async () => {
+  it("answers an unknown, a malformed and an expired link the same way", async () => {
     const { email } = await joined();
     const code = codeIn((await mailTo(t, email))[0]!, "confirm");
     vi.useFakeTimers({ toFake: ["Date"] });
@@ -414,8 +679,10 @@ describe("confirming an address", () => {
     const results = await Promise.all(
       Array.from({ length: 5 }, () => anon(t, "POST", `/api/confirm/${code}`)),
     );
-    expect(results.filter((r) => r.statusCode === 200)).toHaveLength(1);
-    expect(results.filter((r) => r.statusCode === 410)).toHaveLength(4);
+    // One request does it; the others arrive after it and are told it is already done.
+    expect(results.map((r) => r.statusCode)).toEqual([200, 200, 200, 200, 200]);
+    expect(results.filter((r) => r.json().status === "confirmed")).toHaveLength(1);
+    expect(results.filter((r) => r.json().status === "already_confirmed")).toHaveLength(4);
   });
 
   it("says already confirmed when a link outlives the confirmation (Google, an invitation, a reset)", async () => {
@@ -456,6 +723,7 @@ describe("confirming an address", () => {
   });
 
   it("resend is for the person logged in, limited per account", async () => {
+    productionLimits();
     const { cookie } = await joined();
     expect((await anon(t, "POST", "/api/me/email/resend")).statusCode, "needs a session").toBe(401);
     const post = () =>
@@ -463,12 +731,13 @@ describe("confirming an address", () => {
     for (let i = 0; i < 5; i++) expect((await post()).statusCode).toBe(200);
     const sixth = await post();
     expect(sixth.statusCode).toBe(429);
-    expect(sixth.json().error.message).toBe("Too many requests. Try again in a few minutes.");
+    expect(sixth.json().error.message).toBe("Too many requests. Try again later.");
   });
 
   it("resend is limited per address too, whichever accounts ask", async () => {
     // Several accounts cannot share an address, so the allowance is drawn by one account's
     // invitation and join mails and its resends together: 6 in all.
+    productionLimits();
     const { email, cookie } = await joined();
     const post = () =>
       t.app.inject({ method: "POST", url: "/api/me/email/resend", headers: { cookie } });
@@ -718,6 +987,101 @@ describe("changing the address", () => {
     expect(late.json().error.code).toBe("recent_login_needed");
   });
 
+  it("tells the old address once for the same change, and the notice counts against that address's mail allowance", async () => {
+    productionLimits();
+    const a = await joined();
+    const next = fresh();
+    await clearMail(t);
+    const body = { email: next, password: "a long enough password" };
+    expect((await change(a.cookie, body)).statusCode).toBe(200);
+    // Asked again for the same new address: a new link, but the old address is not told again.
+    expect((await change(a.cookie, body)).statusCode).toBe(200);
+    expect((await mailTo(t, a.email)).filter((m) => /being changed/.test(m.subject))).toHaveLength(
+      1,
+    );
+    expect(await mailTo(t, next)).toHaveLength(2);
+    // Another new address is a new change, and is told.
+    const third = fresh();
+    expect((await change(a.cookie, { ...body, email: third })).statusCode).toBe(200);
+    expect((await mailTo(t, a.email)).filter((m) => /being changed/.test(m.subject))).toHaveLength(
+      2,
+    );
+  });
+
+  it("skips the notice to the old address, quietly, when that address has used its allowance", async () => {
+    productionLimits();
+    const a = await joined();
+    // The join drew one mail on the new account's own address; use up the rest of its hour.
+    const key = a.email;
+    for (let i = 0; i < 5; i++) t.server.mailLimit.attempt(key);
+    const next = fresh();
+    await clearMail(t);
+    const res = await change(a.cookie, { email: next, password: "a long enough password" });
+    // The change itself goes on and its link is sent to the new address; only the notice is dropped.
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ applied: false, mail: "sent" });
+    expect(await mailTo(t, a.email)).toHaveLength(0);
+    expect(await mailTo(t, next)).toHaveLength(1);
+  });
+
+  it("opening the link ends nothing it should not, and a resend that lost a race to a cancel brings nothing back", async () => {
+    const a = await joined();
+    await t.server.people.update(a.id, (p) => ({
+      ...p,
+      emailConfirmedAt: new Date().toISOString(),
+      emailConfirmedBy: "link",
+    }));
+    const next = fresh();
+    await change(a.cookie, { email: next, password: "a long enough password" });
+    const resend = () =>
+      t.app.inject({ method: "POST", url: "/api/me/email/resend", headers: { cookie: a.cookie } });
+    // Cancel and Resend at the same moment: whichever way it falls, a cancelled change is not
+    // brought back by the Resend that read the account before the cancel.
+    const [cancelled, again] = await Promise.all([
+      t.app.inject({
+        method: "DELETE",
+        url: "/api/me/email/pending",
+        headers: { cookie: a.cookie },
+      }),
+      resend(),
+    ]);
+    expect(cancelled.statusCode).toBe(200);
+    expect([200, 404]).toContain(again.statusCode);
+    await t.server.mail.settled();
+    const after = (await t.server.people.get(a.id))!;
+    expect(after.emailPending).toBeNull();
+    expect(after.emailCode).toBeNull();
+  });
+
+  it("a resend whose account was confirmed meanwhile is refused and sends nothing", async () => {
+    const a = await joined();
+    const code = codeIn((await mailTo(t, a.email))[0]!, "confirm");
+    await clearMail(t);
+    const sendConfirmLater = (await import("../src/mail/accounts.js")).sendConfirm;
+    await anon(t, "POST", `/api/confirm/${code}`);
+    // What the route had read before the link was opened: unconfirmed. The change inside the
+    // serialized write sees the account as it is now.
+    await expect(
+      sendConfirmLater(t.server, a.id, a.email, { pending: false, resend: true }),
+    ).rejects.toMatchObject({ code: "already_confirmed" });
+    await expect(
+      sendConfirmLater(t.server, a.id, "someone.else@example.org", { pending: true, resend: true }),
+    ).rejects.toMatchObject({ code: "not_found" });
+    expect(await outbox(t)).toHaveLength(0);
+    expect((await t.server.people.get(a.id))!.emailCode).toBeNull();
+  });
+
+  it("confirming the account's own address clears a change that waits for that same address", async () => {
+    const a = await joined();
+    const code = codeIn((await mailTo(t, a.email))[0]!, "confirm");
+    await t.server.people.update(a.id, (p) => ({
+      ...p,
+      emailPending: { address: a.email.toUpperCase(), requestedAt: new Date().toISOString() },
+    }));
+    await anon(t, "POST", `/api/confirm/${code}`);
+    expect((await t.server.people.get(a.id))!.emailPending).toBeNull();
+  });
+
   it("the profile form: the same address with a new name is fine; another address is not, with mail on", async () => {
     const a = await joined();
     const put = (body: unknown) =>
@@ -727,7 +1091,7 @@ describe("changing the address", () => {
         headers: { cookie: a.cookie },
         payload: body as object,
       });
-    const ok = await put({ name: "New Name", email: a.email.toUpperCase() });
+    const ok = await put({ name: "New Name", email: a.email });
     expect(ok.statusCode).toBe(200);
     expect(ok.json()).toMatchObject({ name: "New Name", email: a.email });
     const res = await put({ name: "New Name", email: fresh() });
@@ -735,36 +1099,201 @@ describe("changing the address", () => {
     expect(res.json().error.code).toBe("use_change_address");
     expect((await meOf(a.cookie)).email).toBe(a.email);
   });
+
+  it("a change of case through the profile form is the same address: saved as typed, still confirmed", async () => {
+    const a = await joined();
+    await t.server.people.update(a.id, (p) => ({
+      ...p,
+      emailConfirmedAt: new Date().toISOString(),
+      emailConfirmedBy: "link",
+    }));
+    await clearMail(t);
+    const res = await t.app.inject({
+      method: "PUT",
+      url: "/api/me",
+      headers: { cookie: a.cookie },
+      payload: { name: "Nina New", email: a.email.toUpperCase() },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({
+      email: a.email.toUpperCase(),
+      emailInfo: { status: "confirmed", confirmedBy: "link" },
+    });
+    expect((await t.server.people.get(a.id))!.email).toBe(a.email.toUpperCase());
+    expect(await outbox(t)).toHaveLength(0);
+    // And it still logs in with either casing.
+    const login = await anon(t, "POST", "/api/login", {
+      email: a.email,
+      password: "a long enough password",
+    });
+    expect(login.statusCode).toBe(200);
+  });
+
+  it("a password change, a reset and ending the other sessions drop a change of address that waits", async () => {
+    const start = async () => {
+      const a = await joined();
+      await t.server.people.update(a.id, (p) => ({
+        ...p,
+        emailConfirmedAt: new Date().toISOString(),
+        emailConfirmedBy: "link",
+      }));
+      const next = fresh();
+      const asked = await t.app.inject({
+        method: "POST",
+        url: "/api/me/email",
+        headers: { cookie: a.cookie },
+        payload: { email: next, password: "a long enough password" },
+      });
+      expect(asked.statusCode).toBe(200);
+      const code = codeIn((await mailTo(t, next))[0]!, "confirm");
+      expect((await t.server.people.get(a.id))!.emailPending).not.toBeNull();
+      return { ...a, next, code };
+    };
+    const gone = async (who: { id: string; code: string }) => {
+      const p = (await t.server.people.get(who.id))!;
+      expect(p.emailPending).toBeNull();
+      expect(p.emailCode).toBeNull();
+      expect((await anon(t, "POST", `/api/confirm/${who.code}`)).statusCode).toBe(410);
+    };
+    // A password change.
+    const a = await start();
+    expect(
+      (
+        await t.app.inject({
+          method: "PUT",
+          url: "/api/me/password",
+          headers: { cookie: a.cookie },
+          payload: { current: "a long enough password", password: "another long password" },
+        })
+      ).statusCode,
+    ).toBe(200);
+    await gone(a);
+    // A reset.
+    const b = await start();
+    await clearMail(t);
+    await anon(t, "POST", "/api/forgot-password", { email: b.email });
+    const reset = codeIn((await mailTo(t, b.email))[0]!, "reset");
+    expect(
+      (await anon(t, "POST", `/api/reset/${reset}`, { password: "a brand new password" }))
+        .statusCode,
+    ).toBe(200);
+    await gone(b);
+    // Ending the other sessions: removing a passkey does it, as do the other changes to how the
+    // account is logged into.
+    const c = await start();
+    await t.server.people.update(c.id, (p) => ({
+      ...p,
+      passkeys: [
+        {
+          id: "k-gone",
+          publicKey: "AA",
+          counter: 0,
+          transports: [],
+          name: "x",
+          addedAt: "2026-11-01T00:00:00.000Z",
+        },
+      ],
+    }));
+    expect(
+      (
+        await t.app.inject({
+          method: "DELETE",
+          url: "/api/passkeys/k-gone",
+          headers: { cookie: c.cookie },
+        })
+      ).statusCode,
+    ).toBe(200);
+    await gone(c);
+  });
 });
 
-describe("the first address of an account that has none (the profile form)", () => {
-  it("is set at once, unconfirmed, and sent a link", async () => {
-    // An account from before emails were asked for: a password, no address; it logs in with a
-    // blank email while it is the only one like that.
-    const lone = await makeTestApp({
-      LOGIN_ATTEMPTS: "100",
-      MAIL_TEST_TRANSPORT: "memory",
-    });
+describe("the first address of an account that has none", () => {
+  // An account from before emails were asked for: a password, no address; it logs in with a blank
+  // email while it is the only one like that.
+  async function lone() {
+    const app = await makeTestApp({ LOGIN_ATTEMPTS: "100", MAIL_TEST_TRANSPORT: "memory" });
+    const only = (await app.server.people.all())[0]!;
+    await app.server.people.update(only.id, (p) => ({ ...p, email: "" }));
+    expect((await app.login(PASSWORD, "")).statusCode).toBe(200);
+    return { app, only };
+  }
+  const sent = (app: TestApp) => app.server.mail.outbox!.messages;
+
+  it("is not set by the profile form with mail on: it goes through Change address", async () => {
+    const { app, only } = await lone();
     try {
-      const only = (await lone.server.people.all())[0]!;
-      await lone.server.people.update(only.id, (p) => ({ ...p, email: "" }));
-      expect((await lone.login(PASSWORD, "")).statusCode).toBe(200);
-      const res = await lone.put("/api/me", { name: "Late Adder", email: "late@example.org" });
-      expect(res.statusCode).toBe(200);
-      expect(res.json().emailInfo).toMatchObject({ status: "unconfirmed" });
-      await lone.server.mail.settled();
-      expect(lone.server.mail.outbox!.messages.map((m) => m.to)).toEqual(["late@example.org"]);
-      expect((await lone.get("/api/me")).json().emailInfo.sent).toMatchObject({ ok: true });
-      // And through Change address, for an account in the same state.
-      await lone.server.people.update(only.id, (p) => ({ ...p, email: "", emailCode: null }));
-      const via = await lone.post("/api/me/email", {
-        email: "again@example.org",
-        password: PASSWORD,
-      });
-      expect(via.json()).toMatchObject({ applied: true, mail: "sent" });
-      expect((await lone.get("/api/me")).json().email).toBe("again@example.org");
+      const res = await app.put("/api/me", { name: "Late Adder", email: "late@example.org" });
+      expect(res.statusCode).toBe(409);
+      expect(res.json().error.code).toBe("use_change_address");
+      await app.server.mail.settled();
+      expect(sent(app)).toHaveLength(0);
+      expect((await app.server.people.get(only.id))!.email).toBe("");
     } finally {
-      await lone.close();
+      await app.close();
+    }
+  });
+
+  it("through Change address asks for the password, applies at once, and sends a link to confirm it", async () => {
+    const { app, only } = await lone();
+    try {
+      const body = { email: "again@example.org" };
+      expect((await app.post("/api/me/email", body)).json().error.code).toBe("invalid");
+      expect(
+        (await app.post("/api/me/email", { ...body, password: "not the password" })).statusCode,
+      ).toBe(400);
+      expect((await app.server.people.get(only.id))!.email).toBe("");
+      const via = await app.post("/api/me/email", { ...body, password: PASSWORD });
+      expect(via.json()).toMatchObject({ applied: true, mail: "sent" });
+      const me = (await app.get("/api/me")).json();
+      expect(me.email).toBe("again@example.org");
+      expect(me.emailInfo).toMatchObject({ status: "unconfirmed", sent: { ok: true } });
+      await app.server.mail.settled();
+      expect(sent(app).map((m) => m.to)).toEqual(["again@example.org"]);
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("the takeover chain from the review fails: a session alone cannot set an address and then reset to it", async () => {
+    const { app, only } = await lone();
+    try {
+      const evil = "attacker@evil.example";
+      // Session only, no password: the profile form and Change address both refuse.
+      expect((await app.put("/api/me", { name: "x", email: evil })).json().error.code).toBe(
+        "use_change_address",
+      );
+      expect((await app.post("/api/me/email", { email: evil })).statusCode).toBe(400);
+      // So there is no account at the address, and forgot-password sends nothing there.
+      const forgot = await anon(app, "POST", "/api/forgot-password", { email: evil });
+      expect(forgot.statusCode).toBe(200);
+      await app.server.mail.settled();
+      expect(sent(app)).toHaveLength(0);
+      expect((await app.server.people.get(only.id))!.email).toBe("");
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("an address the account set itself gets no reset link until it is confirmed; one given at joining does", async () => {
+    const { app, only } = await lone();
+    try {
+      await app.post("/api/me/email", { email: "mine@example.org", password: PASSWORD });
+      expect((await app.server.people.get(only.id))!.emailSetBySelf).toBe(true);
+      await app.server.mail.settled();
+      const confirm = sent(app).find((m) => m.to === "mine@example.org")!;
+      sent(app).length = 0;
+      const forgot = () => anon(app, "POST", "/api/forgot-password", { email: "mine@example.org" });
+      expect((await forgot()).statusCode).toBe(200);
+      await app.server.mail.settled();
+      expect(sent(app), "no reset link to an address nobody confirmed").toHaveLength(0);
+      // Opening the confirm link proves the mailbox; now a reset link goes there.
+      const code = codeIn(confirm, "confirm");
+      expect((await anon(app, "POST", `/api/confirm/${code}`)).json().status).toBe("confirmed");
+      expect((await forgot()).statusCode).toBe(200);
+      await app.server.mail.settled();
+      expect(sent(app).map((m) => m.subject)).toEqual(["Reset your Frontier password"]);
+    } finally {
+      await app.close();
     }
   });
 });
@@ -1041,20 +1570,20 @@ describe("forgot password", () => {
   });
 
   it("allows 3 requests an hour per address, counted whether or not the address has an account", async () => {
+    productionLimits();
     const real = await account();
     for (const email of [real.email, "ghost.limit@nowhere.example"]) {
       const results = [];
       for (let i = 0; i < 4; i++) results.push(await forgot(email));
       expect(results.map((r) => r.statusCode)).toEqual([200, 200, 200, 429]);
-      expect(results[3]!.json().error.message).toBe(
-        "Too many requests. Try again in a few minutes.",
-      );
+      expect(results[3]!.json().error.message).toBe("Too many requests. Try again later.");
     }
     // Other addresses are not held back by it.
     expect((await forgot(fresh())).statusCode).toBe(200);
   });
 
   it("allows 10 requests an hour from one network address", async () => {
+    productionLimits();
     const results = [];
     for (let i = 0; i < 11; i++)
       results.push(await forgot(fresh(), { "x-forwarded-for": "172.16.9.9" }));
@@ -1137,5 +1666,102 @@ describe("the test hook", () => {
     expect(res.json().messages.length).toBeGreaterThan(0);
     expect((await anon(t, "DELETE", "/api/test/mail")).json()).toEqual({ ok: true });
     expect((await anon(t, "GET", "/api/test/mail")).json().messages).toEqual([]);
+  });
+});
+
+describe("addresses with an apostrophe", () => {
+  it("get an invitation, a confirm link and a reset link, and nothing that adds a header or a recipient", async () => {
+    const to = `o'brien${++n}@example.com`;
+    await clearMail(t);
+    const made = await invite({ role: "writer", email: to });
+    expect(made.res.statusCode, made.res.body).toBe(201);
+    expect(made.body).toMatchObject({ sentTo: to, mail: "sent" });
+    const [mail] = await mailTo(t, to);
+    expect(mail!.to).toBe(to);
+    const res = await join(made.body.code, to, {}, proofIn(mail!));
+    expect(res.statusCode).toBe(200);
+    // Confirm: use an address nobody has confirmed (a different one for this account).
+    const typed = `d'arcy${++n}@example.com`;
+    await joined(typed);
+    const confirm = (await mailTo(t, typed)).find((m) => /Confirm/.test(m.subject))!;
+    expect(confirm).toBeDefined();
+    expect(
+      (await anon(t, "POST", `/api/confirm/${codeIn(confirm, "confirm")}`)).json().status,
+    ).toBe("confirmed");
+    expect((await person(typed)).emailConfirmedAt).not.toBeNull();
+    // Forgot password.
+    await clearMail(t);
+    expect((await anon(t, "POST", "/api/forgot-password", { email: typed })).statusCode).toBe(200);
+    const reset = await mailTo(t, typed);
+    expect(reset.map((m) => m.subject)).toEqual(["Reset your Frontier password"]);
+    // Still nothing that could add a recipient or end a header line.
+    for (const bad of ["a@b.co, c@d.co", "a\r\nBcc: x@y.zz@b.co", 'a"b@c.co', "a<b>@c.co"]) {
+      const refused = await owner.post(`${base()}/invites`, { role: "writer", email: bad });
+      expect(refused.statusCode, bad).toBe(400);
+    }
+  });
+});
+
+describe("a confirm mail that never reported", () => {
+  it("reads as failed in the banner once it has been on its way for over a minute", async () => {
+    const a = await joined();
+    await t.server.people.update(a.id, (p) => ({
+      ...p,
+      emailCode: {
+        ...p.emailCode!,
+        mail: "queued",
+        createdAt: new Date().toISOString(),
+      },
+    }));
+    expect((await meOf(a.cookie)).emailInfo?.sent).toMatchObject({ ok: null });
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(Date.now() + 61_000);
+    expect((await meOf(a.cookie)).emailInfo?.sent).toMatchObject({ ok: false });
+  });
+});
+
+describe("what lets a Google-verified person take an unconfirmed address", () => {
+  it("is recorded when a confirm link really goes out: its expiry, and nothing when the mail failed", async () => {
+    const a = await joined();
+    const p = await person(a.email);
+    expect(p.emailCode!.mail).toBe("sent");
+    expect(p.emailLinkSentUntil).toBe(p.emailCode!.expiresAt);
+    // A relay that is down: the link exists, but nothing was sent, so nothing is recorded.
+    t.server.mail.outbox!.failNext = 1;
+    const { body } = await invite({ role: "writer" });
+    const email = fresh();
+    expect((await join(body.code, email)).statusCode).toBe(200);
+    await t.server.mail.settled();
+    const failed = await person(email);
+    expect(failed.emailCode!.mail).toBe("failed");
+    expect(failed.emailLinkSentUntil).toBeNull();
+  });
+});
+
+describe("the allowances grow with LOGIN_ATTEMPTS outside production, like the join allowance", () => {
+  it("a test server with LOGIN_ATTEMPTS=100 allows 20 times what production does", () => {
+    const wide = mailLimiters(t.server.config);
+    const narrow = mailLimiters({ ...t.server.config, loginAttempts: 5 });
+    const count = (limiter: { attempt(k: string): void }) => {
+      let n = 0;
+      try {
+        for (;;) {
+          limiter.attempt("k");
+          n++;
+        }
+      } catch {
+        return n;
+      }
+    };
+    expect(count(narrow.mailLimit)).toBe(6);
+    expect(count(narrow.resendLimit)).toBe(5);
+    expect(count(narrow.inviteMailLimit)).toBe(20);
+    expect(count(narrow.forgotIpLimit)).toBe(10);
+    expect(count(narrow.forgotAddressLimit)).toBe(3);
+    expect(count(wide.mailLimit)).toBe(120);
+    expect(count(wide.resendLimit)).toBe(100);
+    expect(count(wide.inviteMailLimit)).toBe(400);
+    expect(count(wide.forgotIpLimit)).toBe(200);
+    expect(count(wide.forgotAddressLimit)).toBe(60);
   });
 });

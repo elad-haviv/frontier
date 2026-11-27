@@ -17,6 +17,17 @@ export function codeIn(message: Sent, kind: "join" | "confirm" | "reset"): strin
   return m![1]!;
 }
 
+/** The proof in an emailed invitation link: `/join/<code>?m=<proof>`. */
+export function proofIn(message: Sent): string {
+  const m = /\/join\/[A-Za-z0-9_-]{20,}\?m=([A-Za-z0-9_-]{20,})/.exec(message.text);
+  expect(m, `no proof in: ${message.text}`).not.toBeNull();
+  return m![1]!;
+}
+
+/** The invitation emails among some messages. */
+export const invitations = (messages: Sent[]): Sent[] =>
+  messages.filter((m) => / invited you to /.test(m.subject));
+
 let ip = 0;
 /** A request from nobody logged in, from a network address of its own unless one is given. */
 export function anon(

@@ -114,4 +114,29 @@ describe("with no relay configured", () => {
     expect(res.statusCode).toBe(200);
     expect(res.json().email).toBe(next);
   });
+
+  it("the profile form sets the first address of an account that has none, and a change of case keeps the confirmation", async () => {
+    const who = await addPerson(t, "Late Adder", fresh());
+    await t.server.people.update(who.id, (p) => ({ ...p, email: "" }));
+    const first = fresh();
+    expect((await who.put("/api/me", { name: "Late Adder", email: first })).json().email).toBe(
+      first,
+    );
+    // Confirmed some other way (Google, say); a change of case is the same address.
+    await t.server.people.update(who.id, (p) => ({
+      ...p,
+      emailConfirmedAt: new Date().toISOString(),
+      emailConfirmedBy: "google",
+    }));
+    const res = await who.put("/api/me", { name: "Late Adder", email: first.toUpperCase() });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().email).toBe(first.toUpperCase());
+    expect(await t.server.people.get(who.id)).toMatchObject({
+      email: first.toUpperCase(),
+      emailConfirmedBy: "google",
+    });
+    // A different address is a new one, unconfirmed.
+    await who.put("/api/me", { name: "Late Adder", email: fresh() });
+    expect((await t.server.people.get(who.id))!.emailConfirmedAt).toBeNull();
+  });
 });

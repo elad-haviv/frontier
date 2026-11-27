@@ -4,7 +4,7 @@
  * account that could be shut out, and the server's first account are never touched.
  */
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import type { CreateInviteResponse, MeResponse } from "@frontier/schema";
+import type { CreateInviteResponse, MeResponse, Person } from "@frontier/schema";
 import {
   addMember,
   addPerson,
@@ -14,6 +14,7 @@ import {
   type Client,
   type TestApp,
 } from "./helpers/app.js";
+import { emailInfo, isUnconfirmed } from "../src/mail/accounts.js";
 import { clearMail, outbox } from "./helpers/mail.js";
 import { CLIENT_ID, CLIENT_SECRET, FakeProvider, type Grant } from "./helpers/oidc.js";
 
@@ -87,6 +88,12 @@ async function trip(app: TestApp, query: string, grant: Grant, cookie = "") {
   };
 }
 
+/**
+ * What an account has once a confirm link was sent to its address and ran out unopened: the only
+ * state in which a Google-verified person may take the address (stage 28 review, D1).
+ */
+const lapsed = () => ({ emailLinkSentUntil: new Date(Date.now() - 3_600_000).toISOString() });
+
 const typed = async (
   app: TestApp,
   email: string,
@@ -104,12 +111,13 @@ const typed = async (
   });
 
 describe("a Google-verified person and an address someone else only typed", () => {
-  it("wins it: a new, confirmed account; the other is asked to add another address", async () => {
+  it("wins it, once the other account's link lapsed unopened: a new, confirmed account; the other is asked to add another address", async () => {
     const email = "shared.one@example.org";
     const { hashPassword } = await import("../src/auth/password.js");
     const old = await typed(t, email, {
       passkeys: [key()],
       passwordHash: await hashPassword(PASSWORD),
+      ...lapsed(),
     });
     // The old account is logged in somewhere; that session carries on.
     const login = await t.app.inject({
@@ -170,14 +178,14 @@ describe("a Google-verified person and an address someone else only typed", () =
 
   it("kills the displaced account's links for that address (confirm, change, reset)", async () => {
     const email = "shared.two@example.org";
-    const old = await typed(t, email, { passkeys: [key()] });
+    const old = await typed(t, email, { passkeys: [key()], ...lapsed() });
     await t.server.people.update(old.id, (p) => ({
       ...p,
       emailCode: {
         codeHash: "a".repeat(64),
         address: email,
-        createdAt: new Date().toISOString(),
-        expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
+        createdAt: new Date(Date.now() - 25 * 3_600_000).toISOString(),
+        expiresAt: new Date(Date.now() - 3_600_000).toISOString(),
         mail: "sent",
       },
       emailPending: { address: "other@example.org", requestedAt: new Date().toISOString() },
@@ -190,7 +198,83 @@ describe("a Google-verified person and an address someone else only typed", () =
     const link = await invite(t, owner);
     await trip(t, `invite=${link.code}`, { sub: "g-shared-2", email, name: "G Two" });
     const left = (await t.server.people.get(old.id))!;
-    expect(left).toMatchObject({ email: "", emailCode: null, emailPending: null, resetCode: null });
+    expect(left).toMatchObject({
+      email: "",
+      emailCode: null,
+      emailPending: null,
+      resetCode: null,
+      emailLinkSentUntil: null,
+    });
+  });
+
+  it("is account_exists for a passkey account from before stage 28: no confirm link was ever sent to it", async () => {
+    const email = "pre28.one@example.org";
+    const old = await typed(t, email, { passkeys: [key()] });
+    const link = await invite(t, owner);
+    const { to } = await trip(t, `invite=${link.code}`, { sub: "g-pre28", email, name: "G Pre" });
+    expect(to).toBe(`/join/${link.code}?problem=account_exists`);
+    const kept = (await t.server.people.get(old.id))!;
+    expect(kept.email).toBe(email);
+    expect(kept.emailDisplaced).toBe(false);
+    expect((await t.server.people.all()).some((p) => p.identities[0]?.subject === "g-pre28")).toBe(
+      false,
+    );
+  });
+
+  it("is account_exists while the confirm link that was sent is still live", async () => {
+    const email = "live.link@example.org";
+    const soon = new Date(Date.now() + 3_600_000).toISOString();
+    const old = await typed(t, email, {
+      passkeys: [key()],
+      emailLinkSentUntil: soon,
+      emailCode: {
+        codeHash: "c".repeat(64),
+        address: email,
+        createdAt: new Date().toISOString(),
+        expiresAt: soon,
+        mail: "sent",
+      },
+    });
+    const link = await invite(t, owner);
+    const { to } = await trip(t, `invite=${link.code}`, { sub: "g-live", email, name: "G Live" });
+    expect(to).toBe(`/join/${link.code}?problem=account_exists`);
+    expect((await t.server.people.get(old.id))!.email).toBe(email);
+  });
+
+  it("is account_exists when the earlier link lapsed but a newer one is out, and when no mail ever went", async () => {
+    const soon = new Date(Date.now() + 3_600_000).toISOString();
+    const newer = "newer.link@example.org";
+    const a = await typed(t, newer, {
+      passkeys: [key()],
+      ...lapsed(),
+      emailCode: {
+        codeHash: "d".repeat(64),
+        address: newer,
+        createdAt: new Date().toISOString(),
+        expiresAt: soon,
+        mail: "queued",
+      },
+    });
+    const failed = "never.sent@example.org";
+    const b = await typed(t, failed, {
+      passkeys: [key()],
+      emailCode: {
+        codeHash: "e".repeat(64),
+        address: failed,
+        createdAt: new Date(Date.now() - 25 * 3_600_000).toISOString(),
+        expiresAt: new Date(Date.now() - 3_600_000).toISOString(),
+        mail: "failed",
+      },
+    });
+    for (const [who, email, sub] of [
+      [a, newer, "g-newer"],
+      [b, failed, "g-failed"],
+    ] as const) {
+      const link = await invite(t, owner);
+      const { to } = await trip(t, `invite=${link.code}`, { sub, email, name: "G X" });
+      expect(to).toBe(`/join/${link.code}?problem=account_exists`);
+      expect((await t.server.people.get(who.id))!.email).toBe(email);
+    }
   });
 
   it("is still account_exists for a CONFIRMED address, and nothing is changed", async () => {
@@ -296,6 +380,7 @@ describe("a Google-verified person and an address someone else only typed", () =
         email,
         passwordHash: await hashPassword(PASSWORD),
         passkeys: [key()],
+        ...lapsed(),
       });
       const link = (await o.post(`/api/p/${sl.slug}/invites`, { role: "writer" })).json();
       await trip(only, `invite=${link.code}`, { sub: "g-legacy", email, name: "G Legacy" });
@@ -327,7 +412,7 @@ describe("a Google-verified person and an address someone else only typed", () =
 
   it("is all or nothing: when joining fails, the other account has its address back", async () => {
     const email = "rollback@example.org";
-    const old = await typed(t, email, { passkeys: [key()] });
+    const old = await typed(t, email, { passkeys: [key()], ...lapsed() });
     const link = await invite(t, owner);
     const spy = vi
       .spyOn(t.server.projects, "addMember")
@@ -355,12 +440,43 @@ describe("a Google-verified person and an address someone else only typed", () =
     );
   });
 
+  it("undoing a failed join gives back only the address, onto the account as it is by then", async () => {
+    const email = "undo.only@example.org";
+    const old = await typed(t, email, { passkeys: [key()], ...lapsed() });
+    let before: Person | undefined;
+    const made = await t.server.people.create(
+      { name: "New Google", email, identities: [], emailConfirmedAt: new Date().toISOString() },
+      { displaceUnconfirmed: true, onDisplaced: (p) => (before = p) },
+    );
+    expect((await t.server.people.get(old.id))!.emailDisplaced).toBe(true);
+    // While the join was going on the displaced account changed: a new passkey, a new name, and
+    // its other sessions were ended.
+    await t.server.people.update(old.id, (p) => ({
+      ...p,
+      name: "Renamed Meanwhile",
+      passkeys: [...p.passkeys, key()],
+      sessionEpoch: p.sessionEpoch + 1,
+    }));
+    await t.server.people.remove(made.id, before);
+    const back = (await t.server.people.get(old.id))!;
+    expect(back).toMatchObject({
+      email,
+      emailDisplaced: false,
+      name: "Renamed Meanwhile",
+      sessionEpoch: 1,
+      emailLinkSentUntil: before!.emailLinkSentUntil,
+    });
+    expect(back.passkeys).toHaveLength(2);
+    expect(await t.server.people.get(made.id)).toBeNull();
+  });
+
   it("the displaced account adds another address like anyone with none, and is no longer displaced", async () => {
     const email = "shared.three@example.org";
     const { hashPassword } = await import("../src/auth/password.js");
     const old = await typed(t, email, {
       passkeys: [key()],
       passwordHash: await hashPassword(PASSWORD),
+      ...lapsed(),
     });
     const cookie = cookieOf(
       await t.app.inject({
@@ -372,14 +488,25 @@ describe("a Google-verified person and an address someone else only typed", () =
     const link = await invite(t, owner);
     await trip(t, `invite=${link.code}`, { sub: "g-shared-3", email, name: "G Three" });
     await clearMail(t);
-    const res = await t.app.inject({
+    // The profile form cannot set an address with mail on; Change address can, with the password.
+    const put = await t.app.inject({
       method: "PUT",
       url: "/api/me",
       headers: { cookie },
       payload: { name: "Typed Address", email: "replacement@example.org" },
     });
+    expect(put.json().error.code).toBe("use_change_address");
+    const res = await t.app.inject({
+      method: "POST",
+      url: "/api/me/email",
+      headers: { cookie },
+      payload: { email: "replacement@example.org", password: PASSWORD },
+    });
     expect(res.statusCode).toBe(200);
-    expect(res.json().emailInfo).toMatchObject({ needsAddress: false, status: "unconfirmed" });
+    expect(res.json()).toMatchObject({ applied: true, mail: "sent" });
+    expect(
+      (await t.app.inject({ method: "GET", url: "/api/me", headers: { cookie } })).json().emailInfo,
+    ).toMatchObject({ needsAddress: false, status: "unconfirmed" });
     expect((await t.server.people.get(old.id))!.emailDisplaced).toBe(false);
     expect((await outbox(t)).map((m) => m.to)).toEqual(["replacement@example.org"]);
   });
@@ -422,6 +549,43 @@ describe("Google verifies an address", () => {
       cookieOf(login),
     );
     expect((await t.server.people.byEmail(email))!.emailConfirmedAt).toBeNull();
+  });
+});
+
+describe("Google accounts from before stage 28", () => {
+  const google = (email: string, sub: string) => ({
+    provider: "google",
+    subject: sub,
+    email,
+    addedAt: "2026-10-01T10:00:00.000Z",
+  });
+
+  it("an address that is the Google identity's own reads as confirmed by Google, and the next Google login writes it", async () => {
+    const email = "old.google@example.org";
+    const p = await typed(t, email, { identities: [google(email.toUpperCase(), "g-old-1")] });
+    expect(p.emailConfirmedAt).toBeNull();
+    expect(isUnconfirmed(t.server, p)).toBe(false);
+    expect(emailInfo(t.server, p)).toMatchObject({
+      status: "confirmed",
+      confirmedBy: "google",
+      confirmedAt: "2026-10-01T10:00:00.000Z",
+    });
+    const { to } = await trip(t, "", { sub: "g-old-1", email, name: "Old Google" });
+    expect(to).toBe("/");
+    const after = (await t.server.people.get(p.id))!;
+    expect(after.emailConfirmedBy).toBe("google");
+    expect(after.emailConfirmedAt).not.toBeNull();
+  });
+
+  it("a Google identity with another address does not confirm the account's", async () => {
+    const email = "old.other@example.org";
+    const p = await typed(t, email, {
+      identities: [google("someone.else@example.org", "g-old-2")],
+    });
+    expect(isUnconfirmed(t.server, p)).toBe(true);
+    expect(emailInfo(t.server, p)).toMatchObject({ status: "unconfirmed", confirmedBy: null });
+    await trip(t, "", { sub: "g-old-2", email: "someone.else@example.org", name: "Old Other" });
+    expect((await t.server.people.get(p.id))!.emailConfirmedAt).toBeNull();
   });
 });
 

@@ -7,10 +7,13 @@ import {
   MailError,
   MemoryTransport,
   oneLine,
+  recipientKey,
   smtpTransport,
 } from "../src/mail/mailer.js";
+import { closeOnSignals } from "../src/shutdown.js";
 import {
   addressChangedMail,
+  askName,
   confirmMail,
   escapeHtml,
   inviteMail,
@@ -19,7 +22,7 @@ import {
   resetMail,
 } from "../src/mail/templates.js";
 import { redactAddress } from "../src/app.js";
-import { testEnv } from "./helpers/app.js";
+import { EMAIL, makeTestApp, testEnv } from "./helpers/app.js";
 import { makeTestRepo } from "./helpers/repo.js";
 import { FakeRelay } from "./helpers/smtp.js";
 
@@ -73,6 +76,35 @@ describe("configuration", () => {
     });
   });
 
+  it("with a login, defaults to required (certificate checked) and refuses the weaker settings", () => {
+    const login = {
+      SMTP_HOST: "smtp.example.com",
+      SMTP_USER: "u",
+      SMTP_PASSWORD: "p",
+      MAIL_FROM: "noreply@example.com",
+    };
+    expect(load(login)).toMatchObject({ security: "required", port: 587, user: "u" });
+    expect(load({ ...login, SMTP_SECURE: "required" })).toMatchObject({ security: "required" });
+    expect(load({ ...login, SMTP_SECURE: "tls" })).toMatchObject({ security: "tls" });
+    for (const weak of ["starttls", "none", "STARTTLS"]) {
+      expect(() => load({ ...login, SMTP_SECURE: weak })).toThrow(
+        /SMTP_USER is set, so SMTP_SECURE must be required or tls/,
+      );
+    }
+    // Opportunistic stays the default only without a login, and none stays possible there.
+    expect(load({ SMTP_HOST: "r", MAIL_FROM: "a@b.co" })).toMatchObject({ security: "starttls" });
+    expect(load({ SMTP_HOST: "r", MAIL_FROM: "a@b.co", SMTP_SECURE: "none" })).toMatchObject({
+      security: "none",
+    });
+  });
+
+  it("implicit TLS defaults to port 465, and a port that is given wins", () => {
+    const ok = { SMTP_HOST: "r", MAIL_FROM: "a@b.co", SMTP_SECURE: "tls" };
+    expect(load(ok)).toMatchObject({ security: "tls", port: 465 });
+    expect(load({ ...ok, SMTP_PORT: "2465" })).toMatchObject({ port: 2465 });
+    expect(load({ ...ok, SMTP_SECURE: "required" })).toMatchObject({ port: 587 });
+  });
+
   it("says what is wrong with each setting", () => {
     const ok = { SMTP_HOST: "r", MAIL_FROM: "a@b.co" };
     expect(() => load({ ...ok, MAIL_FROM: "not an address" })).toThrow(/MAIL_FROM must look like/);
@@ -118,6 +150,7 @@ describe("configuration", () => {
 describe("addresses and subjects", () => {
   it("lets one plain address through and nothing that could add a recipient or a header", () => {
     expect(mailable("a.b+c@example.org")).toBe(true);
+    expect(mailable("o'brien@example.com")).toBe(true);
     for (const bad of [
       "a@b",
       "a b@c.co",
@@ -126,6 +159,9 @@ describe("addresses and subjects", () => {
       "<a@b.co>",
       '"a"@b.co',
       "a@b@c.co",
+      "o'brien@exa'mple.com",
+      "a'\r\nBcc: x@y.zz",
+      "'a@b.co,'c@d.co",
       "",
       `${"a".repeat(250)}@b.co`,
     ]) {
@@ -142,6 +178,14 @@ describe("addresses and subjects", () => {
     expect(escapeHtml(`<a href="x" onclick='y'>&</a>`)).toBe(
       "&lt;a href=&quot;x&quot; onclick=&#39;y&#39;&gt;&amp;&lt;/a&gt;",
     );
+  });
+
+  it("counts a mailbox once, in any case and with any +tag", () => {
+    expect(recipientKey("Ann+news@Example.org")).toBe("ann@example.org");
+    expect(recipientKey("ann+a+b@example.org")).toBe("ann@example.org");
+    expect(recipientKey("ann@example.org")).toBe("ann@example.org");
+    expect(recipientKey("+only@example.org")).toBe("+only@example.org");
+    expect(recipientKey("o'brien+x@example.org")).toBe("o'brien@example.org");
   });
 
   it("masks an address to its first letter and its domain", () => {
@@ -195,7 +239,28 @@ describe("the five emails", () => {
     expect(m.text).toContain("Elad Haviv invited you to write in Avalymia, a project on Frontier.");
     expect(m.text).toContain("stops working on 4 December");
     expect(m.text).toContain("Anyone who opens it can join with it");
-    expect(m.text).toContain("ask Elad Haviv directly");
+    expect(m.text).toContain("ask Elad directly");
+  });
+
+  it("the invite says to ask the inviter by first name when there is one to take, else by the whole name", () => {
+    expect(askName("Elad Haviv")).toBe("Elad");
+    expect(askName("Mary Ann van der Berg")).toBe("Mary");
+    expect(askName("Elad")).toBe("Elad");
+    expect(askName("J. Smith")).toBe("J. Smith");
+    expect(askName("J Smith")).toBe("J Smith");
+    expect(askName("  Someone ")).toBe("Someone");
+    expect(askName("elad@example.com")).toBe("elad@example.com");
+    const text = (inviter: string) =>
+      inviteMail({
+        from,
+        inviter,
+        project: "P",
+        role: "reader",
+        url: "https://frontier.example/join/abc?m=def",
+        expiresAt: "2026-12-04T10:00:00.000Z",
+      }).text;
+    expect(text("Elad Haviv")).toContain("ask Elad directly");
+    expect(text("J. Smith")).toContain("ask J. Smith directly");
   });
 
   it("the invite words each role, and escapes the names it was given", () => {
@@ -465,5 +530,78 @@ describe("the log", () => {
     );
     expect(redactAddress("/%61pi/reset/abcDEF123_-xyz")).toBe("/%61pi/reset/:code");
     expect(redactAddress("/api/me/email")).toBe("/api/me/email");
+  });
+
+  it("writes no proof from an emailed invitation link, on the page or the API", () => {
+    expect(redactAddress("/join/abcDEF123_-xyz?m=PROOFproof_-123")).toBe("/join/:code?m=:redacted");
+    expect(redactAddress("/api/join/abcDEF123_-xyz?m=PROOFproof_-123&x=1")).toBe(
+      "/api/join/:code?m=:redacted&x=1",
+    );
+    expect(redactAddress("/api/join/abcDEF123_-xyz/accept?x=1&m=PROOFproof_-123")).toBe(
+      "/api/join/:code/accept?x=1&m=:redacted",
+    );
+  });
+});
+
+describe("stopping the server", () => {
+  const harness = () => {
+    const handlers = new Map<string, () => void>();
+    const exits: number[] = [];
+    const closed = { count: 0, fail: false };
+    const errors: string[] = [];
+    const proc = {
+      once: (event: string, fn: () => void) => {
+        handlers.set(event, fn);
+      },
+      exit: (code: number) => {
+        exits.push(code);
+      },
+    };
+    const app = {
+      close: async () => {
+        closed.count++;
+        if (closed.fail) throw new Error("cannot close");
+      },
+      log: { error: (_o: object, message: string) => errors.push(message) },
+    };
+    closeOnSignals(app, proc);
+    return { handlers, exits, closed, errors };
+  };
+  const settle = () => new Promise((r) => setTimeout(r, 5));
+
+  it("closes the app on SIGTERM and on SIGINT, once, and then exits", async () => {
+    for (const signal of ["SIGTERM", "SIGINT"]) {
+      const h = harness();
+      expect([...h.handlers.keys()].sort()).toEqual(["SIGINT", "SIGTERM"]);
+      h.handlers.get(signal)!();
+      h.handlers.get(signal)!();
+      await settle();
+      expect(h.closed.count).toBe(1);
+      expect(h.exits).toEqual([0]);
+    }
+  });
+
+  it("still ends the process, with a failure, when the close fails", async () => {
+    const h = harness();
+    h.closed.fail = true;
+    h.handlers.get("SIGTERM")!();
+    await settle();
+    expect(h.exits).toEqual([1]);
+    expect(h.errors).toEqual(["The server did not close cleanly"]);
+  });
+
+  it("closing the app waits for mail still going out", async () => {
+    const app = await makeTestApp({ LOGIN_ATTEMPTS: "100", MAIL_TEST_TRANSPORT: "memory" });
+    const outbox = app.server.mail.outbox!;
+    outbox.delayMs = 200;
+    const res = await app.app.inject({
+      method: "POST",
+      url: "/api/forgot-password",
+      payload: { email: EMAIL },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(outbox.messages).toHaveLength(0);
+    await app.close();
+    expect(outbox.messages.map((m) => m.subject)).toEqual(["Reset your Frontier password"]);
   });
 });
