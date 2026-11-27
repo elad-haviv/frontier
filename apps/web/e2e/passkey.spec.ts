@@ -60,10 +60,16 @@ test("adds a passkey, logs in with it, and switches the password off and on agai
 
   await page.getByLabel(/Switch the password off/).click();
   await expect(page.locator(".banner-ok")).toContainText("The password no longer logs in");
-  expect(await page.evaluate(() => fetch("/api/session").then((r) => r.json()))).toMatchObject({
-    loggedIn: true,
-    password: false,
+  // This account's own state, not the server's: other tests make accounts with passwords, which
+  // stay on the server, so what `/api/session` offers to everyone is not this test's to assert.
+  expect(await page.evaluate(() => fetch("/api/me").then((r) => r.json()))).toMatchObject({
+    passwordSet: true,
+    passwordOff: true,
   });
+  const refused = await page.request.post("/api/login", {
+    data: { email: EMAIL, password: PASSWORD },
+  });
+  expect(refused.ok()).toBe(false);
 
   // Back to how it was, so the other tests can log in.
   await page.getByLabel(/Switch the password off/).click();

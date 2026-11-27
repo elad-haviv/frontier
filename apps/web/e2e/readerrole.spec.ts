@@ -1,13 +1,22 @@
 import { expect, type Browser, type BrowserContext, type Page, test } from "./test.ts";
-import { api, entry, noSidewaysScroll, openLibrary, openSideBar, proj } from "./helpers.ts";
+import {
+  api,
+  entry,
+  noSidewaysScroll,
+  openLibrary,
+  openSideBar,
+  proj,
+  tidyPeople,
+} from "./helpers.ts";
 
 /**
- * Stage 27c: a reader's shell. (Makes accounts with a password: runs after `passkey.spec.ts`.) A reader reads everything saved, asks the lore and talks with
+ * Stage 27c: a reader's shell. A reader reads everything saved, asks the lore and talks with
  * characters, and sees no control that changes anything; the calls only a writer may make are not
  * made; an address that edits says what the role allows. A writer sees everything but the owner's
  * settings.
  */
 test.describe.configure({ mode: "serial" });
+test.afterEach(async ({ page }) => tidyPeople(page));
 
 const WORDS = "a long enough password";
 const mail = (who: string) => `${who}.${Date.now()}.${Math.floor(Math.random() * 1e6)}@example.com`;

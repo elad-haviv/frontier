@@ -470,3 +470,27 @@ export async function setUpAi(
   expect(res.ok(), await res.text()).toBe(true);
   if (options.key !== false) await giveDeviceKeys(page);
 }
+
+/**
+ * Puts the sample project back as it was for the next test: the owner alone, and no invite link
+ * waiting. It uses the server's own calls (there is no test-only endpoint), and never fails a
+ * test: a person or a link it cannot remove is left for the next run's fresh data folder.
+ * People made by a test stay accounts on the server, so a test that needs "the only account"
+ * must not assume it.
+ */
+export async function tidyPeople(page: Page): Promise<void> {
+  try {
+    const people = await page.request.get(api("/members"));
+    if (people.ok()) {
+      const list = ((await people.json()) as { members: { id: string; you: boolean }[] }).members;
+      for (const m of list) if (!m.you) await page.request.delete(api(`/members/${m.id}`));
+    }
+    const links = await page.request.get(api("/invites"));
+    if (links.ok()) {
+      const list = ((await links.json()) as { invites: { id: string }[] }).invites;
+      for (const i of list) await page.request.delete(api(`/invites/${i.id}`));
+    }
+  } catch {
+    /* a closed page or a server that stopped: nothing to put back */
+  }
+}

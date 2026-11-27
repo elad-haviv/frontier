@@ -28,7 +28,9 @@ vi.mock("./Shell.tsx", () => ({
 const { resumeRefused, forgetProjectCopy, held } = vi.hoisted(() => ({
   held: { records: [] as unknown[] },
   resumeRefused: vi.fn(async () => undefined),
-  forgetProjectCopy: vi.fn(async (_ref: { id: string; slug: string }) => undefined),
+  forgetProjectCopy: vi.fn(async () => undefined) as unknown as ReturnType<
+    typeof vi.fn<(ref: { id: string; slug: string }) => Promise<void>>
+  >,
 }));
 vi.mock("../sync/queue.ts", async (original) => {
   const real = await original<typeof import("../sync/queue.ts")>();

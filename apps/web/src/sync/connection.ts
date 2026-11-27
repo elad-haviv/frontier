@@ -126,9 +126,15 @@ export class Connection {
     // Outside a project there is nothing to listen to; the first project that opens starts it.
     if (!this.d.EventSource || !this.started || slug === null) return;
     const source = new this.d.EventSource(streamOf(slug));
+    if (this.openedFor !== slug) this.streamOpenedBefore = false;
     this.openedFor = slug;
     this.source = source;
     source.onopen = () => {
+      // A stream that opens again after one that ended: a role may have changed, or the person
+      // been taken out, while none was open. The server cuts a stream that is open at the time,
+      // and one that was not open is never cut, so nothing else would say so.
+      if (this.streamOpenedBefore) this.accessMayHaveChanged();
+      this.streamOpenedBefore = true;
       this.delay = this.firstDelay();
       this.set("online");
     };
@@ -155,6 +161,8 @@ export class Connection {
 
   /** The project the stream was opened for. */
   private openedFor: string | null = null;
+  /** Whether a stream of this project has opened before: a later one is a reconnection. */
+  private streamOpenedBefore = false;
 
   /**
    * The app opened another project (or none): the status of the last is forgotten and the stream

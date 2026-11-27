@@ -1,5 +1,14 @@
 import { expect, type Browser, type BrowserContext, type Page, test } from "./test.ts";
-import { api, EMAIL, NAME, noSidewaysScroll, openSideBar, PASSWORD, proj } from "./helpers.ts";
+import {
+  api,
+  EMAIL,
+  NAME,
+  noSidewaysScroll,
+  openSideBar,
+  PASSWORD,
+  proj,
+  tidyPeople,
+} from "./helpers.ts";
 
 /**
  * Stage 27c: people in a project. The owner makes invite links; people join by them, are listed in
@@ -11,6 +20,7 @@ import { api, EMAIL, NAME, noSidewaysScroll, openSideBar, PASSWORD, proj } from 
  * `passkey.spec.ts`, which checks that it stops offering it once the one account has switched it off.
  */
 test.describe.configure({ mode: "serial" });
+test.afterEach(async ({ page }) => tidyPeople(page));
 
 const WORDS = "a long enough password";
 /** Emails are made new each run: a person made by one test stays an account on the server. */
@@ -45,11 +55,12 @@ async function joined(
 ) {
   const made = await invite(owner, role);
   const s = await stranger(browser);
+  const email = mail("person");
   const res = await s.context.request.post(`/api/join/${made.code}`, {
-    data: { name, email: mail("person"), password: WORDS },
+    data: { name, email, password: WORDS },
   });
   expect(res.status(), await res.text()).toBe(200);
-  return { ...s, made };
+  return { ...s, made, email };
 }
 
 /** The member rows of the project, as the owner's call lists them. */
@@ -253,6 +264,41 @@ test("an email that has an account is sent to log in, and the link goes into tha
   await s.context.close();
 });
 
+test("an existing account that is not in the project logs in on the join page and accepts the link", async ({
+  page,
+  browser,
+}) => {
+  // An account made by an earlier link, whose person was then taken out: an account in no project.
+  const earlier = await joined(browser, page, "reader", "Esme Exists");
+  await earlier.context.close();
+  await takeOut(page, "Esme Exists");
+
+  const made = await invite(page, "writer");
+  const s = await stranger(browser);
+  await s.page.goto(made.path);
+  await s.page.getByLabel("Your name").fill("Esme Exists");
+  await s.page.getByLabel("Email").fill(earlier.email);
+  await s.page.getByLabel("Password").fill(WORDS);
+  await s.page.getByRole("button", { name: "Join Sample" }).click();
+  // The page says why it changed, keeps the email, and has the login's first field ready.
+  await expect(s.page.getByText("You may already have an account: log in to join.")).toBeVisible();
+  await expect(s.page.getByLabel("Email")).toHaveValue(earlier.email);
+  await expect(s.page.getByLabel("Email")).toBeFocused();
+  await s.page.getByLabel("Password").fill(WORDS);
+  await s.page.getByRole("button", { name: "Log in and join" }).click();
+  // A session was started here: the project is loaded afresh, and says they joined.
+  await expect(s.page).toHaveURL(/\/p\/sample$/);
+  await expect(s.page.getByText("You joined Sample as a writer.")).toBeVisible();
+  await openSideBar(s.page);
+  await expect(s.page.locator(".left-person")).toContainText("Writer here");
+  const list = await members(page);
+  expect(list.map((m) => m.name)).toContain("Esme Exists");
+  // The link is used up.
+  expect((await page.request.get(`/api/join/${made.code}`)).status()).toBe(410);
+  await s.context.close();
+  await takeOut(page, "Esme Exists");
+});
+
 test("a person who is logged in joins as themselves, and one already in the project is taken to it", async ({
   page,
   browser,
@@ -364,4 +410,67 @@ test("a save made while a writer, and refused once they are a reader, is offered
 
   await writer.context.close();
   await takeOut(page, "Wanda Writer");
+});
+
+test("a save refused for a lowered role says so where the editor was, and is sent once the role is back", async ({
+  page,
+  browser,
+}) => {
+  const writer = await joined(browser, page, "writer", "Wren Rewriter");
+  const w = writer.page;
+  const path = "01 Places/Harbor/Old Quay.md";
+  const typed = " A line typed as the role was lowered.";
+  await w.goto(proj(`/edit/${path.split("/").map(encodeURIComponent).join("/")}`));
+  await expect(w.locator(".cm-content")).toBeVisible();
+  await w.locator(".cm-content").click();
+  await writer.context.setOffline(true);
+  await w.keyboard.press("Control+End");
+  await w.keyboard.type(typed);
+  await expect(w.locator(".save-offline")).toBeVisible();
+
+  const mine = (await members(page)).find((m) => m.name === "Wren Rewriter")!;
+  expect(
+    (await page.request.put(api(`/members/${mine.id}`), { data: { role: "reader" } })).ok(),
+  ).toBe(true);
+  await writer.context.setOffline(false);
+
+  // The editor is still the page they are on: it gives way to the words, which say the text was
+  // not saved and where it is.
+  await expect(w.getByText("Your last changes to Old Quay were not saved")).toBeVisible({
+    timeout: 30_000,
+  });
+  await w.getByTestId("main").getByRole("button", { name: "Not sent yet" }).click();
+  const list = w.locator(".unsent");
+  await expect(list).toBeVisible();
+  await expect(list).toContainText("Old Quay");
+  await expect(list.getByRole("button", { name: "Retry" })).toHaveCount(0);
+  // Copying is refused here (no clipboard permission), so the text is shown to copy by hand.
+  await list.getByRole("button", { name: "Copy the text" }).click();
+  await expect(list.locator("textarea[readonly]")).toHaveValue(
+    new RegExp("typed as the role was lowered"),
+  );
+  const text = await page.request.get(api(`/entries?path=${encodeURIComponent(path)}`));
+  expect(JSON.stringify(await text.json())).not.toContain("typed as the role was lowered");
+
+  // An owner makes them a writer again: what was refused is sent, with nobody pressing anything.
+  expect(
+    (await page.request.put(api(`/members/${mine.id}`), { data: { role: "writer" } })).ok(),
+  ).toBe(true);
+  await expect
+    .poll(
+      async () =>
+        JSON.stringify(
+          await (await page.request.get(api(`/entries?path=${encodeURIComponent(path)}`))).json(),
+        ),
+      { timeout: 30_000 },
+    )
+    .toContain("typed as the role was lowered");
+
+  // The draft it made goes, so the next run starts from the saved entry.
+  const after = await page.request.get(api(`/entries?path=${encodeURIComponent(path)}`));
+  const draft = ((await after.json()) as { draft: { id: string } | null }).draft;
+  if (draft) expect((await page.request.delete(api(`/drafts/${draft.id}`))).ok()).toBe(true);
+
+  await writer.context.close();
+  await takeOut(page, "Wren Rewriter");
 });

@@ -112,6 +112,22 @@ describe("the connection service", () => {
     c.stop();
   });
 
+  it("says access may have changed when a stream opens again after one that ended, but not for the first", async () => {
+    // A role changed while no stream was open: the server could not cut it, so nothing said so.
+    const { c } = make(vi.fn(() => answer(200, { unpublished: 0 })) as never);
+    const heard = vi.fn();
+    c.onAccessMayHaveChanged(heard);
+    c.start();
+    FakeSource.made[0]!.open();
+    expect(heard).not.toHaveBeenCalled();
+    FakeSource.made[0]!.fail(true);
+    await vi.waitFor(() => expect(FakeSource.made.length).toBeGreaterThan(1));
+    const before = heard.mock.calls.length;
+    FakeSource.made.at(-1)!.open();
+    expect(heard.mock.calls.length).toBe(before + 1);
+    c.stop();
+  });
+
   it("says offline when the server cannot be reached, and online at its next answer", async () => {
     let up = false;
     const fetch = vi.fn(() =>

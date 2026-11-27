@@ -183,7 +183,9 @@ export const subject = (key: QueueKey): string => key.slice(key.indexOf(":") + 1
 /** A record without the mark that the server refused it for want of a role, or its words. */
 function withoutRefusal(r: QueueRecord): QueueRecord {
   if (!r.refused) return r;
-  const { refused: _refused, error: _error, ...rest } = r;
+  const rest = { ...r };
+  delete rest.refused;
+  delete rest.error;
   return rest;
 }
 

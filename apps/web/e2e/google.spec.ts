@@ -1,5 +1,5 @@
 import { expect, type Browser, test } from "./test.ts";
-import { api, proj } from "./helpers.ts";
+import { api, proj, tidyPeople } from "./helpers.ts";
 
 /**
  * Stage 27c: the web half of Google sign-on. The e2e server has no Google, and no provider to
@@ -7,6 +7,8 @@ import { api, proj } from "./helpers.ts";
  * Google is offered, and the server's redirect after a trip that did not work is made by hand.
  * The server's side of the trip is covered by its own tests against a stand-in provider.
  */
+
+test.afterEach(async ({ page }) => tidyPeople(page));
 
 async function stranger(browser: Browser) {
   const context = await browser.newContext({ storageState: { cookies: [], origins: [] } });
@@ -150,9 +152,15 @@ test("Settings shows a linked Google account, refuses to unlink the last way in,
   await expect(page.getByRole("button", { name: "Link a Google account" })).toBeVisible();
   await page.goto("/settings/you/signing-in?problem=recent_login_needed");
   await expect(page).toHaveURL(/\/settings\/account$/);
-  await expect(page.getByRole("dialog", { name: "Log in again" })).toBeVisible();
   await expect(page.getByRole("alert")).toContainText("asks for a login from the last few minutes");
+  // An address that says so does not open the login by itself: the person asks for it.
+  await expect(page.getByRole("dialog", { name: "Log in again" })).toHaveCount(0);
+  await page.getByRole("button", { name: "Log in again and link Google" }).click();
+  await expect(page.getByRole("dialog", { name: "Log in again" })).toBeVisible();
   await page.getByRole("button", { name: "Not now" }).click();
+  // A reload does not say it again: the problem is off the address.
+  await page.reload();
+  await expect(page.getByRole("button", { name: "Log in again and link Google" })).toHaveCount(0);
   await page.goto("/settings/you/signing-in?problem=google_taken");
   await expect(page.getByRole("alert")).toContainText("belongs to another person");
 });
