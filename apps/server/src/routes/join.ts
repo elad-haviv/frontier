@@ -102,12 +102,12 @@ export function joinRoutes(app: FastifyInstance, s: Server): void {
     s.joinLimit.attempt(request.ip);
     const { invite } = await liveInvite(s, codeOf(request));
     const { name, email } = JoinPasskeyOptionsRequest.parse(request.body);
-    if (email && (await s.people.byEmail(email))) throw accountExists();
+    if (await s.people.byEmail(email)) throw accountExists();
     const options = await generateRegistrationOptions({
       rpName: "Frontier",
       rpID,
       userID: randomBytes(16),
-      userName: email || name,
+      userName: email,
       userDisplayName: name,
       attestationType: "none",
       authenticatorSelection: { residentKey: "preferred", userVerification: "required" },
@@ -117,7 +117,7 @@ export function joinRoutes(app: FastifyInstance, s: Server): void {
       until: Date.now() + FIVE_MINUTES,
       invite: invite.id,
       name,
-      email: email ?? "",
+      email,
     });
     return options;
   });

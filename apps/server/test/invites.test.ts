@@ -347,6 +347,7 @@ describe("joining as someone new", () => {
     const { code } = await invite("writer");
     const optionsRes = await anon("POST", `/api/join/${code}/passkey/options`, {
       name: "Pia Passkey",
+      email: fresh(),
     });
     expect(optionsRes.statusCode, optionsRes.body).toBe(200);
     const options = optionsRes.json();
@@ -366,7 +367,10 @@ describe("joining as someone new", () => {
     expect(crossed.statusCode).toBe(400);
 
     // The challenge is single use: it was spent by that attempt, so start again.
-    const second = await anon("POST", `/api/join/${code}/passkey/options`, { name: "Pia Passkey" });
+    const second = await anon("POST", `/api/join/${code}/passkey/options`, {
+      name: "Pia Passkey",
+      email: fresh(),
+    });
     const cookie2 = cookieOf(second);
     const registered = registerPasskey(second.json(), "http://localhost:3000");
     const done = await anon(
@@ -391,7 +395,10 @@ describe("joining as someone new", () => {
 
   it("a passkey join with a stale challenge or none is refused, and leaves the link alone", async () => {
     const { code } = await invite();
-    const options = await anon("POST", `/api/join/${code}/passkey/options`, { name: "Quin" });
+    const options = await anon("POST", `/api/join/${code}/passkey/options`, {
+      name: "Quin",
+      email: fresh(),
+    });
     const { response } = registerPasskey(options.json(), "http://localhost:3000");
     // No cookie: no challenge.
     expect((await anon("POST", `/api/join/${code}/passkey/verify`, { response })).statusCode).toBe(

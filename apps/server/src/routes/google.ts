@@ -4,7 +4,8 @@
  * Google only says who someone is. What that means for an account is decided here, in this order,
  * and never by matching an email:
  *
- *   1. The Google subject is linked to an account: log in (and, with an invitation, join).
+ *   1. The Google subject is linked to an account: log in. With an invitation they land on its
+ *      join page to accept (they are not joined by the sign-in itself).
  *   2. An invitation came with the flow and is still unused: make the account from Google's name
  *      and verified email, and join. The invitation is checked again here and used only on success.
  *   3. Someone logged in asked, from Settings, to link Google (and logged in recently): link it.
@@ -16,8 +17,8 @@
  * the app, with a `problem` the page can word; nothing sensitive goes in an address but the
  * invitation code the person already holds.
  */
-import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-import { INVITE_CODE_PATTERN, type Person } from "@frontier/schema";
+import type { FastifyInstance, FastifyReply } from "fastify";
+import { INVITE_CODE_PATTERN } from "@frontier/schema";
 import { z } from "zod";
 import { GoogleError, safeReturnTo, sameSecret } from "../auth/google.js";
 import { PUBLIC } from "../auth/openness.js";
@@ -29,7 +30,7 @@ import {
   startSession,
 } from "../auth/session.js";
 import { ApiError } from "../errors.js";
-import { joinAsExistingPerson, joinAsNewPerson, liveInvite } from "../members/join.js";
+import { joinAsNewPerson, liveInvite } from "../members/join.js";
 import type { Server } from "../server.js";
 import { googleOf } from "./auth.js";
 
@@ -201,7 +202,9 @@ export function googleRoutes(app: FastifyInstance, s: Server): void {
     // 1: an account that already has this Google identity.
     if (linked) {
       startSession(request, linked, "google");
-      if (pending.invite) return joinExisting(request, reply, linked, pending.invite);
+      // With an invitation they are logged in but not joined: the join page asks them to accept,
+      // as it does anyone else who has an account, so a link is never used without a click.
+      if (pending.invite) return go(reply, joinPage(pending.invite));
       return go(reply, landing);
     }
 
@@ -230,24 +233,4 @@ export function googleRoutes(app: FastifyInstance, s: Server): void {
     // 4: Google says who this is, and that is all it says.
     return page("google_no_account", "/login");
   });
-
-  /** A person who has Google linked and comes with an invitation: they join as that account. */
-  async function joinExisting(
-    _request: FastifyRequest,
-    reply: FastifyReply,
-    person: Person,
-    code: string,
-  ) {
-    try {
-      const joined = await joinAsExistingPerson(s, code, person);
-      return go(reply, `/p/${encodeURIComponent(joined.project.slug)}`);
-    } catch (err) {
-      if (err instanceof ApiError && err.code === "already_member" && err.extra.project) {
-        // Already in: the link stays unused.
-        return go(reply, `/p/${encodeURIComponent(err.extra.project)}`);
-      }
-      if (err instanceof ApiError) return go(reply, joinPage(code));
-      throw err;
-    }
-  }
 }

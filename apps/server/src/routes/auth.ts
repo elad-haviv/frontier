@@ -30,9 +30,12 @@ export const passwordWorks = (p: Person): boolean => p.passwordHash !== "" && !p
 /** The Google account linked to an account, if any. */
 export const googleOf = (p: Person) => p.identities.find((i) => i.provider === "google") ?? null;
 
-/** The ways an account has to log in: each passkey, the password when it works, and Google. */
-export const waysIn = (p: Person): number =>
-  p.passkeys.length + (passwordWorks(p) ? 1 : 0) + p.identities.length;
+/**
+ * The ways an account has to log in: each passkey, the password when it works, and Google, which
+ * counts only while the server offers it (a linked identity is no way in on a server without it).
+ */
+export const waysIn = (p: Person, googleOn: boolean): number =>
+  p.passkeys.length + (passwordWorks(p) ? 1 : 0) + (googleOn ? p.identities.length : 0);
 
 /**
  * The commit author's email as a suggestion for an account that has none. Not a stand-in address
@@ -129,7 +132,9 @@ export function authRoutes(app: FastifyInstance, s: Server): void {
       person: person && { id: person.id, name: person.name, email: person.email },
       // The project the person used last, as its address; null until they have used one (stage 27b).
       lastProject: person ? await lastProjectSlug(s, person) : null,
-      emailless: people.length === 1 && emailKey(people[0]!.email) === "",
+      // Exactly one account has no email: a blank email at login means that account. (Every new
+      // account is given one, so this is only an owner from before emails were asked for.)
+      emailless: people.filter((p) => emailKey(p.email) === "").length === 1,
       passkeys: people.some((p) => p.passkeys.length > 0),
       // Whether the server offers "Continue with Google"; the app hides the buttons when not.
       google: s.google !== null,
@@ -170,7 +175,12 @@ export function authRoutes(app: FastifyInstance, s: Server): void {
   app.delete("/api/me/google", async (request) => {
     const now = await s.people.update(personOf(request).id, (person) => {
       if (!googleOf(person)) throw new ApiError("not_found", "No Google account is linked.");
-      if (waysIn(person) <= 1) {
+      const rest = {
+        ...person,
+        identities: person.identities.filter((i) => i.provider !== "google"),
+      };
+      // Taking away a link that cannot be used here anyway loses nothing.
+      if (s.google !== null && waysIn(rest, true) < 1) {
         throw new ApiError(
           "not_allowed",
           "This is your only way to log in. Set a password or add a passkey first.",
@@ -178,7 +188,7 @@ export function authRoutes(app: FastifyInstance, s: Server): void {
       }
       return endOtherSessions({
         ...person,
-        identities: person.identities.filter((i) => i.provider !== "google"),
+        identities: rest.identities,
       });
     });
     followEpoch(request, now);

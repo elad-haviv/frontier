@@ -325,24 +325,44 @@ describe("joining with Google by an invitation", () => {
     expect(again.location).toBe(`/join/${code}`);
   });
 
-  it("with an existing Google identity, joins as that account and a member keeps the link unused", async () => {
+  it("with an existing Google identity, logs in and lands on the join page to accept, joining nobody", async () => {
     const person = (await linkedTo("sub-new-1"))!;
     const { code } = await invite("writer");
-    // Nia is already in: logged in, and the link is not used up.
+    // Nia is already in: logged in, sent to the join page, and the link is not used up.
     const done = await trip(`invite=${code}`, { sub: "sub-new-1" });
-    expect(where(done.res)).toBe(`/p/${slug}`);
-    expect((await t.app.inject({ method: "GET", url: `/api/join/${code}` })).statusCode).toBe(200);
-    // Someone with a linked identity who is not in joins with the link.
+    expect(where(done.res)).toBe(`/join/${code}`);
+    const info = await t.app.inject({
+      method: "GET",
+      url: `/api/join/${code}`,
+      headers: { cookie: done.cookie },
+    });
+    expect(info.statusCode).toBe(200);
+    expect(info.json().alreadyMember).toBe(true);
+    // Someone with a linked identity who is not in is logged in too, but not joined by the sign-in.
     const outsider = await t.server.people.create({
       name: "Ola Outside",
       email: "ola@example.com",
       identities: [{ provider: "google", subject: "sub-ola", addedAt: new Date().toISOString() }],
     });
     const joined = await trip(`invite=${code}`, { sub: "sub-ola" });
-    expect(where(joined.res)).toBe(`/p/${slug}`);
-    expect(
-      (await t.server.projects.get(pid))!.members.find((m) => m.personId === outsider.id)!.role,
-    ).toBe("writer");
+    expect(where(joined.res)).toBe(`/join/${code}`);
+    const members = () =>
+      t.server.projects.get(pid).then((p) => p!.members.find((m) => m.personId === outsider.id));
+    expect(await members()).toBeUndefined();
+    const waiting = await t.app.inject({
+      method: "GET",
+      url: `/api/join/${code}`,
+      headers: { cookie: joined.cookie },
+    });
+    expect(waiting.json().alreadyMember).toBe(false);
+    // They confirm with accept, as anyone with an account does.
+    const accepted = await t.app.inject({
+      method: "POST",
+      url: `/api/join/${code}/accept`,
+      headers: { cookie: joined.cookie },
+    });
+    expect(accepted.statusCode, accepted.body).toBe(200);
+    expect((await members())!.role).toBe("writer");
     expect(person.id).not.toBe(outsider.id);
   });
 

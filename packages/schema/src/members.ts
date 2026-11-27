@@ -106,10 +106,10 @@ export const JoinPasswordRequest = z.object({
 });
 export type JoinPasswordRequest = z.infer<typeof JoinPasswordRequest>;
 
-/** `POST /api/join/:code/passkey/options`: the name (and an email, if they wish to give one). */
+/** `POST /api/join/:code/passkey/options`: the name and the email (every account has one). */
 export const JoinPasskeyOptionsRequest = z.object({
   name: z.string().trim().min(1, "Give a name.").max(80, "Use 80 characters or fewer."),
-  email: z.string().trim().max(200).email("This is not an email address.").optional(),
+  email: z.string().trim().min(1, "Give an email.").max(200).email("This is not an email address."),
 });
 export type JoinPasskeyOptionsRequest = z.infer<typeof JoinPasskeyOptionsRequest>;
 

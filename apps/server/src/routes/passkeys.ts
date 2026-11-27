@@ -189,7 +189,7 @@ export function passkeyRoutes(app: FastifyInstance, s: Server): void {
         throw new ApiError("not_found", "There is no such passkey.");
       }
       // The last way of logging in stays.
-      if (!passwordWorks(person) && waysIn(person) <= 1) throw onlyWayIn(person);
+      if (!passwordWorks(person) && waysIn(person, s.google !== null) <= 1) throw onlyWayIn(person);
       return endOtherSessions({ ...person, passkeys: person.passkeys.filter((p) => p.id !== id) });
     });
     followEpoch(request, now);
@@ -198,7 +198,7 @@ export function passkeyRoutes(app: FastifyInstance, s: Server): void {
 
   app.put("/api/settings/password-off", async (request) => {
     const { off } = PasswordOff.parse(request.body);
-    if (off && request.session.get("method") === "password") {
+    if (off && (request.session.get("method") ?? "password") === "password") {
       throw new ApiError(
         "not_allowed",
         "Log in with a passkey first. That shows the passkey works before the password stops working.",
@@ -206,7 +206,11 @@ export function passkeyRoutes(app: FastifyInstance, s: Server): void {
     }
     // Checked on the account as it is when the change is made; see the removal of a passkey.
     const now = await s.people.update(personOf(request).id, (person) => {
-      if (off && person.passkeys.length === 0 && person.identities.length === 0) {
+      if (
+        off &&
+        person.passkeys.length === 0 &&
+        !(s.google !== null && person.identities.length > 0)
+      ) {
         throw new ApiError(
           "not_allowed",
           "Add a passkey first: it would be your only way to log in.",
