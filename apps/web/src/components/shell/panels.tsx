@@ -17,6 +17,7 @@ import {
   useSyncExternalStore,
 } from "react";
 import { createPortal } from "react-dom";
+import { readLegacyLibraryOpen } from "./libraryState.ts";
 
 export interface PanelSpec {
   /** Unique on its screen, and kept in the device's settings as the open tab. */
@@ -54,17 +55,23 @@ export interface ScreenPrefs {
   open: boolean;
   /** Whether the left side bar is folded to its rail. */
   rail: boolean;
+  /** Whether the library pane (stage 28) was left open, on a desktop with room for it. */
+  library: boolean;
 }
 
 const PREFS = "frontier.shell.";
 
 export function readPrefs(kind: ScreenKind): ScreenPrefs {
-  // Maps, chronicles and the graph need the width more than the folder list: they start with the rail.
+  // Maps, chronicles and the graph need the width more than the folder list: they start with the
+  // rail and the library pane closed. Entries and other pages start with the pane open, or as the
+  // one choice kept for the device before the pane was kept per kind.
+  const wide = kind === "map" || kind === "chronicle" || kind === "graph";
   const fallback: ScreenPrefs = {
     width: 340,
     tab: null,
     open: false,
-    rail: kind === "map" || kind === "chronicle" || kind === "graph",
+    rail: wide,
+    library: wide ? false : readLegacyLibraryOpen(),
   };
   try {
     const raw = localStorage.getItem(PREFS + kind);
@@ -75,6 +82,7 @@ export function readPrefs(kind: ScreenKind): ScreenPrefs {
       tab: typeof saved.tab === "string" ? saved.tab : null,
       open: saved.open === true,
       rail: typeof saved.rail === "boolean" ? saved.rail : fallback.rail,
+      library: typeof saved.library === "boolean" ? saved.library : fallback.library,
     };
   } catch {
     return fallback;

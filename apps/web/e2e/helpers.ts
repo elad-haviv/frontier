@@ -171,17 +171,25 @@ export async function openSideBar(page: Page): Promise<void> {
 }
 
 /**
- * Shows the library's folders: the side bar's own on a desktop; on a phone the drawer opens and
- * its Library row opens the panel with the tree.
+ * Shows the library's folders: on a desktop the library pane, opened if it is closed (by the
+ * Library place in the side bar or the rail); on a phone the drawer opens and its Library row
+ * opens the panel with the tree.
  */
 export async function openLibrary(page: Page): Promise<void> {
-  const drawer = page.getByRole("dialog", { name: "Side bar" });
-  if (!(await drawer.isVisible())) await openSideBar(page);
-  const row = drawer.getByRole("button", { name: /^Library/ });
-  if (await row.isVisible()) {
-    await row.click();
-    await expect(page.getByRole("region", { name: "Library" })).toBeVisible();
+  const panel = page.getByRole("region", { name: "Library" });
+  const menu = page.getByRole("button", { name: "Open the side bar", exact: true });
+  const toggle = page.locator("[data-library-toggle]");
+  // Wait until the shell has drawn the phone's menu button or the desktop's Library place.
+  await expect(menu.or(toggle).first()).toBeVisible();
+  if (await menu.isVisible()) {
+    const drawer = page.getByRole("dialog", { name: "Side bar" });
+    if (!(await drawer.isVisible())) await openSideBar(page);
+    const row = drawer.getByRole("button", { name: /^Library/ });
+    if (await row.isVisible()) await row.click();
+  } else if (!(await panel.isVisible())) {
+    await toggle.click();
   }
+  await expect(panel).toBeVisible();
 }
 
 /** Goes to one of the side bar's places, such as "Maps" or "Inbox", as the author would. */

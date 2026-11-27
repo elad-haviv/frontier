@@ -1,4 +1,5 @@
-/* The left side bar: a fixed head and places, the folders scrolling in the room left, a fixed foot. */
+/* The left side bar: a fixed head and places, what is pinned in the room left (scrolling if it must),
+   a fixed foot. The library's folders are in their own pane (LibraryPane.css). */
 .left-bar {
   display: flex;
   flex-direction: column;
@@ -206,17 +207,4 @@
   padding: 0 0.25rem;
   font-size: 0.65rem;
   line-height: 1.1rem;
-}
-
-/* The library's heading, with New folder beside it. */
-.left-heading-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-right: var(--space-1);
-}
-.left-heading-actions {
-  display: flex;
-  align-items: center;
-  gap: 2px;
 }
