@@ -732,3 +732,219 @@ first account who leaves is not made an owner again (that only happens to a proj
 - `GET /api/session` `emailless` is true only when exactly one account has no email; show the
   blank-email login hint only then.
 - A reader gets no open-comment reasons in Home's queue, and an empty `versions` in `/attention`.
+
+## 11. How it was built: 27d server
+
+For the web half. Built on 2026-11-27; `apps/web/src` was not changed and still works against this
+server: every new field is optional or extra, and every address is as it was. What changed in
+behaviour for one person alone: nothing they can see (their own versions are by them, as before).
+
+### What it does, in one paragraph
+
+Each person has their own unsaved changes (drafts, renames, kept copies, conflicts). Saved versions are
+by whoever saved them, and the history says so. Whoever saves an entry second, after someone else
+saved a newer version of it, is not allowed to fold their text into the other's behind their back: the
+save of that entry is refused with both texts, the text they started from, and who saved the other
+and when. Two people saving different entries at once both succeed. Writers and owners are told who
+else has unsaved changes to an entry (never the text) and who is reading what.
+
+### Storage
+
+Nothing moves. The layout under the project's `state/` is the one from before, with an owner written
+into each record:
+
+| File | Holds |
+| --- | --- |
+| `drafts/<id>/record.json` | the draft's record, now with `person` (the owner's id) and `startedAt` (when this person's unsaved change to the file began; a record from before has neither) |
+| `drafts/<id>/content`, `drafts/<id>/versions/*` | as before: the text, and the kept copies of that draft (so kept copies belong to the draft's owner) |
+| `drafts/renames/<id>.json` | a rename or move, now with `person` |
+| `drafts/renamed.json` | the renames that reached the library; **shared** by the project (it says where a path went, to everyone) |
+| `drafts/away.json` (new) | `{ "<person id>": "<when they were seen leaving>" }` for people who are no longer members and have unsaved changes: the 30-day clock |
+
+A draft id names its folder, so an id belongs to one person for good: a second person using the id
+of someone's draft (to save, discard, read versions, merge, resolve, compare) is answered 404
+`not_found`, the same as for an id nobody has, and nothing is written.
+
+**The move.** A record or rename with no `person` is the project's first owner's: the server's first
+account (the admin) when they are a member, else the project's first owner by date joined (a project
+with no member at all yet is the admin's). At every start (`DraftStore.load` then `stampOwners`) the
+owner's id is written into each such file, one file at a time, each written whole and renamed into
+place; nothing else about the file changes and no folder moves. It is safe to run again (a second run
+finds nothing to write), and a start cut off halfway is finished by the next one: files not yet stamped
+read as the first owner's (`ownerOf`), so nothing is ever unowned or lost in between, and a new file
+from this version is stamped when it is made. With no first owner to name (a server with no account
+yet) it writes nothing and waits. Single-user installs: the one person has all their drafts as before.
+
+Outside any request (tests, scripts) the draft store speaks for the first owner. Code that must reach
+everyone's drafts says so (`DraftStore.eachPerson`): clearing what reached the library after every
+fetch, and the sweep of people who left. Everything else sees the person the request is for
+(`projects/view.ts` `asPerson`, set by the facade for every handler).
+
+### People who leave, or are demoted (item 7)
+
+- **Removed, or left** (`DELETE /members/:id`, `POST /members/leave`): their unsaved changes in that
+  project are kept 30 days from the removal (`away.json`), invisible to everyone, then removed
+  (drafts with their kept copies, and renames). The answer says how many: `{ ok: true, unsavedKept:
+  <drafts + renames>, keptDays: 30 }`. If they are made a member again (an invitation) within the
+  time, they have everything as it was: the clock is a note, not a deletion, and it is cleared the next
+  time anything looks (a member is never swept, however long it has been). The sweep runs when the
+  project is opened and every 6 hours while it is open. A project that was not open when someone left
+  starts the clock when it is next opened (so up to that long later).
+- **Demoted to reader**: their drafts are kept and hidden (a reader sees the saved view only), they are
+  not told to others as work in progress, and nothing is cleared. Back to writer: all there.
+- Their saved versions stay, under their name.
+
+### Authors on versions (item 1)
+
+Every version made through the app is authored by the person who saved it, in both library modes:
+`POST /publish/confirm` and the vault import (`POST /import/vault`) use `authorOf(person)`
+(`auth/session.ts`): the person's name and email; for a name missing, the part of the email before
+the "@"; for an email missing, `<person id>@people.frontier.invalid`, which receives nothing and is
+traced back to the person. A person with neither name nor email (the single author of a library from
+before people) is the configured author, as before. The committer is still the bot.
+
+`publish/authors.ts` turns what Git recorded into who: the stand-in or the email finds the account, and
+the answer is `{ id, name }` with the name **as it is now** (`displayName`: the name, else "Someone";
+an email is never a name, for owners too). A version Git alone knows (before people, the bot, a push
+from outside) is `{ id: null, name: <Git's name> }`, a name that looks like an email is "Someone".
+
+### API (all under `/api/p/:project/`, old unprefixed aliases for those that had one)
+
+| Method and path | Role | What |
+| --- | --- | --- |
+| `GET /history[?path=]` | reader | `{ versions: [{ commit, at, message, paths, by: { id: string or null, name } }] }` (new: `by`) |
+| `GET /entries` | reader | adds `othersUnsaved: [{ id, name, since }]` (writers/owners; always `[]` for a reader) and `lastVersion: { commit, at, by } or null` (the last saved version of the entry) |
+| `GET /tree` | reader | a note someone else has unsaved changes to has `othersUnsaved: true` (never for a reader) |
+| `GET /status`, `GET /status/events` | reader | the snapshot is **the caller's**: `unpublished`, `conflicts`, `drafts`, `serverDraftChanges`, `attention.keptCopies` count only their own. New: `othersUnsaved: [{ path, people: [{ id, name, since }] }]` and `presence: [{ id, name, path, since }]`. A reader gets both empty and zero counts. Both change the stream's events as they happen |
+| `GET /attention` | reader | `versions` (drafts with kept copies) are the caller's own |
+| `PUT /presence` | reader | `{ path: string or null, client?: string }` → `{ ok: true }`. Announces the entry the device has open (`null`: none). Repeat about every 25 s; it lapses after 60 s. `client` (letters, digits, `_`, `-`, up to 64) tells two tabs of one person apart |
+| `POST /presence/leave` | reader | `{ client? }` (for `sendBeacon` on a closing tab) → `{ ok: true }` |
+| `GET /drafts/:id/compare` | writer | `{ draftId, path, outcome: "ready" or "merge" or "conflict" or "none", conflict?, merge? }`: what saving this change now would do, without a plan. `conflict` and `merge` are the plan's shapes (below). 404 for a draft that is not the caller's |
+| `POST /publish/plan` | writer | as before; each `conflicts[]` and `merges[]` item may carry `theirsBy: { id or null, name }` and `theirsAt` (who saved the version that is on `main`, and when). New conflict `reason`: `saved_by_other` |
+| `POST /publish/confirm` | writer | `{ commit, published, conflicts }`; `conflicts` (usually empty) are entries left out because someone saved a newer version since the plan; the rest went in. If **nothing** in the save could go in for that reason: 409 `saved_by_other`, the plan is spent, the message names who and which entry |
+| `DELETE /members/:id`, `POST /members/leave` | owner, reader | `{ ok: true, unsavedKept, keptDays: 30 }` |
+
+Plans are the person's own: someone else's plan id is answered 410 `plan_expired`, and is not spent by
+the attempt. A draft id in a plan that is not the caller's is left out as if it were not there; so is
+a rename id.
+
+### Saving when it changed meanwhile (item 5, decision C)
+
+- **At the plan.** An entry (a Markdown note) whose saved version is no longer the one the draft was
+  made from, because **a different person** saved it (the last version that touched the file, resolved
+  to an account), is a conflict with `reason: "saved_by_other"`, **even when the two changes would
+  merge cleanly**: whoever saves second sees both and decides. `mine`, `theirs`, `base` are the three
+  texts; `theirsBy` and `theirsAt` say who and when. Changes by the same person (another device), by
+  a push from outside, or to a map, chronicle or library item file (which merge item by item) are as
+  before: merged when clean (`merges`, to confirm), a conflict when not. `deleted_on_main`,
+  `created_on_main`, `delete_of_changed_file` and `binary` conflicts carry `theirsBy`/`theirsAt` too.
+  This is the same in an own library and in a library on GitHub (the tests run both).
+- **Resolving** is as before and saves as whoever resolves: `POST /drafts/:id/resolve { text }` puts their
+  text (mine, theirs, or merged by hand) on top of what is saved, then plan and confirm make a version
+  **authored by them**. Keep theirs is resolving with their text: nothing is left to save and nothing is.
+  To keep their text of an entry someone deleted, they save it as a new entry at the path
+  (`PUT /drafts` with `kind: "create"` and the same id).
+- **At the save.** Plans and saves go one after another per project, so two people saving at once is
+  two turns. If `main` moved between a plan and its confirm **by saves made by this server** (another
+  person's save, an import), the plan is not thrown away: each entry is checked, those whose saved
+  version is the one the plan looked at go in, those that changed are refused and reported in
+  `conflicts` (a new plan shows the compare). If `main` was moved by a push from outside it is
+  `main_moved`, as before.
+
+### Renames, moves and deletes that meet someone else's unsaved changes (item 6)
+
+The rule is "their text is never lost, and it never silently becomes yours": one person's unsaved
+change never touches another's, only the library does.
+
+- A rename or move (of an entry or a folder) is saved: every other person's draft of a file it moved
+  follows to the new path (their text, kept copies and base unchanged). Their next plan compares it with
+  the library at the new path as usual. The folder file and other library files that name paths follow
+  for everyone's drafts of them.
+- A delete is saved: another person's edit of that entry stays as their unsaved change. Their plan shows
+  it as `deleted_on_main` with `theirsBy` (the person who deleted it); `mine` is their text. They keep it
+  by saving it as a new entry at the path (see above), or discard it.
+- A rename of an entry that someone else renamed or deleted first stays their unsaved rename; their
+  plan reports `rename_blocked` (the file is not there), and they undo it (`DELETE /renames/:id`).
+- A person's edit of an entry someone has an unsaved rename of is not touched; when the rename is saved
+  the draft follows (first point). Their own new entry at a path someone else saved first is
+  `created_on_main`.
+- Someone's pending revert of a quarantined note is theirs: it is listed and saved by them only, and
+  only they can take it back.
+
+### Who has unsaved changes, and who is reading (items 3 and 4)
+
+- **Others' work in progress**: for an entry, the other people in the project who are writers or owners
+  now and have a draft of it (or a rename of it, which counts as an unsaved change to the entry):
+  `[{ id, name, since }]`, oldest first, the caller never in it; `since` is when that person's unsaved
+  change began (not when they last typed). Never text, never kinds, never counts of words. Someone who
+  was demoted or has left is not listed (their changes are kept, not shown). **Readers get nothing**
+  (`[]`, no flag, no entries in the status): the design says readers never see drafts, and who is
+  working on what is part of that.
+- **Who is reading** (`projects/presence.ts`): in memory only, per project (a person in two projects is
+  announced to each separately), never written to disk or the log (the announced path is in the body,
+  which is not logged), gone at restart. Cleared by `PUT /presence { path: null }`, by `POST
+  /presence/leave`, after 60 s without a repeat, when the person's last status stream ends, and when
+  they are removed. At most 8 devices per person. Delivered to **writers and owners** in the status
+  (`presence`, without the caller), one row for each person and entry, the earliest time they began on
+  that entry. **Readers announce** (so writers see them) **and get an empty list**. Listeners are told
+  when who-reads-what changes, not for a repeat.
+
+### Role table
+
+`GET /drafts/:id/compare` is writer. `PUT /presence` and `POST /presence/leave` are reader. Everything
+else keeps its role; `test/projectRoles.test.ts` walks every route as each role and the reader-writes
+list now has the two presence routes.
+
+### Error codes
+
+New: `saved_by_other` 409 (`packages/schema/src/errors.ts`; the tests count 38). New conflict reason:
+`saved_by_other`. Changed answers: `DELETE /members/:id` and `POST /members/leave` give more than
+`{ ok }`; `POST /publish/confirm` gives `conflicts`.
+
+### Decisions where the design was silent
+
+1. Decision C is applied to **notes only**, and only when the other version is by a **different person**.
+   Maps, chronicles and library item files keep merging item by item, because they are shared structures
+   several people touch; a push from outside or the same person on another device merges as before.
+2. A clean merge is still a compare when someone else saved (see above). The cost is a compare screen for
+   people who edited different paragraphs; the benefit is that nothing of the other person's is changed
+   unseen. If it is too strict it is one line in `publish.ts` (`saved_by_other`).
+3. Readers get no presence list and no others-unsaved list. They do announce what they read.
+4. A person's own presence is not told back to them.
+5. The stand-in email for a person with no email, and "Someone" (never an email) for a nameless person.
+6. Kept copies and conflicts belong to the owner of the draft; the shared `renamed.json` is project-wide.
+7. Unsaved changes of someone away are not swept while the project is closed.
+
+### Known and left
+
+- A person with neither name nor email who saves while the configured author's email is another account's
+  is traced to that account (only for the single-author case from before people).
+- Concurrency is per project process; an import or a webhook sync is not in the same line as saves (a
+  save planned before an import still saves, because imports are noted as this server's).
+- `lastVersion` on an entry costs one `git log` per read of an entry.
+
+### Notes for the web half
+
+- **History and Versions**: show "by <name>" from `by.name` (it is never an email); an unknown author
+  (`id: null`) is a plain name. An entry's "Last version by <name>, <when>" is `lastVersion`.
+- **Your unsaved changes** (the page and the counts) already read the caller's own: no change but the
+  wording ("Your"). A `404 not_found` on a draft or rename the device remembers means it is gone or never
+  was this person's: drop it from the queue and say so, do not retry.
+- **The notice** "<name> has unsaved changes" on an entry (several names: the first, and "and N more")
+  from `entries` `othersUnsaved` and the status's `othersUnsaved` (it updates live, so refresh it on each
+  event). **The tree's dot** from a note's `othersUnsaved: true`, or the status's list of paths.
+  Do not show either to a reader (they are empty anyway).
+- **Who is reading**: announce with `PUT /presence { path, client }` when an entry opens, every ~25 s
+  while it stays open, `{ path: null }` when it closes, and `sendBeacon` to `POST /presence/leave` on
+  `pagehide`; use a per-tab id for `client`. Show the avatars from the status's `presence` for the entry
+  at hand.
+- **The compare screen in an own library**: the plan's conflict with `reason: "saved_by_other"` is the
+  same screen the GitHub way has, with `theirsBy.name` and `theirsAt` in its title ("Wren saved this at
+  14:02"). Choose: keep mine (`POST /drafts/:id/resolve` with their text, then plan and confirm), keep
+  theirs (resolve with theirs, nothing to save), or merged text. `GET /drafts/:id/compare` opens it from
+  an entry whose own page says the saved version moved on (no plan needed). After a confirm, show
+  `conflicts` from the answer as a compare for each; a 409 `saved_by_other` means plan again.
+- **Removed and demoted**: when a writer is removed the stream ends and the next call says `no_project`;
+  say that their unsaved changes are kept 30 days and come back if they rejoin. When the owner removes
+  someone, show `unsavedKept` ("3 unsaved changes are kept for 30 days"). A demoted person is a reader
+  at once (their unsaved changes are hidden, not lost): say so in the reader's one line.
