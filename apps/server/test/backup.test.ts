@@ -277,6 +277,9 @@ describe("in the server", () => {
     await vi.waitFor(
       () => {
         expect(existsSync(bucketFile)).toBe(true);
+        // The draft's record is written just after its text; a backup that ran between the two holds
+        // a folder with no record, which a restore (rightly) reads as an interrupted first save.
+        expect(existsSync(join(bucketFile, "..", "record.json"))).toBe(true);
         expect(first.services.status.snapshot().lastBackupAt).not.toBeNull();
       },
       { timeout: 15_000, interval: 20 },
