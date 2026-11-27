@@ -66,7 +66,7 @@ describe("the member list", () => {
 
   it("notes when a member was last active, at most once in a few minutes", async () => {
     await writer.get(`${base()}/schema`);
-    await new Promise((r) => setTimeout(r, 50));
+    await t.server.projects.settled();
     const first = (await t.server.projects.get(pid))!.members.find(
       (m) => m.personId === writer.id,
     )!.lastActiveAt;
@@ -74,7 +74,7 @@ describe("the member list", () => {
     const stamp = (await import("node:fs")).statSync(t.server.projects.file).mtimeMs;
     await writer.get(`${base()}/schema`);
     await writer.get(`${base()}/tree`);
-    await new Promise((r) => setTimeout(r, 50));
+    await t.server.projects.settled();
     // No second write inside the window: the file was not touched.
     expect((await import("node:fs")).statSync(t.server.projects.file).mtimeMs).toBe(stamp);
     const list = (await owner.get(`${base()}/members`)).json() as MembersResponse;

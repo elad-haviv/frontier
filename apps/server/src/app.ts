@@ -13,6 +13,7 @@ import type { Config } from "./config.js";
 import { ApiError, settingsLink } from "./errors.js";
 import { GitError } from "./git/gateway.js";
 import type { FetchLimits, Resolve } from "./images/fromUrl.js";
+import { tidyInvites } from "./members/tidy.js";
 import { guardProjects } from "./projects/guard.js";
 import { projectApp, RouteBook, type ProjectRoute } from "./projects/facade.js";
 import { scopedServices } from "./projects/context.js";
@@ -115,7 +116,7 @@ export interface RegisteredRoute {
 /** An address as it may be logged: no invitation code, no OAuth code or state. */
 export function redactAddress(url: string | undefined): string {
   return (url ?? "")
-    .replace(/(\/(?:api|%61pi)\/join\/)[^/?#]+/i, "$1:code")
+    .replace(/(\/(?:(?:api|%61pi)\/)?join\/)[^/?#]+/i, "$1:code")
     .replace(/([?&](?:invite|code|state|returnTo)=)[^&#]*/gi, "$1:redacted");
 }
 
@@ -172,15 +173,15 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
     }),
   );
 
-  // A person removed from a project (or given another role) loses what they have open there.
-  server.projects.watchMembers((projectId, personId) => server.live.cut(projectId, personId));
-
   // AI keys are never kept here: each request brings the person's own (see ai/keyring.ts). Keys an
   // earlier version stored in the settings file are deleted now, and the web app says so once.
   const keysRemoved = await server.settings.removeStoredKeys(new Date(), config.unusedKeyVars);
   server.keysRemoved = keysRemoved ?? (await server.settings.read())?.ai.keysRemoved ?? null;
 
   const first = await ensureFirstProject(server);
+  // Links whose maker stopped being an owner, and uses cut off half way, are dealt with before the
+  // first request.
+  await tidyInvites(server);
   const services = await server.registry.adopt(first);
 
   // Coolify's proxy sits in front, so the client address and protocol come from its headers.
@@ -212,6 +213,22 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
           },
         }
       : false,
+  });
+  // A person removed from a project (or given another role) loses what they have open there (but
+  // the request making the change is answered), and a person who is no longer an owner has no
+  // invitation links waiting.
+  server.projects.watchMembers(async (projectId, personId) => {
+    server.live.cut(projectId, personId);
+    if (server.projects.roleOfSync(projectId, personId) === "owner") return;
+    try {
+      await server.invites.cancelBy(projectId, personId);
+    } catch (err) {
+      // The link is also refused when it is used, because its maker is no longer an owner.
+      app.log.error(
+        { err },
+        "Could not cancel the invitations of a person who is no longer an owner",
+      );
+    }
   });
   readKeysHeader(app);
   // A failed AI call is written to the server's log too, or production shows only a bare 502.
@@ -256,6 +273,21 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
   app.addHook("onRoute", (route) => {
     for (const method of [route.method].flat())
       registered.push({ method, url: route.url, public: route.config?.public === true });
+  });
+  // A request that changes something, sent by a browser from another site (a page that makes the
+  // browser post to this server with the person's cookie), is refused. The browser says where a
+  // request comes from in `Sec-Fetch-Site`: `cross-site` is never ours, and `same-site` (another
+  // address of the same domain) only when its Origin is the app's own. Without the header (tests,
+  // scripts, GitHub's webhook) nothing is known, and the request goes on as it always did.
+  const ownOrigin = new URL(config.publicUrl).origin;
+  app.addHook("onRequest", async (request) => {
+    if (request.method === "GET" || request.method === "HEAD" || request.method === "OPTIONS")
+      return;
+    if (!isApiRequest(request)) return;
+    const site = request.headers["sec-fetch-site"];
+    if (site === undefined || site === "same-origin" || site === "none") return;
+    if (site === "same-site" && request.headers.origin === ownOrigin) return;
+    throw new ApiError("not_allowed", "This request came from another site, so it was refused.");
   });
   // The login check decides from the route the router matched, never from the raw address (which
   // may be percent-encoded): the API is closed unless the route says `config: PUBLIC`, and so is

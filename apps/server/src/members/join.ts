@@ -39,6 +39,14 @@ export async function liveInvite(server: Server, code: string): Promise<LiveInvi
   const state = stateOf(invite, server.invites.now());
   const inviter = await nameOf(server, invite.createdBy);
   const ask = `Ask ${inviter} for a new one.`;
+  // A link made by someone who has since stopped being an owner of the project is no longer good,
+  // however it came to still be waiting.
+  const makerIsOwner = project?.members.some(
+    (m) => m.personId === invite.createdBy && m.role === "owner",
+  );
+  if (state === "waiting" && !makerIsOwner) {
+    throw new ApiError("invite_cancelled", `This link was cancelled. ${ask}`, { inviter });
+  }
   if (state === "used") {
     throw new ApiError("invite_used", `This link has already been used. ${ask}`, { inviter });
   }
@@ -85,13 +93,16 @@ export function joinAsNewPerson(server: Server, code: string, account: NewPerson
     try {
       person = await server.people.create(account);
     } catch (err) {
-      await server.invites.release(invite.id);
+      await server.invites.release(invite.id).catch(() => undefined);
       throw err instanceof ApiError && err.code === "email_taken" ? accountExists() : err;
     }
     try {
       await server.projects.addMember(project.id, person.id, invite.role);
     } catch (err) {
-      await server.invites.release(invite.id);
+      // All or nothing: the account made a moment ago goes, and the link is given back. Neither
+      // step may hide the error that started this.
+      await server.people.remove(person.id).catch(() => undefined);
+      await server.invites.release(invite.id).catch(() => undefined);
       throw err;
     }
     await server.invites.settle(invite.id, person.id);
@@ -123,7 +134,7 @@ export function joinAsExistingPerson(
     try {
       await server.projects.addMember(project.id, person.id, invite.role);
     } catch (err) {
-      await server.invites.release(invite.id);
+      await server.invites.release(invite.id).catch(() => undefined);
       throw err;
     }
     await server.invites.settle(invite.id, person.id);

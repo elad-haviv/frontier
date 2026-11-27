@@ -100,6 +100,17 @@ export class PeopleStore {
     });
   }
 
+  /**
+   * Takes an account away again. Only for undoing an account made a moment ago, when what it was
+   * made for (joining a project) failed; nothing else refers to it yet.
+   */
+  remove(id: string): Promise<void> {
+    return this.change(async (people) => ({
+      people: people.filter((p) => p.id !== id),
+      result: undefined,
+    }));
+  }
+
   /** Changes one account and keeps the rest. Returns the account as it is after. */
   update(id: string, change: (person: Person) => Person): Promise<Person> {
     return this.change(async (people) => {

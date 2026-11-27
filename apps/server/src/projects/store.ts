@@ -55,18 +55,21 @@ export class ProjectStore {
   }
 
   /** Who is told when a member is removed or their role changes; see `watchMembers`. */
-  private readonly watchers = new Set<(projectId: string, personId: string) => void>();
+  private readonly watchers = new Set<
+    (projectId: string, personId: string) => void | Promise<void>
+  >();
 
   /**
    * Asks to be told, after the change is written, when a person leaves a project or their role
    * changes. The server uses it to cut the requests and streams that person has open there.
    */
-  watchMembers(listener: (projectId: string, personId: string) => void): void {
+  watchMembers(listener: (projectId: string, personId: string) => void | Promise<void>): void {
     this.watchers.add(listener);
   }
 
-  private told(projectId: string, personId: string): void {
-    for (const w of this.watchers) w(projectId, personId);
+  /** Tells the watchers, and waits for them, so the answer to the change comes after their work. */
+  private async told(projectId: string, personId: string): Promise<void> {
+    await Promise.all([...this.watchers].map(async (w) => w(projectId, personId)));
   }
 
   /** A member's role as held in memory right now (no file read); null when they are not one. */
@@ -206,8 +209,9 @@ export class ProjectStore {
    * at once cannot leave the project with none.
    */
   async setRole(projectId: string, personId: string, role: ProjectRole): Promise<ProjectRecord> {
-    const record = await this.changeRole(projectId, personId, role);
-    this.told(projectId, personId);
+    const { record, changed } = await this.changeRole(projectId, personId, role);
+    // The same role again writes nothing and cuts nothing.
+    if (changed) await this.told(projectId, personId);
     return record;
   }
 
@@ -215,11 +219,13 @@ export class ProjectStore {
     projectId: string,
     personId: string,
     role: ProjectRole,
-  ): Promise<ProjectRecord> {
+  ): Promise<{ record: ProjectRecord; changed: boolean }> {
     return this.change(async (projects) => {
       const now = projects.find((p) => p.id === projectId);
       const member = now?.members.find((m) => m.personId === personId);
       if (!now || !member) throw new ApiError("not_found", "This person is not a member here.");
+      if (member.role === role)
+        return { projects, result: { record: now, changed: false as boolean } };
       if (member.role === "owner" && role !== "owner" && ownersOf(now) <= 1) {
         throw new ApiError("last_owner", LAST_OWNER);
       }
@@ -227,14 +233,17 @@ export class ProjectStore {
         ...now,
         members: now.members.map((m) => (m.personId === personId ? { ...m, role } : m)),
       };
-      return { projects: projects.map((p) => (p.id === projectId ? record : p)), result: record };
+      return {
+        projects: projects.map((p) => (p.id === projectId ? record : p)),
+        result: { record, changed: true as boolean },
+      };
     });
   }
 
   /** Takes a member out (or lets them leave). The last owner cannot go; checked as `setRole` is. */
   async removeMember(projectId: string, personId: string): Promise<ProjectRecord> {
     const record = await this.takeOut(projectId, personId);
-    this.told(projectId, personId);
+    await this.told(projectId, personId);
     return record;
   }
 
@@ -257,7 +266,17 @@ export class ProjectStore {
    * nothing for someone who is not a member (or no longer one).
    */
   touchMember(projectId: string, personId: string, everyMs = ACTIVE_EVERY_MS): Promise<void> {
-    const work = this.touch(projectId, personId, everyMs);
+    // Decided now, before anything waits: ten requests arriving together make one note, not ten.
+    const key = `${projectId}:${personId}`;
+    const at = this.now();
+    const last = this.noted.get(key);
+    if (last !== undefined && at.getTime() - last < everyMs) return Promise.resolve();
+    this.noted.set(key, at.getTime());
+    const work = this.touch(projectId, personId, everyMs, at).catch((err: unknown) => {
+      // Not written: the next request may try again.
+      this.noted.delete(key);
+      throw err;
+    });
     this.touching.add(work);
     const done = () => this.touching.delete(work);
     work.then(done, done);
@@ -271,25 +290,39 @@ export class ProjectStore {
   }
 
   private readonly touching = new Set<Promise<void>>();
+  /** When each member was last noted by this process, so a burst of requests asks the file once. */
+  private readonly noted = new Map<string, number>();
 
-  private async touch(projectId: string, personId: string, everyMs: number): Promise<void> {
-    const at = this.now();
-    const member = (await this.get(projectId))?.members.find((m) => m.personId === personId);
-    if (!member) return;
-    if (member.lastActiveAt && at.getTime() - Date.parse(member.lastActiveAt) < everyMs) return;
-    await this.change(async (projects) => ({
-      projects: projects.map((p) =>
-        p.id !== projectId || !p.members.some((m) => m.personId === personId)
-          ? p
-          : {
-              ...p,
-              members: p.members.map((m) =>
-                m.personId === personId ? { ...m, lastActiveAt: at.toISOString() } : m,
-              ),
-            },
-      ),
-      result: undefined,
-    }));
+  private async touch(
+    projectId: string,
+    personId: string,
+    everyMs: number,
+    at: Date,
+  ): Promise<void> {
+    // Checked again inside the serialized change, on the file as it is then: a note that landed
+    // while this one waited (or one from before a restart) means there is nothing to write.
+    await this.change(async (projects) => {
+      const member = projects
+        .find((p) => p.id === projectId)
+        ?.members.find((m) => m.personId === personId);
+      if (!member) return { projects, result: undefined };
+      if (member.lastActiveAt && at.getTime() - Date.parse(member.lastActiveAt) < everyMs) {
+        return { projects, result: undefined };
+      }
+      return {
+        projects: projects.map((p) =>
+          p.id !== projectId
+            ? p
+            : {
+                ...p,
+                members: p.members.map((m) =>
+                  m.personId === personId ? { ...m, lastActiveAt: at.toISOString() } : m,
+                ),
+              },
+        ),
+        result: undefined,
+      };
+    }, true);
   }
 
   async remove(id: string): Promise<void> {
@@ -298,7 +331,7 @@ export class ProjectStore {
       projects: projects.filter((p) => p.id !== id),
       result: undefined,
     }));
-    for (const m of members) this.told(id, m.personId);
+    for (const m of members) await this.told(id, m.personId);
   }
 
   /** Makes the first project, but only while there is none. Returns it, or null when one exists. */
@@ -312,6 +345,7 @@ export class ProjectStore {
 
   private change<T>(
     work: (projects: ProjectRecord[]) => Promise<{ projects: ProjectRecord[]; result: T }>,
+    quiet = false,
   ): Promise<T> {
     const run = this.turn.then(async () => {
       const before = await this.all();
@@ -319,7 +353,7 @@ export class ProjectStore {
       // Nothing was changed: the file is left alone (a refused or repeated change costs no write).
       if (projects === before) return result;
       const file = ProjectsFile.parse({ version: 1, projects });
-      await this.files.writeJson(this.file, file);
+      await this.files.writeJson(this.file, file, quiet);
       this.held = { stamp: await this.stamp(), projects: file.projects };
       return result;
     });

@@ -1,4 +1,5 @@
-import type { FastifyRequest } from "fastify";
+import type { FastifyReply, FastifyRequest } from "fastify";
+import { isThisRequest } from "../ai/keyring.js";
 
 /**
  * The requests a person has open in a project, so that removing them (or changing their role)
@@ -11,24 +12,34 @@ export class LiveRequests {
 
   private key = (projectId: string, personId: string) => `${projectId}:${personId}`;
 
-  /** Remembers a request until it ends. */
-  track(request: FastifyRequest, projectId: string, personId: string): void {
+  /**
+   * Remembers a request until its reply is over (or its connection drops). Not until the request
+   * itself closes: that happens as soon as the body has been read, long before a POST that streams
+   * its answer (the lore stream) is done.
+   */
+  track(request: FastifyRequest, reply: FastifyReply, projectId: string, personId: string): void {
     const key = this.key(projectId, personId);
     let set = this.open.get(key);
     if (!set) this.open.set(key, (set = new Set()));
     set.add(request);
-    request.raw.once("close", () => {
+    reply.raw.once("close", () => {
       set.delete(request);
       if (set.size === 0 && this.open.get(key) === set) this.open.delete(key);
     });
   }
 
-  /** Ends every request the person has open in the project, by closing its connection. */
+  /**
+   * Ends every request the person has open in the project, by closing its connection, except the
+   * one that is making the change (leaving, being removed by oneself, deleting the project): that
+   * one is about to be answered, and cutting it would drop the answer on the floor.
+   */
   cut(projectId: string, personId: string): number {
     const set = this.open.get(this.key(projectId, personId));
     if (!set) return 0;
-    const requests = [...set];
-    for (const r of requests) r.raw.destroy();
+    const requests = [...set].filter((r) => !isThisRequest(r));
+    // The connection itself: destroying the request closes it only while the body is unread, and a
+    // POST that streams its answer has read its body long ago.
+    for (const r of requests) r.raw.socket.destroy();
     return requests.length;
   }
 }

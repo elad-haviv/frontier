@@ -9,6 +9,7 @@ import { z } from "zod";
 import { personOf } from "../auth/session.js";
 import { ApiError } from "../errors.js";
 import { displayName, nameOf } from "../members/names.js";
+import { tidyInvites } from "../members/tidy.js";
 import type { RouteApp } from "../projects/facade.js";
 import type { Services } from "../projects/services.js";
 
@@ -43,7 +44,7 @@ export function memberRoutes(app: RouteApp, s: Services): void {
         const person = await s.server.people.get(m.personId);
         return {
           id: m.personId,
-          name: displayName(person),
+          name: displayName(person, owner),
           email: owner ? (person?.email ?? "") : null,
           role: m.role,
           addedAt: m.addedAt,
@@ -80,6 +81,7 @@ export function memberRoutes(app: RouteApp, s: Services): void {
 
   app.get("/api/invites", async (request): Promise<InvitesResponse> => {
     const project = here(request);
+    await tidyInvites(s.server);
     const at = s.server.invites.now().getTime();
     const waiting = await s.server.invites.waiting(project.record.id);
     return {
@@ -87,7 +89,7 @@ export function memberRoutes(app: RouteApp, s: Services): void {
         waiting.map(async (i) => ({
           id: i.id,
           role: i.role,
-          createdBy: { id: i.createdBy, name: await nameOf(s.server, i.createdBy) },
+          createdBy: { id: i.createdBy, name: await nameOf(s.server, i.createdBy, true) },
           createdAt: i.createdAt,
           expiresAt: i.expiresAt,
           secondsLeft: Math.max(0, Math.floor((Date.parse(i.expiresAt) - at) / 1000)),

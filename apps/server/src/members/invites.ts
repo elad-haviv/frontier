@@ -11,6 +11,9 @@ import {
 import { ApiError } from "../errors.js";
 import type { StateFiles } from "../state/files.js";
 
+/** How long a claim may stay unsettled before startup treats it as one that failed half way. */
+const STALE_CLAIM_MS = 5 * 60 * 1000;
+
 /** How long after an invitation stopped working its record is kept, so the page can still say why. */
 const KEEP_DEAD_DAYS = 30;
 
@@ -127,6 +130,66 @@ export class InviteStore {
         invites: invites.map((i) => (i.id === id ? { ...i, cancelledAt: at } : i)),
         result: undefined,
       };
+    });
+  }
+
+  /** Cancels the waiting invitations a person made in a project (they stopped being an owner there). */
+  cancelBy(projectId: string, personId: string): Promise<number> {
+    return this.change(async (invites) => {
+      const at = this.now();
+      const mine = invites.filter(
+        (i) =>
+          i.projectId === projectId && i.createdBy === personId && stateOf(i, at) === "waiting",
+      );
+      if (mine.length === 0) return { invites, result: 0 };
+      const ids = new Set(mine.map((i) => i.id));
+      return {
+        invites: invites.map((i) => (ids.has(i.id) ? { ...i, cancelledAt: at.toISOString() } : i)),
+        result: mine.length,
+      };
+    });
+  }
+
+  /**
+   * Housekeeping, run at startup and when the list is read: drops links that stopped working long
+   * ago, cancels waiting ones whose maker is no longer an owner of the project (`isOwner`), and
+   * deals with claims that were never settled, from a use that was cut off half way (`memberSince`
+   * says who joined the project after the claim with the link's role: that person is recorded, and
+   * when nobody did, the link is given back).
+   */
+  tidy(rules: {
+    isOwner: (projectId: string, personId: string) => boolean;
+    memberSince: (invite: InviteRecord) => string | null;
+  }): Promise<void> {
+    return this.change(async (invites) => {
+      const at = this.now();
+      const cutoff = at.getTime() - KEEP_DEAD_DAYS * 86_400_000;
+      let changed = false;
+      const next: InviteRecord[] = [];
+      for (const invite of invites) {
+        let i = invite;
+        const state = stateOf(i, at);
+        if (state === "waiting" && !rules.isOwner(i.projectId, i.createdBy)) {
+          i = { ...i, cancelledAt: at.toISOString() };
+        }
+        if (i.usedAt && !i.usedBy && Date.parse(i.usedAt) < at.getTime() - STALE_CLAIM_MS) {
+          const who = rules.memberSince(i);
+          if (who) {
+            i = { ...i, usedBy: who };
+          } else {
+            i = { ...i };
+            delete i.usedAt;
+            delete i.usedBy;
+          }
+        }
+        if (stateOf(i, at) !== "waiting" && Date.parse(i.expiresAt) <= cutoff) {
+          changed = true;
+          continue;
+        }
+        if (i !== invite) changed = true;
+        next.push(i);
+      }
+      return { invites: changed ? next : invites, result: undefined };
     });
   }
 
