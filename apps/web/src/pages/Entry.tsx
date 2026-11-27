@@ -690,14 +690,6 @@ export function EntryPage() {
             <p className="people-byline" data-testid="last-version">
               {byline}
               {fromDevice && <span> (as of this copy)</span>}
-              {editable && (
-                <>
-                  {" "}
-                  <button type="button" className="draft-undo" onClick={() => openPanel("history")}>
-                    History
-                  </button>
-                </>
-              )}
             </p>
           )}
           <ReadingNow people={readers} />

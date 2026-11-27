@@ -1299,8 +1299,8 @@ it is the compare screen; for every other clash it is the editor it always was, 
 - The approved mockup (`frontier-people-projects.html`) draws the entry's byline, the notice and the
   avatars but **not** the compare screen or the words "Keep mine", "Keep theirs" and "Use the merged
   text"; those come from the brief and section 11, and the layout is Frontier's existing Resolve
-  page extended. The mockup's byline puts the History link beside the author; the History button is
-  there for writers and readers alike.
+  page extended. The mockup's byline puts a History link beside the author; the entry already has a History
+  button in its toolbar (a second one made two buttons of one name), so the byline has none.
 - The mockup's notice says "Whoever saves second sees both texts side by side before anything is
   kept" on the entry page. The brief says the entry page's notice is quiet and the editor's says what
   will happen, so the entry page has only the first sentence.
