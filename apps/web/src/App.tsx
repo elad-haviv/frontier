@@ -1,5 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useState } from "react";
 import { Navigate, Route, Routes, useLocation, useParams } from "react-router-dom";
+import { resetAccess } from "./access.ts";
 import { api } from "./api.ts";
 import { keysOwner } from "./aiKeys.ts";
 import { clearMe, loadMe } from "./me.ts";
@@ -281,6 +282,7 @@ export function App() {
     if (loggedIn === false) {
       clearMe();
       clearProjects();
+      resetAccess();
     }
     if (!loggedIn) return;
     // The person's projects, read before any page: the person who owns what an earlier build kept

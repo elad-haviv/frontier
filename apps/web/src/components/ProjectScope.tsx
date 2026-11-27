@@ -15,7 +15,8 @@ import {
 } from "react-router-dom";
 import { ROLE_RANK } from "@frontier/schema";
 import { api, apiFor, ApiFailure } from "../api.ts";
-import { isLeaving, noteAccessLost } from "../access.ts";
+import { isLeaving, noteAccessLost, unmarkLeaving } from "../access.ts";
+import { forgetProjectCopy } from "../offline/copy.ts";
 import { resumeProposals } from "../proposeAfterPublish.ts";
 import { currentProject, projectRoot, setCurrentProject, withoutProject } from "../project.ts";
 import {
@@ -29,6 +30,7 @@ import {
   useProjects,
 } from "../projects.ts";
 import { connection, useConnection } from "../sync/connection.ts";
+import { queue } from "../sync/queue.ts";
 import { Link } from "../nav.tsx";
 import { useToast } from "./ui/Toast.tsx";
 import { OutsideShell } from "./OutsideShell.tsx";
@@ -92,46 +94,77 @@ export function ProjectScope({ children }: { children: ReactNode }) {
   // The project's record is read again, quietly, when the server may have changed what the person
   // may do here (stage 27c): its status stream ends when a role changes or someone is removed,
   // and a request refused for want of a role says so too. A failure to reach the server leaves
-  // what is known as it is.
-  const refreshing = useRef(false);
-  useEffect(
-    () =>
-      connection.onAccessMayHaveChanged(() => {
-        if (refreshing.current) return;
-        refreshing.current = true;
-        apiFor(slug)
-          .project()
-          .then(
-            (next) => setAnswer({ asked: slug, record: next, error: null }),
-            (err: unknown) => {
-              if (err instanceof ApiFailure && err.code === "no_project") {
-                setAnswer({ asked: slug, record: null, error: err });
-              }
-            },
-          )
-          .finally(() => {
-            refreshing.current = false;
-          });
-      }),
-    [slug],
-  );
+  // what is known as it is. Kept for one address: an answer that comes after the person went to
+  // another project is let go, and does not touch that project's record.
+  useEffect(() => {
+    let live = true;
+    let refreshing = false;
+    const stop = connection.onAccessMayHaveChanged(() => {
+      if (refreshing) return;
+      refreshing = true;
+      apiFor(slug)
+        .project()
+        .then(
+          (next) => live && setAnswer({ asked: slug, record: next, error: null }),
+          (err: unknown) => {
+            if (live && err instanceof ApiFailure && err.code === "no_project") {
+              setAnswer({ asked: slug, record: null, error: err });
+            }
+          },
+        )
+        .finally(() => {
+          refreshing = false;
+        });
+    });
+    return () => {
+      live = false;
+      stop();
+    };
+  }, [slug]);
+
+  // What is known of the address that is open: whether the person was in it, and what it was
+  // called. It belongs to the address, so another project (one the person is not in) never
+  // inherits it, and is not reported as lost. A rename carries it to the new address.
+  const seen = useRef({
+    slug,
+    hadIt: false,
+    id: null as string | null,
+    name: known?.name ?? "this project",
+  });
+  const renamedTo = useRef<string | null>(null);
+  if (seen.current.slug !== slug) {
+    seen.current =
+      renamedTo.current === slug
+        ? { ...seen.current, slug }
+        : { slug, hadIt: false, id: null, name: known?.name ?? "this project" };
+    renamedTo.current = null;
+  }
+  if (record) {
+    seen.current.hadIt = true;
+    seen.current.id = record.id;
+    seen.current.name = record.name;
+  } else if (known) {
+    seen.current.hadIt = true;
+    seen.current.id = known.id;
+    seen.current.name = known.name;
+  }
 
   // Taken out of the project while it is open, or opened from a list that is out of date: All
   // projects, with a plain note. An address that never named a project the person is in is the
   // page that says so (`NoProject`).
-  const hadIt = useRef(false);
-  const lastName = useRef(known?.name ?? "this project");
-  if (record) {
-    hadIt.current = true;
-    lastName.current = record.name;
-  } else if (known) hadIt.current = true;
-  const lost = error?.code === "no_project" && hadIt.current;
+  const lost = error?.code === "no_project" && seen.current.hadIt;
   useEffect(() => {
     if (!lost) return;
-    if (!isLeaving(slug)) noteAccessLost(lastName.current);
+    const { id: lostId, name } = seen.current;
+    if (!isLeaving(slug)) noteAccessLost(name);
+    // What this device kept of the project to read goes; the changes not sent yet stay, for the
+    // person to copy out from All projects.
+    if (lostId) void forgetProjectCopy({ id: lostId, slug });
     void loadProjects();
     void navigate("/projects", { replace: true });
-  }, [lost]);
+  }, [lost, slug]);
+  // Leaving on purpose is marked until this page is gone, so it is never also reported as a loss.
+  useEffect(() => () => unmarkLeaving(slug), [slug]);
 
   // The owner renamed the address, here or elsewhere: the address in the bar follows, and what
   // the person typed after it stays.
@@ -139,6 +172,7 @@ export function ProjectScope({ children }: { children: ReactNode }) {
     if (!record) return;
     noteProject({ id: record.id, slug: record.slug, name: record.name });
     if (record.slug !== slug) {
+      renamedTo.current = record.slug;
       const { rest } = withoutProject(location.pathname);
       void navigate(
         `${projectRoot(record.slug)}${rest === "/" ? "" : rest}${location.search}${location.hash}`,
@@ -212,7 +246,10 @@ export function ProjectScope({ children }: { children: ReactNode }) {
   // writer, since a reader's requests for them would be refused (stage 27c).
   const mayWrite = role === "writer" || role === "owner";
   useEffect(() => {
-    if (opened !== null && mayWrite) void resumeProposals();
+    if (opened === null || !mayWrite) return;
+    void resumeProposals();
+    // Saves that were refused while the role was lower go back to waiting.
+    void queue.resumeRefused();
   }, [opened, mayWrite]);
 
   // A role that changed while the project is open is said once; the shell follows it by itself.

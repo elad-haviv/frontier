@@ -1,4 +1,5 @@
 import { useCallback } from "react";
+import { resetAccess } from "../access.ts";
 import { api, ApiFailure } from "../api.ts";
 import { clearMe } from "../me.ts";
 import { wipeDevice } from "../offline/wipe.ts";
@@ -43,6 +44,7 @@ export function useLogoutAction(after = "/login"): () => void {
       await queue.clear();
       clearMe();
       clearProjects();
+      resetAccess();
       await wipeDevice({
         store: queue,
         caches: typeof caches === "undefined" ? undefined : caches,

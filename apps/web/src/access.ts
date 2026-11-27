@@ -20,11 +20,20 @@ export function noteAccessLost(name: string): void {
   changed();
 }
 
+/** The notice as it stands now, for what is not a component. */
+export const currentAccessNotice = (): string | null => notice;
+
 /** Forgets the notice, once it was read. */
 export function clearAccessNotice(): void {
   if (notice === null) return;
   notice = null;
   changed();
+}
+
+/** Forgets the notice and every project marked as leaving; at logout, so the next person sees none. */
+export function resetAccess(): void {
+  leaving.clear();
+  clearAccessNotice();
 }
 
 /** The person is leaving this project on purpose; the loss that follows needs no notice. */

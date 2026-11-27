@@ -11,6 +11,7 @@ import { Icon } from "../../components/ui/Icon.tsx";
 import { Problem } from "../../components/ui/Problem.tsx";
 import { useToast } from "../../components/ui/Toast.tsx";
 import { useNavigate } from "../../nav.tsx";
+import { forgetProjectCopy } from "../../offline/copy.ts";
 import { loadProjects } from "../../projects.ts";
 import { useNeedsConnection } from "../../sync/connection.ts";
 import {
@@ -268,7 +269,7 @@ function Leave({ members }: { members: MemberRow[] }) {
       danger: true,
     });
     if (!ok) return;
-    const { slug, name } = project;
+    const { slug, name, id } = project;
     markLeaving(slug);
     try {
       await api.leaveProject();
@@ -281,8 +282,10 @@ function Leave({ members }: { members: MemberRow[] }) {
     await loadProjects();
     toast({ message: `You left ${name}.` });
     void navigate("/projects", { replace: true });
-    // Out of the project: if they join it again and are removed later, that is a loss to report.
-    unmarkLeaving(slug);
+    // The project's page unmarks the leaving when it goes, so that a loss reported while it is
+    // still on the screen is not worded as one. Its copy on this device goes too; the changes not
+    // sent yet stay, to copy out from All projects.
+    void forgetProjectCopy({ id, slug });
   }
 
   return (

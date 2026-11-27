@@ -349,6 +349,55 @@ describe("a save refused for want of a role (stage 27c)", () => {
   });
 });
 
+describe("a refused save, once the role is back (stage 27c review)", () => {
+  /** A queue whose save is refused while `roleLow` is true. */
+  async function refusedQueue() {
+    const api = fakeApi();
+    const state = { roleLow: true };
+    const sent = api.saveDraft;
+    api.saveDraft = vi.fn(async (d) => {
+      if (state.roleLow) throw new ApiFailure(403, "role_too_low", "No.");
+      return sent(d);
+    });
+    const q = makeQueue(api);
+    await q.put(ENTRY, "typed", {
+      kind: "edit",
+      draftId: "draft0000001",
+      revision: 0,
+      baseBlob: "",
+    });
+    await q.sendNow(ENTRY);
+    expect(await q.get(ENTRY)).toMatchObject({ state: "attention", refused: "role_too_low" });
+    return { api, q, state };
+  }
+
+  it("loses the refusal when the text is typed again", async () => {
+    const { q } = await refusedQueue();
+    await q.put(ENTRY, "typed more");
+    const record = await q.get(ENTRY);
+    expect(record?.refused).toBeUndefined();
+    expect(record?.error).toBeUndefined();
+    expect(record?.state).toBe("waiting");
+  });
+
+  it("loses the refusal on Retry, which then sends", async () => {
+    const { q, state, api } = await refusedQueue();
+    state.roleLow = false;
+    await q.retry(ENTRY);
+    expect((await q.get(ENTRY))?.refused).toBeUndefined();
+    await vi.waitFor(async () => expect(await q.get(ENTRY)).toBeUndefined());
+    expect(api.calls.some((c) => c[0] === "draft")).toBe(true);
+  });
+
+  it("goes back to waiting, and is sent, when the person may write again", async () => {
+    const { q, state, api } = await refusedQueue();
+    state.roleLow = false;
+    await q.resumeRefused();
+    await vi.waitFor(async () => expect(await q.get(ENTRY)).toBeUndefined());
+    expect(api.calls.filter((c) => c[0] === "draft")).toHaveLength(1);
+  });
+});
+
 describe("what the queue keeps beside its records", () => {
   it("reads and writes a value through its one database, without starting to send", async () => {
     const api = fakeApi();

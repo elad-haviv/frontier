@@ -180,6 +180,13 @@ export function kindOf(key: QueueKey): "entry" | "map" | "chronicle" | "library"
 /** The part of the key after its kind: the path of an entry, the id of a map or a chronicle. */
 export const subject = (key: QueueKey): string => key.slice(key.indexOf(":") + 1);
 
+/** A record without the mark that the server refused it for want of a role, or its words. */
+function withoutRefusal(r: QueueRecord): QueueRecord {
+  if (!r.refused) return r;
+  const { refused: _refused, error: _error, ...rest } = r;
+  return rest;
+}
+
 /** A file's name for the author: an entry's name, a map's or chronicle's title, a file's label. */
 export function nameOf(record: Pick<QueueRecord, "key" | "value">): string {
   const library = libraryKindOf(record.key);
@@ -407,7 +414,7 @@ export class Queue {
         tries: 0,
         nextTry: this.now(),
         since: this.now(),
-        ...known,
+        ...(known ? withoutRefusal(known) : {}),
         value,
         state: known?.state === "sending" ? "sending" : "waiting",
       },
@@ -422,7 +429,8 @@ export class Queue {
       const link = combine(r?.link, meta.link);
       const next: QueueRecord = r
         ? {
-            ...r,
+            // A new value is a new try, so what the server refused before no longer holds it back.
+            ...withoutRefusal(r),
             value,
             op: randomId(),
             ...(meta.kind ? { kind: meta.kind } : {}),
@@ -521,9 +529,26 @@ export class Queue {
   async retry(key: QueueKey): Promise<void> {
     const store = await this.ready();
     const record = await store.update(key, (r) =>
-      r ? { ...r, state: "waiting", tries: 0, nextTry: this.now() } : null,
+      r ? { ...withoutRefusal(r), state: "waiting", tries: 0, nextTry: this.now() } : null,
     );
     this.changed(key, record ?? undefined);
+  }
+
+  /**
+   * The person may change this project again (a writer or an owner): what the server refused
+   * for want of a role goes back to waiting, and is sent.
+   */
+  async resumeRefused(): Promise<void> {
+    const store = await this.ready();
+    for (const r of [...this.cache.values()]) {
+      if (r.refused !== "role_too_low") continue;
+      const record = await store.update(r.key, (now) =>
+        now?.refused
+          ? { ...withoutRefusal(now), state: "waiting", tries: 0, nextTry: this.now() }
+          : (now ?? null),
+      );
+      this.changed(r.key, record ?? undefined);
+    }
   }
 
   /**
@@ -1486,6 +1511,10 @@ export class QueueHub {
   }
   async drop(key: QueueKey): Promise<void> {
     return this.open().drop(key);
+  }
+  /** The open project's refused changes go back to waiting (the person may write there again). */
+  async resumeRefused(): Promise<void> {
+    return this.active ? this.active.resumeRefused() : undefined;
   }
   async sendNow(key: QueueKey, timeoutMs?: number): Promise<void> {
     return this.open().sendNow(key, timeoutMs);
