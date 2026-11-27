@@ -6,7 +6,7 @@ import rateLimit from "@fastify/rate-limit";
 import secureSession from "@fastify/secure-session";
 import Fastify, { type FastifyInstance } from "fastify";
 import { ZodError } from "zod";
-import type { BiomesFile } from "@frontier/schema";
+import { type BiomesFile, kindsOf, type TreesFile } from "@frontier/schema";
 import { FieldProposer } from "./ai/fields.js";
 import { FieldJob } from "./ai/job.js";
 import { AiLog } from "./ai/log.js";
@@ -72,6 +72,8 @@ import { authRoutes } from "./routes/auth.js";
 import { entryRoutes } from "./routes/entries.js";
 import { graphRoutes } from "./routes/graph.js";
 import { relationRoutes } from "./routes/relations.js";
+import { collectRelations } from "./relations/collect.js";
+import { relationWarning } from "./ai/relationProposals.js";
 import { imageRoutes } from "./routes/images.js";
 import { pictureRoutes } from "./routes/pictures.js";
 import { searchRoutes } from "./routes/search.js";
@@ -262,7 +264,17 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
   });
   ai.useCatalog(models);
   const changer = new EntryChanger({ git, index, drafts, status });
-  const proposals = new ProposalStore({ stateDir, files, index, changer, status });
+  const proposals = new ProposalStore({
+    stateDir,
+    files,
+    index,
+    changer,
+    status,
+    discard: async (id) => {
+      await drafts.discard(id);
+      status.drafts(drafts.count(), 0);
+    },
+  });
   await proposals.load();
   const fields = new FieldProposer({
     stateDir,
@@ -273,6 +285,9 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
     proposals,
     models,
     mayRead: (path) => quarantine.aiMayRead(path),
+    // Stage 31: the kinds of relation, and the relations already written, from published entries.
+    kinds: () => relationKinds(),
+    written: () => writtenRelations(),
   });
   const quarantine = new Quarantine({
     stateDir,
@@ -309,6 +324,44 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
     changer,
   });
   const libraryFiles = new LibraryFileStore({ vaultDir, drafts });
+  const relationKinds = () => kindsOf((libraryFiles.current("trees").file as TreesFile).kinds);
+  let written: { key: string; keys: Set<string> } | null = null;
+  /** Relations already written, drafts included, so an accepted one is not proposed again. */
+  const writtenRelations = async (): Promise<Set<string>> => {
+    const kinds = relationKinds();
+    const list = drafts.list().filter((d) => d.kind !== "delete" && !d.binary);
+    const key = `${index.generation}|${JSON.stringify(kinds)}|${list.map((d) => `${d.id}:${d.revision}`).join(",")}`;
+    if (written?.key === key) return written.keys;
+    const texts = new Map<string, string>();
+    for (const d of list) texts.set(d.path, await drafts.text(d.id));
+    const notes = index
+      .allNotes()
+      .map((n) => ({ path: n.path, text: texts.get(n.path) ?? n.text }));
+    for (const [path, text] of texts)
+      if (!index.note(path) && path.endsWith(".md")) notes.push({ path, text });
+    const r = collectRelations({
+      notes,
+      files: [...index.files, ...texts.keys()],
+      schema: index.schema,
+      kinds,
+    });
+    const keys = new Set<string>();
+    for (const f of r.facts) {
+      keys.add(`${f.kind}|${f.a}|${f.b}`);
+      if (f.with) keys.add(`${f.kind}|${f.with}|${f.b}`);
+    }
+    written = { key, keys };
+    return keys;
+  };
+  proposals.warnFor = (path, op) =>
+    relationWarning(
+      relationKinds(),
+      op.what,
+      path,
+      op.whoPath,
+      (p) => index.note(p)?.text ?? null,
+      index.schema,
+    );
   const folders = new FolderStore({ index, git, drafts, files: libraryFiles, changer });
   const discoverer = new Discoverer({
     stateDir,

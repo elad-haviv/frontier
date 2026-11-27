@@ -13,6 +13,7 @@ import {
   splitFrontmatter,
   typeFromFolder,
 } from "@frontier/vault";
+import type { RelKind } from "@frontier/schema";
 import { z } from "zod";
 import { ApiError } from "../errors.js";
 import type { VaultIndex } from "../index/build.js";
@@ -21,13 +22,31 @@ import type { StateFiles } from "../state/files.js";
 import type { SettingsStore } from "../state/settings.js";
 import type { ModelCatalogue } from "./models.js";
 import type { AiProvider, AnswerSchema } from "./provider.js";
+import { checkRelations, type PendingRelation, type ReadRelation } from "./relationProposals.js";
 
-/** Changing the instructions changes this, so cached answers to the old ones are not reused. */
-export const PROMPT_VERSION = 1;
+/**
+ * Changing the instructions changes this, so cached answers to the old ones are not reused.
+ * Version 2 (stage 31) also reads relations.
+ */
+export const PROMPT_VERSION = 2;
 
 const Answer = z.object({
   type: z.string().nullable(),
   time: z.array(z.object({ what: z.string(), when: z.string(), quote: z.string() })),
+  relations: z
+    .array(
+      z.object({
+        what: z.string(),
+        who: z.string(),
+        with: z.string().nullable(),
+        how: z.string().nullable(),
+        when: z.string().nullable(),
+        quote: z.string(),
+        words: z.string(),
+        stated: z.boolean(),
+      }),
+    )
+    .default([]),
 });
 type Answer = z.infer<typeof Answer>;
 
@@ -37,7 +56,7 @@ const ANSWER: AnswerSchema<Answer> = {
   json: {
     type: "object",
     additionalProperties: false,
-    required: ["type", "time"],
+    required: ["type", "time", "relations"],
     properties: {
       type: { type: ["string", "null"], description: "One of the listed types, or null." },
       time: {
@@ -59,11 +78,57 @@ const ANSWER: AnswerSchema<Answer> = {
           },
         },
       },
+      relations: {
+        type: "array",
+        items: {
+          type: "object",
+          additionalProperties: false,
+          required: ["what", "who", "with", "how", "when", "quote", "words", "stated"],
+          properties: {
+            what: {
+              type: "string",
+              description: "One of the listed words, as seen from this entry.",
+            },
+            who: { type: "string", description: "The other one, named as the text names them." },
+            with: {
+              type: ["string", "null"],
+              description: "For a child: the other parent, if named.",
+            },
+            how: {
+              type: ["string", "null"],
+              description: "Such as adopted or ended, only if said.",
+            },
+            when: {
+              type: ["string", "null"],
+              description: "When, in the text's words, only if said.",
+            },
+            quote: { type: "string", description: "The exact sentence it comes from." },
+            words: {
+              type: "string",
+              description: "The exact words of that sentence that state it, with the name.",
+            },
+            stated: {
+              type: "boolean",
+              description: "True when the sentence says it; false when it can only be worked out.",
+            },
+          },
+        },
+      },
     },
   },
 };
 
-function instructions(types: string[], what: string[]): string {
+/** The kinds of relation in words for the model: each with its other way round and other words. */
+function kindLines(kinds: RelKind[]): string[] {
+  return kinds.map((k) => {
+    const also = k.also?.length ? ` (also: ${k.also.join(", ")})` : "";
+    if (!k.reverse) return `- "${k.name}"${also}: the same both ways.`;
+    const back = k.reverseAlso?.length ? ` (also: ${k.reverseAlso.join(", ")})` : "";
+    return `- "${k.name}"${also}: names the one above this entry. The other way round, "${k.reverse}"${back}: names the one below.`;
+  });
+}
+
+function instructions(types: string[], what: string[], kinds: RelKind[]): string {
   return [
     "You read one entry from an author's fictional world and list what it states about time.",
     "",
@@ -78,6 +143,20 @@ function instructions(types: string[], what: string[]): string {
     '- Use only the listed names for "what". If none fits, leave the fact out.',
     '- "type" is the listed type that fits the entry, or null when unsure.',
     "- Most entries state no dates. An empty list is a good answer.",
+    "",
+    "Relations: how the subject of this entry relates to others the text names. Words to use, as",
+    "seen from this entry:",
+    ...kindLines(kinds),
+    "- Give each relation from this entry's side: in Wren's entry, \"daughter of Corin\" is",
+    '  "parent" with who "Corin". Use only the listed words; if none fits, leave it out.',
+    '- "who" names the other one as the text does. "with" is the other parent of a child, only',
+    "  when the text names them.",
+    '- "words" are the exact words of the quote that state the relation, holding both the word',
+    '  for the relation and the name, such as "daughter of Corin Vane".',
+    '- "how" (adopted, ended) and "when" only when the text says them in those words.',
+    '- "stated" is true when the sentence says it outright, false when it can only be worked',
+    "  out. Never guess a relation the text does not support.",
+    "- Most entries state no relations. An empty list is a good answer.",
   ].join("\n");
 }
 
@@ -91,6 +170,10 @@ export interface FieldProposerDeps {
   models: ModelCatalogue;
   /** Says why AI features may not read a note right now, or null when they may. */
   mayRead?: (path: string) => string | null;
+  /** The kinds of relation in use (stage 31). */
+  kinds?: () => RelKind[];
+  /** The keys of every relation already written (`factKey`). */
+  written?: () => Promise<Set<string>>;
 }
 
 export class FieldProposer {
@@ -147,6 +230,7 @@ export class FieldProposer {
     const types = Object.keys(schema.types);
     const what = Object.keys(schema.what);
 
+    const kinds = this.d.kinds?.() ?? [];
     const hash = createHash("sha256")
       // OpenRouter ids were bare before stage 18; hashing them the same keeps earlier answers.
       .update(
@@ -155,6 +239,7 @@ export class FieldProposer {
           PROMPT_VERSION,
           this.d.index.schemaText,
           body,
+          kinds,
         ]),
       )
       .digest("hex");
@@ -163,7 +248,7 @@ export class FieldProposer {
     if (!answer) {
       answer = await this.d.provider.complete({
         task: "extraction",
-        system: instructions(types, what),
+        system: instructions(types, what, kinds),
         user: `Entry: ${note.title}\n\n${body}`,
         schema: ANSWER,
         entry: path,
@@ -194,6 +279,21 @@ export class FieldProposer {
     ) {
       operations.push({ op: "set_type", type: answer.type });
     }
-    return this.d.proposals.add(path, operations, model);
+    // Relations (stage 31): checked, matched, and merged with the other entry's proposal.
+    const { ops, merges } = checkRelations({
+      path,
+      body,
+      read: answer.relations as ReadRelation[],
+      kinds,
+      entries: this.d.index
+        .allNotes()
+        .map((n) => ({ path: n.path, title: n.title, aliases: n.aliases })),
+      written: (await this.d.written?.()) ?? new Set(),
+      pending: this.d.proposals.pendingRelations() as PendingRelation[],
+    });
+    operations.push(...ops);
+    for (const m of merges) await this.d.proposals.addEvidence(m.proposal, m.op, m.also);
+    await this.d.proposals.markRead(path);
+    return (await this.d.proposals.add(path, operations, model)) + merges.length;
   }
 }

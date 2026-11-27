@@ -21,6 +21,12 @@ export interface EntryChangerDeps {
 export class EntryChanger {
   constructor(private readonly d: EntryChangerDeps) {}
 
+  /** Whether the entry has a draft of its text now. */
+  hasDraft(path: string): boolean {
+    const draft = this.d.drafts.byPath(path);
+    return !!draft && draft.kind !== "delete" && !draft.binary;
+  }
+
   /** The text the author would see: his draft, or else what is published. Null when neither exists. */
   async text(path: string): Promise<string | null> {
     const draft = this.d.drafts.byPath(path);

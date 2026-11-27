@@ -109,6 +109,8 @@ export const TreeLine = z
     /** Entries whose branch is folded, and entries opened past `gens`. */
     folded: z.array(VaultPath).optional(),
     opened: z.array(VaultPath).optional(),
+    /** Proposed relations are drawn unless this is set (stage 31). */
+    hideProposed: z.boolean().optional(),
   })
   .passthrough();
 export type TreeLine = z.infer<typeof TreeLine>;
@@ -182,6 +184,7 @@ export const TREES: LibraryFileKind<TreesFile> = {
     "show",
     "folded",
     "opened",
+    "hideProposed",
   ],
   key: (item) => (item as TreeLine).id,
   conflict: "trees_changed_on_both",
@@ -247,6 +250,36 @@ export const RelationsResponse = z.object({
   kinds: z.array(RelKind),
   people: z.array(RelPerson),
   facts: z.array(RelFact),
+  /**
+   * Relations the AI proposed and the author has not decided (stage 31), in the same shape as
+   * facts, with where to decide them. They are never counted in checks.
+   */
+  proposed: z
+    .array(
+      z.object({
+        kind: z.string(),
+        a: z.string(),
+        b: z.string(),
+        with: z.string().nullable(),
+        how: z.string().nullable(),
+        when: z.string().nullable(),
+        proposal: z.string(),
+        op: z.string(),
+        /** The entry it would be saved on, and the word written there. */
+        path: VaultPath,
+        word: z.string(),
+        quote: z.string(),
+        words: z.string(),
+        stated: z.boolean(),
+        also: z.array(z.object({ path: VaultPath, quote: z.string(), words: z.string() })),
+        match: z.enum(["title", "alias", "none"]),
+        maybe: VaultPath.nullable(),
+        warning: z.string().nullable(),
+      }),
+    )
+    .optional(),
+  /** Entries never read for relations, for the Trees page's "Find relations" card. */
+  unread: z.number().int().min(0).optional(),
   /** Words written that are not a kind, with where. They are kept and not drawn. */
   unknown: z.array(z.object({ path: VaultPath, index: z.number().int(), word: z.string() })),
 });
