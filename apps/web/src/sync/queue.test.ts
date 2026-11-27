@@ -321,6 +321,97 @@ describe("the save queue", () => {
   });
 });
 
+describe("entry text is never dropped by a refusal (stage 27d)", () => {
+  const typed = { kind: "edit" as const, draftId: "draft0000001", revision: 1, baseBlob: "b0" };
+
+  it("keeps the text of a save answered 404, for Retry or Discard, and does not send it again by itself", async () => {
+    const api = fakeApi({
+      saveDraft: vi.fn(async () => {
+        throw new ApiFailure(404, "not_found", "There is no such draft.");
+      }),
+    });
+    const q = makeQueue(api);
+    await q.put(ENTRY, "a long afternoon of writing", typed);
+    await q.sendNow(ENTRY);
+    expect(await q.get(ENTRY)).toMatchObject({
+      state: "attention",
+      value: "a long afternoon of writing",
+      error: "There is no such draft.",
+    });
+    await new Promise((r) => setTimeout(r, 40));
+    expect(api.saveDraft).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the text of a save refused as saved_by_other, or in any way the table does not know", async () => {
+    for (const [status, code] of [
+      [409, "saved_by_other"],
+      [400, "invalid"],
+      [410, "plan_expired"],
+      [418, "something_new"],
+    ] as const) {
+      const api = fakeApi({
+        saveDraft: vi.fn(async () => {
+          throw new ApiFailure(status, code, `refused: ${code}`);
+        }),
+      });
+      const q = makeQueue(api);
+      await q.put(ENTRY, `text for ${code}`, typed);
+      await q.sendNow(ENTRY);
+      expect(await q.get(ENTRY)).toMatchObject({
+        state: "attention",
+        value: `text for ${code}`,
+      });
+    }
+  });
+
+  it("sends the text again after Retry, and removes it only once the server has it", async () => {
+    let refuse = true;
+    const api = fakeApi();
+    const plain = api.saveDraft;
+    api.saveDraft = vi.fn(async (d) => {
+      if (refuse) throw new ApiFailure(404, "not_found", "There is no such draft.");
+      return plain(d);
+    });
+    const q = makeQueue(api);
+    await q.put(ENTRY, "kept until taken", typed);
+    await q.sendNow(ENTRY);
+    expect((await q.get(ENTRY))?.value).toBe("kept until taken");
+    refuse = false;
+    await q.retry(ENTRY);
+    await vi.waitFor(async () => expect(await q.get(ENTRY)).toBeUndefined());
+    expect(api.calls.at(-1)![1]).toMatchObject({ text: "kept until taken" });
+  });
+
+  it("goes on with the id the server re-homed the text to, and keeps what was typed meanwhile", async () => {
+    // The device's id was another person's: the server made the text a draft of the person's own,
+    // or a kept copy of the draft they had, and says which (`stale_revision { id }`).
+    let first = true;
+    const api = fakeApi();
+    const plain = api.saveDraft;
+    api.saveDraft = vi.fn(async (d) => {
+      if (first) {
+        first = false;
+        // Text typed while this send was on its way.
+        await q.put(ENTRY, "typed while the send was away", typed);
+        const failure = new ApiFailure(409, "stale_revision", "Changed from another device.");
+        failure.draftId = "rehomed00001";
+        throw failure;
+      }
+      return plain(d);
+    });
+    const q = makeQueue(api);
+    await q.put(ENTRY, "first text", typed);
+    await q.sendNow(ENTRY);
+    await vi.waitFor(async () => expect(await q.get(ENTRY)).toBeUndefined());
+    // The newer text went to the id the server named, at revision 0, so it is never built on.
+    expect(api.calls.at(-1)![1]).toMatchObject({
+      id: "rehomed00001",
+      revision: 0,
+      text: "typed while the send was away",
+    });
+  });
+});
+
 describe("a save refused for want of a role (stage 27c)", () => {
   it("is not sent again, and is marked as refused for the role", async () => {
     const api = fakeApi();
