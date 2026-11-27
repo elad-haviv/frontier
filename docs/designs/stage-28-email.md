@@ -316,3 +316,72 @@ password is switched off) and never contains a reset link.
 - For browser tests: `E2E_MAIL=1` makes `apps/web/e2e/server.mjs` keep mail in memory; read it at
   `GET /api/test/mail` (`{ messages: [{ to, subject, text, html }] }`) and clear it with
   `DELETE /api/test/mail`. Mail stays off by default, so existing specs are unaffected.
+
+## How it was built: web
+
+Built on `stage-28-email-web`. No server or schema change. Everything is keyed on whether the server
+sends mail, read from the person's own profile (`me.emailInfo.mailOn`, `useMailOn()` in `me.ts`; the
+login and join pages read `mail` from `GET /api/session`). With mail off the app is as it was, except
+that the invite box says the server cannot send email and Signing in shows the address plainly.
+
+### Where things are
+
+| What | Where |
+| --- | --- |
+| Words and rules (banner states, refusals, password count, the invitation a reset returns to) | `apps/web/src/email/emailModel.ts` |
+| Banner ("Confirm your email: we sent a link to ..."), in `Shell` and `OutsideShell` | `email/ConfirmBanner.tsx` |
+| The form that changes or first adds an address (banner and Settings) | `email/ChangeAddress.tsx` |
+| Settings, Signing in, Email address block | `email/EmailAddress.tsx`, shown by `pages/settings/Account.tsx` |
+| `/confirm/<code>`, `/forgot-password`, `/reset/<code>` | `email/ConfirmPage.tsx`, `ForgotPage.tsx`, `ResetPage.tsx` (card in `MailPage.tsx`) |
+| Invite box with an address, Resend, sent states (moved out of `Members.tsx`) | `pages/settings/Invites.tsx`, `membersModel.ts` |
+| Unconfirmed tag | `pages/settings/Members.tsx` |
+| Proof (`?m=`) on the join page | `pages/Join.tsx`, `pages/joinModel.ts` |
+
+### Behaviour worth knowing
+
+- **Banner.** Shown for `status: "unconfirmed"` (about the pending address while a change waits) and for
+  `needsAddress`; never for a confirmed address or with mail off. No close button. It reads the person
+  again on focus, on tab visibility, when the connection says access may have changed, and every 30 s
+  while shown. Its status line is `aria-live="polite"`.
+- **Change address asks for the current password** (or opens the recent-login dialog when the account
+  has no working password), in the banner too, because the server requires it. The mockup's banner form
+  had only the address.
+- **Confirm page** posts once on load through a per-code in-memory promise, so React's double effect
+  never lets the second "already confirmed" replace the first answer. Nothing is stored. A dead link
+  offers Log in, or, when logged in, "Send a new link" (the resend call).
+- **Reset page** checks the link with a GET, takes 12+ characters with a live count, and logs nobody in.
+- **Proof.** `?m=` is read once into state, kept in the address (a reload keeps it) and sent on every
+  join call. A Google trip that joins returns to the bare invite page (the server ignores `returnTo`
+  with an invitation), so the proof cannot survive it; the login form's Google button on a page that has
+  a proof therefore does a plain login with `returnTo` set to the invite page with its proof.
+- **Forgot password from an invitation.** The invite page's address is remembered in `localStorage`
+  (`frontier.afterReset`, only a `/join/<code>[?m=<proof>]` path, one hour, read once) so the reset
+  link, which opens in another tab or app, can lead back to it through the login page. No confirm or
+  reset code is ever stored.
+- **Service worker and `api.ts`.** `/confirm/*`, `/reset/*`, `/forgot-password` are page routes like
+  `/login` (the worker answers every navigation with the app). `/api/confirm/`, `/api/reset/` and
+  `/api/forgot-password` are "open" in `api.ts` (a 401 never opens the login dialog) and are never
+  cached (the worker answers no `/api/` read but images).
+
+### Departures from the mockup
+
+- The invite box stays inline on Members (as built in 27c), not a dialog or bottom sheet, so Escape
+  rules for the dialog do not apply; Enter in the address field sends. With mail off the button keeps
+  its old name "Make an invite link"; with mail on it reads "Make the link" / "Send the invite".
+- The "from noreply@haviv.pro" in the mockup is not written in the app: the sender is configuration.
+- Signing in offers Change address for a Google-confirmed address too (the server allows it); the text
+  says it is the linked Google account's address.
+- Expired reset page: "Ask for a new link" (the mockup's), which opens the ask page.
+- A confirm banner for an account whose address was taken by Google (`needsAddress`) says so and offers
+  "Add an address".
+
+### Tests
+
+Unit tests sit beside each screen (`email/*.test.ts`, `pages/JoinEmail.test.ts`,
+`pages/settings/MembersEmail.test.ts`, additions to `Login`, `Profile`, `Account`, `AllProjects`,
+`api`, `project` and `sw/routes` tests). Browser tests: `e2e/email.spec.ts` runs on a second e2e
+server with `E2E_MAIL=1` (`playwright.config.ts`: its own port, `E2E_MAIL_PORT`, default the main port
+plus 500; its own data folder `.e2e-data-mail`; addressed as `127.0.0.1` so cookies never mix), reading
+mail from `/api/test/mail`; `e2e/emailoff.spec.ts` runs on the main server (mail off). One existing
+expectation was widened: `api.projects.test.ts` lists `confirm`, `reset` and `forgot-password` among the
+server-wide addresses.

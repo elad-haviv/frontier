@@ -101,7 +101,11 @@ to the real mail provider), and:
 3. Publish SPF and DKIM records for the sending domain (`haviv.pro`): SPF lists the server or provider
    that sends for it, and DKIM is the provider's public key as a DNS TXT record. Without them, mail
    from `noreply@haviv.pro` is likely to land in spam or be refused. A DMARC record is recommended.
-4. Restart Frontier. `GET /api/session` then says `mail: true`, and the app shows the email screens.
+4. Restart Frontier. `GET /api/session` then says `mail: true`, and the app shows the email screens:
+   the optional "Send it to" address on the invite box, the "Confirm your email" banner, the
+   unconfirmed mark in Members (owners), the email address block in Settings, Signing in, "Forgot
+   password?" on the login page, and the pages the links in emails open: `/confirm/<code>`,
+   `/reset/<code>` and `/forgot-password`.
 
 ## Working on it
 
