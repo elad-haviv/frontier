@@ -378,7 +378,9 @@ describe("errors", () => {
     expect(statusOf("ai_stopped")).toBe(409);
     // Stage 27a added email_taken.
     expect(statusOf("email_taken")).toBe(409);
-    expect(Object.keys(ERROR_STATUS)).toHaveLength(25);
+    // The web app asks the person to log in again for this one.
+    expect(statusOf("recent_login_needed")).toBe(403);
+    expect(Object.keys(ERROR_STATUS)).toHaveLength(26);
   });
 
   it("takes a web address of at most 2,048 characters for an image", () => {
@@ -408,12 +410,15 @@ describe("accounts", () => {
       identities: [],
       createdAt: "2026-11-26T10:00:00Z",
       admin: false,
+      sessionEpoch: 0,
     });
     expect(PeopleFile.parse({})).toEqual({ version: 1, people: [] });
   });
 
   it("takes the email in any case, and an empty one at login", () => {
     expect(emailKey("  Elad@Example.COM ")).toBe("elad@example.com");
+    // Full-width letters and ligatures are the plain letters.
+    expect(emailKey("ＥＬＡＤ＠example.com")).toBe("elad@example.com");
     expect(LoginRequest.parse({ password: "x" })).toEqual({ email: "", password: "x" });
     expect(LoginRequest.parse({ email: " a@b.co ", password: "x" }).email).toBe("a@b.co");
     expect(LoginRequest.safeParse({ email: "a@b.co", password: "" }).success).toBe(false);

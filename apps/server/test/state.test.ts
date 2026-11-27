@@ -73,6 +73,7 @@ describe("state files", () => {
       },
       passkeys: [],
       passwordOff: false,
+      migratedToPeople: false,
       // A file from before stage 25 reads with every needs-love rule on.
       keepGoing: {
         needsLove: {
