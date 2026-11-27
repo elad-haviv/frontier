@@ -29,7 +29,8 @@ import {
   useConfirmCode,
   useResetCode,
 } from "../mail/accounts.js";
-import { mailable } from "../mail/mailer.js";
+import { mailable, recipientKey } from "../mail/mailer.js";
+import { confirmedOf, withoutPendingChange } from "../state/people.js";
 import type { Server } from "../server.js";
 
 const CodeParam = z.object({ code: z.string().max(200) });
@@ -71,17 +72,24 @@ export function emailRoutes(app: FastifyInstance, s: Server): void {
         emailConfirmedAt: null,
         emailConfirmedBy: null,
         emailCode: null,
+        emailUsed: null,
         emailPending: null,
         resetCode: null,
         emailDisplaced: false,
+        // Set by the account itself: no reset link goes to it until it is confirmed.
+        emailSetBySelf: true,
+        emailLinkSentUntil: null,
       }));
       if (!s.mail.enabled) return { ok: true, applied: true, mail: "off" };
       const mail = await sendConfirm(s, person.id, email, { pending: false });
       return { ok: true, applied: true, mail: mail === "sent" ? "sent" : "failed" };
     }
+    // Asking again for the change that already waits does not tell the old address again.
+    const again =
+      person.emailPending !== null && emailKey(person.emailPending.address) === emailKey(email);
     const mail = await sendConfirm(s, person.id, email, { pending: true });
     // The old address is told that a change was asked for.
-    noteAddressChanged(s, "asked", person.email, email);
+    if (!again) noteAddressChanged(s, "asked", person.email, email);
     return { ok: true, applied: false, mail: mail === "sent" ? "sent" : "failed" };
   });
 
@@ -91,15 +99,7 @@ export function emailRoutes(app: FastifyInstance, s: Server): void {
     await s.people.mutate((people) => {
       const me = people.find((p) => p.id === id);
       if (!me?.emailPending) throw new ApiError("not_found", "No change of address is waiting.");
-      const pending = me.emailPending.address;
-      const next = {
-        ...me,
-        emailPending: null,
-        emailCode:
-          me.emailCode && emailKey(me.emailCode.address) === emailKey(pending)
-            ? null
-            : me.emailCode,
-      };
+      const next = withoutPendingChange(me);
       return { people: people.map((p) => (p.id === id ? next : p)), result: undefined };
     });
     return { ok: true };
@@ -113,12 +113,13 @@ export function emailRoutes(app: FastifyInstance, s: Server): void {
     if (!pending && person.email.trim() === "") {
       throw new ApiError("invalid", "Add an email address first.");
     }
-    if (!pending && person.emailConfirmedAt) {
+    if (!pending && confirmedOf(person)) {
       throw new ApiError("already_confirmed", "Your email address is already confirmed.");
     }
     s.resendLimit.attempt(person.id);
     const mail = await sendConfirm(s, person.id, pending?.address ?? person.email, {
       pending: pending !== null,
+      resend: true,
     });
     return { ok: true, applied: false, mail: mail === "sent" ? "sent" : "failed" };
   });
@@ -152,8 +153,9 @@ export function emailRoutes(app: FastifyInstance, s: Server): void {
     if (!s.mail.enabled) throw mailOff();
     s.forgotIpLimit.attempt(request.ip);
     const { email } = ForgotPasswordRequest.parse(request.body);
-    // Counted for every address alike, whether or not it has an account.
-    s.forgotAddressLimit.attempt(emailKey(email));
+    // Counted for every address alike, whether or not it has an account, and for a mailbox once
+    // whatever +tag is put in it.
+    s.forgotAddressLimit.attempt(recipientKey(email));
     s.mail.background(() => handleForgot(s, email));
     return { ok: true };
   });

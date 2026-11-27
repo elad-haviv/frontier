@@ -8,7 +8,7 @@ import {
   type MeResponse,
   type Person,
 } from "@frontier/schema";
-import { emailInfo, sendConfirm } from "../mail/accounts.js";
+import { emailInfo } from "../mail/accounts.js";
 import { hashPassword, verifyPassword } from "../auth/password.js";
 import {
   currentPerson,
@@ -170,35 +170,36 @@ export function authRoutes(app: FastifyInstance, s: Server): void {
     const { name, email } = ProfileRequest.parse(request.body);
     const before = personOf(request);
     const sameAddress = emailKey(email) === emailKey(before.email);
-    // With mail on, a different address replaces an existing one only through Change address,
-    // which confirms the new address first. The first address of an account that has none, and
-    // every address on a server without mail, are set at once as before.
-    if (!sameAddress && before.email.trim() !== "" && s.mail.enabled) {
+    // With mail on, no address is set or changed here, the first one of an account that has none
+    // included: that goes through Change address, which asks for the password (or a recent login)
+    // and sends a link to confirm the new address. A session cookie alone must not be able to put
+    // an address on an account. Without mail every address is set at once, as before.
+    if (!sameAddress && s.mail.enabled) {
       throw new ApiError(
         "use_change_address",
-        "To change your email address, use Change address under Settings, Signing in.",
+        "To set or change your email address, use Change address under Settings, Signing in.",
       );
     }
     const person = await s.people.update(before.id, (p) => ({
       ...p,
       name,
+      // The same address in another case is the same address: it is saved as typed and keeps
+      // whatever confirmation it had.
+      email,
       ...(sameAddress
         ? {}
         : {
-            email,
             emailConfirmedAt: null,
             emailConfirmedBy: null,
             emailCode: null,
+            emailUsed: null,
             emailPending: null,
             resetCode: null,
             emailDisplaced: false,
+            emailSetBySelf: true,
+            emailLinkSentUntil: null,
           }),
     }));
-    if (!sameAddress && s.mail.enabled) {
-      s.mail.background(() =>
-        sendConfirm(s, person.id, person.email, { pending: false, quiet: true }),
-      );
-    }
     return me(
       person,
       request.session.get("method") ?? "password",

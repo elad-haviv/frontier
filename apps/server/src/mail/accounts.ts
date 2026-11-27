@@ -21,8 +21,8 @@ import {
 import { ApiError } from "../errors.js";
 import { newInviteCode } from "../members/invites.js";
 import type { Server } from "../server.js";
-import { mayDisplace } from "../state/people.js";
-import { MailError } from "./mailer.js";
+import { confirmedOf, mayDisplace, withoutPendingChange } from "../state/people.js";
+import { MailError, recipientKey } from "./mailer.js";
 import { addressChangedMail, confirmMail, noPasswordMail, resetMail } from "./templates.js";
 
 const hashOf = (code: string): Buffer => createHash("sha256").update(code, "utf8").digest();
@@ -32,6 +32,9 @@ const ZERO = Buffer.alloc(32);
 export const linkTo = (server: Server, path: string): string =>
   `${server.config.publicUrl.replace(/\/+$/, "")}${path}`;
 
+/** Whether a reset link (or the explanatory email) may go to the account's address now. */
+export const mayReceiveReset = (p: Person): boolean => !p.emailSetBySelf || confirmedOf(p) !== null;
+
 /** Whether the account can log in with its password right now (the only case a reset link is sent). */
 export const passwordWorks = (p: Person): boolean => p.passwordHash !== "" && !p.passwordOff;
 
@@ -39,7 +42,11 @@ export const passwordWorks = (p: Person): boolean => p.passwordHash !== "" && !p
  * The account holding a code. Every account is compared, in constant time and without stopping at
  * the first match, so how long it takes says nothing about whether, or where, a code is.
  */
-function holder(people: Person[], code: string, field: "emailCode" | "resetCode"): Person | null {
+function holder(
+  people: Person[],
+  code: string,
+  field: "emailCode" | "resetCode" | "emailUsed",
+): Person | null {
   const valid = INVITE_CODE_PATTERN.test(code);
   const wanted = hashOf(valid ? code : "");
   let found: Person | null = null;
@@ -53,8 +60,17 @@ function holder(people: Person[], code: string, field: "emailCode" | "resetCode"
 
 const dead = () => new ApiError("link_invalid", "This link has been used or has run out.");
 
-const sentOf = (code: EmailCode | null): MailSent | null =>
-  code ? { at: code.createdAt, ok: code.mail === "queued" ? null : code.mail === "sent" } : null;
+/** A mail still "on its way" after this long was lost (the server stopped, or the relay hung). */
+const QUEUED_STALE_MS = 60_000;
+
+const sentOf = (code: EmailCode | null): MailSent | null => {
+  if (!code) return null;
+  if (code.mail === "queued") {
+    const lost = Date.now() - Date.parse(code.createdAt) > QUEUED_STALE_MS;
+    return { at: code.createdAt, ok: lost ? false : null };
+  }
+  return { at: code.createdAt, ok: code.mail === "sent" };
+};
 
 /** What the app needs to know about a person's address, for the banner and Settings. */
 export function emailInfo(server: Server, p: Person): EmailInfo {
@@ -62,11 +78,12 @@ export function emailInfo(server: Server, p: Person): EmailInfo {
   const code = p.emailCode;
   const forCurrent = code !== null && emailKey(code.address) === emailKey(p.email);
   const pending = p.emailPending;
+  const confirmed = confirmedOf(p);
   return {
     mailOn: on,
-    status: p.email.trim() === "" ? "none" : p.emailConfirmedAt ? "confirmed" : "unconfirmed",
-    confirmedBy: p.emailConfirmedAt ? p.emailConfirmedBy : null,
-    confirmedAt: p.emailConfirmedAt,
+    status: p.email.trim() === "" ? "none" : confirmed ? "confirmed" : "unconfirmed",
+    confirmedBy: confirmed?.by ?? null,
+    confirmedAt: confirmed?.at ?? null,
     sent: forCurrent ? sentOf(code) : null,
     pending: pending
       ? {
@@ -81,7 +98,7 @@ export function emailInfo(server: Server, p: Person): EmailInfo {
 
 /** Whether to show the person's address as unconfirmed, as owners see it in the members list. */
 export const isUnconfirmed = (server: Server, p: Person | null | undefined): boolean =>
-  server.mail.enabled && !!p && p.email.trim() !== "" && p.emailConfirmedAt === null;
+  server.mail.enabled && !!p && p.email.trim() !== "" && confirmedOf(p) === null;
 
 const addMs = (ms: number): string => new Date(Date.now() + ms).toISOString();
 
@@ -92,31 +109,47 @@ const addMs = (ms: number): string => new Date(Date.now() + ms).toISOString();
  * mail. A new link replaces the one before it. With `pending` the address is a change that waits
  * for the link; without it, it is the account's own. A caller that must not wait (joining) runs
  * this with `server.mail.background`. `quiet`: when the address has used its allowance, make no
- * link and say nothing (joining must not fail on it).
+ * link and say nothing (joining must not fail on it). `resend`: the caller read the account a
+ * moment ago and asked for the link it saw; it is checked again inside the serialized change, so
+ * a link opened, a change cancelled or an address changed in between is not brought back.
  */
 export async function sendConfirm(
   server: Server,
   personId: string,
   address: string,
-  options: { pending: boolean; quiet?: boolean },
+  options: { pending: boolean; quiet?: boolean; resend?: boolean },
 ): Promise<"sent" | "failed"> {
   if (!server.mail.enabled) throw new ApiError("mail_off", "This server cannot send email.");
   const key = emailKey(address);
   try {
-    server.mailLimit.attempt(key);
+    server.mailLimit.attempt(recipientKey(address));
   } catch (err) {
     if (options.quiet) return "failed";
     throw err;
   }
   const code = newInviteCode();
+  const hash = hashOf(code).toString("hex");
   const now = new Date().toISOString();
   const person = await server.people.mutate((people) => {
     const me = people.find((p) => p.id === personId);
     if (!me) throw new ApiError("unauthenticated", "Log in first.");
+    if (options.resend && options.pending) {
+      if (!me.emailPending || emailKey(me.emailPending.address) !== key) {
+        throw new ApiError("not_found", "No change of address is waiting.");
+      }
+    }
+    if (!options.pending) {
+      if (emailKey(me.email) !== key) {
+        throw new ApiError("invalid", "Your email address has changed. Try again.");
+      }
+      if (confirmedOf(me)) {
+        throw new ApiError("already_confirmed", "Your email address is already confirmed.");
+      }
+    }
     const next: Person = {
       ...me,
       emailCode: {
-        codeHash: hashOf(code).toString("hex"),
+        codeHash: hash,
         address,
         createdAt: now,
         expiresAt: addMs(CONFIRM_LINK_HOURS * 3_600_000),
@@ -141,14 +174,18 @@ export async function sendConfirm(
     if (!(err instanceof MailError)) throw err;
     ok = false;
   }
-  // Recorded for the banner, only if this is still the link the account holds.
+  // Recorded for the banner, only if this is still the link the account holds. A link to the
+  // account's own address that went out also starts the clock that decides whether an address
+  // nobody ever confirmed may be given up to a Google-verified person (see `linkLapsed`).
   await server.people
     .mutate((people) => ({
       people: people.map((p) =>
-        p.id === personId && p.emailCode?.codeHash === hashOf(code).toString("hex")
+        p.id === personId && p.emailCode?.codeHash === hash
           ? {
               ...p,
               emailCode: { ...p.emailCode, mail: ok ? ("sent" as const) : ("failed" as const) },
+              emailLinkSentUntil:
+                ok && !options.pending ? p.emailCode.expiresAt : p.emailLinkSentUntil,
             }
           : p,
       ),
@@ -170,21 +207,41 @@ export interface Confirmed {
  * Uses a confirm link. The account it belongs to is the one changed, whoever opens it and
  * whatever session they have. A link that names a new address (a change) puts that address in
  * force; it fails like a dead link when another account has taken the address meanwhile.
+ *
+ * A link that was used is remembered (its hash, until it would have run out anyway): opening it
+ * again, or a second request arriving at the same moment, is answered `already_confirmed` and
+ * changes nothing, where an unknown, replaced or expired link is dead.
  */
 export function useConfirmCode(server: Server, code: string): Promise<Confirmed> {
   return server.people.mutate<Confirmed>((people) => {
     const me = holder(people, code, "emailCode");
-    if (!me?.emailCode || Date.parse(me.emailCode.expiresAt) <= Date.now()) throw dead();
+    if (!me?.emailCode || Date.parse(me.emailCode.expiresAt) <= Date.now()) {
+      const used = holder(people, code, "emailUsed");
+      if (used?.emailUsed && Date.parse(used.emailUsed.expiresAt) > Date.now()) {
+        return {
+          people,
+          result: { person: used, status: "already_confirmed", oldAddress: "" },
+        };
+      }
+      throw dead();
+    }
     const address = me.emailCode.address;
     const now = new Date().toISOString();
     const replace = (next: Person) => people.map((p) => (p.id === me.id ? next : p));
+    const remember = { codeHash: me.emailCode.codeHash, expiresAt: me.emailCode.expiresAt };
     if (emailKey(address) === emailKey(me.email)) {
-      const already = me.emailConfirmedAt !== null;
+      const already = confirmedOf(me) !== null;
       const next: Person = {
         ...me,
         emailCode: null,
-        emailConfirmedAt: me.emailConfirmedAt ?? now,
-        emailConfirmedBy: me.emailConfirmedBy ?? "link",
+        emailUsed: remember,
+        emailConfirmedAt: me.emailConfirmedAt ?? confirmedOf(me)?.at ?? now,
+        emailConfirmedBy: me.emailConfirmedBy ?? confirmedOf(me)?.by ?? "link",
+        // A change to this very address that is still waiting has nothing left to wait for.
+        emailPending:
+          me.emailPending && emailKey(me.emailPending.address) === emailKey(address)
+            ? null
+            : me.emailPending,
       };
       return {
         people: replace(next),
@@ -204,7 +261,9 @@ export function useConfirmCode(server: Server, code: string): Promise<Confirmed>
       emailConfirmedAt: now,
       emailConfirmedBy: "link",
       emailCode: null,
+      emailUsed: remember,
       emailPending: null,
+      emailLinkSentUntil: null,
       // A reset link was sent to the address that is no longer the account's.
       resetCode: null,
       emailDisplaced: false,
@@ -225,6 +284,15 @@ export function noteAddressChanged(
 ): void {
   server.mail.background(async () => {
     if (!oldAddress.trim() || emailKey(oldAddress) === emailKey(newAddress)) return;
+    // The "asked" notice goes to an address a stranger may type in, so it counts against that
+    // address's mail allowance like any other mail, and is skipped quietly when it is used up.
+    if (phase === "asked") {
+      try {
+        server.mailLimit.attempt(recipientKey(oldAddress));
+      } catch {
+        return;
+      }
+    }
     try {
       await server.mail.send({
         to: oldAddress,
@@ -252,6 +320,10 @@ export function noteAddressChanged(
 export async function handleForgot(server: Server, address: string): Promise<void> {
   const person = await server.people.byEmail(address);
   if (!person) return;
+  // An address the account itself set after stage 28 and nobody confirmed gets no reset link:
+  // whoever set it need not own the mailbox. (An address given at joining, or from before stage
+  // 28, still gets one, and opening it confirms the address.)
+  if (!mayReceiveReset(person)) return;
   if (!passwordWorks(person)) {
     await send(server, person.email, (from) =>
       noPasswordMail({
@@ -324,16 +396,18 @@ export function useResetCode(server: Server, code: string, passwordHash: string)
     }
     const now = new Date().toISOString();
     const next: Person = {
-      ...me,
+      ...withoutPendingChange(me),
       passwordHash,
       resetCode: null,
       sessionEpoch: me.sessionEpoch + 1,
       // The link went to this address and was opened: it is the person's.
-      emailConfirmedAt: me.emailConfirmedAt ?? now,
-      emailConfirmedBy: me.emailConfirmedBy ?? "reset",
-      emailCode:
-        me.emailCode && emailKey(me.emailCode.address) === emailKey(me.email) ? null : me.emailCode,
+      emailConfirmedAt: me.emailConfirmedAt ?? confirmedOf(me)?.at ?? now,
+      emailConfirmedBy: me.emailConfirmedBy ?? confirmedOf(me)?.by ?? "reset",
     };
+    // The link made for the address itself is no longer needed (a change's link went with it).
+    if (next.emailCode && emailKey(next.emailCode.address) === emailKey(next.email)) {
+      next.emailCode = null;
+    }
     return { people: people.map((p) => (p.id === me.id ? next : p)), result: undefined };
   });
 }

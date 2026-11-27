@@ -1,18 +1,55 @@
 import { randomUUID } from "node:crypto";
 import { stat } from "node:fs/promises";
 import { join } from "node:path";
-import { emailKey, PeopleFile, type Person } from "@frontier/schema";
+import { emailKey, PeopleFile, type ConfirmedBy, type Person } from "@frontier/schema";
 import { ApiError } from "../errors.js";
 import type { StateFiles } from "./files.js";
 
 /**
- * An account whose address nobody confirmed may give it up to a person Google has verified it
- * for, so a mistyped or squatted address cannot keep the real owner out. Not when that would shut
- * its person out: they must have a way in that needs no address (a passkey), and the server's
- * first account (the admin) is never touched. An account linked to Google is not touched either.
+ * How an address came to count as confirmed, as far as is known now. An account from before
+ * stage 28 that has a Google identity whose email is the account's address is confirmed by
+ * Google (the next Google login writes it down; until then it is read from the identity).
  */
-export const mayDisplace = (p: Person): boolean =>
-  p.emailConfirmedAt === null && !p.admin && p.identities.length === 0 && p.passkeys.length > 0;
+export function confirmedOf(p: Person): { at: string; by: ConfirmedBy } | null {
+  if (p.emailConfirmedAt) return { at: p.emailConfirmedAt, by: p.emailConfirmedBy ?? "link" };
+  const key = emailKey(p.email);
+  if (key === "") return null;
+  const google = p.identities.find(
+    (i) => i.provider === "google" && emailKey(i.email ?? "") === key,
+  );
+  return google ? { at: google.addedAt, by: "google" } : null;
+}
+
+/**
+ * Whether a confirm link was successfully sent to the account's address by Frontier and has run
+ * out unopened: the holder had its whole time to prove the address and did not. A link still
+ * live (even a newer one that never went) keeps the address safe, and an account that was never
+ * sent one (every account from before stage 28, until "Send a link") has not lapsed.
+ */
+export function linkLapsed(p: Person, now = Date.now()): boolean {
+  if (p.emailLinkSentUntil === null || Date.parse(p.emailLinkSentUntil) > now) return false;
+  const code = p.emailCode;
+  const live =
+    code !== null &&
+    emailKey(code.address) === emailKey(p.email) &&
+    code.mail !== "failed" &&
+    Date.parse(code.expiresAt) > now;
+  return !live;
+}
+
+/**
+ * An account whose address nobody confirmed may give it up to a person Google has verified it
+ * for, so a squatted address cannot keep the real owner out. Only when all hold: it is not the
+ * server's first account (the admin), has no Google identity, has a passkey (a way in that needs
+ * no address), its address is unconfirmed, and a confirm link Frontier sent to it ran out
+ * unopened (`linkLapsed`). Mail being on is the caller's to check.
+ */
+export const mayDisplace = (p: Person, now = Date.now()): boolean =>
+  confirmedOf(p) === null &&
+  !p.admin &&
+  p.identities.length === 0 &&
+  p.passkeys.length > 0 &&
+  linkLapsed(p, now);
 
 /** The account after it gave its address up: asked to add another, with no link left for the old one. */
 export const displaced = (p: Person): Person => ({
@@ -21,8 +58,24 @@ export const displaced = (p: Person): Person => ({
   emailCode: null,
   emailPending: null,
   resetCode: null,
+  emailUsed: null,
+  emailSetBySelf: false,
+  emailLinkSentUntil: null,
   emailDisplaced: true,
 });
+
+/** The account without a change of address that waits, and without the link made for that address. */
+export const withoutPendingChange = (p: Person): Person =>
+  p.emailPending === null
+    ? p
+    : {
+        ...p,
+        emailPending: null,
+        emailCode:
+          p.emailCode && emailKey(p.emailCode.address) === emailKey(p.emailPending.address)
+            ? null
+            : p.emailCode,
+      };
 
 /** What a new account starts from; the rest has its defaults. */
 export type NewPerson = Partial<Omit<Person, "id" | "createdAt" | "admin">>;
@@ -131,6 +184,9 @@ export class PeopleStore {
         emailPending: null,
         resetCode: null,
         emailDisplaced: false,
+        emailSetBySelf: false,
+        emailLinkSentUntil: null,
+        emailUsed: null,
         ...input,
         id: randomUUID(),
         createdAt: new Date().toISOString(),
@@ -143,14 +199,29 @@ export class PeopleStore {
   /**
    * Takes an account away again. Only for undoing an account made a moment ago, when what it was
    * made for (joining a project) failed; nothing else refers to it yet. `restore` is an account
-   * that gave up its address to this one (see `create`): it gets it back, as it was.
+   * that gave up its address to this one (see `create`): it gets its address back, as it was, and
+   * nothing else of the old copy (the account may have changed since, a session or a passkey).
    */
   remove(id: string, restore?: Person): Promise<void> {
     return this.change(async (people) => ({
       people: people
         .filter((p) => p.id !== id)
         .map((p) =>
-          restore && p.id === restore.id && p.email === "" && p.emailDisplaced ? restore : p,
+          restore && p.id === restore.id && p.email === "" && p.emailDisplaced
+            ? {
+                ...p,
+                email: restore.email,
+                emailConfirmedAt: restore.emailConfirmedAt,
+                emailConfirmedBy: restore.emailConfirmedBy,
+                emailCode: restore.emailCode,
+                emailPending: restore.emailPending,
+                resetCode: restore.resetCode,
+                emailUsed: restore.emailUsed,
+                emailSetBySelf: restore.emailSetBySelf,
+                emailLinkSentUntil: restore.emailLinkSentUntil,
+                emailDisplaced: restore.emailDisplaced,
+              }
+            : p,
         ),
       result: undefined,
     }));

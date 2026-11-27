@@ -211,6 +211,19 @@ export function googleRoutes(app: FastifyInstance, s: Server): void {
 
     // 1: an account that already has this Google identity.
     if (linked) {
+      // An account from before stage 28 whose address is the one Google verifies is confirmed by
+      // Google; `confirmedOf` already reads it so, and this login writes it down.
+      if (
+        linked.emailConfirmedAt === null &&
+        emailKey(linked.email) !== "" &&
+        emailKey(linked.email) === emailKey(profile.email)
+      ) {
+        await s.people.update(linked.id, (p) => ({
+          ...p,
+          emailConfirmedAt: p.emailConfirmedAt ?? new Date().toISOString(),
+          emailConfirmedBy: p.emailConfirmedBy ?? ("google" as const),
+        }));
+      }
       startSession(request, linked, "google");
       // With an invitation they are logged in but not joined: the join page asks them to accept,
       // as it does anyone else who has an account, so a link is never used without a click.

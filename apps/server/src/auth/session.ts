@@ -1,7 +1,7 @@
 import type { FastifyRequest } from "fastify";
 import type { Person } from "@frontier/schema";
 import { ApiError } from "../errors.js";
-import type { PeopleStore } from "../state/people.js";
+import { withoutPendingChange, type PeopleStore } from "../state/people.js";
 
 declare module "fastify" {
   interface FastifyRequest {
@@ -29,9 +29,14 @@ export function startSession(request: FastifyRequest, person: Person, method: Me
 
 /**
  * Ends every other session of the account, for a change to how it is logged into. Use it inside
- * the people store's change, so the new epoch is written with the change itself.
+ * the people store's change, so the new epoch is written with the change itself. A change of
+ * address that was waiting for its link is dropped with them (stage 28): whoever asked for it may
+ * be exactly who was just logged out.
  */
-export const endOtherSessions = (p: Person): Person => ({ ...p, sessionEpoch: p.sessionEpoch + 1 });
+export const endOtherSessions = (p: Person): Person => ({
+  ...withoutPendingChange(p),
+  sessionEpoch: p.sessionEpoch + 1,
+});
 
 /**
  * Keeps this device's session going after `endOtherSessions`: it takes the new epoch, and stays
