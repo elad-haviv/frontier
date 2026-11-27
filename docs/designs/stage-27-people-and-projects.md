@@ -747,11 +747,19 @@ Google sign-on, and the roles in the shell. The server was not changed.
   in a dialog. The only owner's select is disabled and says why; the server's `last_owner` is put
   in the same words (`A project always needs an owner. Make someone else an owner first...`).
   Writers and readers see the same list without emails or controls.
+- The list is read again when the status stream ends or opens again, when the tab is focused, and each
+  minute while it is in view. A role select shows the chosen role and "Saving…" while the server is
+  asked; Escape or Keep closes "Remove X?" and puts the focus back on the row's X; an owner stepping
+  down is told once (the page's notice), not also under the list.
 - **Leave this project**, for everyone, asks first, then goes to All projects. It is disabled for the
   only owner, with the reason beside it.
 - **Invite someone** (owners): "They join as" (Writer first; the list is Reader, Writer, Owner) and
   "Make an invite link". An Owner link asks a question first. The link is shown once, with Copy, and
-  says it works once, for 7 days, and will not be shown again. "Invitations waiting" lists each link
+  says it works once, for 7 days, and will not be shown again once another is made or the page is
+  closed: the link just made is kept in memory only (never in storage) while the person moves about
+  Settings, a second link asks first, and cancelling the one just made takes it off the screen. Time
+  left counts down each minute and a link that runs out drops off the list; a list that could not be
+  read says so with "Try again". "Invitations waiting" lists each link
   (role, who made it, time left) with "Cancel it". The key of what each role may do is under the box.
 - General's People list links here; the section's one-line state in the Settings menu is the count.
   A reader does not see "Propose for a folder" (it changes the project).
@@ -761,18 +769,28 @@ Google sign-on, and the roles in the shell. The server was not changed.
 - Outside every project, in `App.tsx` for a logged-out and a logged-in browser alike
   (`pages/Join.tsx`, words in `joinModel.ts`). It says who invited you, to what and as what (the
   mockup's heading), the project's mark, name and counts, and what the role allows, then the ways in:
-  name and email, then **a passkey on this device** (fingerprint icon), **Continue with Google** when
-  `google` is true, then a password (12 or more characters). Name and email are checked before any
-  way is tried. Google asks for neither: Google supplies the verified name and email.
+  name and email, then **Continue with Google** when `google` is true, **a passkey on this device**
+  (fingerprint icon; hidden where the browser cannot make one), then a password (12 or more
+  characters). Name and email are checked before any way is tried, and the first field that is wrong
+  is announced and takes the focus; Enter in name or email moves on and never joins with a password
+  nobody typed. Google asks for neither: Google supplies the verified name and email.
 - Dead links, each with its own words and the inviter's name when the server gave one: `invite_used`,
   `invite_cancelled`, `invite_expired`, `invite_unknown` (no name). `rate_limited` says to wait.
 - `account_exists`: the page shows the login form (passkey, Google, email and password) with the link
-  kept; logging in is followed by `POST /api/join/<code>/accept`. A logged-in person gets "Join as
+  kept, says why ("You may already have an account: log in to join."), keeps the typed email, and puts
+  the focus on its first field; logging in is followed by `POST /api/join/<code>/accept`. A logged-in person gets "Join as
   <name>" (accept) and a way to log out and use another account; opening a link to a project they are
   in accepts, hears `already_member`, and goes to the project without using the link. The Google
   `problem` values are worded (`joinModel.ts`); `account_exists` from Google opens the login form.
-- After joining, the app is told a session started and the project opens. The page also shows the AI
-  key note from the invitation.
+- After a session was started on the page (joining by password or passkey, or logging in and
+  accepting) the destination is **loaded afresh** (`window.location.assign`), never entered inside the
+  running app, which may still hold a previous person's AI keys, queue and project list; "You joined
+  X as a writer." is kept in `sessionStorage` for the project to say. If the login worked and
+  accepting did not, the page is loaded again, which then knows the person and shows a dead link as
+  one. A logged-in person who is not the person the app was set up for (the session changed in
+  another tab) gets the same. A link that dies while the form is open shows the dead-link page. The
+  page shows the AI key note from the invitation, sets its title, and `problem` is taken off the
+  address once read (also on the login page).
 
 ### Google
 
@@ -782,8 +800,10 @@ Google sign-on, and the roles in the shell. The server was not changed.
 - Settings → Signing in (`/settings/account`; `/settings/you/signing-in`, where the server sends the
   browser back, is an alias that keeps the query) has a Google block: the linked address, **Unlink
   Google** (asks; refused, with the reason in words, when it is the last way in), or **Link a Google
-  account**. `?problem=recent_login_needed` opens the "Log in again" dialog as adding a passkey does,
-  and the link trip goes ahead once the login is made. "Switch the password off" now says a passkey
+  account**. `?problem=recent_login_needed` shows the notice with a "Log in again and link Google" button; the
+  login dialog opens by itself, and the trip goes ahead, only for a trip this page started (marked in
+  `sessionStorage`), never for an address typed or followed from elsewhere. `problem` is taken off the
+  address. "Switch the password off" now says a passkey
   or Google session is needed.
 
 ### Roles in the shell
@@ -817,10 +837,21 @@ Google sign-on, and the roles in the shell. The server was not changed.
   one is in flight): a new role switches the shell, with a toast ("You are now a Reader here."), and a
   `no_project` for a project the person had goes to All projects with a note ("You are no longer in
   <project>. An owner may have taken you out of it, or you left it on another device"; `access.ts`).
-  Leaving on purpose sets a flag so it is not reported as a loss. An address that never named a
-  project the person is in still shows the page that says so.
+  Leaving on purpose sets a flag, kept until the project's page goes, so it is not reported as a loss.
+  What is known about "had it" and the name belongs to the address (a project the person is not in,
+  opened after another, shows the page that says so), and an answer for another address is let go.
+  A stream that opens again after one that ended says access may have changed too, since a role
+  changed while none was open cuts nothing. When a person is taken out or leaves, that project's copy
+  on the device (pages, images by its addresses, the "on this device" mark) goes; the changes not sent
+  yet stay, listed on All projects. Logging out forgets the notice and the leaving marks.
+- A role lowered to reader while a text waits: the editor's page says plainly that the last changes
+  were not saved and opens "Not sent yet" (a button), and so does the toast. "Copy the text" falls back
+  to a read-only box with the text selected when the clipboard is refused. A map open at the time
+  turns exploring off and stops its shortcut, menu entry and running asks; the New entry dialog
+  closes; a reader's press and hold on the timeline pans instead of arming a drag.
 - A queued save refused with `role_too_low` is not retried: its record is marked `refused` and says
-  so. In the "Not sent yet" list it offers "Copy the text" and Discard (no Retry), and All projects
+  so. New text or Retry takes the mark off, and when the role is writer or owner again the project's
+  refused records go back to waiting and are sent. In the "Not sent yet" list it offers "Copy the text" and Discard (no Retry), and All projects
   lists it with the other stranded changes ("You can still read this project, but your role no longer
   lets you change it"), also for the legacy project in the device's own database.
 - A person in no project sees "You're not in a project yet", that they need an invite link from one
@@ -854,11 +885,22 @@ logged out does not open the login dialog over the page. `routes.test.ts` and an
 
 Unit: Members, Join, Login, Account (Google), All projects, `WriterOnly` and the role hooks,
 `membersModel`, `joinModel`, `access`, the connection's access signal, the queue's refused records
-and the hub's stranded list, the service worker's routes. Browser: `people.spec.ts` (an owner makes
+and the hub's stranded list, the service worker's routes. Browser: `members.spec.ts` (an owner makes
 a link; a new person joins by password in a fresh browser; Members; a role changed and the open app
 follows; removed and landing on All projects; owner links; dead links; `account_exists`; logged-in
 join and `already_member`; leaving; the last owner; a refused save), `readerrole.spec.ts` (a reader's
 whole shell and its calls, an edit address, a writer), `google.spec.ts`, and an offline spec for
-`/join/*`. `people.spec.ts` and `readerrole.spec.ts` make people with passwords, who stay accounts on
-the server, and `GET /api/session` says `password: true` while any account has one: they are named to
-run after `passkey.spec.ts`, which needs the one account to be the only one with a password.
+`/join/*`. `members.spec.ts`, `readerrole.spec.ts` and `google.spec.ts` clean up after each test
+through the server's own calls (`tidyPeople` in `helpers.ts`: members removed, links cancelled). The
+people they make stay accounts on the server, so no spec may assume there is exactly one: `passkey.spec.ts`
+checks its own account (`/api/me`, and that its password login is refused once switched off), not what
+`/api/session` offers everyone.
+
+### Not done, or only noted
+
+- A device still running the pre-27c shell and opening `/join/<code>` meets that old shell's own
+  old-address handling, which turns the path into `/p/<project>/join/<code>`: the old code cannot be
+  changed from here. The new shell answers `/join/<code>` before its catch-all, so it is only the
+  update that is missing.
+- After a login on the join page whose accepting then failed for a reason other than a dead link,
+  the page is loaded again and the reason is not carried across; the button to accept is there again.
