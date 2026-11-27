@@ -808,7 +808,7 @@ describe("the stage 27d review: presence and the status stream", () => {
     let buffer = "";
     const seen: StatusSnapshot[] = [];
     // One read is outstanding at a time: a read that lost a race to the clock must not swallow the next chunk.
-    let pending: Promise<ReadableStreamReadResult<Uint8Array>> | null = null;
+    let pending: Promise<{ done: boolean; value?: Uint8Array }> | null = null;
     const pump = async (ms: number, until?: () => boolean) => {
       const stop = Date.now() + ms;
       while (Date.now() < stop && !(until?.() ?? false)) {
