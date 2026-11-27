@@ -5,6 +5,8 @@
 
 import type { AiProviderKind } from "@frontier/schema";
 
+/** Google's OpenID Connect issuer, whose discovery document names the rest. */
+export const GOOGLE_ISSUER = "https://accounts.google.com";
 const DEFAULT_OPENROUTER_URL = "https://openrouter.ai/api/v1";
 
 export class ConfigError extends Error {
@@ -78,6 +80,12 @@ export interface Config {
    * refused in production.
    */
   loginAttempts: number;
+  /**
+   * Google sign-on (stage 27c): present when `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` are
+   * both given; absent turns the feature off. `issuer` is Google's own except in tests, which
+   * point it at a stand-in provider (`GOOGLE_ISSUER`; refused in production).
+   */
+  google: { clientId: string; clientSecret: string; issuer: string } | null;
   /**
    * False when `FRONTIER_SERVICE_WORKER=off`: `/sw.js` then answers the kill worker, which removes
    * the app's service worker from every browser that has it.
@@ -179,6 +187,16 @@ export function loadConfig(env: Env = process.env): Config {
     );
   }
 
+  const googleId = optional("GOOGLE_CLIENT_ID");
+  const googleSecret = optional("GOOGLE_CLIENT_SECRET");
+  if ((googleId === null) !== (googleSecret === null)) {
+    throw new ConfigError("Google sign-on needs both GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET.");
+  }
+  const googleIssuer = optional("GOOGLE_ISSUER")?.replace(/\/+$/, "") ?? GOOGLE_ISSUER;
+  if (googleIssuer !== GOOGLE_ISSUER && optional("NODE_ENV") === "production") {
+    throw new ConfigError("GOOGLE_ISSUER is for tests and cannot be set in production.");
+  }
+
   const urlOf = (name: string) => optional(name)?.replace(/\/+$/, "") ?? null;
   const openrouterUrl = urlOf("OPENROUTER_BASE_URL") ?? DEFAULT_OPENROUTER_URL;
   const providerUrls: Config["providerUrls"] = { openrouter: openrouterUrl };
@@ -229,6 +247,10 @@ export function loadConfig(env: Env = process.env): Config {
     openrouterUrl,
     providerUrls,
     imageFetchAllowLoopback,
+    google:
+      googleId !== null && googleSecret !== null
+        ? { clientId: googleId, clientSecret: googleSecret, issuer: googleIssuer }
+        : null,
     serviceWorker: optional("FRONTIER_SERVICE_WORKER")?.toLowerCase() !== "off",
     commitAuthor,
     commitBot,

@@ -3,6 +3,7 @@ import { stat } from "node:fs/promises";
 import { join } from "node:path";
 import {
   OLD_SLUG_DAYS,
+  type ProjectRole,
   ProjectSlug,
   ProjectsFile,
   type ProjectRecord,
@@ -10,6 +11,15 @@ import {
 } from "@frontier/schema";
 import { ApiError } from "../errors.js";
 import type { StateFiles } from "../state/files.js";
+
+/** How often a member's last activity is written at most. */
+export const ACTIVE_EVERY_MS = 5 * 60 * 1000;
+
+const LAST_OWNER = "A project needs at least one owner. Make someone else an owner first.";
+
+/** How many owners a project has. */
+export const ownersOf = (p: ProjectRecord): number =>
+  p.members.filter((m) => m.role === "owner").length;
 
 /** A new id: ten lowercase letters and digits. */
 export function newProjectId(): string {
@@ -42,6 +52,31 @@ export class ProjectStore {
     } catch {
       return null;
     }
+  }
+
+  /** Who is told when a member is removed or their role changes; see `watchMembers`. */
+  private readonly watchers = new Set<(projectId: string, personId: string) => void>();
+
+  /**
+   * Asks to be told, after the change is written, when a person leaves a project or their role
+   * changes. The server uses it to cut the requests and streams that person has open there.
+   */
+  watchMembers(listener: (projectId: string, personId: string) => void): void {
+    this.watchers.add(listener);
+  }
+
+  private told(projectId: string, personId: string): void {
+    for (const w of this.watchers) w(projectId, personId);
+  }
+
+  /** A member's role as held in memory right now (no file read); null when they are not one. */
+  roleOfSync(projectId: string, personId: string | undefined): ProjectRole | null {
+    if (!personId) return null;
+    return (
+      this.held?.projects
+        .find((p) => p.id === projectId)
+        ?.members.find((m) => m.personId === personId)?.role ?? null
+    );
   }
 
   async exists(): Promise<boolean> {
@@ -138,11 +173,116 @@ export class ProjectStore {
     });
   }
 
-  remove(id: string): Promise<void> {
-    return this.change(async (projects) => ({
+  /**
+   * Adds a person to a project with a role. When they are already a member nothing changes and
+   * `added` is false (their role is kept as it is). Refuses with `no_project` when the project is
+   * gone. Runs inside the store's turn, so two invitations used at once cannot both be lost.
+   */
+  addMember(
+    projectId: string,
+    personId: string,
+    role: ProjectRole,
+  ): Promise<{ added: boolean; record: ProjectRecord }> {
+    return this.change(async (projects) => {
+      const now = projects.find((p) => p.id === projectId);
+      if (!now) throw new ApiError("no_project", "There is no such project.");
+      if (now.members.some((m) => m.personId === personId)) {
+        return { projects, result: { added: false as boolean, record: now } };
+      }
+      const record: ProjectRecord = {
+        ...now,
+        members: [...now.members, { personId, role, addedAt: this.now().toISOString() }],
+      };
+      return {
+        projects: projects.map((p) => (p.id === projectId ? record : p)),
+        result: { added: true as boolean, record },
+      };
+    });
+  }
+
+  /**
+   * Changes a member's role. The rule that a project keeps an owner is checked here, inside the
+   * serialized change, on the members as they are at that moment: two owners demoting each other
+   * at once cannot leave the project with none.
+   */
+  async setRole(projectId: string, personId: string, role: ProjectRole): Promise<ProjectRecord> {
+    const record = await this.changeRole(projectId, personId, role);
+    this.told(projectId, personId);
+    return record;
+  }
+
+  private changeRole(
+    projectId: string,
+    personId: string,
+    role: ProjectRole,
+  ): Promise<ProjectRecord> {
+    return this.change(async (projects) => {
+      const now = projects.find((p) => p.id === projectId);
+      const member = now?.members.find((m) => m.personId === personId);
+      if (!now || !member) throw new ApiError("not_found", "This person is not a member here.");
+      if (member.role === "owner" && role !== "owner" && ownersOf(now) <= 1) {
+        throw new ApiError("last_owner", LAST_OWNER);
+      }
+      const record = {
+        ...now,
+        members: now.members.map((m) => (m.personId === personId ? { ...m, role } : m)),
+      };
+      return { projects: projects.map((p) => (p.id === projectId ? record : p)), result: record };
+    });
+  }
+
+  /** Takes a member out (or lets them leave). The last owner cannot go; checked as `setRole` is. */
+  async removeMember(projectId: string, personId: string): Promise<ProjectRecord> {
+    const record = await this.takeOut(projectId, personId);
+    this.told(projectId, personId);
+    return record;
+  }
+
+  private takeOut(projectId: string, personId: string): Promise<ProjectRecord> {
+    return this.change(async (projects) => {
+      const now = projects.find((p) => p.id === projectId);
+      const member = now?.members.find((m) => m.personId === personId);
+      if (!now || !member) throw new ApiError("not_found", "This person is not a member here.");
+      if (member.role === "owner" && ownersOf(now) <= 1) {
+        throw new ApiError("last_owner", LAST_OWNER);
+      }
+      const record = { ...now, members: now.members.filter((m) => m.personId !== personId) };
+      return { projects: projects.map((p) => (p.id === projectId ? record : p)), result: record };
+    });
+  }
+
+  /**
+   * Notes that a member used the project, unless it was noted within `everyMs`. Cheap: it reads
+   * what is held in memory and writes the file at most once per person per window. Changes
+   * nothing for someone who is not a member (or no longer one).
+   */
+  async touchMember(projectId: string, personId: string, everyMs = ACTIVE_EVERY_MS): Promise<void> {
+    const at = this.now();
+    const member = (await this.get(projectId))?.members.find((m) => m.personId === personId);
+    if (!member) return;
+    if (member.lastActiveAt && at.getTime() - Date.parse(member.lastActiveAt) < everyMs) return;
+    await this.change(async (projects) => ({
+      projects: projects.map((p) =>
+        p.id !== projectId || !p.members.some((m) => m.personId === personId)
+          ? p
+          : {
+              ...p,
+              members: p.members.map((m) =>
+                m.personId === personId ? { ...m, lastActiveAt: at.toISOString() } : m,
+              ),
+            },
+      ),
+      result: undefined,
+    }));
+  }
+
+  async remove(id: string): Promise<void> {
+    const members = (await this.get(id))?.members ?? [];
+    await this.change(async (projects) => ({
       projects: projects.filter((p) => p.id !== id),
       result: undefined,
     }));
+    for (const m of members) this.told(id, m.personId);
   }
 
   /** Makes the first project, but only while there is none. Returns it, or null when one exists. */
@@ -158,7 +298,10 @@ export class ProjectStore {
     work: (projects: ProjectRecord[]) => Promise<{ projects: ProjectRecord[]; result: T }>,
   ): Promise<T> {
     const run = this.turn.then(async () => {
-      const { projects, result } = await work(await this.all());
+      const before = await this.all();
+      const { projects, result } = await work(before);
+      // Nothing was changed: the file is left alone (a refused or repeated change costs no write).
+      if (projects === before) return result;
       const file = ProjectsFile.parse({ version: 1, projects });
       await this.files.writeJson(this.file, file);
       this.held = { stamp: await this.stamp(), projects: file.projects };

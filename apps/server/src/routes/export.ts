@@ -43,7 +43,8 @@ export function exportRoutes(app: RouteApp, s: Services): void {
     const choice = choose(s.index, s.drafts, mayRead, pick);
     return {
       entries: choice.entries.map(({ path, title }) => ({ path, title })),
-      unsaved: choice.unsaved,
+      // Which entries have unsaved changes is for the people who made them, not for a reader.
+      unsaved: request.project?.role === "reader" ? [] : choice.unsaved,
       skipped: choice.skipped,
     };
   });

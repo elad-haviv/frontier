@@ -93,21 +93,28 @@ describe("the role table", () => {
         "POST /export/slides",
         "POST /keep-going/question",
         "POST /lore",
-        "POST /lore/:id/turns/:n/addition",
-        "POST /lore/:id/turns/:n/addition/preview",
         "POST /lore/runs/:run/stop",
         "POST /lore/stream",
+        "POST /members/leave",
         "POST /pins",
         "PUT /pins",
       ].sort(),
     );
-    // Only an owner changes the project itself.
+    // Only an owner changes the project itself, its members and its invitation links.
     expect(
       t.routes
         .filter((r) => r.role === "owner")
         .map((r) => `${r.method} ${r.pattern}`)
         .sort(),
-    ).toEqual(["DELETE /project", "PUT /project"]);
+    ).toEqual([
+      "DELETE /invites/:id",
+      "DELETE /members/:id",
+      "DELETE /project",
+      "GET /invites",
+      "POST /invites",
+      "PUT /members/:id",
+      "PUT /project",
+    ]);
   });
 });
 
@@ -116,12 +123,15 @@ describe("every project route, as owner, writer and reader", () => {
   it("lets in the roles the table names and refuses the rest with a typed error, on both addresses", async () => {
     let checked = 0;
     for (const route of routes()) {
+      // Leaving takes the caller out of the project, which would end this walk; it is tried in
+      // members.test.ts, as each role, instead.
+      if (route.pattern === "/members/leave") continue;
       const pattern = concrete(route.pattern);
-      // The old, unprefixed address of the same route works on the same rule (not the project's own).
-      const addresses =
-        route.pattern === "/project"
-          ? [`/api/p/avalymia${pattern}`]
-          : [`/api/p/avalymia${pattern}`, `/api/${pattern.slice(1)}`];
+      // The old, unprefixed address of the same route works on the same rule (not the project's
+      // own: the record, the members and the invitations have no alias).
+      const addresses = /^\/(project|members|invites)/.test(route.pattern)
+        ? [`/api/p/avalymia${pattern}`]
+        : [`/api/p/avalymia${pattern}`, `/api/${pattern.slice(1)}`];
       for (const url of addresses) {
         for (const role of ["owner", "writer", "reader"] as const) {
           const answer = await probe(role, route.method, url);

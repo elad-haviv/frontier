@@ -20,14 +20,9 @@ import { nextColour } from "../projects/first.js";
 import { pathsOf, projectFolder } from "../projects/layout.js";
 import type { Services } from "../projects/services.js";
 import { newProjectId } from "../projects/store.js";
+import { nameOf } from "../members/names.js";
 import { ensureOwnLibrary, ensureSampleRemote } from "../sample.js";
 import type { Server } from "../server.js";
-
-/** A person as the lists of members show them: the name, or the email when there is no name. */
-async function nameOf(server: Server, id: string): Promise<string> {
-  const p = await server.people.get(id);
-  return p ? p.name.trim() || p.email.trim() || "Someone" : "Someone";
-}
 
 async function describe(
   server: Server,

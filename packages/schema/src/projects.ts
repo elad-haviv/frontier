@@ -86,6 +86,11 @@ export const ProjectMember = z.object({
   personId: z.string().min(1),
   role: ProjectRole,
   addedAt: z.string().datetime(),
+  /**
+   * When the person last used the project (stage 27c). Written at most once every few minutes, so
+   * it is a rough "last seen", never an audit trail. Absent until they next use the project.
+   */
+  lastActiveAt: z.string().datetime().optional(),
 });
 export type ProjectMember = z.infer<typeof ProjectMember>;
 

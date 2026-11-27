@@ -36,6 +36,9 @@ import { importRoutes } from "./routes/import.js";
 import { inboxRoutes } from "./routes/inbox.js";
 import { keepGoingRoutes } from "./routes/keepGoing.js";
 import { libraryFileRoutes } from "./routes/libraryFiles.js";
+import { memberRoutes } from "./routes/members.js";
+import { googleRoutes } from "./routes/google.js";
+import { joinRoutes } from "./routes/join.js";
 import { loreRoutes } from "./routes/lore.js";
 import { mapRoutes } from "./routes/maps.js";
 import { passkeyRoutes } from "./routes/passkeys.js";
@@ -60,13 +63,32 @@ declare module "@fastify/secure-session" {
     /** The id of the person logged in. Sessions from before accounts said "author"; see `auth/session.ts`. */
     user: string;
     /** How the person logged in. */
-    method: "password" | "passkey";
+    method: "password" | "passkey" | "google";
     /** The person's `sessionEpoch` when the session started or last followed a change; see `currentPerson`. */
     epoch: number;
     /** When the person logged in (milliseconds), for what asks for a recent login. */
     loginAt: number;
     /** The challenge of a passkey ceremony in progress, and when it ends. */
     challenge: { value: string; until: number };
+    /**
+     * A passkey registration made to join through an invitation, bound to that invitation and to
+     * the name given, so the second step cannot be used for anything else.
+     */
+    joinChallenge: { value: string; until: number; invite: string; name: string; email: string };
+    /**
+     * A Google sign-in in progress: the state, nonce and PKCE verifier of this browser's request,
+     * and what it is for. The cookie is encrypted and signed, so it is the "signed state".
+     */
+    google: {
+      state: string;
+      nonce: string;
+      verifier: string;
+      until: number;
+      invite: string | null;
+      returnTo: string | null;
+      /** The person who asked to link Google from Settings; null for a login or a join. */
+      link: string | null;
+    };
   }
 }
 
@@ -143,6 +165,9 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
     }),
   );
 
+  // A person removed from a project (or given another role) loses what they have open there.
+  server.projects.watchMembers((projectId, personId) => server.live.cut(projectId, personId));
+
   // AI keys are never kept here: each request brings the person's own (see ai/keyring.ts). Keys an
   // earlier version stored in the settings file are deleted now, and the web app says so once.
   const keysRemoved = await server.settings.removeStoredKeys(new Date(), config.unusedKeyVars);
@@ -199,7 +224,11 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
   // One image per upload, up to 25 MB.
   await app.register(multipart, { limits: { fileSize: 25 * 1024 * 1024, files: 1 } });
 
-  app.addHook("onClose", async () => server.registry.closeAll());
+  app.addHook("onClose", async () => {
+    // A member's last-active note is written without the request waiting; let it land first.
+    await server.projects.settled();
+    await server.registry.closeAll();
+  });
 
   app.decorateRequest("person", null);
   // Every route is recorded as it is registered, so the tests can check each one.
@@ -330,10 +359,13 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
   statusRoutes(forProject, s);
   // The project's own routes have no alias: `DELETE /api/project` must not exist.
   projectRoutes(projectApp(app, book, { aliases: false }), s);
+  memberRoutes(projectApp(app, book, { aliases: false }), s);
 
   // What belongs to the whole server, or to the person.
   authRoutes(app, server);
   passkeyRoutes(app, server);
+  joinRoutes(app, server);
+  googleRoutes(app, server);
   settingsRoutes(app, server);
   projectsApi(app, server);
   healthRoute(app, server);

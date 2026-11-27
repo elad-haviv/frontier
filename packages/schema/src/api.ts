@@ -27,6 +27,8 @@ export const SessionResponse = z.object({
   passkeys: z.boolean(),
   /** False when the password is switched off. */
   password: z.boolean(),
+  /** Whether this server offers "Continue with Google" (stage 27c); the app hides the button when false. */
+  google: z.boolean().default(false),
 });
 export type SessionResponse = z.infer<typeof SessionResponse>;
 
@@ -618,7 +620,18 @@ export const MeResponse = z.object({
   passwordSet: z.boolean(),
   passwordOff: z.boolean(),
   /** How this session logged in. Switching the password off needs a passkey session. */
-  method: z.enum(["password", "passkey"]),
+  method: z.enum(["password", "passkey", "google"]),
+  /** The ways this account signs in, for Settings → You → Signing in (stage 27c). */
+  signingIn: z
+    .object({
+      password: z.object({ set: z.boolean(), off: z.boolean() }),
+      passkeys: z.array(z.object({ id: z.string(), name: z.string(), addedAt: z.string() })),
+      /** The linked Google account's email, or null when none is linked. */
+      google: z.object({ email: z.string(), addedAt: z.string() }).nullable(),
+      /** Whether this server offers Google sign-on at all, so Settings can offer to link it. */
+      googleAvailable: z.boolean(),
+    })
+    .optional(),
   /**
    * An email to offer in Settings → Profile when the account has none: the commit author's, which
    * is usually the same person. Only a suggestion; nothing is saved until the person saves.
@@ -664,7 +677,7 @@ export const SettingsResponse = z.object({
   signIn: z.object({
     passkeys: z.array(z.object({ id: z.string(), name: z.string(), addedAt: z.string() })),
     passwordOff: z.boolean(),
-    method: z.enum(["password", "passkey"]),
+    method: z.enum(["password", "passkey", "google"]),
   }),
   /** Stage 25: which needs-love rules are on. */
   keepGoing: KeepGoingSettings,

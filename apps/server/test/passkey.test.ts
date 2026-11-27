@@ -35,6 +35,8 @@ describe("passkeys", () => {
       emailless: false,
       passkeys: false,
       password: true,
+      // Google sign-on is off unless the server has a client id and secret (stage 27c).
+      google: false,
     });
     expect((await t.post("/api/passkeys/login/options")).statusCode).toBe(404);
     await withKey();

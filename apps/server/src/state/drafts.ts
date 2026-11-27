@@ -17,6 +17,7 @@ import { randomBytes } from "node:crypto";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
+import { savedViewOnly } from "../projects/view.js";
 import {
   combineKept,
   DraftRecord,
@@ -177,14 +178,17 @@ export class DraftStore {
   }
 
   list(): DraftRecord[] {
+    if (savedViewOnly()) return [];
     return [...this.records.values()].sort((a, b) => a.path.localeCompare(b.path));
   }
 
   get(id: string): DraftRecord | undefined {
+    if (savedViewOnly()) return undefined;
     return this.records.get(id);
   }
 
   byPath(path: string): DraftRecord | undefined {
+    if (savedViewOnly()) return undefined;
     for (const r of this.records.values()) if (r.path === path) return r;
     return undefined;
   }
@@ -342,6 +346,7 @@ export class DraftStore {
 
   /** How many drafts have kept copies, for the attention count. */
   keptCount(): number {
+    if (savedViewOnly()) return 0;
     return this.kept.size;
   }
 
@@ -661,10 +666,12 @@ export class DraftStore {
   // ---- Rename intents ------------------------------------------------------------------------
 
   listRenames(): RenameIntent[] {
+    if (savedViewOnly()) return [];
     return [...this.renames.values()].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   }
 
   getRename(id: string): RenameIntent | undefined {
+    if (savedViewOnly()) return undefined;
     return this.renames.get(id);
   }
 
@@ -695,6 +702,7 @@ export class DraftStore {
 
   /** How many unpublished changes there are, for the status area. */
   count(): number {
+    if (savedViewOnly()) return 0;
     return this.records.size + this.renames.size;
   }
 }

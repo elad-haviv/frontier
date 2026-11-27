@@ -14,7 +14,7 @@
  * files are in as well. Which files in `DATA_DIR/state` are which:
  *
  *   SERVER-WIDE (`SERVER_STATE`): people.json (accounts), settings.json (AI models, rules for
- *     Keep going; AI prices), projects.json (the project store), ai-log/ (each person's spending),
+ *     Keep going; AI prices), projects.json (the project store), invites.json (invite links, hashed), ai-log/ (each person's spending),
  *     backup-server.json is not kept (see below).
  *   PROJECT (everything else in the folder, for the first project): drafts/, proposals/,
  *     quarantine/, pushed.json, conversations/, comments.json, consults.json, discoveries/,
@@ -28,7 +28,13 @@ import { join, resolve, sep } from "node:path";
 import type { ProjectRecord } from "@frontier/schema";
 
 /** Entries of `DATA_DIR/state` that belong to the server, not to the first project. */
-export const SERVER_STATE = ["people.json", "settings.json", "projects.json", "ai-log"] as const;
+export const SERVER_STATE = [
+  "people.json",
+  "settings.json",
+  "projects.json",
+  "invites.json",
+  "ai-log",
+] as const;
 
 /** Whether a path inside a state folder (relative, with `/`) is a server-wide file. */
 export function isServerState(rel: string): boolean {

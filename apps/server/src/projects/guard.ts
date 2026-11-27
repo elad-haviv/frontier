@@ -147,6 +147,12 @@ export function guardProjects(app: FastifyInstance, server: Server, book: RouteB
     }
     const services = await server.registry.open(record);
     request.project = { record, role: member.role, services, movedFrom };
+    // Removing the person (or changing their role) cuts what they have open here, and the time
+    // they were last here is kept, to within a few minutes.
+    server.live.track(request, record.id, person.id);
+    server.projects.touchMember(record.id, person.id).catch((err: unknown) => {
+      request.log.warn({ err }, "Could not note a member's last activity");
+    });
   });
 }
 
