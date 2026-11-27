@@ -26,6 +26,7 @@ const INFO: JoinInfo = {
   google: true,
   alreadyMember: false,
   email: null,
+  pendingGoogle: null,
 };
 const OUT = {
   loggedIn: false,

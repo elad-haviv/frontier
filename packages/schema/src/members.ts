@@ -134,6 +134,11 @@ export const JoinInfo = z.object({
    * The page fills it in and says so; joining with it and the proof counts as confirmed.
    */
   email: z.string().nullable().default(null),
+  /**
+   * Stage 27c: someone came back from Google for THIS invitation and has not yet clicked Join: the
+   * verified name and email (nothing else) the account would be made from. Null otherwise.
+   */
+  pendingGoogle: z.object({ name: z.string(), email: z.string() }).nullable().default(null),
 });
 export type JoinInfo = z.infer<typeof JoinInfo>;
 

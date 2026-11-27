@@ -280,8 +280,17 @@ describe("logging in with a Google account that is linked", () => {
   });
 });
 
+/** The click on "Join as <name> with Google", in the browser that came back from Google. */
+const clickJoin = (code: string, cookie: string) =>
+  t.app.inject({ method: "POST", url: `/api/join/${code}/google`, headers: { cookie } });
+const joinInfo = async (code: string, cookie: string) =>
+  (await t.app.inject({ method: "GET", url: `/api/join/${code}`, headers: { cookie } })).json() as {
+    pendingGoogle: { name: string; email: string } | null;
+    alreadyMember: boolean;
+  };
+
 describe("joining with Google by an invitation", () => {
-  it("makes the account from Google's name and verified email, joins, uses the link", async () => {
+  it("makes no account at the callback: the profile waits for a click on the join page", async () => {
     const { code } = await invite("reader");
     const before = await people();
     const done = await trip(`invite=${code}`, {
@@ -289,7 +298,38 @@ describe("joining with Google by an invitation", () => {
       email: "nia@example.com",
       name: "Nia New",
     });
-    expect(where(done.res)).toBe(`/p/${slug}`);
+    expect(where(done.res)).toBe(`/join/${code}`);
+    // Nothing yet: no account, no session, no membership, and the link is unused.
+    expect(await people()).toBe(before);
+    expect(await linkedTo("sub-new-1")).toBeUndefined();
+    expect(
+      (await t.app.inject({ method: "GET", url: "/api/me", headers: { cookie: done.cookie } }))
+        .statusCode,
+    ).toBe(401);
+    // The page is told the name and email, and nothing else (no subject).
+    const info = await joinInfo(code, done.cookie);
+    expect(info.pendingGoogle).toEqual({ name: "Nia New", email: "nia@example.com" });
+    expect(JSON.stringify(info)).not.toContain("sub-new-1");
+    // Another browser, with no such session, is told nothing.
+    expect((await joinInfo(code, "")).pendingGoogle).toBeNull();
+    // Without the profile in its session, the click does nothing.
+    const stranger = await clickJoin(code, "");
+    expect(stranger.statusCode).toBe(400);
+    expect(await people()).toBe(before);
+  });
+
+  it("makes the account from Google's name and verified email, joins, uses the link, on the click", async () => {
+    const { code } = await invite("reader");
+    const before = await people();
+    const done = await trip(`invite=${code}`, {
+      sub: "sub-new-1",
+      email: "nia@example.com",
+      name: "Nia New",
+    });
+    const click = await clickJoin(code, done.cookie);
+    expect(click.statusCode, click.body).toBe(200);
+    expect(click.json()).toMatchObject({ ok: true, project: slug, role: "reader" });
+    const cookie = cookieOf(click, done.cookie);
     expect(await people()).toBe(before + 1);
     const person = (await linkedTo("sub-new-1"))!;
     expect(person).toMatchObject({
@@ -302,18 +342,14 @@ describe("joining with Google by an invitation", () => {
     expect(
       (await t.server.projects.get(pid))!.members.find((m) => m.personId === person.id)!.role,
     ).toBe("reader");
-    const me = await t.app.inject({
-      method: "GET",
-      url: "/api/me",
-      headers: { cookie: done.cookie },
-    });
+    const me = await t.app.inject({ method: "GET", url: "/api/me", headers: { cookie } });
     expect(me.json()).toMatchObject({ method: "google", passwordSet: false, name: "Nia New" });
     expect(
       (
         await t.app.inject({
           method: "GET",
           url: `/api/p/${slug}/tree`,
-          headers: { cookie: done.cookie },
+          headers: { cookie },
         })
       ).statusCode,
     ).toBe(200);
@@ -323,10 +359,79 @@ describe("joining with Google by an invitation", () => {
     ).toBe("invite_used");
     const again = await start(`invite=${code}`);
     expect(again.location).toBe(`/join/${code}`);
+    // And the click cannot be repeated with the old cookie.
+    expect((await clickJoin(code, cookie)).statusCode).not.toBe(200);
+    expect(await people()).toBe(before + 1);
+  });
+
+  it("keeps the profile for ten minutes, and for that invitation only", async () => {
+    const one = await invite("writer");
+    const two = await invite("writer");
+    const before = await people();
+    const done = await trip(`invite=${one.code}`, { sub: "sub-ten", email: "ten@example.com" });
+    // Another invitation does not take it, and asking about it drops it for this one too.
+    expect(await clickJoin(two.code, done.cookie)).toMatchObject({ statusCode: 400 });
+    expect((await joinInfo(one.code, done.cookie)).pendingGoogle).not.toBeNull();
+    const mismatch = await joinInfo(two.code, done.cookie);
+    expect(mismatch.pendingGoogle).toBeNull();
+    // Opening the other invitation's page cleared it (the cookie was updated by that read).
+    expect(await people()).toBe(before);
+    // Ten minutes later it has run out, even on the right invitation.
+    const fresh = await trip(`invite=${one.code}`, { sub: "sub-ten2", email: "ten2@example.com" });
+    vi.useFakeTimers({ toFake: ["Date"], now: Date.now() + 10 * 60 * 1000 + 5000 });
+    expect((await joinInfo(one.code, fresh.cookie)).pendingGoogle).toBeNull();
+    expect((await clickJoin(one.code, fresh.cookie)).statusCode).toBe(400);
+    vi.useRealTimers();
+    expect(await people()).toBe(before);
+  });
+
+  it("lets the person drop it, and then the click makes nothing", async () => {
+    const { code } = await invite("writer");
+    const before = await people();
+    const done = await trip(`invite=${code}`, { sub: "sub-drop", email: "drop@example.com" });
+    const dropped = await t.app.inject({
+      method: "DELETE",
+      url: `/api/join/${code}/google`,
+      headers: { cookie: done.cookie },
+    });
+    expect(dropped.statusCode).toBe(200);
+    const cookie = cookieOf(dropped, done.cookie);
+    expect((await joinInfo(code, cookie)).pendingGoogle).toBeNull();
+    expect((await clickJoin(code, cookie)).statusCode).toBe(400);
+    expect(await people()).toBe(before);
+    expect(await linkedTo("sub-drop")).toBeUndefined();
+  });
+
+  it("checks the invitation again at the click: cancelled in between, nothing is made", async () => {
+    const made = await invite("writer");
+    const before = await people();
+    const done = await trip(`invite=${made.code}`, { sub: "sub-click", email: "c@example.com" });
+    await owner.del(`/api/p/${slug}/invites/${made.id}`);
+    const click = await clickJoin(made.code, done.cookie);
+    expect(click.statusCode).toBeGreaterThanOrEqual(400);
+    expect(await people()).toBe(before);
+  });
+
+  it("a click with an email that an account has makes nothing and says so", async () => {
+    const { code } = await invite("writer");
+    const taken = await t.server.people.create({
+      name: "Owner Twin",
+      email: "twin@example.com",
+      passwordHash: "x",
+      emailConfirmedAt: new Date().toISOString(),
+      emailConfirmedBy: "link",
+    });
+    const before = await people();
+    const done = await trip(`invite=${code}`, { sub: "sub-twin", email: "twin@example.com" });
+    expect(where(done.res)).toBe(`/join/${code}?problem=account_exists`);
+    expect((await joinInfo(code, done.cookie)).pendingGoogle).toBeNull();
+    expect(await people()).toBe(before);
+    expect(taken.identities).toEqual([]);
   });
 
   it("with an existing Google identity, logs in and lands on the join page to accept, joining nobody", async () => {
     const person = (await linkedTo("sub-new-1"))!;
+    expect(person).toBeDefined();
     const { code } = await invite("writer");
     // Nia is already in: logged in, sent to the join page, and the link is not used up.
     const done = await trip(`invite=${code}`, { sub: "sub-new-1" });
@@ -425,7 +530,7 @@ describe("joining with Google by an invitation", () => {
   it("makes at most one account when two people use one link at once", async () => {
     const { code } = await invite("reader");
     const before = await people();
-    const results = await Promise.all(
+    const trips = await Promise.all(
       [1, 2, 3].map((i) =>
         trip(`invite=${code}`, {
           sub: `sub-race-${i}`,
@@ -434,11 +539,11 @@ describe("joining with Google by an invitation", () => {
         }),
       ),
     );
-    const made = results.filter((r) => where(r.res) === `/p/${slug}`);
-    expect(made).toHaveLength(1);
+    // None was made at the callback; each then clicks at the same moment.
+    expect(await people()).toBe(before);
+    const clicks = await Promise.all(trips.map((r) => clickJoin(code, r.cookie)));
+    expect(clicks.filter((c) => c.statusCode === 200)).toHaveLength(1);
     expect(await people()).toBe(before + 1);
-    for (const r of results.filter((x) => !made.includes(x)))
-      expect(where(r.res)).toBe(`/join/${code}`);
   });
 });
 
@@ -741,11 +846,12 @@ describe("linking Google from Settings, and unlinking it", () => {
 
     // An account that came by Google has no password: Google is its only way in.
     const { code } = await invite("reader");
-    const only = await trip(`invite=${code}`, {
+    const back = await trip(`invite=${code}`, {
       sub: "sub-only",
       email: "only@example.com",
       name: "Otis Only",
     });
+    const only = { cookie: cookieOf(await clickJoin(code, back.cookie), back.cookie) };
     const refusal = await t.app.inject({
       method: "DELETE",
       url: "/api/me/google",

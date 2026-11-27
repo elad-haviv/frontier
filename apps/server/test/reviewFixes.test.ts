@@ -81,6 +81,8 @@ describe("openness is declared by the route, not read from the address", () => {
         "GET /api/auth/google/start",
         "GET /api/join/:code",
         "POST /api/join/:code",
+        "POST /api/join/:code/google",
+        "DELETE /api/join/:code/google",
         "POST /api/join/:code/passkey/options",
         "POST /api/join/:code/passkey/verify",
         // Stage 28: opening a confirm link, forgot password, and the reset link's two routes.

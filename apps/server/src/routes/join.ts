@@ -93,7 +93,80 @@ export function joinRoutes(app: FastifyInstance, s: Server): void {
       // Only to whoever has the emailed link: the owner who made the invitation has the code but
       // not the proof, so the address is not given to them (or to anyone else with the code).
       email: s.invites.proofMatches(invite, proofOf(request)) ? (invite.email ?? null) : null,
+      pendingGoogle: pendingFor(request, invite.id),
     };
+  });
+
+  /**
+   * The Google profile waiting in this browser's session for THIS invitation, or null. One for
+   * another invitation, or one that ran out, is dropped here, so it cannot be used later.
+   */
+  function pendingFor(request: FastifyRequest, inviteId: string) {
+    const pending = request.session.get("googleJoin");
+    if (!pending) return null;
+    if (pending.until < Date.now() || pending.invite !== inviteId) {
+      request.session.set("googleJoin", undefined);
+      return null;
+    }
+    return { name: pending.name, email: pending.email };
+  }
+
+  /**
+   * The click on "Join as <name> with Google": the account is made from the profile Google verified
+   * (kept in the session since the callback) and joins, using the invitation. Without that profile,
+   * for this very invitation and within ten minutes, nothing is made.
+   */
+  app.post(
+    "/api/join/:code/google",
+    { config: PUBLIC },
+    async (request): Promise<JoinedResponse> => {
+      s.joinLimit.attempt(request.ip);
+      const code = codeOf(request);
+      const { invite } = await liveInvite(s, code);
+      const pending = pendingFor(request, invite.id);
+      const stored = request.session.get("googleJoin");
+      if (!pending || !stored) {
+        throw new ApiError("invalid", "This took too long. Continue with Google again.");
+      }
+      // Once: a second click, or a replayed cookie, finds nothing (the used invitation is gone too).
+      request.session.set("googleJoin", undefined);
+      if (
+        (await s.people.all()).some((p) =>
+          p.identities.some((i) => i.provider === "google" && i.subject === stored.subject),
+        )
+      ) {
+        // Someone linked this Google account in the meantime: it is theirs to log in with.
+        throw accountExists();
+      }
+      const joined = await joinAsNewPerson(
+        s,
+        code,
+        {
+          name: stored.name,
+          email: stored.email,
+          identities: [
+            {
+              provider: "google",
+              subject: stored.subject,
+              email: stored.email,
+              addedAt: new Date().toISOString(),
+            },
+          ],
+        },
+        // Google verified the address: it counts as confirmed, and it wins over an account that
+        // only typed it (see `joinAsNewPerson`).
+        { google: true },
+      );
+      startSession(request, joined.person, "google");
+      return answer(joined);
+    },
+  );
+
+  /** Drops the pending Google profile ("Not you?"): nothing was made, the invitation is untouched. */
+  app.delete("/api/join/:code/google", { config: PUBLIC }, async (request) => {
+    s.joinLimit.attempt(request.ip);
+    request.session.set("googleJoin", undefined);
+    return { ok: true as const };
   });
 
   /** Someone new, with an email and a password. */

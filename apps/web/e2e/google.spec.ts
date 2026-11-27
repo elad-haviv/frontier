@@ -94,6 +94,49 @@ test("the join page offers Google, and explains a trip that did not work", async
   await page.request.delete(api(`/invites/${id}`));
 });
 
+test("back from Google, the join page asks for a click, and the person can drop it", async ({
+  browser,
+  page,
+}) => {
+  const made = await page.request.post(api("/invites"), { data: { role: "reader" } });
+  const { id, path } = (await made.json()) as { id: string; path: string };
+  const s = await stranger(browser);
+  const code = path.split("/join/")[1]!;
+  const info = (await (await s.context.request.get(`/api/join/${code}`)).json()) as Record<
+    string,
+    unknown
+  >;
+  // What the server answers after the callback kept a verified profile in the session.
+  let pending: { name: string; email: string } | null = {
+    name: "Gil Google",
+    email: "gil@example.org",
+  };
+  const writes: string[] = [];
+  await s.page.route("**/api/join/*", (route) =>
+    route.request().method() === "GET"
+      ? route.fulfill({ json: { ...info, google: true, pendingGoogle: pending } })
+      : route.continue(),
+  );
+  await s.page.route("**/api/join/*/google", async (route) => {
+    writes.push(route.request().method());
+    pending = null;
+    await route.fulfill({ json: { ok: true } });
+  });
+  await s.page.goto(path);
+  // Nothing was made: the page says who Google says it is and waits.
+  await expect(s.page.getByText("gil@example.org")).toBeVisible();
+  await expect(
+    s.page.getByRole("button", { name: "Join as Gil Google with Google" }),
+  ).toBeVisible();
+  await expect(s.page.getByLabel("Password")).toHaveCount(0);
+  expect(writes).toEqual([]);
+  await s.page.getByRole("button", { name: "Use another way to join" }).click();
+  await expect(s.page.getByLabel("Password")).toBeVisible();
+  expect(writes).toEqual(["DELETE"]);
+  await s.context.close();
+  await page.request.delete(api(`/invites/${id}`));
+});
+
 test("Settings shows a linked Google account, refuses to unlink the last way in, and asks for a recent login", async ({
   page,
 }) => {

@@ -24,6 +24,7 @@ const INFO: JoinInfo = {
   google: false,
   alreadyMember: false,
   email: null,
+  pendingGoogle: null,
 };
 const OUT = {
   loggedIn: false,
@@ -95,6 +96,70 @@ describe("the join page", () => {
     );
     const m = await page();
     expect(m.withText("button", "Continue with Google")).not.toBeNull();
+  });
+
+  it("back from Google, offers a click and makes nothing until it", async () => {
+    const calls = stubServer((url, method) =>
+      method === "POST" && url === `/api/join/${CODE}/google`
+        ? answer({ ok: true, project: "avalymia", role: "writer" })
+        : url.includes("/api/join/")
+          ? answer({
+              ...INFO,
+              google: true,
+              pendingGoogle: { name: "Yael Stern", email: "yael@example.org" },
+            })
+          : answer(OUT),
+    );
+    const m = await page();
+    // The page shows who Google says it is, and no form to fill in.
+    expect(m.host.textContent).toContain("yael@example.org");
+    expect(m.host.querySelector('input[type="password"]')).toBeNull();
+    expect(calls.some((c) => c.method === "POST")).toBe(false);
+    await m.click(m.withText("button", "Join as Yael Stern with Google")!);
+    await m.settle();
+    expect(calls.find((c) => c.method === "POST")).toMatchObject({
+      url: `/api/join/${CODE}/google`,
+    });
+    expect(loaded).toEqual(["/p/avalymia"]);
+  });
+
+  it("lets the person drop the Google profile, and then shows the other ways", async () => {
+    const calls = stubServer((url, method) =>
+      method === "DELETE" && url === `/api/join/${CODE}/google`
+        ? answer({ ok: true })
+        : url.includes("/api/join/")
+          ? answer({
+              ...INFO,
+              google: true,
+              pendingGoogle: { name: "Yael Stern", email: "yael@example.org" },
+            })
+          : answer(OUT),
+    );
+    const m = await page();
+    await m.click(m.withText("button", "Use another way to join")!);
+    await m.settle();
+    expect(calls.find((c) => c.method === "DELETE")).toBeDefined();
+    expect(m.withText("button", "Join as Yael Stern with Google")).toBeNull();
+    expect(m.withText("button", "Continue with Google")).not.toBeNull();
+    expect(m.host.querySelector('input[type="password"]')).not.toBeNull();
+  });
+
+  it("turns into the login form when the Google email has an account", async () => {
+    stubServer((url, method) =>
+      method === "POST" && url === `/api/join/${CODE}/google`
+        ? failure(409, "account_exists", "An account already has that email.")
+        : url.includes("/api/join/")
+          ? answer({
+              ...INFO,
+              google: true,
+              pendingGoogle: { name: "Yael Stern", email: "yael@example.org" },
+            })
+          : answer(OUT),
+    );
+    const m = await page();
+    await m.click(m.withText("button", "Join as Yael Stern with Google")!);
+    await m.settle();
+    expect(m.host.textContent).toContain("You may already have an account: log in to join.");
   });
 
   it("asks for a name, an email and a password before it asks the server", async () => {

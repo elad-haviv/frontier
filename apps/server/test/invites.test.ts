@@ -494,6 +494,8 @@ describe("what is kept out of the log and the open", () => {
     const routes: [string, string][] = [
       ["GET", `/api/join/${"c".repeat(32)}`],
       ["POST", `/api/join/${"c".repeat(32)}`],
+      ["POST", `/api/join/${"c".repeat(32)}/google`],
+      ["DELETE", `/api/join/${"c".repeat(32)}/google`],
       ["POST", `/api/join/${"c".repeat(32)}/passkey/options`],
       ["POST", `/api/join/${"c".repeat(32)}/passkey/verify`],
       ["GET", "/api/auth/google/start"],

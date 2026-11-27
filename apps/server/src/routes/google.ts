@@ -6,8 +6,11 @@
  *
  *   1. The Google subject is linked to an account: log in. With an invitation they land on its
  *      join page to accept (they are not joined by the sign-in itself).
- *   2. An invitation came with the flow and is still unused: make the account from Google's name
- *      and verified email, and join. The invitation is checked again here and used only on success.
+ *   2. An invitation came with the flow and is still unused, and nobody has this Google identity:
+ *      the verified profile (subject, email, name) waits in the signed session for ten minutes and
+ *      the person lands on the join page, which shows "Join as <name> with Google". The account is
+ *      made, and the invitation used, only by their click (`POST /api/join/:code/google`, in
+ *      `routes/join.ts`), which checks the invitation again.
  *   3. Someone logged in asked, from Settings, to link Google (and logged in recently): link it.
  *   4. Otherwise: nothing. `/login?problem=google_no_account`. An account is never made without
  *      an invitation, and an existing account is never taken over because the email matches.
@@ -30,7 +33,8 @@ import {
   startSession,
 } from "../auth/session.js";
 import { ApiError } from "../errors.js";
-import { joinAsNewPerson, liveInvite } from "../members/join.js";
+import { canDisplace } from "../mail/accounts.js";
+import { liveInvite } from "../members/join.js";
 import type { Server } from "../server.js";
 import { googleOf } from "./auth.js";
 
@@ -231,26 +235,27 @@ export function googleRoutes(app: FastifyInstance, s: Server): void {
       return go(reply, landing);
     }
 
-    // 2: someone new, with an invitation that is still good.
+    // 2: someone new, with an invitation that is still good. Nothing is made here: the verified
+    // profile waits in the signed session, and the join page asks for a click.
     if (pending.invite) {
       const code = pending.invite;
       try {
-        // Google verified the address: it counts as confirmed, and it wins over an account that
-        // only typed it (see `joinAsNewPerson`).
-        const joined = await joinAsNewPerson(
-          s,
-          code,
-          { name: profile.name, email: profile.email, identities: [identity] },
-          { google: true },
-        );
-        startSession(request, joined.person, "google");
-        return go(reply, `/p/${encodeURIComponent(joined.project.slug)}`);
-      } catch (err) {
-        if (err instanceof ApiError && err.code === "account_exists") {
-          // An account has this email but is not linked to this Google identity: the person logs
-          // in the way that account allows and joins as that account. Nothing is linked by email.
+        const { invite } = await liveInvite(s, code);
+        const existing = await s.people.byEmail(profile.email);
+        if (existing && !canDisplace(s, existing)) {
+          // An account has this email but is not linked to this Google identity: the join page
+          // tells them to log in and accept. Nothing is linked by email.
           return go(reply, joinPage(code, "account_exists"));
         }
+        request.session.set("googleJoin", {
+          subject: profile.subject,
+          email: profile.email,
+          name: profile.name,
+          until: Date.now() + TEN_MINUTES,
+          invite: invite.id,
+        });
+        return go(reply, joinPage(code));
+      } catch (err) {
         if (err instanceof ApiError) return go(reply, joinPage(code));
         throw err;
       }

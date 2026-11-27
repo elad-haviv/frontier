@@ -67,6 +67,11 @@ const invite = async (app: TestApp, by: Client | null, role = "writer") => {
   return res.json() as CreateInviteResponse;
 };
 
+/**
+ * The whole trip, as the person takes it: Google, back to the join page, and the click on "Join as
+ * <name> with Google" when that page offers it. `back` is where Google sent the browser, before
+ * the click; `to` is where the person ends; `res` is the last answer (the click's, when there was one).
+ */
 async function trip(app: TestApp, query: string, grant: Grant, cookie = "") {
   const started = await app.app.inject({
     method: "GET",
@@ -81,11 +86,33 @@ async function trip(app: TestApp, query: string, grant: Grant, cookie = "") {
     url: `/api/auth/google/callback?code=${code}&state=${request.state}`,
     headers: { cookie: cookieOf(started, cookie) },
   });
-  return {
-    res,
-    to: String(res.headers.location ?? ""),
-    cookie: cookieOf(res, cookieOf(started, cookie)),
-  };
+  let answer = res;
+  let to = String(res.headers.location ?? "");
+  let jar = cookieOf(res, cookieOf(started, cookie));
+  const back = to;
+  const page = /^\/join\/([^/?]+)$/.exec(to);
+  if (page) {
+    const info = await app.app.inject({
+      method: "GET",
+      url: `/api/join/${page[1]}`,
+      headers: { cookie: jar },
+    });
+    jar = cookieOf(info, jar);
+    if (info.statusCode === 200 && info.json().pendingGoogle) {
+      const click = await app.app.inject({
+        method: "POST",
+        url: `/api/join/${page[1]}/google`,
+        headers: { cookie: jar },
+      });
+      jar = cookieOf(click, jar);
+      answer = click;
+      to =
+        click.statusCode === 200
+          ? `/p/${click.json().project}`
+          : `/join/${page[1]}?error=${click.json().error?.code}`;
+    }
+  }
+  return { res: answer, back, to, cookie: jar };
 }
 
 /**

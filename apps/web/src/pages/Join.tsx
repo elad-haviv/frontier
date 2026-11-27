@@ -244,7 +244,11 @@ function Invitation({
   // The address the invitation was emailed to, when the link is the emailed one: filled in.
   const [email, setEmail] = useState(info.email ?? "");
   const [password, setPassword] = useState("");
-  const [busy, setBusy] = useState<null | "passkey" | "password" | "accept" | "login">(null);
+  const [busy, setBusy] = useState<null | "passkey" | "password" | "accept" | "login" | "google">(
+    null,
+  );
+  // The Google profile waiting for a click (stage 27c): shown until it is joined with or dropped.
+  const [waiting, setWaiting] = useState(info.pendingGoogle);
   const [error, setError] = useState<string | null>(googleProblem(problem));
   // Why the page turned into a login form, when it did by itself.
   const [switched, setSwitched] = useState<string | null>(
@@ -365,6 +369,32 @@ function Invitation({
     }
   }
 
+  /** The click Google's return waits for: only now is the account made. */
+  async function withGoogle() {
+    setError(null);
+    setBusy("google");
+    try {
+      const joined = await api.joinWithGoogle(code);
+      await onJoined(joined.project, joined.role, name, true);
+    } catch (err) {
+      failed(err, "Joining did not work. Continue with Google again.");
+      // A profile that is gone (it ran out, or was used) is not offered again.
+      if (err instanceof ApiFailure && err.code === "invalid") setWaiting(null);
+    }
+  }
+
+  async function dropGoogle() {
+    setBusy("google");
+    setError(null);
+    try {
+      await api.dropGoogleJoin(code);
+      setWaiting(null);
+    } catch {
+      setError("That did not work. Try again.");
+    }
+    setBusy(null);
+  }
+
   async function withPassword(e: FormEvent) {
     e.preventDefault();
     setError(null);
@@ -464,6 +494,35 @@ function Invitation({
           Someone else?{" "}
           <button type="button" className="join-link" onClick={logout}>
             Log out and use another account
+          </button>
+        </p>
+        {keyNote}
+      </>
+    );
+  }
+
+  // Back from Google with someone new: nothing is made until they click.
+  if (waiting && mode === "join") {
+    return (
+      <>
+        {head}
+        <p>
+          Google says you are <b>{waiting.name || waiting.email}</b>
+          {waiting.name && waiting.email ? <> ({waiting.email})</> : null}.
+        </p>
+        {problemLine}
+        <button type="button" disabled={busy !== null} onClick={() => void withGoogle()}>
+          {busy === "google" ? "Joining…" : `Join as ${waiting.name || waiting.email} with Google`}
+        </button>
+        <p className="muted join-note">
+          Not you?{" "}
+          <button
+            type="button"
+            className="join-link"
+            disabled={busy !== null}
+            onClick={() => void dropGoogle()}
+          >
+            Use another way to join
           </button>
         </p>
         {keyNote}

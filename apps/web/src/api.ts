@@ -538,6 +538,12 @@ const serverApi = {
     });
   },
   /** A person who is logged in takes the invitation into their own account. */
+  /** Joins with the Google profile waiting in this browser's session: the click on "Join as … with Google". */
+  joinWithGoogle: (code: string) =>
+    basePost<JoinedResponse>(`/api/join/${encodeURIComponent(code)}/google`, {}),
+  /** Drops that waiting profile ("Not you?"); nothing was made. */
+  dropGoogleJoin: (code: string) =>
+    baseSend<{ ok: true }>("DELETE", `/api/join/${encodeURIComponent(code)}/google`),
   acceptInvite: (code: string, m?: string | null) =>
     basePost<JoinedResponse>(`/api/join/${encodeURIComponent(code)}/accept${proof(m)}`),
   // ---- Email (stage 28) -----------------------------------------------------------------------

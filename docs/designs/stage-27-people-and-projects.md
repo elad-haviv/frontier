@@ -600,11 +600,13 @@ records are kept 30 days so the page can say why a link is dead.
 
 | Method and path | Body | Response |
 | --- | --- | --- |
-| `GET /api/join/:code` | none | `JoinInfo`: `{ project: { name, colour, entries, maps, people }, inviter: { name }, role, google, alreadyMember }`. `google` is whether to show the Google button; `alreadyMember` is true when the caller is logged in and in the project |
+| `GET /api/join/:code` | none | `JoinInfo`: `{ project: { name, colour, entries, maps, people }, inviter: { name }, role, google, alreadyMember, pendingGoogle }`. `google` is whether to show the Google button; `alreadyMember` is true when the caller is logged in and in the project |
 | `POST /api/join/:code` | `{ name, email, password }` (password 12 to 500 characters) | `JoinedResponse` `{ ok, project, role }` and a session (a password login); `project` is the slug: open `/p/<project>` |
 | `POST /api/join/:code/passkey/options` | `{ name, email }` (both required) | WebAuthn registration options (`userVerification: required`). The challenge, the invitation and the name are kept in the signed session for 5 minutes |
 | `POST /api/join/:code/passkey/verify` | `{ response, passkeyName? }` (the browser's registration response) | `JoinedResponse` and a session (method `passkey`). The challenge is single use and is bound to this link |
 | `POST /api/join/:code/accept` | none; logged in | `JoinedResponse`. 409 `already_member` (with `error.project`, the slug) and the link is **not** used up. 401 when logged out |
+| `POST /api/join/:code/google` | none (the profile is in the signed session) | `JoinedResponse` and a session (method `google`); 400 `invalid` when no profile waits for this link |
+| `DELETE /api/join/:code/google` | none | `{ ok }`; drops the waiting Google profile |
 | `GET /api/auth/google/start?invite=&returnTo=&link=1` | see below | 302 to Google |
 | `GET /api/auth/google/callback` | Google's `code` and `state` | 302 to a page of the app |
 
@@ -660,9 +662,15 @@ leading slash, no host, no backslash, not `/api`; anything else is dropped and t
 
 What a good trip does, in this order: the Google subject is linked to an account: log in (landing on
 `returnTo` or `/`; with an invitation they are logged in but **not joined**: they land on
-`/join/<code>` and confirm with "accept", so a link is never used without a click). Else with a valid unused invitation (checked again at
-the callback, used only on success): make the account from Google's name and verified email, join,
-log in, land on `/p/<slug>`. Else with `link=1`: add the identity to the logged-in account. Else
+`/join/<code>` and confirm with "accept", so a link is never used without a click). Else with a valid unused invitation
+(and no account with that email, unless it may give the address up): **nothing is made**. The verified profile (subject, email,
+name) is kept in the signed session (`googleJoin`) for 10 minutes, tied to that invitation's id, and the browser goes to
+`/join/<code>`. There `GET /api/join/:code` says `pendingGoogle: { name, email } | null` (name and email only; a profile for
+another invitation, or an expired one, is dropped by that read), and the page shows "Join as <name> with Google". The click,
+`POST /api/join/:code/google` (public, joinLimit, CSRF-checked like the other join routes), checks the invitation again, makes the
+account from the profile (confirmed by Google), joins, uses the link, starts the session and answers like the other joins;
+`DELETE /api/join/:code/google` drops it. Without that profile in the session, for that invitation, within 10 minutes, the click
+makes nothing (400). Else with `link=1`: add the identity to the logged-in account. Else
 `google_no_account`. The session's method is `google`.
 
 | Method and path | Body | Response |
@@ -698,7 +706,8 @@ first account who leaves is not made an owner again (that only happens to a proj
 - `account_exists` reveals that an email has an account to someone who holds a working link; it is
   the price of letting the page say "log in to join". It is not said for an unknown or dead link.
 - A person who has Google linked and arrives on an invitation through Google is logged in and sent to
-  `/join/<code>` to accept; a new person through Google still joins directly.
+  `/join/<code>` to accept; a new person through Google lands there too and joins by clicking "Join as <name> with Google"
+  (review fix: the callback no longer makes the account).
 - Every join gives an email; an account made by passkey or Google has no password.
 - `GET /api/session` says `emailless: true` when exactly one account has no email (however many
   accounts there are), and a blank email at login then means that account.
@@ -728,7 +737,7 @@ first account who leaves is not made an owner again (that only happens to a proj
   closed); reconnect and read the new role, or `no_project`.
 - An email is required on every join, including the passkey options request.
 - An existing Google account that arrives with an invitation lands on `/join/<code>` logged in, to
-  accept; only a new account through Google joins without a click.
+  accept; a new person through Google also lands on `/join/<code>` and joins by a click (no account is made at the callback).
 - `GET /api/session` `emailless` is true only when exactly one account has no email; show the
   blank-email login hint only then.
 - A reader gets no open-comment reasons in Home's queue, and an empty `versions` in `/attention`.
@@ -774,6 +783,9 @@ Google sign-on, and the roles in the shell. The server was not changed.
   characters). Name and email are checked before any way is tried, and the first field that is wrong
   is announced and takes the focus; Enter in name or email moves on and never joins with a password
   nobody typed. Google asks for neither: Google supplies the verified name and email.
+- Back from Google with someone new, the page shows "Google says you are <name> (<email>)", a **Join as <name> with Google**
+  button, and "Not you? Use another way to join" (drops the waiting profile and shows the usual form). A refused click
+  (`account_exists`) opens the login form; a profile that ran out is not offered again.
 - Dead links, each with its own words and the inviter's name when the server gave one: `invite_used`,
   `invite_cancelled`, `invite_expired`, `invite_unknown` (no name). `rate_limited` says to wait.
 - `account_exists`: the page shows the login form (passkey, Google, email and password) with the link

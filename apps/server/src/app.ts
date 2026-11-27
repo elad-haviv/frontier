@@ -78,6 +78,18 @@ declare module "@fastify/secure-session" {
      */
     joinChallenge: { value: string; until: number; invite: string; name: string; email: string };
     /**
+     * Someone new came back from Google for an invitation: the verified profile, kept for ten
+     * minutes until they click Join (`POST /api/join/:code/google`). No account exists before that.
+     */
+    googleJoin: {
+      subject: string;
+      email: string;
+      name: string;
+      until: number;
+      /** The invitation's id, so another invitation cannot use it. */
+      invite: string;
+    };
+    /**
      * A Google sign-in in progress: the state, nonce and PKCE verifier of this browser's request,
      * and what it is for. The cookie is encrypted and signed, so it is the "signed state".
      */
