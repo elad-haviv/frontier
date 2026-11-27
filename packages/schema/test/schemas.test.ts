@@ -382,8 +382,8 @@ describe("errors", () => {
     expect(statusOf("ai_key_rejected")).toBe(409);
     // The web app asks the person to log in again for this one.
     expect(statusOf("recent_login_needed")).toBe(403);
-    // 30 before stage 27c, which added seven (below).
-    expect(Object.keys(ERROR_STATUS)).toHaveLength(37);
+    // 30 before stage 27c, which added seven (below), and stage 28 added four.
+    expect(Object.keys(ERROR_STATUS)).toHaveLength(41);
     // Stage 27b: a project that is not there for the person, a role too low, an address taken.
     expect(statusOf("no_project")).toBe(403);
     expect(statusOf("role_too_low")).toBe(403);
@@ -428,6 +428,16 @@ describe("accounts", () => {
       admin: false,
       sessionEpoch: 0,
       lastProject: null,
+      // Stage 28: an account from before it is unconfirmed, with nothing waiting.
+      emailConfirmedAt: null,
+      emailConfirmedBy: null,
+      emailCode: null,
+      emailPending: null,
+      resetCode: null,
+      emailDisplaced: false,
+      emailSetBySelf: false,
+      emailLinkSentUntil: null,
+      emailUsed: null,
     });
     expect(PeopleFile.parse({})).toEqual({ version: 1, people: [] });
   });

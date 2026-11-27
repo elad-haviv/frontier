@@ -24,6 +24,7 @@ import { authRoutes } from "./routes/auth.js";
 import { characterRoutes } from "./routes/characters.js";
 import { chronicleRoutes } from "./routes/chronicles.js";
 import { commentRoutes } from "./routes/comments.js";
+import { emailRoutes } from "./routes/email.js";
 import { discoverRoutes } from "./routes/discover.js";
 import { draftRoutes } from "./routes/drafts.js";
 import { entryDraftRoutes } from "./routes/entryDraft.js";
@@ -116,8 +117,8 @@ export interface RegisteredRoute {
 /** An address as it may be logged: no invitation code, no OAuth code or state. */
 export function redactAddress(url: string | undefined): string {
   return (url ?? "")
-    .replace(/(\/(?:(?:api|%61pi)\/)?join\/)[^/?#]+/i, "$1:code")
-    .replace(/([?&](?:invite|code|state|returnTo)=)[^&#]*/gi, "$1:redacted");
+    .replace(/(\/(?:(?:api|%61pi)\/)?(?:join|confirm|reset)\/)[^/?#]+/i, "$1:code")
+    .replace(/([?&](?:invite|code|state|returnTo|m)=)[^&#]*/gi, "$1:redacted");
 }
 
 const THIRTY_DAYS = 30 * 24 * 60 * 60;
@@ -231,6 +232,7 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
     }
   });
   readKeysHeader(app);
+  server.mail.logTo(app.log);
   // A failed AI call is written to the server's log too, or production shows only a bare 502.
   server.ai.logFailuresTo(app.log);
 
@@ -263,6 +265,7 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
 
   app.addHook("onClose", async () => {
     // A member's last-active note is written without the request waiting; let it land first.
+    await server.mail.settled();
     await server.projects.settled();
     await server.registry.closeAll();
   });
@@ -418,6 +421,7 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
   passkeyRoutes(app, server);
   joinRoutes(app, server);
   googleRoutes(app, server);
+  emailRoutes(app, server);
   settingsRoutes(app, server);
   projectsApi(app, server);
   healthRoute(app, server);

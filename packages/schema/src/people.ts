@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { ConfirmedBy, EmailCode, EmailPending, EmailUsed, ResetCode } from "./email.js";
 import { Passkey } from "./state.js";
 
 /**
@@ -44,6 +45,38 @@ export const Person = z.object({
   admin: z.boolean().default(false),
   /** The id of the project the person used last (stage 27b), so the app opens it after a login. */
   lastProject: z.string().nullable().default(null),
+  /**
+   * Stage 28. When the address was confirmed (a link opened, Google's own check, or an emailed
+   * invitation joined with that address). Null for an address nobody has checked, which is every
+   * account from before stage 28 and every address typed on a server without mail.
+   */
+  emailConfirmedAt: z.string().datetime().nullable().default(null),
+  emailConfirmedBy: ConfirmedBy.nullable().default(null),
+  /** The confirm link waiting to be opened (hash only), for the address it names. */
+  emailCode: EmailCode.nullable().default(null),
+  /** A new address waiting for its confirm link; the old one stays in force until then. */
+  emailPending: EmailPending.nullable().default(null),
+  /** The reset link waiting to be opened (hash only). */
+  resetCode: ResetCode.nullable().default(null),
+  /**
+   * The address was taken away because a Google sign-in verified the same one: the person is asked
+   * to add another. Such an account never counts as "the account with no email" at login.
+   */
+  emailDisplaced: z.boolean().default(false),
+  /**
+   * The account itself set its current address after stage 28 (Change address, or the profile
+   * form), as against giving it when it joined. Until such an address is confirmed no reset link
+   * is sent to it.
+   */
+  emailSetBySelf: z.boolean().default(false),
+  /**
+   * When the latest confirm link Frontier successfully sent to the current address runs (or ran)
+   * out; null when none was ever sent. An unconfirmed address whose link lapsed unopened may be
+   * given up to a Google-verified person; one never sent a link never is.
+   */
+  emailLinkSentUntil: z.string().datetime().nullable().default(null),
+  /** The confirm link used last, so opening it again says "already confirmed". */
+  emailUsed: EmailUsed.nullable().default(null),
 });
 export type Person = z.infer<typeof Person>;
 

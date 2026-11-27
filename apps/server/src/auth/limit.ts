@@ -45,6 +45,7 @@ export class LoginLimiter {
     private readonly windowMs = 15 * 60 * 1000,
     private readonly now: () => number = Date.now,
     private readonly capacity = MAX_ADDRESSES,
+    private readonly message = "Too many attempts. Wait 15 minutes and try again.",
   ) {}
 
   /** How many addresses are held now (for tests). */
@@ -83,7 +84,7 @@ export class LoginLimiter {
     current.count++;
     this.attempts.set(key, current);
     if (current.count > this.max) {
-      throw new ApiError("rate_limited", "Too many attempts. Wait 15 minutes and try again.");
+      throw new ApiError("rate_limited", this.message);
     }
   }
 }

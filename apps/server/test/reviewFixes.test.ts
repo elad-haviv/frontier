@@ -83,6 +83,11 @@ describe("openness is declared by the route, not read from the address", () => {
         "POST /api/join/:code",
         "POST /api/join/:code/passkey/options",
         "POST /api/join/:code/passkey/verify",
+        // Stage 28: opening a confirm link, forgot password, and the reset link's two routes.
+        "POST /api/confirm/:code",
+        "POST /api/forgot-password",
+        "GET /api/reset/:code",
+        "POST /api/reset/:code",
         "GET /api/session",
         "GET /health",
         "POST /api/github/webhook",

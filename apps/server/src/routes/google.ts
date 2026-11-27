@@ -18,7 +18,7 @@
  * invitation code the person already holds.
  */
 import type { FastifyInstance, FastifyReply } from "fastify";
-import { INVITE_CODE_PATTERN } from "@frontier/schema";
+import { emailKey, INVITE_CODE_PATTERN } from "@frontier/schema";
 import { z } from "zod";
 import { GoogleError, safeReturnTo, sameSecret } from "../auth/google.js";
 import { PUBLIC } from "../auth/openness.js";
@@ -193,7 +193,17 @@ export function googleRoutes(app: FastifyInstance, s: Server): void {
       if (linked && linked.id !== me.id) return page("google_taken", SETTINGS);
       if (googleOf(me)) return page("google_already_linked", SETTINGS);
       const now = await s.people.update(me.id, (p) =>
-        endOtherSessions({ ...p, identities: [...p.identities, identity] }),
+        endOtherSessions({
+          ...p,
+          identities: [...p.identities, identity],
+          // Google verified an address that is the account's own: that counts as confirmed.
+          ...(emailKey(p.email) !== "" && emailKey(p.email) === emailKey(profile.email)
+            ? {
+                emailConfirmedAt: p.emailConfirmedAt ?? new Date().toISOString(),
+                emailConfirmedBy: p.emailConfirmedBy ?? ("google" as const),
+              }
+            : {}),
+        }),
       );
       followEpoch(request, now);
       return go(reply, pending.returnTo ?? SETTINGS);
@@ -201,6 +211,19 @@ export function googleRoutes(app: FastifyInstance, s: Server): void {
 
     // 1: an account that already has this Google identity.
     if (linked) {
+      // An account from before stage 28 whose address is the one Google verifies is confirmed by
+      // Google; `confirmedOf` already reads it so, and this login writes it down.
+      if (
+        linked.emailConfirmedAt === null &&
+        emailKey(linked.email) !== "" &&
+        emailKey(linked.email) === emailKey(profile.email)
+      ) {
+        await s.people.update(linked.id, (p) => ({
+          ...p,
+          emailConfirmedAt: p.emailConfirmedAt ?? new Date().toISOString(),
+          emailConfirmedBy: p.emailConfirmedBy ?? ("google" as const),
+        }));
+      }
       startSession(request, linked, "google");
       // With an invitation they are logged in but not joined: the join page asks them to accept,
       // as it does anyone else who has an account, so a link is never used without a click.
@@ -212,11 +235,14 @@ export function googleRoutes(app: FastifyInstance, s: Server): void {
     if (pending.invite) {
       const code = pending.invite;
       try {
-        const joined = await joinAsNewPerson(s, code, {
-          name: profile.name,
-          email: profile.email,
-          identities: [identity],
-        });
+        // Google verified the address: it counts as confirmed, and it wins over an account that
+        // only typed it (see `joinAsNewPerson`).
+        const joined = await joinAsNewPerson(
+          s,
+          code,
+          { name: profile.name, email: profile.email, identities: [identity] },
+          { google: true },
+        );
         startSession(request, joined.person, "google");
         return go(reply, `/p/${encodeURIComponent(joined.project.slug)}`);
       } catch (err) {

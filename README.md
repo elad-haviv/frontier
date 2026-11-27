@@ -37,8 +37,8 @@ A project is a library with its own members (stage 27b). A server holds any numb
 ### People, invitations and Google sign-on
 
 An owner invites people from a project's Members page (stage 27c): a link for one project and one
-role, for one person, usable once and for seven days. Frontier sends no mail; the owner sends the
-link. Only a hash of the code is stored (`DATA_DIR/state/invites.json`, in the backup), so a link
+role, for one person, usable once and for seven days. With mail set up (below) the owner can have
+Frontier email it; without, the owner sends the link. Only a hash of the code is stored (`DATA_DIR/state/invites.json`, in the backup), so a link
 cannot be read back later. The person opens `/join/<code>` and joins with an email and a password,
 a passkey on their device, or Google. An account is only ever made from an invitation.
 
@@ -64,6 +64,44 @@ Frontier account and no invitation gets "no account" and nothing else, and an ac
 linked to Google by matching emails: a person links it themselves in Settings, soon after logging
 in. The ID token's signature, issuer, audience, expiry and nonce are checked, the email must be
 verified, and the flow uses PKCE and a state bound to the browser.
+
+### Mail (optional)
+
+Frontier can send five short emails (stage 28): an invitation, "confirm your address", a password
+reset, an explanation for an account with no password, and a notice to the old address when an
+address is changed. Mail is on only when both `SMTP_HOST` and `MAIL_FROM` are set. With neither,
+every email feature is hidden and the app behaves as it did before: the owner passes invitation
+links on by hand, an address is taken as typed, there is no "Forgot password", and a forgotten
+password is put right by running the set-password command on the server.
+
+| Variable                     | Meaning                                                                                                                                                                                                                                                                                                                     |
+| ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `SMTP_HOST`                  | The relay's host name.                                                                                                                                                                                                                                                                                                      |
+| `SMTP_PORT`                  | Default 587, or 465 when `SMTP_SECURE=tls`.                                                                                                                                                                                                                                                                                 |
+| `MAIL_FROM`                  | `Frontier <noreply@haviv.pro>`.                                                                                                                                                                                                                                                                                             |
+| `SMTP_USER`, `SMTP_PASSWORD` | Only if the relay asks for a login. Both or neither. With a login `SMTP_SECURE` defaults to `required`, and `starttls` or `none` stop the server at start.                                                                                                                                                                  |
+| `SMTP_SECURE`                | `starttls` (default without a login): encrypt when the relay offers it, and do not check its certificate, which suits a private relay on the same network. `required` (default with a login): STARTTLS or fail, certificate checked. `tls`: TLS from the first byte (port 465), certificate checked. `none`: never encrypt. |
+
+Links in emails are built from `PUBLIC_URL`, never from the request. Codes are 192 random bits, kept
+only as hashes, used once; a confirm link lasts 24 hours, a reset link 30 minutes. A mail that cannot
+be sent never fails the action that asked for it; the app says what was not sent. Neither the
+messages, their links nor their codes are written to the log.
+
+#### Sending mail through a relay on Coolify
+
+Run an SMTP relay as its own service in Coolify (for example a Postfix or msmtp relay that forwards
+to the real mail provider), and:
+
+1. Put the relay and Frontier on the same Docker network (in Coolify, give both the same
+   destination, or attach the relay to Frontier's network). Frontier reaches it by the service name,
+   so `SMTP_HOST` is that name. Do not publish the relay's port on the internet.
+2. Set `SMTP_HOST=<relay service name>`, `MAIL_FROM=Frontier <noreply@haviv.pro>` and leave
+   `SMTP_PORT=587` and `SMTP_SECURE=starttls`. A relay on the private network that accepts
+   submission without a login needs no `SMTP_USER`.
+3. Publish SPF and DKIM records for the sending domain (`haviv.pro`): SPF lists the server or provider
+   that sends for it, and DKIM is the provider's public key as a DNS TXT record. Without them, mail
+   from `noreply@haviv.pro` is likely to land in spam or be refused. A DMARC record is recommended.
+4. Restart Frontier. `GET /api/session` then says `mail: true`, and the app shows the email screens.
 
 ## Working on it
 
