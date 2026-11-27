@@ -15,6 +15,7 @@ import { CommentBubbles, useMargin } from "../components/comments/CommentBubbles
 import { type Anchor, anchorAt, locate, MIN_QUOTE } from "../components/anchor.ts";
 import { setCommentMarks } from "../components/commentMarks.ts";
 import { Properties } from "../components/Properties.tsx";
+import { changesOf } from "../components/comments/model.ts";
 import { useRefresh, useStatus } from "../components/Shell.tsx";
 import { useDialogs } from "../components/Dialogs.tsx";
 import { Menu, MenuItem, MenuSeparator } from "../components/ui/Menu.tsx";
@@ -389,7 +390,7 @@ export function EditPage() {
 
   // Once the editor holds the text, its comments are found and highlighted.
   // Read again when the stream says some entry's comments changed (someone commented or replied).
-  const commentChanges = useStatus()?.comments?.changes;
+  const commentChanges = changesOf(useStatus()?.comments, path);
   useEffect(() => {
     if (initial !== null) void loadComments();
   }, [initial, loadComments, commentChanges]);

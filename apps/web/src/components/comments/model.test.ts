@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { PassageComment } from "../../api.ts";
-import { countSpaced, openCount, roleTag, sourceAnchor, splitThreads } from "./model.ts";
+import { changesOf, countSpaced, openCount, roleTag, sourceAnchor, splitThreads } from "./model.ts";
 
 const thread = (id: string, at: string, resolved = false): PassageComment =>
   ({
@@ -44,5 +44,14 @@ describe("a selection on the page as a passage of the Markdown", () => {
   });
   it("counts repeats with spaces as one", () => {
     expect(countSpaced("a  b a b", "a b")).toBe(2);
+  });
+});
+
+describe("changesOf", () => {
+  it("counts the stream's comment changes only while they are about this entry", () => {
+    expect(changesOf({ changes: 3, path: "A.md" }, "A.md")).toBe(3);
+    expect(changesOf({ changes: 4, path: "B.md" }, "A.md")).toBe(0);
+    expect(changesOf({ changes: 4, path: null }, "A.md")).toBe(0);
+    expect(changesOf(undefined, "A.md")).toBe(0);
   });
 });

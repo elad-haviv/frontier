@@ -82,3 +82,14 @@ export function countSpaced(hay: string, needle: string): number {
   for (let at = h.indexOf(n); at !== -1; at = h.indexOf(n, at + 1)) count++;
   return count;
 }
+
+/**
+ * The stream's count of comment changes while it is about this entry, else 0: a change to another
+ * entry's comments is not a reason to read this one's again.
+ */
+export function changesOf(
+  status: { changes: number; path: string | null } | undefined,
+  path: string,
+): number {
+  return status && status.path === path ? status.changes : 0;
+}

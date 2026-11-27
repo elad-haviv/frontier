@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, type PassageComment } from "../../api.ts";
+import { changesOf } from "./model.ts";
 import { useStatus } from "../Shell.tsx";
 
 const NONE: PassageComment[] = [];
@@ -16,7 +17,7 @@ export function useComments(path: string): {
   reload: () => void;
 } {
   const [state, setState] = useState<{ path: string; list: PassageComment[] } | null>(null);
-  const changes = useStatus()?.comments;
+  const changes = changesOf(useStatus()?.comments, path);
   const read = useRef(0);
   const load = useCallback(() => {
     const mine = ++read.current;
@@ -27,8 +28,8 @@ export function useComments(path: string): {
       () => undefined,
     );
   }, [path]);
-  // Read when the entry is opened, and again whenever its comments, or any entry's, changed.
-  useEffect(load, [load, changes?.changes]);
+  // Read when the entry is opened, and again whenever its comments changed.
+  useEffect(load, [load, changes]);
   const here = state?.path === path;
   return { comments: here ? state.list : NONE, loaded: here, reload: load };
 }

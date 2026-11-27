@@ -62,7 +62,7 @@ function watch(page: Page) {
 }
 
 const WRITERS_ONLY =
-  /\/(unpublished|inbox|drafts|publish|renames|write\/review|proposals)(\/|$|\?)|\/maps\/[^/]+\/discoveries|\/turns\/\d+\/addition/;
+  /\/(unpublished|inbox|drafts|publish|renames|write\/review|proposals)(\/|$|\?)|\/maps\/[^/]+\/discoveries|\/turns\/\d+\/addition|\/comments\/[^/]+\/(work|share)(\/|$|\?)/;
 
 test("a reader's shell has no control that changes anything, and calls nothing only a writer may", async ({
   page,
