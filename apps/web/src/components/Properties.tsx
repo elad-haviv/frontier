@@ -8,11 +8,27 @@ import {
   setType,
   type TimeItem,
 } from "@frontier/vault";
-import type { SchemaResponse } from "@frontier/schema";
+import { type FolderFile, FOLDERS, TYPES, type TypesFile, typeNamed } from "@frontier/schema";
 import type { EditorView } from "@codemirror/view";
 import { useEffect, useRef, useState } from "react";
-import { api } from "../api.ts";
+import { useLibraryFile } from "../sync/libraryFile.ts";
 import { CustomProperties } from "./CustomProperties.tsx";
+import { useRole } from "./projectContext.ts";
+import { useToast } from "./ui/Toast.tsx";
+
+/** The type the folder file gives an entry at `path`: that of the nearest folder above it with one. */
+export function folderTypeOf(file: FolderFile | null | undefined, path: string): string | null {
+  let best: { type: string; length: number } | null = null;
+  const lower = path.toLowerCase();
+  for (const line of file?.folders ?? []) {
+    if (!line.type) continue;
+    const prefix = line.path.toLowerCase() + "/";
+    if (lower.startsWith(prefix) && (!best || prefix.length > best.length)) {
+      best = { type: line.type, length: prefix.length };
+    }
+  }
+  return best?.type ?? null;
+}
 
 const LISTS = [
   { key: "aliases", label: "Other names", hint: "Names that also link to this entry" },
@@ -64,20 +80,27 @@ interface Loaded {
  */
 export function Properties({
   view,
+  path,
   focus = 0,
 }: {
   view: { current: EditorView | null };
+  /** Where the entry is, which says the type its folder gives it. */
+  path: string;
   /** Changes when the editor's folded frontmatter line asks for the first field. */
   focus?: number;
 }) {
   const [values, setValues] = useState<Loaded | null>(null);
-  const [schema, setSchema] = useState<SchemaResponse | null>(null);
+  // The types file says which types and date names there are, and what each type gives (stage 34).
+  const typesFile = useLibraryFile(TYPES);
+  const schema: TypesFile | null = typesFile.value;
+  const folders = useLibraryFile(FOLDERS);
+  const { isOwner } = useRole();
+  const toast = useToast();
   const [error, setError] = useState<string | null>(null);
 
   function load() {
     const v = view.current;
     if (!v) return;
-    if (!schema) api.schema().then(setSchema, () => undefined);
     const text = v.state.doc.toString();
     const { data, error: bad } = readFrontmatter(text);
     if (bad) {
@@ -129,13 +152,35 @@ export function Properties({
     });
   }
 
-  const types = schema ? [...schema.types] : [];
+  const types = schema ? schema.types.map((t) => t.name) : [];
   if (values?.type && !types.includes(values.type)) types.push(values.type);
   const whats = (current: string) => {
-    const all = schema ? [...schema.what] : [];
+    const all = schema ? schema.what.map((w) => w.name) : [];
     if (current && !all.includes(current)) all.push(current);
     return all;
   };
+  const fromFolder = folderTypeOf(folders.value, path);
+  const type = schema ? typeNamed(schema, values?.type || fromFolder) : undefined;
+  // The dates the type usually has and the entry has not written yet, offered ready to fill.
+  const usual = (type?.dates ?? []).filter((d) => !values?.time.some((t) => t.what === d));
+
+  /** Makes one of the entry's own properties a property of every entry of its type. */
+  function giveToType(key: string, kind: TypesFile["types"][number]["props"][number]["kind"]) {
+    if (!type) return;
+    void typesFile.client
+      .change((file) => ({
+        ...file,
+        types: file.types.map((t) =>
+          t.name === type.name && !t.props.some((p) => p.key.toLowerCase() === key.toLowerCase())
+            ? { ...t, props: [...t.props, { key, kind }] }
+            : t,
+        ),
+      }))
+      .then(
+        () => toast({ message: `Every ${type.name} now has “${key}”.` }),
+        () => toast({ message: "The type could not be changed." }),
+      );
+  }
 
   // Read from the text when the panel opens: it shows the note as it is now.
   const box = useRef<HTMLElement>(null);
@@ -176,7 +221,9 @@ export function Properties({
                 write((text) => setType(text, type || null));
               }}
             >
-              <option value="">From its folder</option>
+              <option value="">
+                {fromFolder ? `${fromFolder} (from its folder)` : "From its folder"}
+              </option>
               {types.map((t) => (
                 <option key={t} value={t}>
                   {t}
@@ -238,6 +285,26 @@ export function Properties({
                   </button>
                 </div>
               ))}
+            {values.timeReadable &&
+              usual.map((what) => (
+                <div key={`usual-${what}`} className="props-time-row is-usual">
+                  <span className="props-time-what">{what}</span>
+                  <input
+                    type="text"
+                    aria-label={`When ${what}, in the lore's own words`}
+                    placeholder="When, in the lore's own words"
+                    defaultValue=""
+                    onBlur={(e) => {
+                      const when = e.target.value.trim();
+                      if (when) commitTime([...values.time, { what, when }]);
+                    }}
+                    onKeyDown={(e) => {
+                      const when = e.currentTarget.value.trim();
+                      if (e.key === "Enter" && when) commitTime([...values.time, { what, when }]);
+                    }}
+                  />
+                </div>
+              ))}
             {values.timeReadable && (
               <button
                 type="button"
@@ -250,7 +317,12 @@ export function Properties({
               </button>
             )}
           </div>
-          <CustomProperties read={() => view.current?.state.doc.toString() ?? ""} write={write} />
+          <CustomProperties
+            read={() => view.current?.state.doc.toString() ?? ""}
+            write={write}
+            type={type}
+            onGiveToType={isOwner ? giveToType : undefined}
+          />
         </>
       )}
     </section>

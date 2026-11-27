@@ -56,6 +56,8 @@ import type {
   MapPreview,
   ChronicleFile,
   SchemaResponse,
+  RenameTypesRequest,
+  RenameTypesResponse,
   PublishConfirmResponse,
   PublishPlan,
   RemoveMemberResponse,
@@ -705,16 +707,25 @@ function projectCalls(slugOf: () => string) {
     status: () => call<StatusSnapshot>("/status"),
     attention: () => call<AttentionResponse>("/attention"),
     schema: () => call<SchemaResponse>("/schema"),
-    names: (query = "") =>
-      call<{
+    /** With `type`, entries of that type come first and are marked (stage 34). */
+    names: (query = "", type?: string) => {
+      const params = new URLSearchParams();
+      if (query) params.set("q", query);
+      if (type) params.set("type", type);
+      const asked = params.toString();
+      return call<{
         results: {
           path: string;
           title: string;
           alias?: string;
           shared?: boolean;
           words?: number;
+          ofType?: boolean;
         }[];
-      }>(`/switcher${query ? `?q=${encodeURIComponent(query)}` : ""}`),
+      }>(`/switcher${asked ? `?${asked}` : ""}`);
+    },
+    /** Renames a type, a type's property or a date name, in the entries too (stage 34). */
+    renameTypes: (body: RenameTypesRequest) => post<RenameTypesResponse>("/types/rename", body),
     search: (query: string) =>
       call<{ results: { path: string; title: string; snippet: string; words?: number }[] }>(
         `/search?q=${encodeURIComponent(query)}`,

@@ -1,5 +1,6 @@
-import type { EntryFields, EntryResponse } from "@frontier/schema";
-import { customProperties, linkOf } from "@frontier/vault";
+import { type EntryFields, type EntryResponse, SYSTEM_PROPS } from "@frontier/schema";
+import { customProperties, isThingKind, linkOf } from "@frontier/vault";
+import { ThingLink } from "./ThingCombobox.tsx";
 import { useMemo } from "react";
 import { Link } from "../nav.tsx";
 import { entryUrl } from "../api.ts";
@@ -94,11 +95,39 @@ export function Fields({ fields }: { fields: EntryFields }) {
  * The author's own properties, under the type and dates: each key with its value. Links go to
  * their entries; values only the text can show are left out.
  */
-export function CustomFields({ text, links }: { text: string; links: EntryResponse["links"] }) {
-  const list = useMemo(
-    () => (customProperties(text) ?? []).filter((p) => p.kind !== "other"),
-    [text],
-  );
+export function CustomFields({
+  text,
+  links,
+  props = [],
+}: {
+  text: string;
+  links: EntryResponse["links"];
+  /** What the entry's type gives it (stage 34): shown first, with the type's value where the entry has none. */
+  props?: EntryFields["props"];
+}) {
+  const list = useMemo(() => {
+    const own = (customProperties(text) ?? []).filter(
+      // What only Frontier reads, such as `chattable`, is not shown to readers.
+      (p) => p.kind !== "other" && !SYSTEM_PROPS[p.key.toLowerCase()],
+    );
+    const out: { key: string; kind: string; value: unknown }[] = [];
+    const used = new Set<string>();
+    for (const prop of props) {
+      if (SYSTEM_PROPS[prop.key.toLowerCase()]) continue;
+      const mine = own.find((p) => p.key.toLowerCase() === prop.key.toLowerCase());
+      const set = mine && mine.value !== null && mine.value !== "";
+      if (mine) used.add(mine.key);
+      if (set) out.push({ key: mine.key, kind: mine.kind, value: mine.value });
+      else if (prop.value !== undefined) {
+        out.push({
+          key: prop.key,
+          kind: prop.kind === "choice" ? "text" : prop.kind,
+          value: prop.value,
+        });
+      }
+    }
+    return [...out, ...own.filter((p) => !used.has(p.key))];
+  }, [text, props]);
   if (list.length === 0) return null;
   return (
     <dl className="fields custom-fields">
@@ -127,6 +156,7 @@ function PropertyShown({
     return <span className="muted">—</span>;
   }
   if (kind === "checkbox") return <>{value === true ? "Yes" : "No"}</>;
+  if (isThingKind(kind)) return <ThingLink value={value} />;
   if (kind === "list") return <>{(value as unknown[]).map(String).join(", ")}</>;
   if (kind === "link") {
     const name = linkOf(value)!;

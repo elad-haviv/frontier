@@ -24,7 +24,10 @@ export function EntryCombobox({
   open,
   onOpenChange,
   onCreate,
+  preferType,
 }: {
+  /** A type whose entries are listed first, for a property that links to that type (stage 34). */
+  preferType?: string;
   /**
    * Given, a name typed that no entry has is offered as a new entry, "Create entry “…”", and
    * handed here to be made.
@@ -48,7 +51,7 @@ export function EntryCombobox({
     // Nothing typed lists every name; a short pause keeps the server from a request a key.
     const wait = window.setTimeout(
       () => {
-        api.names(wanted).then(
+        api.names(wanted, preferType).then(
           (r) => {
             if (!live) return;
             const seen = new Set<string>();
@@ -75,7 +78,7 @@ export function EntryCombobox({
       live = false;
       window.clearTimeout(wait);
     };
-  }, [query]);
+  }, [query, preferType]);
 
   const options = useMemo<ComboboxOption[]>(() => {
     const list: ComboboxOption[] = found.map((f) => {

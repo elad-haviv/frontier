@@ -734,8 +734,8 @@ export function EntryPage() {
           <ReadingNow people={readers} />
           <OthersNotice people={others} />
           <Fields fields={ent.fields} />
-          <CustomFields text={ent.text} links={ent.links} />
-          {canTalk && (ent.fields.type === "person" || ent.fields.type === "deity") && (
+          <CustomFields text={ent.text} links={ent.links} props={ent.fields.props} />
+          {canTalk && ent.fields.chattable && (
             <p className="talk-with">
               <Link to={talkUrl(ent.path)}>
                 Talk with {ent.path.split("/").pop()!.replace(/\.md$/i, "")}

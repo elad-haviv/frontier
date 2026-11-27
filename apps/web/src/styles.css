@@ -5003,3 +5003,28 @@ button[data-offline] {
     bottom: auto;
   }
 }
+
+/* The entry's Properties panel: what its type gives it. */
+.given-prop-name {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.given-prop-note,
+.custom-prop-give {
+  grid-column: 1 / -1;
+  justify-self: start;
+  font-size: 0.82rem;
+}
+.thing-combobox {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  min-width: 0;
+}
+.props-time-row.is-usual .props-time-what {
+  align-self: center;
+  color: var(--ink-soft);
+}
+.custom-prop-value > input[type="checkbox"] {
+  accent-color: var(--accent);
+}

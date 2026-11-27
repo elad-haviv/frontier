@@ -552,7 +552,7 @@ export function EditPage() {
           id: "properties",
           title: "Properties",
           icon: SlidersHorizontal,
-          render: () => <Properties key={path} view={view} focus={focusProperties} />,
+          render: () => <Properties key={path} path={path} view={view} focus={focusProperties} />,
         },
   );
   usePanel(
