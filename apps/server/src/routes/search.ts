@@ -56,7 +56,7 @@ export function searchRoutes(app: RouteApp, s: Services): void {
       return note ? { ...hit, words: factsOf(note).words } : hit;
     });
     if (!type) return { results };
-    // For a property that links to a type (stage 34): entries of that type come first, marked.
+    // For a property that links to a type (stage 35): entries of that type come first, marked.
     const schema = s.index.schema;
     const wanted = type.toLowerCase();
     const marked = results.map((hit) => {

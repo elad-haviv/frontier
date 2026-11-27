@@ -1,5 +1,5 @@
 /**
- * The types file, `.frontier/types.json` (stage 34): what an entry can be, the properties each
+ * The types file, `.frontier/types.json` (stage 35): what an entry can be, the properties each
  * type gives its entries, the dates a type usually has, and the names a date can carry. A type is
  * a template: its entries show its properties as fields, empty until filled, and a value the type
  * gives holds for every entry that has not set its own. Nothing of a type is copied into entries.

@@ -139,7 +139,7 @@ export const ROUTE_ROLES: Record<string, ProjectRole> = {
   "POST /library-files/:name/resolve": "writer",
   "POST /folders/delete": "writer",
   "POST /folders/apply-type": "writer",
-  // Types and dates belong to the project (stage 34): owners change them.
+  // Types and dates belong to the project (stage 35): owners change them.
   "POST /types/rename": "owner",
   "POST /images": "writer",
   "POST /images/from-url": "writer",

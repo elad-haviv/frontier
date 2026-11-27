@@ -26,7 +26,7 @@ export function EntryCombobox({
   onCreate,
   preferType,
 }: {
-  /** A type whose entries are listed first, for a property that links to that type (stage 34). */
+  /** A type whose entries are listed first, for a property that links to that type (stage 35). */
   preferType?: string;
   /**
    * Given, a name typed that no entry has is offered as a new entry, "Create entry “…”", and

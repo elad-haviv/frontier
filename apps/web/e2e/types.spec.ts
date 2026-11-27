@@ -12,7 +12,7 @@ async function onServer(page: Page, path: string): Promise<Fields> {
   return (await res.json()) as Fields;
 }
 
-test("a type gives its entries properties, and a rename reaches into them (stage 34)", async ({
+test("a type gives its entries properties, and a rename reaches into them (stage 35)", async ({
   page,
 }, info) => {
   // One server holds one types file for the phone and the desktop run: each has words of its own.
@@ -136,7 +136,7 @@ test("a type gives its entries properties, and a rename reaches into them (stage
   await discardDraft(page);
 });
 
-test("a date name is a start, an end or a moment, and can be added and removed (stage 34)", async ({
+test("a date name is a start, an end or a moment, and can be added and removed (stage 35)", async ({
   page,
 }, info) => {
   const word = `crowned-${info.project.name}`;

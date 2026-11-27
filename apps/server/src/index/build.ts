@@ -88,7 +88,7 @@ export class VaultIndex {
   /** The types and `what` names of the vault's own schema file, or the built-in ones. */
   fileSchema: Schema = BUILT_IN_SCHEMA;
   /**
-   * The types file as the author sees it (stage 34), or null before the type store is there. Set
+   * The types file as the author sees it (stage 35), or null before the type store is there. Set
    * by the type store; read each time, so a draft of the types file counts at once.
    */
   typesFile: () => TypesFile | null = () => null;

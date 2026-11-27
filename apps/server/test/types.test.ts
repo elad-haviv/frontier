@@ -39,7 +39,7 @@ const SCHEMA = {
     'version: 1\ntypes:\n  person: { folders: ["02 People"] }\n  place: { folders: ["01 Places"] }\nwhat:\n  born: { begins: true }\n  died: { ends: true }\n',
 };
 
-describe("the types file (stage 34)", () => {
+describe("the types file (stage 35)", () => {
   it("starts from the schema's names, with a person chattable", async () => {
     t.repo.pushFromOutside(SCHEMA);
     await t.services.sync();
@@ -145,7 +145,7 @@ describe("the types file (stage 34)", () => {
   });
 });
 
-describe("saving the types as a version (stage 34)", () => {
+describe("saving the types as a version (stage 35)", () => {
   async function publishAll() {
     const un = UnpublishedResponse.parse((await t.get("/api/unpublished")).json());
     const plan = PublishPlan.parse(
@@ -211,7 +211,7 @@ describe("saving the types as a version (stage 34)", () => {
   });
 });
 
-describe("renaming (stage 34)", () => {
+describe("renaming (stage 35)", () => {
   beforeEach(async () => {
     t.repo.pushFromOutside({
       ...SCHEMA,

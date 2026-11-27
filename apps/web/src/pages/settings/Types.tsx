@@ -105,7 +105,7 @@ function withFolderType(file: FolderFile, path: string, type: string | undefined
 }
 
 /**
- * Settings → This project → Types and dates (stage 34). A type says what its entries are and
+ * Settings → This project → Types and dates (stage 35). A type says what its entries are and
  * which properties they have; a date name says what happened and whether it starts or ends the
  * entry's span. An owner changes them, and each change is kept with the unsaved changes, as a
  * folder change is. Anyone else reads the lists.

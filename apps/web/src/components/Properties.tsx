@@ -90,7 +90,7 @@ export function Properties({
   focus?: number;
 }) {
   const [values, setValues] = useState<Loaded | null>(null);
-  // The types file says which types and date names there are, and what each type gives (stage 34).
+  // The types file says which types and date names there are, and what each type gives (stage 35).
   const typesFile = useLibraryFile(TYPES);
   const schema: TypesFile | null = typesFile.value;
   const folders = useLibraryFile(FOLDERS);

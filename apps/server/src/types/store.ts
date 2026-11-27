@@ -1,5 +1,5 @@
 /**
- * Types (stage 34): the types file as a library item file, the counts the settings page shows,
+ * Types (stage 35): the types file as a library item file, the counts the settings page shows,
  * and the renames that reach into entries.
  *
  * While no types file exists, it reads as one built in memory from the schema file's names (or the

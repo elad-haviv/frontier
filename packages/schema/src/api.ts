@@ -165,7 +165,7 @@ export const EntryFields = z.object({
   ),
   /** Values that are present and cannot be read. */
   problems: z.array(z.string()),
-  /** The properties the entry's type gives it, in the type's order (stage 34). */
+  /** The properties the entry's type gives it, in the type's order (stage 35). */
   props: z.array(TypeProp),
   /** Whether readers can talk with the entry: its own `chattable`, or else its type's. */
   chattable: z.boolean(),
@@ -767,7 +767,7 @@ export const SchemaResponse = z.object({
   problem: z.string().nullable(),
   types: z.array(z.string()),
   what: z.array(z.string()),
-  /** The types file as the author sees it: each type's properties and usual dates (stage 34). */
+  /** The types file as the author sees it: each type's properties and usual dates (stage 35). */
   file: TypesFile,
   /** How many saved entries have each type and how many dates carry each name. */
   counts: z.object({

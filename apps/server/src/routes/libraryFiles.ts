@@ -23,7 +23,7 @@ export function libraryFileRoutes(app: RouteApp, s: Services): void {
     return { file, revision, blob };
   });
 
-  /** Types and dates belong to the project: only an owner changes that file (stage 34). */
+  /** Types and dates belong to the project: only an owner changes that file (stage 35). */
   const ownersOnly = (name: string, role: ProjectRole | undefined) => {
     if (name === TYPES.name && role !== "owner") {
       throw new ApiError(

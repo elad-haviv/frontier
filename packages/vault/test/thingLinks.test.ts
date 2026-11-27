@@ -7,7 +7,7 @@ import {
   thingValue,
 } from "../src/index.js";
 
-describe("links to maps, chronicles and trees (stage 34)", () => {
+describe("links to maps, chronicles and trees (stage 35)", () => {
   it("reads a link by its kind and id, with a place or an event inside it", () => {
     expect(thingOf("map/ab12cd34")).toEqual({ kind: "map", id: "ab12cd34" });
     expect(thingOf("chronicle/k3v9x2ab#s1")).toEqual({

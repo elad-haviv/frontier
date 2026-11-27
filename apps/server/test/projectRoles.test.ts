@@ -130,7 +130,7 @@ describe("the role table", () => {
       "GET /invites",
       "POST /invites",
       "POST /invites/:id/resend",
-      // Stage 34: types and dates belong to the project.
+      // Stage 35: types and dates belong to the project.
       "POST /types/rename",
       "PUT /members/:id",
       "PUT /project",

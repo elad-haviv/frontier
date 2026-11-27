@@ -733,7 +733,7 @@ function projectCalls(slugOf: () => string) {
     status: () => call<StatusSnapshot>("/status"),
     attention: () => call<AttentionResponse>("/attention"),
     schema: () => call<SchemaResponse>("/schema"),
-    /** With `type`, entries of that type come first and are marked (stage 34). */
+    /** With `type`, entries of that type come first and are marked (stage 35). */
     names: (query = "", type?: string) => {
       const params = new URLSearchParams();
       if (query) params.set("q", query);
@@ -750,7 +750,7 @@ function projectCalls(slugOf: () => string) {
         }[];
       }>(`/switcher${asked ? `?${asked}` : ""}`);
     },
-    /** Renames a type, a type's property or a date name, in the entries too (stage 34). */
+    /** Renames a type, a type's property or a date name, in the entries too (stage 35). */
     renameTypes: (body: RenameTypesRequest) => post<RenameTypesResponse>("/types/rename", body),
     search: (query: string) =>
       call<{ results: { path: string; title: string; snippet: string; words?: number }[] }>(

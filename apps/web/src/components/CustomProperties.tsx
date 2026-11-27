@@ -70,7 +70,7 @@ export function CustomProperties({
   read: () => string;
   /** Changes the editor's text; false when the change could not be made. */
   write: (change: (text: string) => string) => boolean;
-  /** The entry's type (stage 34): its properties are shown first, as fields to fill. */
+  /** The entry's type (stage 35): its properties are shown first, as fields to fill. */
   type?: TypeLine | undefined;
   /** Given to an owner: makes one of the entry's own properties a property of its type. */
   onGiveToType?: ((key: string, kind: PropertyKind) => void) | undefined;

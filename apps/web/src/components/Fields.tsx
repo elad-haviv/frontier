@@ -102,7 +102,7 @@ export function CustomFields({
 }: {
   text: string;
   links: EntryResponse["links"];
-  /** What the entry's type gives it (stage 34): shown first, with the type's value where the entry has none. */
+  /** What the entry's type gives it (stage 35): shown first, with the type's value where the entry has none. */
   props?: EntryFields["props"];
 }) {
   const list = useMemo(() => {

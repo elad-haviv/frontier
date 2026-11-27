@@ -86,13 +86,13 @@ One place for what is being built, what is waiting, and ideas. The design in
 - [x] 32 Email: invitations, address confirmation, forgot password.
       [Design](designs/stage-32-email.md)
 
-## Done: stage 34 (2026-11-27)
+## Done: stage 35 (2026-11-27)
 
-- [x] 34 Types that give their entries properties: Settings › Types and dates is two lists you edit
+- [x] 35 Types that give their entries properties: Settings › Types and dates is two lists you edit
       (types with their folders, properties and usual dates; names for dates), kept in
       `.frontier/types.json`. A type's properties show as fields on its entries; `chattable` decides
       "Talk with …"; properties can link to an entry, a map, a chronicle or a tree, chosen by name.
-      Renaming a type, a property or a date name rewrites the entries. ([design](designs/stage-34-types-and-properties.md))
+      Renaming a type, a property or a date name rewrites the entries. ([design](designs/stage-35-types-and-properties.md))
 - [ ] Elad tries it on Avalymia: gives person, place and item their properties
 - [ ] Left out, each its own small piece: "Show them" for a word not on the list, reordering, the AI
       filling a type's properties from the prose, the graph by type

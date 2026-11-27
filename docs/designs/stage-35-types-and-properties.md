@@ -1,4 +1,4 @@
-# Stage 34: types that give their entries properties
+# Stage 35: types that give their entries properties
 
 - **Author:** Elad Haviv
 - **Status:** Approved on 2026-11-27 ("go ahead and implement it"), with every recommendation in
