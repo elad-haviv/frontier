@@ -234,6 +234,22 @@ export class CharacterTalk {
     return given.filter((g, i) => i === 0 || !later.has(g.path));
   }
 
+  /**
+   * What a year of the main chronicle keeps from the character: of the entries read for the
+   * profile, those whose span begins after it. Nothing is sent to the AI.
+   */
+  async withheld(
+    path: string,
+    year: number | null,
+  ): Promise<{ read: number; withheld: { path: string; title: string }[] }> {
+    const given = this.entriesOf(path);
+    const stay = new Set((await this.beforeMoment(given, year)).map((g) => g.path));
+    return {
+      read: given.length,
+      withheld: given.filter((g) => !stay.has(g.path)).map(({ path, title }) => ({ path, title })),
+    };
+  }
+
   /** The approved profile of a character: from the draft if there is one, else the library. */
   async profile(path: string): Promise<Profile | null> {
     const note = this.d.index.note(path);

@@ -19,3 +19,4 @@ export * from "./people.js";
 export * from "./email.js";
 export * from "./projects.js";
 export * from "./members.js";
+export * from "./relations.js";

@@ -52,7 +52,7 @@ interface Flavour {
   /** Where pictures are made, or null when the provider makes none through this format. */
   imagePath: string | null;
   /** Asks for the picture as base64 rather than a link. */
-  imageBody(model: string): Record<string, unknown>;
+  imageBody(model: string, aspect?: ImageRequest["aspect"]): Record<string, unknown>;
   modelsPath: string;
   /** What the provider's list does not say about a model. */
   known(id: string): Known;
@@ -68,6 +68,18 @@ export type CompatKind = Extract<
   AiProviderKind,
   "openrouter" | "openai" | "xai" | "mistral" | "deepseek" | "groq"
 >;
+
+/**
+ * OpenAI's sizes for a shape: gpt-image takes 1536 by 1024, DALL·E 3 takes 1792 by 1024, and
+ * DALL·E 2 makes squares only, so it is sent nothing.
+ */
+function openaiSize(model: string, aspect: ImageRequest["aspect"]): { size?: string } {
+  if (!aspect || /^dall-e-2/.test(model)) return {};
+  const [long, short] = /^dall-e/.test(model) ? [1792, 1024] : [1536, 1024];
+  if (aspect === "3:2") return { size: `${long}x${short}` };
+  if (aspect === "2:3") return { size: `${short}x${long}` };
+  return { size: "1024x1024" };
+}
 
 /** A provider that follows OpenAI's format and asks for nothing special. */
 const plain = (known: (id: string) => Known = unknownModel): Flavour => ({
@@ -93,7 +105,7 @@ const FLAVOURS: Record<CompatKind, Flavour> = {
     maxTokensField: "max_tokens",
     askStreamUsage: false,
     imagePath: "/images",
-    imageBody: () => ({}),
+    imageBody: (_model, aspect) => (aspect ? { aspect_ratio: aspect } : {}),
     // Without this the list holds only the models that write text, and none that paint.
     modelsPath: "/models?output_modalities=all",
     known: unknownModel,
@@ -109,7 +121,10 @@ const FLAVOURS: Record<CompatKind, Flavour> = {
     askStreamUsage: true,
     imagePath: "/images/generations",
     // gpt-image models always answer in base64 and refuse the field; DALL·E needs it.
-    imageBody: (model) => (/^dall-e/.test(model) ? { response_format: "b64_json" } : {}),
+    imageBody: (model, aspect) => ({
+      ...(/^dall-e/.test(model) ? { response_format: "b64_json" } : {}),
+      ...openaiSize(model, aspect),
+    }),
     modelsPath: "/models",
     known: openaiModel,
     json: "schema",
@@ -326,7 +341,7 @@ export class OpenAiCompatibleAdapter implements ProviderAdapter {
       body: JSON.stringify({
         model: req.model,
         prompt: req.prompt,
-        ...this.flavour.imageBody(req.model),
+        ...this.flavour.imageBody(req.model, req.aspect),
       }),
       signal: req.signal,
     });

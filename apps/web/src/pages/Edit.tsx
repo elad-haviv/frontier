@@ -5,7 +5,13 @@ import type { EditorView } from "@codemirror/view";
 import { CodeEditor } from "../components/CodeEditor.tsx";
 import { EditToolbar } from "../components/EditToolbar.tsx";
 import { EditorContextMenu } from "../components/EditorContextMenu.tsx";
-import { type BlockStyle, insertEmbeds, lineStyle, run } from "../components/editCommands.ts";
+import {
+  type BlockStyle,
+  insertEmbeds,
+  insertEmbedsAfter,
+  lineStyle,
+  run,
+} from "../components/editCommands.ts";
 import { LinkToEntry } from "../components/LinkToEntry.tsx";
 import { closeHelp, openHelp, passageOf, startHelp } from "../components/writing/helpCard.ts";
 import { WritingHelp } from "../components/writing/WritingHelp.tsx";
@@ -38,6 +44,8 @@ import { useWide } from "../width.ts";
 import { useProjectWork } from "../projectWork.ts";
 import { useOthersUnsaved } from "../people/live.ts";
 import { OthersNotice } from "../people/OthersNotice.tsx";
+import type { PictureSubject } from "../components/images/GeneratePanel.tsx";
+import { pictureBrief } from "../components/images/pictureBrief.ts";
 
 /** A phone, where the right bar is a sheet over the text. */
 const PHONE = "(max-width: 47.99rem)";
@@ -95,7 +103,7 @@ export function EditPage() {
   const view = useRef<EditorView | null>(null);
   /** When the text was opened from this device's copy, the time that copy was stored. */
   const [offlineAt, setOfflineAt] = useState<number | null>(null);
-  // Someone else's unsaved changes to this entry: whoever saves second compares (stage 27d).
+  // Someone else's unsaved changes to this entry: whoever saves second compares (stage 31d).
   const others = useOthersUnsaved(path, undefined, offlineAt !== null);
   /** The server's copy the text was opened from, to see whether a later read differs. */
   const openedFrom = useRef({ id: "", revision: 0, blob: "" });
@@ -160,7 +168,9 @@ export function EditPage() {
     if (view.current) setStyle(lineStyle(view.current.state));
   }, []);
   const [linking, setLinking] = useState(false);
-  const [picking, setPicking] = useState(false);
+  // The image dialog, and the tab it opens on; with Generate, what a picture starts from.
+  const [picking, setPicking] = useState<false | "library" | "generate">(false);
+  const [subject, setSubject] = useState<PictureSubject | null>(null);
   const [preview, setPreview] = useState(() => {
     try {
       return localStorage.getItem("frontier.preview") !== "0";
@@ -496,6 +506,28 @@ export function EditPage() {
     if (view.current) startHelp(view.current);
   });
   useShortcut("editor.consult", () => consult());
+  useShortcut("editor.generateImage", () => openPicker("generate"));
+
+  /** Opens the image dialog, with the selection and the entry's opening read now. */
+  function openPicker(tab: "library" | "generate") {
+    const v = view.current;
+    if (!v) return;
+    if (tab === "generate" && connection.state !== "online") {
+      setMessage(IMAGES_NEED_CONNECTION);
+      return;
+    }
+    const { from, to } = v.state.selection.main;
+    setSubject({
+      path,
+      title,
+      ...pictureBrief({
+        text: v.state.doc.toString(),
+        title,
+        selection: v.state.sliceDoc(from, to),
+      }),
+    });
+    setPicking(tab);
+  }
 
   // The folded frontmatter line in the text opens the Properties panel, at its first field.
   const [focusProperties, setFocusProperties] = useState(0);
@@ -679,7 +711,8 @@ export function EditPage() {
   /** What the toolbar and the right-click menu open. */
   const tools = {
     onLink: () => setLinking(true),
-    onImage: () => setPicking(true),
+    onImage: () => openPicker("library"),
+    onGenerateImage: () => openPicker("generate"),
     onComment: comment,
     onHelp: () => {
       if (view.current) startHelp(view.current);
@@ -835,15 +868,25 @@ export function EditPage() {
       {picking && (
         <Suspense fallback={null}>
           <ImagePicker
+            start={picking}
+            {...(subject ? { subject } : {})}
             onClose={() => {
               setPicking(false);
               view.current?.focus();
             }}
-            onPick={(_paths, names) => {
+            onPick={(_paths, names, source) => {
               setPicking(false);
               refresh();
               const v = view.current;
-              if (v) run(v, insertEmbeds(v.state, names));
+              // A picture made from the selection goes under it; the others where the cursor is.
+              if (v) {
+                run(
+                  v,
+                  source === "generate"
+                    ? insertEmbedsAfter(v.state, names)
+                    : insertEmbeds(v.state, names),
+                );
+              }
             }}
           />
         </Suspense>

@@ -10,6 +10,7 @@ import {
   TableOfContents,
   TextCursorInput,
   UnfoldHorizontal,
+  Network,
   Waypoints,
 } from "lucide-react";
 import { useWide } from "../../width.ts";
@@ -45,6 +46,9 @@ export interface EntryActionsProps {
   onComments?: (() => void) | undefined;
   commentsOpen?: boolean;
   openComments?: number;
+  /** Opens or closes the Relations tab (stage 30); absent where it is not offered. */
+  onRelations?: (() => void) | undefined;
+  relationsOpen?: boolean;
   /** Pin to "Working on"; absent where the entry cannot be pinned. */
   pin?:
     | {
@@ -77,6 +81,15 @@ function actionsOf(p: EntryActionsProps): { main: Action[]; rest: Action[] } {
       icon: TableOfContents,
       run: p.onOutline,
       pressed: p.outlineOpen,
+    });
+  }
+  if (p.onRelations) {
+    main.push({
+      id: "relations",
+      label: "Relations",
+      icon: Network,
+      run: p.onRelations,
+      pressed: p.relationsOpen ?? false,
     });
   }
   main.push({ id: "graph", label: "Graph", icon: Waypoints, run: p.onGraph, pressed: p.graphOpen });

@@ -1,0 +1,77 @@
+/* Stage 28: the library as a pane beside the side bar on a desktop. It shares the phone panel's top
+   bar and body (DrawerLibrary.css); what is here is where it sits and how it floats. */
+.library-pane {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  width: 17rem;
+  height: 100%;
+  min-height: 0;
+  border-right: 1px solid var(--rule);
+  background: var(--paper-raised);
+}
+.library-pane .library-head {
+  min-height: 3rem;
+  padding: var(--space-1) var(--space-2) var(--space-1) var(--space-4);
+}
+.library-pane .library-title {
+  text-align: left;
+}
+
+/* A narrow window: the pane lies over the page, right of the side bar, with the page dimmed. */
+.library-scrim {
+  position: absolute;
+  inset: 0;
+  z-index: var(--layer-side);
+  background: rgba(20, 16, 10, 0.35);
+}
+.library-pane.is-floating {
+  position: absolute;
+  z-index: calc(var(--layer-side) + 1);
+  top: 0;
+  bottom: 0;
+  left: 0;
+  box-shadow: var(--shadow);
+  animation: library-in 160ms ease;
+}
+@keyframes library-in {
+  from {
+    opacity: 0;
+    transform: translateX(-0.75rem);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .library-pane.is-floating {
+    animation: none;
+  }
+}
+
+/* The Library place in the side bar: a toggle, lit while its pane is open. */
+button.side-link.library-toggle {
+  width: 100%;
+  border: 0;
+  background: none;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+button.side-link.library-toggle:hover {
+  color: var(--ink);
+  background: color-mix(in srgb, var(--ink) 6%, transparent);
+}
+button.side-link.library-toggle[aria-pressed="true"],
+.rail-library.ui-icon-button[aria-pressed="true"] {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+.library-toggle > .ui-icon {
+  color: inherit;
+}
+.library-toggle .library-count {
+  margin-left: auto;
+}
+/* In the rail it is a square like the places beside it. */
+.left-bar.is-rail .rail-library {
+  width: 2.5rem;
+  height: 2.5rem;
+}

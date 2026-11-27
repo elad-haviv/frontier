@@ -46,7 +46,8 @@ test("the menu has a Library row with the number of entries, and the folders are
   expect(box.height).toBeGreaterThanOrEqual(40);
   // The small buttons and the folders left the menu; Working on stays.
   await expect(drawer(page).getByRole("tree")).toHaveCount(0);
-  await expect(drawer(page).locator(".left-tree")).toHaveCount(0);
+  // The desktop's pane is not drawn on a phone.
+  await expect(page.locator(".library-pane")).toHaveCount(0);
   await expect(drawer(page).getByRole("region", { name: "Working on" })).toBeVisible();
   await noSidewaysScroll(page);
 });
@@ -294,18 +295,22 @@ test("a library that cannot be read says why inside the panel, with Retry", asyn
   await expect(panel(page).getByRole("button", { name: "Retry" })).toBeVisible();
 });
 
-test("on a desktop the left bar is as before: no Library row, the folders and their buttons", async ({
+test("on a desktop the phone's drawer is not used: the Library is a pane beside the side bar", async ({
   page,
   isMobile,
 }) => {
   test.skip(isMobile, "This is the desktop's side bar.");
   await page.goto(entry(HARBOR));
   const bar = page.locator(".left-bar");
-  await expect(bar.locator(".tree")).toBeVisible();
-  await expect(bar.getByRole("button", { name: /^Library/ })).toHaveCount(0);
-  await expect(bar.getByRole("heading", { name: "Library" })).toBeVisible();
-  await expect(bar.getByRole("button", { name: "New entry", exact: true })).toHaveCount(2);
-  await expect(bar.getByRole("button", { name: "New folder", exact: true })).toBeVisible();
+  // The side bar holds the Library place and one New entry; the folders and the library's own
+  // New entry and New folder buttons are in the pane (stage 28).
+  await expect(bar.locator(".tree")).toHaveCount(0);
+  await expect(bar.getByRole("button", { name: /^Library/ })).toBeVisible();
+  await expect(bar.getByRole("button", { name: "New entry", exact: true })).toHaveCount(1);
+  const pane = page.getByRole("region", { name: "Library" });
+  await expect(pane.locator(".tree")).toBeVisible();
+  await expect(pane.getByRole("button", { name: "New entry", exact: true })).toBeVisible();
+  await expect(pane.getByRole("button", { name: "New folder", exact: true })).toBeVisible();
   await expect(page.locator(".drawer-panes")).toHaveCount(0);
 });
 
@@ -342,7 +347,7 @@ test("clicking the entry already open on a desktop does not add a history entry"
 }) => {
   test.skip(isMobile, "This is the desktop's side bar.");
   await page.goto(entry(HARBOR));
-  const active = page.locator(".left-bar .tree-note.active, .left-bar .tree-folder.active");
+  const active = page.locator(".library-pane .tree-note.active, .library-pane .tree-folder.active");
   await expect(active).toBeVisible();
   const before = await historyLength(page);
   await active.click();

@@ -340,6 +340,25 @@ describe("OpenAI", () => {
     expect(s.sent[1]!.body!.response_format).toBeUndefined();
     await a.image!({ model: "dall-e-3", prompt: "x", signal: AbortSignal.timeout(1000) });
     expect(s.sent[2]!.body!.response_format).toBe("b64_json");
+    expect(s.sent[2]!.body!.size).toBeUndefined();
+  });
+
+  it("asks OpenAI for the size of the shape: gpt-image, DALL·E 3, and none for DALL·E 2", async () => {
+    const pic = () =>
+      Response.json({ data: [{ b64_json: Buffer.from("img").toString("base64") }] });
+    const s = stand([pic(), pic(), pic(), pic()]);
+    const a = adapter("openai", s.fake);
+    const signal = AbortSignal.timeout(1000);
+    await a.image!({ model: "gpt-image-1", prompt: "x", aspect: "3:2", signal });
+    await a.image!({ model: "gpt-image-1", prompt: "x", aspect: "2:3", signal });
+    await a.image!({ model: "dall-e-3", prompt: "x", aspect: "3:2", signal });
+    await a.image!({ model: "dall-e-2", prompt: "x", aspect: "3:2", signal });
+    expect(s.sent.map((x) => x.body!.size)).toEqual([
+      "1536x1024",
+      "1024x1536",
+      "1792x1024",
+      undefined,
+    ]);
   });
 
   it("lists chat and image models, leaving out embeddings and speech, with what the names tell", async () => {
@@ -673,12 +692,14 @@ describe("Google AI Studio", () => {
     const pic = await a.image!({
       model: "gemini-2.5-flash-image",
       prompt: "A lantern",
+      aspect: "2:3",
       signal: AbortSignal.timeout(1000),
     });
     expect(pic.bytes.toString()).toBe("pic");
-    expect(
-      (s.sent[2]!.body!.generationConfig as Record<string, unknown>).responseModalities,
-    ).toEqual(["TEXT", "IMAGE"]);
+    expect(s.sent[2]!.body!.generationConfig).toEqual({
+      responseModalities: ["TEXT", "IMAGE"],
+      imageConfig: { aspectRatio: "2:3" },
+    });
   });
 
   it("lists the models that generate content, without the models/ prefix", async () => {

@@ -1,18 +1,19 @@
 import type { ProjectRole } from "@frontier/schema";
 
 /**
- * THE role table (stage 27b): the least role each route of a project needs. A key is the method and
+ * THE role table (stage 31b): the least role each route of a project needs. A key is the method and
  * the path after `/api` (so `GET /entries` is `GET /api/p/<project>/entries`, and the unprefixed
  * `GET /api/entries` that devices on the previous web build still use). The guard (`guard.ts`)
  * checks it before a route runs; a route registered without an entry here stops the server from
  * starting, and `test/projectRoles.test.ts` walks every route as each role.
  *
- *   reader   reads the library; asks and talks to characters (with their own key); their own
- *            pins and conversations; exports
+ *   reader   reads the library, relations and Trees; asks and talks to characters (with their own
+ *            key); their own pins, conversations and talks; exports
  *   writer   anything that changes the library or the unsaved changes: drafts, saving versions,
- *            uploads, imports, maps, chronicles, folders, inbox, quarantine, AI writing help;
+ *            uploads, imports, pictures made by AI, relations, maps, chronicles, folders, inbox,
+ *            quarantine, AI writing help (also a character's line added to its entry);
  *            comments for the AI
- *   owner    the project's settings, and deleting it; its members and invitation links (stage 27c).
+ *   owner    the project's settings, and deleting it; its members and invitation links (stage 31c).
  *            Backups are automatic and have no route yet.
  *
  * A reader's requests run in the saved view (`view.ts`): the draft store answers nothing, so a
@@ -20,12 +21,12 @@ import type { ProjectRole } from "@frontier/schema";
  * help that drafts into the library (an addition to an entry) and what AI has proposed but nobody
  * has kept (a map's discoveries) are writers', for the same reason.
  *
- * Unsaved changes are each person's own (stage 27d, `state/drafts.ts`): the draft routes act on the
+ * Unsaved changes are each person's own (stage 31d, `state/drafts.ts`): the draft routes act on the
  * caller's drafts only, and answer `not_found` for anyone else's. A reader announces the entry they
  * have open (`PUT /presence`) so writers can see who is reading, and is told nothing of other people's
  * work in progress or of who is reading.
  *
- * Comments (stage 27e) are between people: every role reads the comments on saved entries and adds
+ * Comments (stage 31e) are between people: every role reads the comments on saved entries and adds
  * comments and replies. Changing or deleting is the author's (an owner may delete anyone's), and
  * resolving is the author's, a writer's or an owner's: those rules are in `comments/rules.ts`,
  * checked in the route, as a route's role is only the least any caller needs. A comment for the AI
@@ -37,7 +38,7 @@ export const ROUTE_ROLES: Record<string, ProjectRole> = {
   "PUT /project": "owner",
   "DELETE /project": "owner",
 
-  // People (stage 27c). Everyone in the project reads the list (emails only for owners, decided
+  // People (stage 31c). Everyone in the project reads the list (emails only for owners, decided
   // in the route); any member may leave; the rest is the owners'.
   "GET /members": "reader",
   "PUT /members/:id": "owner",
@@ -54,6 +55,8 @@ export const ROUTE_ROLES: Record<string, ProjectRole> = {
   "GET /entries": "reader",
   "GET /images/find": "reader",
   "GET /graph": "reader",
+  // Relations and Trees (stage 30): read from the saved entries; a writer sees their own unsaved ones too.
+  "GET /relations": "reader",
   "GET /search": "reader",
   "GET /preview": "reader",
   "GET /switcher": "reader",
@@ -65,7 +68,7 @@ export const ROUTE_ROLES: Record<string, ProjectRole> = {
   "GET /history/version": "reader",
   "GET /status": "reader",
   "GET /status/events": "reader",
-  // Announce the entry this device has open (stage 27d); a reader reads, so a reader announces too.
+  // Announce the entry this device has open (stage 31d); a reader reads, so a reader announces too.
   "PUT /presence": "reader",
   "POST /presence/leave": "reader",
   "GET /attention": "reader",
@@ -99,6 +102,12 @@ export const ROUTE_ROLES: Record<string, ProjectRole> = {
   "POST /lore/:id/turns/:n/addition": "writer",
   "POST /lore/:id/turns/:n/addition/preview": "writer",
   "GET /characters/profile": "reader",
+  "GET /characters/moment": "reader",
+  // A person's own conversations with a character (stage 27, kept per person like lore's): `say`
+  // saves the person's words and the character's answer; nobody reads another person's.
+  "GET /characters/talks": "reader",
+  "GET /characters/talks/:id": "reader",
+  "DELETE /characters/talks/:id": "reader",
   "POST /characters/say": "reader",
 
   // Keep going: a person's own pins and question, and what is read from the library
@@ -159,6 +168,14 @@ export const ROUTE_ROLES: Record<string, ProjectRole> = {
   "POST /characters/propose": "writer",
   "POST /characters/approve": "writer",
   "POST /characters/line": "writer",
+  // Relations change an entry (stage 30), pictures make an image to keep in the library (stage 29):
+  // both are writers'. The pictures list and the tries are the writer's own.
+  "POST /relations": "writer",
+  "POST /relations/remove": "writer",
+  "GET /pictures": "writer",
+  "POST /pictures": "writer",
+  "GET /pictures/:id": "writer",
+  "POST /pictures/:id/insert": "writer",
   "POST /keep-going/link-it": "writer",
   "POST /keep-going/link-it/undo": "writer",
   "POST /keep-going/after-publish": "writer",
@@ -181,7 +198,7 @@ export const ROUTE_ROLES: Record<string, ProjectRole> = {
   "POST /quarantine": "writer",
   "DELETE /quarantine/:id": "writer",
 
-  // Comments between people (stage 27e): every role reads, comments and replies. Whose to change,
+  // Comments between people (stage 31e): every role reads, comments and replies. Whose to change,
   // delete or resolve is decided in the route from `comments/rules.ts`; a reader's call that needs
   // more answers `role_too_low` there.
   "GET /comments": "reader",

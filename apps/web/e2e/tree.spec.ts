@@ -14,7 +14,7 @@ async function folderMenu(page: Page, name: string, isMobile: boolean): Promise<
   return menu;
 }
 
-/** Opens an entry and shows the tree: in the side bar, or in the drawer on a phone. */
+/** Opens an entry and shows the tree: in the library pane, or in the drawer's panel on a phone. */
 async function openTree(page: Page, path = "README.md"): Promise<void> {
   await roomForTree(page);
   await page.goto(entry(path));
@@ -25,8 +25,8 @@ async function openTree(page: Page, path = "README.md"): Promise<void> {
 }
 
 /**
- * On a desktop, a taller window: the folders sit below the places and scroll on their own, and a
- * drag is surest when the rows it starts and ends on are both in sight.
+ * On a desktop, a taller window: the folders scroll inside the library pane, and a drag is surest
+ * when the rows it starts and ends on are both in sight.
  */
 async function roomForTree(page: Page): Promise<void> {
   const size = page.viewportSize();
@@ -34,15 +34,16 @@ async function roomForTree(page: Page): Promise<void> {
 }
 
 /**
- * Waits until the folders have stopped scrolling: they scroll on their own below the places, and
- * bring the entry in view into sight once it opens. A drag started before that misses its row.
+ * Waits until the folders have stopped scrolling: they scroll inside the library pane (or the
+ * phone's panel), and bring the entry in view into sight once it opens. A drag started before
+ * that misses its row.
  */
 async function treeSettled(page: Page): Promise<void> {
   const at = () =>
     page.evaluate(
       () =>
         new Promise<boolean>((resolve) => {
-          const box = document.querySelector(".left-scroll");
+          const box = document.querySelector(".library-body");
           const before = box?.scrollTop ?? 0;
           setTimeout(() => resolve((box?.scrollTop ?? 0) === before), 250);
         }),
@@ -369,10 +370,8 @@ test("New entry beside New folder starts an entry at the top of the library", as
 }) => {
   // In view is an entry in a folder; the side bar's own New entry would start there.
   await openTree(page, "01 Places/Harbor/Harbor.md");
-  // Beside the library's heading in the side bar; in the library panel's top bar on a phone.
-  const library = isMobile
-    ? page.getByRole("region", { name: "Library" })
-    : page.locator(".left-tree");
+  // In the top bar of the library pane on a desktop, of the library panel on a phone.
+  const library = page.getByRole("region", { name: "Library" });
   const button = library.getByRole("button", { name: "New entry", exact: true });
   if (!isMobile) {
     await button.hover();

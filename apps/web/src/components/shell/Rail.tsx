@@ -1,4 +1,4 @@
-import { Dices, FilePlus2, House, PanelLeftOpen, Search } from "lucide-react";
+import { Dices, FilePlus2, Folder, House, PanelLeftOpen, Search } from "lucide-react";
 import { ConnectionMark } from "../ConnectionMark.tsx";
 import { Unsent } from "../Unsent.tsx";
 import { IconButton } from "../ui/IconButton.tsx";
@@ -11,8 +11,8 @@ import "./ProjectMenu.css";
 import "./KeepGoing.css";
 
 /**
- * The side bar folded to a narrow rail of icons. It keeps everything but the folder list: search,
- * New entry, the places, what waits with its counts, the connection and the app menu.
+ * The side bar folded to a narrow rail of icons: search, New entry, the places (the Library among
+ * them, showing or hiding its pane), what waits with its counts, the connection and the app menu.
  */
 export function Rail({
   onExpand,
@@ -21,7 +21,11 @@ export function Rail({
   onRandom,
   onKeys,
   onLogout,
+  libraryOpen,
+  onLibraryToggle,
 }: {
+  libraryOpen: boolean;
+  onLibraryToggle: () => void;
   onExpand: () => void;
   onSearch: () => void;
   onNewEntry: () => void;
@@ -70,6 +74,16 @@ export function Rail({
         {PLACES.map((p) => (
           <SideLink key={p.to} to={p.to} icon={p.icon} label={p.label} rail />
         ))}
+        <IconButton
+          label="Library"
+          icon={Folder}
+          shortcut="app.library"
+          tipSide="right"
+          className="rail-library"
+          data-library-toggle=""
+          aria-pressed={libraryOpen}
+          onClick={onLibraryToggle}
+        />
       </nav>
       <div className="left-foot">
         {canWrite && (

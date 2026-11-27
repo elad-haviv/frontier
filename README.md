@@ -25,6 +25,10 @@ Stage 1 of nine is in progress. What exists so far:
 | Stage 4: maps (flat maps and globes, markers, paths, zones, layers, measuring)                                                               | Built; to be tried on the real images                                            |
 | Own library: Frontier keeps the knowledge base itself, with versions, import and export                                                      | Built; the preview still shows the sample                                        |
 | Stage 11a: icons, tooltips, menus, one keys registry; a save queue on the device, saves that say what they started from                      | Built; covered by tests. 11b (the shell) and 11c (folder tree) to come           |
+| Stage 25: Home with a work queue, From here, pins, random entry, back to last, resume position, recents in the switcher                      | Built; covered by tests                                                          |
+| Stages 26 and 28: the library as a menu item and full-drawer panel on the phone, and as a pane beside the sidebar on desktop                 | Built; covered by tests                                                          |
+| Stage 29: generating pictures for entries from the image dialog, in the art style from Settings                                              | Built; covered by tests                                                          |
+| Stage 30: Trees: relations on entries; family trees, descent, pantheons and hierarchies; an entry's Relations tab                            | Built; covered by tests                                                          |
 
 The app writes to its vault: drafts are saved on the server and Publish makes one commit.
 
@@ -32,30 +36,30 @@ A preview on made-up sample content runs with `FRONTIER_SAMPLE_VAULT=1`; see the
 
 ## Projects
 
-A project is a library with its own members (stage 27b). A server holds any number of them, each with its own repository, working copy, drafts, comments, maps, backup and timers, opened the first time it is used. The library a server had before projects becomes the first project, named by `FRONTIER_PROJECT_NAME` (default "Avalymia", "Sample" for the sample), with its files where they were: `library.git`, `vault`, `state` and `assets` under `DATA_DIR`. A project made since lives in `DATA_DIR/projects/<id>/` with the same four inside it, and is always an own library. Every project route is `/api/p/<slug>/...`, and each route says in one table (`apps/server/src/projects/roles.ts`) which role it needs: reader, writer or owner. Accounts, sign-in, AI settings and `/api/projects` stay server-wide. A deleted project's folder is moved to `DATA_DIR/trash/`, not removed. Each project is backed up under its own prefix (`projects/<id>/`) in the bucket; the first project keeps the old keys, and the server's own files (accounts, settings, the project list) are with it. `npm run restore -w apps/server` restores everything; `-- --project <address>` restores one project. The design is [docs/designs/stage-27-people-and-projects.md](docs/designs/stage-27-people-and-projects.md).
+A project is a library with its own members (stage 31b). A server holds any number of them, each with its own repository, working copy, drafts, comments, maps, backup and timers, opened the first time it is used. The library a server had before projects becomes the first project, named by `FRONTIER_PROJECT_NAME` (default "Avalymia", "Sample" for the sample), with its files where they were: `library.git`, `vault`, `state` and `assets` under `DATA_DIR`. A project made since lives in `DATA_DIR/projects/<id>/` with the same four inside it, and is always an own library. Every project route is `/api/p/<slug>/...`, and each route says in one table (`apps/server/src/projects/roles.ts`) which role it needs: reader, writer or owner. Accounts, sign-in, AI settings and `/api/projects` stay server-wide. A deleted project's folder is moved to `DATA_DIR/trash/`, not removed. Each project is backed up under its own prefix (`projects/<id>/`) in the bucket; the first project keeps the old keys, and the server's own files (accounts, settings, the project list) are with it. `npm run restore -w apps/server` restores everything; `-- --project <address>` restores one project. The design is [docs/designs/stage-31-people-and-projects.md](docs/designs/stage-31-people-and-projects.md).
 
 ### People, invitations and Google sign-on
 
-An owner invites people from a project's Members page (stage 27c): a link for one project and one
+An owner invites people from a project's Members page (stage 31c): a link for one project and one
 role, for one person, usable once and for seven days. With mail set up (below) the owner can have
 Frontier email it; without, the owner sends the link. Only a hash of the code is stored (`DATA_DIR/state/invites.json`, in the backup), so a link
 cannot be read back later. The person opens `/join/<code>` and joins with an email and a password,
 a passkey on their device, or Google. An account is only ever made from an invitation.
 
-In the app (stage 27c, web): Settings › This project › Members lists everyone with their role; an
+In the app (stage 31c, web): Settings › This project › Members lists everyone with their role; an
 owner changes a role, removes a person and makes invite links there, and anyone can leave. A reader
 sees the library as it was last saved and has no control that changes anything, but can still Ask and
 talk with characters with their own AI key; a writer has everything but the owner's settings. The
 pages for this are `/p/<project>/settings/members`, `/join/<code>` (open to someone not logged in),
 and `/settings/account` (Signing in), where Google is linked and unlinked.
 
-Comments between people (stage 27e): on an entry's page everyone, a reader too, can comment on a
+Comments between people (stage 31e): on an entry's page everyone, a reader too, can comment on a
 selected passage or on the whole entry, reply, and edit or delete their own; the thread's author, a
 writer or an owner resolves it, and an owner can delete anyone's. Comments carry the writer's name and
 show up live for the others reading the entry. They are always on saved text. A comment for the AI
 stays private to the writer who made it.
 
-Two people in one project (stage 27d, web): each has their own unsaved changes, and the app says so
+Two people in one project (stage 31d, web): each has their own unsaved changes, and the app says so
 ("Your unsaved changes"). An entry shows "Last version by <name>", and every saved version in its
 history carries its author. A writer sees a quiet notice, and a dot in the tree, when someone else
 has unsaved changes to an entry (never what they wrote), and who else is reading it. Whoever saves
@@ -81,7 +85,7 @@ verified, and the flow uses PKCE and a state bound to the browser.
 
 ### Mail (optional)
 
-Frontier can send five short emails (stage 28): an invitation, "confirm your address", a password
+Frontier can send five short emails (stage 32): an invitation, "confirm your address", a password
 reset, an explanation for an account with no password, and a notice to the old address when an
 address is changed. Mail is on only when both `SMTP_HOST` and `MAIL_FROM` are set. With neither,
 every email feature is hidden and the app behaves as it did before: the owner passes invitation

@@ -30,6 +30,7 @@ import {
   TextQuote,
   Underline,
   Undo2,
+  WandSparkles,
 } from "lucide-react";
 import {
   type BlockStyle,
@@ -45,6 +46,8 @@ import {
 export interface ToolHandlers {
   onLink: () => void;
   onImage: () => void;
+  /** Opens the image dialog on Generate, with the selection or the entry's opening (stage 29). */
+  onGenerateImage?: (() => void) | undefined;
   onComment?: (() => void) | undefined;
   /** Writing help on the selection or the cursor's paragraph; shown even with no model chosen. */
   onHelp?: (() => void) | undefined;
@@ -190,6 +193,21 @@ export function tools(h: ToolHandlers): Tool[] {
       offlineReason: "Images need a connection",
       act: h.onImage,
     },
+    ...(h.onGenerateImage
+      ? [
+          {
+            id: "generateImage",
+            label: "Generate an image…",
+            icon: WandSparkles,
+            shortcut: "editor.generateImage",
+            group: "insert" as const,
+            online: true,
+            offlineReason: "Making a picture needs a connection",
+            menuOnly: true,
+            act: h.onGenerateImage,
+          },
+        ]
+      : []),
     {
       id: "rule",
       label: "Horizontal rule",

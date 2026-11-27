@@ -5,6 +5,9 @@ import { currentSlug } from "./project.ts";
 import { connection } from "./sync/connection.ts";
 import { randomId } from "./sync/db.ts";
 import type {
+  AddRelationRequest,
+  RelationsResponse,
+  RemoveRelationRequest,
   AfterPublishResponse,
   AttentionResponse,
   CreateRenameResponse,
@@ -18,6 +21,9 @@ import type {
   ModelsResponse,
   AiLogResponse,
   AiTaskName,
+  PictureShape,
+  PictureTry,
+  PicturesResponse,
   PinsResponse,
   QueueResponse,
   QuestionResponse,
@@ -93,7 +99,7 @@ export class ApiFailure extends Error {
 }
 
 /**
- * The one place a project's address is made (stage 27b): `/api/p/<slug>` and then the path the
+ * The one place a project's address is made (stage 31b): `/api/p/<slug>` and then the path the
  * server's route has inside a project (`/entries?path=…`). Everything that belongs to a library
  * goes through here, with the open project's address or the one a queued save belongs to. The
  * server's old unprefixed addresses are for builds from before projects and are never made here
@@ -123,13 +129,13 @@ export function setDevice(known: { id: string; name: string } | null): void {
 }
 
 /** Routes that answer without a session, whose answers say nothing about the connection's state. */
-// Stage 28: the links in emails (confirm, reset) and "forgot password" answer without a session too,
+// Stage 32: the links in emails (confirm, reset) and "forgot password" answer without a session too,
 // so a refusal on one of them is the page's to word, and never opens the login dialog.
 const OPEN =
   /^\/api\/(session|login|passkeys\/login\/|join\/|confirm\/|reset\/|forgot-password(?:[/?]|$))/;
 
 /**
- * The requests that can lead to an AI call (stage 27f). Only these carry this device's AI keys,
+ * The requests that can lead to an AI call (stage 31f). Only these carry this device's AI keys,
  * in a header: the server uses them for that one request and never saves them. Anything that
  * needs no key, which is nearly everything, sends none.
  */
@@ -505,7 +511,7 @@ const serverApi = {
   },
   /** Takes the linked Google account off the account (the last way in cannot go). */
   unlinkGoogle: () => baseSend<{ ok: true }>("DELETE", "/api/me/google"),
-  // ---- Joining a project by an invite link (stage 27c): public, no project is open -----------
+  // ---- Joining a project by an invite link (stage 31c): public, no project is open -----------
 
   /**
    * What an invite link is for, or why it no longer works (the error carries `inviter`). `m` is
@@ -546,7 +552,7 @@ const serverApi = {
     baseSend<{ ok: true }>("DELETE", `/api/join/${encodeURIComponent(code)}/google`),
   acceptInvite: (code: string, m?: string | null) =>
     basePost<JoinedResponse>(`/api/join/${encodeURIComponent(code)}/accept${proof(m)}`),
-  // ---- Email (stage 28) -----------------------------------------------------------------------
+  // ---- Email (stage 32) -----------------------------------------------------------------------
 
   /**
    * Asks to change the address. The current password is sent when the account has one that works;
@@ -611,7 +617,7 @@ const serverApi = {
     }),
   /** Says the notice about keys deleted from the server was seen. */
   keysNoticeSeen: () => baseSend<{ ok: true }>("DELETE", "/api/notices/keys-removed"),
-  // ---- Projects (stage 27b): the server's own, not a project's --------------------------
+  // ---- Projects (stage 31b): the server's own, not a project's --------------------------
 
   /** The projects the person is in, and whether they may make one. */
   projects: () => baseCall<ProjectsResponse>("/api/projects"),
@@ -669,7 +675,7 @@ function projectCalls(slugOf: () => string) {
       send<ProjectResponse>("PUT", "/project", change),
     /** The name is typed again, so a stray press cannot delete a project. */
     deleteProject: (name: string) => send<{ ok: true }>("DELETE", "/project", { name }),
-    // ---- People (stage 27c) ----------------------------------------------------------------
+    // ---- People (stage 31c) ----------------------------------------------------------------
     members: () => call<MembersResponse>("/members"),
     changeRole: (id: string, role: ProjectRole) =>
       send<{ ok: true }>("PUT", `/members/${encodeURIComponent(id)}`, { role }),
@@ -688,6 +694,12 @@ function projectCalls(slugOf: () => string) {
     tree: () => call<TreeResponse>("/tree"),
     /** Every entry and every link between two entries, with the top-level folders' colours. */
     graph: () => call<GraphResponse>("/graph"),
+    /** Every entry's relations as facts, with the kinds of relation (stage 30). */
+    relations: () => call<RelationsResponse>("/relations"),
+    /** Writes one relation on one entry; `made` is the new entry's path when one was made. */
+    addRelation: (body: AddRelationRequest) =>
+      post<{ ok: true; draft: string | null; made: string | null }>("/relations", body),
+    removeRelation: (body: RemoveRelationRequest) => post<{ ok: true }>("/relations/remove", body),
     entry: (path: string) => call<EntryResponse>(`/entries?path=${encodeURIComponent(path)}`),
     status: () => call<StatusSnapshot>("/status"),
     attention: () => call<AttentionResponse>("/attention"),
@@ -721,6 +733,15 @@ function projectCalls(slugOf: () => string) {
     /** Has the server take an image from a web address; it is kept as an upload. */
     imageFromUrl: (url: string) =>
       post<{ path: string; embed: string }>("/images/from-url", { url }),
+    /** Stage 29: whether pictures can be made for an entry, their cost, and the entry's tries. */
+    pictures: (entry: string) =>
+      call<PicturesResponse>(`/pictures?entry=${encodeURIComponent(entry)}`),
+    /** Makes one picture with this person's own key; it is kept as a try until inserted or a week has passed. */
+    makePicture: (input: { entry: string; prompt: string; style: string; shape: PictureShape }) =>
+      post<{ try: PictureTry }>("/pictures", input),
+    /** Keeps a try as an unpublished image, as an upload. */
+    insertPicture: (id: string, name: string) =>
+      post<{ path: string; embed: string }>(`/pictures/${id}/insert`, { name }),
     rename: (from: string, to: string) => post<CreateRenameResponse>("/renames", { from, to }),
 
     /** Pages save through the queue (`sync/queue.ts`), which calls this. */
@@ -751,7 +772,7 @@ function projectCalls(slugOf: () => string) {
         ...(theirsBlob !== undefined ? { theirsBlob } : {}),
         ...(revision !== undefined ? { revision } : {}),
       }),
-    /** What saving this unsaved change now would do, with both texts when they differ (stage 27d). */
+    /** What saving this unsaved change now would do, with both texts when they differ (stage 31d). */
     compare: (id: string) => call<DraftCompareResponse>(`/drafts/${id}/compare`),
     unpublished: () => call<UnpublishedResponse>("/unpublished"),
     maps: () =>
@@ -1021,13 +1042,30 @@ function projectCalls(slugOf: () => string) {
         traits,
         moment,
       }),
-    say: (
-      path: string,
-      message: string,
-      history: { who: "author" | "character"; text: string }[],
-    ) => post<{ lines: CharacterLine[] }>("/characters/say", { path, message, history }),
-    keepLine: (path: string, text: string) =>
-      post<{ draft: string | null }>("/characters/line", { path, text }),
+    /** Says something to the character; the conversation is saved, and started when `talk` is null. */
+    say: (path: string, message: string, talk: string | null) =>
+      post<{ talk: CharacterTalk; lines: CharacterLine[] }>("/characters/say", {
+        path,
+        message,
+        talk,
+      }),
+    keepLine: (path: string, text: string, talk: string | null, line: number) =>
+      post<{ draft: string | null; talk: CharacterTalk | null }>("/characters/line", {
+        path,
+        text,
+        talk,
+        line,
+      }),
+    /** Which of the entries read for the profile a year of the main chronicle keeps from them. */
+    characterMoment: (path: string, year: string) =>
+      call<{ read: number; withheld: { path: string; title: string }[] }>(
+        `/characters/moment?path=${encodeURIComponent(path)}&year=${encodeURIComponent(year)}`,
+      ),
+    /** The caller's own conversations with the character. */
+    talks: (path: string) =>
+      call<{ talks: TalkSummary[] }>(`/characters/talks?path=${encodeURIComponent(path)}`),
+    talk: (id: string) => call<{ talk: CharacterTalk }>(`/characters/talks/${id}`),
+    deleteTalk: (id: string) => send<{ ok: true }>("DELETE", `/characters/talks/${id}`),
     discoveries: (map: string) =>
       call<{ discoveries: Discovery[]; ready: boolean; art: boolean; folders: string[] }>(
         `/maps/${map}/discoveries`,
@@ -1255,6 +1293,11 @@ export function imageUrl(path: string, width?: 320 | 640 | 1280, slug?: string):
   return projectUrl(`/images?path=${encodeURIComponent(path)}${width ? `&w=${width}` : ""}`, slug);
 }
 
+/** The address of a picture made for an entry and not yet inserted (stage 29); the maker's own. */
+export function pictureUrl(id: string, width?: number, slug?: string): string {
+  return projectUrl(`/pictures/${id}${width ? `?w=${width}` : ""}`, slug);
+}
+
 /** The address of a new image on an agent's branch, for the inbox. */
 export function branchImageUrl(branch: string, path: string): string {
   return projectUrl(
@@ -1279,6 +1322,7 @@ export function mapImageUrl(path: string, size: 2560 | 4096, slug?: string): str
 }
 
 export const chronicleUrl = (id: string): string => `/chronicle/${id}`;
+export const treeUrl = (id: string): string => `/tree/${id}`;
 
 export const mapUrl = (id: string, feature?: string): string =>
   `/map/${id}${feature ? `?f=${encodeURIComponent(feature)}` : ""}`;
@@ -1289,7 +1333,7 @@ export interface Version {
   at: string;
   message: string;
   paths: string[];
-  /** Who saved it (stage 27d). Absent from a server that does not say. */
+  /** Who saved it (stage 31d). Absent from a server that does not say. */
   by?: { id: string | null; name: string };
 }
 
@@ -1401,6 +1445,26 @@ export interface CharacterLine {
   quotes: { path: string; text: string }[];
   improvised: boolean;
 }
+export type TalkLine =
+  { who: "author"; text: string } | ({ who: "character"; kept: boolean } & CharacterLine);
+/** A saved conversation with a character (stage 27). */
+export interface CharacterTalk {
+  id: string;
+  entry: string;
+  at: string;
+  updatedAt: string;
+  moment: { words: string; year: number | null };
+  lines: TalkLine[];
+}
+export interface TalkSummary {
+  id: string;
+  at: string;
+  updatedAt: string;
+  moment: { words: string; year: number | null };
+  title: string;
+  lines: number;
+  kept: number;
+}
 export const talkUrl = (path: string): string =>
   "/talk/" + path.split("/").map(encodeURIComponent).join("/");
 
@@ -1470,7 +1534,7 @@ export interface CommentReply {
   can: { edit: boolean; delete: boolean };
 }
 
-/** A comment thread on an entry (stage 27e): a comment on a passage or the whole entry, with replies. */
+/** A comment thread on an entry (stage 31e): a comment on a passage or the whole entry, with replies. */
 export interface PassageComment {
   id: string;
   path: string;

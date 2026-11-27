@@ -3920,9 +3920,78 @@ input.map-title {
   }
 }
 
-/* Talking with a character */
+/* Talking with a character (stage 27) */
 .talk-with {
   margin: 0.4rem 0 1rem;
+}
+.entry.wide.talk {
+  max-width: 64rem;
+}
+.talk-phone {
+  display: none;
+}
+.talk-cols {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 19rem;
+  gap: 2rem;
+  align-items: start;
+}
+
+/* No profile yet */
+.talk-empty {
+  max-width: 40rem;
+  padding: 1.4rem;
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  background: var(--paper-raised);
+}
+.talk-empty h2 {
+  margin: 0 0 0.5rem;
+  font-family: var(--serif);
+  font-size: 1.25rem;
+}
+.talk-empty p {
+  margin: 0.6rem 0 0;
+}
+.talk-empty dl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.6rem 1.25rem;
+  margin: 1rem 0;
+}
+.talk-empty dt,
+.trait-group-head h2,
+.talk-list-head h2 {
+  margin: 0;
+  font-family: var(--sans);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+.talk-empty dd {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--ink-soft);
+}
+
+/* The profile, by kind */
+.trait-group {
+  margin-bottom: 1.4rem;
+}
+.trait-group-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.5rem;
+  padding-bottom: 0.25rem;
+  border-bottom: 1px solid var(--rule);
+  font-size: 0.8rem;
+}
+.trait-group-note {
+  margin: 0.4rem 0 0;
+  font-size: 0.85rem;
 }
 .traits {
   margin: 0;
@@ -3931,60 +4000,388 @@ input.map-title {
 }
 .trait {
   display: grid;
-  gap: 0.3rem;
-  margin: 0.6rem 0;
-  padding: 0.5rem 0.7rem;
-  border-left: 3px solid var(--rule);
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.1rem 0.4rem;
+  padding: 0.6rem 0;
+  border-bottom: 1px solid var(--rule);
+}
+.trait-text {
+  width: 100%;
+  margin: 0;
+  padding: 0.15rem 0.4rem;
+  margin-left: -0.4rem;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: none;
+  color: var(--ink);
+  font-family: var(--serif);
+  font-size: 1.05rem;
+  line-height: 1.45;
+  resize: none;
+  overflow: hidden;
+}
+.trait-text:hover,
+.trait-text:focus {
+  border-color: var(--rule);
   background: var(--paper-raised);
 }
-.trait-unknown {
-  border-left-style: dashed;
+.trait-unknown .trait-text {
+  font-style: italic;
+  color: var(--ink-soft);
 }
-.trait select,
-.trait textarea,
-.profile-form input[type="text"] {
-  min-height: 2.5rem;
-  padding: 0.4rem 0.5rem;
-  border: 1px solid var(--rule);
+.trait .sources {
+  grid-column: 1;
+  margin: 0;
+  font-size: 0.82rem;
+  overflow-wrap: anywhere;
+}
+.trait-tools {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  display: flex;
+  align-items: flex-start;
+}
+.trait-tools select {
+  max-width: 6.2rem;
+  height: 2rem;
+  border: 0;
   border-radius: 4px;
-  background: var(--paper);
+  background: none;
+  color: var(--ink-faint);
   font: inherit;
-  font-size: 1rem;
+  font-size: 0.8rem;
 }
-.talk-lines {
-  margin: 1rem 0;
+.trait-tools select:hover {
+  background: var(--accent-soft);
+  color: var(--ink);
+}
+.trait-add {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  min-height: 2rem;
+  margin-top: 0.3rem;
+  color: var(--accent);
+  font-size: 0.9rem;
+}
+
+/* The side panel: the moment while editing, the profile while talking */
+.talk-panel {
+  display: grid;
+  gap: 0.9rem;
+  padding: 1rem;
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  background: var(--paper-raised);
+}
+.talk-panel h2 {
+  margin: 0;
+  font-family: var(--serif);
+  font-size: 1.1rem;
+}
+.talk-panel .field {
+  margin-top: 0;
+}
+.talk-panel .field input {
+  width: 100%;
+  background: var(--paper);
+}
+.talk-panel > button {
+  justify-self: start;
+}
+.talk-withheld {
+  margin: 0;
+  padding-left: 0.6rem;
+  border-left: 2px solid var(--accent);
+  font-size: 0.85rem;
+  color: var(--ink-soft);
+}
+.talk-foot {
+  position: sticky;
+  bottom: 0;
+  z-index: var(--layer-sticky);
+  margin-top: 1rem;
+  padding: 0.75rem 0;
+  border-top: 1px solid var(--rule);
+  background: var(--paper);
+}
+.talk-foot-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.9rem;
+}
+.talk-foot-row p {
+  margin: 0 0 0 auto;
+  font-size: 0.82rem;
+}
+.talk-foot .error {
+  margin: 0 0 0.5rem;
+}
+
+/* The conversation */
+.talk.is-talking .talk-profile {
+  position: sticky;
+  top: calc(var(--top) + 1rem);
+  max-height: calc(100vh - var(--top) - 2rem);
+  overflow-y: auto;
+}
+.talk-panel-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+}
+.entry.wide .talk-profile h3 {
+  margin: 0;
+  font-family: var(--sans);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+.talk-profile ul {
+  display: grid;
+  gap: 0.4rem;
+  margin: 0.3rem 0 0;
   padding: 0;
   list-style: none;
+  font-family: var(--serif);
+  font-size: 0.95rem;
+}
+.talk-profile li {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+.talk-profile li button {
+  flex: none;
+  color: var(--accent);
+  text-decoration: underline;
+  font-family: var(--sans);
+  font-size: 0.8rem;
+}
+.talk-lines {
+  display: grid;
+  gap: 1rem;
+  min-height: 12rem;
+  margin: 0 0 1rem;
+  padding: 0;
+  list-style: none;
+  align-content: start;
 }
 .talk-lines li {
-  margin: 0.6rem 0;
-  padding: 0.5rem 0.8rem;
-  border-radius: 8px;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
 .talk-author {
-  margin-left: 15%;
+  justify-self: end;
+  max-width: 85%;
+  padding: 0.5rem 0.8rem;
+  border-radius: 12px 12px 2px 12px;
   background: var(--accent-soft);
 }
 .talk-character {
-  margin-right: 10%;
-  border: 1px solid var(--rule);
-  background: var(--paper-raised);
-  font-family: var(--serif);
-}
-.talk-character p {
-  margin: 0.15rem 0;
-}
-.talk-character .sources,
-.talk-character .guess,
-.talk-character button {
-  font-family: var(--sans);
-  font-size: 0.8rem;
+  max-width: 92%;
+  padding-left: 0.9rem;
+  border-left: 2px solid var(--ink-soft);
 }
 .talk-character.is-improvised {
-  border-style: dashed;
-  border-color: var(--warn);
+  border-left-style: dashed;
+  border-left-color: var(--warn);
+}
+.talk-said {
+  margin: 0;
+  font-family: var(--serif);
+  font-size: 1.1rem;
+  line-height: 1.5;
+}
+.talk-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.2rem 0.8rem;
+  margin: 0.25rem 0 0;
+  font-size: 0.82rem;
+  color: var(--ink-faint);
+  white-space: normal;
+}
+.talk-meta button {
+  color: var(--accent);
+  text-decoration: underline;
+  font-size: 0.82rem;
+}
+.talk-tag {
+  padding: 0 0.4rem;
+  border: 1px dashed var(--warn);
+  border-radius: 4px;
+  color: var(--warn);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+.talk-composer {
+  position: sticky;
+  bottom: 0;
+  z-index: var(--layer-sticky);
+  padding: 0.75rem 0;
+  border-top: 1px solid var(--rule);
+  background: var(--paper);
+}
+.talk-composer-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.5rem;
+}
+.talk-composer textarea {
+  flex: 1;
+  min-width: 0;
+  min-height: 2.6rem;
+  max-height: 12rem;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  background: var(--paper-raised);
+  color: var(--ink);
+  font: inherit;
+  font-size: 1rem;
+  resize: none;
+}
+.talk-composer-row button {
+  min-height: 2.6rem;
+  white-space: nowrap;
+}
+.talk-composer .error {
+  margin: 0.5rem 0 0;
+}
+.talk-starters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0 0 0.6rem;
+}
+.talk-starters button {
+  max-width: 100%;
+  padding: 0.25rem 0.8rem;
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  background: var(--paper-raised);
+  color: var(--ink-soft);
+  font-size: 0.85rem;
+  text-align: left;
+}
+.talk-hint {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.2rem 0.8rem;
+  margin: 0.4rem 0 0;
+  font-size: 0.8rem;
+}
+.talk-hint button,
+.lede button.plain,
+.talk-empty button.plain {
+  color: var(--accent);
+  text-decoration: underline;
+}
+
+/* The saved conversations */
+.talk-list-head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--rule);
+}
+.talk-list ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.talk-list li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.6rem;
+  min-height: 2.75rem;
+  padding: 0.6rem 0;
+  border-bottom: 1px solid var(--rule);
+}
+.talk-list-what {
+  min-width: 0;
+}
+.talk-list-title {
+  font-family: var(--serif);
+  font-size: 1.05rem;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+.talk-list-title:hover {
+  color: var(--accent);
+}
+.talk-list-now {
+  margin-left: 0.4rem;
+  padding: 0 0.4rem;
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  font-size: 0.75rem;
+  color: var(--ink-soft);
+  white-space: nowrap;
+}
+.talk-list-what p {
+  margin: 0.1rem 0 0;
+  font-size: 0.82rem;
+}
+.talk-list-tools,
+.talk-list-ask {
+  display: flex;
+  flex: none;
+  gap: 0.25rem;
+}
+
+@media (max-width: 47.99rem) {
+  .talk-phone {
+    display: inline;
+  }
+  .talk-cols {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 1.25rem;
+  }
+  .talk-empty dl {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .talk-foot-row p {
+    width: 100%;
+    margin-left: 0;
+  }
+  .talk-keys {
+    display: none;
+  }
+  .trait-tools select,
+  .trait-tools button,
+  .talk-list-tools button {
+    min-width: 2.75rem;
+    min-height: 2.75rem;
+  }
+  .talk.is-talking .talk-profile {
+    display: none;
+  }
+  .talk.is-talking .talk-profile.is-open {
+    display: grid;
+    position: fixed;
+    inset: var(--top) 0 0 0;
+    z-index: var(--layer-popover);
+    max-height: none;
+    align-content: start;
+    border: 0;
+    border-radius: 0;
+    background: var(--paper);
+    padding: 1rem max(1.25rem, env(safe-area-inset-right)) 2rem
+      max(1.25rem, env(safe-area-inset-left));
+  }
 }
 
 /* Discoveries on a map: provisional pins and their card */

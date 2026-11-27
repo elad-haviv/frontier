@@ -58,7 +58,8 @@ describe("the layout", () => {
     expect(layout.ticks).toBe(67);
   });
 
-  it("gives the same positions for the same input", () => {
+  // It lays the graph out twice, about 6 s on a slow machine, so it needs more than the default 5 s.
+  it("gives the same positions for the same input", { timeout: 30_000 }, () => {
     const a = settled();
     const b = settled();
     for (const i of shown.nodes.slice(0, 50)) {

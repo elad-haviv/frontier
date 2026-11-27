@@ -1,0 +1,290 @@
+/* The image dialog's Generate tab: the prompt, style and shape on the left, the picture and the
+   tries on the right; one column on a phone. */
+.generate-panel {
+  display: grid;
+  grid-template-columns: minmax(16rem, 20rem) minmax(0, 1fr);
+  gap: 1.1rem;
+  align-items: start;
+  padding: 0.2rem 0.1rem 0.6rem;
+}
+.generate-form,
+.generate-result {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.75rem;
+  min-width: 0;
+}
+.generate-field label,
+.generate-label {
+  display: block;
+  margin-bottom: 0.25rem;
+  font-size: 0.85rem;
+  color: var(--ink-soft);
+}
+.generate-panel textarea,
+.generate-name input {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  background: var(--paper-raised);
+  color: var(--ink);
+  font: inherit;
+  font-size: 1rem;
+  line-height: 1.45;
+}
+.generate-panel textarea {
+  resize: vertical;
+}
+.generate-from {
+  margin: 0.25rem 0 0;
+  font-size: 0.8rem;
+  color: var(--ink-faint);
+}
+.generate-panel button.link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.generate-style {
+  min-width: 0;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  background: var(--paper-raised);
+  font-size: 0.85rem;
+  color: var(--ink-soft);
+}
+.generate-style summary {
+  cursor: pointer;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.generate-style summary span {
+  color: var(--ink-soft);
+}
+.generate-style label {
+  display: block;
+  margin: 0.5rem 0 0.25rem;
+}
+.generate-style textarea {
+  font-size: 0.9rem;
+}
+.generate-shapes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+.generate-shapes button {
+  display: grid;
+  justify-items: center;
+  gap: 0.2rem;
+  min-width: 4.2rem;
+  padding: 0.35rem 0.6rem;
+  font-size: 0.8rem;
+}
+.generate-shapes button i {
+  display: block;
+  height: 0.9rem;
+  border: 1.5px solid currentColor;
+  border-radius: 2px;
+}
+.generate-shapes button[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.generate-go {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+}
+.generate-go button {
+  min-height: 2.5rem;
+  padding-inline: 1rem;
+}
+.generate-cost {
+  font-size: 0.8rem;
+  color: var(--ink-faint);
+}
+.generate-stage {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 100%;
+  max-height: 22rem;
+  border: 1px dashed var(--rule);
+  border-radius: 8px;
+  background: var(--paper-raised);
+  overflow: hidden;
+}
+.generate-stage img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.generate-stage p {
+  margin: 0;
+  padding: 1rem;
+  text-align: center;
+}
+.generate-busy {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 0.5rem;
+  background: color-mix(in srgb, var(--paper-raised) 72%, transparent);
+  color: var(--ink-soft);
+  font-size: 0.9rem;
+}
+.generate-bar {
+  display: block;
+  width: 10rem;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--rule);
+  overflow: hidden;
+}
+.generate-bar i {
+  display: block;
+  width: 40%;
+  height: 100%;
+  background: var(--accent);
+  animation: generate-slide 1.1s ease-in-out infinite;
+}
+@keyframes generate-slide {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(260%);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .generate-bar i {
+    width: 100%;
+    animation: none;
+  }
+}
+.generate-problem {
+  margin: 0;
+  color: var(--warn);
+  font-size: 0.9rem;
+}
+.generate-name {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+  color: var(--ink-soft);
+}
+.generate-name input {
+  flex: 1;
+  min-width: 0;
+}
+.generate-tries-head {
+  display: flex;
+  justify-content: space-between;
+  margin: 0;
+  font-size: 0.8rem;
+}
+.generate-tries {
+  display: flex;
+  gap: 0.5rem;
+  overflow-x: auto;
+  padding-bottom: 0.2rem;
+}
+.generate-tries button {
+  flex: 0 0 auto;
+  padding: 0;
+  border: 2px solid transparent;
+  border-radius: 6px;
+  background: none;
+  overflow: hidden;
+}
+.generate-tries button[aria-selected="true"] {
+  border-color: var(--accent);
+}
+.generate-tries img {
+  display: block;
+  height: 3.5rem;
+  width: auto;
+}
+.generate-off {
+  display: grid;
+  justify-items: start;
+  gap: 0.5rem;
+  max-width: 28rem;
+  padding: 1rem;
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  background: var(--paper-raised);
+}
+.generate-off h3 {
+  margin: 0;
+  font-size: 1.05rem;
+}
+.generate-off p {
+  margin: 0;
+  color: var(--ink-soft);
+}
+.generate-off a.button {
+  padding: 0.4rem 0.9rem;
+  border-radius: 6px;
+  background: var(--accent);
+  color: var(--paper-raised);
+  text-decoration: none;
+  font-weight: 600;
+}
+
+/* The tabs above the dialog's body. */
+.image-picker-tabs {
+  display: flex;
+  gap: 0.2rem;
+  margin: 0.3rem 0 0.75rem;
+  border-bottom: 1px solid var(--rule);
+}
+.image-picker-tabs button {
+  padding: 0.45rem 0.8rem;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  background: none;
+  color: var(--ink-soft);
+}
+.image-picker-tabs button[aria-selected="true"] {
+  border-bottom-color: var(--accent);
+  color: var(--ink);
+  font-weight: 600;
+}
+.image-picker-generate {
+  flex: 1 1 auto;
+  min-height: 12rem;
+  overflow-y: auto;
+}
+
+@media (max-width: 40rem) {
+  .generate-panel {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .generate-shapes button {
+    flex: 1;
+  }
+}
+
+/* Both tabs stay mounted; the one not shown is hidden even where its own rule sets a display. */
+.image-picker-pane[hidden],
+.image-picker-generate[hidden] {
+  display: none;
+}

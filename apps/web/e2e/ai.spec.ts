@@ -385,11 +385,14 @@ test("CUJ 12: drafts a character's profile, approves it, talks, and adds a line 
     .getByLabel("Trait", { exact: true })
     .fill("Where Shade was born is not told.");
   await page.getByLabel("Speaks from").fill("The night of the harbor fire");
-  await page.getByRole("button", { name: "Approve the profile" }).click();
-  await expect(page.locator(".lede")).toContainText("Speaking from: The night of the harbor fire");
+  await page.getByRole("button", { name: "Approve and start talking" }).click();
+  await expect(page.locator(".lede")).toContainText("Speaking from The night of the harbor fire");
+  await expect(page.locator(".lede")).toContainText("Conversations (0)");
 
+  // What the entries leave open is offered as something to ask; Enter says it.
+  await expect(page.locator(".talk-starters")).toContainText("Where Shade was born is not told.");
   await page.getByLabel("Say something to Shade").fill("Who are your friends?");
-  await page.getByRole("button", { name: "Say it" }).click();
+  await page.getByLabel("Say something to Shade").press("Enter");
   const lines = page.locator(".talk-character");
   await expect(lines).toHaveCount(2);
   await expect(lines.first()).toContainText("A quiet figure. Friend of [[Mira]].");
@@ -398,6 +401,28 @@ test("CUJ 12: drafts a character's profile, approves it, talks, and adds a line 
   await expect(lines.nth(1)).toContainText("Improvised");
   await lines.nth(1).getByRole("button", { name: "Add to Shade's entry" }).click();
   await expect(lines.nth(1)).toContainText("Added to Shade's entry");
+
+  // The conversation is saved: it is there again after leaving, with the line marked as added.
+  await page.reload();
+  await expect(lines).toHaveCount(2);
+  await expect(lines.nth(1)).toContainText("Added to Shade's entry");
+  await page.getByRole("button", { name: "Profile", exact: true }).click();
+  const profile = page.getByRole("complementary", { name: "Profile" });
+  await expect(profile).toContainText("Where Shade was born is not told.");
+  await profile.getByRole("button", { name: "Close the profile" }).click();
+  await page.getByRole("button", { name: "Conversations (1)" }).click();
+  const saved = page.locator(".talk-list li");
+  await expect(saved).toHaveCount(1);
+  await expect(saved).toContainText("Who are your friends?");
+  await expect(saved).toContainText("3 lines · 1 added to the entry");
+  const download = page.waitForEvent("download");
+  await saved.getByRole("button", { name: "Export this conversation" }).click();
+  expect((await download).suggestedFilename()).toMatch(/^Talk with Shade .*\.md$/);
+  await saved.getByRole("button", { name: "Delete this conversation" }).click();
+  await saved.getByRole("button", { name: "Delete", exact: true }).click();
+  await expect(saved).toHaveCount(0);
+  await page.getByRole("button", { name: "Back" }).click();
+  await expect(lines).toHaveCount(0);
   await expect(
     page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
   ).resolves.toBe(true);

@@ -139,7 +139,11 @@ test("CUJ 1: says where the reader is in a long entry, and goes to a heading fro
     const line = page.locator(".sticky-line");
     await expect(line.locator(".sticky-heading")).toHaveText("Tides");
     await expect(outline.locator('[aria-current="location"]')).toHaveText("Tides");
-    // Full width, remembered on the device, widens the page; the switch turns it back.
+    // Full width, remembered on the device, widens the page; the switch turns it back. The bar
+    // keeps it as an icon only where it has room, so the library pane is closed to give it some
+    // (with the outline open there is no room for it docked, and it is closed already).
+    const closePane = page.getByRole("button", { name: "Close Library" });
+    if (await closePane.isVisible()) await closePane.click();
     const article = page.locator("article.entry");
     // The measure widens; with the side bar open the page may be narrower than either.
     const measure = () => article.evaluate((a) => parseFloat(getComputedStyle(a).maxWidth));

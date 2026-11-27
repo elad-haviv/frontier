@@ -34,6 +34,7 @@ import { EntryPage } from "./pages/Entry.tsx";
 import { UnpublishedPage } from "./pages/Unpublished.tsx";
 import { Home } from "./pages/Home.tsx";
 import { ChroniclesPage } from "./pages/Chronicles.tsx";
+import { TreesPage } from "./pages/Trees.tsx";
 import { MapsPage } from "./pages/Maps.tsx";
 import { Login } from "./pages/Login.tsx";
 import { JoinPage } from "./pages/Join.tsx";
@@ -58,6 +59,7 @@ const SystemMapPage = lazy(() =>
 const StackPage = lazy(() =>
   import("./pages/StackPage.tsx").then((m) => ({ default: m.StackPage })),
 );
+const TreePage = lazy(() => import("./pages/TreePage.tsx").then((m) => ({ default: m.TreePage })));
 const ChroniclePage = lazy(() =>
   import("./pages/ChroniclePage.tsx").then((m) => ({ default: m.ChroniclePage })),
 );
@@ -101,7 +103,7 @@ function JoinRoute() {
   return <JoinPage key={code} code={code} />;
 }
 
-/** `/confirm/<code>` and `/reset/<code>`: the pages the links in emails open (stage 28), logged in or not. */
+/** `/confirm/<code>` and `/reset/<code>`: the pages the links in emails open (stage 32), logged in or not. */
 function ConfirmRoute({ loggedIn }: { loggedIn: boolean }) {
   const { code = "" } = useParams();
   return <ConfirmPage key={code} code={code} loggedIn={loggedIn} />;
@@ -228,6 +230,15 @@ function ProjectPages() {
         <Route path="/export" element={<ExportPage />} />
         <Route path="/gallery" element={<GalleryPage />} />
         <Route path="/chronicles" element={<ChroniclesPage />} />
+        <Route path="/trees" element={<TreesPage />} />
+        <Route
+          path="/tree/:id"
+          element={
+            <Suspense fallback={<Progress />}>
+              <TreePage />
+            </Suspense>
+          }
+        />
         <Route
           path="/chronicle/:id"
           element={
@@ -396,7 +407,7 @@ export function App() {
             </OutsideShell>
           }
         />
-        {/* The library's old sections moved into the project (stage 27b). */}
+        {/* The library's old sections moved into the project (stage 31b). */}
         <Route path="/settings/library/*" element={<OldAddress />} />
         <Route
           path="/settings/*"

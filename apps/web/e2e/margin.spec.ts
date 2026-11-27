@@ -86,6 +86,10 @@ test("comments show as bubbles in the margin, level with their passages", async 
     // Writing: the same, level with the lines in the editor.
     await page.goto(edit(PATH));
     await expect(page.locator(".cm-comment").first()).toBeVisible();
+    // The editor's column is wide, so the margin beside it is narrower than the bubbles need while
+    // the library pane is docked; closed, there is room.
+    const closePane = page.getByRole("button", { name: "Close Library" });
+    if (await closePane.isVisible()) await closePane.click();
     await expect(bubbles).toHaveCount(2);
     const line = (await page
       .locator(".cm-line", { hasText: "Founded by fishers." })

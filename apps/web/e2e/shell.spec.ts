@@ -2,6 +2,8 @@ import { expect, type Page, test } from "./test.ts";
 import { discardDraft, entry, noSidewaysScroll, openEditor, saved, proj } from "./helpers.ts";
 
 const side = (page: Page) => page.locator(".side");
+/** The library pane, beside the side bar. */
+const pane = (page: Page) => page.getByRole("region", { name: "Library" });
 
 test("the side bar folds to a rail that keeps the counts and the connection", async ({
   page,
@@ -58,27 +60,30 @@ test("the side bar folds to a rail that keeps the counts and the connection", as
   await page.reload();
   await expect(side(page)).toHaveClass(/is-rail/);
   await side(page).getByRole("button", { name: "Unfold the side bar" }).click();
-  await expect(side(page).locator(".tree")).toBeVisible();
+  await expect(pane(page).locator(".tree")).toBeVisible();
 
   await page.goto(proj("/edit/") + ["03 Things", "Ledger.md"].map(encodeURIComponent).join("/"));
   await discardDraft(page);
 });
 
-test("the left side bar has the places above the folders, and its width is set by dragging or with the keys, and kept", async ({
+test("the left side bar has the places, the Library among them and its folders in a pane beside it, and its width is set by dragging or with the keys, and kept", async ({
   page,
   isMobile,
 }) => {
   test.skip(isMobile, "A phone has a drawer instead of the side bar.");
   await page.goto(entry("01 Places/Harbor/Harbor.md"));
-  await expect(side(page).locator(".tree")).toBeVisible();
-  // The places come first; the folders below them fill the rest and scroll on their own.
+  await expect(pane(page).locator(".tree")).toBeVisible();
+  // The places come first, the Library after them; the folders are not in the side bar.
   const maps = side(page).getByRole("link", { name: /^Maps/ });
-  const library = side(page).getByRole("heading", { name: "Library" });
+  const library = side(page).getByRole("button", { name: /^Library/ });
   expect((await maps.boundingBox())!.y).toBeLessThan((await library.boundingBox())!.y);
-  await side(page)
-    .locator(".left-scroll")
-    .evaluate((el) => el.scrollTo({ top: el.scrollHeight }));
+  await expect(side(page).locator(".tree")).toHaveCount(0);
   await expect(maps).toBeInViewport();
+  // Working on and the footer stay in the side bar, and the pane sits right of it.
+  await expect(side(page).getByRole("region", { name: "Working on" })).toBeVisible();
+  await expect(side(page).getByRole("button", { name: "App menu" })).toBeVisible();
+  const bar = (await side(page).boundingBox())!;
+  expect((await pane(page).boundingBox())!.x).toBeGreaterThanOrEqual(bar.x + bar.width - 1);
 
   const width = async () => (await side(page).boundingBox())!.width;
   const before = await width();
@@ -97,10 +102,10 @@ test("the left side bar has the places above the folders, and its width is set b
 
   // It is kept on this device, on every kind of screen.
   await page.reload();
-  await expect(side(page).locator(".tree")).toBeVisible();
+  await expect(pane(page).locator(".tree")).toBeVisible();
   expect(Math.abs((await width()) - wider)).toBeLessThan(6);
   await openEditor(page, "01 Places/Harbor/Harbor.md");
-  await expect(side(page).locator(".tree")).toBeVisible();
+  await expect(pane(page).locator(".tree")).toBeVisible();
   expect(Math.abs((await width()) - wider)).toBeLessThan(6);
 
   // The arrow keys move the edge too; it never gets narrower than its least width.
@@ -115,7 +120,7 @@ test("the left side bar has the places above the folders, and its width is set b
   await expect(side(page)).toHaveClass(/is-rail/);
   await expect(page.getByRole("separator", { name: "Side bar width" })).toHaveCount(0);
   await side(page).getByRole("button", { name: "Unfold the side bar" }).click();
-  await expect(side(page).locator(".tree")).toBeVisible();
+  await expect(pane(page).locator(".tree")).toBeVisible();
   expect(Math.abs((await width()) - narrow)).toBeLessThan(6);
 });
 

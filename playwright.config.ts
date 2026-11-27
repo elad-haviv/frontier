@@ -3,7 +3,7 @@ import { defineConfig, devices } from "@playwright/test";
 // E2E_PORT lets two checkouts (such as worktrees) run their browser tests side by side.
 const PORT = Number(process.env.E2E_PORT ?? 3987);
 const AUTH = "test-results/.auth.json";
-// Stage 28: the specs about email need a server that sends mail (kept in memory, read at
+// Stage 32: the specs about email need a server that sends mail (kept in memory, read at
 // /api/test/mail), and every other spec needs one that does not. So there are two servers: the
 // main one as always, and a second with `E2E_MAIL=1` on its own port and its own data folder. It is
 // addressed as 127.0.0.1, not localhost, so the two never share cookies (cookies ignore the port).
@@ -48,9 +48,9 @@ export default defineConfig({
       use: { viewport: { width: 1280, height: 800 }, storageState: AUTH, serviceWorkers: "block" },
       dependencies: ["setup"],
       testMatch:
-        /(reader|voice|chronicle|mapstime|mapviews|mapgestures|mapsread|mapsedit|starmap|systemmap|stackmap|mapslist|mapstyles|maplayers|maptools|findareas|findpaths|terrain|terrainhints|biomes|explore|mapjoins|mapgroups|editor|shell|tree|graph|writing|consult|properties|margin|settings|accounts|home|keepgoing|phonelibrary|projects|members|readerrole|google|people)\.spec\.ts/,
+        /(reader|voice|chronicle|mapstime|mapviews|mapgestures|mapsread|mapsedit|starmap|systemmap|stackmap|mapslist|mapstyles|maplayers|maptools|findareas|findpaths|terrain|terrainhints|biomes|explore|mapjoins|mapgroups|editor|shell|tree|graph|writing|consult|properties|margin|settings|accounts|home|keepgoing|phonelibrary|librarypane|pictures|trees|projects|members|readerrole|google|people)\.spec\.ts/,
     },
-    // Email (stage 28): against the server that sends mail, logged out: each test logs in or joins
+    // Email (stage 32): against the server that sends mail, logged out: each test logs in or joins
     // by itself, as a person would. Desktop size; the phone is looked at inside the tests.
     {
       name: "mail",

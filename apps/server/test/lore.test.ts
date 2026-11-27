@@ -836,12 +836,40 @@ describe("talking with a character", () => {
     expect(sent).toContain("- voice: Speaks slowly.");
     expect(sent).toContain("Author: How do you count days?");
 
-    // A line goes into the character's entry as a draft.
+    // The conversation is saved as it is spoken, and goes on when its id is given.
+    const { talk } = said.json();
+    expect(talk.lines.map((l: { who: string }) => l.who)).toEqual([
+      "author",
+      "character",
+      "character",
+    ]);
+    expect(talk.moment.words).toBe("Before the Exodus");
+    const again = await t.post("/api/characters/say", {
+      path: NIRANI,
+      message: "And the nights?",
+      talk: talk.id,
+    });
+    expect(again.statusCode, again.body).toBe(200);
+    expect(again.json().talk.lines).toHaveLength(6);
+    expect(p.calls.at(-1)!.body.messages[1]!.content).toContain("Author: How do you count days?");
+
+    // A line goes into the character's entry as a draft, and is marked in the conversation.
     const line = await t.post("/api/characters/line", {
       path: NIRANI,
       text: "We count by the currents.",
+      talk: talk.id,
+      line: 1,
     });
     expect(line.statusCode, line.body).toBe(200);
+    expect(line.json().talk.lines[1].kept).toBe(true);
+    const listed = (await t.get(`/api/characters/talks?path=${encodeURIComponent(NIRANI)}`)).json()
+      .talks;
+    expect(listed).toEqual([
+      expect.objectContaining({ id: talk.id, title: "How do you count days?", lines: 6, kept: 1 }),
+    ]);
+    expect((await t.get(`/api/characters/talks/${talk.id}`)).json().talk.lines).toHaveLength(6);
+    expect((await t.del(`/api/characters/talks/${talk.id}`)).statusCode).toBe(200);
+    expect((await t.get(`/api/characters/talks/${talk.id}`)).statusCode).toBe(404);
     const un = UnpublishedResponse.parse((await t.get("/api/unpublished")).json());
     expect(un.drafts.find((d) => d.path === NIRANI)?.text).toContain(
       "\n\nWe count by the currents.\n",
@@ -892,6 +920,13 @@ describe("talking with a character", () => {
       await t.post("/api/characters/say", { path: NIRANI, message: "Hello", history: [] });
       return p.calls.at(-1)!.body.messages[1]!.content;
     };
+    const kept = async (year: string) =>
+      (
+        await t.get(`/api/characters/moment?path=${encodeURIComponent(NIRANI)}&year=${year}`)
+      ).json();
+    expect((await kept("100")).withheld).toEqual([{ path: VAAKH, title: "Vaakh" }]);
+    expect((await kept("900")).withheld).toEqual([]);
+    expect((await kept("")).read).toBeGreaterThan(1);
     expect(await talk(null)).toContain(`=== Entry: ${VAAKH}`);
     expect(await talk(100)).not.toContain(`=== Entry: ${VAAKH}`);
     expect(await talk(900)).toContain(`=== Entry: ${VAAKH}`);

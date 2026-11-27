@@ -33,6 +33,8 @@ export const SCOPES = [
   "map",
   "maps",
   "graph",
+  "trees",
+  "tree",
   "editor",
   "table",
   "dialog",
@@ -46,6 +48,8 @@ export const SCOPE_NAMES: Record<Scope, string> = {
   map: "Map",
   maps: "List of maps",
   graph: "Graph",
+  trees: "List of trees",
+  tree: "Tree",
   editor: "Editor",
   table: "In a table",
   dialog: "Dialogs and menus",
@@ -65,6 +69,11 @@ export interface Shortcut {
   handledBy?: string;
   /** For a screen with a viewing and an editing mode: the one mode the key acts in, if only one. */
   when?: "viewing" | "editing";
+  /**
+   * Listed in the sheet only while something is bound to it, for a key that works on some screens
+   * only (a desktop's, say): the screen that has it binds it, and the sheet shows it from then on.
+   */
+  listWhenBound?: boolean;
 }
 
 type Action = () => boolean | void;
@@ -348,7 +357,10 @@ export function createRegistry() {
         scope,
         name: SCOPE_NAMES[scope],
         items: [...shortcuts.values()].filter(
-          (s) => s.scope === scope && (active.has(scope) || (scope === "dialog" && s.handledBy)),
+          (s) =>
+            s.scope === scope &&
+            (active.has(scope) || (scope === "dialog" && s.handledBy)) &&
+            (!s.listWhenBound || (bound.get(s.id)?.length ?? 0) > 0),
         ),
       })).filter((g) => g.items.length > 0);
     },
@@ -375,6 +387,16 @@ keys.register(
   { id: "app.home", keys: ["g h"], scope: "app", label: "Go to Home" },
   { id: "app.projects", keys: ["g p"], scope: "app", label: "Go to All projects" },
   { id: "app.random", keys: ["g r"], scope: "app", label: "Open a random entry" },
+  { id: "app.trees", keys: ["g t"], scope: "app", label: "Go to Trees" },
+  // Stage 28: the library pane on a desktop (on a phone the Library is a panel in the drawer).
+  {
+    id: "app.library",
+    keys: ["g l"],
+    scope: "app",
+    label: "Show or hide the Library",
+    // The library is a pane on a desktop only; a phone has no such key.
+    listWhenBound: true,
+  },
   {
     id: "app.sidebar",
     keys: ["Mod-\\"],
@@ -435,6 +457,12 @@ keys.register(
     keys: ["Mod-j"],
     scope: "editor",
     label: "Writing help on the selection or paragraph",
+  },
+  {
+    id: "editor.generateImage",
+    keys: ["Mod-Alt-i"],
+    scope: "editor",
+    label: "Generate an image for this entry",
   },
   {
     id: "editor.consult",
@@ -758,6 +786,41 @@ keys.register(
   { id: "graph.zoomIn", keys: ["="], scope: "graph", label: "Zoom in" },
   { id: "graph.zoomOut", keys: ["-"], scope: "graph", label: "Zoom out" },
 
+  // Trees (stage 30). The drawing takes its own arrow keys while it has the focus.
+  { id: "trees.new", keys: ["n"], scope: "trees", label: "New tree" },
+  { id: "tree.find", keys: ["/"], scope: "tree", label: "Find someone in the tree" },
+  { id: "tree.add", keys: ["a"], scope: "tree", label: "Add to the selected card" },
+  {
+    id: "tree.compare",
+    keys: ["c"],
+    scope: "tree",
+    label: "How are they related? Then pick the second",
+  },
+  { id: "tree.fit", keys: ["f"], scope: "tree", label: "Show the whole tree" },
+  { id: "tree.zoomIn", keys: ["=", "+"], scope: "tree", label: "Zoom in" },
+  { id: "tree.zoomOut", keys: ["-"], scope: "tree", label: "Zoom out" },
+  {
+    id: "tree.move",
+    keys: ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"],
+    scope: "tree",
+    label: "Move to a parent, a child, or along the row",
+    handledBy: "the tree drawing",
+  },
+  {
+    id: "tree.open",
+    keys: ["Enter"],
+    scope: "tree",
+    label: "Open the entry",
+    handledBy: "the tree drawing",
+  },
+  {
+    id: "tree.clear",
+    keys: ["Escape"],
+    scope: "tree",
+    label: "Stop comparing, close",
+    handledBy: "the tree drawing",
+  },
+
   // The chronicle
   { id: "chronicle.undo", keys: ["Mod-z"], scope: "chronicle", label: "Undo" },
   { id: "chronicle.redo", keys: ["Shift-Mod-z"], scope: "chronicle", label: "Redo" },
@@ -977,6 +1040,9 @@ export function editorKeymap(registry = keys): Extension {
     // The browser's own Ctrl+J (its downloads) never opens from the editor.
     ...bind("editor.help", runBound("editor.help", registry), { preventDefault: true }),
     ...bind("editor.consult", runBound("editor.consult", registry), { preventDefault: true }),
+    ...bind("editor.generateImage", runBound("editor.generateImage", registry), {
+      preventDefault: true,
+    }),
     // In a list Tab nests the item; elsewhere it indents the line.
     ...bind("editor.indent", (v) => command(indentListItem)(v) || indentMore(v)),
     ...bind("editor.outdent", (v) => command(outdentListItem)(v) || indentLess(v)),

@@ -1,5 +1,5 @@
 /**
- * One set of services for one project, made by one factory (stage 27b). Everything that belongs
+ * One set of services for one project, made by one factory (stage 31b). Everything that belongs
  * to a library is made here: the Git gateway, the index, drafts, the publisher, comments, pins,
  * maps, chronicles, images, the inbox, conversations, the status stream, the backup and its
  * timers. What belongs to the whole server (accounts, the AI settings and provider, the list of
@@ -27,6 +27,8 @@ import { MapStore } from "../maps/store.js";
 import { FolderStore } from "../folders/store.js";
 import { LibraryFileStore } from "../library/files.js";
 import { Conversations } from "../ai/conversations.js";
+import { Talks } from "../ai/talks.js";
+import { EntryPictures } from "../ai/pictures.js";
 import { EntryDrafter } from "../ai/draftEntry.js";
 import { LoreAsker } from "../ai/lore.js";
 import { KeepGoingAi } from "../ai/keepGoing.js";
@@ -74,10 +76,10 @@ export interface Services {
   /** Takes images from web addresses, with the safeguards that keep the server's network safe. */
   imageFetcher: ImageFetcher;
   drafts: DraftStore;
-  /** Who is reading which entry now; in memory only (stage 27d). */
+  /** Who is reading which entry now; in memory only (stage 31d). */
   presence: Presence;
   publisher: Publisher;
-  /** Who made each saved version: people who are or were members of this project (stage 27d). */
+  /** Who made each saved version: people who are or were members of this project (stage 31d). */
   authors: Authors;
   branches: BranchInbox;
   ai: AiProvider;
@@ -104,6 +106,10 @@ export interface Services {
   characters: CharacterTalk;
   discoverer: Discoverer;
   conversations: Conversations;
+  /** Each person's conversations with characters (stage 27, see `ai/talks.ts`). */
+  talks: Talks;
+  /** Pictures made for entries, kept as each person's tries until one is inserted. */
+  pictures: EntryPictures;
   comments: CommentStore;
   consults: ConsultStore;
   backup: Backup;
@@ -322,6 +328,7 @@ export async function buildServices(
   });
   const search = new SearchIndex(index);
   const conversations = new Conversations(stateDir, files, legacyOwner);
+  const talks = new Talks(stateDir, files, legacyOwner);
   const comments = new CommentStore(stateDir, files, {
     legacyOwner: firstOwner,
     nameOf,
@@ -371,6 +378,14 @@ export async function buildServices(
         return [];
       }
     },
+  });
+  const pictures = new EntryPictures({
+    dir: join(paths.assets, "generated", "entries"),
+    files,
+    settings,
+    log: aiLog,
+    provider: ai,
+    saving: { index, drafts, config, status },
   });
   const writing = new WritingHelper({
     index,
@@ -510,6 +525,8 @@ export async function buildServices(
     characters,
     discoverer,
     conversations,
+    talks,
+    pictures,
     comments,
     consults,
     async bringUp() {
