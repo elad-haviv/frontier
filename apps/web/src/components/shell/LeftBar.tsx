@@ -529,7 +529,7 @@ export function LeftBar({
       <div className="left-foot">
         {reader && (
           <p className="left-reader-note" role="note">
-            You can read and ask here. You cannot change the text.
+            You can read, comment and ask here. You cannot change the text.
           </p>
         )}
         {canWrite && (

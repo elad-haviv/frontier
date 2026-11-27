@@ -3862,6 +3862,59 @@ input.map-title {
 .comment-actions button {
   min-height: 2.5rem;
 }
+/* Comments between people (stage 27e): who wrote what, replies, resolved threads. */
+.comment-who {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.85rem;
+}
+.comment-edited {
+  font-size: 0.78rem;
+  font-style: italic;
+}
+.comment-replies {
+  margin: 0.2rem 0 0 0.9rem;
+  padding: 0 0 0 0.7rem;
+  border-left: 2px solid var(--rule);
+  list-style: none;
+}
+.comment-replies > li {
+  padding: 0.3rem 0;
+}
+.comment-write {
+  margin: 0.3rem 0;
+}
+.comment-write textarea {
+  width: 100%;
+  padding: 0.4rem 0.6rem;
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  background: var(--paper);
+  color: var(--ink);
+  font: inherit;
+}
+.comment-hint {
+  margin-left: auto;
+  font-size: 0.78rem;
+}
+.comment-thread.is-resolved {
+  opacity: 0.75;
+}
+.comment-resolved-list {
+  margin-top: 0.6rem;
+  border-top: 1px solid var(--rule);
+}
+.comment-resolved-list > button {
+  min-height: 2.5rem;
+}
+@media (max-width: 47.99rem) {
+  /* On a phone the hint about Ctrl+Enter has no key to point at. */
+  .comment-hint {
+    display: none;
+  }
+}
 
 /* Talking with a character */
 .talk-with {

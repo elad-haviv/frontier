@@ -62,7 +62,7 @@ function watch(page: Page) {
 }
 
 const WRITERS_ONLY =
-  /\/(unpublished|inbox|comments|drafts|publish|renames|write\/review|proposals)(\/|$|\?)|\/maps\/[^/]+\/discoveries|\/turns\/\d+\/addition/;
+  /\/(unpublished|inbox|drafts|publish|renames|write\/review|proposals)(\/|$|\?)|\/maps\/[^/]+\/discoveries|\/turns\/\d+\/addition/;
 
 test("a reader's shell has no control that changes anything, and calls nothing only a writer may", async ({
   page,
@@ -78,7 +78,7 @@ test("a reader's shell has no control that changes anything, and calls nothing o
   const left = r.locator(".left-bar").first();
   await expect(left.locator(".left-person")).toContainText("Reader here");
   await expect(left.locator(".left-reader-note")).toHaveText(
-    "You can read and ask here. You cannot change the text.",
+    "You can read, comment and ask here. You cannot change the text.",
   );
   // No new entry, no unsaved changes, no inbox; the places to read are there, Ask among them.
   await expect(left.locator(".new-entry")).toHaveCount(0);

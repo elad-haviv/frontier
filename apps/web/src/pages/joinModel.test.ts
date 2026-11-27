@@ -43,7 +43,7 @@ describe("the words of the join page", () => {
     expect(inviteHeading("Elad", "Avalymia", "reader")).toBe("Elad invited you to read Avalymia");
     expect(inviteHeading("Elad", "Avalymia", "owner")).toBe("Elad invited you to own Avalymia");
     expect(inviteHeading("", "Avalymia", "reader")).toBe("Someone invited you to read Avalymia");
-    expect(ROLE_ALLOWS.reader).toContain("cannot change anything");
+    expect(ROLE_ALLOWS.reader).toContain("cannot change the text");
     expect(AI_KEY_NOTE).toContain("stays on your device");
   });
 

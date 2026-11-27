@@ -10,7 +10,8 @@ export const ROLE_MAY: Record<ProjectRole, string> = {
   owner:
     "Everything a writer does, plus members, invite links, project settings and deleting the project.",
   writer: "Writes entries, maps and chronicles, saves versions, and uses the AI help.",
-  reader: "Reads, searches, asks the lore and talks with characters. Cannot change anything.",
+  reader:
+    "Reads, searches, comments on passages, asks the lore and talks with characters. Cannot change the text.",
 };
 
 /** The roles in the order a select lists them: the least first, so the safe choice is first. */

@@ -276,7 +276,9 @@ export function ProjectScope({ children }: { children: ReactNode }) {
     const unsent = lowered && role === "reader" && queue.current().length > 0;
     toast({
       message: `You are now ${article} ${ROLE_NAMES[role]} here.${
-        lowered && role === "reader" ? " You can read and ask, but not change the project." : ""
+        lowered && role === "reader"
+          ? " You can read, comment and ask, but not change the project."
+          : ""
       }${
         unsent
           ? " Your last changes were not saved. They are kept on this device, in Not sent yet."

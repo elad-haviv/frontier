@@ -173,7 +173,7 @@ describe("a project's page (stage 27c)", () => {
     expect(m.one("#shell").dataset.role).toBe("reader");
     const said = document.body.textContent ?? "";
     expect(said).toContain("You are now a Reader here.");
-    expect(said).toContain("You can read and ask, but not change the project.");
+    expect(said).toContain("You can read, comment and ask, but not change the project.");
     // Nothing more is said when the same role is read again.
     await act(async () => connection.accessMayHaveChanged());
     await m.settle();
