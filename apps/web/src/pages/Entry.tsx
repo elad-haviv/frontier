@@ -72,6 +72,7 @@ import {
   useRelocate,
 } from "../components/entry/RenameField.tsx";
 import { useNeedsConnection } from "../sync/connection.ts";
+import { useCanWrite } from "../components/projectContext.ts";
 import { NotOnDevice } from "../components/NotOnDevice.tsx";
 import { OfflineCopy, useReadAgain } from "../components/OfflineCopy.tsx";
 import {
@@ -138,10 +139,18 @@ export function EntryPage() {
   // an entry that is only a draft, and then the foot of the page is quiet about it.
   const fromHere = useAsync(() => api.fromHere(path), `from-here:${path}@${key}`);
   const here = fromHere.state === "ready" && fromHere.value.path === path ? fromHere.value : null;
-  const comments = useAsync(() => api.commentCount(path), `comments:${path}@${key}`);
+  // Comments are writers' until stage 27e: a reader's shell never asks for them.
+  const canWrite = useCanWrite();
+  const comments = useAsync(
+    () => (canWrite ? api.commentCount(path) : Promise.resolve({ open: 0 })),
+    `comments:${path}@${key}:${canWrite}`,
+  );
   const openComments = comments.state === "ready" ? comments.value.open : 0;
   // The comments themselves, for the margin and the Comments tab.
-  const commentList = useAsync(() => api.comments(path), `comment-list:${path}@${key}`);
+  const commentList = useAsync(
+    () => (canWrite ? api.comments(path) : Promise.resolve({ comments: NO_COMMENTS })),
+    `comment-list:${path}@${key}:${canWrite}`,
+  );
   const passageComments = commentList.state === "ready" ? commentList.value.comments : NO_COMMENTS;
   /** The comment whose bubble was pressed last; a new object at each press. */
   const [focusComment, setFocusComment] = useState<{ id: string } | null>(null);
@@ -251,6 +260,8 @@ export function EntryPage() {
   const name = stem(shownPath);
   const folder = dirname(shownPath);
   const editable = !!e && !e.readOnly && e.draft?.kind !== "delete";
+  /** Edit, rename and move are for writers; History and Export are for everyone who reads. */
+  const mayEdit = editable && canWrite;
   const reached = current >= 0 ? (headings[current]?.text ?? null) : null;
   const relocate = useRelocate(e, entry.retry);
 
@@ -506,7 +517,7 @@ export function EntryPage() {
 
   const toggle = (id: string) => () => (bar.open === id ? bar.hide() : openPanel(id));
   const actions: EntryActionsProps = {
-    editHref: editable ? editUrl(ent.path) : undefined,
+    editHref: mayEdit ? editUrl(ent.path) : undefined,
     onOutline: headings.length > 0 ? toggle("outline") : undefined,
     outlineOpen: bar.open === "outline",
     onGraph: toggle("graph"),
@@ -516,8 +527,7 @@ export function EntryPage() {
       : undefined,
     changes: editable
       ? {
-          onRename: startRename,
-          onMove: startMove,
+          ...(canWrite ? { onRename: startRename, onMove: startMove } : {}),
           onHistory: () => openPanel("history"),
           onExport: () => openPanel("export"),
           offline,
@@ -692,7 +702,9 @@ export function EntryPage() {
               ))}
             </p>
           )}
-          {ent.state === "published" && !ent.readOnly && <ProposeFields path={ent.path} />}
+          {canWrite && ent.state === "published" && !ent.readOnly && (
+            <ProposeFields path={ent.path} />
+          )}
         </header>
 
         <div className="prose" ref={prose}>

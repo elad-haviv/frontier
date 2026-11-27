@@ -501,3 +501,87 @@ export function Details(props: Props) {
     </div>
   );
 }
+
+/**
+ * The same event as `Details`, to read: what a reader sees (stage 27c). No field, rule or button
+ * changes anything; the entry and the maps are links.
+ */
+export function ReadDetails(props: Omit<Props, "change" | "onLink" | "onUnlink" | "focus">) {
+  const { chronicle, worked: w, span, entry } = props;
+  const points = w.points.get(span.id);
+  const nameOf = (id: string) => {
+    const s = chronicle.spans.find((x) => x.id === id);
+    return s ? spanName(s) : "a removed event";
+  };
+  const shown = (part: "start" | "end") => {
+    const tie = part === "start" ? span.startFrom : span.endFrom;
+    return tie ? formatTie(tie, part, nameOf(tie.span)) : formatEnd(span[part]);
+  };
+  const lane = chronicle.lanes.find((l) => l.id === span.lane);
+  const mine = w.checks.filter((c) => c.relation.a === span.id || c.relation.b === span.id);
+  return (
+    <div className="dt is-read">
+      <dl className="facts">
+        <dt>Group</dt>
+        <dd>{lane?.name ?? ""}</dd>
+        <dt>{span.point ? "When" : "Starts"}</dt>
+        <dd>{shown("start") || (worked(points?.start) ?? "not placed")}</dd>
+        {!span.point && (
+          <>
+            <dt>Ends</dt>
+            <dd>{shown("end") || (worked(points?.end) ?? "not placed")}</dd>
+            <dt>Lasts</dt>
+            <dd>{formatLength(span.length, chronicle.units) || "not set"}</dd>
+          </>
+        )}
+      </dl>
+      {mine.length > 0 && (
+        <section className="dt-rules" aria-label="Must fit">
+          <h3>Must fit</h3>
+          <ul>
+            {mine.map((c) => {
+              const m = RULE_MARK[c.state] ?? RULE_MARK["not_checked"]!;
+              return (
+                <li key={c.relation.id} className={`dt-rule is-${m.tone}`}>
+                  <p>
+                    <span className="dt-mark" aria-hidden="true">
+                      {m.mark}
+                    </span>{" "}
+                    {statementOf(c.relation, chronicle.spans)}{" "}
+                    <span className="sr-only">({m.words})</span>
+                  </p>
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      )}
+      {(entry.state === "linked" || entry.state === "pending") && (
+        <section className="dt-entry" aria-label="Entry">
+          <h3>Entry</h3>
+          <p>
+            📖 <Link to={entryUrl(entry.path)}>{entry.title}</Link>
+          </p>
+        </section>
+      )}
+      {props.onMaps.length > 0 && (
+        <section className="dt-maps" aria-label="On maps">
+          <h3>On maps</h3>
+          <ul>
+            {props.onMaps.map((m) => {
+              const at = points?.start && Number.isFinite(points.start.lo) ? points.start.lo : null;
+              const params = new URLSearchParams({ c: chronicle.id });
+              if (at !== null) params.set("t", String(Math.round(at)));
+              return (
+                <li key={m.map}>
+                  🗺 <Link to={`${mapUrl(m.map)}?${params.toString()}`}>{m.title}</Link>
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      )}
+      {span.note && <p className="dt-note-read">{span.note}</p>}
+    </div>
+  );
+}

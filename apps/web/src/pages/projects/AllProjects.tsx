@@ -2,6 +2,7 @@ import type { ProjectSummary } from "@frontier/schema";
 import { Plus } from "lucide-react";
 import { useEffect, useId } from "react";
 import { useSearchParams } from "react-router-dom";
+import { clearAccessNotice, useAccessNotice } from "../../access.ts";
 import { useDialogs } from "../../components/Dialogs.tsx";
 import { Avatar } from "../../components/ui/Avatar.tsx";
 import { useToast } from "../../components/ui/Toast.tsx";
@@ -146,6 +147,7 @@ export function AllProjects() {
   const onDevice = useOnDevice();
   const [params, setParams] = useSearchParams();
   const making = params.get("new") === "1";
+  const lostNotice = useAccessNotice();
   useEffect(() => void loadProjects(), []);
   useEffect(() => {
     document.title = "All projects · Frontier";
@@ -158,6 +160,14 @@ export function AllProjects() {
   return (
     <section className="all-projects">
       <h1>Your projects</h1>
+      {lostNotice && (
+        <p className="banner banner-ok access-notice" role="status">
+          {lostNotice}{" "}
+          <button type="button" className="quiet" onClick={clearAccessNotice}>
+            Dismiss
+          </button>
+        </p>
+      )}
       {!list ? (
         failed ? (
           <Problem
@@ -168,9 +178,14 @@ export function AllProjects() {
           <p className="muted">{loading ? "Loading…" : ""}</p>
         )
       ) : list.projects.length === 0 && !list.canCreate ? (
-        <p className="all-projects-empty">
-          You're not in a project yet. Ask an owner for an invite link.
-        </p>
+        <div className="all-projects-empty">
+          <p>You're not in a project yet.</p>
+          <p className="muted">
+            You join a project with an invite link from one of its owners. Ask an owner to make one
+            for you and send it; opening it brings you in. Frontier sends no mail, so the link comes
+            from them.
+          </p>
+        </div>
       ) : (
         <ul className="project-cards">
           {list.projects.map((p) => (
@@ -187,7 +202,10 @@ export function AllProjects() {
         </ul>
       )}
       {list && list.projects.length === 0 && list.canCreate && (
-        <p className="muted">You're not in a project yet. Make one to begin.</p>
+        <p className="muted">
+          You're not in a project yet. Make one to begin, or open an invite link from an owner of
+          another.
+        </p>
       )}
       <StrandedChanges />
       {making && list?.canCreate && <NewProjectDialog onClose={() => setMaking(false)} />}

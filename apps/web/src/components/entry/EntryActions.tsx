@@ -46,11 +46,11 @@ export interface EntryActionsProps {
         blocked?: string | undefined;
       }
     | undefined;
-  /** Present for an entry that can be changed. */
+  /** Present for an entry that can be read with its history; rename and move only for a writer. */
   changes?:
     | {
-        onRename: () => void;
-        onMove: () => void;
+        onRename?: (() => void) | undefined;
+        onMove?: (() => void) | undefined;
         onHistory: () => void;
         onExport: () => void;
         /** Why renaming and moving cannot be done now. */
@@ -75,9 +75,19 @@ function actionsOf(p: EntryActionsProps): { main: Action[]; rest: Action[] } {
   const rest: Action[] = [];
   if (p.changes) {
     const c = p.changes;
+    if (c.onRename && c.onMove) {
+      rest.push(
+        {
+          id: "rename",
+          label: "Rename",
+          icon: TextCursorInput,
+          run: c.onRename,
+          blocked: c.offline,
+        },
+        { id: "move", label: "Move to…", icon: FolderInput, run: c.onMove, blocked: c.offline },
+      );
+    }
     rest.push(
-      { id: "rename", label: "Rename", icon: TextCursorInput, run: c.onRename, blocked: c.offline },
-      { id: "move", label: "Move to…", icon: FolderInput, run: c.onMove, blocked: c.offline },
       { id: "history", label: "History", icon: History, run: c.onHistory },
       { id: "export", label: "Export", icon: FileDown, run: c.onExport },
     );

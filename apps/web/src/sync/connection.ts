@@ -34,6 +34,7 @@ export class Connection {
   /** The latest status the server sent, or null before the first. */
   snapshot: StatusSnapshot | null = null;
   private listeners = new Set<() => void>();
+  private accessListeners = new Set<() => void>();
   private source: EventSource | null = null;
   private probing: Promise<void> | null = null;
   private timer: ReturnType<typeof setTimeout> | undefined;
@@ -90,6 +91,22 @@ export class Connection {
     return this.view;
   }
 
+  /**
+   * Hears that what the person may do in the open project may have changed: the status stream was
+   * cut while the server could still be reached (the server closes it when a role changes or a
+   * person is removed), or a request was refused for want of a role or a project. The project's
+   * record is read again then.
+   */
+  onAccessMayHaveChanged(listener: () => void): () => void {
+    this.accessListeners.add(listener);
+    return () => this.accessListeners.delete(listener);
+  }
+
+  /** Says that the person's access to the open project may have changed. */
+  accessMayHaveChanged(): void {
+    for (const l of [...this.accessListeners]) l();
+  }
+
   private set(state: ConnectionState, snapshot = this.snapshot): void {
     if (state === this.state && snapshot === this.snapshot) return;
     const back = state === "online" && this.state !== "online";
@@ -129,6 +146,9 @@ export class Connection {
       if (closed && this.source === source) this.source = null;
       void this.probe().then(() => {
         if (closed && !this.source) this.reopenLater();
+        // The server answers but the stream ended: it closes the streams of a person whose role
+        // changed or who was taken out, so the project's record is read again.
+        if (this.state === "online") this.accessMayHaveChanged();
       });
     };
   }

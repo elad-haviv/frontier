@@ -19,6 +19,7 @@ import { IconButton } from "../ui/IconButton.tsx";
 import { Tip } from "../ui/Tip.tsx";
 import { mapOptions, styleOptions } from "./FeatureEditor.tsx";
 import "./GroupPanel.css";
+import { useCanWrite } from "../projectContext.ts";
 
 /** What the group's tab can do to the map; the page makes each change one step to undo. */
 export interface GroupActions {
@@ -365,6 +366,7 @@ export function GroupCard({
   onEdit: () => void;
   onClose: () => void;
 }) {
+  const canWrite = useCanWrite();
   const entry = group.entry ? names[group.entry] : undefined;
   const members = membersOf(map, group.id);
   return (
@@ -405,11 +407,13 @@ export function GroupCard({
           );
         })}
       </ul>
-      <p className="change-actions">
-        <button type="button" className="quiet" onClick={onEdit}>
-          Edit this group
-        </button>
-      </p>
+      {canWrite && (
+        <p className="change-actions">
+          <button type="button" className="quiet" onClick={onEdit}>
+            Edit this group
+          </button>
+        </p>
+      )}
     </aside>
   );
 }

@@ -9,7 +9,8 @@ import { allSpanPoints, formatYears, placeable } from "@frontier/time";
 import { ApiFailure, chronicleUrl, mapUrl } from "../api.ts";
 import { AddEvent } from "../components/chronicle/AddEvent.tsx";
 import { CompareView } from "../components/chronicle/CompareView.tsx";
-import { Details, type OnMap } from "../components/chronicle/Details.tsx";
+import { Details, type OnMap, ReadDetails } from "../components/chronicle/Details.tsx";
+import { useCanWrite } from "../components/projectContext.ts";
 import { typeWhen } from "../components/chronicle/edit.ts";
 import { Flags, redCount } from "../components/chronicle/Flags.tsx";
 import { UnitList } from "../components/chronicle/Lists.tsx";
@@ -239,15 +240,20 @@ function Chronicle({ id }: { id: string }) {
   const worked = useMemo(() => (chronicle ? work(chronicle) : null), [chronicle]);
   // Every change runs through the ties, so what is tied follows what it is tied to.
   const fileChange = file.change;
+  // A chronicle is read by everyone and changed by writers (stage 27c): for a reader nothing
+  // changes it, and nothing is queued for the server, which would refuse it.
+  const canWrite = useCanWrite();
   const change = useCallback<Change>(
-    (fn, tag) => fileChange((c) => withTies(fn(c)), tag),
-    [fileChange],
+    (fn, tag) => {
+      if (canWrite) fileChange((c) => withTies(fn(c)), tag);
+    },
+    [fileChange, canWrite],
   );
   // A merge with another device's copy, or a copy that predates a move, can leave a tied number
   // behind: it is worked out again and saved.
   useEffect(() => {
-    if (chronicle && withTies(chronicle) !== chronicle) fileChange(withTies, "ties");
-  }, [chronicle, fileChange]);
+    if (canWrite && chronicle && withTies(chronicle) !== chronicle) fileChange(withTies, "ties");
+  }, [chronicle, fileChange, canWrite]);
   const offers = useMemo(() => (chronicle ? placeable(chronicle) : []), [chronicle]);
   const [offerSeen, setOfferSeen] = useState(() => store.get(OFFER_KEY(id)) !== null);
   const answerOffer = () => {
@@ -293,10 +299,10 @@ function Chronicle({ id }: { id: string }) {
     };
   }, [under, chronicle]);
 
-  useShortcut("chronicle.undo", file.undo);
-  useShortcut("chronicle.redo", file.redo);
+  useShortcut("chronicle.undo", () => (canWrite ? file.undo() : false));
+  useShortcut("chronicle.redo", () => (canWrite ? file.redo() : false));
   useShortcut("chronicle.add", () => {
-    if (!chronicle) return false;
+    if (!chronicle || !canWrite) return false;
     setAdding(laneFor());
     return true;
   });
@@ -500,7 +506,25 @@ function Chronicle({ id }: { id: string }) {
     );
   };
 
-  const details = span && (
+  const details = span && !canWrite && (
+    <ReadDetails
+      key={span.id}
+      chronicle={chronicle}
+      worked={worked}
+      span={span}
+      onSelect={selectOne}
+      onMaps={onMaps[span.id] ?? []}
+      entry={
+        span.entry === null
+          ? { state: "none" }
+          : entries[span.entry]
+            ? { state: "linked", ...entries[span.entry]! }
+            : { state: "gone" }
+      }
+      second={false}
+    />
+  );
+  const writerDetails = span && canWrite && (
     <Details
       key={span.id}
       chronicle={chronicle}
@@ -574,7 +598,7 @@ function Chronicle({ id }: { id: string }) {
             <span className="ch-pill is-main" title="Maps that change with time read this one">
               ★ Main · maps use this
             </span>
-          ) : (
+          ) : !canWrite ? null : (
             <button
               type="button"
               className="ch-pill"
@@ -585,8 +609,8 @@ function Chronicle({ id }: { id: string }) {
               Make main
             </button>
           ))}
-        <SaveStatus state={saving.state} variant="chronicle" />
-        {red > 0 && fits}
+        {canWrite && <SaveStatus state={saving.state} variant="chronicle" />}
+        {canWrite && red > 0 && fits}
         {!narrow && maps.length === 1 && mapYear !== null && (
           <Link className="ch-pill is-map" to={mapLink(maps[0]!.id)}>
             🗺 Open map at {yearText}
@@ -604,29 +628,37 @@ function Chronicle({ id }: { id: string }) {
         <Menu label="More actions" className="ch-more-menu">
           {narrow && (
             <>
-              <MenuItem disabled={!file.canUndo} onSelect={file.undo}>
-                Undo
-              </MenuItem>
-              <MenuItem disabled={!file.canRedo} onSelect={file.redo}>
-                Redo
-              </MenuItem>
+              {canWrite && (
+                <>
+                  <MenuItem disabled={!file.canUndo} onSelect={file.undo}>
+                    Undo
+                  </MenuItem>
+                  <MenuItem disabled={!file.canRedo} onSelect={file.redo}>
+                    Redo
+                  </MenuItem>
+                </>
+              )}
               <MenuItem onSelect={() => timeline.current?.fit()}>Fit everything</MenuItem>
               <MenuSeparator />
             </>
           )}
-          <MenuItem onSelect={() => void rename()}>Rename</MenuItem>
-          <MenuItem onSelect={() => void addGroup()}>Add a group</MenuItem>
-          <MenuItem onSelect={() => setDialog("units")}>Units…</MenuItem>
-          <MenuItem onSelect={() => setDialog("compare")}>
-            Compare lengths with real history…
-          </MenuItem>
-          <MenuSeparator />
+          {canWrite && (
+            <>
+              <MenuItem onSelect={() => void rename()}>Rename</MenuItem>
+              <MenuItem onSelect={() => void addGroup()}>Add a group</MenuItem>
+              <MenuItem onSelect={() => setDialog("units")}>Units…</MenuItem>
+              <MenuItem onSelect={() => setDialog("compare")}>
+                Compare lengths with real history…
+              </MenuItem>
+              <MenuSeparator />
+            </>
+          )}
           {narrow && chronicle.main && (
             <MenuItem disabled onSelect={() => undefined}>
               ★ Main · maps use this
             </MenuItem>
           )}
-          {narrow && !chronicle.main && (
+          {narrow && canWrite && !chronicle.main && (
             <MenuItem
               disabled={offline !== undefined}
               disabledReason={offlineReason}
@@ -642,13 +674,15 @@ function Chronicle({ id }: { id: string }) {
                 🗺 Open {m.title} at {yearText}
               </MenuLink>
             ))}
-          <MenuItem
-            disabled={offline !== undefined}
-            disabledReason={offlineReason}
-            onSelect={() => void copy()}
-          >
-            Copy, to try another version
-          </MenuItem>
+          {canWrite && (
+            <MenuItem
+              disabled={offline !== undefined}
+              disabledReason={offlineReason}
+              onSelect={() => void copy()}
+            >
+              Copy, to try another version
+            </MenuItem>
+          )}
           {under ? (
             <MenuItem onSelect={() => setUnder(null)}>
               Stop showing {under.title} underneath
@@ -662,15 +696,19 @@ function Chronicle({ id }: { id: string }) {
               Show another version underneath…
             </MenuItem>
           )}
-          <MenuSeparator />
-          <MenuItem
-            danger
-            disabled={offline !== undefined}
-            disabledReason={offlineReason}
-            onSelect={() => void remove()}
-          >
-            Delete the chronicle
-          </MenuItem>
+          {canWrite && (
+            <>
+              <MenuSeparator />
+              <MenuItem
+                danger
+                disabled={offline !== undefined}
+                disabledReason={offlineReason}
+                onSelect={() => void remove()}
+              >
+                Delete the chronicle
+              </MenuItem>
+            </>
+          )}
         </Menu>
       </header>
       <OfflineCopy at={offlineAt} className="chronicle-offline" />
@@ -682,7 +720,7 @@ function Chronicle({ id }: { id: string }) {
           </button>
         </p>
       )}
-      {offers.length > 0 && !offerSeen && (
+      {canWrite && offers.length > 0 && !offerSeen && (
         <p className="banner ch-offer-banner" role="status">
           {offers.length === 1
             ? "1 event can be placed from what you said."
@@ -747,7 +785,7 @@ function Chronicle({ id }: { id: string }) {
       )}
 
       <div className="ch-tools" role="toolbar" aria-label="Timeline tools">
-        {!narrow && (
+        {!narrow && canWrite && (
           <button
             type="button"
             className="primary"
@@ -782,7 +820,7 @@ function Chronicle({ id }: { id: string }) {
             Fit
           </button>
         )}
-        {!narrow && (
+        {!narrow && canWrite && (
           <>
             <IconButton
               label="Undo"
@@ -878,6 +916,7 @@ function Chronicle({ id }: { id: string }) {
                 }))
               }
               ghost={ghost}
+              readOnly={!canWrite}
             />
           ) : (
             <ListView
@@ -891,12 +930,15 @@ function Chronicle({ id }: { id: string }) {
           {chronicle.spans.length === 0 && (
             <div className="ch-start">
               <p>
-                Lay out a history. Add the events you know, rough dates are fine. Year 0 is whatever
-                you place first.
+                {canWrite
+                  ? "Lay out a history. Add the events you know, rough dates are fine. Year 0 is whatever you place first."
+                  : "Nothing has been laid out in this chronicle yet."}
               </p>
-              <button type="button" className="primary" onClick={() => setAdding(laneFor())}>
-                + Add the first event
-              </button>
+              {canWrite && (
+                <button type="button" className="primary" onClick={() => setAdding(laneFor())}>
+                  + Add the first event
+                </button>
+              )}
             </div>
           )}
           <p className="ch-note muted">
@@ -924,12 +966,12 @@ function Chronicle({ id }: { id: string }) {
                 Close
               </button>
             </header>
-            {details}
+            {details || writerDetails}
           </aside>
         )}
       </div>
 
-      {narrow && !span && (
+      {narrow && canWrite && !span && (
         <button
           type="button"
           className="ch-fab"
@@ -941,7 +983,7 @@ function Chronicle({ id }: { id: string }) {
         </button>
       )}
 
-      {adding && (
+      {adding && canWrite && (
         <AddEvent
           chronicle={chronicle}
           lane={adding}

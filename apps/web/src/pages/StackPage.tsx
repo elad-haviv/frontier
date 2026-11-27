@@ -1,4 +1,5 @@
 import type { MapFeature } from "@frontier/schema";
+import { useCanWrite } from "../components/projectContext.ts";
 import {
   ChevronLeft,
   Layers as LayersIcon,
@@ -57,7 +58,10 @@ export function StackPage() {
   const [params, setParams] = useSearchParams();
   const stack = useMapStack(id);
   const { order, maps, names } = stack;
-  const [editing, setEditing] = useState(params.get("edit") === "1");
+  // Editing is for writers: a reader opening `?edit=1` simply reads (stage 27c).
+  const canWrite = useCanWrite();
+  const [wantsEdit, setEditing] = useState(params.get("edit") === "1");
+  const editing = wantsEdit && canWrite;
   const [tool, setTool] = useState<StackTool>("select");
   const [active, setActive] = useState(0);
   const [selected, setSelected] = useState<string | null>(null);
@@ -99,7 +103,9 @@ export function StackPage() {
     setTool(next);
     setFrom(null);
   };
-  const startEditing = () => setEditing(true);
+  const startEditing = () => {
+    if (canWrite) setEditing(true);
+  };
   const stopEditing = () => {
     stack.sendAll();
     setEditing(false);
@@ -300,20 +306,22 @@ export function StackPage() {
           />
         </span>
         <span className="map-main">
-          <PageAction>
-            <Tip
-              label={editing ? "Done editing" : "Edit the places and passages"}
-              keys={shortcutText(editing ? "map.done" : "map.edit")}
-            >
-              <button
-                type="button"
-                className={editing ? "primary" : "quiet"}
-                onClick={editing ? stopEditing : startEditing}
+          {canWrite && (
+            <PageAction>
+              <Tip
+                label={editing ? "Done editing" : "Edit the places and passages"}
+                keys={shortcutText(editing ? "map.done" : "map.edit")}
               >
-                {editing ? "Done" : "Edit"}
-              </button>
-            </Tip>
-          </PageAction>
+                <button
+                  type="button"
+                  className={editing ? "primary" : "quiet"}
+                  onClick={editing ? stopEditing : startEditing}
+                >
+                  {editing ? "Done" : "Edit"}
+                </button>
+              </Tip>
+            </PageAction>
+          )}
         </span>
       </div>
 

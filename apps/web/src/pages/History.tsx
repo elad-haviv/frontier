@@ -15,6 +15,7 @@ import { Problem } from "../components/ui/Problem.tsx";
 import { Progress } from "../components/ui/Progress.tsx";
 import { failureOf, useAsync } from "../useAsync.ts";
 import { projectWork } from "../projectWork.ts";
+import { useCanWrite } from "../components/projectContext.ts";
 
 const when = (at: string) =>
   new Date(at).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
@@ -40,6 +41,8 @@ function VersionRow({
   const [texts, setTexts] = useState<{ text: string; before: string | null } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // Restoring a version writes to the project: writers' (stage 27c).
+  const canWrite = useCanWrite();
 
   function load(open: boolean) {
     if (!open || texts) return;
@@ -105,7 +108,7 @@ function VersionRow({
         {error && <p className="error">{error}</p>}
         {!texts && !error && <p className="muted">Loading…</p>}
         {texts && <Diff before={texts.before ?? ""} after={texts.text} />}
-        {texts && !latest && (
+        {texts && !latest && canWrite && (
           <p className="change-actions">
             <button type="button" className="quiet" disabled={busy} onClick={restore}>
               Restore this version

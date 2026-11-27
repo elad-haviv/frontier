@@ -11,6 +11,7 @@ import {
   stackText,
   stateText,
 } from "../../map/mapsList.ts";
+import { useCanWrite } from "../projectContext.ts";
 import { Menu, MenuItem, MenuSeparator } from "../ui/Menu.tsx";
 import { Icon } from "../ui/Icon.tsx";
 import { MapArt } from "./MapArt.tsx";
@@ -58,38 +59,45 @@ export function MapMenu({
   actions: MapActions;
 }) {
   const navigate = useNavigate();
+  const canWrite = useCanWrite();
   const stacked = row.kind === "sphere" && inStack(row.id, rows);
   return (
     <Menu label={`Actions for ${row.title}`} className="maps-card-menu">
       <MenuItem icon={ExternalLink} onSelect={() => navigate(mapUrl(row.id))}>
         Open
       </MenuItem>
-      <MenuItem icon={SquarePen} onSelect={() => actions.onEdit(row)}>
-        Edit
-      </MenuItem>
+      {canWrite && (
+        <MenuItem icon={SquarePen} onSelect={() => actions.onEdit(row)}>
+          Edit
+        </MenuItem>
+      )}
       {stacked && (
         <MenuItem icon={Layers3} onSelect={() => actions.onStack(row)}>
           Layers stacked
         </MenuItem>
       )}
-      <MenuSeparator />
-      <MenuItem
-        icon={Pencil}
-        disabled={actions.offline !== undefined}
-        disabledReason={actions.offline}
-        onSelect={() => actions.onRename(row)}
-      >
-        Rename…
-      </MenuItem>
-      <MenuItem
-        icon={Trash2}
-        danger
-        disabled={actions.offline !== undefined}
-        disabledReason={actions.offline}
-        onSelect={() => actions.onDelete(row)}
-      >
-        Delete…
-      </MenuItem>
+      {canWrite && (
+        <>
+          <MenuSeparator />
+          <MenuItem
+            icon={Pencil}
+            disabled={actions.offline !== undefined}
+            disabledReason={actions.offline}
+            onSelect={() => actions.onRename(row)}
+          >
+            Rename…
+          </MenuItem>
+          <MenuItem
+            icon={Trash2}
+            danger
+            disabled={actions.offline !== undefined}
+            disabledReason={actions.offline}
+            onSelect={() => actions.onDelete(row)}
+          >
+            Delete…
+          </MenuItem>
+        </>
+      )}
     </Menu>
   );
 }

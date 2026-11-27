@@ -45,3 +45,19 @@ export const ROLE_NAMES: Record<ProjectRole, string> = {
   writer: "Writer",
   reader: "Reader",
 };
+
+/**
+ * Whether to draw the controls that change the project's text (new entry, edit, rename, move,
+ * delete, map editing, upload, saving versions): writers and owners, never a reader and never
+ * while the role is still unknown, so nobody sees a control flash and vanish.
+ */
+export const useCanWrite = (): boolean => useRole().canWrite;
+
+/** The same, outside a project's pages (false there): for parts that may be drawn without one. */
+export function useCanWriteOrNot(): boolean {
+  const info = useContext(ProjectContext);
+  return useMemo(() => roleInfo(info?.role ?? null).canWrite, [info?.role]);
+}
+
+/** Whether the person is known to be a reader here; false while the role is unknown. */
+export const useIsReader = (): boolean => useRole().role === "reader";

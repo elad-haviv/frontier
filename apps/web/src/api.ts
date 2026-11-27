@@ -30,7 +30,13 @@ import type {
   KeepGoingSettings,
   KeepGoingSettingsRequest,
   CreateProjectRequest,
+  CreateInviteResponse,
+  InvitesResponse,
+  JoinedResponse,
+  JoinInfo,
+  MembersResponse,
   ProjectResponse,
+  ProjectRole,
   ProjectsResponse,
   SlugFreeResponse,
   UpdateProjectRequest,
@@ -75,6 +81,10 @@ export class ApiFailure extends Error {
   href?: string;
   /** With `ai_key_missing`: the provider whose key this device lacks. */
   provider?: AiProviderKind;
+  /** With a dead invite link: the name of the person who made it, to ask for a new one. */
+  inviter?: string;
+  /** With `already_member`: the address of the project the person is already in. */
+  project?: string;
 }
 
 /**
@@ -108,7 +118,7 @@ export function setDevice(known: { id: string; name: string } | null): void {
 }
 
 /** Routes that answer without a session, whose answers say nothing about the connection's state. */
-const OPEN = /^\/api\/(session|login|passkeys\/login\/)/;
+const OPEN = /^\/api\/(session|login|passkeys\/login\/|join\/)/;
 
 /**
  * The requests that can lead to an AI call (stage 27f). Only these carry this device's AI keys,
@@ -297,6 +307,12 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
   if (body?.error.id) failure.draftId = body.error.id;
   if (body?.error.href) failure.href = body.error.href;
   if (body?.error.provider) failure.provider = body.error.provider as AiProviderKind;
+  if (body?.error.inviter) failure.inviter = body.error.inviter;
+  // A refusal for want of a role or a project: what the person may do here may have changed.
+  if (res.status === 403 && (failure.code === "role_too_low" || failure.code === "no_project")) {
+    connection.accessMayHaveChanged();
+  }
+  if (body?.error.project) failure.project = body.error.project;
   throw failure;
 }
 
@@ -476,6 +492,28 @@ const serverApi = {
     const response = await startAuthentication({ optionsJSON });
     return basePost<{ ok: true }>("/api/passkeys/login/verify", { response });
   },
+  /** Takes the linked Google account off the account (the last way in cannot go). */
+  unlinkGoogle: () => baseSend<{ ok: true }>("DELETE", "/api/me/google"),
+  // ---- Joining a project by an invite link (stage 27c): public, no project is open -----------
+
+  /** What an invite link is for, or why it no longer works (the error carries `inviter`). */
+  joinInfo: (code: string) => baseCall<JoinInfo>(`/api/join/${encodeURIComponent(code)}`),
+  /** A new person joins with an email and a password, and is logged in. */
+  joinWithPassword: (code: string, who: { name: string; email: string; password: string }) =>
+    basePost<JoinedResponse>(`/api/join/${encodeURIComponent(code)}`, who),
+  /** A new person joins with a passkey made on this device, and is logged in. */
+  joinWithPasskey: async (code: string, who: { name: string; email: string }) => {
+    const base = `/api/join/${encodeURIComponent(code)}/passkey`;
+    const optionsJSON = await basePost<Parameters<typeof startRegistration>[0]["optionsJSON"]>(
+      `${base}/options`,
+      who,
+    );
+    const response = await startRegistration({ optionsJSON });
+    return basePost<JoinedResponse>(`${base}/verify`, { response, passkeyName: "This device" });
+  },
+  /** A person who is logged in takes the invitation into their own account. */
+  acceptInvite: (code: string) =>
+    basePost<JoinedResponse>(`/api/join/${encodeURIComponent(code)}/accept`),
   removePasskey: (id: string) =>
     baseSend<{ ok: true }>("DELETE", `/api/passkeys/${encodeURIComponent(id)}`),
   passwordOff: (off: boolean) =>
@@ -538,6 +576,22 @@ const serverApi = {
     baseSend<KeepGoingSettings>("PUT", "/api/settings/keep-going", change),
 };
 
+/**
+ * Where "Continue with Google" goes: the server sends the browser to Google and, after, back to a
+ * page of the app. With an invite code the trip is for joining; `link` adds Google to the account
+ * that is logged in (Settings → Signing in). `returnTo` is a path in the app.
+ */
+export function googleStartUrl(
+  options: { invite?: string; link?: boolean; returnTo?: string } = {},
+): string {
+  const params = new URLSearchParams();
+  if (options.invite) params.set("invite", options.invite);
+  if (options.link) params.set("link", "1");
+  if (options.returnTo) params.set("returnTo", options.returnTo);
+  const qs = params.toString();
+  return `/api/auth/google/start${qs ? `?${qs}` : ""}`;
+}
+
 /** The calls that belong to one project: each goes to `/api/p/<slug>/...` (`projectUrl`). */
 function projectCalls(slugOf: () => string) {
   const url = (path: string) => projectUrl(path, slugOf());
@@ -560,6 +614,17 @@ function projectCalls(slugOf: () => string) {
       send<ProjectResponse>("PUT", "/project", change),
     /** The name is typed again, so a stray press cannot delete a project. */
     deleteProject: (name: string) => send<{ ok: true }>("DELETE", "/project", { name }),
+    // ---- People (stage 27c) ----------------------------------------------------------------
+    members: () => call<MembersResponse>("/members"),
+    changeRole: (id: string, role: ProjectRole) =>
+      send<{ ok: true }>("PUT", `/members/${encodeURIComponent(id)}`, { role }),
+    removeMember: (id: string) =>
+      send<{ ok: true }>("DELETE", `/members/${encodeURIComponent(id)}`),
+    leaveProject: () => post<{ ok: true }>("/members/leave"),
+    invites: () => call<InvitesResponse>("/invites"),
+    createInvite: (role: ProjectRole) => post<CreateInviteResponse>("/invites", { role }),
+    cancelInvite: (id: string) =>
+      send<{ ok: true }>("DELETE", `/invites/${encodeURIComponent(id)}`),
     tree: () => call<TreeResponse>("/tree"),
     /** Every entry and every link between two entries, with the top-level folders' colours. */
     graph: () => call<GraphResponse>("/graph"),

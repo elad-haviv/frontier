@@ -10,6 +10,7 @@ import { useLightbox } from "../components/Lightbox.tsx";
 import { currentEntryPath } from "../components/Shell.tsx";
 import { wikilinks } from "./wikilinks.ts";
 import { useDialogs } from "../components/Dialogs.tsx";
+import { useCanWriteOrNot } from "../components/projectContext.ts";
 
 /**
  * Everything rendered from Markdown is untrusted. Raw HTML in a note is not rendered at all, and
@@ -37,6 +38,7 @@ function MissingEntry({ target, children }: { target: string; children: ReactNod
   const navigate = useNavigate();
   const { pathname } = useLocation();
   const here = currentEntryPath(pathname);
+  const canWrite = useCanWriteOrNot();
 
   async function create() {
     const clean = target
@@ -64,6 +66,14 @@ function MissingEntry({ target, children }: { target: string; children: ReactNod
     navigate(`${editUrl(path)}?new=1`);
   }
 
+  // A reader sees that the entry is not written, and cannot write it.
+  if (!canWrite) {
+    return (
+      <span className="link link-unresolved" title="Not written yet.">
+        {children}
+      </span>
+    );
+  }
   return (
     <button
       type="button"

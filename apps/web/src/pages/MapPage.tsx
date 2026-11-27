@@ -114,6 +114,7 @@ import { useSnapSetting, useSnapTargets } from "../map/snap.ts";
 import { nearestOnPath } from "../map/joins.ts";
 import { useReliefSetting } from "../map/reliefSetting.ts";
 import { useDiscovery } from "../map/useDiscovery.ts";
+import { useCanWrite } from "../components/projectContext.ts";
 import { sendable, useExplore } from "../map/spots/useExplore.ts";
 import type { Spot } from "../map/spots/spots.ts";
 import { useMapDraw } from "../map/useMapDraw.ts";
@@ -167,7 +168,10 @@ export function MapPage() {
   const [notice, setNotice] = useState<string | null>(null);
   const [hidden, setHidden] = useState<Set<string>>(new Set());
   const [shownImages, setShownImages] = useState<Set<string>>(new Set());
-  const [editing, setEditing] = useState(params.get("edit") === "1");
+  // Editing is for writers: a reader opening `?edit=1` simply reads (stage 27c).
+  const canWrite = useCanWrite();
+  const [wantsEdit, setEditing] = useState(params.get("edit") === "1");
+  const editing = wantsEdit && canWrite;
   const [tool, setTool] = useState<Tool>("select");
   const [selected, setSelected] = useState<string | null>(null);
   const [vertex, setVertex] = useState<number | null>(null);
@@ -332,7 +336,7 @@ export function MapPage() {
     biomes: drawBiomes,
   });
   const { titleOf } = draw;
-  const discovery = useDiscovery(id, { ...time, setNotice });
+  const discovery = useDiscovery(id, { ...time, setNotice, enabled: canWrite });
   /** The moment the map is seen at, which what the AI proposes must fit. */
   const moment = {
     chronicle: time.timeOn ? time.chronicleId : null,
@@ -425,6 +429,7 @@ export function MapPage() {
   const copyPlace = (feature: string) => copy(placeLink(feature), "this place");
   const copyView = () => copy(viewLink(), "this view");
   const startEditing = (feature: string | null = null) => {
+    if (!canWrite) return;
     setEditing(true);
     setTool("select");
     setSketch([]);

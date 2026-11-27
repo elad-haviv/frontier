@@ -7,6 +7,7 @@ import { MapArt } from "../components/maps/MapArt.tsx";
 import { isDark, KIND_PICTURES } from "../components/maps/KindPictures.tsx";
 import { type MapActions, MapCard, MapRowItem } from "../components/maps/MapItems.tsx";
 import { NewMapDialog } from "../components/maps/NewMapDialog.tsx";
+import { useCanWrite } from "../components/projectContext.ts";
 import { useRefresh } from "../components/Shell.tsx";
 import { Problem } from "../components/ui/Problem.tsx";
 import { Progress } from "../components/ui/Progress.tsx";
@@ -74,7 +75,9 @@ export function MapsPage() {
     if (!search.current) return false;
     search.current.focus();
   });
-  useShortcut("maps.new", () => setMaking("flat"));
+  // Making, editing, renaming and deleting maps are writers' (stage 27c).
+  const canWrite = useCanWrite();
+  useShortcut("maps.new", () => (canWrite ? setMaking("flat") : false));
 
   const actions: MapActions = {
     offline,
@@ -199,10 +202,12 @@ export function MapsPage() {
             ))}
           </div>
         )}
-        <button type="button" className="primary maps-new" onClick={() => setMaking("flat")}>
-          <Plus size={18} aria-hidden="true" />
-          <span className="maps-new-label">New map</span>
-        </button>
+        {canWrite && (
+          <button type="button" className="primary maps-new" onClick={() => setMaking("flat")}>
+            <Plus size={18} aria-hidden="true" />
+            <span className="maps-new-label">New map</span>
+          </button>
+        )}
       </header>
       <p className="muted lede">
         A map is drawn over an image of yours, or, for a star map or a system model, in open space.
@@ -339,9 +344,11 @@ export function MapsPage() {
             Draw a world over an image of yours, or place stars and planets in open space. Each
             map's markers point at entries.
           </p>
-          <button type="button" className="primary" onClick={() => setMaking("flat")}>
-            <Plus size={18} aria-hidden="true" /> Make the first map
-          </button>
+          {canWrite && (
+            <button type="button" className="primary" onClick={() => setMaking("flat")}>
+              <Plus size={18} aria-hidden="true" /> Make the first map
+            </button>
+          )}
         </div>
       )}
 
@@ -401,7 +408,7 @@ export function MapsPage() {
           {shown.map((r) => (
             <MapCard key={r.id} row={r} rows={rows} query={filters.query} actions={actions} />
           ))}
-          {!filtering && tools.newTile && (
+          {canWrite && !filtering && tools.newTile && (
             <li className="map-newtile">
               <button type="button" onClick={() => setMaking("flat")}>
                 <Plus size={20} aria-hidden="true" />
@@ -445,7 +452,7 @@ export function MapsPage() {
         </div>
       )}
 
-      {making && <NewMapDialog initialKind={making} onClose={() => setMaking(null)} />}
+      {making && canWrite && <NewMapDialog initialKind={making} onClose={() => setMaking(null)} />}
     </article>
   );
 }

@@ -10,6 +10,7 @@ import {
   type Trait,
 } from "../api.ts";
 import { useRefresh } from "../components/Shell.tsx";
+import { useCanWrite } from "../components/projectContext.ts";
 
 const KINDS: [Trait["kind"], string][] = [
   ["voice", "How they speak"],
@@ -188,6 +189,9 @@ export function TalkPage() {
   const path = decodeURIComponent(pathname.replace(/^\/talk\//, ""));
   const name = titleOf(path);
   const refresh = useRefresh();
+  // A reader talks with a character that has a profile; making the profile and adding what was
+  // said to the entry change the project, and are writers' (stage 27c).
+  const canWrite = useCanWrite();
   const [profile, setProfile] = useState<CharacterProfile | null | undefined>(undefined);
   const [editing, setEditing] = useState(false);
   const [said, setSaid] = useState<
@@ -250,14 +254,22 @@ export function TalkPage() {
         {profile && !editing && (
           <p className="muted lede">
             Speaking from: {profile.moment.words || "a moment not named"}.{" "}
-            <button type="button" className="plain" onClick={() => setEditing(true)}>
-              Change the profile
-            </button>
+            {canWrite && (
+              <button type="button" className="plain" onClick={() => setEditing(true)}>
+                Change the profile
+              </button>
+            )}
           </p>
         )}
       </header>
 
-      {(!profile || editing) && (
+      {!profile && !canWrite && (
+        <p className="muted">
+          {name} has no profile yet, so there is no one to talk with. A writer or an owner of the
+          project can draft one.
+        </p>
+      )}
+      {(!profile || editing) && canWrite && (
         <ProfileForm
           path={path}
           start={profile}
@@ -295,9 +307,11 @@ export function TalkPage() {
                   {l.kept ? (
                     <p className="muted">Added to {name}'s entry as an unsaved change.</p>
                   ) : (
-                    <ActionButton type="button" className="plain" onClick={() => void keep(i)}>
-                      Add to {name}'s entry
-                    </ActionButton>
+                    canWrite && (
+                      <ActionButton type="button" className="plain" onClick={() => void keep(i)}>
+                        Add to {name}'s entry
+                      </ActionButton>
+                    )
                   )}
                 </li>
               ),

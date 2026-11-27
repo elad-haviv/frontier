@@ -6,6 +6,7 @@ import { api, ApiFailure, askUrl, entryUrl, type LoreConversation, type LoreTurn
 import { Diff } from "../components/Diff.tsx";
 import { useDialogs } from "../components/Dialogs.tsx";
 import { LiveTurn, TurnWork, useLoreAsk } from "../components/LoreWork.tsx";
+import { useCanWrite } from "../components/projectContext.ts";
 import { useRefresh } from "../components/Shell.tsx";
 import { projectWork } from "../projectWork.ts";
 
@@ -142,6 +143,8 @@ function Answer(p: {
   onChange: (c: LoreConversation) => void;
 }) {
   const { answer } = p.turn;
+  // Drafting text into an entry is for writers (stage 27c); a reader asks and reads.
+  const canWrite = useCanWrite();
   const [drafting, setDrafting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const supported = answer.paragraphs.some((x) => x.grounded);
@@ -200,7 +203,7 @@ function Answer(p: {
               <span className="muted">The AI says it lacks: {answer.missing}</span>
             )}
           </p>
-          {!p.turn.addition && (
+          {canWrite && !p.turn.addition && (
             <p className="change-actions">
               <ActionButton
                 type="button"
@@ -219,7 +222,9 @@ function Answer(p: {
           )}
         </div>
       )}
-      {p.turn.addition && <Addition id={p.id} n={p.n} turn={p.turn} onChange={p.onChange} />}
+      {canWrite && p.turn.addition && (
+        <Addition id={p.id} n={p.n} turn={p.turn} onChange={p.onChange} />
+      )}
       {answer.related.length > 0 && (
         <p className="related">
           <span className="muted">Also related:</span>{" "}

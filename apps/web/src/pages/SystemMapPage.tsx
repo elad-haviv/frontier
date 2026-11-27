@@ -1,4 +1,5 @@
 import type { MapFeature } from "@frontier/schema";
+import { useCanWrite } from "../components/projectContext.ts";
 import {
   ChevronLeft,
   Layers as LayersIcon,
@@ -86,7 +87,10 @@ export function SystemMapPage() {
   const { id = "" } = useParams();
   const [params, setParams] = useSearchParams();
   const [notice, setNotice] = useState<string | null>(null);
-  const [editing, setEditing] = useState(params.get("edit") === "1");
+  // Editing is for writers: a reader opening `?edit=1` simply reads (stage 27c).
+  const canWrite = useCanWrite();
+  const [wantsEdit, setEditing] = useState(params.get("edit") === "1");
+  const editing = wantsEdit && canWrite;
   const [tool, setTool] = useState<SystemTool>("select");
   const [adding, setAdding] = useState<BodyType | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
@@ -176,6 +180,7 @@ export function SystemMapPage() {
     setAdding(null);
   };
   const startEditing = () => {
+    if (!canWrite) return;
     setPlaying(false);
     setEditing(true);
   };
@@ -386,31 +391,35 @@ export function SystemMapPage() {
           />
         </span>
         <span className="map-main">
-          <PageAction>
-            <Tip
-              label={editing ? "Done editing" : "Edit the map"}
-              keys={shortcutText(editing ? "map.done" : "map.edit")}
-            >
-              <button
-                type="button"
-                className={editing ? "primary" : "quiet"}
-                onClick={editing ? stopEditing : startEditing}
+          {canWrite && (
+            <PageAction>
+              <Tip
+                label={editing ? "Done editing" : "Edit the map"}
+                keys={shortcutText(editing ? "map.done" : "map.edit")}
               >
-                {editing ? "Done" : "Edit"}
-              </button>
-            </Tip>
-          </PageAction>
-          <Menu label="More actions" className="map-more">
-            <MenuItem
-              icon={Trash2}
-              danger
-              disabled={offline !== undefined}
-              disabledReason={offline}
-              onSelect={() => void file.removeMap()}
-            >
-              Delete map
-            </MenuItem>
-          </Menu>
+                <button
+                  type="button"
+                  className={editing ? "primary" : "quiet"}
+                  onClick={editing ? stopEditing : startEditing}
+                >
+                  {editing ? "Done" : "Edit"}
+                </button>
+              </Tip>
+            </PageAction>
+          )}
+          {canWrite && (
+            <Menu label="More actions" className="map-more">
+              <MenuItem
+                icon={Trash2}
+                danger
+                disabled={offline !== undefined}
+                disabledReason={offline}
+                onSelect={() => void file.removeMap()}
+              >
+                Delete map
+              </MenuItem>
+            </Menu>
+          )}
         </span>
       </div>
 
@@ -499,32 +508,36 @@ export function SystemMapPage() {
           <div className="star-empty">
             <h2>A system starts with its star</h2>
             <p>Add the worlds that circle it. Each gets its orbit from how far out you put it.</p>
-            <button
-              type="button"
-              className="primary"
-              onClick={() => {
-                change(firstStar(map, layer));
-                startEditing();
-              }}
-            >
-              Add the star
-            </button>
+            {canWrite && (
+              <button
+                type="button"
+                className="primary"
+                onClick={() => {
+                  change(firstStar(map, layer));
+                  startEditing();
+                }}
+              >
+                Add the star
+              </button>
+            )}
           </div>
         )}
         {hasStar && bodies.length === 1 && !editing && (
           <div className="star-empty">
             <h2>Only the star so far</h2>
             <p>Add the worlds that circle it. Each gets its orbit from how far out you put it.</p>
-            <button
-              type="button"
-              className="primary"
-              onClick={() => {
-                startEditing();
-                chooseTool("add");
-              }}
-            >
-              Add a planet
-            </button>
+            {canWrite && (
+              <button
+                type="button"
+                className="primary"
+                onClick={() => {
+                  startEditing();
+                  chooseTool("add");
+                }}
+              >
+                Add a planet
+              </button>
+            )}
           </div>
         )}
         <div className="map-zoom">

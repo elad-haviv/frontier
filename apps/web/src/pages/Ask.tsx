@@ -4,6 +4,7 @@ import { Link, useLocation, useNavigate } from "../nav.tsx";
 import { api, askUrl, type EntryProposal } from "../api.ts";
 import { DictateButton, ListeningBar } from "../components/DictateButton.tsx";
 import { EntryDraft } from "../components/EntryDraft.tsx";
+import { useCanWrite } from "../components/projectContext.ts";
 import { LiveTurn, useLoreAsk } from "../components/LoreWork.tsx";
 import { Problem } from "../components/ui/Problem.tsx";
 import { Progress } from "../components/ui/Progress.tsx";
@@ -26,6 +27,8 @@ export function AskPage() {
   const [drafting, setDrafting] = useState<Drafting | null>(null);
   const drafted = useRef<AbortController | null>(null);
   const voice = useDictation(setQuestion);
+  // Drafting an entry from what was said writes to the project: writers' (stage 27c).
+  const canWrite = useCanWrite();
   const {
     live,
     ask: askLive,
@@ -140,14 +143,16 @@ export function AskPage() {
             >
               Ask
             </ActionButton>
-            <ActionButton
-              type="button"
-              className="primary"
-              disabled={locked || voice.listening || empty}
-              onClick={() => void draftEntry()}
-            >
-              Draft entry
-            </ActionButton>
+            {canWrite && (
+              <ActionButton
+                type="button"
+                className="primary"
+                disabled={locked || voice.listening || empty}
+                onClick={() => void draftEntry()}
+              >
+                Draft entry
+              </ActionButton>
+            )}
           </span>
         </p>
         {voice.problem && (

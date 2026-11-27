@@ -1,4 +1,5 @@
 import { type MapFeature } from "@frontier/schema";
+import { useCanWrite } from "../components/projectContext.ts";
 import {
   ChevronLeft,
   Layers as LayersIcon,
@@ -58,7 +59,10 @@ export function StarMapPage() {
   const { id = "" } = useParams();
   const [params, setParams] = useSearchParams();
   const [notice, setNotice] = useState<string | null>(null);
-  const [editing, setEditing] = useState(params.get("edit") === "1");
+  // Editing is for writers: a reader opening `?edit=1` simply reads (stage 27c).
+  const canWrite = useCanWrite();
+  const [wantsEdit, setEditing] = useState(params.get("edit") === "1");
+  const editing = wantsEdit && canWrite;
   const [tool, setTool] = useState<StarTool>("select");
   const [selected, setSelected] = useState<string | null>(null);
   const [hidden, setHidden] = useState<Set<string>>(new Set());
@@ -107,7 +111,9 @@ export function StarMapPage() {
     setTool(next);
     setDraft(null);
   };
-  const startEditing = () => setEditing(true);
+  const startEditing = () => {
+    if (canWrite) setEditing(true);
+  };
   const stopEditing = () => {
     // Sent at once, so the map is on the server when the author leaves; the address stops asking
     // for editing, so a page read again opens in viewing.
@@ -345,31 +351,35 @@ export function StarMapPage() {
           />
         </span>
         <span className="map-main">
-          <PageAction>
-            <Tip
-              label={editing ? "Done editing" : "Edit the map"}
-              keys={shortcutText(editing ? "map.done" : "map.edit")}
-            >
-              <button
-                type="button"
-                className={editing ? "primary" : "quiet"}
-                onClick={editing ? stopEditing : startEditing}
+          {canWrite && (
+            <PageAction>
+              <Tip
+                label={editing ? "Done editing" : "Edit the map"}
+                keys={shortcutText(editing ? "map.done" : "map.edit")}
               >
-                {editing ? "Done" : "Edit"}
-              </button>
-            </Tip>
-          </PageAction>
-          <Menu label="More actions" className="map-more">
-            <MenuItem
-              icon={Trash2}
-              danger
-              disabled={offline !== undefined}
-              disabledReason={offline}
-              onSelect={() => void file.removeMap()}
-            >
-              Delete map
-            </MenuItem>
-          </Menu>
+                <button
+                  type="button"
+                  className={editing ? "primary" : "quiet"}
+                  onClick={editing ? stopEditing : startEditing}
+                >
+                  {editing ? "Done" : "Edit"}
+                </button>
+              </Tip>
+            </PageAction>
+          )}
+          {canWrite && (
+            <Menu label="More actions" className="map-more">
+              <MenuItem
+                icon={Trash2}
+                danger
+                disabled={offline !== undefined}
+                disabledReason={offline}
+                onSelect={() => void file.removeMap()}
+              >
+                Delete map
+              </MenuItem>
+            </Menu>
+          )}
         </span>
       </div>
 
@@ -470,16 +480,18 @@ export function StarMapPage() {
             <p>
               Place stars on the plane, lift them above or below it, then join them with routes.
             </p>
-            <button
-              type="button"
-              className="primary"
-              onClick={() => {
-                startEditing();
-                chooseTool("marker");
-              }}
-            >
-              Place the first star
-            </button>
+            {canWrite && (
+              <button
+                type="button"
+                className="primary"
+                onClick={() => {
+                  startEditing();
+                  chooseTool("marker");
+                }}
+              >
+                Place the first star
+              </button>
+            )}
           </div>
         )}
         <div className="map-zoom">

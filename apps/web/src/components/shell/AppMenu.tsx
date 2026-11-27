@@ -1,6 +1,7 @@
 import { Activity, Download, History, Keyboard, LogOut, Settings, Upload } from "lucide-react";
 import { useMe } from "../../me.ts";
 import { NEEDS_CONNECTION, useConnection } from "../../sync/connection.ts";
+import { useCanWriteOrNot } from "../projectContext.ts";
 import { Menu, MenuHeading, MenuItem, MenuLink, MenuSeparator } from "../ui/Menu.tsx";
 
 /**
@@ -18,6 +19,7 @@ export function AppMenu({
 }) {
   const offline = useConnection().state === "offline";
   const me = useMe();
+  const canWrite = useCanWriteOrNot();
   return (
     <Menu label="App menu" className="app-menu" align={align}>
       {me && (
@@ -29,9 +31,11 @@ export function AppMenu({
           <MenuSeparator />
         </>
       )}
-      <MenuLink icon={Upload} to="/import">
-        Import
-      </MenuLink>
+      {canWrite && (
+        <MenuLink icon={Upload} to="/import">
+          Import
+        </MenuLink>
+      )}
       <MenuLink icon={Download} to="/export">
         Export
       </MenuLink>

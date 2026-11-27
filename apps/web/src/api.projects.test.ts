@@ -7,7 +7,7 @@ import { setCurrentProject } from "./project.ts";
 
 /** The calls that are the server's, not a project's: they keep their own addresses. */
 const SERVER_WIDE =
-  /^\/api\/(session|login|logout|passkeys|me|settings|ai|notices|projects)(?:[/?]|$)/;
+  /^\/api\/(session|login|logout|passkeys|me|settings|ai|notices|projects|join|auth)(?:[/?]|$)/;
 
 afterEach(() => {
   vi.unstubAllGlobals();

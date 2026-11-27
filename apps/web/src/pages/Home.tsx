@@ -16,6 +16,7 @@ import { type ReactNode, useEffect, useRef, useState } from "react";
 import { Link, useNavigate } from "../nav.tsx";
 import { api, ApiFailure, editUrl, entryUrl } from "../api.ts";
 import { NewEntry } from "../components/NewEntry.tsx";
+import { useCanWrite } from "../components/projectContext.ts";
 import { useRevealInTree } from "../components/shell/panels.tsx";
 import { ActionButton } from "../components/ui/ActionButton.tsx";
 import { Icon } from "../components/ui/Icon.tsx";
@@ -101,11 +102,18 @@ const NeedsConnection = ({ what }: { what: string }) => (
 function PickUp() {
   const { recents } = useRecents();
   const offline = useNeedsConnection();
-  const drafts = useAsync(() => api.unpublished(), `home-drafts:${!!offline}`);
+  // Unsaved changes are a writer's: a reader's Home never asks for them (stage 27c).
+  const canWrite = useCanWrite();
+  const drafts = useAsync(
+    () =>
+      canWrite ? api.unpublished() : Promise.resolve({ drafts: [], renames: [], decisions: [] }),
+    `home-drafts:${!!offline}:${canWrite}`,
+  );
   const read = lastRead(recents);
   const draft = drafts.state === "ready" ? newestDraft(drafts.value.drafts, recents) : null;
   // With no connection the server's list is out of reach; this device still knows what it edited.
-  const edited = !draft && offline ? recents.find((r) => r.kind === "edited") : undefined;
+  const edited =
+    !draft && offline && canWrite ? recents.find((r) => r.kind === "edited") : undefined;
   const target = draft
     ? {
         path: draft.path,
@@ -190,6 +198,7 @@ function Queue({
   onWrite: (name: string, folder: string) => void;
 }) {
   const offline = useNeedsConnection();
+  const canWrite = useCanWrite();
   const [filter, setFilter] = useState<Filter>("love");
   const [all, setAll] = useState(false);
   const failed = queue.state === "failed" || (queue.state === "ready" && queue.error);
@@ -234,14 +243,16 @@ function Queue({
                   tone="missing"
                   why={mentionsText(r.mentions, r.folder)}
                   action={
-                    <button
-                      type="button"
-                      className="home-btn is-small is-primary"
-                      aria-label={`Write ${r.name}`}
-                      onClick={() => onWrite(r.name, r.folder ?? "")}
-                    >
-                      Write it
-                    </button>
+                    canWrite ? (
+                      <button
+                        type="button"
+                        className="home-btn is-small is-primary"
+                        aria-label={`Write ${r.name}`}
+                        onClick={() => onWrite(r.name, r.folder ?? "")}
+                      >
+                        Write it
+                      </button>
+                    ) : null
                   }
                 />
               ))}
@@ -313,6 +324,7 @@ const countsOf = (q: QueueResponse): Record<Filter, number> => ({
 
 function Question() {
   const offline = useNeedsConnection();
+  const canWrite = useCanWrite();
   const today = useAsync(() => api.todaysQuestion(), `home-question:${!!offline}`);
   const [made, setMade] = useState<DayQuestion | null>(null);
   const [asking, setAsking] = useState(false);
@@ -354,8 +366,11 @@ function Question() {
           From <i>{question.title}</i>, a thin entry.
         </p>
         <div className="home-actions">
-          <Link to={editUrl(question.path)} className="home-btn is-small is-primary">
-            Answer it in {question.title}
+          <Link
+            to={canWrite ? editUrl(question.path) : entryUrl(question.path)}
+            className="home-btn is-small is-primary"
+          >
+            {canWrite ? `Answer it in ${question.title}` : `Read ${question.title}`}
           </Link>
           <ActionButton
             className="home-btn is-small"
@@ -665,6 +680,7 @@ export function Home() {
   const lastFolder = diceFolder(read?.path ?? null);
   const dice = useDice(lastFolder, read?.path ?? null);
   const brandNew = queue.state === "ready" && queue.value.entries === 0;
+  const canWrite = useCanWrite();
   const first = recents[0];
 
   return (
@@ -679,19 +695,23 @@ export function Home() {
       </header>
 
       {brandNew ? (
-        <Card id="first" title="Write your first entry">
+        <Card id="first" title={canWrite ? "Write your first entry" : "Nothing written yet"}>
           <p className="home-meta">
-            The library has no entries yet. Name one, pick a folder for it, and start writing.
+            {canWrite
+              ? "The library has no entries yet. Name one, pick a folder for it, and start writing."
+              : "The library has no entries yet. A writer or an owner of the project can start it."}
           </p>
-          <div className="home-actions">
-            <button
-              type="button"
-              className="home-btn is-primary"
-              onClick={() => setWriting({ name: "", folder: "" })}
-            >
-              New entry
-            </button>
-          </div>
+          {canWrite && (
+            <div className="home-actions">
+              <button
+                type="button"
+                className="home-btn is-primary"
+                onClick={() => setWriting({ name: "", folder: "" })}
+              >
+                New entry
+              </button>
+            </div>
+          )}
         </Card>
       ) : (
         <div className="home-cols">
@@ -721,7 +741,7 @@ export function Home() {
         </ActionButton>
       )}
 
-      {writing && (
+      {writing && canWrite && (
         <NewEntry
           tree={tree}
           folder={writing.folder}

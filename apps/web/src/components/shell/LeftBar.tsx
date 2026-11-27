@@ -37,7 +37,7 @@ import { Problem } from "../ui/Problem.tsx";
 import { Tip } from "../ui/Tip.tsx";
 import { PersonRow } from "./PersonRow.tsx";
 import { ProjectMenu } from "./ProjectMenu.tsx";
-import { useProject } from "../projectContext.ts";
+import { useCanWrite, useIsReader, useProject } from "../projectContext.ts";
 import { isSwipeBack, type Point } from "./swipe.ts";
 import "./LeftBar.css";
 import "./DrawerLibrary.css";
@@ -111,6 +111,8 @@ export function SideLink({
 /** What waits for the author, each in a place of its own so nothing moves when a count appears. */
 export function WaitingLinks({ rail = false }: { rail?: boolean }) {
   const counts = useCounts();
+  // Unsaved changes, the inbox and texts to compare are writers' (stage 27c).
+  if (!useCanWrite()) return null;
   return (
     <>
       <SideLink
@@ -173,11 +175,12 @@ export function TreeSection({
   onNewEntryIn: (folder: string) => void;
 }) {
   const [asked, setAsked] = useState(0);
+  const canWrite = useCanWrite();
   return (
     <section className="left-tree" aria-label="Library">
       <div className="left-heading-row">
         <h2 className="left-heading">Library</h2>
-        {tree.state === "ready" && (
+        {tree.state === "ready" && canWrite && (
           <span className="left-heading-actions">
             {/* A new entry at the top of the library, whatever entry is in view. */}
             <IconButton
@@ -281,6 +284,7 @@ function LibraryPanel({
   backRef: Ref<HTMLButtonElement>;
 }) {
   const [asked, setAsked] = useState(0);
+  const canWrite = useCanWrite();
   const drawn = useLingering(open, 250);
   const body = useRef<HTMLDivElement>(null);
   const swipe = useRef<Point | null>(null);
@@ -333,7 +337,7 @@ function LibraryPanel({
           Menu
         </button>
         <h2 className="library-title">Library</h2>
-        {ready && !empty && (
+        {ready && !empty && canWrite && (
           <IconButton
             label="New entry"
             icon={FilePlus2}
@@ -342,7 +346,7 @@ function LibraryPanel({
             onClick={() => onNewEntryIn("")}
           />
         )}
-        {ready && !empty && (
+        {ready && !empty && canWrite && (
           <IconButton
             label="New folder"
             icon={FolderPlus}
@@ -357,10 +361,12 @@ function LibraryPanel({
           (empty ? (
             <div className="library-empty">
               <p>No entries yet.</p>
-              <button type="button" className="new-entry" onClick={() => onNewEntryIn("")}>
-                <Icon icon={Plus} size="sm" />
-                New entry
-              </button>
+              {canWrite && (
+                <button type="button" className="new-entry" onClick={() => onNewEntryIn("")}>
+                  <Icon icon={Plus} size="sm" />
+                  New entry
+                </button>
+              )}
             </div>
           ) : (
             <TreeBody
@@ -424,6 +430,8 @@ export function LeftBar({
   top?: ReactNode;
 }) {
   const project = useProject();
+  const canWrite = useCanWrite();
+  const reader = useIsReader();
   const libraryRow = useRef<HTMLButtonElement>(null);
   const libraryBack = useRef<HTMLButtonElement>(null);
   const wasOpen = useRef(library);
@@ -489,10 +497,12 @@ export function LeftBar({
             onClick={onSearch}
           />
         )}
-        <button type="button" className="new-entry" onClick={onNewEntry}>
-          <Icon icon={Plus} size="sm" />
-          New entry
-        </button>
+        {canWrite && (
+          <button type="button" className="new-entry" onClick={onNewEntry}>
+            <Icon icon={Plus} size="sm" />
+            New entry
+          </button>
+        )}
         <IconButton
           label="Random entry"
           icon={Dices}
@@ -517,9 +527,16 @@ export function LeftBar({
         )}
       </div>
       <div className="left-foot">
-        <nav className="left-waiting" aria-label="Waiting for you">
-          <WaitingLinks />
-        </nav>
+        {reader && (
+          <p className="left-reader-note" role="note">
+            You can read and ask here. You cannot change the text.
+          </p>
+        )}
+        {canWrite && (
+          <nav className="left-waiting" aria-label="Waiting for you">
+            <WaitingLinks />
+          </nav>
+        )}
         <div className="left-status">
           <ConnectionMark words tipSide="top" />
           <Unsent />

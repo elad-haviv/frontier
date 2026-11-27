@@ -1,16 +1,27 @@
 import type { ProjectResponse } from "@frontier/schema";
-import { type ReactNode, useCallback, useEffect, useLayoutEffect, useMemo, useState } from "react";
+import {
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   useLocation as useRouterLocation,
   useNavigate as useRouterNavigate,
   useParams,
 } from "react-router-dom";
+import { ROLE_RANK } from "@frontier/schema";
 import { api, apiFor, ApiFailure } from "../api.ts";
+import { isLeaving, noteAccessLost } from "../access.ts";
 import { resumeProposals } from "../proposeAfterPublish.ts";
 import { currentProject, projectRoot, setCurrentProject, withoutProject } from "../project.ts";
 import {
   hasLegacyFlags,
   isOnDevice,
+  loadProjects,
   noteLast,
   noteProject,
   projectAt,
@@ -19,8 +30,9 @@ import {
 } from "../projects.ts";
 import { connection, useConnection } from "../sync/connection.ts";
 import { Link } from "../nav.tsx";
+import { useToast } from "./ui/Toast.tsx";
 import { OutsideShell } from "./OutsideShell.tsx";
-import { ProjectContext, type ProjectInfo } from "./projectContext.ts";
+import { ProjectContext, type ProjectInfo, ROLE_NAMES } from "./projectContext.ts";
 import { rememberRole, resolveRole } from "./projectRole.ts";
 import { Shell } from "./Shell.tsx";
 import { Problem } from "./ui/Problem.tsx";
@@ -77,6 +89,50 @@ export function ProjectScope({ children }: { children: ReactNode }) {
   const record = heard?.record ?? null;
   const error = heard?.error ?? null;
 
+  // The project's record is read again, quietly, when the server may have changed what the person
+  // may do here (stage 27c): its status stream ends when a role changes or someone is removed,
+  // and a request refused for want of a role says so too. A failure to reach the server leaves
+  // what is known as it is.
+  const refreshing = useRef(false);
+  useEffect(
+    () =>
+      connection.onAccessMayHaveChanged(() => {
+        if (refreshing.current) return;
+        refreshing.current = true;
+        apiFor(slug)
+          .project()
+          .then(
+            (next) => setAnswer({ asked: slug, record: next, error: null }),
+            (err: unknown) => {
+              if (err instanceof ApiFailure && err.code === "no_project") {
+                setAnswer({ asked: slug, record: null, error: err });
+              }
+            },
+          )
+          .finally(() => {
+            refreshing.current = false;
+          });
+      }),
+    [slug],
+  );
+
+  // Taken out of the project while it is open, or opened from a list that is out of date: All
+  // projects, with a plain note. An address that never named a project the person is in is the
+  // page that says so (`NoProject`).
+  const hadIt = useRef(false);
+  const lastName = useRef(known?.name ?? "this project");
+  if (record) {
+    hadIt.current = true;
+    lastName.current = record.name;
+  } else if (known) hadIt.current = true;
+  const lost = error?.code === "no_project" && hadIt.current;
+  useEffect(() => {
+    if (!lost) return;
+    if (!isLeaving(slug)) noteAccessLost(lastName.current);
+    void loadProjects();
+    void navigate("/projects", { replace: true });
+  }, [lost]);
+
   // The owner renamed the address, here or elsewhere: the address in the bar follows, and what
   // the person typed after it stays.
   useEffect(() => {
@@ -132,15 +188,6 @@ export function ProjectScope({ children }: { children: ReactNode }) {
     }
   }, [address]);
 
-  // What belongs to opening the project, once the app has it.
-  useEffect(() => {
-    if (opened === null || address === null) return;
-    noteLast(address);
-    void api.setLastProject(address).catch(() => undefined);
-    // Proposals a save left waiting in this project go on, with this person's keys.
-    void resumeProposals();
-  }, [opened]);
-
   // Back with a connection: the record is read again, which opens a project that could not be.
   useEffect(() => {
     if (connectionState === "online" && error && error.status === 0) reload();
@@ -155,6 +202,34 @@ export function ProjectScope({ children }: { children: ReactNode }) {
     const said = record?.role ?? summary?.role;
     if (ref && said) rememberRole(ref.id, said);
   }, [ref?.id, record?.role, summary?.role]);
+  // What belongs to opening the project, once the app has it.
+  useEffect(() => {
+    if (opened === null || address === null) return;
+    noteLast(address);
+    void api.setLastProject(address).catch(() => undefined);
+  }, [opened]);
+  // Proposals a save left waiting in this project go on, with this person's keys: only for a
+  // writer, since a reader's requests for them would be refused (stage 27c).
+  const mayWrite = role === "writer" || role === "owner";
+  useEffect(() => {
+    if (opened !== null && mayWrite) void resumeProposals();
+  }, [opened, mayWrite]);
+
+  // A role that changed while the project is open is said once; the shell follows it by itself.
+  const toast = useToast();
+  const before = useRef<{ id: string; role: NonNullable<typeof role> } | null>(null);
+  useEffect(() => {
+    if (!ref || !role) return;
+    const was = before.current;
+    before.current = { id: ref.id, role };
+    if (!was || was.id !== ref.id || was.role === role) return;
+    toast({
+      message:
+        ROLE_RANK[role] < ROLE_RANK[was.role]
+          ? `You are now ${role === "owner" ? "an" : "a"} ${ROLE_NAMES[role]} here.${role === "reader" ? " You can read and ask, but not change the project." : ""}`
+          : `You are now ${role === "owner" ? "an" : "a"} ${ROLE_NAMES[role]} here.`,
+    });
+  }, [ref?.id, role]);
   const info: ProjectInfo | null = useMemo(() => {
     if (!ref) return null;
     const base = record ?? summary;

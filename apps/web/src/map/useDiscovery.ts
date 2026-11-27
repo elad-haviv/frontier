@@ -28,11 +28,17 @@ export function useDiscovery(
     chronicleId,
     year,
     setNotice,
+    enabled = true,
   }: {
     timeOn: boolean;
     chronicleId: string | null;
     year: number | null;
     setNotice: (notice: string | null) => void;
+    /**
+     * Whether the person may see what the AI proposed and nobody kept: writers (stage 27c). A
+     * reader's map never asks for discoveries, which the server refuses to them.
+     */
+    enabled?: boolean;
   },
 ) {
   const [exploring, setExploringNow] = useState(false);
@@ -47,6 +53,7 @@ export function useDiscovery(
   /** Why the last ask found nothing, shown until the next one. */
   const [failed, setFailed] = useState<string | null>(null);
   useEffect(() => {
+    if (!enabled) return;
     api.discoveries(id).then(
       (r) => {
         setFound({ items: r.discoveries, ready: r.ready, art: r.art, folders: r.folders });
@@ -59,7 +66,7 @@ export function useDiscovery(
       // Offline: exploring still works from the map file; asking waits for the connection.
       () => setFound((f) => ({ ...f, ready: f.ready || rememberedReady() })),
     );
-  }, [id]);
+  }, [id, enabled]);
   const setExploring = (on: boolean) => {
     setExploringNow(on);
     setFailed(null);

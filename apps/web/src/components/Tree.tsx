@@ -53,6 +53,7 @@ import { queue } from "../sync/queue.ts";
 import { useAsync } from "../useAsync.ts";
 import { useDialogs } from "./Dialogs.tsx";
 import { FolderSettings, type FolderStyle } from "./FolderSettings.tsx";
+import { useCanWrite } from "./projectContext.ts";
 import { MoveTo } from "./MoveTo.tsx";
 import { stubsIn } from "../keepGoing/homeModel.ts";
 import { useOpenFolders, useRevealDone, useRevealRequest } from "./shell/panels.tsx";
@@ -188,6 +189,8 @@ export function Tree({
   const dialogs = useDialogs();
   const offline = useNeedsConnection();
   const touch = useTouch();
+  // A reader browses the folders: nothing in the tree changes them (stage 27c).
+  const canWrite = useCanWrite();
   const folders = useLibraryFile(FOLDERS);
   const file = folders.value;
   const types = useAsync(() => api.schema(), "schema");
@@ -476,7 +479,7 @@ export function Tree({
   useEffect(() => {
     if (newFolderAsked === asked.current) return;
     asked.current = newFolderAsked;
-    void newFolder("");
+    if (canWrite) void newFolder("");
   }, [newFolderAsked]);
 
   const actionsFor = (row: Row): Action[] => {
@@ -537,6 +540,8 @@ export function Tree({
     const node = t?.focusedNode;
     if (!t || !node || t.isEditing || (e.target as HTMLElement).closest("input")) return;
     const row = node.data;
+    // F2 and the menu key change things; a reader's tree has neither.
+    if (!canWrite && (e.key === "F2" || e.key === "ContextMenu" || e.key === "F10")) return;
     if (e.key === "Enter") {
       e.preventDefault();
       e.stopPropagation();
@@ -638,7 +643,8 @@ export function Tree({
         onOpenCurrent={onOpenCurrent}
         menuOpen={menuFor === node.data.path}
         onMenu={(open) => setMenuFor(open ? node.data.path : null)}
-        actions={node.data.kind === "folder" ? actionsFor(node.data) : []}
+        actions={canWrite && node.data.kind === "folder" ? actionsFor(node.data) : []}
+        canWrite={canWrite}
         onNewEntry={onNewEntry}
         onRename={(name) => void rename(node.data, name)}
       />
@@ -669,9 +675,11 @@ export function Tree({
           indent={14}
           overscanCount={50}
           disableMultiSelection
-          disableEdit={(r) => r.kind !== "folder" || pending(r)}
-          disableDrag={(r) => touch || (r.kind === "folder" && pending(r))}
-          disableDrop={({ parentNode }) => !parentNode.isRoot && parentNode.data.kind !== "folder"}
+          disableEdit={(r) => !canWrite || r.kind !== "folder" || pending(r)}
+          disableDrag={(r) => !canWrite || touch || (r.kind === "folder" && pending(r))}
+          disableDrop={({ parentNode }) =>
+            !canWrite || (!parentNode.isRoot && parentNode.data.kind !== "folder")
+          }
           onMove={onMove}
           onRename={({ node, name }) => void rename(node.data, name)}
           onToggle={toggled}
@@ -746,6 +754,7 @@ function RowBody({
   menuOpen,
   onMenu,
   actions,
+  canWrite,
   onNewEntry,
   onRename,
 }: {
@@ -759,6 +768,8 @@ function RowBody({
   menuOpen: boolean;
   onMenu: (open: boolean) => void;
   actions: Action[];
+  /** Whether the person may change the folders: a reader has no buttons and no menu on a row. */
+  canWrite: boolean;
   onNewEntry: (folder: string) => void;
   onRename: (name: string) => void;
 }) {
@@ -883,7 +894,7 @@ function RowBody({
       )}
       {name}
       {marks}
-      {folder && !node.isEditing && (
+      {folder && canWrite && !node.isEditing && (
         <span className="tree-actions">
           <button
             type="button"
@@ -931,7 +942,7 @@ function RowBody({
 
   const withSettings = body;
 
-  if (!folder) return withSettings;
+  if (!folder || !canWrite) return withSettings;
   return (
     <ContextMenuPrimitive.Root>
       <ContextMenuPrimitive.Trigger asChild>{withSettings}</ContextMenuPrimitive.Trigger>

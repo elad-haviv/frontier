@@ -78,6 +78,11 @@ interface Props {
   onTypeWhen: (id: string, text: string) => string | null;
   onGroupMenu: (lane: string) => ReactNode;
   onRenameGroup: (lane: string, name: string) => void;
+  /**
+   * A reader looks and selects but changes nothing (stage 27c): nothing is dragged, drawn, typed
+   * or added, and no group menu or add button is drawn.
+   */
+  readOnly?: boolean;
   ghost: Ghost | null;
   ref?: Ref<TimelineHandle>;
 }
@@ -347,6 +352,8 @@ export function Timeline(p: Props) {
     }
     if (!d.moved && Math.abs(dx) < 4) return;
     if (d.kind === "draw" && !d.drawable) return;
+    // A reader's press selects: nothing is dragged (the map-year line is a view, not a change).
+    if (p.readOnly && d.kind !== "line") return;
     const snap = level.snap;
     const by = snapYears(dx / zoom, snap);
     const next: Drag = { ...d, moved: true, by, clientX: e.clientX, clientY: e.clientY };
@@ -401,6 +408,7 @@ export function Timeline(p: Props) {
 
   // Double-click on an empty row drops a moment there.
   function onDoubleClick(e: React.MouseEvent, row: Row) {
+    if (p.readOnly) return;
     const box = scroller.current!.getBoundingClientRect();
     const chartX = scroller.current!.scrollLeft + e.clientX - box.left - LIST;
     const year = snapYears(yearAt(chartX), level.snap);
@@ -444,7 +452,7 @@ export function Timeline(p: Props) {
     return true;
   };
   const nudge = (grip: Grip, times: number) => {
-    if (!free() || p.selected.length === 0) return false;
+    if (p.readOnly || !free() || p.selected.length === 0) return false;
     p.change((c) => dragSpans(c, [...p.selected], grip, times * level.snap));
     return true;
   };
@@ -475,7 +483,7 @@ export function Timeline(p: Props) {
     return true;
   });
   useShortcut("chronicle.delete", () => {
-    if (!onBar() || p.selected.length === 0) return false;
+    if (p.readOnly || !onBar() || p.selected.length === 0) return false;
     const ids = [...p.selected];
     p.change((c) => ids.reduce((acc, id) => withoutSpan(acc, id), c));
     p.onSelect([]);
@@ -487,12 +495,12 @@ export function Timeline(p: Props) {
     return true;
   });
   useShortcut("chronicle.name", () => {
-    if (!onBar() || !primary) return false;
+    if (p.readOnly || !onBar() || !primary) return false;
     p.onEdit("name");
     return true;
   });
   useShortcut("chronicle.dates", () => {
-    if (!primary) return false;
+    if (p.readOnly || !primary) return false;
     p.onEdit("dates");
     return true;
   });
@@ -792,8 +800,10 @@ function RowView(r: RowProps) {
           <button
             type="button"
             className="tl-group-name"
-            title="Rename"
-            onClick={() => r.setRenaming({ lane: lane.id, text: lane.name })}
+            title={p.readOnly ? undefined : "Rename"}
+            onClick={() => {
+              if (!p.readOnly) r.setRenaming({ lane: lane.id, text: lane.name });
+            }}
           >
             {lane.name}
           </button>
@@ -803,7 +813,7 @@ function RowView(r: RowProps) {
             ? `${formatYears(b.lo, b.lo)} → ${formatYears(b.hi, b.hi)}`
             : `${row.count} ${row.count === 1 ? "event" : "events"}`}
         </span>
-        {p.onGroupMenu(lane.id)}
+        {!p.readOnly && p.onGroupMenu(lane.id)}
       </div>
     );
   } else if (row.kind === "event") {
@@ -822,7 +832,7 @@ function RowView(r: RowProps) {
             p.onSelect(sel ? p.selected.filter((x) => x !== s.id) : [...p.selected, s.id]);
           } else p.onSelect([s.id]);
         }}
-        draggable
+        draggable={!p.readOnly}
         onDragStart={(e) => {
           e.dataTransfer.setData("text/x-frontier-span", s.id);
           e.dataTransfer.effectAllowed = "move";
@@ -868,8 +878,10 @@ function RowView(r: RowProps) {
         ) : (
           <span
             className={`tl-when${pt?.start || pt?.end ? "" : " is-none"}`}
-            title="Double-click to type"
-            onDoubleClick={() => r.setEditing({ id: s.id, text: typedWhen(s, pt), error: null })}
+            title={p.readOnly ? undefined : "Double-click to type"}
+            onDoubleClick={() => {
+              if (!p.readOnly) r.setEditing({ id: s.id, text: typedWhen(s, pt), error: null });
+            }}
           >
             {whenText(s, pt)}
           </span>
@@ -879,9 +891,11 @@ function RowView(r: RowProps) {
   } else {
     cell = (
       <div className="tl-cell is-add" role="rowheader">
-        <button type="button" className="plain" onClick={() => p.onAddTo(lane.id)}>
-          + Add to {lane.name}
-        </button>
+        {!p.readOnly && (
+          <button type="button" className="plain" onClick={() => p.onAddTo(lane.id)}>
+            + Add to {lane.name}
+          </button>
+        )}
       </div>
     );
   }
@@ -953,19 +967,20 @@ function RowView(r: RowProps) {
               {row.folded ? "▸" : "▾"} <i className="tl-dot" aria-hidden="true" /> {lane.name}
               <span className="muted"> · {row.count}</span>
             </button>
-            {p.onGroupMenu(lane.id)}
+            {!p.readOnly && p.onGroupMenu(lane.id)}
           </div>
         )}
       </>
     );
   } else if (row.kind === "add") {
-    track = narrow ? (
-      <div className="tl-sticky-head is-add">
-        <button type="button" className="plain" onClick={() => p.onAddTo(lane.id)}>
-          + Add to {lane.name}
-        </button>
-      </div>
-    ) : null;
+    track =
+      narrow && !p.readOnly ? (
+        <div className="tl-sticky-head is-add">
+          <button type="button" className="plain" onClick={() => p.onAddTo(lane.id)}>
+            + Add to {lane.name}
+          </button>
+        </div>
+      ) : null;
   } else {
     track = (
       <>

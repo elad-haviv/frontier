@@ -12,6 +12,7 @@ import {
   splitMention,
   type Backlink,
 } from "../../keepGoing/strip.ts";
+import { useCanWrite } from "../projectContext.ts";
 import { useWriteIt } from "../WriteIt.tsx";
 import { ActionButton } from "../ui/ActionButton.tsx";
 import { Icon } from "../ui/Icon.tsx";
@@ -169,14 +170,16 @@ export function FromHere({
   ai: boolean;
 }) {
   const { write, dialog } = useWriteIt();
-  const mentions = data?.unlinked.length ?? 0;
+  // Writing, linking and asking the AI what is missing change or draft the project: writers'.
+  const canWrite = useCanWrite();
+  const mentions = canWrite ? (data?.unlinked.length ?? 0) : 0;
   const empty =
     !data ||
     (data.missing.length === 0 &&
       mentions === 0 &&
       data.thin.length === 0 &&
       data.related.length === 0);
-  if (empty && !ai) return null;
+  if (empty && !(ai && canWrite)) return null;
 
   return (
     <section className="fh" aria-labelledby="fh-title">
@@ -195,20 +198,22 @@ export function FromHere({
                     {m.name}
                   </span>
                   <span className="fh-when">{entries(m.mentions)}</span>
-                  <button
-                    type="button"
-                    className="quiet fh-btn"
-                    aria-label={`Write ${m.name}`}
-                    onClick={() => write({ name: m.name, folder: m.folder })}
-                  >
-                    Write
-                  </button>
+                  {canWrite && (
+                    <button
+                      type="button"
+                      className="quiet fh-btn"
+                      aria-label={`Write ${m.name}`}
+                      onClick={() => write({ name: m.name, folder: m.folder })}
+                    >
+                      Write
+                    </button>
+                  )}
                 </li>
               ))}
             </ul>
           </section>
         )}
-        {data && <Mentions path={path} data={data} />}
+        {data && canWrite && <Mentions path={path} data={data} />}
         {data && data.thin.length > 0 && (
           <section className="fh-card" aria-labelledby="fh-thin">
             <h3 id="fh-thin">Close by, and thin</h3>
@@ -258,7 +263,7 @@ export function FromHere({
             </ul>
           </section>
         )}
-        {ai && <WhatsMissing path={path} title={title} />}
+        {ai && canWrite && <WhatsMissing path={path} title={title} />}
       </div>
       {dialog}
     </section>

@@ -11,6 +11,7 @@ import { KeysRemovedNotice } from "./components/KeysRemovedNotice.tsx";
 import { LoginDialog } from "./components/LoginDialog.tsx";
 import { OutsideShell } from "./components/OutsideShell.tsx";
 import { ProjectScope } from "./components/ProjectScope.tsx";
+import { WriterOnly } from "./components/WriterOnly.tsx";
 import { AllProjects } from "./pages/projects/AllProjects.tsx";
 import { Navigate as ProjectNavigate, useLocation as useProjectLocation } from "./nav.tsx";
 import { movedInto, projectRoot } from "./project.ts";
@@ -155,11 +156,39 @@ function ProjectPages() {
       <Routes>
         <Route path="/" element={<Home />} />
         <Route path="/e/*" element={<EntryPage />} />
-        <Route path="/edit/*" element={<EditPage />} />
+        <Route
+          path="/edit/*"
+          element={
+            <WriterOnly what="edit entries">
+              <EditPage />
+            </WriterOnly>
+          }
+        />
         <Route path="/rename/*" element={<RenameRedirect />} />
-        <Route path="/unpublished" element={<UnpublishedPage />} />
-        <Route path="/inbox" element={<InboxPage />} />
-        <Route path="/import" element={<ImportPage />} />
+        <Route
+          path="/unpublished"
+          element={
+            <WriterOnly what="keep unsaved changes and save versions">
+              <UnpublishedPage />
+            </WriterOnly>
+          }
+        />
+        <Route
+          path="/inbox"
+          element={
+            <WriterOnly what="work through the inbox">
+              <InboxPage />
+            </WriterOnly>
+          }
+        />
+        <Route
+          path="/import"
+          element={
+            <WriterOnly what="import notes and pictures">
+              <ImportPage />
+            </WriterOnly>
+          }
+        />
         <Route path="/history/*" element={<HistoryPage />} />
         <Route path="/versions" element={<LibraryHistoryPage />} />
         <Route path="/maps" element={<MapsPage />} />
@@ -195,8 +224,22 @@ function ProjectPages() {
           }
         />
         <Route path="/settings/*" element={<SettingsPage />} />
-        <Route path="/conflict/:id" element={<ConflictPage />} />
-        <Route path="/versions/:id" element={<VersionsPage />} />
+        <Route
+          path="/conflict/:id"
+          element={
+            <WriterOnly what="settle clashing changes">
+              <ConflictPage />
+            </WriterOnly>
+          }
+        />
+        <Route
+          path="/versions/:id"
+          element={
+            <WriterOnly what="compare and merge two texts">
+              <VersionsPage />
+            </WriterOnly>
+          }
+        />
         <Route path="/status" element={<StatusPage />} />
         <Route path="/login" element={<ProjectNavigate to="/" replace />} />
         <Route
