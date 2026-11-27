@@ -6,6 +6,7 @@ import { startAccounts } from "./auth/accounts.js";
 import { ConfigError, loadConfig } from "./config.js";
 import { claimForAdmin } from "./projects/guard.js";
 import { applyLibraryMode } from "./sample.js";
+import { closeOnSignals } from "./shutdown.js";
 
 async function main(): Promise<void> {
   applyLibraryMode(process.env);
@@ -32,6 +33,7 @@ async function main(): Promise<void> {
   // library the timer fetch. Projects made since are brought up when first used.
   await services.bringUp();
 
+  closeOnSignals(app, process);
   const port = Number(process.env["PORT"] ?? 3000);
   await app.listen({ host: "0.0.0.0", port });
 }
