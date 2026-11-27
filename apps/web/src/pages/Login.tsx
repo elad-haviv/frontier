@@ -15,6 +15,14 @@ export function Login({ onLoggedIn }: { onLoggedIn: () => void }) {
     googleProblem(new URLSearchParams(location.search).get("problem")),
   );
   const navigate = useNavigate();
+  // The reason is said once and taken off the address, so a reload does not say it again.
+  useEffect(() => {
+    if (!new URLSearchParams(location.search).has("problem")) return;
+    void navigate(
+      { pathname: location.pathname, search: "", hash: location.hash },
+      { replace: true, state: location.state },
+    );
+  }, []);
   const from = (location.state as { from?: string } | null)?.from;
   const [ways, setWays] = useState({
     passkeys: false,
@@ -80,7 +88,7 @@ export function Login({ onLoggedIn }: { onLoggedIn: () => void }) {
     <main className="login">
       <div className="login-card">
         <h1 className="wordmark">Frontier</h1>
-        <p className="muted">The atlas of Avalymia.</p>
+        <p className="muted">Log in to your projects.</p>
         {ways.passkeys && (
           <button type="button" className="login-passkey" disabled={busy} onClick={passkey}>
             <Icon icon={Fingerprint} size="md" />

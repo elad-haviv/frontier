@@ -22,6 +22,33 @@ export const GOOGLE_LAST_WAY =
 /** The address the Google trip comes back to: this section, opened with no project. */
 const BACK_HERE = "/settings/account";
 
+/**
+ * Set in this tab (and only this tab) when this page sends the browser off to link Google. An
+ * address typed or followed from elsewhere with `?problem=recent_login_needed` must not open the
+ * login dialog by itself: only a trip this page started goes on automatically.
+ */
+const LINK_TRIP = "frontier.linkGoogleTrip";
+
+function startLinkTrip(): void {
+  try {
+    sessionStorage.setItem(LINK_TRIP, "1");
+  } catch {
+    /* without it the person is asked, never sent on by themselves */
+  }
+  window.location.assign(googleStartUrl({ link: true, returnTo: BACK_HERE }));
+}
+
+/** Whether this tab started a link trip that has now come back; read once, and forgotten. */
+function takeLinkTrip(): boolean {
+  try {
+    const started = sessionStorage.getItem(LINK_TRIP) === "1";
+    sessionStorage.removeItem(LINK_TRIP);
+    return started;
+  } catch {
+    return false;
+  }
+}
+
 /** Passkeys, Google, the password, the switch that turns it off, and Log out. */
 export function Account() {
   const me = useMe();
@@ -42,6 +69,10 @@ export function Account() {
   const navigate = useNavigate();
   const problem = new URLSearchParams(location.search).get("problem");
   const handled = useRef<string | null>(null);
+  // Whether this page sent the browser off to link Google (decided once, on arriving).
+  const [ownTrip] = useState(takeLinkTrip);
+  // A link that needs a recent login, which the person starts by pressing the button.
+  const [relink, setRelink] = useState(false);
 
   // Back from a Google trip that did not work, or one that asked for a recent login: said in
   // words, and the address cleaned. A recent login is asked for here, as when adding a passkey,
@@ -53,16 +84,23 @@ export function Account() {
     if (problem === "recent_login_needed") {
       setNotice({
         kind: "error",
-        text: "Linking Google asks for a login from the last few minutes. Log in again and it goes ahead.",
+        text: ownTrip
+          ? "Linking Google asks for a login from the last few minutes. Log in again and it goes ahead."
+          : "Linking Google asks for a login from the last few minutes.",
       });
-      void askForRecentLogin().then((ok) => {
-        if (ok) window.location.assign(googleStartUrl({ link: true, returnTo: BACK_HERE }));
-      });
+      // Only a trip this page started goes on by itself; an address that says so does not.
+      if (ownTrip) void relinkGoogle();
+      else setRelink(true);
       return;
     }
     const words = googleProblem(problem);
     if (words) setNotice({ kind: "error", text: words });
   }, [problem]);
+  /** Log in again, then link Google, as when adding a passkey asks for a recent login. */
+  async function relinkGoogle() {
+    setRelink(false);
+    if (await askForRecentLogin()) startLinkTrip();
+  }
   if (!me) return <NoMe />;
   const google = me.signingIn?.google ?? null;
   const googleAvailable = me.signingIn?.googleAvailable ?? false;
@@ -158,6 +196,13 @@ export function Account() {
           {notice.text}
         </p>
       )}
+      {relink && (
+        <p className="change-actions">
+          <ActionButton type="button" className="primary" onClick={() => void relinkGoogle()}>
+            Log in again and link Google
+          </ActionButton>
+        </p>
+      )}
       {(googleAvailable || google) && (
         <>
           <h2>Google</h2>
@@ -190,9 +235,7 @@ export function Account() {
                   type="button"
                   className="primary"
                   disabled={busy}
-                  onClick={() =>
-                    window.location.assign(googleStartUrl({ link: true, returnTo: BACK_HERE }))
-                  }
+                  onClick={startLinkTrip}
                 >
                   Link a Google account
                 </ActionButton>

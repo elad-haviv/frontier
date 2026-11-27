@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 import { createElement } from "react";
+import { Route, Routes, useLocation } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { answer, type Mounted, mount, stubServer } from "../testing/mount.ts";
 import { Login } from "./Login.tsx";
@@ -54,6 +55,31 @@ describe("the login page", () => {
     expect(alert).toContain("no Frontier account yet");
     expect(alert).toContain("invite link");
     expect(m.one("form")).toBeTruthy();
+  });
+
+  it("takes the problem off the address once it is said, so a reload does not repeat it", async () => {
+    stubServer(() => answer(session({ google: true })));
+    const Where = () => createElement("output", { id: "where" }, useLocation().search);
+    mounted = await mount(
+      createElement(
+        "div",
+        null,
+        createElement(Where),
+        createElement(
+          Routes,
+          null,
+          createElement(Route, {
+            path: "/login",
+            element: createElement(Login, { onLoggedIn: () => undefined }),
+          }),
+        ),
+      ),
+      null,
+      "/login?problem=google_denied",
+    );
+    await mounted.settle();
+    expect(mounted.one("[role=alert]").textContent).toContain("cancelled");
+    expect(mounted.one("#where").textContent).toBe("");
   });
 
   it("says nothing for a problem it does not know", async () => {

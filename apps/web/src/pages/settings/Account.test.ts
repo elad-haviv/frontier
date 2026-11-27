@@ -7,6 +7,13 @@ import { clearMe, noteMe } from "../../me.ts";
 import { answer, failure, type Mounted, mount, stubServer } from "../../testing/mount.ts";
 import { Account, GOOGLE_LAST_WAY } from "./Account.tsx";
 
+// The dialog is the app's; here only whether the page asks for it.
+const { askForRecentLogin } = vi.hoisted(() => ({ askForRecentLogin: vi.fn(async () => false) }));
+vi.mock("../../components/LoginDialog.tsx", async (original) => ({
+  ...(await original<typeof import("../../components/LoginDialog.tsx")>()),
+  askForRecentLogin,
+}));
+
 const me = (
   over: Partial<MeResponse> & { google?: boolean; available?: boolean } = {},
 ): MeResponse => {
@@ -34,7 +41,11 @@ const me = (
 };
 
 let mounted: Mounted | null = null;
-beforeEach(() => localStorage.clear());
+beforeEach(() => {
+  localStorage.clear();
+  sessionStorage.clear();
+  askForRecentLogin.mockClear();
+});
 afterEach(async () => {
   await mounted?.unmount();
   mounted = null;
@@ -123,7 +134,7 @@ describe("Settings → Signing in, and Google", () => {
     expect(m.one("[role=alert]").textContent).toContain("belongs to another person");
   });
 
-  it("asks for a login again when linking needs a recent one, as adding a passkey does", async () => {
+  it("does not open the login dialog by itself for an address that says a recent login is needed", async () => {
     stubServer(() => answer({}));
     const m = await show(
       me({ google: false, passwordSet: true }),
@@ -132,5 +143,33 @@ describe("Settings → Signing in, and Google", () => {
     expect(m.one("[role=alert]").textContent).toContain(
       "asks for a login from the last few minutes",
     );
+    expect(askForRecentLogin).not.toHaveBeenCalled();
+    // The person starts it, by pressing the button.
+    expect(m.withText("button", "Log in again and link Google")).not.toBeNull();
+    await m.click(m.withText("button", "Log in again and link Google")!);
+    await m.settle();
+    expect(askForRecentLogin).toHaveBeenCalledTimes(1);
+  });
+
+  it("goes on by itself only when this page started the link trip", async () => {
+    stubServer(() => answer({}));
+    const assign = vi.fn();
+    vi.stubGlobal("location", { ...window.location, assign });
+    // Pressing "Link a Google account" marks the trip, in this tab.
+    const first = await show(me({ google: false, passwordSet: true }));
+    await first.click(first.withText("button", "Link a Google account")!);
+    expect(sessionStorage.getItem("frontier.linkGoogleTrip")).toBe("1");
+    await first.unmount();
+    mounted = null;
+    clearMe();
+    // Back from it: the login is asked for, and the mark is gone for the next time.
+    const m = await show(
+      me({ google: false, passwordSet: true }),
+      "/settings/account?problem=recent_login_needed",
+    );
+    await m.settle();
+    expect(askForRecentLogin).toHaveBeenCalledTimes(1);
+    expect(sessionStorage.getItem("frontier.linkGoogleTrip")).toBeNull();
+    expect(m.withText("button", "Log in again and link Google")).toBeNull();
   });
 });
