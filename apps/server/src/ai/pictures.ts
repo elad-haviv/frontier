@@ -2,6 +2,7 @@ import { randomBytes } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
+  artLibrary,
   type MakePictureRequest,
   makeId,
   PictureTry,
@@ -151,9 +152,12 @@ export class EntryPictures {
   }
 
   async status(entry: string): Promise<PicturesResponse> {
+    const library = artLibrary((await this.d.settings.current()).ai);
     return {
       off: await this.off(),
-      style: (await this.d.settings.current()).ai.artStyle ?? "",
+      style: library.styles.find((x) => x.id === library.usual)?.text ?? "",
+      styles: library.styles,
+      usualStyle: library.usual,
       perPictureUsd: await this.perPicture(),
       tries: (await this.all())
         .filter((t) => t.entry === entry && t.person === who())
@@ -189,6 +193,7 @@ export class EntryPictures {
       entry: input.entry,
       prompt,
       style,
+      ...(input.styleName ? { styleName: input.styleName } : {}),
       shape: input.shape,
       ext,
       at: this.now().toISOString(),

@@ -15,6 +15,7 @@ import { useDialogs } from "../../components/Dialogs.tsx";
 import { useRefresh } from "../../components/Shell.tsx";
 import { ActionButton } from "../../components/ui/ActionButton.tsx";
 import { useToast } from "../../components/ui/Toast.tsx";
+import { ArtStyles } from "./ArtStyles.tsx";
 import {
   message,
   kindLabel,
@@ -82,8 +83,6 @@ function TaskRow({
   const saving = useAutoSave();
   const trying = useAutoSave();
   const [tried, setTried] = useState<{ ok: boolean; text: string; image?: string } | null>(null);
-  const [style, setStyle] = useState(settings?.ai.artStyle ?? "");
-  const styleSave = useAutoSave();
   const publishSave = useAutoSave();
   if (!settings) return null;
   const ai = settings.ai;
@@ -228,38 +227,6 @@ function TaskRow({
             )}
           </div>
         )}
-        {task === "art" && (
-          <label className="field">
-            <span>
-              Style of concept art <Saved at={styleSave.savedAt} />
-            </span>
-            <textarea
-              rows={3}
-              maxLength={600}
-              value={style}
-              onChange={(e) => setStyle(e.target.value)}
-              onBlur={() => {
-                const next = style.trim();
-                if (next === ai.artStyle) return;
-                if (next === "") {
-                  setStyle(ai.artStyle);
-                  styleSave.setError("The style can't be empty.");
-                  return;
-                }
-                void styleSave
-                  .run(() => api.saveAi({ artStyle: next }))
-                  .then((ok) => {
-                    if (!ok) setStyle(ai.artStyle);
-                    else void reload();
-                  });
-              }}
-            />
-            <em className="muted small">
-              {style.length} of 600 characters. Added to every picture's description.
-            </em>
-            {styleSave.error && <em className="field-error">{styleSave.error}</em>}
-          </label>
-        )}
         {task === "extraction" && (
           <label className="check">
             <input
@@ -278,6 +245,7 @@ function TaskRow({
         )}
         {publishSave.error && <p className="field-error">{publishSave.error}</p>}
       </div>
+      {task === "art" && <ArtStyles />}
       {open && (
         <div className="task-picker">
           <ModelPicker

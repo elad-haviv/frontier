@@ -50,6 +50,7 @@ import { projectRoutes, projectsApi } from "./routes/projects.js";
 import { proposalRoutes } from "./routes/proposals.js";
 import { quarantineRoutes } from "./routes/quarantine.js";
 import { searchRoutes } from "./routes/search.js";
+import { artStyleRoutes } from "./routes/artStyles.js";
 import { settingsRoutes } from "./routes/settings.js";
 import { healthRoute, presenceRoutes, statusRoutes } from "./routes/status.js";
 import { webhookRoutes } from "./routes/webhook.js";
@@ -452,6 +453,7 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
   googleRoutes(app, server);
   emailRoutes(app, server);
   settingsRoutes(app, server);
+  artStyleRoutes(app, server);
   projectsApi(app, server);
   healthRoute(app, server);
   webhookRoutes(app, server);

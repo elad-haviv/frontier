@@ -1,11 +1,14 @@
-import type { PictureShape, PictureTry } from "@frontier/schema";
+import type { ArtStyle, ArtStylesResponse, PictureShape, PictureTry } from "@frontier/schema";
 import { Link } from "../../nav.tsx";
 import { type MutableRefObject, useEffect, useId, useRef, useState } from "react";
 import { api, ApiFailure, pictureUrl } from "../../api.ts";
 import { useNeedsConnection } from "../../sync/connection.ts";
 import { failureOf, useAsync } from "../../useAsync.ts";
 import { Problem } from "../ui/Problem.tsx";
+import { ArtStyleEditor } from "./ArtStyleEditor.tsx";
+import { StyleSample } from "./StyleSample.tsx";
 import "./GeneratePanel.css";
+import "./ArtStyles.css";
 
 /** What the panel starts from: the entry, and the two texts a prompt can start as. */
 export interface PictureSubject {
@@ -20,6 +23,8 @@ const SHAPES: { shape: PictureShape; label: string; ratio: [number, number] }[] 
   { shape: "wide", label: "Wide", ratio: [3, 2] },
   { shape: "tall", label: "Tall", ratio: [2, 3] },
 ];
+/** The strip's last choice: the description goes to the model as it is. */
+const NO_STYLE = { id: "none", name: "No style", sample: null };
 const ratioOf = (s: PictureShape) => SHAPES.find((x) => x.shape === s)!.ratio;
 
 const price = (usd: number) => (usd < 1 ? `${Math.round(usd * 100)}¢` : `$${usd.toFixed(2)}`);
@@ -32,8 +37,8 @@ export interface GenerateSubmit {
 
 /**
  * The image dialog's Generate tab (stage 29): a prompt started from the selection or the entry's
- * opening, the art style from the settings (changeable for one picture), a shape, and one picture
- * per press. Every picture made for the entry stays a try, on the server, for seven days; the one
+ * opening, an art style picked from the person's library (stage 34; its words changeable for one
+ * picture, and kept as a new style when asked), a shape, and one picture per press. Every picture made for the entry stays a try, on the server, for seven days; the one
  * chosen is inserted as an unpublished image named as the field says.
  */
 export function GeneratePanel({
@@ -58,7 +63,14 @@ export function GeneratePanel({
     subject.selection ? "selection" : "opening",
   );
   const [prompt, setPrompt] = useState(subject.selection || subject.opening);
+  /** The style picked on the strip: an id, "none", or null while it is still the usual one. */
+  const [picked, setPicked] = useState<string | null>(null);
+  /** The words written for this picture in place of the picked style's, or null. */
   const [style, setStyle] = useState<string | null>(null);
+  const [ownWords, setOwnWords] = useState(false);
+  /** The library once this dialog added a style to it; before that, the one that came. */
+  const [library, setLibrary] = useState<ArtStylesResponse | null>(null);
+  const [savingStyle, setSavingStyle] = useState(false);
   const [shape, setShape] = useState<PictureShape>("square");
   const [tries, setTries] = useState<PictureTry[] | null>(null);
   const [chosen, setChosen] = useState<string | null>(null);
@@ -72,7 +84,19 @@ export function GeneratePanel({
   const ready = status.state === "ready" ? status.value : null;
   const list = tries ?? ready?.tries ?? [];
   const current = list.find((t) => t.id === chosen) ?? null;
-  const styleText = style ?? ready?.style ?? "";
+  const styles: ArtStyle[] = library?.styles ?? ready?.styles ?? [];
+  const usualId = library?.usual ?? ready?.usualStyle ?? "";
+  const pickedId = picked ?? usualId;
+  const pickedStyle = pickedId === "none" ? null : (styles.find((x) => x.id === pickedId) ?? null);
+  const baseText = pickedStyle ? pickedStyle.text : pickedId === "none" ? "" : (ready?.style ?? "");
+  const styleText = style ?? baseText;
+  const changed = style !== null && style.trim() !== baseText;
+  /** What the try says made it: the style's name, with a word when its words were changed. */
+  const styleName = pickedStyle
+    ? `${pickedStyle.name}${changed ? ", changed" : ""}`
+    : styleText.trim()
+      ? "Own words"
+      : undefined;
 
   // The prompt takes the focus once the panel can be used, so typing starts there.
   const usable = !!ready && !ready.off;
@@ -101,6 +125,7 @@ export function GeneratePanel({
         entry: subject.path,
         prompt,
         style: styleText,
+        ...(styleName ? { styleName } : {}),
         shape,
       });
       setTries((t) => [made, ...(t ?? [])]);
@@ -140,6 +165,24 @@ export function GeneratePanel({
     setChosen(id);
     // A try made from another prompt brings its prompt back, so Again makes one like it.
     if (t) setPrompt(t.prompt);
+  }
+
+  function pick(id: string) {
+    setPicked(id);
+    setStyle(null);
+  }
+
+  function onStylesKey(e: React.KeyboardEvent<HTMLDivElement>) {
+    const step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[e.key];
+    const at = (e.target as HTMLElement).closest<HTMLElement>("[role=radio]");
+    if (!step || !at) return;
+    e.preventDefault();
+    const all = [...e.currentTarget.querySelectorAll<HTMLElement>("[role=radio]")];
+    const next = all[(all.indexOf(at) + step + all.length) % all.length];
+    if (!next) return;
+    next.focus();
+    next.scrollIntoView({ block: "nearest", inline: "nearest" });
+    pick(next.dataset.style!);
   }
 
   function onStripKey(e: React.KeyboardEvent) {
@@ -213,21 +256,74 @@ export function GeneratePanel({
             )}
           </p>
         </div>
-        <details className="generate-style">
-          <summary>
-            Style: <span>{styleText.trim() || "none set"}</span>
-          </summary>
-          <label htmlFor={ids.style}>
-            For this picture only. The usual style is set in Settings › AI models.
-          </label>
-          <textarea
-            id={ids.style}
-            value={styleText}
-            rows={3}
-            maxLength={2000}
-            onChange={(e) => setStyle(e.target.value)}
-          />
-        </details>
+        <div className="generate-field">
+          <div className="generate-style-head">
+            <span className="generate-label" id={`${ids.style}-title`}>
+              Style
+            </span>
+            <Link to="/settings/you/ai-models">Edit styles</Link>
+          </div>
+          <div
+            className="generate-styles"
+            role="radiogroup"
+            aria-labelledby={`${ids.style}-title`}
+            onKeyDown={onStylesKey}
+          >
+            {[...styles.map((x) => ({ id: x.id, name: x.name, sample: x.sample })), NO_STYLE].map(
+              (x) => (
+                <button
+                  key={x.id}
+                  type="button"
+                  role="radio"
+                  aria-checked={x.id === pickedId}
+                  tabIndex={x.id === pickedId ? 0 : -1}
+                  data-style={x.id}
+                  onClick={() => pick(x.id)}
+                >
+                  <StyleSample sample={x.sample} none={x.id === "none" ? "—" : "No sample"} />
+                  <b>
+                    {x.name}
+                    {x.id === usualId && " · usual"}
+                  </b>
+                </button>
+              ),
+            )}
+          </div>
+          {ownWords ? (
+            <div className="generate-style-own">
+              <label htmlFor={ids.style}>For this picture only{changed && " · changed"}</label>
+              <textarea
+                id={ids.style}
+                value={styleText}
+                rows={3}
+                maxLength={2000}
+                onChange={(e) => setStyle(e.target.value)}
+              />
+              <div>
+                <button
+                  type="button"
+                  className="plain"
+                  disabled={!styleText.trim()}
+                  onClick={() => setSavingStyle(true)}
+                >
+                  Save as a new style
+                </button>
+                {pickedStyle && changed && (
+                  <button type="button" className="plain" onClick={() => setStyle(null)}>
+                    Back to {pickedStyle.name}
+                  </button>
+                )}
+              </div>
+            </div>
+          ) : (
+            <p className="generate-style-now">
+              {styleText.trim() || "Only your description is sent."}{" "}
+              <button type="button" className="plain" onClick={() => setOwnWords(true)}>
+                Change for this picture
+              </button>
+            </p>
+          )}
+        </div>
         <div className="generate-field">
           <span className="generate-label" id={`${ids.prompt}-shape`}>
             Shape
@@ -296,6 +392,7 @@ export function GeneratePanel({
             )}
           </p>
         )}
+        {current?.styleName && <p className="generate-made muted">Style: {current.styleName}</p>}
         {current && (
           <div className="generate-name">
             <label htmlFor={ids.name}>Save as</label>
@@ -339,6 +436,23 @@ export function GeneratePanel({
           </>
         )}
       </div>
+      {savingStyle && (
+        <ArtStyleEditor
+          style={null}
+          start={{ text: styleText.trim() }}
+          library={{ styles, usual: usualId }}
+          onChanged={(next, event) => {
+            setLibrary(next);
+            setSavingStyle(false);
+            // The picture is now made in the style just kept.
+            if (event.kind === "added") {
+              pick(event.style.id);
+              setOwnWords(false);
+            }
+          }}
+          onClose={() => setSavingStyle(false)}
+        />
+      )}
     </div>
   );
 }

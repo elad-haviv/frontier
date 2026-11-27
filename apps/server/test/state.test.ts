@@ -66,6 +66,8 @@ describe("state files", () => {
         models: { extraction: null, conversation: null, art: null },
         modelPrices: {},
         artStyle: expect.stringContaining("Pencil and ink"),
+        artStyles: null,
+        usualArtStyle: null,
         proposeOnPublish: false,
         keysRemoved: null,
         envKeysNoticed: false,

@@ -1,3 +1,4 @@
+import { ArtStyles } from "./ai/artStyles.js";
 import { join } from "node:path";
 import type { Config } from "./config.js";
 import { AiLog } from "./ai/log.js";
@@ -55,6 +56,8 @@ export interface Server {
   /** Per-person AI choices and the rules for Keep going. */
   settings: SettingsStore;
   ai: AiProvider;
+  /** Each person's library of art styles and their samples (stage 34). */
+  artStyles: ArtStyles;
   aiLog: AiLog;
   models: ModelCatalogue;
   /** Takes images from web addresses, with the safeguards that keep the server's network safe. */
@@ -137,6 +140,12 @@ export function makeServer(config: Config, options: ServerOptions = {}): Server 
     live: new LiveRequests(),
     settings,
     ai,
+    artStyles: new ArtStyles({
+      dir: join(stateDir, "art-samples"),
+      files,
+      settings,
+      image: (prompt, entry, aspect) => ai.image(prompt, entry, aspect),
+    }),
     aiLog,
     models,
     imageFetcher: new ImageFetcher({
