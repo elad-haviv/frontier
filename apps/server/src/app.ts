@@ -113,8 +113,8 @@ export interface RegisteredRoute {
 }
 
 /** An address as it may be logged: no invitation code, no OAuth code or state. */
-export function redactAddress(url: string): string {
-  return url
+export function redactAddress(url: string | undefined): string {
+  return (url ?? "")
     .replace(/(\/(?:api|%61pi)\/join\/)[^/?#]+/i, "$1:code")
     .replace(/([?&](?:invite|code|state|returnTo)=)[^&#]*/gi, "$1:redacted");
 }
