@@ -1,5 +1,12 @@
 import { expect, type Locator, type Page, test } from "@playwright/test";
-import { entry, noSidewaysScroll, openLibrary, openSideBar, setUpAi } from "./helpers.ts";
+import {
+  DEVICE_KEY,
+  entry,
+  noSidewaysScroll,
+  openLibrary,
+  openSideBar,
+  setUpAi,
+} from "./helpers.ts";
 
 // Home and the rest of "keep going" in the shell (stage 25). Pins and the settings are one per
 // server, so these take turns and put back what they change.
@@ -585,5 +592,27 @@ test.describe("the question of the day (AI)", () => {
     await expect(q.locator("q")).toContainText("smell like");
     await q.getByRole("link", { name: /^Answer it in / }).click();
     await expect(page).toHaveURL(/\/edit\//);
+  });
+
+  test("with no key on this device, the first ask explains and then carries on (stage 27f)", async ({
+    page,
+  }, info) => {
+    test.skip(info.project.name !== "desktop", "The AI settings are one per server.");
+    await setUpAi(page, { conversation: "sample/reader" }, { key: false });
+    await page.goto("/");
+    const q = card(page, "A question to answer");
+    // A question kept for the day by an earlier test is asked for again; either way it is a click.
+    const ask = q
+      .getByRole("button", { name: "Give me a question" })
+      .or(q.getByRole("button", { name: "Another question" }));
+    await ask.click();
+    const explain = page.getByRole("dialog", {
+      name: "The question of the day runs on your own AI key",
+    });
+    await expect(explain).toContainText("The key is kept on this device only.");
+    await explain.getByLabel("Key", { exact: true }).fill(DEVICE_KEY);
+    await explain.getByRole("button", { name: "Test and keep on this device" }).click();
+    await expect(explain).toHaveCount(0);
+    await expect(q.locator("q")).toContainText("smell like");
   });
 });

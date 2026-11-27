@@ -182,7 +182,7 @@ describe("keys an earlier version stored on the server", () => {
     expect(file).not.toContain('"kind"');
     expect(file).not.toContain("monthlyCapUsd");
     const now = JSON.parse(file);
-    expect(now.passwordHash).toMatch(/^\$argon2/);
+    expect(now.passwordHash).toBe("");
     expect(now.ai.artStyle).toBe("Charcoal.");
     // Bare ids are OpenRouter's; a model of the removed endpoint is off until another is chosen.
     expect(now.ai.models).toEqual({
