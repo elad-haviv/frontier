@@ -12,7 +12,8 @@
  */
 import { type AiProviderKind, splitModelId } from "@frontier/schema";
 import { hasDeviceKey } from "./aiKeys.ts";
-import { api } from "./api.ts";
+import { api, apiFor } from "./api.ts";
+import { currentProject } from "./project.ts";
 import { readOwn, writeOwn } from "./personStorage.ts";
 
 const WHAT = "pendingProposals";
@@ -28,34 +29,51 @@ export interface ProposeDeps {
   }>;
   propose: (path: string) => Promise<{ made: number }>;
   hasKey: (kind: AiProviderKind) => boolean;
-  /** Where the entries still waiting are kept; on this device, per person, unless a test says. */
+  /** Where the entries still waiting are kept; on this device, per person and project, unless a test says. */
   pending?: PendingStore;
 }
 
-const stored: PendingStore = {
+/** The entries waiting in a project, kept under the project's id. */
+const storedFor = (project: string | undefined): PendingStore => ({
   read: () =>
-    readOwn(WHAT, (raw) =>
-      Array.isArray(raw) ? raw.filter((p): p is string => typeof p === "string") : null,
+    readOwn(
+      WHAT,
+      (raw) => (Array.isArray(raw) ? raw.filter((p): p is string => typeof p === "string") : null),
+      project,
     ) ?? [],
-  write: (paths) => writeOwn(WHAT, paths.length > 0 ? paths : null),
-};
+  write: (paths) => writeOwn(WHAT, paths.length > 0 ? paths : null, project),
+});
 
-const live: ProposeDeps = {
-  settings: () => api.settings(),
-  propose: (path) => api.proposeFields(path, true),
-  hasKey: hasDeviceKey,
-};
+/**
+ * What a run for the open project uses, taken when it starts: it goes on for that project (its
+ * address, its list of waiting entries) even if the person moves to another meanwhile.
+ */
+function liveFor(): { deps: ProposeDeps; project: string } | null {
+  const open = currentProject();
+  if (!open) return null;
+  const p = apiFor(open.slug);
+  return {
+    project: open.id,
+    deps: {
+      settings: () => api.settings(),
+      propose: (path) => p.proposeFields(path, true),
+      hasKey: hasDeviceKey,
+      pending: storedFor(open.id),
+    },
+  };
+}
 
 /** Errors after which the entry is not given up on: it is tried again another time. */
 const KEEP = new Set(["offline", "unauthenticated", "ai_off", "ai_key_missing", "ai_key_rejected"]);
 
-let working = false;
+/** The projects with a run on its way: one at a time in each. */
+const working = new Set<string>();
 
 /** Asks for the proposals of what is waiting, one entry at a time; returns how many were made. */
-async function work(deps: ProposeDeps): Promise<number> {
-  if (working) return 0;
-  working = true;
-  const pending = deps.pending ?? stored;
+async function work(deps: ProposeDeps, project: string): Promise<number> {
+  if (working.has(project)) return 0;
+  working.add(project);
+  const pending = deps.pending ?? storedFor(project);
   let made = 0;
   try {
     const { ai } = await deps.settings();
@@ -84,7 +102,7 @@ async function work(deps: ProposeDeps): Promise<number> {
   } catch {
     /* settings could not be read: what is waiting stays for the next time */
   } finally {
-    working = false;
+    working.delete(project);
   }
   return made;
 }
@@ -92,17 +110,21 @@ async function work(deps: ProposeDeps): Promise<number> {
 /** Asks for proposals for the notes just published; returns how many were made. */
 export async function proposeAfterPublish(
   paths: readonly string[],
-  deps: ProposeDeps = live,
+  given?: ProposeDeps,
 ): Promise<number> {
   if (paths.length === 0) return 0;
-  const pending = deps.pending ?? stored;
+  const run = given ? { deps: given, project: "given" } : liveFor();
+  if (!run) return 0;
+  const pending = run.deps.pending ?? storedFor(run.project);
   const have = pending.read();
   pending.write([...have, ...paths.filter((p) => !have.includes(p))]);
-  return work(deps);
+  return work(run.deps, run.project);
 }
 
 /** On opening the app, online, signed in: carries on with what an earlier page left waiting. */
-export async function resumeProposals(deps: ProposeDeps = live): Promise<number> {
-  if ((deps.pending ?? stored).read().length === 0) return 0;
-  return work(deps);
+export async function resumeProposals(given?: ProposeDeps): Promise<number> {
+  const run = given ? { deps: given, project: "given" } : liveFor();
+  if (!run) return 0;
+  if ((run.deps.pending ?? storedFor(run.project)).read().length === 0) return 0;
+  return work(run.deps, run.project);
 }

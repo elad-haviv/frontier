@@ -321,3 +321,140 @@ settings route, `PUT /api/settings/keep-going`, moved to the server-wide setting
   projects).
 - A person who is in no project gets 403 `no_project` from every project route and an empty list
   from `GET /api/projects`.
+
+## 8. How it was built: 27b web
+
+Built on 2026-11-27, after the server half. Every page of a project is under `/p/<slug>/...`, every
+call for a project under `/api/p/<slug>/...`, and what the device keeps for a library is kept per
+project.
+
+### Addresses
+
+- **One helper puts the project in front.** `project.ts` keeps which project the app has open
+  (`currentProject`, set once by the project's route before anything under it draws) and the
+  function `inProject(to)`: `/e/Notes.md` becomes `/p/avalymia/e/Notes.md`, and `/` the project's
+  Home. An address that already names a project, or belongs to none (`/projects`, `/login`,
+  `/join/...`), is left alone. `appUrl` is the same for a plain string (an `href`), `withoutProject`
+  takes it off, `movedInto` puts an old address into a project.
+- **Pages write addresses as if there were one library.** `nav.tsx` is the only place the router's
+  `Link`, `NavLink`, `Navigate`, `useNavigate` and `useLocation` are used (`nav.test.ts` fails if a
+  file reaches for the router's own, or writes an app address into an `href`, `location.assign` or
+  `window.open`, or builds `/e/` or `/edit/` by hand). Its versions prefix a destination with
+  the open project and give `useLocation` a pathname without it, so every pattern the pages and the
+  shell already match on (`/e/*`, `/edit/*`, `/map/:id`) is as it was. `entryUrl`, `editUrl`,
+  `mapUrl` and the rest in `api.ts` stay project-relative.
+- **Old addresses redirect** (`OldAddress` in `App.tsx`): any address that is not `/p/...`,
+  `/projects`, `/settings/...` or `/login` goes to the same page in the person's last-used project
+  (from `GET /api/projects`, `last`), else their first, keeping the rest of the path, the query and
+  the hash. `/` opens the last-used project; with none remembered it opens the one project there
+  is, or All projects when there are several or none. `/settings/library/*` (the old project
+  sections) goes into the project as well. The list is kept on the device, so this works offline.
+- **A renamed address.** `ProjectScope` asks the server for the project's record
+  (`GET /api/p/<slug>/project`) whenever it opens; when the record's address differs from the
+  one in the bar (`movedFrom`), the bar is replaced with the new address, keeping the rest.
+- **Open project, and no leak.** `ProjectScope` (`components/ProjectScope.tsx`) finds the project
+  (the list, or the server for an address the list does not know), opens it in a layout effect,
+  and draws the shell under `key={project id}`: another project is a whole new tree, so no page
+  state, no hook and no tree of the last one is left. What lives in memory beside the React tree
+  lets go on `onProjectChange`: the pins, the link completion's names, the hover previews, the
+  image finder's answers, the local graph's picture, the graph for the visit (a late answer of the
+  old project is dropped), the library-file clients, and the recents. Tested in
+  `projectSwitch.test.ts`; the browser test opens an entry in one project, switches, and finds
+  nothing of it in the tree, the pins, Home or the quick switcher.
+
+### Calls
+
+- **One place makes a project's address**: `projectUrl(path, slug)` in `api.ts`. The `api` object
+  is the server's own calls (session, login, `/api/me`, `/api/settings...`, `/api/ai/...`,
+  `/api/projects...`: unprefixed) plus `projectCalls(slug)`, in which every call is written with
+  the path the server's route has inside a project (`/entries?path=...`). `api` uses the open
+  project; `apiFor(slug)` is the same for a named project, which is how a queued save is sent to
+  the project it was made in. With no project open a project call fails with `no_project` and asks
+  nothing. The server's unprefixed aliases are never used by the web app: `api.projects.test.ts`
+  fails if `api.ts` writes an unprefixed project address (a scan of the source) or any call, with
+  dummy arguments, asks for one (every `api` call is made against a stubbed `fetch`).
+- Images (`imageUrl`, `mapImageUrl`, `branchImageUrl`, `discoveryArtUrl`), the zip of the library
+  and `downloadExport` go through `projectUrl`. The status stream and the status probe are the
+  open project's (`Connection.projectChanged`); outside a project the probe asks `/api/me`.
+- The service worker answers `/api/p/<slug>/images` (and no other `/api/` address); the stored
+  image of one project is never answered for another (`sw/routes.ts`).
+
+### Device state, per project
+
+- **The save queue** (`sync/queue.ts`): one `Queue` for each project, each over a database of its
+  own (the first project's is the device's own `frontier`, so nothing moves; the others are
+  `frontier-p-<project id>`), with its own Web Lock and broadcast channel. `queue`, as the pages
+  see it, is the `QueueHub`: it forwards to the open project's queue. A queue that is not open
+  goes on sending what it holds to its own project (the address is read from the list when the
+  call is made) and is let go once it has nothing left; at start the queues of projects that were
+  left with changes are started. The device's id and name are shared by all of them.
+- **The device copy** (`offline/device.ts`): one `DeviceCopy` for each project over that project's
+  database, behind one `DeviceHub` that answers each read from the copy of the project its
+  address names; only the open project has a keeper. A late answer is announced only while its
+  project is open. Removing a project's copy removes only its images from the shared Cache
+  Storage cache. The device marks a project as on this device (`frontier.onDevice`) when its compact
+  index is first kept.
+- **Which project owns what an earlier build kept**: the first project in the list, decided once
+  and kept in the device's `meta` (`legacyProject`). The `frontier` database, its queue and its
+  copy are that project's; the keys the browser's own storage held unfiled (`frontier.keepGoing.v1`,
+  `frontier.maps.recent`, `frontier.discovery.ready`, `frontier.explore.*`, `frontier.chronicle.*`,
+  and the per-person `pendingProposals` and `folderRun`) are moved to `<key>:<project id>` once
+  (`fileUnfiled`, `projectStorage.ts`), before any page reads. From then on everything of a library
+  is read and written under the project's id (`projectKey`; `personStorage` files under person and
+  project): recents and reading positions, the maps opened lately, the explore filters, the
+  chronicle's offers and folded spans, the graph's view, the proposals waiting after a save, a
+  folder run's leftovers. The folded folders of the tree are in the shell's memory, which is new for
+  each project. Device settings that are not a library's (bar widths, the map's curve, snapping)
+  are not filed.
+- **Log out** clears every project's queue, copy and database, the list and the marks, as before.
+
+### The screens
+
+- **Switcher** (`components/shell/ProjectMenu.tsx`): the project's letter mark (eight colour tokens,
+  `--project-0..7`, 4.5:1 or more with white text in both themes) and name at the head of the left
+  bar, in place of the wordmark; the rail shows the letter with a tooltip; the phone's drawer has
+  the same button. It is the app's `Menu`, so arrows, Enter, Escape and typing a name's first
+  letters work. Each row shows the role, the entries, a mark when the project is on this device,
+  how many changes wait in it when it is not the open one, and a check on the open one. Then
+  All projects (`g p`) and New project (only when `canCreate`). Search says "Search <project>"; the
+  foot says "<Role> here". The left bar's "Unpublished" is "Your unsaved changes" ("Your
+  unpublished changes" for a library on GitHub), and the page's title with it; its address is
+  unchanged. `g p` is in the keys registry and so in the "?" sheet.
+- **All projects** (`/projects`, `pages/projects/AllProjects.tsx`), in `OutsideShell`: the wordmark
+  and the account menu (All projects, Settings, Keyboard shortcuts, Log out); a card for each
+  project and, for those who can make one, a dashed New project card. "You're not in a project yet.
+  Ask an owner for an invite link." when there is none.
+- **New project** (`?new=1` on All projects, so it can be linked to and reached from the switcher):
+  name, address (from the name until edited, checked as it is typed, shown in full), what to start
+  with. A zip is sent to the new project after it is made, with progress; if that fails the
+  dialog says the project exists and offers the zip again, or to open it empty.
+
+### Settings
+
+- **Group "This project · <name>"** (General, Types and dates, Backups and export), "You" (Profile,
+  Signing in, AI models, Your AI spending, Propose for a folder, Keep going) and "This device" (AI
+  keys, Offline copy). Keep going moved to "You" since its settings are the person's (they were
+  moved server-wide in the server half).
+- **Where the sections live**: the project's at `/p/<slug>/settings/general`, `.../types`,
+  `.../backups`. The personal sections open at both `/settings/<section>`, with no project, which
+  shows only "You" and "This device" and is reached from the account menu of All projects, and at
+  `/p/<slug>/settings/<section>`, which shows all three groups. Old addresses (`/settings/library/types`,
+  `.../backups`, `.../keep-going`) go to where the sections are now.
+- **General**: name, address and description, changed by owners and read by everyone else; a
+  changed address says the old one works for 90 days before it is saved; the people of the project
+  (name and role, read-only: Members is part 27c). Delete this project asks for the project's name
+  typed; it is disabled, with the server's words, for the first project (whose files are the old
+  layout) and for the last one.
+- **Offline copy** lists each project that holds a copy on this device, with the space it takes
+  and a way to remove it.
+
+### Not done, and decisions
+
+- No Members section (27c). Roles are read from the project's record and shown; nothing yet hides
+  a control from a writer or a reader beyond General's.
+- Reading a project that was never opened on this device with no connection says so on a page of
+  its own, with All projects and the projects that are on this device. A project is "on this device"
+  once its compact index has been kept.
+- The e2e specs open pages through one helper (`at`, `helpers.ts`); their direct calls to the
+  server in the page (`fetch("/api/maps")`) still use the unprefixed aliases, which reach the
+  project used last. `projects.spec.ts` makes the first project the one used last again after each test.

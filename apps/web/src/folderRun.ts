@@ -4,6 +4,7 @@
  * Nothing goes on after the page is left, so no key has to outlive a request. What was left is
  * kept on this device, per person, and can be continued.
  */
+import { currentProject } from "./project.ts";
 import { readOwn, writeOwn } from "./personStorage.ts";
 
 export interface RunProgress {
@@ -51,7 +52,8 @@ const asLeft = (raw: unknown): RunLeft | null => {
 export const runLeft = (): RunLeft | null => readOwn(WHAT, asLeft);
 
 /** Forgets the run that was left. */
-export const forgetRun = (): void => writeOwn(WHAT, null);
+export const forgetRun = (project: string | undefined = currentProject()?.id): void =>
+  writeOwn(WHAT, null, project);
 
 /**
  * Reads the entries one at a time. After each, `onProgress` says how far it got and what is left is
@@ -65,8 +67,10 @@ export async function runFolder(
   onProgress: (p: RunProgress) => void,
 ): Promise<RunEnd> {
   const progress: RunProgress = { ...start, failed: [...start.failed] };
+  // What is left is kept for the project the run began in, even if the page is left for another.
+  const project = currentProject()?.id;
   const keep = (rest: string[]) =>
-    writeOwn(WHAT, rest.length > 0 ? { ...progress, remaining: rest } : null);
+    writeOwn(WHAT, rest.length > 0 ? { ...progress, remaining: rest } : null, project);
   for (let i = 0; i < paths.length; i++) {
     const rest = paths.slice(i);
     if (signal.aborted) {
@@ -88,6 +92,6 @@ export async function runFolder(
     keep(paths.slice(i + 1));
     onProgress({ ...progress, failed: [...progress.failed] });
   }
-  forgetRun();
+  forgetRun(project);
   return { state: "done" };
 }

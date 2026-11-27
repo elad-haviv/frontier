@@ -13,10 +13,16 @@ import { currentProject } from "./project.ts";
 const name = (what: string, person: string, project: string) =>
   `frontier.${what}:${person}:${project}`;
 
-/** What was kept under this name for the signed-in person, or null. */
-export function readOwn<T>(what: string, valid: (raw: unknown) => T | null): T | null {
+/**
+ * What was kept under this name for the signed-in person in a project (the open one, unless one
+ * is named: work that goes on while the person moves to another project names its own), or null.
+ */
+export function readOwn<T>(
+  what: string,
+  valid: (raw: unknown) => T | null,
+  project: string | undefined = currentProject()?.id,
+): T | null {
   const person = keysOwner();
-  const project = currentProject()?.id;
   if (!person || !project) return null;
   try {
     const text = localStorage.getItem(name(what, person, project));
@@ -27,9 +33,12 @@ export function readOwn<T>(what: string, valid: (raw: unknown) => T | null): T |
 }
 
 /** Keeps a value for the signed-in person; null removes it. */
-export function writeOwn(what: string, value: unknown): void {
+export function writeOwn(
+  what: string,
+  value: unknown,
+  project: string | undefined = currentProject()?.id,
+): void {
   const person = keysOwner();
-  const project = currentProject()?.id;
   if (!person || !project) return;
   try {
     if (value === null) localStorage.removeItem(name(what, person, project));

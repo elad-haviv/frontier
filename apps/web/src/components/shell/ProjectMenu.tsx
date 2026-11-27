@@ -1,8 +1,9 @@
-import type { Ref } from "react";
+import { type Ref, useEffect } from "react";
 import { Check, ChevronsUpDown, HardDrive, Layers, Plus } from "lucide-react";
 import { useNavigate } from "../../nav.tsx";
 import { projectRoot } from "../../project.ts";
-import { useOnDevice, useProjects } from "../../projects.ts";
+import { loadProjects, useOnDevice, useProjects } from "../../projects.ts";
+import { useConnection } from "../../sync/connection.ts";
 import { queue } from "../../sync/queue.ts";
 import { ROLE_NAMES, useProject } from "../projectContext.ts";
 import { Icon } from "../ui/Icon.tsx";
@@ -61,6 +62,12 @@ export function ProjectMenu({ rail = false }: { rail?: boolean }) {
   const onDevice = useOnDevice();
   const navigate = useNavigate();
   const waiting = new Map(queue.waitingElsewhere().map((w) => [w.id, w.count]));
+  // The counts in the list follow the library: read again when a version is saved.
+  const { snapshot } = useConnection();
+  const mark = snapshot?.indexCommit ?? "";
+  useEffect(() => {
+    void loadProjects();
+  }, [mark]);
   return (
     <Menu
       label="Projects"
