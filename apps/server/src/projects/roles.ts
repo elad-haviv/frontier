@@ -33,6 +33,8 @@ export const ROUTE_ROLES: Record<string, ProjectRole> = {
   "GET /preview": "reader",
   "GET /switcher": "reader",
   "GET /gallery": "reader",
+  // Reader for the library's images; with `?branch=` (an inbox branch, not yet published) the route
+  // asks for writer itself, inside the handler.
   "GET /images": "reader",
   "GET /history": "reader",
   "GET /history/version": "reader",

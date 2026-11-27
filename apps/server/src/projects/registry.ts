@@ -1,4 +1,5 @@
 import type { ProjectRecord } from "@frontier/schema";
+import { ApiError } from "../errors.js";
 import type { Services } from "./services.js";
 
 /**
@@ -6,8 +7,13 @@ import type { Services } from "./services.js";
  * not opened costs nothing; one that is opened has its timers (the nightly backup, the fetch of
  * a GitHub library) until `close`.
  */
+/** What a request is told when the project went while it was running. */
+const goneError = () => new ApiError("no_project", "This project has been deleted.");
+
 export class ProjectRegistry {
   private readonly open_ = new Map<string, Promise<Services>>();
+  /** Projects that were deleted: never opened again, whatever record a request still holds. */
+  private readonly gone = new Set<string>();
 
   constructor(
     /** Makes a project's services, not yet brought up. */
@@ -16,6 +22,7 @@ export class ProjectRegistry {
 
   /** The project's services, made and brought up. A second request waits for the first. */
   open(record: ProjectRecord): Promise<Services> {
+    if (this.gone.has(record.id)) return Promise.reject(goneError());
     let made = this.open_.get(record.id);
     if (!made) {
       made = this.build(record).then(async (services) => {
@@ -50,6 +57,16 @@ export class ProjectRegistry {
   /** The services of one project when it is open, without opening it. */
   async peek(id: string): Promise<Services | null> {
     return (await this.open_.get(id)?.catch(() => null)) ?? null;
+  }
+
+  /**
+   * Marks a project as deleted and closes its services. From the first line on `open` refuses the
+   * id, so a request that already has the project's record cannot bring its services (and its
+   * folders) back. Delete the project from the store before this, and move the folder after.
+   */
+  async retire(id: string): Promise<void> {
+    this.gone.add(id);
+    await this.close(id);
   }
 
   async close(id: string): Promise<void> {

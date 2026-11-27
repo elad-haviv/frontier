@@ -18,6 +18,7 @@ import {
 } from "../auth/session.js";
 import { ApiError } from "../errors.js";
 import { lastProjectSlug } from "../projects/guard.js";
+import { PUBLIC } from "../auth/openness.js";
 import type { Server } from "../server.js";
 
 /** Said for a wrong email and a wrong password alike, so neither tells which was wrong. */
@@ -66,7 +67,7 @@ let decoy: Promise<string> | null = null;
 
 export function authRoutes(app: FastifyInstance, s: Server): void {
   // 5 attempts per 15 minutes per network address, counted together with passkey logins.
-  app.post("/api/login", async (request) => {
+  app.post("/api/login", { config: PUBLIC }, async (request) => {
     s.loginLimit.attempt(request.ip);
     const { email, password } = LoginRequest.parse(request.body);
     const people = await s.people.all();
@@ -108,7 +109,7 @@ export function authRoutes(app: FastifyInstance, s: Server): void {
     return { ok: true as const };
   });
 
-  app.get("/api/session", async (request) => {
+  app.get("/api/session", { config: PUBLIC }, async (request) => {
     const people = await s.people.all();
     const person = await currentPerson(request, s.people);
     return {

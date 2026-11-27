@@ -19,6 +19,7 @@ import {
   startSession,
 } from "../auth/session.js";
 import { ApiError } from "../errors.js";
+import { PUBLIC } from "../auth/openness.js";
 import type { Server } from "../server.js";
 import { passwordWorks, waysIn } from "./auth.js";
 import type { Person } from "@frontier/schema";
@@ -123,7 +124,7 @@ export function passkeyRoutes(app: FastifyInstance, s: Server): void {
     return { ok: true as const };
   });
 
-  app.post("/api/passkeys/login/options", async (request) => {
+  app.post("/api/passkeys/login/options", { config: PUBLIC }, async (request) => {
     // Nobody has said who they are yet, so every passkey is offered to the device.
     const keys = (await s.people.all()).flatMap((p) => p.passkeys);
     if (keys.length === 0) {
@@ -141,7 +142,7 @@ export function passkeyRoutes(app: FastifyInstance, s: Server): void {
     return options;
   });
 
-  app.post("/api/passkeys/login/verify", async (request) => {
+  app.post("/api/passkeys/login/verify", { config: PUBLIC }, async (request) => {
     s.loginLimit.attempt(request.ip);
     const { response } = LoginVerify.parse(request.body);
     const expectedChallenge = take(request);

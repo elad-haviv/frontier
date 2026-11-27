@@ -144,8 +144,7 @@ export class ModelCatalogue {
 
   /** Every model of every usable provider, with the status of each provider's list. */
   async all(refresh = false): Promise<Catalogue> {
-    const settings = await this.d.settings.read();
-    const prices = settings?.ai.modelPrices ?? {};
+    const prices = (await this.d.settings.current()).ai.modelPrices;
     // Only the providers this request carries a key for: each person sees their own models.
     const providers = this.d.connections.list();
     const lists = await Promise.all(providers.map((p) => this.fetchList(p, refresh)));

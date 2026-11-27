@@ -3,6 +3,7 @@ import { type ProjectRecord, type ProjectRole, roleAtLeast } from "@frontier/sch
 import { ApiError } from "../errors.js";
 import type { Services } from "../app.js";
 import type { Server } from "../server.js";
+import { decodedPath } from "../auth/openness.js";
 import { PROJECT_PREFIX, type RouteBook } from "./facade.js";
 import { roleFor } from "./roles.js";
 
@@ -29,15 +30,23 @@ declare module "fastify" {
  */
 const NO_PROJECT = "There is no project here that you can open.";
 
-/** The slug in `/api/p/<slug>/...`, or null when the path is not a project's. */
-export function slugOf(path: string): string | null {
-  if (!path.startsWith("/api/p/")) return null;
-  const raw = path.slice("/api/p/".length).split("/")[0] ?? "";
-  try {
-    return decodeURIComponent(raw);
-  } catch {
-    return raw;
+/**
+ * The slug of a project route, from the parameter the router matched (it is decoded by the router,
+ * as the path is), or null when the route is not a project's. Never from the raw address.
+ */
+export function slugOf(request: FastifyRequest): string | null {
+  const routeUrl = request.routeOptions?.url;
+  // An address under a project that matched no route: its slug is read from the decoded path, only
+  // so that it is answered as any other address of that project is (never a way into anything: the
+  // request matched no handler, and a person is already required).
+  if (routeUrl === undefined) {
+    const path = decodedPath(request.url);
+    if (!path.startsWith("/api/p/")) return null;
+    return path.slice("/api/p/".length).split("/")[0] || null;
   }
+  if (!routeUrl.startsWith(`${PROJECT_PREFIX}/`)) return null;
+  const slug = (request.params as { project?: unknown } | undefined)?.project;
+  return typeof slug === "string" ? slug : null;
 }
 
 /**
@@ -88,14 +97,15 @@ export async function aliasProject(
 export function guardProjects(app: FastifyInstance, server: Server, book: RouteBook): void {
   app.decorateRequest("project", null);
   app.addHook("onRequest", async (request: FastifyRequest) => {
-    const path = request.url.split("?")[0] ?? "";
-    const person = request.person;
-    if (!person) return;
     const routeUrl = request.routeOptions?.url;
-    const slug = slugOf(path);
+    const slug = slugOf(request);
     const aliased =
       slug === null && routeUrl !== undefined && book.aliases.has(`${request.method} ${routeUrl}`);
     if (slug === null && !aliased) return;
+    // The login check runs first and sets the person; a project route that reaches here without
+    // one is refused, never let through.
+    const person = request.person;
+    if (!person) throw new ApiError("unauthenticated", "Log in first.");
 
     await claimForAdmin(server, person);
     let record: ProjectRecord | null;

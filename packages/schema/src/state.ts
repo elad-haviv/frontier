@@ -183,6 +183,29 @@ export const Settings = z.object({
   keepGoing: KeepGoingSettings.default({}),
 });
 export type Settings = z.infer<typeof Settings>;
+/**
+ * What belongs to one person (stage 27b review): the models they chose, the prices they entered,
+ * the look of their concept art, whether Publish proposes fields, and their Keep going rules.
+ * Kept in `/data/state/person-settings.json` by person id. A person with no entry has the
+ * defaults, but for the admin, whose entry is what `settings.json` held before there were people.
+ */
+export const PersonSettings = z.object({
+  ai: AiSettings.pick({
+    models: true,
+    modelPrices: true,
+    artStyle: true,
+    proposeOnPublish: true,
+  }).default({}),
+  keepGoing: KeepGoingSettings.default({}),
+});
+export type PersonSettings = z.infer<typeof PersonSettings>;
+
+/** `/data/state/person-settings.json` */
+export const PersonSettingsFile = z.object({
+  people: z.record(z.string(), PersonSettings).default({}),
+});
+export type PersonSettingsFile = z.infer<typeof PersonSettingsFile>;
+
 /** What a caller may pass when writing: the password, and any other part it wants to set. */
 export type SettingsInput = z.input<typeof Settings>;
 

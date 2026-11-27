@@ -1,8 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { PublishPlan, serialiseMap, type MapFile, UnpublishedResponse } from "@frontier/schema";
-import { withDeviceKeys } from "../src/ai/keyring.js";
 import { lookUp, plainForQuotes } from "../src/ai/lore.js";
-import { makeTestApp, type TestApp } from "./helpers/app.js";
+import { asAdmin, makeTestApp, type TestApp } from "./helpers/app.js";
 
 let t: TestApp;
 afterEach(() => t.close());
@@ -717,7 +716,7 @@ describe("writing help", () => {
     t.keys = { openrouter: KEY };
     await t.put("/api/settings/ai", { models: { conversation: MODEL } });
     const stop = new AbortController();
-    const asked = withDeviceKeys({ openrouter: KEY }, () =>
+    const asked = asAdmin(t, { openrouter: KEY }, () =>
       t.services.writing.rewrite({
         path: NIRANI,
         passage: "Some words.",

@@ -48,6 +48,7 @@ import { healthRoute, statusRoutes } from "./routes/status.js";
 import { webhookRoutes } from "./routes/webhook.js";
 import { writingRoutes } from "./routes/writing.js";
 import { makeServer, type Server } from "./server.js";
+import { decodedPath, isApiRequest, isPublicRoute } from "./auth/openness.js";
 import { requirePerson } from "./auth/session.js";
 import { readBuild, webRoutes } from "./web.js";
 
@@ -77,17 +78,17 @@ export interface App {
   server: Server;
   /** Every project route, with the role it needs: the table the guard enforces. */
   routes: ProjectRoute[];
+  /** Every route the server registered, open or not. */
+  allRoutes: RegisteredRoute[];
 }
 
-/** Routes that need no session. */
-const OPEN = new Set([
-  "/api/login",
-  "/api/session",
-  "/api/github/webhook",
-  "/health",
-  "/api/passkeys/login/options",
-  "/api/passkeys/login/verify",
-]);
+export interface RegisteredRoute {
+  method: string;
+  /** The pattern as registered, with its `:params`. */
+  url: string;
+  /** Declared open with `config: PUBLIC`. */
+  public: boolean;
+}
 
 const THIRTY_DAYS = 30 * 24 * 60 * 60;
 
@@ -201,9 +202,17 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
   app.addHook("onClose", async () => server.registry.closeAll());
 
   app.decorateRequest("person", null);
+  // Every route is recorded as it is registered, so the tests can check each one.
+  const registered: RegisteredRoute[] = [];
+  app.addHook("onRoute", (route) => {
+    for (const method of [route.method].flat())
+      registered.push({ method, url: route.url, public: route.config?.public === true });
+  });
+  // The login check decides from the route the router matched, never from the raw address (which
+  // may be percent-encoded): the API is closed unless the route says `config: PUBLIC`, and so is
+  // anything under `/api` that matched no route.
   app.addHook("onRequest", async (request) => {
-    const path = request.url.split("?")[0] ?? "";
-    if (OPEN.has(path) || !path.startsWith("/api/")) return;
+    if (!isApiRequest(request) || isPublicRoute(request)) return;
     const person = await requirePerson(request, server.people);
     request.keysHolder.person = person.id;
   });
@@ -219,7 +228,7 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
         "connect-src 'self'; worker-src 'self'; manifest-src 'self'; frame-ancestors 'none'; " +
         "base-uri 'self'; form-action 'self'",
     );
-    if (request.url.startsWith("/api/")) reply.header("frontier-build", build.build);
+    if (isApiRequest(request)) reply.header("frontier-build", build.build);
     reply.header("x-content-type-options", "nosniff");
     reply.header("referrer-policy", "no-referrer");
   });
@@ -279,9 +288,10 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
   }
 
   app.setNotFoundHandler((request, reply) => {
-    const path = request.url.split("?")[0] ?? "";
     // The interface handles its own addresses: any page address gets the app, which then routes.
-    if (serveWeb && request.method === "GET" && !path.startsWith("/api/") && path !== "/health") {
+    // What is the API's is decided on the decoded path, as the router read it.
+    const path = decodedPath(request.url);
+    if (serveWeb && request.method === "GET" && !isApiRequest(request) && path !== "/health") {
       return reply.header("cache-control", "no-cache").sendFile("index.html");
     }
     return reply
@@ -329,5 +339,5 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
   healthRoute(app, server);
   webhookRoutes(app, server);
 
-  return { app, services, server, routes: book.routes };
+  return { app, services, server, routes: book.routes, allRoutes: registered };
 }

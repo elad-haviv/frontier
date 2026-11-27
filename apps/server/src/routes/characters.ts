@@ -46,7 +46,7 @@ export function characterRoutes(app: RouteApp, s: Services): void {
    */
   app.post("/api/characters/line", async (request) => {
     const { path, text } = Line.parse(request.body);
-    const model = (await s.settings.read())?.ai.models.conversation ?? "unknown";
+    const model = (await s.settings.current()).ai.models.conversation ?? "unknown";
     const draft = await s.changer.apply(path, (now) => `${now.replace(/\s*$/, "")}\n\n${text}\n`, {
       kind: "lore",
       ref: `character:${path}`,

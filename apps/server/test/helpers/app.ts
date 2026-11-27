@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { AI_KEYS_HEADER, type DeviceKeys, encodeDeviceKeys } from "@frontier/schema";
 import type { LightMyRequestResponse } from "fastify";
 import { type App, buildApp } from "../../src/app.js";
+import { withDeviceKeys } from "../../src/ai/keyring.js";
 import { hashPassword } from "../../src/auth/password.js";
 import { loadConfig } from "../../src/config.js";
 import { makeTestRepo, type TestRepo } from "./repo.js";
@@ -150,6 +151,20 @@ export async function makeTestApp(
     },
   };
   return t;
+}
+
+/**
+ * Runs work as the test account (the admin) with these device keys: what a request of theirs does
+ * to the services, for a test that calls a service directly. Settings are per person, so a call
+ * outside a request has no choices of its own to read.
+ */
+export async function asAdmin<T>(
+  t: Pick<App, "server">,
+  keys: DeviceKeys,
+  work: () => T,
+): Promise<Awaited<T>> {
+  const id = (await t.server.people.all())[0]!.id;
+  return withDeviceKeys(keys, work, id) as Promise<Awaited<T>>;
 }
 
 /** A person's session on a test server: requests as them, without the helper's own login. */

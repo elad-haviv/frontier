@@ -74,7 +74,7 @@ export class KeepGoing {
 
   /** The needs-love rules in force; all on until the author switches one off. */
   async rules(): Promise<NeedsLoveRules> {
-    return (await this.d.settings.read())?.keepGoing.needsLove ?? NeedsLoveRules.parse({});
+    return (await this.d.settings.current()).keepGoing.needsLove;
   }
 
   async queue(): Promise<QueueResponse> {

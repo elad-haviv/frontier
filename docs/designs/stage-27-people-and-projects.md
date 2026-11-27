@@ -308,8 +308,51 @@ their first. It is the second registration in `projects/facade.ts`; to remove it
 and `aliases` in `projects/guard.ts`. The project's own routes have no alias. The keep-going
 settings route, `PUT /api/settings/keep-going`, moved to the server-wide settings.
 
+### Openness is declared per route
+
+Whether a route needs a session is declared on the route, never read from the address. Fastify
+decodes the path before it matches, so `/%61pi/projects/x` reaches the handler of
+`/api/projects/x`; a check on `request.url` would let it by without a session. So:
+
+- The login check (`app.ts`) reads what the router matched (`request.routeOptions`): a matched route
+  under `/api` is closed unless it says `config: PUBLIC` (`auth/openness.ts`). The open ones are
+  `POST /api/login`, `GET /api/session`, `POST /api/github/webhook` (which checks the signature),
+  `POST /api/passkeys/login/{options,verify}` and `GET /health`. A request under `/api` that matched
+  no route is closed too (401 before the 404), and so is the `frontier-build` header and the
+  single-page fallback decided on the decoded path (`isApiRequest`, `decodedPath`).
+- The project guard takes the project from the router's `:project` parameter, not from the address,
+  and throws `unauthenticated` when a project route has no person.
+- `app.allRoutes` lists every registered route with its flag; `test/reviewFixes.test.ts` requests
+  each one that is not open, plain and percent-encoded, without a session, and expects 401. A new
+  route is covered the day it is added, and is closed unless it says otherwise.
+- Nothing in the server may decide "is this the API" or "is this a project" from `request.url`.
+
+### Settings that are per person
+
+Models for each AI task, the prices a person entered, the look of their concept art,
+propose-on-publish and the Keep going rules are the person's own ("Settings → You"), not the
+server's: `PUT /api/settings/{ai,ai/prices,keep-going}` change the caller's settings only, and one
+person's choice never reaches another. They are kept in `state/person-settings.json` by person id
+(`PersonSettings` in the schema; changes are made one after another and the file is written whole
+and renamed into place). A person with no entry has the defaults; the admin, who has none until
+their first change, has what `settings.json` held before (so an existing server keeps its values
+for the first account). Code inside a project's services asks `settings.current()`, which is the
+person whose request is being served (nothing is read for a task that runs outside a request, which
+has no keys either). The request and response shapes did not change. What is still server-wide and
+writable is admin-only: the notice about deleted keys.
+
+### Deleting a project
+
+The order is: out of the store (no guard can find it), the registry marks the id gone (`open` refuses
+it, so a request that already holds the record cannot bring the services back), the services close
+(their state files, the thumbnail cache and the backup state stop writing, so nothing makes the
+folder again), and only then the folder moves to `trash/`. A request in flight is answered, or told
+`no_project`; a reconnecting event stream gets `no_project`.
+
 ### For the web half
 
+- `GET /images?branch=` (an inbox branch's image, not yet published) needs a writer; without
+  `branch` it is reader-level.
 - Routes that a reader may not call answer 403 `role_too_low`; until 27c every reachable account in
   a project is an owner, but the first account can already be given a different role by editing the
   store (tests do).

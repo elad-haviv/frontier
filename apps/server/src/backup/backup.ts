@@ -56,6 +56,8 @@ export class Backup {
   private timer: NodeJS.Timeout | undefined;
   private nightly: NodeJS.Timeout | undefined;
   private queue: Promise<unknown> = Promise.resolve();
+  /** Set when the project is gone: nothing is written for it any more. */
+  private retired = false;
   private readonly delayMs: number;
   private readonly keepNights: number;
   private readonly now: () => Date;
@@ -99,6 +101,12 @@ export class Backup {
     this.timer = undefined;
   }
 
+  /** The project is gone: stops, and writes nothing more, so its folder is not made again. */
+  retire(): void {
+    this.retired = true;
+    this.stop();
+  }
+
   async lastState(): Promise<BackupState> {
     if (!existsSync(this.o.stateFile)) return { lastSuccessAt: null, lastError: null };
     try {
@@ -114,8 +122,10 @@ export class Backup {
       lastSuccessAt: error === null ? this.now().toISOString() : previous.lastSuccessAt,
       lastError: error,
     };
-    await mkdir(dirname(this.o.stateFile), { recursive: true });
-    await writeFile(this.o.stateFile, JSON.stringify(state, null, 2) + "\n");
+    if (!this.retired) {
+      await mkdir(dirname(this.o.stateFile), { recursive: true });
+      await writeFile(this.o.stateFile, JSON.stringify(state, null, 2) + "\n");
+    }
     this.o.onResult?.(state);
     return state;
   }

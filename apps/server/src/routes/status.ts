@@ -1,6 +1,7 @@
 import type { FastifyRequest } from "fastify";
 import type { FastifyInstance } from "fastify";
 import type { RouteApp } from "../projects/facade.js";
+import { PUBLIC } from "../auth/openness.js";
 import type { Server } from "../server.js";
 import type { StatusSnapshot } from "@frontier/schema";
 import type { Services } from "../app.js";
@@ -51,7 +52,7 @@ export function statusRoutes(app: RouteApp, s: Services): void {
  * library, no vault content.
  */
 export function healthRoute(app: FastifyInstance, server: Server): void {
-  app.get("/health", async (_request, reply) => {
+  app.get("/health", { config: PUBLIC }, async (_request, reply) => {
     const first = (await server.projects.all()).find((p) => p.layout === "legacy");
     if (!first) return reply.status(503).send({ ok: false });
     const health = (await server.registry.open(first)).status.health();

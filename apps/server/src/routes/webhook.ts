@@ -1,6 +1,7 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import type { FastifyInstance } from "fastify";
 import { ApiError } from "../errors.js";
+import { PUBLIC } from "../auth/openness.js";
 import type { Server } from "../server.js";
 
 /** Checks GitHub's `X-Hub-Signature-256` header against the unparsed request body. */
@@ -17,7 +18,7 @@ export function validSignature(secret: string, body: Buffer, header: string | un
  * one it reaches, whoever is logged in (it carries no session).
  */
 export function webhookRoutes(app: FastifyInstance, s: Server): void {
-  app.post("/api/github/webhook", async (request) => {
+  app.post("/api/github/webhook", { config: PUBLIC }, async (request) => {
     const secret = s.config.webhookSecret;
     if (!secret) throw new ApiError("not_found", "No webhook is configured.");
     const header = request.headers["x-hub-signature-256"];

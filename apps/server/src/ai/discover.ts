@@ -842,7 +842,7 @@ export class Discoverer {
     const items = await this.list(mapId);
     const found = items.find((x) => x.id === id);
     if (!found) throw new ApiError("not_found", "There is no such discovery.");
-    const style = (await this.d.settings.read())?.ai.artStyle ?? "";
+    const style = (await this.d.settings.current()).ai.artStyle;
     const { bytes } = await this.d.provider.image(
       `${style}\n\nThe subject: ${found.kind}, "${found.name}". ${found.description}`,
       `map:${mapId}`,

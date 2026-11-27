@@ -26,12 +26,18 @@ const TYPES: Record<string, string> = {
 
 export class ImageServer {
   private readonly cacheDir: string;
+  /** Set when the project is gone: a thumbnail is made but not kept, so no folder is made again. */
+  private closed = false;
 
   constructor(
     private readonly vaultDir: string,
     dataDir: string,
   ) {
     this.cacheDir = join(dataDir, "assets", "thumbs");
+  }
+
+  close(): void {
+    this.closed = true;
   }
 
   /**
@@ -68,6 +74,7 @@ export class ImageServer {
           : { width, withoutEnlargement: true },
       )
       .toBuffer();
+    if (this.closed) return { body, contentType };
     await mkdir(this.cacheDir, { recursive: true });
     const temp = `${cached}.${process.pid}.tmp`;
     await writeFile(temp, body);

@@ -4,19 +4,90 @@ import { join } from "node:path";
 import {
   AI_PROVIDER_KINDS,
   type AiProviderKind,
+  PersonSettings,
+  PersonSettingsFile,
   Settings,
   type SettingsInput,
 } from "@frontier/schema";
+import { requestPerson } from "../ai/keyring.js";
 import type { StateFiles } from "./files.js";
+
+/** Whether a person is the server's admin; the store asks it to give the admin the old values. */
+export type IsAdmin = (personId: string) => Promise<boolean>;
 
 export class SettingsStore {
   private readonly path: string;
+  private readonly personPath: string;
+  /** Changes to the one file are made one after another, so two requests cannot lose each other's. */
+  private turn: Promise<unknown> = Promise.resolve();
 
   constructor(
     stateDir: string,
     private readonly files: StateFiles,
+    private readonly isAdmin: IsAdmin = async () => false,
   ) {
     this.path = join(stateDir, "settings.json");
+    this.personPath = join(stateDir, "person-settings.json");
+  }
+
+  /** Runs changes to the settings files one after another. */
+  private serial<T>(work: () => Promise<T>): Promise<T> {
+    const run = this.turn.then(work);
+    this.turn = run.catch(() => undefined);
+    return run;
+  }
+
+  /**
+   * One person's settings: models, prices, art style, propose-on-publish and Keep going rules.
+   * Someone with nothing saved has the defaults, except the admin, whose values are the ones the
+   * server's settings file held before settings were per person.
+   */
+  async ofPerson(personId: string): Promise<PersonSettings> {
+    const file = (await this.files.readJson(this.personPath, PersonSettingsFile)) ?? { people: {} };
+    const own = file.people[personId];
+    if (own) return own;
+    if (await this.isAdmin(personId)) {
+      const old = await this.read();
+      if (old) {
+        return PersonSettings.parse({
+          ai: {
+            models: old.ai.models,
+            modelPrices: old.ai.modelPrices,
+            artStyle: old.ai.artStyle,
+            proposeOnPublish: old.ai.proposeOnPublish,
+          },
+          keepGoing: old.keepGoing,
+        });
+      }
+    }
+    return PersonSettings.parse({});
+  }
+
+  /**
+   * The settings of the person whose request is being served, for the code deep in a service that
+   * has no request to hand. Outside a request nobody is asking, so the defaults apply.
+   */
+  async current(): Promise<PersonSettings> {
+    const id = requestPerson();
+    return id ? this.ofPerson(id) : PersonSettings.parse({});
+  }
+
+  /** Changes one person's settings and keeps the rest, the other people's included. */
+  updatePerson(
+    personId: string,
+    change: (settings: PersonSettings) => PersonSettings,
+  ): Promise<PersonSettings> {
+    return this.serial(async () => {
+      const next = PersonSettings.parse(change(await this.ofPerson(personId)));
+      const file = (await this.files.readJson(this.personPath, PersonSettingsFile)) ?? {
+        people: {},
+      };
+      await this.files.writeJson(
+        this.personPath,
+        PersonSettingsFile.parse({ people: { ...file.people, [personId]: next } }),
+      );
+      return next;
+    });
   }
 
   /** The stored settings, or null before a password has been set. */
@@ -30,12 +101,14 @@ export class SettingsStore {
   }
 
   /** Changes part of the settings and keeps the rest. Refused before a password exists. */
-  async update(change: (settings: Settings) => Settings): Promise<Settings> {
-    const now = await this.read();
-    if (!now) throw new Error("Settings cannot be changed before a password is set.");
-    const next = Settings.parse(change(now));
-    await this.files.writeJson(this.path, next);
-    return next;
+  update(change: (settings: Settings) => Settings): Promise<Settings> {
+    return this.serial(async () => {
+      const now = await this.read();
+      if (!now) throw new Error("Settings cannot be changed before a password is set.");
+      const next = Settings.parse(change(now));
+      await this.files.writeJson(this.path, next);
+      return next;
+    });
   }
 
   /**
