@@ -210,17 +210,24 @@ export class GoogleSignOn {
  * A `returnTo` that cannot send the browser anywhere but this app: a path that starts with one
  * slash, with no scheme, no host, no backslash or control character. Anything else is dropped.
  */
+/** Whether a text holds a backslash or a control character (never in an address we send people to). */
+const hasUnsafeCharacter = (text: string): boolean =>
+  [...text].some((c) => c === "\\" || c.charCodeAt(0) < 0x20 || c.charCodeAt(0) === 0x7f);
+
 export function safeReturnTo(raw: string | undefined | null): string | null {
   if (!raw || raw.length > 500) return null;
-  if (!raw.startsWith("/") || raw.startsWith("//") || /[\\\u0000-\u001f\u007f]/.test(raw))
-    return null;
+  if (!raw.startsWith("/") || raw.startsWith("//") || hasUnsafeCharacter(raw)) return null;
   try {
+    // An encoded backslash or control character is no safer than a plain one.
+    if (hasUnsafeCharacter(decodeURIComponent(raw))) return null;
     // Whatever the address parses as against a made-up host must still be that host.
     const parsed = new URL(raw, "http://frontier.invalid");
     if (parsed.origin !== "http://frontier.invalid") return null;
     // Not the API: a browser navigating to one would show raw JSON.
     if (parsed.pathname === "/api" || parsed.pathname.startsWith("/api/")) return null;
-    return `${parsed.pathname}${parsed.search}${parsed.hash}`;
+    const kept = `${parsed.pathname}${parsed.search}${parsed.hash}`;
+    // Dot segments can collapse into a double slash ("/.//host"), which a browser reads as a host.
+    return kept.startsWith("//") ? null : kept;
   } catch {
     return null;
   }

@@ -60,6 +60,19 @@ export type GoogleProblem =
   | "recent_login_needed";
 
 export function googleRoutes(app: FastifyInstance, s: Server): void {
+  /**
+   * States already used, until they would have run out. The cookie holding a pending sign-in is
+   * stateless, so an old copy of it could be replayed; this makes "once" true on the server.
+   */
+  const usedStates = new Map<string, number>();
+  const spend = (state: string, until: number): boolean => {
+    const now = Date.now();
+    for (const [key, end] of usedStates) if (end < now) usedStates.delete(key);
+    if (usedStates.has(state)) return false;
+    usedStates.set(state, until);
+    return true;
+  };
+
   const go = (reply: FastifyReply, to: string) =>
     reply.header("cache-control", "no-store").code(302).header("location", to).send();
   const withProblem = (path: string, problem: GoogleProblem) =>
@@ -143,6 +156,7 @@ export function googleRoutes(app: FastifyInstance, s: Server): void {
     ) {
       return page("google_expired");
     }
+    if (!spend(pending.state, pending.until)) return page("google_expired");
 
     let profile;
     try {
