@@ -66,6 +66,9 @@ export const ERROR_STATUS = {
   already_confirmed: 409,
   // With mail on, a different address goes through Change address, which confirms it first.
   use_change_address: 409,
+  // Stage 27d: when someone saves, an entry in the save was changed by another person since the plan was
+  // made, so it was not saved (the other entries of the save were); plan again to compare.
+  saved_by_other: 409,
   // An image could not be taken from a web address; the server log says why.
   image_fetch_failed: 422,
 } as const;

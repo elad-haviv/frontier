@@ -110,10 +110,13 @@ export function entryRoutes(app: RouteApp, s: Services): void {
     };
     const renames = s.drafts.listRenames();
     const after = (path: string) => renames.reduce((p, r) => movedPath(p, r.from, r.to) ?? p, path);
+    // The entries other people have unsaved changes to get a dot (writers and owners; never text).
+    const others = reader ? new Map() : s.drafts.othersUnsaved();
     const place = (note: TreeResponse["notes"][number]) => {
       const shown = after(note.path);
       // The entry is listed where it is going; its link opens it where it still is.
-      const entry = shown === note.path ? note : { ...note, path: shown, moved: note.path };
+      const marked = others.has(note.path) ? { ...note, othersUnsaved: true } : note;
+      const entry = shown === note.path ? marked : { ...marked, path: shown, moved: note.path };
       folder(dirname(shown)).notes.push(entry);
     };
     const { added, removed } = overlay(s);
@@ -190,6 +193,26 @@ export function entryRoutes(app: RouteApp, s: Services): void {
     }
 
     const info = draft ? { id: draft.id, revision: draft.revision, kind: draft.kind } : null;
+    // Who else has unsaved changes to this entry, never what (a reader sees none), and who saved
+    // the last version.
+    const reader = request.project?.role === "reader";
+    const othersUnsaved = reader ? [] : (s.drafts.othersUnsaved().get(path) ?? []);
+    // From the map of every file's last version for the library's commit (no Git command per read once
+    // it is made), not a `git log` for each entry read under the lock that every save waits on.
+    const last = note
+      ? await (
+          s.index.commit === null
+            ? s.git.lastChange(path)
+            : s.git.lastChangeAt(path, s.index.commit)
+        ).catch(() => null)
+      : null;
+    const lastVersion = last
+      ? {
+          commit: last.commit,
+          at: last.at,
+          by: await s.authors.resolve(last.author),
+        }
+      : null;
     // The one rename waiting for this entry, if any; a folder's rename is the folder's own.
     const intent = s.drafts.listRenames().find((r) => r.from === path);
     const rename = intent ? { id: intent.id, to: intent.to } : null;
@@ -214,11 +237,12 @@ export function entryRoutes(app: RouteApp, s: Services): void {
         chronicles: await chroniclesOf(path),
         blob,
         rename,
+        othersUnsaved,
+        lastVersion,
       };
     }
 
-    const waiting =
-      request.project?.role === "reader" ? undefined : s.quarantine.waiting(note!.path);
+    const waiting = reader ? undefined : s.quarantine.waiting(note!.path);
     return {
       path: note!.path,
       text: note!.text,
@@ -237,6 +261,8 @@ export function entryRoutes(app: RouteApp, s: Services): void {
       chronicles: await chroniclesOf(note!.path),
       blob,
       rename,
+      othersUnsaved,
+      lastVersion,
     };
   });
 

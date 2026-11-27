@@ -20,6 +20,11 @@ import type { ProjectRole } from "@frontier/schema";
  * help that drafts into the library (an addition to an entry) and what AI has proposed but nobody
  * has kept (a map's discoveries) are writers', for the same reason.
  *
+ * Unsaved changes are each person's own (stage 27d, `state/drafts.ts`): the draft routes act on the
+ * caller's drafts only, and answer `not_found` for anyone else's. A reader announces the entry they
+ * have open (`PUT /presence`) so writers can see who is reading, and is told nothing of other people's
+ * work in progress or of who is reading.
+ *
  * Comments are writer-only until stage 27e: until then they are one person's private notes ("for
  * me", "for the AI"), which a reader must not read or add to.
  */
@@ -57,6 +62,9 @@ export const ROUTE_ROLES: Record<string, ProjectRole> = {
   "GET /history/version": "reader",
   "GET /status": "reader",
   "GET /status/events": "reader",
+  // Announce the entry this device has open (stage 27d); a reader reads, so a reader announces too.
+  "PUT /presence": "reader",
+  "POST /presence/leave": "reader",
   "GET /attention": "reader",
   "GET /library-files/:name": "reader",
   "GET /maps": "reader",
@@ -109,6 +117,7 @@ export const ROUTE_ROLES: Record<string, ProjectRole> = {
   "DELETE /drafts/:id/versions/server": "writer",
   "POST /drafts/:id/merge-versions": "writer",
   "POST /drafts/:id/resolve": "writer",
+  "GET /drafts/:id/compare": "writer",
   "GET /unpublished": "writer",
   "POST /publish/plan": "writer",
   "POST /publish/confirm": "writer",

@@ -267,6 +267,14 @@ export class Quarantine {
   async withdraw(id: string): Promise<void> {
     const record = this.pending.find((p) => p.id === id);
     if (!record) throw new ApiError("not_found", "This decision is not waiting to be published.");
+    // A revert's unsaved text is the person's who decided it (stage 27d): nobody else withdraws it.
+    if (
+      record.draftId &&
+      this.d.drafts.existsAny(record.draftId) &&
+      !this.d.drafts.get(record.draftId)
+    ) {
+      throw new ApiError("not_found", "This decision is not waiting to be published.");
+    }
     if (record.draftId && this.d.drafts.get(record.draftId)) {
       await this.d.drafts.discard(record.draftId);
     }
@@ -277,7 +285,8 @@ export class Quarantine {
   /** A revert whose draft was discarded on its own is no revert any more. */
   async prune(): Promise<void> {
     const left = this.pending.filter(
-      (p) => p.decision !== "reverted" || !p.draftId || this.d.drafts.get(p.draftId) !== undefined,
+      // Whoever's it is: this runs for the whole project, not for a person (stage 27d).
+      (p) => p.decision !== "reverted" || !p.draftId || this.d.drafts.existsAny(p.draftId),
     );
     if (left.length !== this.pending.length) {
       this.pending = left;

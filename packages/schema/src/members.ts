@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { EmailAddress, InviteMailState } from "./email.js";
 import { ProjectRole } from "./projects.js";
+import { AccountEmail } from "./people.js";
 
 /**
  * Stage 27c: members, invite links and joining. Members are listed and changed by owners under
@@ -43,6 +44,21 @@ export const MembersResponse = z.object({
   canManage: z.boolean(),
 });
 export type MembersResponse = z.infer<typeof MembersResponse>;
+
+/** How many days a person's unsaved changes are kept in a project they have left or were removed from (stage 27d). */
+export const AWAY_KEEP_DAYS = 30;
+
+/**
+ * `DELETE /api/p/:project/members/:id` and `POST /api/p/:project/members/leave` (stage 27d): how
+ * many unsaved changes (entries, renames and the like) the person leaves in the project. They are
+ * kept for `keptDays` days, restored if the person rejoins within them, and then removed.
+ */
+export const RemoveMemberResponse = z.object({
+  ok: z.literal(true),
+  unsavedKept: z.number().int().min(0),
+  keptDays: z.number().int().min(0),
+});
+export type RemoveMemberResponse = z.infer<typeof RemoveMemberResponse>;
 
 /** `PUT /api/p/:project/members/:id` */
 export const ChangeRoleRequest = z.object({ role: ProjectRole });
@@ -124,7 +140,7 @@ export type JoinInfo = z.infer<typeof JoinInfo>;
 /** `POST /api/join/:code`: a new person joins with an email and a password. */
 export const JoinPasswordRequest = z.object({
   name: z.string().trim().min(1, "Give a name.").max(80, "Use 80 characters or fewer."),
-  email: z.string().trim().min(1, "Give an email.").max(200).email("This is not an email address."),
+  email: AccountEmail,
   password: z.string().min(12, "Use at least 12 characters.").max(500),
 });
 export type JoinPasswordRequest = z.infer<typeof JoinPasswordRequest>;
@@ -132,7 +148,7 @@ export type JoinPasswordRequest = z.infer<typeof JoinPasswordRequest>;
 /** `POST /api/join/:code/passkey/options`: the name and the email (every account has one). */
 export const JoinPasskeyOptionsRequest = z.object({
   name: z.string().trim().min(1, "Give a name.").max(80, "Use 80 characters or fewer."),
-  email: z.string().trim().min(1, "Give an email.").max(200).email("This is not an email address."),
+  email: AccountEmail,
 });
 export type JoinPasskeyOptionsRequest = z.infer<typeof JoinPasskeyOptionsRequest>;
 

@@ -26,9 +26,16 @@ export interface BackupOptions {
   keepNights?: number;
   onResult?: (state: BackupState) => void;
   now?: () => Date;
+  /** Told after each file of a draft's folder is read. Used by tests, to write in between. */
+  afterDraftRead?: (path: string) => Promise<void> | void;
 }
 
 const MANIFEST = "latest/.manifest.json";
+
+/** A draft's folder under the state folder: `drafts/<id>/`, but not the renames' folder. */
+const DRAFT_FOLDER = /^drafts\/(?!renames\/)[^/]+(?=\/)/;
+/** How many times a draft's folder is read again when its record moves meanwhile. */
+const DRAFT_READ_TRIES = 5;
 
 async function walk(root: string, rel = ""): Promise<string[]> {
   const out: string[] = [];
@@ -141,15 +148,57 @@ export class Backup {
   private async files(): Promise<Map<string, Buffer>> {
     const out = new Map<string, Buffer>();
     for (const [name, dir] of Object.entries(this.o.sources)) {
+      const folders = new Map<string, string[]>();
       for (const rel of await walk(dir)) {
         const full = join(dir, rel);
         if (full === this.o.stateFile) continue;
         // The list's counts of a project are worked out again when it opens; they are not data.
         if (name === "state" && rel === SUMMARY_FILE) continue;
-        out.set(`${name}/${rel}`, await readFile(full));
+        // A draft's files are one thing, copied together (below).
+        const draft = name === "state" ? DRAFT_FOLDER.exec(rel)?.[0] : undefined;
+        if (draft !== undefined) folders.set(draft, [...(folders.get(draft) ?? []), rel]);
+        else out.set(`${name}/${rel}`, await readFile(full));
+      }
+      for (const [folder, rels] of folders) {
+        for (const [rel, data] of await this.draftFolder(dir, folder, rels)) {
+          out.set(`${name}/${rel}`, data);
+        }
       }
     }
     return out;
+  }
+
+  /**
+   * A draft's folder as one consistent copy. The store writes a draft's text and then its record (so
+   * a record never names text that is not there), and a kept copy's text and then its record: the
+   * record is read first here, then the text, then the record again, and the folder is read again if
+   * the record moved meanwhile, so the copy never holds a record newer than its text. A folder that
+   * is removed while it is read (a discard) is not copied.
+   */
+  private async draftFolder(
+    dir: string,
+    folder: string,
+    rels: string[],
+  ): Promise<Map<string, Buffer>> {
+    const records = rels.filter((r) => r.endsWith(".json"));
+    const texts = rels.filter((r) => !r.endsWith(".json"));
+    const main = `${folder}/record.json`;
+    for (let attempt = 0; ; attempt++) {
+      const got = new Map<string, Buffer>();
+      try {
+        for (const rel of [...records, ...texts]) {
+          got.set(rel, await readFile(join(dir, rel)));
+          await this.o.afterDraftRead?.(rel);
+        }
+        const again = records.includes(main) ? await readFile(join(dir, main)) : null;
+        if (again === null || again.equals(got.get(main)!) || attempt >= DRAFT_READ_TRIES) {
+          return got;
+        }
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code === "ENOENT") return new Map();
+        throw err;
+      }
+    }
   }
 
   /** Brings `latest/` in line with the folders: uploads what changed and removes what is gone. */

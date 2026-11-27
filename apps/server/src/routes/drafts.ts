@@ -4,6 +4,8 @@ import type { RouteApp } from "../projects/facade.js";
 import {
   CreateRenameRequest,
   type CreateRenameResponse,
+  type DraftCompareResponse,
+  DraftResolveRequest,
   DraftTextRequest,
   Id,
   makeId,
@@ -256,7 +258,8 @@ export function draftRoutes(app: RouteApp, s: Services): void {
     const device = deviceOf(request);
     try {
       const record = await saveEntry(input, device);
-      return { id: record.id, revision: record.revision };
+      // A device is answered with the id it uses (see `DraftStore.save`).
+      return { id: record.clientId ?? record.id, revision: record.revision };
     } finally {
       // A kept copy raises the attention count, so every open page hears of it too.
       s.status.drafts(s.drafts.count(), 0);
@@ -293,16 +296,35 @@ export function draftRoutes(app: RouteApp, s: Services): void {
     return { id: record.id, revision: record.revision };
   });
 
-  /** The author settled a conflict: his text now builds on what is on `main`. */
+  /**
+   * The person settled a conflict: their text now builds on the saved version they compared
+   * (`theirsBlob`), or is refused when someone saved another one meanwhile (stage 27d).
+   */
   app.post("/api/drafts/:id/resolve", async (request) => {
     const { id } = IdParam.parse(request.params);
-    const { text } = DraftTextRequest.parse(request.body);
-    const draft = s.drafts.get(id);
-    if (!draft) throw new ApiError("not_found", "There is no such draft.");
+    const { text, theirsBlob } = DraftResolveRequest.parse(request.body);
+    if (!s.drafts.get(id)) throw new ApiError("not_found", "There is no such draft.");
     onlyNotes(id);
-    const blob = (await s.git.blobHash(draft.path)) ?? "";
-    const record = await s.drafts.rebase(id, text.replace(/\r\n/g, "\n"), blob, true);
+    const record = await s.publisher.resolve(id, text.replace(/\r\n/g, "\n"), theirsBlob);
     return { id: record.id, revision: record.revision };
+  });
+
+  /**
+   * What a compare screen shows for one unsaved change (stage 27d): the person's text, the saved
+   * text, the text it started from, and who saved the saved version and when. Without making a plan;
+   * the answer is what saving it now would do.
+   */
+  app.get("/api/drafts/:id/compare", async (request): Promise<DraftCompareResponse> => {
+    const { id } = IdParam.parse(request.params);
+    const { outcome, c, draft, theirsBlob } = await s.publisher.compare(id);
+    return {
+      draftId: draft.id,
+      path: draft.path,
+      outcome,
+      theirsBlob,
+      ...(c?.conflict ? { conflict: c.conflict } : {}),
+      ...(c?.merge ? { merge: c.merge } : {}),
+    };
   });
 
   app.get("/api/unpublished", async (): Promise<UnpublishedResponse> => {
@@ -328,12 +350,16 @@ export function draftRoutes(app: RouteApp, s: Services): void {
       renames.push({ id: intent.id, from: intent.from, to: intent.to, affected });
     }
     await s.quarantine.prune();
-    const decisions = s.quarantine.pendingDecisions().map((d) => ({
-      id: d.id,
-      path: d.path,
-      decision: d.decision,
-      ...(d.draftId ? { draftId: d.draftId } : {}),
-    }));
+    // A revert is saved by the person who decided it: its unsaved text is theirs alone.
+    const decisions = s.quarantine
+      .pendingDecisions()
+      .filter((d) => !d.draftId || !s.drafts.existsAny(d.draftId) || s.drafts.get(d.draftId))
+      .map((d) => ({
+        id: d.id,
+        path: d.path,
+        decision: d.decision,
+        ...(d.draftId ? { draftId: d.draftId } : {}),
+      }));
     return { drafts, renames, decisions };
   });
 
@@ -346,7 +372,7 @@ export function draftRoutes(app: RouteApp, s: Services): void {
     const { planId, confirmedMergeIds, message } = PublishConfirmRequest.parse(request.body);
     const author = authorOf(personOf(request), s.config.commitAuthor);
     let published: string[] = [];
-    const commit = await s.publisher.confirm(
+    const { commit, conflicts } = await s.publisher.confirm(
       planId,
       confirmedMergeIds,
       message,
@@ -356,7 +382,8 @@ export function draftRoutes(app: RouteApp, s: Services): void {
       },
     );
     // `published` lists the notes whose own text went out, for the browser to propose fields for.
-    return { commit, published };
+    // `conflicts` lists entries left out because someone else saved a newer version since the plan.
+    return { commit, published, conflicts };
   });
 
   /**

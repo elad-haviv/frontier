@@ -1,7 +1,13 @@
 import { randomUUID } from "node:crypto";
 import { stat } from "node:fs/promises";
 import { join } from "node:path";
-import { emailKey, PeopleFile, type ConfirmedBy, type Person } from "@frontier/schema";
+import {
+  emailKey,
+  isStandInAddress,
+  PeopleFile,
+  type ConfirmedBy,
+  type Person,
+} from "@frontier/schema";
 import { ApiError } from "../errors.js";
 import type { StateFiles } from "./files.js";
 
@@ -134,6 +140,11 @@ export class PeopleStore {
     return this.held?.people.find((p) => p.admin)?.id ?? null;
   }
 
+  /** A person from what is held in memory, without reading the file; null when not known (yet). */
+  getSync(id: string): Person | null {
+    return this.held?.people.find((p) => p.id === id) ?? null;
+  }
+
   async get(id: string): Promise<Person | null> {
     return (await this.all()).find((p) => p.id === id) ?? null;
   }
@@ -240,6 +251,10 @@ export class PeopleStore {
 
   private checkEmail(people: Person[], email: string, own: string | null): void {
     const key = emailKey(email);
+    // The stand-in domain names a person on a saved version for one with no email: no account has it.
+    if (isStandInAddress(email)) {
+      throw new ApiError("invalid", "This address cannot be used. Give your own email.");
+    }
     if (key !== "" && people.some((p) => p.id !== own && emailKey(p.email) === key)) {
       throw new ApiError("email_taken", "Another account already uses this email.");
     }

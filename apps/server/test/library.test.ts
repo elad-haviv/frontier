@@ -319,8 +319,10 @@ describe("import", () => {
       [".obsidian/app.json", "01 Places/Harbor.md", "Changes.md", "Stays.md", "Welcome.md"].sort(),
     );
     expect((await get("/api/entries?path=Changes.md")).json().text).toContain("New.");
+    // Stage 27d: the import is by the person who made it, as any other version.
     expect((await get("/api/history")).json().versions[0]).toMatchObject({
       message: "Bring Avalymia in",
+      by: { id: expect.any(String), name: expect.any(String) },
     });
     // The replaced text is still in the history.
     const versions = (await get("/api/history?path=Changes.md")).json().versions;

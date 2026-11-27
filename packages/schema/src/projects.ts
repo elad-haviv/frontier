@@ -120,6 +120,11 @@ export const ProjectRecord = z.object({
   /** The folder of marker sets, when it is not the server's own setting (a project begun from the sample). */
   iconFolder: z.string().nullable().default(null),
   members: z.array(ProjectMember).default([]),
+  /**
+   * The ids of people who were members and are not now (stage 27d). Saved versions they made are
+   * still shown under their name; a person who was never a member is not looked up for a version.
+   */
+  formerMembers: z.array(z.string()).default([]),
 });
 export type ProjectRecord = z.infer<typeof ProjectRecord>;
 

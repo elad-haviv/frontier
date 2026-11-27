@@ -217,6 +217,7 @@ export class KeepGoing {
     if (kept.previousText === null) await this.d.drafts.discard(draft.id);
     else await this.d.drafts.serverChange(draft.id, kept.previousText);
     this.d.status.drafts(this.d.drafts.count(), 0);
+    this.d.drafts.noteServerChange();
     this.d.status.serverChangedDraft();
   }
 

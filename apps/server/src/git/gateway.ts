@@ -38,6 +38,13 @@ export interface GatewayOptions {
   committer: Identity;
   /** How long an operation may wait for the lock. */
   lockTimeoutMs?: number;
+  /**
+   * How long a fetch or a push may take before it is stopped (default 90 seconds), and a first clone
+   * (default 10 minutes). A command that talks to the remote holds the one lock, so one that hangs
+   * would otherwise make every other read and save wait until it gave up.
+   */
+  remoteTimeoutMs?: number;
+  cloneTimeoutMs?: number;
   /** Called with the arguments of every Git command. Used by tests. */
   onCommand?: (args: readonly string[]) => void;
 }
@@ -59,7 +66,22 @@ export interface Version {
   at: string;
   message: string;
   paths: string[];
+  /** Who Git says made it (the commit's author). Never sent to the browser as it is: see `publish/authors.ts`. */
+  author: Identity;
 }
+
+/** One saved version of a file: the commit, when, and who Git says made it. */
+export interface SavedChange {
+  commit: string;
+  at: string;
+  author: Identity;
+}
+
+const changeOf = ([commit, at, name, email]: string[]): SavedChange => ({
+  commit: commit ?? "",
+  at: at ?? "",
+  author: { name: name ?? "", email: email ?? "" },
+});
 
 export interface CommitChanges {
   writes: { path: string; content: Buffer }[];
@@ -79,6 +101,8 @@ interface RunOptions {
   /** Exit codes that are returned to the caller, not thrown. */
   allow?: (code: number) => boolean;
   remote?: boolean;
+  /** Stops the command after this long (for those that talk to the remote). */
+  timeoutMs?: number;
 }
 
 interface RunResult {
@@ -88,6 +112,11 @@ interface RunResult {
 }
 
 const MAX_BUFFER = 256 * 1024 * 1024;
+
+/** A fetch or a push that takes longer than this is stopped: 90 seconds, far more than a healthy one needs. */
+export const REMOTE_TIMEOUT_MS = 90_000;
+/** A first clone may be a large library: 10 minutes. */
+export const CLONE_TIMEOUT_MS = 10 * 60_000;
 
 /** Only branches under this name are read as proposals from agents. */
 export const PROPOSAL_PREFIX = "proposal/";
@@ -156,6 +185,36 @@ function parseChangeLog(out: string): LoggedCommit[] {
     });
 }
 
+/**
+ * Reads the output of `git log -z` whose format is `%x00` and then `fields` placeholders joined by
+ * `%x00`, optionally with `--name-only` or `--raw`. Every free-text field (a name, a subject) is
+ * split off by NUL, which Git never lets into one, so a control character in an author's name
+ * cannot shift the fields or the paths. A commit starts at an empty token (a path is never empty),
+ * takes the next `fields` tokens, and then every token up to the next empty one is a path (or, for
+ * `--raw`, a `:mode mode old new status` token and then its path).
+ */
+export function parseLogZ(out: string, fields: number): { fields: string[]; rest: string[] }[] {
+  const tokens = out.split("\0");
+  const commits: { fields: string[]; rest: string[] }[] = [];
+  let i = 0;
+  while (i < tokens.length) {
+    if (tokens[i] !== "") {
+      i++;
+      continue;
+    }
+    i++;
+    if (i + fields > tokens.length) break;
+    const head = tokens.slice(i, i + fields);
+    i += fields;
+    const rest: string[] = [];
+    while (i < tokens.length && tokens[i] !== "") rest.push(tokens[i++]!);
+    // Git puts a newline between the format and the first path.
+    if (rest[0]?.startsWith("\n")) rest[0] = rest[0].slice(1);
+    commits.push({ fields: head, rest });
+  }
+  return commits;
+}
+
 const wordsIn = (line: string): number => line.match(/[\p{L}\p{N}][\p{L}\p{N}'’-]*/gu)?.length ?? 0;
 
 function parseWordChanges(out: string): WordCommit[] {
@@ -195,9 +254,13 @@ function parseWordChanges(out: string): WordCommit[] {
 export class GitGateway {
   private tail: Promise<unknown> = Promise.resolve();
   private readonly lockTimeoutMs: number;
+  private readonly remoteTimeoutMs: number;
+  private readonly cloneTimeoutMs: number;
 
   constructor(private readonly opts: GatewayOptions) {
     this.lockTimeoutMs = opts.lockTimeoutMs ?? 60_000;
+    this.remoteTimeoutMs = opts.remoteTimeoutMs ?? REMOTE_TIMEOUT_MS;
+    this.cloneTimeoutMs = opts.cloneTimeoutMs ?? CLONE_TIMEOUT_MS;
   }
 
   /** Runs `fn` when every earlier operation has finished. Fails with `git_busy` if the wait is too long. */
@@ -257,9 +320,27 @@ export class GitGateway {
       const child = execFile(
         "git",
         ["-c", "core.quotepath=off", ...args],
-        { cwd: options.cwd ?? this.opts.dir, env, encoding: "buffer", maxBuffer: MAX_BUFFER },
+        {
+          cwd: options.cwd ?? this.opts.dir,
+          env,
+          encoding: "buffer",
+          maxBuffer: MAX_BUFFER,
+          // Killed outright: Git's helpers (ssh, the HTTPS transport) ignore a polite stop.
+          ...(options.timeoutMs !== undefined
+            ? { timeout: options.timeoutMs, killSignal: "SIGKILL" as const }
+            : {}),
+        },
         (error, stdout, stderr) => {
-          const err = error as (Error & { code?: number | string }) | null;
+          const err = error as (Error & { code?: number | string; killed?: boolean }) | null;
+          if (err?.killed && options.timeoutMs !== undefined) {
+            reject(
+              new GitError(
+                "git_failed",
+                `git ${args[0]} took longer than ${Math.round(options.timeoutMs / 1000)} seconds and was stopped.`,
+              ),
+            );
+            return;
+          }
           const code = err === null ? 0 : typeof err.code === "number" ? err.code : -1;
           const result = { code, stdout, stderr: stderr.toString("utf8") };
           if (code === 0 || options.allow?.(code)) resolve(result);
@@ -287,6 +368,7 @@ export class GitGateway {
       await this.run(["clone", "--branch", "main", this.opts.remoteUrl, this.opts.dir], {
         cwd: tmpdir(),
         remote: true,
+        timeoutMs: this.cloneTimeoutMs,
       });
     });
   }
@@ -312,7 +394,7 @@ export class GitGateway {
         "+refs/heads/main:refs/remotes/origin/main",
         `+refs/heads/${PROPOSAL_PREFIX}*:refs/remotes/origin/${PROPOSAL_PREFIX}*`,
       ],
-      { remote: true },
+      { remote: true, timeoutMs: this.remoteTimeoutMs },
     );
     const current = await this.text(["rev-parse", "origin/main"]);
     await this.run(["reset", "--hard", "origin/main"]);
@@ -407,6 +489,7 @@ export class GitGateway {
       const r = await this.run(["push", "--porcelain", "origin", `:refs/heads/${name}`], {
         remote: true,
         allow: () => true,
+        timeoutMs: this.remoteTimeoutMs,
       });
       const out = r.stdout.toString("utf8") + r.stderr;
       // Already gone on the remote counts as removed.
@@ -598,31 +681,146 @@ export class GitGateway {
           "log",
           `-n${limit}`,
           "--name-only",
-          "--format=%x01%H%x02%cI%x02%s%x02",
+          "-z",
+          "--format=%x00%H%x00%cI%x00%s%x00%an%x00%ae",
           ...(path ? ["--follow", "--", path] : ["--no-renames"]),
         ])
       ).stdout.toString("utf8");
-      return out
-        .split("\u0001")
-        .filter((part) => part.trim() !== "")
-        .map((part) => {
-          const [commit, at, message, rest] = part.split("\u0002");
-          return {
-            commit: commit!,
-            at: at!,
-            message: message!,
-            paths: (rest ?? "").split("\n").filter((p) => p !== ""),
-          };
-        });
+      return parseLogZ(out, 5).map(({ fields: [commit, at, message, name, email], rest }) => ({
+        commit: commit!,
+        at: at!,
+        message: message!,
+        author: { name: name ?? "", email: email ?? "" },
+        paths: rest.filter((p) => p !== ""),
+      }));
+    });
+  }
+
+  /**
+   * The last saved version that touched a file, newest first, even when it is gone since (the
+   * version that deleted it is that). Null for a path no version ever touched.
+   */
+  lastChange(path: string): Promise<{ commit: string; at: string; author: Identity } | null> {
+    return this.locked(async () => {
+      const r = await this.run(
+        ["log", "-n1", "-z", "--format=%x00%H%x00%cI%x00%an%x00%ae", "--", path],
+        { allow: (c) => c === 128 },
+      );
+      if (r.code !== 0) return null;
+      const [last] = parseLogZ(r.stdout.toString("utf8"), 4);
+      return last ? changeOf(last.fields) : null;
+    });
+  }
+
+  /** The last version that touched each path, by path, as of a commit: see `lastChangeAt`. */
+  private changeMap: { head: string; map: Map<string, SavedChange> } | null = null;
+
+  /**
+   * As `lastChange`, for a path at a commit the caller already knows is the working copy's (the
+   * index's commit). Answered from one map of every path's last version, built by one pass over the
+   * log and, for each new commit after that, by reading only the commits since; a read of an entry
+   * costs no Git command once the map is there, instead of a `git log` for each (stage 27d).
+   */
+  async lastChangeAt(path: string, commit: string): Promise<SavedChange | null> {
+    const held =
+      this.changeMap?.head === commit ? this.changeMap : await this.buildChangeMap(commit);
+    return held.map.get(path) ?? null;
+  }
+
+  private buildChangeMap(commit: string): Promise<{ head: string; map: Map<string, SavedChange> }> {
+    return this.locked(async () => {
+      // Another read may have built it while this one waited.
+      if (this.changeMap?.head === commit) return this.changeMap;
+      const before = this.changeMap;
+      const range = before
+        ? (
+            await this.run(["merge-base", "--is-ancestor", before.head, commit], {
+              allow: (c) => c === 1 || c === 128,
+            })
+          ).code === 0
+          ? `${before.head}..${commit}`
+          : commit
+        : commit;
+      const r = await this.run(
+        [
+          "log",
+          "--no-renames",
+          "--name-only",
+          "-z",
+          "--format=%x00%H%x00%cI%x00%an%x00%ae",
+          range,
+          "--",
+        ],
+        // A library with no commit yet has no log.
+        { allow: (c) => c === 128 },
+      );
+      const map =
+        range === commit || !before ? new Map<string, SavedChange>() : new Map(before.map);
+      const seen = new Set<string>();
+      // Newest first: the first commit to name a path is its last version.
+      if (r.code === 0) {
+        for (const { fields, rest } of parseLogZ(r.stdout.toString("utf8"), 4)) {
+          const change = changeOf(fields);
+          for (const p of rest) {
+            if (p === "" || seen.has(p)) continue;
+            seen.add(p);
+            map.set(p, change);
+          }
+        }
+      }
+      this.changeMap = { head: commit, map };
+      return this.changeMap;
+    });
+  }
+
+  /**
+   * The saved versions of a file made after the version whose blob is `sinceBlob` (the one a change
+   * was started from), newest first, each with who saved it and the blob it left; `""` for a change
+   * started from no file counts every version. Stops at the version with that blob; when none has it
+   * (the base is no longer in the history) every version up to `limit` is listed.
+   */
+  changesAfter(
+    path: string,
+    sinceBlob: string,
+    limit = 200,
+  ): Promise<(SavedChange & { blob: string | null })[]> {
+    return this.locked(async () => {
+      const r = await this.run(
+        [
+          "log",
+          `-n${limit}`,
+          "--no-renames",
+          "--raw",
+          "--no-abbrev",
+          "-z",
+          "--format=%x00%H%x00%cI%x00%an%x00%ae",
+          "--",
+          path,
+        ],
+        { allow: (c) => c === 128 },
+      );
+      if (r.code !== 0) return [];
+      const out: (SavedChange & { blob: string | null })[] = [];
+      for (const { fields, rest } of parseLogZ(r.stdout.toString("utf8"), 4)) {
+        // ":<mode> <mode> <old> <new> <status>", then the path.
+        const meta = rest.find((t) => t.startsWith(":"))?.split(" ");
+        const blob = meta?.[3] && !/^0+$/.test(meta[3]) ? meta[3] : null;
+        if (sinceBlob !== "" && blob === sinceBlob) break;
+        out.push({ ...changeOf(fields), blob });
+      }
+      return out;
     });
   }
 
   /** When the last saved version was made and the name of its author; null for a library with none. */
   lastVersion(): Promise<{ at: string; by: string } | null> {
     return this.locked(async () => {
-      const r = await this.run(["log", "-n1", "--format=%cI%x02%an"], { allow: () => true });
-      const [at, by] = r.stdout.toString("utf8").trim().split("\u0002");
-      return r.code === 0 && at ? { at, by: by ?? "" } : null;
+      const r = await this.run(["log", "-n1", "-z", "--format=%x00%cI%x00%an"], {
+        allow: () => true,
+      });
+      const [last] = r.code === 0 ? parseLogZ(r.stdout.toString("utf8"), 2) : [];
+      const [at, by] = last?.fields ?? [];
+      return at ? { at, by: by ?? "" } : null;
     });
   }
 
@@ -682,6 +880,7 @@ export class GitGateway {
       const r = await this.run(["push", "--porcelain", "origin", `${commit}:refs/heads/main`], {
         remote: true,
         allow: () => true,
+        timeoutMs: this.remoteTimeoutMs,
       });
       if (r.code === 0) return;
       const out = r.stdout.toString("utf8") + r.stderr;

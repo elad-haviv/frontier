@@ -23,3 +23,21 @@ export const savedViewOnly = (): boolean => saved.getStore() === true;
  * sent): it must not be computed as the reader sees things.
  */
 export const outsideSavedView = <T>(work: () => T): T => saved.exit(work);
+
+/**
+ * Whose unsaved changes a request works with (stage 27d). Each person has their own: the draft
+ * store answers for the person set here and nobody else, so a route written as if there were one
+ * author cannot reach another person's draft by id, by path or by listing. `facade.ts` runs every
+ * handler inside `asPerson` with the session's person.
+ *
+ * Outside a request nothing is set, and the store speaks for the project's first owner: the
+ * single author of a library from before people (scripts and tests that call a service directly).
+ * What must touch everyone's work (clearing what reached the library, the sweep of people who
+ * left) goes through `DraftStore.eachPerson` and says so.
+ */
+const person = new AsyncLocalStorage<{ id: string }>();
+
+export const asPerson = <T>(id: string, work: () => T): T => person.run({ id }, work);
+
+/** The person whose request is being served, or null outside one. */
+export const currentPersonId = (): string | null => person.getStore()?.id ?? null;

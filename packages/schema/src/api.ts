@@ -2,6 +2,7 @@ import { z } from "zod";
 import { DraftKind, Id, Origin, ProposalOperation, VaultPath } from "./state.js";
 import { ModelPrice } from "./ai.js";
 import { EmailInfo } from "./email.js";
+import { AccountEmail } from "./people.js";
 import { KeepGoingSettings } from "./keepGoingSettings.js";
 
 const Ok = z.object({ ok: z.literal(true) });
@@ -47,10 +48,29 @@ export type SessionResponse = z.infer<typeof SessionResponse>;
 export const EntryState = z.enum(["published", "unpublished", "conflict", "quarantined"]);
 export type EntryState = z.infer<typeof EntryState>;
 
+/** Who made a saved version, or whose unsaved change this is: the person's id, and the name to show. */
+export const AuthorRef = z.object({
+  /** The person's id; null for a version Git alone says something about (an older one, a bot, an outside push). */
+  id: z.string().nullable(),
+  name: z.string(),
+});
+export type AuthorRef = z.infer<typeof AuthorRef>;
+
+/** Someone else in the project who has unsaved changes to an entry (stage 27d). Never their text. */
+export const OtherUnsaved = z.object({
+  id: z.string(),
+  name: z.string(),
+  /** When their unsaved changes to the entry began. */
+  since: z.string().datetime(),
+});
+export type OtherUnsaved = z.infer<typeof OtherUnsaved>;
+
 export const TreeNote = z.object({
   path: VaultPath,
   title: z.string(),
   state: EntryState,
+  /** Someone else in the project has unsaved changes to this entry: the tree shows a dot (stage 27d). Writers and owners only. */
+  othersUnsaved: z.boolean().optional(),
   /** Where the entry still is while a rename moves it here: its link opens this path. */
   moved: VaultPath.optional(),
   /** Words of body text, for the stub mark; sent for published entries. */
@@ -177,6 +197,16 @@ export const EntryResponse = z.object({
    * one: a second rename or move replaces it.
    */
   rename: z.object({ id: Id, to: VaultPath }).nullable(),
+  /**
+   * The other people in the project who have unsaved changes to this entry (stage 27d): who and
+   * since when, never what. Writers and owners get the list; a reader always gets an empty one.
+   */
+  othersUnsaved: z.array(OtherUnsaved).optional(),
+  /** Who made the entry's last saved version, and when; absent for an entry with none. */
+  lastVersion: z
+    .object({ commit: z.string(), at: z.string(), by: AuthorRef })
+    .nullable()
+    .optional(),
 });
 export type EntryResponse = z.infer<typeof EntryResponse>;
 
@@ -227,6 +257,20 @@ export type DraftVersionsResponse = z.infer<typeof DraftVersionsResponse>;
 
 /** `POST /api/drafts/:id/merge-versions` and `POST /api/drafts/:id/resolve` */
 export const DraftTextRequest = z.object({ text: z.string() });
+
+/**
+ * `POST /api/drafts/:id/resolve` (stage 27d): the person's text, and `theirsBlob`, the blob of the
+ * saved version the compare screen showed as "theirs" (from the plan's conflict or merge, or the
+ * compare answer; `null` when it showed no file, as for an entry that was deleted). The text is
+ * rebuilt on exactly that version, and refused (`saved_by_other`) when the saved version is another
+ * one by now, so a version saved while the person was comparing is never overwritten unseen. Left
+ * out, as by the web app before 27d: it is accepted only when the saved version is the one the
+ * server last compared for this change.
+ */
+export const DraftResolveRequest = z.object({
+  text: z.string(),
+  theirsBlob: z.string().nullable().optional(),
+});
 
 export const DeleteResponse = Ok;
 
@@ -285,6 +329,11 @@ export const PlannedMerge = z.object({
   mergedText: z.string(),
   mainText: z.string(),
   baseText: z.string(),
+  /** Who saved `mainText`, and when (stage 27d). */
+  theirsBy: AuthorRef.nullable().optional(),
+  theirsAt: z.string().nullable().optional(),
+  /** The blob `mainText` was read from: send it back when resolving (stage 27d). */
+  theirsBlob: z.string().nullable().optional(),
 });
 
 export const ConflictReason = z.enum([
@@ -307,6 +356,12 @@ export const ConflictReason = z.enum([
   "biomes_changed_on_both",
   /** The pins file changed here and in the library on the same pins. */
   "pins_changed_on_both",
+  /**
+   * Someone else in the project saved a newer version of this entry than the one this change was
+   * made from (stage 27d, decision C). Compare `mine`, `theirs` and `base`; `theirsBy` and
+   * `theirsAt` say who and when.
+   */
+  "saved_by_other",
 ]);
 
 export const PlannedConflict = z.object({
@@ -317,6 +372,22 @@ export const PlannedConflict = z.object({
   mine: z.string(),
   theirs: z.string().nullable(),
   base: z.string().nullable(),
+  /**
+   * Who saved the version `theirs` is, and when (stage 27d): the person (or the name Git has) behind
+   * the last saved version of the file. Absent when it cannot be told.
+   */
+  theirsBy: AuthorRef.nullable().optional(),
+  theirsAt: z.string().nullable().optional(),
+  /**
+   * The blob `theirs` was read from, `null` when there is no file (stage 27d). Resolving sends it
+   * back, so the person's text is rebuilt on exactly the version they compared.
+   */
+  theirsBlob: z.string().nullable().optional(),
+  /**
+   * With `saved_by_other`, when the two changes merge cleanly: the merged text, for the compare
+   * screen to offer as a pre-filled "merged" choice (stage 27d). Absent when they do not merge.
+   */
+  mergedText: z.string().optional(),
 });
 
 export const PublishPlan = z.object({
@@ -347,7 +418,74 @@ export const PublishConfirmResponse = z.object({
    * proposals for them with its own AI key, when the settings ask for it (stage 27f).
    */
   published: z.array(VaultPath).default([]),
+  /**
+   * Entries of this save that were refused because someone else saved a newer version of them
+   * between the plan and the confirm (stage 27d). They stay unsaved changes; the others went in.
+   */
+  conflicts: z.array(PlannedConflict).default([]),
 });
+export type PublishConfirmResponse = z.infer<typeof PublishConfirmResponse>;
+
+/**
+ * `GET /api/drafts/:id/compare` (stage 27d): what a compare screen needs for one unsaved change,
+ * without making a plan. `outcome` is what saving it now would do: `ready`, a `merge` to confirm,
+ * a `conflict`, or `none` (nothing differs from the saved version any more).
+ */
+export const DraftCompareResponse = z.object({
+  draftId: Id,
+  path: VaultPath,
+  outcome: z.enum(["ready", "merge", "conflict", "none"]),
+  conflict: PlannedConflict.optional(),
+  merge: PlannedMerge.optional(),
+  /**
+   * The blob of the saved version at the path now, `null` when there is none (stage 27d): the same
+   * as the conflict's or merge's `theirsBlob`, and given when `outcome` is `ready` or `none` too.
+   */
+  theirsBlob: z.string().nullable().optional(),
+});
+export type DraftCompareResponse = z.infer<typeof DraftCompareResponse>;
+
+// ---- Who is reading (stage 27d) --------------------------------------------------------------
+
+/**
+ * `PUT /api/presence`: this device says which entry it has open (`path`), or that it has none
+ * (`null`). `client` names the device or tab, so one person's two tabs are told apart; it is
+ * optional (one anonymous client per person). Repeat every 25 seconds or so: it lapses after 60.
+ */
+export const PresenceRequest = z.object({
+  path: VaultPath.refine((p) => p.length <= 1024, "A path of reasonable length.").nullable(),
+  client: z
+    .string()
+    .min(1)
+    .max(64)
+    .regex(/^[A-Za-z0-9_-]+$/)
+    .optional(),
+});
+export type PresenceRequest = z.infer<typeof PresenceRequest>;
+
+/** One person reading one entry now, as the status stream tells writers and owners. */
+export const Reading = z.object({
+  id: z.string(),
+  name: z.string(),
+  path: VaultPath,
+  since: z.string().datetime(),
+});
+export type Reading = z.infer<typeof Reading>;
+
+// ---- Saved versions and who made them (stage 27d) --------------------------------------------
+
+/** One saved version in `GET /api/history`. */
+export const HistoryVersion = z.object({
+  commit: z.string(),
+  at: z.string(),
+  message: z.string(),
+  paths: z.array(z.string()),
+  /** Who saved it. Never an email. */
+  by: AuthorRef,
+});
+export type HistoryVersion = z.infer<typeof HistoryVersion>;
+export const HistoryResponse = z.object({ versions: z.array(HistoryVersion) });
+export type HistoryResponse = z.infer<typeof HistoryResponse>;
 
 // ---- Renames -------------------------------------------------------------------------------
 
@@ -656,7 +794,7 @@ export type MeResponse = z.infer<typeof MeResponse>;
 /** `PUT /api/me` */
 export const ProfileRequest = z.object({
   name: z.string().trim().min(1, "Give a name.").max(80, "Use 80 characters or fewer."),
-  email: z.string().trim().min(1, "Give an email.").max(200).email("This is not an email address."),
+  email: AccountEmail,
 });
 export type ProfileRequest = z.infer<typeof ProfileRequest>;
 

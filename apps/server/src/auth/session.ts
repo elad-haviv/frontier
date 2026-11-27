@@ -1,5 +1,5 @@
 import type { FastifyRequest } from "fastify";
-import type { Person } from "@frontier/schema";
+import { type Person, STAND_IN_DOMAIN } from "@frontier/schema";
 import { ApiError } from "../errors.js";
 import { withoutPendingChange, type PeopleStore } from "../state/people.js";
 
@@ -91,16 +91,26 @@ export function personOf(request: FastifyRequest): Person {
   return request.person;
 }
 
+/** The domain of the email a person with none is given on their saved versions: it cannot receive mail. */
+export { STAND_IN_DOMAIN };
+
 /**
- * Who a saved version is by: the person's own name and email where they have them, and the
- * configured author for what they have not given.
+ * Who a saved version is by (stage 27d: every one made through the app, in both modes of library):
+ * the person's own name and email. For what they have not given, a name from the part of the email
+ * before the "@" (or "Someone" with no email either), and an email that stands in for it
+ * (`<id>@people.frontier.invalid`, which can be traced back to the person and receives nothing).
+ * The configured author is only for work with no person at all (an import or a save made outside any
+ * request): a known person is never authored as someone else, even with neither name nor email.
  */
 export function authorOf(
-  person: Person,
+  person: Person | null,
   configured: { name: string; email: string },
 ): { name: string; email: string } {
+  if (!person) return configured;
+  const name = person.name.trim();
+  const email = person.email.trim();
   return {
-    name: person.name.trim() || configured.name,
-    email: person.email.trim() || configured.email,
+    name: name || (email ? email.split("@")[0]! : "Someone"),
+    email: email || `${person.id}@${STAND_IN_DOMAIN}`,
   };
 }

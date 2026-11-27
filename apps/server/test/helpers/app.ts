@@ -167,6 +167,10 @@ export async function asAdmin<T>(
   return withDeviceKeys(keys, work, id) as Promise<Awaited<T>>;
 }
 
+/** What a test needs to make requests as someone: a person's client, or the test app itself (the admin). */
+export type Who =
+  Pick<Client, "get" | "post" | "put" | "del"> | Pick<TestApp, "get" | "post" | "put" | "del">;
+
 /** A person's session on a test server: requests as them, without the helper's own login. */
 export interface Client {
   id: string;

@@ -2,7 +2,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type { ProjectRole } from "@frontier/schema";
 import { runWithProject } from "./context.js";
 import { roleFor } from "./roles.js";
-import { asSavedView } from "./view.js";
+import { asPerson, asSavedView } from "./view.js";
 
 /** The part of Fastify the route files use. */
 export type RouteApp = Pick<FastifyInstance, "get" | "post" | "put" | "patch" | "delete" | "log">;
@@ -65,8 +65,11 @@ export function projectApp(
         const project = request.project;
         if (!project) throw new Error(`${method} ${url} ran without a project.`);
         // A reader sees the last saved version only, never anyone's unsaved changes (`view.ts`).
+        // Unsaved changes are each person's own (`state/drafts.ts`): the store answers for this one.
+        const person = request.person;
         const run = () => runWithProject(project.services, () => handler(request, reply));
-        return project.role === "reader" ? asSavedView(run) : run();
+        const mine = () => (person ? asPerson(person.id, run) : run());
+        return project.role === "reader" ? asSavedView(mine) : mine();
       };
       const options = rest.length > 1 ? [rest[0]] : [];
       const lower = method.toLowerCase() as "get";

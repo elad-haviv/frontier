@@ -57,6 +57,19 @@ export const DraftRecord = z.object({
   origins: z.array(Origin).default([]),
   /** The `op` of the last save the server accepted, so a retry of it writes nothing. */
   lastOp: z.string().optional(),
+  /**
+   * The id of the person whose unsaved change this is (stage 27d). A record from before people
+   * has none, and belongs to the project's first owner (see `state/drafts.ts`, "the move").
+   */
+  person: z.string().optional(),
+  /** When the person's unsaved change to this file began; absent from a record made before 27d. */
+  startedAt: z.string().datetime().optional(),
+  /**
+   * The id the person's device made for this draft, when it was another person's draft id already
+   * and the draft got a new id of its own (stage 27d): the device goes on using its id, which names
+   * this draft for that person.
+   */
+  clientId: Id.optional(),
 });
 export type DraftRecord = z.infer<typeof DraftRecord>;
 
@@ -96,6 +109,8 @@ export const RenameIntent = z.object({
   from: VaultPath,
   to: VaultPath,
   createdAt: z.string().datetime(),
+  /** The person whose rename it is (stage 27d); absent from one made before, which is the first owner's. */
+  person: z.string().optional(),
 });
 export type RenameIntent = z.infer<typeof RenameIntent>;
 

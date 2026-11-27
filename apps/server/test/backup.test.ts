@@ -97,6 +97,49 @@ describe("the latest copy", () => {
     expect(inBucket("latest/generated/art.png")).toBe("image");
   });
 
+  it("copies a draft's record and text from the same moment, even when it is saved while they are read", async () => {
+    const write = (n: number) => {
+      // The store writes the text first and the record after it.
+      put(state, "drafts/abc/content", `text ${n}`);
+      put(state, "drafts/abc/record.json", JSON.stringify({ revision: n }));
+      put(state, "drafts/abc/versions/dev.txt", `kept ${n}`);
+      put(state, "drafts/abc/versions/dev.json", JSON.stringify({ revision: n }));
+    };
+    write(1);
+    let saved = false;
+    const { backup } = make({
+      // Whatever file of the draft is read first, the draft is saved again right after it.
+      afterDraftRead: () => {
+        if (saved) return;
+        saved = true;
+        write(2);
+      },
+    });
+    expect((await backup.runNow()).lastError).toBeNull();
+    // Never a record of one save with the text of another: the copy is the draft as it was after the save.
+    const record = JSON.parse(inBucket("latest/state/drafts/abc/record.json")!) as {
+      revision: number;
+    };
+    expect(inBucket("latest/state/drafts/abc/content")).toBe(`text ${record.revision}`);
+    expect(inBucket("latest/state/drafts/abc/versions/dev.txt")).toBe(`kept ${record.revision}`);
+    expect(record.revision).toBe(2);
+  });
+
+  it("does not copy a draft that is discarded while it is read, and leaves other folders alone", async () => {
+    put(state, "drafts/gone/record.json", "{}");
+    put(state, "drafts/gone/content", "x");
+    put(state, "drafts/renames/r1.json", "{}");
+    put(state, "drafts/renamed.json", "[]");
+    const { backup } = make({
+      afterDraftRead: () => rmSync(join(state, "drafts/gone"), { recursive: true, force: true }),
+    });
+    expect((await backup.runNow()).lastError).toBeNull();
+    expect(inBucket("latest/state/drafts/gone/content")).toBeNull();
+    expect(inBucket("latest/state/drafts/gone/record.json")).toBeNull();
+    expect(inBucket("latest/state/drafts/renames/r1.json")).toBe("{}");
+    expect(inBucket("latest/state/drafts/renamed.json")).toBe("[]");
+  });
+
   it("runs once, the set delay after the first change", async () => {
     put(state, "a.txt", "a");
     const { backup, results } = make({ delayMs: 40 });
@@ -277,6 +320,9 @@ describe("in the server", () => {
     await vi.waitFor(
       () => {
         expect(existsSync(bucketFile)).toBe(true);
+        // The draft's record is written just after its text; a backup that ran between the two holds
+        // a folder with no record, which a restore (rightly) reads as an interrupted first save.
+        expect(existsSync(join(bucketFile, "..", "record.json"))).toBe(true);
         expect(first.services.status.snapshot().lastBackupAt).not.toBeNull();
       },
       { timeout: 15_000, interval: 20 },
