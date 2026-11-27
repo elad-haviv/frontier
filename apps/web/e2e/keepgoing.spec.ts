@@ -545,10 +545,15 @@ test.describe("next and previous in the folder", () => {
     );
     await expect(nav.getByRole("link", { name: /Next in 01 Places/ })).toContainText(next!.title);
 
+    // A key is read once the entry's neighbours are: wait for them before each press.
     await page.keyboard.press("Alt+ArrowDown");
     await expect(page.locator(".entry h1").first()).toHaveText(next!.title);
+    await expect(nav.getByRole("link", { name: /Previous in 01 Places/ })).toContainText(
+      "Salt Road",
+    );
     await page.keyboard.press("Alt+ArrowUp");
     await expect(page.locator(".entry h1").first()).toHaveText("Salt Road");
+    await expect(nav.getByRole("link", { name: /Next in 01 Places/ })).toContainText(next!.title);
     await page.keyboard.press("Alt+ArrowUp");
     await expect(page.locator(".entry h1").first()).toHaveText(previous!.title);
     await nav.getByRole("link", { name: /Next in 01 Places/ }).click();
