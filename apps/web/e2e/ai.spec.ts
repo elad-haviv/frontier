@@ -343,17 +343,20 @@ test("comments on a passage: one for the author, one the AI works on", async ({ 
   await expect(page.locator(".cm-content")).toContainText("A rewritten passage (Do what");
   await expect(page.locator(".cm-comment")).toHaveCount(0);
 
-  // A comment for the author stays, and the entry's page counts it.
+  // A note on text that is not saved yet cannot be shared (stage 27e), so it is for the AI, which
+  // is the writer's alone; it stays, and the entry's page counts it.
   await page.locator(".cm-content").getByText("A rewritten passage").click();
   await pressTool(page, "Comment");
   await panel.getByLabel("Your comment").fill("Check her age");
+  await panel.getByLabel("For the AI").check();
   await panel.getByRole("button", { name: "Keep the comment" }).click();
   await expect(panel.locator(".comment-list > li")).toHaveCount(1);
   await panel.getByRole("button", { name: "Close" }).click();
   await page.getByRole("button", { name: "Done" }).click();
   await page.getByRole("link", { name: "1 open comment" }).click();
   await expect(panel.locator(".comment-text")).toHaveText("Check her age");
-  await panel.getByRole("button", { name: "Done" }).click();
+  // Done is now Resolve: the thread leaves the open list.
+  await panel.getByRole("button", { name: /^Resolve the comment/ }).click();
   await expect(panel.locator(".comment-list > li")).toHaveCount(0);
   await panel.getByRole("button", { name: "Close" }).click();
 
