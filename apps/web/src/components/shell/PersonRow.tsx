@@ -25,7 +25,7 @@ export function PersonRow({
   const mark = me && <Avatar name={me.name} email={me.email} />;
   // The warning dot on the avatar is said in words too: the rail has no room for the line.
   const lacks = me?.needsProfile ? `Add your ${missing(me.name, me.email)}` : null;
-  const label = `${shown}, ${ROLE_NAMES[project.role]} here, your profile${lacks ? `. ${lacks}` : ""}`;
+  const label = `${shown}, your profile${lacks ? `. ${lacks}` : ""}`;
   return (
     <>
       {me?.needsProfile && !rail && (
@@ -46,12 +46,19 @@ export function PersonRow({
               </Link>
             </Tip>
           ) : (
-            <Link to="/settings/profile" className="left-person-link" aria-label={label}>
+            <Link
+              to="/settings/profile"
+              className="left-person-link"
+              aria-label={label}
+              aria-describedby="left-person-role"
+            >
               {mark}
               <span className="left-person-text">
                 <span className="left-person-name">{shown}</span>
                 {/* What you may do in this project, in words. */}
-                <span className="left-person-role">{ROLE_NAMES[project.role]} here</span>
+                <span id="left-person-role" className="left-person-role">
+                  {ROLE_NAMES[project.role]} here
+                </span>
               </span>
             </Link>
           ))}

@@ -1,9 +1,9 @@
 import { expect, test } from "@playwright/test";
 import sharp from "sharp";
-import { openMenu, rightPanel, at } from "./helpers.ts";
+import { openMenu, rightPanel, proj } from "./helpers.ts";
 
 test("exports a folder as web pages, and an entry as a Word document", async ({ page }) => {
-  await page.goto(at("/export"));
+  await page.goto(proj("/export"));
   await page.getByRole("combobox", { name: "Folder" }).selectOption("02 People");
   await expect(page.locator(".export-preview")).toContainText("will be exported");
   const [site] = await Promise.all([
@@ -30,7 +30,7 @@ test("exports a folder as web pages, and an entry as a Word document", async ({ 
   expect(parsed.entries.length).toBeGreaterThan(0);
 
   // From an entry's page, one entry, in its Export tab.
-  await page.goto(at("/e/02%20People/Mira.md"));
+  await page.goto(proj("/e/02%20People/Mira.md"));
   await openMenu(page, "More actions");
   await page.getByRole("menuitem", { name: "Export", exact: true }).click();
   const tab = await rightPanel(page, "Export");
@@ -47,13 +47,13 @@ test("exports a folder as web pages, and an entry as a Word document", async ({ 
   ]);
   expect(word.suggestedFilename()).toBe("Mira.docx");
   // The Export page still exports one entry from its address.
-  await page.goto(at("/export?path=") + encodeURIComponent("02 People/Mira.md"));
+  await page.goto(proj("/export?path=") + encodeURIComponent("02 People/Mira.md"));
   await expect(page.locator(".export")).toContainText("One entry");
   await expect(page.getByLabel("Title")).toHaveValue("Mira");
 });
 
 test("saves a picture of a map at twice the size of the screen", async ({ page }, info) => {
-  await page.goto(at("/maps"));
+  await page.goto(proj("/maps"));
   const id = await page.evaluate(async () => {
     const res = await fetch("/api/maps", {
       method: "POST",
@@ -66,7 +66,7 @@ test("saves a picture of a map at twice the size of the screen", async ({ page }
     });
     return ((await res.json()) as { id: string }).id;
   });
-  await page.goto(at(`/map/${id}`));
+  await page.goto(proj(`/map/${id}`));
   await expect(page.locator(".map-top")).toBeVisible();
   await expect(page).toHaveURL(/v=/);
   // The bar's buttons fit a phone without the page scrolling sideways.

@@ -1,5 +1,5 @@
 import { type CDPSession, expect, type Page, test } from "@playwright/test";
-import { at } from "./helpers.ts";
+import { proj } from "./helpers.ts";
 
 /**
  * The gestures on a map that the other map tests do not make: pinches, second fingers, the tap
@@ -36,9 +36,9 @@ const cleanUp = (page: Page, id: string) =>
 
 /** Opens a new globe of the sample image, editing or not, once its view is laid out. */
 async function openMap(page: Page, title: string, edit = false) {
-  await page.goto(at("/maps"));
+  await page.goto(proj("/maps"));
   const id = await makeMap(page, title);
-  await page.goto(at(`/map/${id}${edit ? "?edit=1" : ""}`));
+  await page.goto(proj(`/map/${id}${edit ? "?edit=1" : ""}`));
   await expect(page.locator(".map-top")).toBeVisible();
   await expect(page).toHaveURL(/v=/);
   return id;

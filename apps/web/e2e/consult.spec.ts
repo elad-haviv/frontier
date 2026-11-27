@@ -1,5 +1,5 @@
 import { expect, type Page, test } from "@playwright/test";
-import { discardDraft, edit, giveDeviceKeys, at } from "./helpers.ts";
+import { discardDraft, edit, giveDeviceKeys, proj } from "./helpers.ts";
 
 // Consult in the editor (stage 24): the AI's opinion in the right side bar. The AI settings are
 // one per server, so these take turns and put the model back as they found it.
@@ -118,7 +118,7 @@ test("keeps its history: a review survives leaving the page, with what was done 
   await expect(panel.locator(".consult-dismissed")).toContainText("Dismissed (1)");
 
   // Leave and come back: the review is there as it was left, and nothing runs by itself.
-  await page.goto(at("/"));
+  await page.goto(proj("/"));
   await page.goto(edit(NOTE));
   await page.getByRole("tab", { name: "Consult" }).click();
   const back = page.getByRole("complementary", { name: "Consult" });

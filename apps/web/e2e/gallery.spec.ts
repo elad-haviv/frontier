@@ -6,7 +6,7 @@ import {
   openEditor,
   openImageDialog,
   saved,
-  at,
+  proj,
 } from "./helpers.ts";
 
 /** The test server's stand-in for a site on the web, at its port plus 100 (e2e/server.mjs). */
@@ -15,7 +15,7 @@ const PICTURES = Number(process.env.E2E_PORT ?? 3987) + 100;
 test("the gallery shows images by folder, finds one by its entry and opens it large", async ({
   page,
 }) => {
-  await page.goto(at("/gallery"));
+  await page.goto(proj("/gallery"));
   const tiles = page.locator(".gallery-tile");
   await expect(tiles.first()).toBeVisible();
   const used = await tiles.count();

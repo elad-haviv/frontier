@@ -49,13 +49,22 @@ function change(next: Partial<Known>): void {
 }
 
 let reading: Promise<ProjectsResponse | null> | null = null;
+/**
+ * The project this page opened last. A list read while the server was still being told of it may
+ * say another, so what this page knows wins.
+ */
+let openedHere: string | null = null;
 
 /** Reads the list from the server. A failure leaves what is known as it is. */
 export function loadProjects(): Promise<ProjectsResponse | null> {
   reading ??= (async () => {
     change({ loading: true });
     try {
-      const list = await api.projects();
+      const read = await api.projects();
+      const list =
+        openedHere && read.projects.some((p) => p.slug === openedHere)
+          ? { ...read, last: openedHere }
+          : read;
       try {
         localStorage.setItem(KEY, JSON.stringify(list));
       } catch {
@@ -97,6 +106,7 @@ export function clearProjects(): void {
     /* nothing to remove */
   }
   device = new Set();
+  openedHere = null;
   change({ list: null, failed: false, loading: false });
 }
 
@@ -166,6 +176,7 @@ export function useOnDevice(): ReadonlySet<string> {
 
 /** Notes the project the person opened last, so `/` and the old addresses open it, offline too. */
 export function noteLast(slug: string): void {
+  openedHere = slug;
   if (!state.list || state.list.last === slug) return;
   const list = { ...state.list, last: slug };
   try {

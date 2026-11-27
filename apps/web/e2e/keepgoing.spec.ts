@@ -1,5 +1,5 @@
 import { expect, type Page, test } from "@playwright/test";
-import { at, edit, entry, noSidewaysScroll, review, setUpAi } from "./helpers.ts";
+import { proj, edit, entry, noSidewaysScroll, review, setUpAi } from "./helpers.ts";
 
 /**
  * Stage 25, the entry's half: back to last, resume position, pins, "From here", next and previous
@@ -239,7 +239,7 @@ test("p twice quickly makes one change, and a pin made elsewhere shows when the 
 }) => {
   const asked: string[] = [];
   page.on("request", (r) => {
-    if (r.method() !== "GET" && r.url().includes("/api/pins")) asked.push(r.method());
+    if (r.method() !== "GET" && r.url().includes("/pins")) asked.push(r.method());
   });
   const clean = async () => {
     await page.request.delete(`/api/pins?path=${encodeURIComponent(HARBOR)}`);
@@ -339,7 +339,7 @@ test.describe("From here", () => {
   });
 
   test("is quiet when it cannot be read", async ({ page }) => {
-    await page.route("**/api/keep-going/from-here*", (route) => route.abort());
+    await page.route("**/api/p/*/keep-going/from-here*", (route) => route.abort());
     await page.goto(entry(HARBOR));
     await expect(page.locator(".entry h1").first()).toHaveText("Harbor");
     // Who links here is read with the entry, so it stays.
@@ -384,7 +384,7 @@ test.describe("From here", () => {
     const row = page.locator(".fh-mention", { hasText: "Salt Road" });
 
     // The mention is gone: nothing is linked and the row goes.
-    await page.route("**/api/keep-going/link-it", (route) =>
+    await page.route("**/api/p/*/keep-going/link-it", (route) =>
       route.fulfill({
         status: 404,
         json: { error: { code: "not_found", message: "There is no such mention." } },
@@ -396,8 +396,8 @@ test.describe("From here", () => {
 
     // The entry cannot be changed here.
     await page.reload();
-    await page.unroute("**/api/keep-going/link-it");
-    await page.route("**/api/keep-going/link-it", (route) =>
+    await page.unroute("**/api/p/*/keep-going/link-it");
+    await page.route("**/api/p/*/keep-going/link-it", (route) =>
       route.fulfill({
         status: 403,
         json: { error: { code: "not_allowed", message: "Not allowed." } },
@@ -409,13 +409,13 @@ test.describe("From here", () => {
 
     // A real link, whose undo is refused because the draft was edited since.
     await page.reload();
-    await page.unroute("**/api/keep-going/link-it");
+    await page.unroute("**/api/p/*/keep-going/link-it");
     const made = page.waitForResponse(
-      (r) => r.url().endsWith("/api/keep-going/link-it") && r.request().method() === "POST",
+      (r) => r.url().endsWith("/keep-going/link-it") && r.request().method() === "POST",
     );
     await row.getByRole("button", { name: "Link it" }).click();
     const { undo } = await (await made).json();
-    await page.route("**/api/keep-going/link-it/undo", (route) =>
+    await page.route("**/api/p/*/keep-going/link-it/undo", (route) =>
       route.fulfill({
         status: 403,
         json: { error: { code: "not_allowed", message: "Not allowed." } },
@@ -426,7 +426,7 @@ test.describe("From here", () => {
     await page.locator(".ui-toast").getByRole("button", { name: "Open" }).click();
     await expect(page).toHaveURL(/\/edit\/01%20Places\/Salt%20Road\.md/);
     // Put right for the tests that follow.
-    await page.unroute("**/api/keep-going/link-it/undo");
+    await page.unroute("**/api/p/*/keep-going/link-it/undo");
     const back = await page.request.post("/api/keep-going/link-it/undo", { data: undo });
     expect(back.ok(), await back.text()).toBe(true);
   });
@@ -439,7 +439,7 @@ test.describe("From here", () => {
       ["03 Things/Rope.md", "Rope"],
       ["03 Things/Knot.md", "Knot"],
     ] as const;
-    await page.route("**/api/keep-going/from-here*", async (route) => {
+    await page.route("**/api/p/*/keep-going/from-here*", async (route) => {
       const res = await route.fetch();
       const data = await res.json();
       data.unlinked = names.map(([path, title]) => ({
@@ -501,15 +501,15 @@ test.describe("What's missing (AI)", () => {
     const card = page.locator(".fh-card", { hasText: "What's missing" });
 
     // Held up: Stop puts the button back.
-    await page.route("**/api/keep-going/whats-missing", () => new Promise(() => undefined));
+    await page.route("**/api/p/*/keep-going/whats-missing", () => new Promise(() => undefined));
     await card.getByRole("button", { name: "What's missing here?" }).click();
     await expect(card).toContainText("Reading this entry and its neighbours");
     await card.getByRole("button", { name: "Stop" }).click();
     await expect(card.getByRole("button", { name: "What's missing here?" })).toBeVisible();
 
     // No model, with where to put it right.
-    await page.unroute("**/api/keep-going/whats-missing");
-    await page.route("**/api/keep-going/whats-missing", (route) =>
+    await page.unroute("**/api/p/*/keep-going/whats-missing");
+    await page.route("**/api/p/*/keep-going/whats-missing", (route) =>
       route.fulfill({
         status: 409,
         json: {
@@ -525,7 +525,7 @@ test.describe("What's missing (AI)", () => {
     await expect(card.getByRole("alert")).toContainText("No model is chosen");
     await expect(card.getByRole("link", { name: "Open Settings" })).toHaveAttribute(
       "href",
-      at("/settings/you/ai-models/conversation"),
+      proj("/settings/you/ai-models/conversation"),
     );
     await card.getByRole("button", { name: "Retry" }).click();
     await expect(card.getByRole("alert")).toBeVisible();
@@ -604,7 +604,7 @@ test.describe("after Publish", () => {
       },
     });
     expect(saved.ok(), await saved.text()).toBe(true);
-    await page.route("**/api/publish/confirm", (route) =>
+    await page.route("**/api/p/*/publish/confirm", (route) =>
       route.fulfill({ json: { commit: "0123456789abcdef" } }),
     );
   }
@@ -706,7 +706,7 @@ test.describe("after Publish", () => {
   test("with no steps it is the plain end as before", async ({ page }) => {
     const id = "kgnudge00003";
     await draftToPublish(page, id);
-    await page.route("**/api/keep-going/after-publish", (route) =>
+    await page.route("**/api/p/*/keep-going/after-publish", (route) =>
       route.fulfill({ json: { steps: [] } }),
     );
     try {

@@ -95,4 +95,19 @@ describe("the person's projects", () => {
     markOffDevice("alpha00000");
     expect(isOnDevice("alpha00000")).toBe(false);
   });
+
+  it("keeps the project this page opened last, over a list the server read before it was told", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () => new Response(JSON.stringify(list("alpha", "alpha", "beta")), { status: 200 }),
+      ),
+    );
+    await loadProjects();
+    noteLast("beta");
+    // The server's answer was made before it heard of beta.
+    await loadProjects();
+    expect(knownProjects()?.last).toBe("beta");
+    expect(homeProject()?.slug).toBe("beta");
+  });
 });

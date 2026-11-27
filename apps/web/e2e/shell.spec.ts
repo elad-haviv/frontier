@@ -1,5 +1,5 @@
 import { expect, type Page, test } from "@playwright/test";
-import { discardDraft, entry, noSidewaysScroll, openEditor, saved, at } from "./helpers.ts";
+import { discardDraft, entry, noSidewaysScroll, openEditor, saved, proj } from "./helpers.ts";
 
 const side = (page: Page) => page.locator(".side");
 
@@ -60,7 +60,7 @@ test("the side bar folds to a rail that keeps the counts and the connection", as
   await side(page).getByRole("button", { name: "Unfold the side bar" }).click();
   await expect(side(page).locator(".tree")).toBeVisible();
 
-  await page.goto(at("/edit/") + ["03 Things", "Ledger.md"].map(encodeURIComponent).join("/"));
+  await page.goto(proj("/edit/") + ["03 Things", "Ledger.md"].map(encodeURIComponent).join("/"));
   await discardDraft(page);
 });
 

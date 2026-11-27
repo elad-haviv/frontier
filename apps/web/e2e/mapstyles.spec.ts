@@ -1,5 +1,5 @@
 import { expect, type Locator, type Page, test } from "@playwright/test";
-import { at } from "./helpers.ts";
+import { proj } from "./helpers.ts";
 
 /**
  * Path and zone styles (stage 13d): kept once for the library in `.frontier/map-styles.json`,
@@ -136,7 +136,7 @@ async function colourAt(page: Page, at: { x: number; y: number }) {
 }
 
 async function open(page: Page, id: string, query = "edit=1") {
-  await page.goto(at(`/map/${id}?${query}`));
+  await page.goto(proj(`/map/${id}?${query}`));
   await expect(page.locator(".map-top")).toBeVisible();
   await expect(page).toHaveURL(/v=/);
   await page.waitForTimeout(300);
@@ -184,7 +184,7 @@ test("CUJ 5: gives rivers and borders their own look on two maps, and a deleted 
 }) => {
   const tag = Date.now().toString(36);
   const one = await (async () => {
-    await page.goto(at("/maps"));
+    await page.goto(proj("/maps"));
     return makeMap(page, `Rivers one ${tag}`);
   })();
   const two = await makeMap(page, `Rivers two ${tag}`);
@@ -298,14 +298,14 @@ test("CUJ 5: gives rivers and borders their own look on two maps, and a deleted 
       `.frontier/maps/${two}.json`,
     ]),
   );
-  await page.goto(at("/unpublished"));
+  await page.goto(proj("/unpublished"));
   await expect(page.getByText("Map styles", { exact: true })).toBeVisible();
 
   await cleanUp(page, [one, two]);
 });
 
 test("two devices editing different styles are merged", async ({ page, browser }) => {
-  await page.goto(at("/maps"));
+  await page.goto(proj("/maps"));
   const id = await makeMap(page, `Merged rivers ${Date.now().toString(36)}`);
   await page.evaluate(async () => {
     const loaded = await (await fetch("/api/library-files/map-styles")).json();

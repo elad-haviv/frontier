@@ -107,9 +107,12 @@ export function ProjectScope({ children }: { children: ReactNode }) {
     if (id === null || address === null) return;
     setCurrentProject({ id, slug: address });
     connection.projectChanged();
+    // The page says which project it shows (the browser tests read what the device keeps for it).
+    document.documentElement.dataset.project = id;
     setOpened(id);
     return () => {
       if (currentProject()?.id === id) {
+        delete document.documentElement.dataset.project;
         setCurrentProject(null);
         setOpened(null);
       }

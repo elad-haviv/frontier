@@ -1,5 +1,5 @@
 import { expect, type Page, test } from "@playwright/test";
-import { entry, noSidewaysScroll, openSideBar, at } from "./helpers.ts";
+import { entry, noSidewaysScroll, openSideBar, proj } from "./helpers.ts";
 
 // Stage 26: on a phone the library is a row in the drawer's menu and opens as a panel over it.
 
@@ -270,7 +270,9 @@ test("closing the drawer from the library resets it to the menu", async ({ page,
 
 test("an empty library says so, with a New entry button", async ({ page, isMobile }) => {
   test.skip(!isMobile, "The drawer is the phone's side bar.");
-  await page.route("**/api/tree", (route) => route.fulfill({ json: { folders: [], notes: [] } }));
+  await page.route("**/api/p/*/tree", (route) =>
+    route.fulfill({ json: { folders: [], notes: [] } }),
+  );
   await openPanel(page);
   await expect(panel(page).getByText("No entries yet.")).toBeVisible();
   await panel(page).getByRole("button", { name: "New entry", exact: true }).click();
@@ -282,7 +284,7 @@ test("a library that cannot be read says why inside the panel, with Retry", asyn
   isMobile,
 }) => {
   test.skip(!isMobile, "The drawer is the phone's side bar.");
-  await page.route("**/api/tree", (route) =>
+  await page.route("**/api/p/*/tree", (route) =>
     route.fulfill({ status: 500, json: { error: "The library could not be read." } }),
   );
   await page.goto(entry("README.md"));
@@ -468,7 +470,7 @@ test("revealing a folder from Home and closing the drawer gives the focus back",
   isMobile,
 }) => {
   test.skip(!isMobile, "The drawer is the phone's side bar.");
-  await page.goto(at("/"));
+  await page.goto(proj("/"));
   const folder = page.getByRole("button", { name: "01 Places", exact: true });
   await folder.click();
   await expect(panel(page)).toBeVisible();

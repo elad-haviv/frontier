@@ -7,7 +7,7 @@ import {
   publish,
   review,
   rightPanel,
-  at,
+  proj,
 } from "./helpers.ts";
 
 test("imports a note, saves it, changes it, and restores the first version from its history", async ({
@@ -18,7 +18,7 @@ test("imports a note, saves it, changes it, and restores the first version from 
   const path = `01 Places/${name}.md`;
   const before = commitCount();
 
-  await page.goto(at("/import"));
+  await page.goto(proj("/import"));
   await page
     .locator('input[type="file"]')
     .first()
@@ -37,7 +37,7 @@ test("imports a note, saves it, changes it, and restores the first version from 
   expect(onMain(path)).toContain("The first telling.");
 
   // Importing the same name again asks first, then replaces as a change to read.
-  await page.goto(at("/import"));
+  await page.goto(proj("/import"));
   await page
     .locator('input[type="file"]')
     .first()
@@ -78,7 +78,7 @@ test("imports a note, saves it, changes it, and restores the first version from 
   expect(onMain(path)).toContain("The first telling.");
 
   // The whole library's versions, and the export.
-  await page.goto(at("/versions"));
+  await page.goto(proj("/versions"));
   await expect(page.locator(".versions > li").first()).toContainText(
     "Bring back the first telling",
   );

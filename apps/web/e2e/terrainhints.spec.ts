@@ -1,6 +1,6 @@
 import { expect, type Page, test } from "@playwright/test";
 import { bar, cleanUp, findPaths, open, upload } from "./pathsHelpers.ts";
-import { at } from "./helpers.ts";
+import { proj } from "./helpers.ts";
 
 /**
  * Height map from hints (stage 21): find hints in the fixture picture (an island with a river
@@ -20,7 +20,7 @@ const stored = (page: Page) =>
 
 /** A flat map of the fixture picture, one kilometre a pixel. */
 async function makeMap(page: Page, title: string): Promise<string> {
-  if (!page.url().startsWith("http")) await page.goto(at("/maps"));
+  if (!page.url().startsWith("http")) await page.goto(proj("/maps"));
   const image = await upload(page, "infer-heights.png");
   return page.evaluate(
     async ({ title, image }) => {

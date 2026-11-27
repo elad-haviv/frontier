@@ -1,6 +1,6 @@
 import { expect, type Page, test } from "@playwright/test";
 import yazl from "yazl";
-import { at, openLibrary, openSideBar, PROJECT } from "./helpers.ts";
+import { proj, openLibrary, openSideBar, PROJECT } from "./helpers.ts";
 
 /**
  * Stage 27b: projects. The e2e server's first project is "Sample" (its address is `sample`). The
@@ -57,7 +57,7 @@ async function folders(page: Page) {
 test("the switcher lists your projects with your role and the entries, then All projects and New project", async ({
   page,
 }) => {
-  await page.goto(at("/"));
+  await page.goto(proj("/"));
   await expect(page.locator(".home h1")).toBeVisible();
   await sideBar(page);
   // At the head of the left bar, the project's name replaces the wordmark; the foot says who you are here.
@@ -83,7 +83,7 @@ test("All projects shows a card for each project, and is reached from the switch
   page,
 }) => {
   await made(page, "Salt Coast", "salt-coast");
-  await page.goto(at("/"));
+  await page.goto(proj("/"));
   await expect(page.locator(".home h1")).toBeVisible();
   const menu = await openSwitcher(page);
   await menu.getByRole("menuitem", { name: /^All projects/ }).click();
@@ -221,7 +221,7 @@ test("a switch leaves nothing of the project behind: the tree, the pins, the rec
 }) => {
   await made(page, "Salt Coast", "salt-coast");
   await page.request.post(`/api/p/${PROJECT}/pins`, { data: { path: HARBOR } });
-  await page.goto(at(`/e/${HARBOR.split("/").map(encodeURIComponent).join("/")}`));
+  await page.goto(proj(`/e/${HARBOR.split("/").map(encodeURIComponent).join("/")}`));
   await expect(page.locator(".entry h1").first()).toHaveText("Harbor");
   // In the sample: the entry is in the tree, pinned, and among the recents.
   await sideBar(page);
@@ -257,7 +257,7 @@ test("a switch leaves nothing of the project behind: the tree, the pins, the rec
   await expect(page.locator(".entry h1")).toHaveCount(0);
 
   // Back in the sample, all of it is there again.
-  await page.goto(at("/"));
+  await page.goto(proj("/"));
   await sideBar(page);
   await expect(page.locator(".left-pins")).toContainText("Harbor");
 });
@@ -265,7 +265,7 @@ test("a switch leaves nothing of the project behind: the tree, the pins, the rec
 test("old addresses open the same page in the project last used, keeping the query and the hash", async ({
   page,
 }) => {
-  await page.goto(at("/"));
+  await page.goto(proj("/"));
   await expect(page.locator(".home h1")).toBeVisible();
   await page.goto("/maps?x=1#there");
   await expect(page).toHaveURL(/\/p\/sample\/maps\?x=1#there$/);
@@ -351,7 +351,7 @@ test("deleting asks for the project's name, and the first project cannot be dele
   expect(list.projects.map((p) => p.slug)).toEqual(["sample"]);
 
   // The library the server started with cannot be deleted, and the page says why.
-  await page.goto(at("/settings/general"));
+  await page.goto(proj("/settings/general"));
   const first = page.locator(".general-danger");
   await expect(first).toContainText("started with");
   await expect(first.getByRole("button", { name: "Delete this project" })).toBeDisabled();

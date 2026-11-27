@@ -7,7 +7,7 @@ import {
   noSidewaysScroll,
   openSideBar,
   PASSWORD,
-  at,
+  proj,
 } from "./helpers.ts";
 
 // The account is one per server: these tests take turns and put back what they change.
@@ -17,7 +17,7 @@ const isPhone = (name: string) => name === "phone";
 
 /** Where you are shown: the side bar on a desktop, the drawer on a phone. */
 async function bar(page: Page) {
-  await page.goto(at("/"));
+  await page.goto(proj("/"));
   await openSideBar(page);
   return page.locator(".left-bar").first();
 }
@@ -69,7 +69,7 @@ test("the folded rail keeps you: the avatar, named on hover, and the app menu", 
 });
 
 test("Settings has a You group with Profile and Signing in", async ({ page }, info) => {
-  await page.goto(at("/settings"));
+  await page.goto(proj("/settings"));
   const menu = page.getByRole("navigation", { name: "Settings" });
   await expect(menu.getByRole("heading", { name: "You" })).toBeVisible();
   await expect(menu.getByRole("link", { name: /Profile/ })).toBeVisible();
@@ -88,7 +88,7 @@ test("the profile says what is wrong under the field, and a saved name shows in 
   page,
 }, info) => {
   test.skip(!isPhone(info.project.name), "One account: the phone project runs the changes.");
-  await page.goto(at("/settings/profile"));
+  await page.goto(proj("/settings/profile"));
   const name = page.getByLabel("Name");
   const email = page.getByLabel("Email");
   const save = page.getByRole("button", { name: "Save" });
@@ -114,7 +114,7 @@ test("the profile says what is wrong under the field, and a saved name shows in 
   await expect(left.getByRole("link", { name: "Olive Q. Owner, your profile" })).toBeVisible();
 
   // Put it back.
-  await page.goto(at("/settings/profile"));
+  await page.goto(proj("/settings/profile"));
   await name.fill(NAME);
   await save.click();
   await expect(page.locator(".field-ok")).toHaveText("Saved.");
@@ -124,7 +124,7 @@ test("the password changes only with the current one, and says why under the fie
   page,
 }, info) => {
   test.skip(!isPhone(info.project.name), "One account: the phone project runs the changes.");
-  await page.goto(at("/settings/account"));
+  await page.goto(proj("/settings/account"));
   await expect(page.getByRole("heading", { name: "Passkeys" })).toBeVisible();
   const change = page.getByRole("button", { name: "Change the password" });
   const current = page.getByLabel("Current password");

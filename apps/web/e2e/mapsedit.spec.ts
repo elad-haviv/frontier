@@ -1,6 +1,6 @@
 import { type CDPSession, expect, type Page, test } from "@playwright/test";
 import { midpointOn, outline, type Position } from "@frontier/geo";
-import { newMapInForm, openNewMap, pickEntry, at } from "./helpers.ts";
+import { newMapInForm, openNewMap, pickEntry, proj } from "./helpers.ts";
 
 /**
  * The editing tools of stage 13c: the line to the cursor while drawing, curves, the "+" handles,
@@ -111,7 +111,7 @@ async function onFlat(page: Page, [x, y]: Position): Promise<Point> {
 }
 
 async function open(page: Page, id: string, query = "edit=1") {
-  await page.goto(at(`/map/${id}?${query}`));
+  await page.goto(proj(`/map/${id}?${query}`));
   await expect(page.locator(".map-top")).toBeVisible();
   await expect(page).toHaveURL(/v=/);
   await page.waitForTimeout(300);
@@ -180,7 +180,7 @@ test.describe("with a mouse", () => {
   test("CUJ 2: draws a curved river with the line to the cursor, then refines it", async ({
     page,
   }) => {
-    await page.goto(at("/maps"));
+    await page.goto(proj("/maps"));
     const id = await makeMap(page, "Curved river", "sphere");
     await open(page, id);
     // A press on the map gives it the focus, so the keys act on it.
@@ -280,7 +280,7 @@ test.describe("with a mouse", () => {
   test("CUJ 3: moves a border at a later year; a drag elsewhere, or with Space, pans", async ({
     page,
   }) => {
-    await page.goto(at("/maps"));
+    await page.goto(proj("/maps"));
     const chronicle = await makeChronicle(page, "Border years");
     const square = (a: number, b: number): Position[] => [
       [a, a],
@@ -384,7 +384,7 @@ test.describe("with a mouse", () => {
   });
 
   test("CUJ 4: places five towns with the marker tool on, and links them", async ({ page }) => {
-    await page.goto(at("/maps"));
+    await page.goto(proj("/maps"));
     const port = await makeMap(page, "Port quarter", "flat");
     const id = await makeMap(page, "Five towns", "flat");
     await open(page, id);
@@ -450,7 +450,7 @@ test.describe("with a mouse", () => {
   });
 
   test("the image dialog for a map chooses one image, and the form uses it", async ({ page }) => {
-    await page.goto(at("/maps"));
+    await page.goto(proj("/maps"));
     await openNewMap(page);
     await page.getByRole("button", { name: "Choose an image…" }).click();
     const dialog = page.getByRole("dialog", { name: "Choose an image" });
@@ -526,7 +526,7 @@ test.describe("by touch", () => {
     page,
   }, info) => {
     test.skip(info.project.name !== "phone", "Needs touch");
-    await page.goto(at("/maps"));
+    await page.goto(proj("/maps"));
     const id = await makeMap(page, "Touched zone", "sphere", [
       {
         id: "zone0001",

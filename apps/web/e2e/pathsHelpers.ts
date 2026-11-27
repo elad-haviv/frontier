@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, type Page } from "@playwright/test";
-import { at } from "./helpers.ts";
+import { proj } from "./helpers.ts";
 
 /**
  * What the Find paths, joins and Terrain browser tests share: a map made of the fixture picture
@@ -90,7 +90,7 @@ export async function makeMap(
     terrain?: object;
   } = {},
 ) {
-  if (!page.url().startsWith("http")) await page.goto(at("/maps"));
+  if (!page.url().startsWith("http")) await page.goto(proj("/maps"));
   const image = await upload(page, o.picture ?? "find-paths.png");
   const heights = o.heights
     ? await upload(page, o.heightsPicture ?? "find-paths-heights.png")
@@ -182,7 +182,7 @@ export const click = async (page: Page, at: Position) => {
 };
 
 export async function open(page: Page, id: string) {
-  await page.goto(at(`/map/${id}?edit=1`));
+  await page.goto(proj(`/map/${id}?edit=1`));
   await expect(page.locator(".map-top")).toBeVisible();
   await expect(page).toHaveURL(/v=/);
   await page.waitForTimeout(300);

@@ -14,7 +14,7 @@ import {
   setUpAi,
   DEVICE_KEY,
   giveDeviceKeys,
-  at,
+  proj,
 } from "./helpers.ts";
 
 // One test at a time changes the AI settings, which are shared by the whole server.
@@ -51,7 +51,7 @@ test("CUJ 5: sets up the AI, asks for fields, corrects one and accepts it into a
   await expect(page.locator(".propose .error")).toContainText("No model is chosen");
 
   // Settings › AI keys: the key is on this device, tested for real, and shown only masked.
-  await page.goto(at("/settings/device/ai-keys"));
+  await page.goto(proj("/settings/device/ai-keys"));
   await expect(page.getByRole("note")).toContainText("Your keys stay in this browser.");
   const row = page.locator(".provider-row", { hasText: "OpenRouter" });
   await expect(row).toContainText("Working");
@@ -63,7 +63,7 @@ test("CUJ 5: sets up the AI, asks for fields, corrects one and accepts it into a
   expect(await (await page.request.get("/api/settings")).text()).not.toContain(DEVICE_KEY);
 
   // Settings › AI models: the picker, as a sheet on the phone.
-  await page.goto(at("/settings/you/ai-models/extraction"));
+  await page.goto(proj("/settings/you/ai-models/extraction"));
   const sheet = page.getByRole("dialog", { name: "Model for Proposing fields" });
   await sheet.getByRole("combobox", { name: /Find a model/ }).fill("reader");
   await sheet.getByRole("option", { name: /Sample reader/ }).click();
@@ -74,7 +74,7 @@ test("CUJ 5: sets up the AI, asks for fields, corrects one and accepts it into a
   await expect(task.locator(".field-ok")).toContainText('The model answered "ok"');
 
   // Settings › Your AI spending: what was spent, and no cap.
-  await page.goto(at("/settings/you/ai-spending"));
+  await page.goto(proj("/settings/you/ai-spending"));
   await expect(page.locator(".spend-line")).toContainText("spent this month");
   await expect(page.getByLabel("Monthly cap in US dollars")).toHaveCount(0);
   await expect(page.getByText(/\bcap\b/i)).toHaveCount(0);
@@ -101,7 +101,7 @@ test("CUJ 5: sets up the AI, asks for fields, corrects one and accepts it into a
   expect(onMain(note)).toContain('when: "in the year of the long tide"');
   expect(lastBody()).toContain("Frontier-Model: openrouter:sample/reader");
 
-  await page.goto(at("/settings/you/ai-spending"));
+  await page.goto(proj("/settings/you/ai-spending"));
   await expect(page.locator(".call-log")).toContainText("sample/reader");
   await expect(page.locator(".call-log")).toContainText("Proposed fields");
 });
@@ -117,7 +117,7 @@ test("a rejected proposal is not made again", async ({ page }, info) => {
   // The reader marks it as proposed until it is decided.
   await page.reload();
   await expect(page.locator(".field-proposed")).toContainText("proposed");
-  await page.goto(at("/inbox"));
+  await page.goto(proj("/inbox"));
   await page
     .locator(".proposal", { hasText: "Lantern" })
     .getByRole("button", { name: "Reject" })
@@ -136,7 +136,7 @@ test("CUJ 11: asks the lore, reads cited answers, and keeps a drafted addition a
   await page.setViewportSize({ width: 375, height: 740 });
   await setUpAi(page, { conversation: "sample/reader" });
 
-  await page.goto(at("/ask"));
+  await page.goto(proj("/ask"));
   await page.getByLabel("A question").fill("Who is Shade?");
   await page.getByRole("button", { name: "Ask" }).click();
   await expect(page).toHaveURL(/\/ask\/[a-z0-9]{12}$/);
@@ -169,7 +169,7 @@ test("CUJ 11: asks the lore, reads cited answers, and keeps a drafted addition a
     page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
   ).resolves.toBe(true);
 
-  await page.goto(at("/unpublished"));
+  await page.goto(proj("/unpublished"));
   const shade = page.locator(".changes li", { hasText: "02 People/Shade.md" });
   await expect(shade).toContainText("Holds an addition the AI drafted");
   await shade.getByRole("button", { name: "Discard" }).click();
@@ -180,7 +180,7 @@ test("CUJ 11: asks the lore, reads cited answers, and keeps a drafted addition a
     .catch(() => undefined);
 
   // The conversation is listed, and can be deleted.
-  await page.goto(at("/ask"));
+  await page.goto(proj("/ask"));
   await expect(page.locator(".map-list li", { hasText: "Who is Shade?" })).toContainText(
     "2 questions",
   );
@@ -198,7 +198,7 @@ test("shows the work while the lore is answered, step by step, and can stop it",
   await setUpAi(page, { conversation: "sample/reader" });
 
   // The model asks for more once, then answers: each step shows as it happens.
-  await page.goto(at("/ask"));
+  await page.goto(proj("/ask"));
   await page.getByLabel("A question").fill("Who is Shade? Look further.");
   await page.getByRole("button", { name: "Ask" }).click();
   const live = page.locator(".lore-live");
@@ -349,7 +349,7 @@ test("CUJ 12: drafts a character's profile, approves it, talks, and adds a line 
   await page.setViewportSize({ width: 375, height: 740 });
   await setUpAi(page, { conversation: "sample/reader" });
 
-  await page.goto(at("/talk/02%20People/Shade.md"));
+  await page.goto(proj("/talk/02%20People/Shade.md"));
   await expect(page.locator("h1")).toHaveText("Talk with Shade");
   await page.getByRole("button", { name: "Draft a profile from the entries" }).click();
   const traits = page.locator(".trait");
@@ -379,7 +379,7 @@ test("CUJ 12: drafts a character's profile, approves it, talks, and adds a line 
   ).resolves.toBe(true);
 
   // The profile, the id it needed, and the line are unsaved changes; they are thrown away here.
-  await page.goto(at("/unpublished"));
+  await page.goto(proj("/unpublished"));
   await expect(page.locator(".changes")).toContainText(".frontier/profiles/");
   await expect(
     page
@@ -430,7 +430,7 @@ test("CUJ 13: explores a map, makes concept art when asked, and keeps a discover
   await expect(page.locator(".map-notice")).toContainText("02 People/Test Hollow.md");
   await expect(page.locator(".discovery-pin")).toHaveCount(0);
 
-  await page.goto(at("/unpublished"));
+  await page.goto(proj("/unpublished"));
   const changes = page.locator(".changes");
   await expect(changes).toContainText("02 People/Test Hollow.md");
   await expect(changes).toContainText("Test Hollow.png");
@@ -449,7 +449,7 @@ test("the first time someone without a key asks, the explanation opens in place 
 }, info) => {
   test.skip(info.project.name !== "phone", "The AI settings are one per server.");
   await setUpAi(page, { conversation: "sample/reader" }, { key: false });
-  await page.goto(at("/ask"));
+  await page.goto(proj("/ask"));
   await page.getByLabel("A question").fill("Who is Shade?");
   await page.getByRole("button", { name: "Ask" }).click();
 
@@ -469,7 +469,7 @@ test("the first time someone without a key asks, the explanation opens in place 
   await expect(page).toHaveURL(/\/ask\/[a-z0-9]{12}$/);
   await expect(page.locator(".turn").first().locator(".turn-question")).toHaveText("Who is Shade?");
   // Asked again, it does not explain again.
-  await page.goto(at("/ask"));
+  await page.goto(proj("/ask"));
   await page.getByLabel("A question").fill("Who is Shade?");
   await page.getByRole("button", { name: "Ask" }).click();
   await expect(page).toHaveURL(/\/ask\/[a-z0-9]{12}$/);
