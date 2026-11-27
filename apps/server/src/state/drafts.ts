@@ -183,6 +183,11 @@ export class DraftStore {
    * used keeps working as a name for it, so a device cannot tell that the id was taken.
    */
   private aliases = new Map<string, string>();
+  /**
+   * Rises on every change to anyone's unsaved changes, kept copies or counts: what is worked out
+   * from them for a status event is kept for the number it was worked out at (`StatusService`).
+   */
+  generation = 0;
   /** When each person who is no longer in the project was seen leaving it, by person id. */
   private away: Record<string, string> = {};
 
@@ -222,6 +227,7 @@ export class DraftStore {
   }
 
   private bump(owner = this.me()): void {
+    this.generation++;
     this.changeCounts.set(owner, (this.changeCounts.get(owner) ?? 0) + 1);
     this.conflictCounts.delete(owner);
   }
@@ -237,6 +243,7 @@ export class DraftStore {
   }
 
   noteConflicts(n: number): void {
+    this.generation++;
     if (n > 0) this.conflictCounts.set(this.me(), n);
     else this.conflictCounts.delete(this.me());
   }
@@ -255,6 +262,7 @@ export class DraftStore {
 
   /** Notes that the server itself changed a draft of the person being served. */
   noteServerChange(): void {
+    this.generation++;
     this.serverChangeCounts.set(this.me(), (this.serverChangeCounts.get(this.me()) ?? 0) + 1);
   }
 
@@ -310,6 +318,7 @@ export class DraftStore {
 
   /** Reads every stored draft and rename intent. Called once at start. */
   async load(): Promise<void> {
+    this.generation++;
     this.records.clear();
     this.renames.clear();
     this.kept.clear();
@@ -531,6 +540,7 @@ export class DraftStore {
 
   /** Counts a draft's kept copies on disk, after a change to them. */
   private countKept(id: string): void {
+    this.generation++;
     const dir = this.versionsDir(id);
     let n = existsSync(join(this.folder(id), "content.v2")) ? 1 : 0;
     if (existsSync(dir)) n += readdirSync(dir).filter((f) => f.endsWith(".txt")).length;
@@ -947,6 +957,7 @@ export class DraftStore {
     const next = { ...intent, from };
     await this.files.writeJson(join(this.dir, "renames", `${id}.json`), next);
     this.renames.set(id, next);
+    this.generation++;
     this.conflictCounts.delete(this.me());
   }
 
@@ -999,6 +1010,7 @@ export class DraftStore {
     const intent: RenameIntent = { ...made, ...(made.person === undefined ? this.stamp() : {}) };
     await this.files.writeJson(join(this.dir, "renames", `${intent.id}.json`), intent);
     this.renames.set(intent.id, intent);
+    this.generation++;
     this.conflictCounts.delete(this.me());
   }
 
@@ -1008,6 +1020,7 @@ export class DraftStore {
       throw new ApiError("not_found", "There is no such rename.");
     }
     this.renames.delete(id);
+    this.generation++;
     await this.files.remove(join(this.dir, "renames", `${id}.json`));
     this.conflictCounts.delete(this.me());
   }
@@ -1175,6 +1188,7 @@ export class DraftStore {
     for (const [id, r] of [...this.renames]) {
       if (this.ownerOf(r) !== personId) continue;
       this.renames.delete(id);
+      this.generation++;
       await this.files.remove(join(this.dir, "renames", `${id}.json`));
     }
   }

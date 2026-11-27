@@ -36,6 +36,7 @@ export interface PresenceOptions {
  */
 export class Presence {
   private readonly clients = new Map<string, Client>();
+  /** How many status streams each of a person's devices has open, by person and client. */
   private readonly streams = new Map<string, number>();
   private timer: NodeJS.Timeout | null = null;
   private readonly now: () => number;
@@ -48,7 +49,7 @@ export class Presence {
 
   /** A person's device says which entry it has open, or `null` for none. */
   announce(person: string, client: string | undefined, path: string | null): void {
-    const key = `${person}\u0000${client ?? ""}`;
+    const key = this.key(person, client);
     const at = this.now();
     const before = this.shape();
     this.expire(at);
@@ -73,20 +74,40 @@ export class Presence {
     this.announce(person, client, null);
   }
 
-  /** A status stream of the person's opened. */
-  streamOpened(person: string): void {
-    this.streams.set(person, (this.streams.get(person) ?? 0) + 1);
+  /**
+   * A status stream of the person's opened. `client` is the device or tab it belongs to (the same
+   * name its announcements use); a stream that says none is the person's anonymous client.
+   */
+  streamOpened(person: string, client?: string): void {
+    const key = this.key(person, client);
+    this.streams.set(key, (this.streams.get(key) ?? 0) + 1);
   }
 
-  /** One ended; with the person's last one gone they have left, whatever they announced. */
-  streamClosed(person: string): void {
-    const n = (this.streams.get(person) ?? 1) - 1;
+  /**
+   * One ended. Nobody is reading through a stream that ended, so what that device announced goes
+   * with it, once it has no stream left; what the person's other tabs and devices announced stays,
+   * for they have streams of their own. A stream that names no client cannot say which announcement
+   * was its own: with the person's last stream gone, they have left, whatever they announced.
+   */
+  streamClosed(person: string, client?: string): void {
+    const key = this.key(person, client);
+    const n = (this.streams.get(key) ?? 1) - 1;
     if (n > 0) {
-      this.streams.set(person, n);
+      this.streams.set(key, n);
       return;
     }
-    this.streams.delete(person);
-    this.forget(person);
+    this.streams.delete(key);
+    if (client !== undefined) {
+      this.leave(person, client);
+      return;
+    }
+    const prefix = `${person}\u0000`;
+    if (![...this.streams.keys()].some((k) => k.startsWith(prefix))) this.forget(person);
+    else this.leave(person, undefined);
+  }
+
+  private key(person: string, client: string | undefined): string {
+    return `${person}\u0000${client ?? ""}`;
   }
 
   /** Forgets everything of one person, such as when they are removed. */

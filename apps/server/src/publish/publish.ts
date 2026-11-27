@@ -242,7 +242,10 @@ export class Publisher {
    * it, as the compare screen says "Wren saved this at ...". Null parts when that cannot be told.
    */
   private async savedBy(path: string): Promise<{ by: AuthorRef | null; at: string | null }> {
-    const last = await this.d.git.lastChange(path).catch(() => null);
+    const commit = this.d.index.commit;
+    const last = await (
+      commit === null ? this.d.git.lastChange(path) : this.d.git.lastChangeAt(path, commit)
+    ).catch(() => null);
     if (!last) return { by: null, at: null };
     const by = this.d.authors
       ? await this.d.authors.resolve(last.author)
@@ -963,9 +966,7 @@ export class Publisher {
     await this.d.onPushed?.(commit);
     this.d.status.pushed(new Date(this.now()));
     this.plans.delete(planId);
-    // The push went through: a fetch that fails now (the network, or a clearing that met another's)
-    // must not turn the save into an error. The next fetch catches up.
-    await this.d.sync().catch(() => undefined);
+    await this.d.sync();
     this.noteLeftOver(stored, refused);
     onPublished?.(
       publishing

@@ -197,7 +197,15 @@ export function entryRoutes(app: RouteApp, s: Services): void {
     // the last version.
     const reader = request.project?.role === "reader";
     const othersUnsaved = reader ? [] : (s.drafts.othersUnsaved().get(path) ?? []);
-    const last = note ? await s.git.lastChange(path).catch(() => null) : null;
+    // From the map of every file's last version for the library's commit (no Git command per read once
+    // it is made), not a `git log` for each entry read under the lock that every save waits on.
+    const last = note
+      ? await (
+          s.index.commit === null
+            ? s.git.lastChange(path)
+            : s.git.lastChangeAt(path, s.index.commit)
+        ).catch(() => null)
+      : null;
     const lastVersion = last
       ? {
           commit: last.commit,

@@ -8,6 +8,9 @@ import { PresenceRequest, type StatusSnapshot } from "@frontier/schema";
 import { personOf } from "../auth/session.js";
 import type { Services } from "../app.js";
 
+/** What may name a device or tab: the shape `PUT /presence` accepts for `client`. */
+const CLIENT = /^[A-Za-z0-9_-]{1,64}$/;
+
 /** How often the status stream says it is still there. */
 export const HEARTBEAT_MS = 20_000;
 
@@ -63,13 +66,24 @@ export function statusRoutes(app: RouteApp, s: Services): void {
       connection: "keep-alive",
     });
     const status = s.status;
-    const send = () =>
-      reply.raw.write(`event: status\ndata: ${JSON.stringify(snapshotFor(request, status))}\n\n`);
+    // What this stream sent last: an event that would say the same again is not sent, so a reader's
+    // stream shows nothing of a writer's saves that change nothing it may know (stage 27d).
+    let last = "";
+    const send = () => {
+      const data = JSON.stringify(snapshotFor(request, status));
+      if (data === last) return;
+      last = data;
+      reply.raw.write(`event: status\ndata: ${data}\n\n`);
+    };
     // Presence is told to nobody until this stream is the person's: whoever is here is reading.
     const who = request.person?.id;
+    // The tab this stream belongs to, when it says (`?client=`, the name its announcements use), so
+    // that closing it takes away only what that tab announced.
+    const named = (request.query as { client?: unknown } | undefined)?.client;
+    const client = typeof named === "string" && CLIENT.test(named) ? named : undefined;
     // Read now: a close handler runs outside this request's project (`projects/context.ts`).
     const presence = s.presence;
-    if (who) presence.streamOpened(who);
+    if (who) presence.streamOpened(who, client);
     send();
     const stop = status.subscribe(send);
     const beat = setInterval(() => reply.raw.write(": heartbeat\n\n"), HEARTBEAT_MS);
@@ -77,7 +91,7 @@ export function statusRoutes(app: RouteApp, s: Services): void {
       clearInterval(beat);
       stop();
       // Nobody is reading through a stream that ended; with their last one gone, they have left.
-      if (who) presence.streamClosed(who);
+      if (who) presence.streamClosed(who, client);
     });
   });
 }
@@ -90,17 +104,28 @@ export function statusRoutes(app: RouteApp, s: Services): void {
 export function presenceRoutes(app: RouteApp, s: Services): void {
   app.put("/api/presence", async (request) => {
     const { path, client } = PresenceRequest.parse(request.body);
-    s.presence.announce(personOf(request).id, client, path);
+    // Only a published entry is announced: what a person reads of their own unsaved new entry, or
+    // of a path that is nothing, tells others nothing and is dropped (as if they had none open).
+    const shown = path !== null && s.index.hasFile(path) ? path : null;
+    s.presence.announce(personOf(request).id, client, shown);
     return { ok: true as const };
   });
 
-  /** For a closing tab (`navigator.sendBeacon` posts): the device has left. */
+  /**
+   * For a closing tab (`navigator.sendBeacon` posts): the device has left. A beacon sent as a plain
+   * string arrives as `text/plain`, so a body that is text is read as JSON too.
+   */
   app.post("/api/presence/leave", async (request) => {
-    const body = (request.body ?? {}) as { client?: unknown };
-    const client =
-      typeof body.client === "string" && /^[A-Za-z0-9_-]{1,64}$/.test(body.client)
-        ? body.client
-        : undefined;
+    let body: unknown = request.body ?? {};
+    if (typeof body === "string") {
+      try {
+        body = JSON.parse(body);
+      } catch {
+        body = {};
+      }
+    }
+    const named = (body as { client?: unknown } | null)?.client;
+    const client = typeof named === "string" && CLIENT.test(named) ? named : undefined;
     s.presence.leave(personOf(request).id, client);
     return { ok: true as const };
   });

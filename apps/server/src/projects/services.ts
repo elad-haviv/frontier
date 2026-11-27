@@ -246,8 +246,14 @@ export async function buildServices(
         othersUnsaved: [...drafts.othersUnsaved()]
           .filter(([path]) => index.hasFile(path) || drafts.byPath(path) !== undefined)
           .map(([path, people]) => ({ path, people })),
-        presence: presence.readingFor(personId),
       })),
+    presence: (personId) => presence.readingFor(personId),
+    // Everything a person's part is made of, as one number: it is worked out again only when this changes.
+    personVersion: () =>
+      `${drafts.generation}|${index.generation}|${index.commit}|${server.projects
+        .membersSync(record.id)
+        .map((m) => `${m.personId}:${m.role}:${nameOf(m.personId)}`)
+        .join(",")}`,
   });
   const presence = new Presence({ roleOf, nameOf, onChange: () => status.presenceChanged() });
   const files = new StateFiles();

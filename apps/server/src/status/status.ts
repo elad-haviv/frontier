@@ -15,7 +15,6 @@ export type PersonalStatus = Pick<
 > & {
   keptCopies: number;
   othersUnsaved: NonNullable<StatusSnapshot["othersUnsaved"]>;
-  presence: NonNullable<StatusSnapshot["presence"]>;
 };
 
 /** Holds the facts shown in the status area and tells listeners when one changes. */
@@ -47,10 +46,37 @@ export class StatusService {
       draftChanges?: () => number;
       /** What the snapshot says of one person's own work, and of other people's (stage 27d). */
       person?: (personId: string) => PersonalStatus;
+      /** Who else is reading what, as this person is told. Asked for each time: it changes with every announcement. */
+      presence?: (personId: string) => NonNullable<StatusSnapshot["presence"]>;
+      /**
+       * Changes whenever what `person` answers for anyone could: someone's unsaved changes, who the
+       * members and their roles and names are, the library. Cheap to ask; with it a person's part is
+       * worked out once for all their streams, and again only when this changes.
+       */
+      personVersion?: () => string;
     } = { library: "github", backupOutside: true },
   ) {}
 
+  /** Rises when a fact of the project's own changes, so the part of the snapshot made of them is made again. */
+  private rev = 0;
+  /** The part of the snapshot that is the same for everyone, for the `rev` and build it was made at. */
+  private shared: { key: string; value: StatusSnapshot } | null = null;
+  /** Each person's part, for the version it was made at: many tabs of one person share it. */
+  private personal = new Map<string, { version: string; value: PersonalStatus }>();
+
   snapshot(): StatusSnapshot {
+    const key = `${this.rev}|${this.index.generation}|${this.index.commit}`;
+    if (this.shared?.key !== key) this.shared = { key, value: this.makeShared() };
+    const shared = this.shared.value;
+    // What the person being served has of their own is asked for each time: it is cheap.
+    return {
+      ...shared,
+      drafts: this.facts.draftChanges?.() ?? 0,
+      attention: { ...shared.attention, keptCopies: this.facts.keptCopies?.() ?? 0 },
+    };
+  }
+
+  private makeShared(): StatusSnapshot {
     const a = this.index.attention();
     return {
       library: this.facts.library,
@@ -97,15 +123,37 @@ export class StatusService {
    */
   snapshotFor(personId: string): StatusSnapshot {
     const base = this.snapshot();
-    const mine = this.facts.person?.(personId);
+    const mine = this.personalFor(personId);
     if (!mine) return base;
     const { keptCopies, ...rest } = mine;
-    return { ...base, ...rest, attention: { ...base.attention, keptCopies } };
+    return {
+      ...base,
+      ...rest,
+      presence: this.facts.presence?.(personId) ?? [],
+      attention: { ...base.attention, keptCopies },
+    };
   }
 
-  /** Who is reading what changed. */
+  /**
+   * A person's own part of the snapshot, from the cache while nothing it is made of has changed.
+   * Who is reading is not in it (it is cheap, and changes with every announcement), so it is asked
+   * for each time.
+   */
+  private personalFor(personId: string): PersonalStatus | null {
+    const person = this.facts.person;
+    if (!person) return null;
+    const version = this.facts.personVersion?.();
+    if (version === undefined) return person(personId);
+    const held = this.personal.get(personId);
+    if (held?.version === version) return held.value;
+    const value = person(personId);
+    this.personal.set(personId, { version, value });
+    return value;
+  }
+
+  /** Who is reading what changed: listeners are told, and nothing else is worked out again. */
   presenceChanged(): void {
-    this.changed();
+    this.tell();
   }
 
   health(): Health {
@@ -123,6 +171,11 @@ export class StatusService {
   }
 
   private changed(): void {
+    this.rev++;
+    this.tell();
+  }
+
+  private tell(): void {
     if (this.listeners.size === 0) return;
     // The snapshot is shared by every listener, so it is never computed as a reader sees it, even
     // when a reader's request is what made the change.

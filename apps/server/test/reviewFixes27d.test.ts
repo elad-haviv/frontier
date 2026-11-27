@@ -14,6 +14,10 @@ import {
   STAND_IN_DOMAIN,
 } from "@frontier/schema";
 import { parseLogZ } from "../src/git/gateway.js";
+import { VaultIndex } from "../src/index/build.js";
+import { Presence } from "../src/projects/presence.js";
+import { StatusService } from "../src/status/status.js";
+import type { StatusSnapshot } from "@frontier/schema";
 import {
   addMember,
   addPerson,
@@ -759,6 +763,384 @@ describe("the stage 27d review: saved versions and who made them", () => {
       ]);
       expect(parseLogZ("", 4)).toEqual([]);
       expect(parseLogZ("\0h\0only-two", 4)).toEqual([]);
+    });
+  });
+});
+
+// ---- Items 10, 12, 13: presence and the status stream -------------------------------------------
+
+describe("the stage 27d review: presence and the status stream", () => {
+  let t: TestApp;
+  let base: string;
+  let wren: Client;
+  let rex: Client;
+  let reed: Client;
+  const MIRA = "02 People/Mira.md";
+  const SHADE = "02 People/Shade.md";
+
+  beforeEach(async () => {
+    t = await makeTestApp({ LOGIN_ATTEMPTS: "1000" });
+    await t.login();
+    const first = (await t.server.projects.all())[0]!;
+    base = `/api/p/${first.slug}`;
+    wren = await addPerson(t, "Wren Writer", "wren@example.com");
+    rex = await addPerson(t, "Rex Writer", "rex@example.com");
+    reed = await addPerson(t, "Reed Reader", "reed@example.com");
+    await addMember(t, first.id, wren.id, "writer");
+    await addMember(t, first.id, rex.id, "writer");
+    await addMember(t, first.id, reed.id, "reader");
+  });
+  afterEach(() => t.close());
+
+  const status = async (c: { get: Client["get"] }) =>
+    (await c.get(`${base}/status`)).json() as StatusSnapshot;
+
+  /** A status stream of a person (optionally for a named tab), with what it has been sent. */
+  async function stream(who: Client, client?: string) {
+    const address = await t.app
+      .listen({ port: 0, host: "127.0.0.1" })
+      .catch(() => `http://127.0.0.1:${(t.app.server.address() as { port: number }).port}`);
+    const query = client ? `?client=${client}` : "";
+    const res = await fetch(`${address}${base}/status/events${query}`, {
+      headers: { cookie: who.cookie },
+    });
+    const reader = res.body!.getReader();
+    let buffer = "";
+    const seen: StatusSnapshot[] = [];
+    // One read is outstanding at a time: a read that lost a race to the clock must not swallow the next chunk.
+    let pending: Promise<ReadableStreamReadResult<Uint8Array>> | null = null;
+    const pump = async (ms: number, until?: () => boolean) => {
+      const stop = Date.now() + ms;
+      while (Date.now() < stop && !(until?.() ?? false)) {
+        pending ??= reader.read();
+        const got = await Promise.race([
+          pending,
+          new Promise<null>((r) => setTimeout(() => r(null), 50)),
+        ]);
+        if (got === null) continue;
+        pending = null;
+        if (got.done) return;
+        buffer += new TextDecoder().decode(got.value);
+        for (let end = buffer.indexOf("\n\n"); end !== -1; end = buffer.indexOf("\n\n")) {
+          const line = buffer
+            .slice(0, end)
+            .split("\n")
+            .find((l) => l.startsWith("data: "));
+          buffer = buffer.slice(end + 2);
+          if (line) seen.push(JSON.parse(line.slice(6)) as StatusSnapshot);
+        }
+      }
+    };
+    return {
+      seen,
+      pump,
+      close: () => reader.cancel().catch(() => undefined),
+    };
+  }
+
+  describe("a person's other tabs", () => {
+    const ids = () => {
+      const p = new Presence({
+        roleOf: () => "writer",
+        nameOf: (id) => id,
+        onChange: () => undefined,
+      });
+      return p;
+    };
+
+    it("stay announced when one tab's stream ends; only that tab's announcement goes", () => {
+      const p = ids();
+      p.streamOpened("ann", "t1");
+      p.streamOpened("ann", "t2");
+      p.announce("ann", "t1", "A.md");
+      p.announce("ann", "t2", "B.md");
+      p.streamClosed("ann", "t1");
+      expect(p.readingFor("bob").map((r) => r.path)).toEqual(["B.md"]);
+      // A second stream of the same tab keeps its announcement until it ends too.
+      p.streamOpened("ann", "t2");
+      p.streamClosed("ann", "t2");
+      expect(p.readingFor("bob").map((r) => r.path)).toEqual(["B.md"]);
+      p.streamClosed("ann", "t2");
+      expect(p.readingFor("bob")).toEqual([]);
+      p.close();
+    });
+
+    it("go with a stream that names no tab only when it was the person's last stream", () => {
+      const p = ids();
+      p.streamOpened("ann", "t1");
+      p.streamOpened("ann");
+      p.announce("ann", "t1", "A.md");
+      p.announce("ann", undefined, "B.md");
+      p.streamClosed("ann");
+      // The unnamed tab's announcement goes; the named tab, which has its own stream, keeps its own.
+      expect(p.readingFor("bob").map((r) => r.path)).toEqual(["A.md"]);
+      p.streamOpened("ann");
+      p.streamClosed("ann", "t1");
+      p.streamClosed("ann");
+      expect(p.readingFor("bob")).toEqual([]);
+      // An unnamed last stream clears whatever the person announced, as before.
+      p.streamOpened("cat");
+      p.announce("cat", "x", "A.md");
+      p.streamClosed("cat");
+      expect(p.readingFor("bob")).toEqual([]);
+      p.close();
+    });
+
+    it("are told through the real stream: closing one tab's stream leaves the other's reading", async () => {
+      const rexStream = await stream(rex);
+      const tab1 = await stream(wren, "tab1");
+      const tab2 = await stream(wren, "tab2");
+      await wren.put(`${base}/presence`, { path: MIRA, client: "tab1" });
+      await wren.put(`${base}/presence`, { path: SHADE, client: "tab2" });
+      await rexStream.pump(300);
+      expect(
+        rexStream.seen
+          .at(-1)!
+          .presence!.map((r) => r.path)
+          .sort(),
+      ).toEqual([MIRA, SHADE]);
+      await tab1.close();
+      const paths = () => rexStream.seen.at(-1)!.presence!.map((r) => r.path);
+      await rexStream.pump(5000, () => paths().length === 1);
+      expect(paths()).toEqual([SHADE]);
+      await tab2.close();
+      await rexStream.pump(5000, () => paths().length === 0);
+      expect(paths()).toEqual([]);
+      await rexStream.close();
+    });
+  });
+
+  describe("the leave beacon", () => {
+    it("reads a body sent as text/plain as JSON, and one sent as JSON", async () => {
+      const announce = (client: string) => wren.put(`${base}/presence`, { path: MIRA, client });
+      await announce("tab1");
+      await announce("tab2");
+      expect((await status(rex)).presence).toHaveLength(1);
+      const beacon = (payload: string, type: string) =>
+        t.app.inject({
+          method: "POST",
+          url: `${base}/presence/leave`,
+          headers: { cookie: wren.cookie, "content-type": type },
+          payload,
+        });
+      // sendBeacon with a string: text/plain, whatever the page meant.
+      const plain = await beacon(JSON.stringify({ client: "tab1" }), "text/plain;charset=UTF-8");
+      expect(plain.statusCode, plain.body).toBe(200);
+      // One client left, the person's other tab is still reading (rows are per person and entry,
+      // so look at the person's clients through what is told).
+      await t.services.presence.announce(wren.id, "tab1", null);
+      expect(t.services.presence.size()).toBe(1);
+      const json = await beacon(JSON.stringify({ client: "tab2" }), "application/json");
+      expect(json.statusCode).toBe(200);
+      expect(t.services.presence.size()).toBe(0);
+      // Text that is not JSON leaves nobody's announcement but the unnamed one.
+      await announce("tab3");
+      expect((await beacon("not json", "text/plain")).statusCode).toBe(200);
+      expect(t.services.presence.size()).toBe(1);
+    });
+  });
+
+  describe("what is announced", () => {
+    it("is only a published entry: an unsaved new entry or a made-up path announces nothing", async () => {
+      const put = (c: Client, path: string | null, client = "tab1") =>
+        c.put(`${base}/presence`, { path, client });
+      // Wren reads her own unsaved new entry.
+      const made = await wren.put(`${base}/drafts`, {
+        id: "newentry0001",
+        path: "02 People/Brand New.md",
+        kind: "create",
+        text: "# Brand New\n",
+        revision: 0,
+        baseBlob: "",
+      });
+      expect(made.statusCode).toBe(200);
+      expect((await put(wren, "02 People/Brand New.md")).statusCode).toBe(200);
+      expect((await put(wren, "Not/There.md")).statusCode).toBe(200);
+      expect((await status(rex)).presence).toEqual([]);
+      expect(t.services.presence.size()).toBe(0);
+      // A published entry is announced; moving on to an unsaved one takes it back.
+      await put(wren, MIRA);
+      expect((await status(rex)).presence!.map((r) => r.path)).toEqual([MIRA]);
+      await put(wren, "02 People/Brand New.md");
+      expect((await status(rex)).presence).toEqual([]);
+      // A reader's announcements are held to the same.
+      await put(reed, "Not/There.md");
+      await put(reed, SHADE);
+      expect((await status(rex)).presence!.map((r) => r.path)).toEqual([SHADE]);
+    });
+  });
+
+  describe("what a stream says", () => {
+    it("is not repeated: a reader's stream shows nothing of a writer's saves it may not know", async () => {
+      const readerStream = await stream(reed);
+      const writerStream = await stream(rex);
+      await readerStream.pump(300);
+      await writerStream.pump(100);
+      const before = readerStream.seen.length;
+      expect(before).toBeGreaterThan(0);
+      // Wren saves a draft three times: each tells her own stream and Rex's, not the reader's.
+      for (let revision = 0; revision < 3; revision++) {
+        const res = await wren.put(`${base}/drafts`, {
+          id: "wrendraft001",
+          path: MIRA,
+          kind: "edit",
+          text: `# Mira\n\nVersion ${revision}.\n`,
+          revision,
+          baseBlob: (
+            (await wren.get(`${base}/entries?path=${encodeURIComponent(MIRA)}`)).json() as {
+              blob: string;
+            }
+          ).blob,
+        });
+        expect(res.statusCode, res.body).toBe(200);
+      }
+      await readerStream.pump(400);
+      await writerStream.pump(400);
+      expect(readerStream.seen.length).toBe(before);
+      // The writer's own, and another writer's (who is told of Wren's unsaved changes), do change.
+      expect(writerStream.seen.length).toBeGreaterThan(1);
+      await readerStream.close();
+      await writerStream.close();
+    });
+  });
+});
+
+// ---- Items 15 and 16: what is worked out once --------------------------------------------------
+
+describe("the stage 27d review: the library index and the status are worked out once", () => {
+  it("answers hasFile from a set, and follows `files` when it is replaced", () => {
+    const index = new VaultIndex("/nowhere");
+    index.files = ["a.md", "b/c.md"];
+    expect(index.hasFile("a.md")).toBe(true);
+    expect(index.hasFile("b")).toBe(false);
+    index.files = ["z.md"];
+    expect(index.hasFile("a.md")).toBe(false);
+    expect(index.hasFile("z.md")).toBe(true);
+  });
+
+  it("keeps what it found for attention until the index is built again", () => {
+    const index = new VaultIndex("/nowhere");
+    const first = index.attention();
+    expect(index.attention()).toBe(first);
+    index.generation++;
+    expect(index.attention()).not.toBe(first);
+  });
+
+  describe("the status service", () => {
+    const make = () => {
+      const index = new VaultIndex("/nowhere");
+      let attention = 0;
+      const real = index.attention.bind(index);
+      index.attention = () => {
+        attention++;
+        return real();
+      };
+      let people = 0;
+      let version = "v1";
+      const status = new StatusService(index, {
+        library: "own",
+        backupOutside: false,
+        person: () => {
+          people++;
+          return {
+            unpublished: 0,
+            conflicts: 0,
+            drafts: 0,
+            serverDraftChanges: 0,
+            keptCopies: 0,
+            othersUnsaved: [],
+          };
+        },
+        presence: () => [],
+        personVersion: () => version,
+      });
+      return {
+        status,
+        calls: () => ({ attention, people }),
+        change: (v: string) => (version = v),
+      };
+    };
+
+    it("makes the shared part once for every tab, and again only after a change", () => {
+      const { status, calls } = make();
+      for (let i = 0; i < 40; i++) status.snapshotFor(`p${i % 10}`);
+      // The shared part once; each of ten people's part once, however many tabs they have.
+      expect(calls()).toEqual({ attention: 1, people: 10 });
+      status.drafts(1, 0);
+      status.snapshotFor("p1");
+      expect(calls().attention).toBe(2);
+      expect(calls().people).toBe(10);
+    });
+
+    it("makes a person's part again only when what it is made of changed, and not for who is reading", () => {
+      const { status, calls, change } = make();
+      const seen: StatusSnapshot[] = [];
+      for (let i = 0; i < 5; i++) status.subscribe((s) => seen.push(s));
+      status.snapshotFor("p1");
+      for (let i = 0; i < 20; i++) status.presenceChanged();
+      status.snapshotFor("p1");
+      // Twenty presence changes told twenty listeners, and worked out nothing again.
+      expect(seen).toHaveLength(100);
+      expect(calls()).toEqual({ attention: 1, people: 1 });
+      change("v2");
+      status.snapshotFor("p1");
+      expect(calls().people).toBe(2);
+    });
+  });
+
+  describe("the version of each entry", () => {
+    let t: TestApp;
+    beforeEach(async () => {
+      t = await makeTestApp({ LOGIN_ATTEMPTS: "1000" });
+      await t.login();
+    });
+    afterEach(() => t.close());
+
+    // The passes over the log that make the map of every file's last version.
+    const logs = () =>
+      t.gitCommands.filter(
+        (a) =>
+          a[0] === "log" &&
+          a.includes("--name-only") &&
+          a.includes("--format=%x00%H%x00%cI%x00%an%x00%ae"),
+      ).length;
+
+    it("is read without a Git command for each read of an entry", async () => {
+      const base = `/api/p/${(await t.server.projects.all())[0]!.slug}`;
+      const read = async (path: string) => {
+        const res = await t.get(`${base}/entries?path=${encodeURIComponent(path)}`);
+        expect(res.statusCode, res.body).toBe(200);
+        return res.json().lastVersion as { commit: string; by: { name: string } } | null;
+      };
+      await read(MIRA);
+      const afterFirst = logs();
+      for (let i = 0; i < 20; i++) await read(i % 2 === 0 ? MIRA : SHADE);
+      expect(logs()).toBe(afterFirst);
+      // A new version is picked up by reading the commits since, not the whole log.
+      const head = t.repo.pushFromOutside({ [MIRA]: "# Mira\n\nNew.\n" }, "New Mira");
+      await t.services.sync();
+      expect((await read(MIRA))!.commit).toBe(head);
+      expect(logs()).toBe(afterFirst + 1);
+      expect(t.gitCommands.some((a) => a.join(" ").includes(`..${head}`))).toBe(true);
+    });
+
+    it("agrees with the log for every kind of path: touched, deleted, never touched, and an older commit", async () => {
+      const git = t.services.git;
+      t.repo.pushFromOutside({ [SHADE]: null }, "Delete Shade");
+      t.repo.pushFromOutside({ [MIRA]: "# Mira\n\nTwice.\n" }, "Mira again");
+      await t.services.sync();
+      const head = t.services.index.commit!;
+      for (const path of [MIRA, SHADE, "03 Things/Plain.md", "Nothing/Never.md"]) {
+        expect(await git.lastChangeAt(path, head), path).toEqual(await git.lastChange(path));
+      }
+      // A commit that is not after the one the map was made for gets the map of its own.
+      const older = (await git.history())[1]!.commit;
+      expect((await git.lastChangeAt(MIRA, older))!.commit).not.toBe(head);
+      expect((await git.lastChangeAt(SHADE, older))!.commit).toBe(
+        (await git.lastChangeAt(SHADE, head))!.commit,
+      );
+      // And back to the library's own commit.
+      expect((await git.lastChangeAt(MIRA, head))!.commit).toBe(head);
     });
   });
 });
