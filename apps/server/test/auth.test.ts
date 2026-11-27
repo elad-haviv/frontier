@@ -91,10 +91,10 @@ describe("session", () => {
 
   it("ends the session of a person who is no longer there", async () => {
     await t.login();
-    const [person] = await t.services.people.all();
+    const [person] = await t.services.server.people.all();
     await t.services.files.remove(`${t.services.config.dataDir}/state/people.json`);
-    await t.services.people.create({ name: "Someone else", email: "else@example.com" });
-    expect(person!.id).not.toBe((await t.services.people.all())[0]!.id);
+    await t.services.server.people.create({ name: "Someone else", email: "else@example.com" });
+    expect(person!.id).not.toBe((await t.services.server.people.all())[0]!.id);
     expect((await t.get("/api/tree")).statusCode).toBe(401);
   });
 

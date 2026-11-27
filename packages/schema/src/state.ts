@@ -188,6 +188,11 @@ export const Settings = z.object({
   passkeys: z.array(Passkey).default([]),
   /** When true the password no longer logs in; only a passkey does. */
   passwordOff: z.boolean().default(false),
+  /**
+   * Set once the people store (`people.json`) has been made. From then on the fields above are
+   * never read again, so a deleted people file cannot bring an old password back.
+   */
+  migratedToPeople: z.boolean().default(false),
   /** Stage 25: which needs-love rules are on. */
   keepGoing: KeepGoingSettings.default({}),
 });

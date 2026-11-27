@@ -18,7 +18,7 @@ async function main(): Promise<void> {
   // The first account: moved from the one password and passkeys of earlier versions, or made
   // from FRONTIER_INITIAL_PASSWORD. Only while there is no account.
   await startAccounts({
-    people: services.people,
+    people: services.server.people,
     settings: services.settings,
     env: process.env,
     say: (message) => app.log.info(message),

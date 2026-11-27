@@ -56,7 +56,7 @@ export async function seedAccount(
 ) {
   if (password === PASSWORD) cachedHash ??= hashPassword(PASSWORD);
   if (!(await services.settings.read())) await services.settings.write({ passwordHash: "" });
-  return services.people.create({
+  return services.server.people.create({
     name: extra.name ?? NAME,
     email: extra.email ?? EMAIL,
     passwordHash: password === PASSWORD ? await cachedHash! : await hashPassword(password),
@@ -80,6 +80,18 @@ export async function makeTestApp(
   await built.services.sync();
   await seedAccount(built.services);
 
+  // Like a browser: a new session cookie in an answer replaces the one held, as when a change
+  // ends the other sessions and this one is given the new epoch.
+  const keep = async (pending: Promise<LightMyRequestResponse>) => {
+    const res = await pending;
+    const set = res.headers["set-cookie"];
+    const first = Array.isArray(set) ? set[0] : set;
+    if (res.statusCode < 400 && first?.startsWith("frontier_session=")) {
+      t.cookie = first.split(";")[0]!;
+    }
+    return res;
+  };
+
   const t: TestApp = {
     ...built,
     repo,
@@ -97,22 +109,26 @@ export async function makeTestApp(
       return res;
     },
     get: (url) =>
-      built.app.inject({ method: "GET", url, headers: t.cookie ? { cookie: t.cookie } : {} }),
+      keep(built.app.inject({ method: "GET", url, headers: t.cookie ? { cookie: t.cookie } : {} })),
     post: (url, body, headers = {}) =>
-      built.app.inject({
-        method: "POST",
-        url,
-        headers: { ...(t.cookie ? { cookie: t.cookie } : {}), ...headers },
-        ...(body === undefined ? {} : { payload: body as object }),
-      }),
+      keep(
+        built.app.inject({
+          method: "POST",
+          url,
+          headers: { ...(t.cookie ? { cookie: t.cookie } : {}), ...headers },
+          ...(body === undefined ? {} : { payload: body as object }),
+        }),
+      ),
     put: (url, body) =>
-      built.app.inject({
-        method: "PUT",
-        url,
-        headers: { cookie: t.cookie },
-        payload: body as object,
-      }),
-    del: (url) => built.app.inject({ method: "DELETE", url, headers: { cookie: t.cookie } }),
+      keep(
+        built.app.inject({
+          method: "PUT",
+          url,
+          headers: { cookie: t.cookie },
+          payload: body as object,
+        }),
+      ),
+    del: (url) => keep(built.app.inject({ method: "DELETE", url, headers: { cookie: t.cookie } })),
     async close() {
       await built.app.close();
       repo.cleanup();

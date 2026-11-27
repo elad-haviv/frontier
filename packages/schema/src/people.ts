@@ -31,6 +31,13 @@ export const Person = z.object({
   passkeys: z.array(Passkey).default([]),
   identities: z.array(Identity).default([]),
   createdAt: z.string().datetime(),
+  /**
+   * Counted up whenever the way into the account changes (a new password, a passkey removed, the
+   * password switched off or on). A session carries the number it started with, and one that
+   * does not match is over, so a stolen session does not outlive the change that was made to
+   * shut it out.
+   */
+  sessionEpoch: z.number().int().default(0),
   /** The server's first account. Only it may do what only the server's owner may. */
   admin: z.boolean().default(false),
 });
@@ -42,8 +49,11 @@ export const PeopleFile = z.object({
 });
 export type PeopleFile = z.infer<typeof PeopleFile>;
 
-/** The same address however it is typed. */
-export const emailKey = (email: string): string => email.trim().toLowerCase();
+/**
+ * The same address however it is typed: in any case, with spaces around it, and with look-alike
+ * characters (full-width letters, ligatures) written the plain way.
+ */
+export const emailKey = (email: string): string => email.normalize("NFKC").trim().toLowerCase();
 
 /** Two letters for a round avatar: the first letters of the first and last name, or of the email. */
 export function initialsOf(name: string, email = ""): string {

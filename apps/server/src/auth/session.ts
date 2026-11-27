@@ -13,23 +13,60 @@ declare module "fastify" {
 /** How a person proved who they are, kept in the session for the rules that depend on it. */
 export type Method = "password" | "passkey";
 
-/** Starts a session for a person. The session holds their id and nothing else about them. */
+/** How recent a login must be for what could take an account over: a first password, a passkey. */
+export const RECENT_LOGIN_MS = 5 * 60 * 1000;
+
+/**
+ * Starts a session for a person. The session holds their id, how they logged in, when, and the
+ * epoch of their way in, and nothing else about them.
+ */
 export function startSession(request: FastifyRequest, person: Person, method: Method): void {
   request.session.set("user", person.id);
   request.session.set("method", method);
+  request.session.set("epoch", person.sessionEpoch);
+  request.session.set("loginAt", Date.now());
+}
+
+/**
+ * Ends every other session of the account, for a change to how it is logged into. Use it inside
+ * the people store's change, so the new epoch is written with the change itself.
+ */
+export const endOtherSessions = (p: Person): Person => ({ ...p, sessionEpoch: p.sessionEpoch + 1 });
+
+/**
+ * Keeps this device's session going after `endOtherSessions`: it takes the new epoch, and stays
+ * logged in. The login time stays what it was, because this was not a login.
+ */
+export function followEpoch(request: FastifyRequest, person: Person): void {
+  request.session.set("epoch", person.sessionEpoch);
+}
+
+/**
+ * Refuses unless the person logged in within the last five minutes. A session cookie alone must
+ * not be enough to add a way into the account that outlasts the cookie.
+ */
+export function requireRecentLogin(request: FastifyRequest): void {
+  const at = request.session.get("loginAt") ?? 0;
+  if (Date.now() - at > RECENT_LOGIN_MS) {
+    throw new ApiError("recent_login_needed", "Log in again to do this.");
+  }
 }
 
 /**
  * The person the session belongs to, or null. A session that names no account, such as the one
  * from before accounts existed, which said "author", is a session of nobody: the person logs in
- * again, and nothing breaks.
+ * again, and nothing breaks. So is a session whose epoch is not the account's any more: the
+ * password or a passkey changed since, and every session from before it is over. A session made
+ * before epochs existed has none, which counts as the first epoch.
  */
 export async function currentPerson(
   request: FastifyRequest,
   people: PeopleStore,
 ): Promise<Person | null> {
   const id = request.session.get("user");
-  return id ? people.get(id) : null;
+  const person = id ? await people.get(id) : null;
+  if (!person || (request.session.get("epoch") ?? 0) !== person.sessionEpoch) return null;
+  return person;
 }
 
 /**

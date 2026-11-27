@@ -3,8 +3,9 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { initialsOf, MeResponse } from "@frontier/schema";
+import { emailKey, initialsOf, MeResponse, type Person } from "@frontier/schema";
 import { startAccounts } from "../src/auth/accounts.js";
+import { LoginLimiter } from "../src/auth/limit.js";
 import { hashPassword, verifyPassword } from "../src/auth/password.js";
 import { PeopleStore } from "../src/state/people.js";
 import { StateFiles } from "../src/state/files.js";
@@ -125,16 +126,22 @@ describe("the move from author", () => {
     await start(AUTHOR);
     const [person, ...rest] = await people.all();
     expect(rest).toEqual([]);
+    // The commit author's email is not taken as the account's: see `startAccounts`.
     expect(person).toMatchObject({
       name: "Elad",
-      email: "elad@example.com",
+      email: "",
       admin: true,
       passwordHash: hash,
       passwordOff: true,
       passkeys: [KEY],
     });
-    expect(readFileSync(join(dir, "settings.json"), "utf8")).toBe(before);
-    expect(said).toEqual(["Moved the password and passkeys into the first account."]);
+    // The old fields stay as they were; the file only gains the note that the move was made.
+    expect(JSON.parse(readFileSync(join(dir, "settings.json"), "utf8"))).toEqual({
+      ...JSON.parse(before),
+      migratedToPeople: true,
+    });
+    expect(said).toHaveLength(1);
+    expect(said[0]).toMatch(/Moved the password and passkeys.*Elad.*no email yet/);
     // It runs once: a person made since is not overwritten.
     await people.update(person!.id, (p) => ({ ...p, name: "Changed" }));
     await start(AUTHOR);
@@ -217,7 +224,7 @@ describe("accounts in the server", () => {
 
   it("changes the name and email, and refuses ones that are not valid or are taken", async () => {
     await t.login();
-    await t.services.people.create({ name: "Mira", email: "mira@example.com" });
+    await t.services.server.people.create({ name: "Mira", email: "mira@example.com" });
     const ok = await t.put("/api/me", { name: " Elad Z ", email: "elad@new.example.com" });
     expect(ok.statusCode).toBe(200);
     expect(await me()).toMatchObject({ name: "Elad Z", email: "elad@new.example.com" });
@@ -239,6 +246,8 @@ describe("accounts in the server", () => {
 
   it("changes the password only with the current one, and sets one for an account without", async () => {
     await t.login();
+    // Changing the password draws on the login allowance; this test makes more tries than that.
+    t.services.server.loginLimit = new LoginLimiter(100);
     const short = await t.put("/api/me/password", { current: PASSWORD, password: "short" });
     expect(short.statusCode).toBe(400);
     const wrong = await t.put("/api/me/password", {
@@ -259,8 +268,8 @@ describe("accounts in the server", () => {
     expect((await t.login("a new long password")).statusCode).toBe(200);
 
     // An account with no password sets one without a current password.
-    const [person] = await t.services.people.all();
-    await t.services.people.update(person!.id, (p) => ({
+    const [person] = await t.services.server.people.all();
+    await t.services.server.people.update(person!.id, (p) => ({
       ...p,
       passwordHash: "",
       passwordOff: true,
@@ -277,8 +286,8 @@ describe("accounts in the server", () => {
     await t.login();
     const none = await t.put("/api/settings/password-off", { off: true });
     expect(none.statusCode).toBe(403);
-    const [person] = await t.services.people.all();
-    await t.services.people.update(person!.id, (p) => ({ ...p, passwordHash: "" }));
+    const [person] = await t.services.server.people.all();
+    await t.services.server.people.update(person!.id, (p) => ({ ...p, passwordHash: "" }));
     const on = await t.put("/api/settings/password-off", { off: false });
     expect(on.statusCode).toBe(403);
     expect(on.json().error.message).toMatch(/no password/);
@@ -286,7 +295,7 @@ describe("accounts in the server", () => {
 
   it("keeps the last way to log in: a passkey cannot go when there is no password", async () => {
     await t.login();
-    const [person] = await t.services.people.all();
+    const [person] = await t.services.server.people.all();
     const key = {
       id: "cred",
       publicKey: "k",
@@ -295,7 +304,7 @@ describe("accounts in the server", () => {
       name: "Phone",
       addedAt: "2026-11-21T10:00:00Z",
     };
-    await t.services.people.update(person!.id, (p) => ({
+    await t.services.server.people.update(person!.id, (p) => ({
       ...p,
       passwordHash: "",
       passkeys: [key],
@@ -308,8 +317,8 @@ describe("accounts in the server", () => {
   });
 
   it("does not take a passkey that another account holds", async () => {
-    const [mine] = await t.services.people.all();
-    const other = await t.services.people.create({
+    const [mine] = await t.services.server.people.all();
+    const other = await t.services.server.people.create({
       name: "Mira",
       email: "mira@example.com",
       passkeys: [
@@ -323,12 +332,12 @@ describe("accounts in the server", () => {
         },
       ],
     });
-    expect((await t.services.people.byPasskey("cred"))?.id).toBe(other.id);
+    expect((await t.services.server.people.byPasskey("cred"))?.id).toBe(other.id);
     expect(mine!.passkeys).toEqual([]);
     // Removing a passkey takes it from the logged-in person only: this one is not theirs.
     await t.login();
     expect((await t.del("/api/passkeys/cred")).statusCode).toBe(404);
-    expect((await t.services.people.byPasskey("cred"))?.id).toBe(other.id);
+    expect((await t.services.server.people.byPasskey("cred"))?.id).toBe(other.id);
   });
 
   it("registers a passkey for the logged-in person, under their own name", async () => {
@@ -336,7 +345,7 @@ describe("accounts in the server", () => {
     const options = (await t.post("/api/passkeys/register/options")).json();
     expect(options.user.name).toBe(EMAIL);
     expect(options.user.displayName).toBe(NAME);
-    const [person] = await t.services.people.all();
+    const [person] = await t.services.server.people.all();
     expect(Buffer.from(options.user.id, "base64url").toString()).toBe(person!.id);
   });
 
@@ -349,9 +358,9 @@ describe("accounts in the server", () => {
       name: "Phone",
       addedAt: "2026-11-21T10:00:00Z",
     });
-    const [mine] = await t.services.people.all();
-    await t.services.people.update(mine!.id, (p) => ({ ...p, passkeys: [key("one")] }));
-    await t.services.people.create({
+    const [mine] = await t.services.server.people.all();
+    await t.services.server.people.update(mine!.id, (p) => ({ ...p, passkeys: [key("one")] }));
+    await t.services.server.people.create({
       name: "Mira",
       email: "mira@example.com",
       passkeys: [key("two")],
@@ -363,7 +372,7 @@ describe("accounts in the server", () => {
     ]);
     // A credential no one holds is refused the same way as a wrong one.
     const refused = await t.post("/api/passkeys/login/verify", { response: { id: "nobody" } });
-    expect(refused.statusCode).toBe(400);
+    expect(refused.statusCode).toBe(401);
   });
 });
 
@@ -393,7 +402,7 @@ describe("an account with no email yet", () => {
   });
 
   it("does not guess between two accounts that have no email", async () => {
-    await t.services.people.create({ name: "", email: "" });
+    await t.services.server.people.create({ name: "", email: "" });
     expect((await t.login(PASSWORD, "")).statusCode).toBe(401);
   });
 });
@@ -437,8 +446,8 @@ describe("who saves a version", () => {
   });
 
   it("falls back to the configured author for what the person has not given", async () => {
-    const [person] = await t.services.people.all();
-    await t.services.people.update(person!.id, (p) => ({ ...p, name: "", email: "" }));
+    const [person] = await t.services.server.people.all();
+    await t.services.server.people.update(person!.id, (p) => ({ ...p, name: "", email: "" }));
     // The login needs no email while it is the only account without one.
     expect((await t.login(PASSWORD, "")).statusCode).toBe(200);
     expect((await save()).statusCode).toBe(200);
@@ -453,5 +462,305 @@ describe("initials", () => {
     expect(initialsOf("Mira")).toBe("M");
     expect(initialsOf("", "elad@example.com")).toBe("E");
     expect(initialsOf("", "")).toBe("?");
+  });
+});
+
+describe("sessions after a change to how the account is logged into", () => {
+  let t: TestApp;
+  beforeEach(async () => {
+    t = await makeTestApp();
+    t.services.server.loginLimit = new LoginLimiter(100);
+  });
+  afterEach(() => t.close());
+
+  const KEY = {
+    id: "cred",
+    publicKey: "k",
+    counter: 0,
+    transports: [],
+    name: "Phone",
+    addedAt: "2026-11-21T10:00:00Z",
+  };
+  const NEW = "a new long password";
+
+  /** Another device: a second login, which gets a cookie of its own. */
+  async function otherDevice() {
+    const mine = t.cookie;
+    await t.login();
+    const other = t.cookie;
+    t.cookie = mine;
+    return other;
+  }
+  const status = async (cookie: string) => {
+    const mine = t.cookie;
+    t.cookie = cookie;
+    const code = (await t.get("/api/me")).statusCode;
+    t.cookie = mine;
+    return code;
+  };
+  const update = async (change: (p: Person) => Person) =>
+    t.services.server.people.update((await t.services.server.people.all())[0]!.id, change);
+
+  it("ends the other sessions when the password changes, and keeps this one", async () => {
+    await t.login();
+    const other = await otherDevice();
+    expect(await status(other)).toBe(200);
+    const ok = await t.put("/api/me/password", { current: PASSWORD, password: NEW });
+    expect(ok.statusCode).toBe(200);
+    expect(await status(other)).toBe(401);
+    expect((await t.get("/api/me")).statusCode).toBe(200);
+  });
+
+  it("ends the other sessions when a passkey is removed, or the password switched off or on", async () => {
+    await t.login();
+    await update((p) => ({ ...p, passkeys: [KEY] }));
+    let other = await otherDevice();
+    // A passkey session may switch the password off; this session is made to look like one.
+    const [person] = await t.services.server.people.all();
+    const passkeySession = t.app.createSecureSession({
+      user: person!.id,
+      method: "passkey",
+      epoch: person!.sessionEpoch,
+      loginAt: Date.now(),
+    });
+    t.cookie = `frontier_session=${encodeURIComponent(t.app.encodeSecureSession(passkeySession))}`;
+    expect((await t.put("/api/settings/password-off", { off: true })).statusCode).toBe(200);
+    expect(await status(other)).toBe(401);
+    expect((await t.get("/api/me")).statusCode).toBe(200);
+
+    // The password is off, so another session can only be made from the store.
+    const now = (await t.services.server.people.all())[0]!;
+    const made = t.app.createSecureSession({
+      user: now.id,
+      method: "passkey",
+      epoch: now.sessionEpoch,
+      loginAt: Date.now(),
+    });
+    other = `frontier_session=${encodeURIComponent(t.app.encodeSecureSession(made))}`;
+    expect((await t.put("/api/settings/password-off", { off: false })).statusCode).toBe(200);
+    expect(await status(other)).toBe(401);
+
+    other = await otherDevice();
+    expect((await t.del(`/api/passkeys/${KEY.id}`)).statusCode).toBe(200);
+    expect(await status(other)).toBe(401);
+    expect((await t.get("/api/me")).statusCode).toBe(200);
+  });
+
+  it("treats a session that never had an epoch as the first one, so a change still ends it", async () => {
+    const [person] = await t.services.server.people.all();
+    const old = t.app.createSecureSession({ user: person!.id, method: "password" });
+    const cookie = `frontier_session=${encodeURIComponent(t.app.encodeSecureSession(old))}`;
+    expect(await status(cookie)).toBe(200);
+    await t.login();
+    await t.put("/api/me/password", { current: PASSWORD, password: NEW });
+    expect(await status(cookie)).toBe(401);
+  });
+
+  it("keeps two removals at once from taking away the last way in", async () => {
+    await t.login();
+    const second = { ...KEY, id: "cred2", name: "Laptop" };
+    await update((p) => ({ ...p, passwordHash: "", passkeys: [KEY, second] }));
+    const results = await Promise.all([t.del("/api/passkeys/cred"), t.del("/api/passkeys/cred2")]);
+    expect(results.map((r) => r.statusCode).sort()).toEqual([200, 403]);
+    expect((await t.services.server.people.all())[0]!.passkeys).toHaveLength(1);
+  });
+
+  it("checks the last way in against the account as it is when a change is made", async () => {
+    await t.login();
+    // The password is switched off while the request is in flight: the one passkey must stay.
+    await update((p) => ({ ...p, passkeys: [KEY] }));
+    const pending = t.del(`/api/passkeys/${KEY.id}`);
+    await update((p) => ({ ...p, passwordOff: true }));
+    const res = await pending;
+    // Whichever came first, the account is never left with no way in.
+    const [now] = await t.services.server.people.all();
+    expect(now!.passkeys.length + (now!.passwordOff ? 0 : 1)).toBeGreaterThan(0);
+    expect([200, 403]).toContain(res.statusCode);
+  });
+});
+
+describe("a login from the last few minutes", () => {
+  let t: TestApp;
+  beforeEach(async () => {
+    t = await makeTestApp();
+  });
+  afterEach(() => t.close());
+
+  /** A session that logged in this long ago. */
+  async function sessionFrom(msAgo: number) {
+    const [person] = await t.services.server.people.all();
+    const s = t.app.createSecureSession({
+      user: person!.id,
+      method: "password",
+      epoch: person!.sessionEpoch,
+      loginAt: Date.now() - msAgo,
+    });
+    t.cookie = `frontier_session=${encodeURIComponent(t.app.encodeSecureSession(s))}`;
+  }
+  const withoutPassword = async () => {
+    const [person] = await t.services.server.people.all();
+    await t.services.server.people.update(person!.id, (p) => ({
+      ...p,
+      passwordHash: "",
+      passwordOff: true,
+      passkeys: [
+        {
+          id: "cred",
+          publicKey: "k",
+          counter: 0,
+          transports: [],
+          name: "Phone",
+          addedAt: "2026-11-21T10:00:00Z",
+        },
+      ],
+    }));
+  };
+
+  it("is needed to set a first password, and not to change an existing one", async () => {
+    await withoutPassword();
+    await sessionFrom(6 * 60 * 1000);
+    const refused = await t.put("/api/me/password", { password: "a new long password" });
+    expect(refused.statusCode).toBe(403);
+    expect(refused.json().error.code).toBe("recent_login_needed");
+    expect((await t.services.server.people.all())[0]!.passwordHash).toBe("");
+    await sessionFrom(60 * 1000);
+    expect((await t.put("/api/me/password", { password: "a new long password" })).statusCode).toBe(
+      200,
+    );
+
+    // With a password to ask for, the session's age does not matter.
+    await sessionFrom(24 * 60 * 60 * 1000);
+    const changed = await t.put("/api/me/password", {
+      current: "a new long password",
+      password: "another long password",
+    });
+    expect(changed.statusCode).toBe(200);
+  });
+
+  it("is needed to add a passkey, at both steps", async () => {
+    await sessionFrom(6 * 60 * 1000);
+    for (const url of ["/api/passkeys/register/options", "/api/passkeys/register/verify"]) {
+      const res = await t.post(url, { name: "Phone", response: { id: "x" } });
+      expect(res.statusCode).toBe(403);
+      expect(res.json().error.code).toBe("recent_login_needed");
+    }
+    await sessionFrom(60 * 1000);
+    expect((await t.post("/api/passkeys/register/options")).statusCode).toBe(200);
+  });
+
+  it("is there after a fresh login, so the first passkey can be added at once", async () => {
+    await t.login();
+    expect((await t.post("/api/passkeys/register/options")).statusCode).toBe(200);
+  });
+
+  it("counts a password change against the login allowance", async () => {
+    await t.login();
+    const codes: number[] = [];
+    for (let i = 0; i < 6; i++) {
+      codes.push(
+        (await t.put("/api/me/password", { current: "wrong", password: "a new long password" }))
+          .statusCode,
+      );
+    }
+    // The login took the first of the five.
+    expect(codes).toEqual([400, 400, 400, 400, 429, 429]);
+  });
+});
+
+describe("the move happens once", () => {
+  let dir: string;
+  let people: PeopleStore;
+  let settings: SettingsStore;
+  const start = (env: Record<string, string> = {}) =>
+    startAccounts({ people, settings, env, say: () => undefined });
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), "frontier-once-"));
+    const files = new StateFiles();
+    people = new PeopleStore(dir, files);
+    settings = new SettingsStore(dir, files);
+  });
+  afterEach(() => rmSync(dir, { recursive: true, force: true }));
+
+  it("does not bring the old password back when the people file is gone", async () => {
+    await settings.write({ passwordHash: await hashPassword(PASSWORD) });
+    await start();
+    expect((await settings.read())!.migratedToPeople).toBe(true);
+    rmSync(join(dir, "people.json"));
+    const refusal = start({ FRONTIER_INITIAL_PASSWORD: "a long enough password" });
+    await expect(refusal).rejects.toThrow(/people\.json/);
+    await expect(start()).rejects.toThrow(/npm run restore/);
+    expect(await people.exists()).toBe(false);
+  });
+
+  it("makes the account from FRONTIER_INITIAL_PASSWORD only when none has ever existed", async () => {
+    await start({ FRONTIER_INITIAL_PASSWORD: "a long enough password" });
+    expect((await settings.read())!.migratedToPeople).toBe(true);
+    rmSync(join(dir, "people.json"));
+    await expect(start({ FRONTIER_INITIAL_PASSWORD: "a long enough password" })).rejects.toThrow(
+      /restore/,
+    );
+    expect(await people.exists()).toBe(false);
+  });
+
+  it("notes the move for a server that made its accounts before the note existed", async () => {
+    await settings.write({ passwordHash: "" });
+    await people.create({ name: "Old" });
+    await start();
+    expect((await settings.read())!.migratedToPeople).toBe(true);
+    rmSync(join(dir, "people.json"));
+    await expect(start()).rejects.toThrow(/restore/);
+  });
+
+  it("starts as usual on a server that never had an account", async () => {
+    await expect(start()).resolves.toBeUndefined();
+  });
+});
+
+describe("the email of an account", () => {
+  it("is the same under compatibility forms, case and spaces", () => {
+    expect(emailKey("  ＡＢ＠Example.COM ")).toBe(emailKey("ab@example.com"));
+    expect(emailKey("ﬀ@example.com")).toBe("ff@example.com");
+  });
+});
+
+describe("the first account after the move", () => {
+  let t: TestApp;
+  beforeEach(async () => {
+    t = await makeTestApp();
+  });
+  afterEach(() => t.close());
+
+  it("suggests the commit author's email for an account with none, but not a stand-in or no-reply one", async () => {
+    const [person] = await t.services.server.people.all();
+    await t.services.server.people.update(person!.id, (p) => ({ ...p, email: "" }));
+    await t.login(PASSWORD, "");
+    expect((await t.get("/api/me")).json()).toMatchObject({
+      email: "",
+      suggestedEmail: "author@example.com",
+    });
+    // Saving is the person's own act.
+    expect((await t.services.server.people.all())[0]!.email).toBe("");
+    for (const bad of ["author@frontier.invalid", "123+name@users.noreply.github.com"]) {
+      t.services.config.commitAuthor.email = bad;
+      expect((await t.get("/api/me")).json().suggestedEmail).toBe("");
+    }
+  });
+
+  it("keeps a sign-in field in the settings for devices on the previous build", async () => {
+    await t.login();
+    expect((await t.get("/api/settings")).json().signIn).toMatchObject({
+      passkeys: [],
+      passwordOff: false,
+      method: "password",
+    });
+  });
+
+  it("is seen from the file when another process, like the set-password command, changes it", async () => {
+    await t.login();
+    const [person] = await t.services.server.people.all();
+    // A second store on the same file stands for the other process.
+    const other = new PeopleStore(`${t.services.config.dataDir}/state`, new StateFiles());
+    await other.update(person!.id, (p) => ({ ...p, sessionEpoch: p.sessionEpoch + 1 }));
+    expect((await t.get("/api/me")).statusCode).toBe(401);
   });
 });

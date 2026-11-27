@@ -11,6 +11,7 @@ const ME: MeResponse = {
   passwordSet: true,
   passwordOff: false,
   method: "password",
+  suggestedEmail: "",
 };
 
 const store = new Map<string, string>();
@@ -47,6 +48,35 @@ describe("the person logged in", () => {
     }));
     const me = await import("./me.ts");
     expect(await me.loadMe()).toEqual(ME);
+  });
+
+  it("says what is lacking, naming only that", async () => {
+    const me = await import("./me.ts");
+    expect(me.missing("", "")).toBe("name and email");
+    expect(me.missing("Olive", "")).toBe("email");
+    expect(me.missing("", "o@example.com")).toBe("name");
+  });
+
+  it("remembers that the last read failed, until one works", async () => {
+    let fail = true;
+    vi.doMock("./api.ts", () => ({
+      api: {
+        me: async () => {
+          if (fail) throw new Error("down");
+          return ME;
+        },
+      },
+    }));
+    const me = await import("./me.ts");
+    // The hook reads this flag; the module exposes it through a store, so read it by rendering.
+    const { createElement } = await import("react");
+    const { renderToString } = await import("react-dom/server");
+    const failed = () => renderToString(createElement(() => String(me.useMeFailed())));
+    await me.loadMe();
+    expect(failed()).toBe("true");
+    fail = false;
+    await me.loadMe();
+    expect(failed()).toBe("false");
   });
 
   it("takes a profile just saved, and survives storage that throws", async () => {

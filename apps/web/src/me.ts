@@ -10,6 +10,8 @@ import { api } from "./api.ts";
 const KEY = "frontier.me";
 
 let current: MeResponse | null = readKept();
+/** True after the server was asked and could not say, until it does. */
+let failed = false;
 const listeners = new Set<() => void>();
 
 function readKept(): MeResponse | null {
@@ -35,11 +37,25 @@ function set(next: MeResponse | null): void {
 /** Reads the person again from the server. A failure leaves what is known as it is. */
 export async function loadMe(): Promise<MeResponse | null> {
   try {
+    failed = false;
     set(await api.me());
   } catch {
     /* offline, or logged out: the left bar keeps what it had until the session says otherwise */
+    failed = true;
+    for (const l of listeners) l();
   }
   return current;
+}
+
+/** What the account still lacks, in words, for the places that ask for it. */
+export function missing(name: string, email: string): string {
+  if (name.trim() === "" && email.trim() === "") return "name and email";
+  return name.trim() === "" ? "name" : "email";
+}
+
+/** Whether the last attempt to read the person failed, so a page can offer to try again. */
+export function useMeFailed(): boolean {
+  return useSyncExternalStore(subscribe, () => failed);
 }
 
 /** Forgets the person, at log out. */

@@ -1,9 +1,11 @@
 import { type FormEvent, useState } from "react";
 import { api, ApiFailure } from "../../api.ts";
 import { useDialogs } from "../../components/Dialogs.tsx";
+import { withRecentLogin } from "../../components/LoginDialog.tsx";
 import { useLogout } from "../../components/Shell.tsx";
 import { ActionButton } from "../../components/ui/ActionButton.tsx";
 import { loadMe, useMe } from "../../me.ts";
+import { NoMe } from "./NoMe.tsx";
 import { useNeedsConnection } from "../../sync/connection.ts";
 
 type Notice = { kind: "ok" | "error"; text: string } | null;
@@ -27,7 +29,7 @@ export function Account() {
     text: string;
   } | null>(null);
   const offline = useNeedsConnection();
-  if (!me) return <p className="muted">Loading…</p>;
+  if (!me) return <NoMe />;
 
   async function run(work: () => Promise<unknown>, done: string, failed: string) {
     setBusy(true);
@@ -60,7 +62,7 @@ export function Account() {
     setBusy(true);
     setNotice(null);
     try {
-      await api.setPassword(next, current);
+      await withRecentLogin(() => api.setPassword(next, current));
       setCurrent("");
       setNext("");
       setNotice({
@@ -147,7 +149,7 @@ export function Account() {
             }
             void run(
               async () => {
-                await api.addPasskey(name.trim());
+                await withRecentLogin(() => api.addPasskey(name.trim()));
                 setName("");
               },
               "The passkey was added. Log out and try it before switching the password off.",

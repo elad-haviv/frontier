@@ -18,6 +18,15 @@ export const NAME = "Olive Owner";
 /** Where the shared login session is kept between tests. */
 export const AUTH_FILE = join(here, "..", "..", "..", "test-results", ".auth.json");
 
+/**
+ * For a test that changes how the account logs in (a new password, a passkey removed). That ends
+ * every other session of the account, including the one the other tests start from, so the test
+ * keeps the session it still holds, which is the one that stays valid, for those that follow.
+ */
+export async function keepSession(page: Page): Promise<void> {
+  await page.context().storageState({ path: AUTH_FILE });
+}
+
 function git(cwd: string, ...args: string[]): string {
   return execFileSync(
     "git",

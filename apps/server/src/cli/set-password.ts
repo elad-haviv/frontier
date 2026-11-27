@@ -10,7 +10,9 @@
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { createInterface } from "node:readline/promises";
-import { startAccounts } from "../auth/accounts.js";
+import { markMigrated, startAccounts } from "../auth/accounts.js";
+import { endOtherSessions } from "../auth/session.js";
+import { ConfigError } from "../config.js";
 import { hashPassword } from "../auth/password.js";
 import { PeopleStore } from "../state/people.js";
 import { StateFiles } from "../state/files.js";
@@ -24,7 +26,13 @@ const settings = new SettingsStore(stateDir, files);
 const people = new PeopleStore(stateDir, files);
 
 // A server from before accounts: its password and passkeys become the first account first.
-await startAccounts({ people, settings, env: process.env, say: (m) => console.error(m) });
+try {
+  await startAccounts({ people, settings, env: process.env, say: (m) => console.error(m) });
+} catch (err) {
+  if (!(err instanceof ConfigError)) throw err;
+  console.error(err.message);
+  process.exit(1);
+}
 
 const wanted = process.argv[2]?.trim();
 const all = await people.all();
@@ -53,11 +61,14 @@ if (password.length < 12) {
 const passwordHash = await hashPassword(password);
 if (person) {
   // The password is switched back on, which is the way in again after losing a passkey device.
-  await people.update(person.id, (p) => ({ ...p, passwordHash, passwordOff: false }));
+  // Every session of the account ends: a password set here may be because the old one leaked.
+  await people.update(person.id, (p) =>
+    endOtherSessions({ ...p, passwordHash, passwordOff: false }),
+  );
   console.error(`Password set for ${person.email || person.name || "the account"}.`);
 } else {
   await people.create({ name, email, passwordHash });
   // The rest of the settings (AI, keep going) need their file to exist.
-  if ((await settings.read()) === null) await settings.write({ passwordHash: "" });
+  await markMigrated(settings);
   console.error(`Made the first account. Stored in ${join(stateDir, "people.json")}.`);
 }

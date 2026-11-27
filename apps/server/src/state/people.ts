@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { stat } from "node:fs/promises";
 import { join } from "node:path";
 import { emailKey, PeopleFile, type Person } from "@frontier/schema";
 import { ApiError } from "../errors.js";
@@ -11,25 +12,49 @@ export type NewPerson = Partial<Omit<Person, "id" | "createdAt" | "admin">>;
  * Everyone who has an account, in `/data/state/people.json`. The file is part of the backup, like
  * the rest of the state folder. One server process is its only writer, and changes are made one
  * after another, so two requests cannot overwrite each other's change.
+ *
+ * The people are held in memory, because every request asks who is logged in. What is held is
+ * checked against the file's size and time of change on each read, so the set-password command,
+ * which runs as its own process and writes the same file, is seen at once, and so is a file
+ * restored from the backup while the server runs.
  */
 export class PeopleStore {
+  /** Where the file is, for what is said when it is missing. */
+  readonly file: string;
   private readonly path: string;
   private turn: Promise<unknown> = Promise.resolve();
+  /** What was last read or written, and the file's stamp then; null stamp is "no file". */
+  private held: { stamp: string | null; people: Person[] } | null = null;
 
   constructor(
     stateDir: string,
     private readonly files: StateFiles,
   ) {
     this.path = join(stateDir, "people.json");
+    this.file = this.path;
   }
 
   /** Whether the store exists yet. Before it does, the move from "author" may still be due. */
   async exists(): Promise<boolean> {
-    return (await this.files.readJson(this.path, PeopleFile)) !== null;
+    return (await this.stamp()) !== null;
   }
 
   async all(): Promise<Person[]> {
-    return (await this.files.readJson(this.path, PeopleFile))?.people ?? [];
+    const stamp = await this.stamp();
+    if (this.held && this.held.stamp === stamp) return this.held.people;
+    const people = (await this.files.readJson(this.path, PeopleFile))?.people ?? [];
+    this.held = { stamp, people };
+    return people;
+  }
+
+  /** Changes whenever the file does, from this process or another; null when there is no file. */
+  private async stamp(): Promise<string | null> {
+    try {
+      const s = await stat(this.path);
+      return `${s.mtimeMs}:${s.size}`;
+    } catch {
+      return null;
+    }
   }
 
   async get(id: string): Promise<Person | null> {
@@ -55,6 +80,7 @@ export class PeopleStore {
       const person: Person = {
         passwordHash: "",
         passwordOff: false,
+        sessionEpoch: 0,
         passkeys: [],
         identities: [],
         name: "",
@@ -92,7 +118,9 @@ export class PeopleStore {
   ): Promise<T> {
     const run = this.turn.then(async () => {
       const { people, result } = await work(await this.all());
-      await this.files.writeJson(this.path, PeopleFile.parse({ version: 1, people }));
+      const file = PeopleFile.parse({ version: 1, people });
+      await this.files.writeJson(this.path, file);
+      this.held = { stamp: await this.stamp(), people: file.people };
       return result;
     });
     // A refused change must not stop the changes behind it.

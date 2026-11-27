@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { answerDialog } from "./helpers.ts";
+import { answerDialog, EMAIL, keepSession, PASSWORD } from "./helpers.ts";
 
 test("adds a passkey, logs in with it, and switches the password off and on again", async ({
   page,
@@ -20,9 +20,26 @@ test("adds a passkey, logs in with it, and switches the password off and on agai
     },
   });
 
+  // The server wants a login from the last few minutes to add a passkey, and the shared login of
+  // these tests may be older. The first try is answered that way whatever its age, so the dialog
+  // that asks the person to log in again is part of the test; after it, the passkey goes in.
+  let asked = false;
+  await page.route("**/api/passkeys/register/options", (route) => {
+    if (asked) return route.continue();
+    asked = true;
+    return route.fulfill({
+      status: 403,
+      json: { error: { code: "recent_login_needed", message: "Log in again to do this." } },
+    });
+  });
+
   await page.goto("/settings/account");
   await page.getByLabel("Add a passkey on this device").fill("Test phone");
   await page.getByRole("button", { name: "Add a passkey" }).click();
+  const again = page.getByRole("dialog");
+  await expect(again).toContainText("needs a login from the last few minutes");
+  await again.getByLabel("Password").fill(PASSWORD);
+  await again.getByRole("button", { name: "Log in" }).click();
   await expect(page.locator(".banner-ok")).toContainText("The passkey was added");
   await expect(page.locator(".passkeys")).toContainText("Test phone");
 
@@ -51,4 +68,12 @@ test("adds a passkey, logs in with it, and switches the password off and on agai
   await page.locator(".passkeys").getByRole("button", { name: "Remove" }).click();
   await answerDialog(page, "Remove");
   await expect(page.locator(".passkeys")).toHaveCount(0);
+
+  // The passkey login, the switches and the removal ended every other session. Logging in with
+  // the password again gives the other tests the session they start from.
+  const back = await page.request.post("/api/login", {
+    data: { email: EMAIL, password: PASSWORD },
+  });
+  expect(back.ok()).toBe(true);
+  await keepSession(page);
 });

@@ -612,6 +612,11 @@ export const MeResponse = z.object({
   passwordOff: z.boolean(),
   /** How this session logged in. Switching the password off needs a passkey session. */
   method: z.enum(["password", "passkey"]),
+  /**
+   * An email to offer in Settings → Profile when the account has none: the commit author's, which
+   * is usually the same person. Only a suggestion; nothing is saved until the person saves.
+   */
+  suggestedEmail: z.string().default(""),
 });
 export type MeResponse = z.infer<typeof MeResponse>;
 
@@ -652,6 +657,15 @@ export const SettingsResponse = z.object({
     monthlyCapUsd: z.number(),
     proposeOnPublish: z.boolean(),
     spentUsd: z.number(),
+  }),
+  /**
+   * Kept for devices still on the build before stage 27a, whose Settings page reads it and would
+   * crash without it. The current app reads `GET /api/me` instead. Remove once none are left.
+   */
+  signIn: z.object({
+    passkeys: z.array(z.object({ id: z.string(), name: z.string(), addedAt: z.string() })),
+    passwordOff: z.boolean(),
+    method: z.enum(["password", "passkey"]),
   }),
   /** Stage 25: which needs-love rules are on. */
   keepGoing: KeepGoingSettings,

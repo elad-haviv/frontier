@@ -17,8 +17,12 @@ const KEY = {
   addedAt: "2026-11-21T10:00:00Z",
 };
 const withKey = async (passwordOff = false) => {
-  const [person] = await t.services.people.all();
-  await t.services.people.update(person!.id, (p) => ({ ...p, passkeys: [KEY], passwordOff }));
+  const [person] = await t.services.server.people.all();
+  await t.services.server.people.update(person!.id, (p) => ({
+    ...p,
+    passkeys: [KEY],
+    passwordOff,
+  }));
 };
 const me = async () => MeResponse.parse((await t.get("/api/me")).json());
 const session = async () => SessionResponse.parse((await t.get("/api/session")).json());
@@ -106,7 +110,7 @@ describe("passkeys", () => {
     expect((await t.del(`/api/passkeys/${KEY.id}`)).statusCode).toBe(200);
     expect((await session()).passkeys).toBe(false);
     // The AI settings and the password are untouched by all of this.
-    expect((await t.services.people.all())[0]!.passwordHash).toMatch(/^\$argon2/);
+    expect((await t.services.server.people.all())[0]!.passwordHash).toMatch(/^\$argon2/);
     expect((await t.services.settings.read())!.ai.monthlyCapUsd).toBe(10);
   });
 });

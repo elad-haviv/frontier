@@ -25,6 +25,9 @@ export const ERROR_STATUS = {
   // What the author was shown has changed since; he looks again before going on.
   changed: 409,
   secrets_key_missing: 409,
+  // The change needs a login from the last few minutes; the web app asks the person to log in
+  // again and then tries once more.
+  recent_login_needed: 403,
   // Another account already uses this email.
   email_taken: 409,
   // A folder cannot be deleted while something under it has an unpublished change, or is an image.

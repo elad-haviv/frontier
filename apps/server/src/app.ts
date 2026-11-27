@@ -12,7 +12,6 @@ import { FieldJob } from "./ai/job.js";
 import { AiLog } from "./ai/log.js";
 import { ModelCatalogue } from "./ai/models.js";
 import { AiProvider } from "./ai/provider.js";
-import { LoginLimiter } from "./auth/limit.js";
 import { ChronicleStore } from "./chronicles/store.js";
 import { MapStore } from "./maps/store.js";
 import { FolderStore } from "./folders/store.js";
@@ -74,7 +73,7 @@ import { searchRoutes } from "./routes/search.js";
 import { statusRoutes } from "./routes/status.js";
 import { webhookRoutes } from "./routes/webhook.js";
 import { StateFiles } from "./state/files.js";
-import { PeopleStore } from "./state/people.js";
+import { makeServer, type Server } from "./server.js";
 import { SettingsStore } from "./state/settings.js";
 import { requirePerson } from "./auth/session.js";
 import { StatusService } from "./status/status.js";
@@ -86,6 +85,10 @@ declare module "@fastify/secure-session" {
     user: string;
     /** How the person logged in. */
     method: "password" | "passkey";
+    /** The person's `sessionEpoch` when the session started or last followed a change; see `currentPerson`. */
+    epoch: number;
+    /** When the person logged in (milliseconds), for what asks for a recent login. */
+    loginAt: number;
     /** The challenge of a passkey ceremony in progress, and when it ends. */
     challenge: { value: string; until: number };
   }
@@ -98,8 +101,8 @@ export interface Services {
   status: StatusService;
   files: StateFiles;
   settings: SettingsStore;
-  /** Everyone who has an account (stage 27a). */
-  people: PeopleStore;
+  /** What is the whole server's, not this library's: the accounts and the login allowance. */
+  server: Server;
   images: ImageServer;
   /** Takes images from web addresses, with the safeguards that keep the server's network safe. */
   imageFetcher: ImageFetcher;
@@ -114,7 +117,6 @@ export interface Services {
   fields: FieldProposer;
   fieldJob: FieldJob;
   quarantine: Quarantine;
-  loginLimit: LoginLimiter;
   maps: MapStore;
   chronicles: ChronicleStore;
   /** Library item files, such as the folder file, through one store. */
@@ -179,6 +181,8 @@ function cacheRule(file: string): string | null {
 }
 
 export interface BuildOptions {
+  /** The server-wide accounts, when a server holds more than one library. Made here when not given. */
+  server?: Server;
   /** Used by tests to watch Git commands. */
   onGitCommand?: (args: readonly string[]) => void;
   logger?: boolean;
@@ -223,7 +227,7 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
   });
   const files = new StateFiles();
   const settings = new SettingsStore(stateDir, files);
-  const people = new PeopleStore(stateDir, files);
+  const server = options.server ?? makeServer(config, files);
   const images = new ImageServer(vaultDir, config.dataDir);
   const imageFetcher = new ImageFetcher({
     publicUrl: config.publicUrl,
@@ -389,7 +393,7 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
     status,
     files,
     settings,
-    people,
+    server,
     images,
     imageFetcher,
     drafts,
@@ -405,7 +409,6 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
     fields,
     fieldJob: new FieldJob(fields),
     quarantine,
-    loginLimit: new LoginLimiter(),
     maps,
     chronicles,
     libraryFiles,
@@ -534,7 +537,7 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
   app.addHook("onRequest", async (request) => {
     const path = request.url.split("?")[0] ?? "";
     if (OPEN.has(path) || !path.startsWith("/api/")) return;
-    await requirePerson(request, people);
+    await requirePerson(request, server.people);
   });
 
   // Which build this server carries, for reading logs and the browser's network panel.

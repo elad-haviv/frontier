@@ -25,6 +25,7 @@ import type { ResolvedProvider } from "../ai/connections.js";
 import { type AiCall, monthOf } from "../ai/log.js";
 import { endpointProblem } from "../ai/providers/guard.js";
 import { ProviderError, type ProviderAdapter } from "../ai/providers/index.js";
+import { personOf } from "../auth/session.js";
 import { ApiError } from "../errors.js";
 import { encrypt } from "../state/secrets.js";
 import type { Services } from "../app.js";
@@ -169,7 +170,7 @@ export function settingsRoutes(app: FastifyInstance, s: Services): void {
     );
   }
 
-  app.get("/api/settings", async (): Promise<SettingsResponse> => {
+  app.get("/api/settings", async (request): Promise<SettingsResponse> => {
     const settings = (await s.settings.read())!;
     const key = await s.ai.key();
     const { spentUsd } = await s.ai.spending();
@@ -187,6 +188,16 @@ export function settingsRoutes(app: FastifyInstance, s: Services): void {
         monthlyCapUsd: settings.ai.monthlyCapUsd,
         proposeOnPublish: settings.ai.proposeOnPublish,
         spentUsd,
+      },
+      // For devices still on the previous build; see `SettingsResponse`.
+      signIn: {
+        passkeys: personOf(request).passkeys.map(({ id, name, addedAt }) => ({
+          id,
+          name,
+          addedAt,
+        })),
+        passwordOff: personOf(request).passwordOff,
+        method: request.session.get("method") ?? "password",
       },
       keepGoing: settings.keepGoing,
     };

@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { useMe } from "../../me.ts";
+import { missing, useMe } from "../../me.ts";
 import { Avatar } from "../ui/Avatar.tsx";
 import { Tip } from "../ui/Tip.tsx";
 import { AppMenu } from "./AppMenu.tsx";
@@ -21,31 +21,30 @@ export function PersonRow({
   const me = useMe();
   const shown = me ? me.name || me.email || "You" : null;
   const mark = me && <Avatar name={me.name} email={me.email} />;
+  // The warning dot on the avatar is said in words too: the rail has no room for the line.
+  const lacks = me?.needsProfile ? `Add your ${missing(me.name, me.email)}` : null;
+  const label = `${shown}, your profile${lacks ? `. ${lacks}` : ""}`;
   return (
     <>
       {me?.needsProfile && !rail && (
         <Link to="/settings/profile" className="left-nudge">
-          Add your name and email
+          {lacks}
         </Link>
       )}
       <div className="left-person">
         {me &&
           (rail ? (
-            <Tip label={shown} side="right">
+            <Tip label={lacks ? `${shown}. ${lacks}` : shown} side="right">
               <Link
                 to="/settings/profile"
                 className={`left-person-link${me.needsProfile ? " needs-profile" : ""}`}
-                aria-label={`${shown}, your profile`}
+                aria-label={label}
               >
                 {mark}
               </Link>
             </Tip>
           ) : (
-            <Link
-              to="/settings/profile"
-              className="left-person-link"
-              aria-label={`${shown}, your profile`}
-            >
+            <Link to="/settings/profile" className="left-person-link" aria-label={label}>
               {mark}
               <span className="left-person-name">{shown}</span>
             </Link>

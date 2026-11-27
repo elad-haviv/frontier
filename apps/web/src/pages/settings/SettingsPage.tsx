@@ -12,7 +12,7 @@ import { api, ApiFailure } from "../../api.ts";
 import { Icon } from "../../components/ui/Icon.tsx";
 import { Problem } from "../../components/ui/Problem.tsx";
 import { useNeedsConnection } from "../../sync/connection.ts";
-import { useMe } from "../../me.ts";
+import { missing, useMe } from "../../me.ts";
 import { Account } from "./Account.tsx";
 import { Backups } from "./Backups.tsx";
 import { Device } from "./Device.tsx";
@@ -71,7 +71,7 @@ function youStateOf(
   if (!me) return null;
   if (section.path === "profile") {
     return me.needsProfile
-      ? { text: "Add your name and email", problem: true }
+      ? { text: `Add your ${missing(me.name, me.email)}`, problem: true }
       : { text: me.email };
   }
   if (section.path === "account") {

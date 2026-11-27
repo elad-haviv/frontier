@@ -67,6 +67,12 @@ export interface Config {
    */
   imageFetchAllowLoopback: boolean;
   /**
+   * How many login attempts one address may make in 15 minutes: 5. Only the browser tests, which
+   * log in and change passwords many times from one address, raise it (`LOGIN_ATTEMPTS`); it is
+   * refused in production.
+   */
+  loginAttempts: number;
+  /**
    * False when `FRONTIER_SERVICE_WORKER=off`: `/sw.js` then answers the kill worker, which removes
    * the app's service worker from every browser that has it.
    */
@@ -154,6 +160,13 @@ export function loadConfig(env: Env = process.env): Config {
       "IMAGE_FETCH_ALLOW_LOOPBACK is for tests and cannot be set in production.",
     );
   }
+  const loginAttempts = Number(optional("LOGIN_ATTEMPTS") ?? 5);
+  if (!Number.isInteger(loginAttempts) || loginAttempts < 1) {
+    throw new ConfigError("LOGIN_ATTEMPTS must be a whole number of at least 1.");
+  }
+  if (loginAttempts !== 5 && optional("NODE_ENV") === "production") {
+    throw new ConfigError("LOGIN_ATTEMPTS is for tests and cannot be set in production.");
+  }
   if (sessionKey.length !== 32) {
     throw new ConfigError(
       "SESSION_KEY must be 32 bytes in base64. Generate one with: openssl rand -base64 32",
@@ -179,6 +192,7 @@ export function loadConfig(env: Env = process.env): Config {
     ),
     webhookSecret,
     sessionKey,
+    loginAttempts,
     library:
       optional("FRONTIER_LIBRARY") === "sample"
         ? "sample"

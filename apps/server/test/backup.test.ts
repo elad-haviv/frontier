@@ -290,7 +290,7 @@ describe("in the server", () => {
     await second.services.sync();
     expect(second.services.drafts.list().map((d) => d.id)).toEqual(["backupdraft1"]);
     // The accounts are in the backup too: the same person can log in on the new disk.
-    expect((await second.services.people.all()).map((p) => p.email)).toEqual([EMAIL]);
+    expect((await second.services.server.people.all()).map((p) => p.email)).toEqual([EMAIL]);
     expect(await second.services.drafts.text("backupdraft1")).toBe("# Mira\n\nBacked up.\n");
     // The time of the last backup is read from disk at start when it exists.
     await second.services.backup.runNow();

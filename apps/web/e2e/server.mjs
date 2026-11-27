@@ -22,6 +22,8 @@ Object.assign(process.env, {
   ICON_FOLDER: "99 Appendices/Icons",
   // The image dialog's web address is tried against the picture server below, on loopback.
   IMAGE_FETCH_ALLOW_LOOPBACK: "1",
+  // The tests log in and change the password many times from one address.
+  LOGIN_ATTEMPTS: "100",
 });
 
 // A stand-in for a site on the web with one picture, at the server's port plus 100, so the

@@ -1,5 +1,13 @@
 import { expect, type Page, test } from "@playwright/test";
-import { EMAIL, entry, NAME, noSidewaysScroll, openSideBar, PASSWORD } from "./helpers.ts";
+import {
+  EMAIL,
+  entry,
+  keepSession,
+  NAME,
+  noSidewaysScroll,
+  openSideBar,
+  PASSWORD,
+} from "./helpers.ts";
 
 // The account is one per server: these tests take turns and put back what they change.
 test.describe.configure({ mode: "serial" });
@@ -136,6 +144,8 @@ test("the password changes only with the current one, and says why under the fie
   await change.click();
   await expect(page.locator(".banner-ok")).toHaveText("The password was changed.");
   await expect(current).toHaveValue("");
+  // Changing the password ended the other sessions: this page's is the one that stays valid.
+  await keepSession(page);
 
   // Back to how it was, so the other tests can log in.
   await current.fill("a new long password");
@@ -143,6 +153,7 @@ test("the password changes only with the current one, and says why under the fie
   await change.click();
   await expect(page.locator(".banner-ok")).toHaveText("The password was changed.");
   await expect(page.getByText("The last way to log in cannot be removed.")).toBeVisible();
+  await keepSession(page);
 });
 
 test("the login page: a passkey first, then email and password, then the note about invites", async ({

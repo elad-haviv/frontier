@@ -122,10 +122,20 @@ export function App() {
     if (loggedIn === false) clearMe();
     if (!loggedIn) return;
     void loadMe();
+    // The person is read again whenever the connection comes back, since the first read may have
+    // failed while it was down.
+    let last = connection.state;
+    const unsubscribe = connection.subscribe(() => {
+      if (connection.state === "online" && last !== "online") void loadMe();
+      last = connection.state;
+    });
     connection.start();
     void queue.start();
     void updates.register();
-    return () => connection.stop();
+    return () => {
+      unsubscribe();
+      connection.stop();
+    };
   }, [loggedIn]);
 
   if (loggedIn === null) return <p className="center muted">Opening Frontier…</p>;

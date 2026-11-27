@@ -27,7 +27,7 @@ async function start() {
   built = await buildApp(config, {});
   await built.services.git.ensureClone();
   await built.services.sync();
-  if ((await built.services.people.all()).length === 0) {
+  if ((await built.services.server.people.all()).length === 0) {
     await seedAccount(built.services, "a long password");
   }
   const res = await built.app.inject({

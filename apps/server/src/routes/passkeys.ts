@@ -11,10 +11,17 @@ import {
   verifyRegistrationResponse,
 } from "@simplewebauthn/server";
 import { z } from "zod";
-import { personOf, startSession } from "../auth/session.js";
+import {
+  endOtherSessions,
+  followEpoch,
+  personOf,
+  requireRecentLogin,
+  startSession,
+} from "../auth/session.js";
 import { ApiError } from "../errors.js";
 import type { Services } from "../app.js";
 import { passwordWorks, waysIn } from "./auth.js";
+import type { Person } from "@frontier/schema";
 
 const FIVE_MINUTES = 5 * 60 * 1000;
 
@@ -26,6 +33,15 @@ const LoginVerify = z.object({ response: z.object({ id: z.string() }).passthroug
 const PasswordOff = z.object({ off: z.boolean() });
 
 type Transport = "ble" | "cable" | "hybrid" | "internal" | "nfc" | "smart-card" | "usb";
+
+/** Why the last way of logging in cannot go. */
+const onlyWayIn = (person: Person) =>
+  new ApiError(
+    "not_allowed",
+    person.passwordHash === ""
+      ? "This is your only way to log in. Set a password first."
+      : "This is your only passkey and the password is switched off. Switch the password on first.",
+  );
 
 export function passkeyRoutes(app: FastifyInstance, s: Services): void {
   const origin = new URL(s.config.publicUrl).origin;
@@ -45,6 +61,8 @@ export function passkeyRoutes(app: FastifyInstance, s: Services): void {
   }
 
   app.post("/api/passkeys/register/options", async (request) => {
+    // A passkey outlasts the session that adds it, so it is added only soon after a login.
+    requireRecentLogin(request);
     const person = personOf(request);
     const options = await generateRegistrationOptions({
       rpName: "Frontier",
@@ -64,6 +82,7 @@ export function passkeyRoutes(app: FastifyInstance, s: Services): void {
   });
 
   app.post("/api/passkeys/register/verify", async (request) => {
+    requireRecentLogin(request);
     const { name, response } = RegisterVerify.parse(request.body);
     const expectedChallenge = take(request);
     let result;
@@ -83,11 +102,11 @@ export function passkeyRoutes(app: FastifyInstance, s: Services): void {
     }
     const { credential } = result.registrationInfo;
     // A credential id belongs to one account: it is not taken from another.
-    const owner = await s.people.byPasskey(credential.id);
+    const owner = await s.server.people.byPasskey(credential.id);
     if (owner && owner.id !== personOf(request).id) {
       throw new ApiError("invalid", "The passkey could not be checked. Try again.");
     }
-    await s.people.update(personOf(request).id, (now) => ({
+    await s.server.people.update(personOf(request).id, (now) => ({
       ...now,
       passkeys: [
         ...now.passkeys.filter((p) => p.id !== credential.id),
@@ -106,7 +125,7 @@ export function passkeyRoutes(app: FastifyInstance, s: Services): void {
 
   app.post("/api/passkeys/login/options", async (request) => {
     // Nobody has said who they are yet, so every passkey is offered to the device.
-    const keys = (await s.people.all()).flatMap((p) => p.passkeys);
+    const keys = (await s.server.people.all()).flatMap((p) => p.passkeys);
     if (keys.length === 0) {
       throw new ApiError("not_found", "No passkey is registered.");
     }
@@ -123,10 +142,10 @@ export function passkeyRoutes(app: FastifyInstance, s: Services): void {
   });
 
   app.post("/api/passkeys/login/verify", async (request) => {
-    s.loginLimit.attempt(request.ip);
+    s.server.loginLimit.attempt(request.ip);
     const { response } = LoginVerify.parse(request.body);
     const expectedChallenge = take(request);
-    const person = await s.people.byPasskey(response.id);
+    const person = await s.server.people.byPasskey(response.id);
     const passkey = person?.passkeys.find((p) => p.id === response.id);
     const refused = new ApiError("unauthenticated", "This passkey was not accepted.");
     if (!person || !passkey) throw refused;
@@ -152,7 +171,7 @@ export function passkeyRoutes(app: FastifyInstance, s: Services): void {
     }
     if (!result.verified) throw refused;
     const counter = result.authenticationInfo.newCounter;
-    const now = await s.people.update(person.id, (p) => ({
+    const now = await s.server.people.update(person.id, (p) => ({
       ...p,
       passkeys: p.passkeys.map((k) => (k.id === passkey.id ? { ...k, counter } : k)),
     }));
@@ -162,23 +181,17 @@ export function passkeyRoutes(app: FastifyInstance, s: Services): void {
 
   app.delete("/api/passkeys/:id", async (request) => {
     const { id } = z.object({ id: z.string() }).parse(request.params);
-    const person = personOf(request);
-    if (!person.passkeys.some((p) => p.id === id)) {
-      throw new ApiError("not_found", "There is no such passkey.");
-    }
-    // The last way of logging in stays.
-    if (!passwordWorks(person) && waysIn(person) <= 1) {
-      throw new ApiError(
-        "not_allowed",
-        person.passwordHash === ""
-          ? "This is your only way to log in. Set a password first."
-          : "This is your only passkey and the password is switched off. Switch the password on first.",
-      );
-    }
-    await s.people.update(person.id, (now) => ({
-      ...now,
-      passkeys: now.passkeys.filter((p) => p.id !== id),
-    }));
+    // The checks run on the account as it is when the change is made, not as it was when the
+    // request arrived: two removals at once must not each see a passkey that is left.
+    const now = await s.server.people.update(personOf(request).id, (person) => {
+      if (!person.passkeys.some((p) => p.id === id)) {
+        throw new ApiError("not_found", "There is no such passkey.");
+      }
+      // The last way of logging in stays.
+      if (!passwordWorks(person) && waysIn(person) <= 1) throw onlyWayIn(person);
+      return endOtherSessions({ ...person, passkeys: person.passkeys.filter((p) => p.id !== id) });
+    });
+    followEpoch(request, now);
     return { ok: true as const };
   });
 
@@ -190,17 +203,20 @@ export function passkeyRoutes(app: FastifyInstance, s: Services): void {
         "Log in with a passkey first. That shows the passkey works before the password stops working.",
       );
     }
-    const person = personOf(request);
-    if (off && person.passkeys.length === 0) {
-      throw new ApiError(
-        "not_allowed",
-        "Add a passkey first: it would be your only way to log in.",
-      );
-    }
-    if (!off && person.passwordHash === "") {
-      throw new ApiError("not_allowed", "There is no password to switch on. Set one first.");
-    }
-    await s.people.update(person.id, (now) => ({ ...now, passwordOff: off }));
+    // Checked on the account as it is when the change is made; see the removal of a passkey.
+    const now = await s.server.people.update(personOf(request).id, (person) => {
+      if (off && person.passkeys.length === 0) {
+        throw new ApiError(
+          "not_allowed",
+          "Add a passkey first: it would be your only way to log in.",
+        );
+      }
+      if (!off && person.passwordHash === "") {
+        throw new ApiError("not_allowed", "There is no password to switch on. Set one first.");
+      }
+      return endOtherSessions({ ...person, passwordOff: off });
+    });
+    followEpoch(request, now);
     return { ok: true as const };
   });
 }

@@ -2,7 +2,8 @@ import { type FormEvent, useEffect, useState } from "react";
 import { api, ApiFailure } from "../../api.ts";
 import { ActionButton } from "../../components/ui/ActionButton.tsx";
 import { Avatar } from "../../components/ui/Avatar.tsx";
-import { noteMe, useMe } from "../../me.ts";
+import { missing, noteMe, useMe } from "../../me.ts";
+import { NoMe } from "./NoMe.tsx";
 
 /** What the browser can say before the server does: the same rules as the server's. */
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -14,12 +15,6 @@ export function checkProfile(name: string, email: string): { name?: string; emai
   if (email.trim() === "") problems.email = "Give an email.";
   else if (!EMAIL.test(email.trim())) problems.email = "This is not an email address.";
   return problems;
-}
-
-/** What the account still lacks, in words. */
-function missing(name: string, email: string): string {
-  if (name.trim() === "" && email.trim() === "") return "name and email";
-  return name.trim() === "" ? "name" : "email";
 }
 
 /** Your name and email: how others see you, what saved versions carry, and what logging in asks for. */
@@ -40,12 +35,13 @@ export function Profile() {
   useEffect(() => {
     if (me && !started) {
       setName(me.name);
-      setEmail(me.email);
+      // An account with no email is offered the commit author's, to be saved only if they say so.
+      setEmail(me.email || me.suggestedEmail);
       setStarted(true);
     }
   }, [me, started]);
 
-  if (!me) return <p className="muted">Loading…</p>;
+  if (!me) return <NoMe />;
 
   const changed = name.trim() !== me.name || email.trim() !== me.email;
 
