@@ -7,7 +7,8 @@
  *   library.git/   its repository (an own library)
  *   vault/         the working copy of `main`
  *   state/         working files: drafts, proposals, comments, conversations, ...
- *   assets/        what can be made again: thumbnails; and what cannot: generated art
+ *   assets/        what can be made again: thumbnails; and what cannot: generated art and the
+ *                 pictures made for entries (`generated/entries/`)
  *
  * The first project is the library a server had before projects. It keeps the same four straight
  * under `DATA_DIR`, so an upgrade moves nothing, and its `state/` is the folder the server-wide
@@ -17,7 +18,7 @@
  *     Keep going; AI prices), projects.json (the project store), invites.json (invite links, hashed), ai-log/ (each person's spending),
  *     backup-server.json is not kept (see below).
  *   PROJECT (everything else in the folder, for the first project): drafts/, proposals/,
- *     quarantine/, pushed.json, conversations/, comments.json, consults.json, discoveries/,
+ *     quarantine/, pushed.json, conversations/, talks/, comments.json, consults.json, discoveries/,
  *     ai-cache/, question*, inbox/, backup.json (when the first project was last backed up).
  *
  * No service of a project is given a path outside its project's folder, except the first
