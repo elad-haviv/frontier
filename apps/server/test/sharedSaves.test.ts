@@ -240,7 +240,8 @@ describe.each(["own", "github"] as const)(
         const r = await edit(rex, MIRA, "# Mira\n\nRex's version.\n");
         await confirm(wren, (await plan(wren, [w])).planId);
 
-        // Keep mine: the text is rebuilt on theirs and saved as Rex.
+        // Keep mine: the text is rebuilt on theirs and saved as Rex (the compare screen came first).
+        await rex.get(`${base}/drafts/${r}/compare`);
         let res = await rex.post(`${base}/drafts/${r}/resolve`, {
           text: "# Mira\n\nRex's version.\n",
         });
@@ -255,6 +256,8 @@ describe.each(["own", "github"] as const)(
         const w2 = await edit(wren, MIRA, "# Mira\n\nWren again.\n", newId());
         const r2 = await edit(rex, MIRA, "# Mira\n\nRex again.\n", newId());
         await confirm(rex, (await plan(rex, [r2])).planId);
+        // The compare screen has been looked at (the web app asks for it before it offers a choice).
+        await wren.get(`${base}/drafts/${w2}/compare`);
         res = await wren.post(`${base}/drafts/${w2}/resolve`, { text: "# Mira\n\nBoth of us.\n" });
         expect(res.statusCode).toBe(200);
         p = await plan(wren, [w2]);
@@ -269,6 +272,7 @@ describe.each(["own", "github"] as const)(
         await confirm(rex, (await plan(rex, [r3])).planId);
         const headAfterRex = t.repo.remoteHead();
         expect(headAfterRex).not.toBe(head);
+        await wren.get(`${base}/drafts/${w3}/compare`);
         await wren.post(`${base}/drafts/${w3}/resolve`, { text: "# Mira\n\nRex third.\n" });
         p = await plan(wren, [w3]);
         expect(p).toMatchObject({ ready: [], merges: [], conflicts: [] });

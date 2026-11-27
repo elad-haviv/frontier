@@ -26,14 +26,37 @@ describe("the author lookup", () => {
     }) as never;
 
   it("finds the account by its email or its stand-in, and falls back to the name Git has", async () => {
-    const a = new Authors(people({ p1: { id: "p1", name: "Ann", email: "ann@x.org" } }));
+    const a = new Authors(
+      people({
+        p1: { id: "p1", name: "Ann", email: "ann@x.org" },
+        p2: { id: "p2", name: "Bo", email: "" },
+      }),
+    );
     expect(await a.resolve({ name: "Anything", email: "ann@x.org" })).toEqual({
       id: "p1",
       name: "Ann",
     });
+    // The stand-in names a person who has no email, in any letter case; not one who has one.
+    expect(await a.resolve({ name: "Anything", email: "p2@people.frontier.invalid" })).toEqual({
+      id: "p2",
+      name: "Bo",
+    });
+    expect(await a.resolve({ name: "Anything", email: "P2@PEOPLE.FRONTIER.INVALID" })).toEqual({
+      id: "p2",
+      name: "Bo",
+    });
     expect(await a.resolve({ name: "Anything", email: "p1@people.frontier.invalid" })).toEqual({
-      id: "p1",
-      name: "Ann",
+      id: null,
+      name: "Anything",
+    });
+    // Only people of the project are found.
+    const strict = new Authors(
+      people({ p1: { id: "p1", name: "Ann", email: "ann@x.org" } }),
+      () => false,
+    );
+    expect(await strict.resolve({ name: "Ann on Git", email: "ann@x.org" })).toEqual({
+      id: null,
+      name: "Ann on Git",
     });
     expect(await a.resolve({ name: "Seed", email: "seed@x.org" })).toEqual({
       id: null,
@@ -233,9 +256,11 @@ describe("the publisher with several people", () => {
     expect(done.json().conflicts[0]).toMatchObject({
       draftId: r,
       path: MIRA,
-      reason: "overlap",
+      // A clean merge is not an overlap: it is refused because a newer version was saved.
+      reason: "saved_by_other",
       theirsBy: { id: null, name: "Seed" },
     });
+    expect(done.json().conflicts[0].mergedText).toContain("(their title)");
     expect(t.repo.remoteFile(SHADE)).toContain("Rex.");
   });
 

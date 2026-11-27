@@ -80,6 +80,220 @@ describe("the stage 27d review: saved versions and who made them", () => {
       encoding: "utf8",
     }).trim();
 
+  // ---- Item 1: resolving rebases onto the version that was compared ---------------------------
+
+  describe("resolving a conflict", () => {
+    const WREN = "# Mira\n\nWren's version.\n";
+    const REX1 = "# Mira\n\nRex's first version.\n";
+    const REX2 = "# Mira\n\nRex's second version.\n";
+
+    it("is refused when someone saved another version while the person was comparing", async () => {
+      const w = await edit(wren, MIRA, WREN);
+      const r = await edit(rex, MIRA, REX1);
+      expect((await confirm(rex, (await plan(rex, [r])).planId)).statusCode).toBe(200);
+      // Wren compares with Rex's first version ...
+      const first = await compare(wren, w);
+      expect(first.outcome).toBe("conflict");
+      expect(first.conflict).toMatchObject({ theirs: REX1, reason: "saved_by_other" });
+      expect(first.theirsBlob).toBe(first.conflict!.theirsBlob);
+      expect(first.theirsBlob).toMatch(/^[0-9a-f]{40}$/);
+      // ... Rex saves a second version meanwhile ...
+      const r2 = await edit(rex, MIRA, REX2, newId());
+      expect((await confirm(rex, (await plan(rex, [r2])).planId)).statusCode).toBe(200);
+      // ... and Wren's choice (keep mine) is refused: it would have overwritten the second version.
+      const refused = await wren.post(`${base}/drafts/${w}/resolve`, {
+        text: WREN,
+        theirsBlob: first.theirsBlob,
+      });
+      expect(refused.statusCode, refused.body).toBe(409);
+      expect(refused.json().error.code).toBe("saved_by_other");
+      expect(refused.json().error.message).toContain("Rex Writer");
+      expect(main(MIRA)).toBe(REX2);
+      // The draft is as it was: still based on the old version, her text untouched.
+      expect((await entry(wren, MIRA)).text).toBe(WREN);
+      expect((await compare(wren, w)).outcome).toBe("conflict");
+
+      // After comparing again she sees the second version, and her choice (both changes) is saved.
+      const second = await compare(wren, w);
+      expect(second.conflict!.theirs).toBe(REX2);
+      expect(second.theirsBlob).not.toBe(first.theirsBlob);
+      const both = "# Mira\n\nRex's second version.\n\nWren's version.\n";
+      const ok = await wren.post(`${base}/drafts/${w}/resolve`, {
+        text: both,
+        theirsBlob: second.theirsBlob,
+      });
+      expect(ok.statusCode, ok.body).toBe(200);
+      const p = await plan(wren, [w]);
+      expect(p.ready).toEqual([w]);
+      expect((await confirm(wren, p.planId)).statusCode).toBe(200);
+      expect(main(MIRA)).toBe(both);
+      expect(lastAuthor()).toBe("Wren Writer <wren@example.com>");
+    });
+
+    it("is refused without the compared version when the saved one changed since the plan", async () => {
+      const w = await edit(wren, MIRA, WREN);
+      const r = await edit(rex, MIRA, REX1);
+      await confirm(rex, (await plan(rex, [r])).planId);
+      // The web app before 27d: a plan shows the conflict, then it resolves with the text alone.
+      expect((await plan(wren, [w])).conflicts).toHaveLength(1);
+      const r2 = await edit(rex, MIRA, REX2, newId());
+      await confirm(rex, (await plan(rex, [r2])).planId);
+      const refused = await wren.post(`${base}/drafts/${w}/resolve`, { text: WREN });
+      expect(refused.statusCode).toBe(409);
+      expect(refused.json().error.code).toBe("saved_by_other");
+      expect(main(MIRA)).toBe(REX2);
+      // Planned again, the same request is good while the saved version is the one that was shown.
+      expect((await plan(wren, [w])).conflicts).toHaveLength(1);
+      const ok = await wren.post(`${base}/drafts/${w}/resolve`, { text: WREN });
+      expect(ok.statusCode, ok.body).toBe(200);
+      // The version is used up: it is not resolved again without looking again.
+      const again = await wren.post(`${base}/drafts/${w}/resolve`, { text: WREN });
+      expect(again.statusCode).toBe(400);
+    });
+
+    it("is refused when the change was never compared and there is nothing to rebuild on", async () => {
+      const w = await edit(wren, MIRA, WREN);
+      const res = await wren.post(`${base}/drafts/${w}/resolve`, { text: WREN });
+      expect(res.statusCode).toBe(400);
+      // Nobody else's draft, as before.
+      expect(
+        (await rex.post(`${base}/drafts/${w}/resolve`, { text: "x", theirsBlob: null })).statusCode,
+      ).toBe(404);
+    });
+
+    it("names no version when the compared entry was deleted, and holds while it stays so", async () => {
+      const w = await edit(wren, MIRA, WREN);
+      const d = newId();
+      expect(
+        (
+          await rex.put(`${base}/drafts`, {
+            id: d,
+            path: MIRA,
+            kind: "delete",
+            text: "",
+            revision: 0,
+            baseBlob: (await entry(rex, MIRA)).blob,
+          })
+        ).statusCode,
+      ).toBe(200);
+      await confirm(rex, (await plan(rex, [d])).planId);
+      const c = await compare(wren, w);
+      expect(c.conflict).toMatchObject({ reason: "deleted_on_main", theirsBlob: null });
+      expect(c.theirsBlob).toBeNull();
+      const ok = await wren.post(`${base}/drafts/${w}/resolve`, { text: WREN, theirsBlob: null });
+      expect(ok.statusCode, ok.body).toBe(200);
+      // A file at the path again: the choice made on "nothing there" is not applied to it.
+      t.repo.pushFromOutside({ [MIRA]: "# Mira\n\nBack.\n" });
+      const late = await wren.post(`${base}/drafts/${w}/resolve`, { text: WREN, theirsBlob: null });
+      expect(late.statusCode).toBe(409);
+    });
+  });
+
+  // ---- Item 4: any version by someone else counts, and a clean merge is sent along -----------
+
+  describe("saving after someone else saved (decision C)", () => {
+    it("compares when any version since the one the change started from is by another person", async () => {
+      const text = (await entry(wren, MIRA)).text as string;
+      const w = await edit(wren, MIRA, text.replace("# Mira", "# Mira the Elder"));
+      const r = await edit(rex, MIRA, `${text}\nRex's line.\n`);
+      expect((await confirm(rex, (await plan(rex, [r])).planId)).statusCode).toBe(200);
+      // The last version is by someone Git alone knows, yet Rex's came in between.
+      t.repo.pushFromOutside({ [SHADE]: "# Shade\n\nOutside.\n" });
+      t.repo.pushFromOutside({ [MIRA]: `${text}\nRex's line.\nAn outside line.\n` }, "Outside");
+      const c = await compare(wren, w);
+      expect(c.outcome).toBe("conflict");
+      expect(c.conflict).toMatchObject({
+        reason: "saved_by_other",
+        theirsBy: { id: rex.id, name: "Rex Writer" },
+      });
+      // The two changes merge cleanly, so the merged text comes with the conflict.
+      expect(c.conflict!.mergedText).toBe(
+        `${text.replace("# Mira", "# Mira the Elder")}\nRex's line.\nAn outside line.\n`,
+      );
+      // Versions after the one this change started from, none by someone else: merged as before.
+      expect((await compare(rex, await edit(rex, SHADE, "# Shade\n\nRex.\n"))).outcome).not.toBe(
+        "conflict",
+      );
+    });
+
+    it("sends no merged text when the two changes overlap", async () => {
+      const w = await edit(wren, MIRA, "# Mira\n\nWren's version.\n");
+      const r = await edit(rex, MIRA, "# Mira\n\nRex's version.\n");
+      await confirm(rex, (await plan(rex, [r])).planId);
+      const c = (await compare(wren, w)).conflict!;
+      expect(c.reason).toBe("saved_by_other");
+      expect(c.mergedText).toBeUndefined();
+      const p = await plan(wren, [w]);
+      expect(p.conflicts[0]!.mergedText).toBeUndefined();
+      expect(p.conflicts[0]!.theirsBlob).toBe(c.theirsBlob);
+    });
+
+    it("says on the plan which version it looked at, for a merge too", async () => {
+      const text = (await entry(wren, MIRA)).text as string;
+      const w = await edit(wren, MIRA, `${text}\nWren's line.\n`);
+      t.repo.pushFromOutside({ [MIRA]: text.replace("# Mira", "# Mira (outside)") });
+      const p = await plan(wren, [w]);
+      expect(p.merges[0]!.theirsBlob).toMatch(/^[0-9a-f]{40}$/);
+    });
+  });
+
+  // ---- Item 5: the details of a partial save -------------------------------------------------
+
+  describe("a save that is only partly possible", () => {
+    const KNOT = SHADE;
+    const ROPE = MIRA;
+
+    it("does not hold a rename back for a draft that reached main meanwhile", async () => {
+      const knot = (await entry(wren, KNOT)).text as string;
+      const same = `${knot}\nBoth of us wrote this.\n`;
+      const w = await edit(wren, KNOT, same);
+      const rename = await wren.post(`${base}/renames`, { from: ROPE, to: "02 People/Mirra.md" });
+      expect(rename.statusCode, rename.body).toBe(200);
+      const p = await plan(wren, [w], [rename.json().id]);
+      expect(p.groups.some((g) => g.includes(w) && g.includes(rename.json().id))).toBe(true);
+      // Rex saves the same text of the same note first, so Wren's draft of it is on main.
+      const r = await edit(rex, KNOT, same);
+      expect((await confirm(rex, (await plan(rex, [r])).planId)).statusCode).toBe(200);
+      const done = await confirm(wren, p.planId);
+      expect(done.statusCode, done.body).toBe(200);
+      expect(main("02 People/Mirra.md")).not.toBeNull();
+      expect(main(ROPE)).toBeNull();
+      expect(main(KNOT)).toContain("[[Mirra]]");
+    });
+
+    it("says everything is published when that is all there was", async () => {
+      const w = await edit(wren, SHADE, "# Shade\n\nSame.\n");
+      const p = await plan(wren, [w]);
+      const r = await edit(rex, SHADE, "# Shade\n\nSame.\n");
+      await confirm(rex, (await plan(rex, [r])).planId);
+      const done = await confirm(wren, p.planId);
+      expect(done.statusCode).toBe(400);
+      expect(done.json().error.message).toBe("Everything in this plan is already published.");
+    });
+
+    it("keeps the right reason, and the merged text, for a clean merge refused at the save", async () => {
+      const text = (await entry(wren, MIRA)).text as string;
+      const w = await edit(wren, MIRA, text.replace("# Mira", "# Mira the Elder"));
+      const ws = await edit(wren, SHADE, "# Shade\n\nWren changed Shade.\n");
+      const p = await plan(wren, [w, ws]);
+      expect(p.ready).toEqual([w, ws]);
+      // Someone changes the entry a line elsewhere, by a save this server made (an import).
+      const head = t.repo.pushFromOutside({ [MIRA]: `${text}\nAn imported line.\n` }, "Import");
+      t.services.publisher.noteOwnCommit(head);
+      const done = await confirm(wren, p.planId);
+      expect(done.statusCode, done.body).toBe(200);
+      const [c] = done.json().conflicts;
+      expect(c).toMatchObject({ draftId: w, path: MIRA, reason: "saved_by_other" });
+      expect(c.mergedText).toContain("# Mira the Elder");
+      expect(c.mergedText).toContain("An imported line.");
+      expect(c.theirsBlob).toMatch(/^[0-9a-f]{40}$/);
+      expect(main(SHADE)).toContain("Wren changed Shade.");
+      // The person's count of things to settle is refreshed after the save.
+      const status = (await wren.get(`${base}/status`)).json();
+      expect(status.conflicts).toBe(1);
+    });
+  });
+
   // ---- Item 11: no one can write another's address -----------------------------------------
 
   describe("the stand-in address", () => {

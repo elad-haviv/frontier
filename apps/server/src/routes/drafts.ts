@@ -5,6 +5,7 @@ import {
   CreateRenameRequest,
   type CreateRenameResponse,
   type DraftCompareResponse,
+  DraftResolveRequest,
   DraftTextRequest,
   Id,
   makeId,
@@ -294,15 +295,16 @@ export function draftRoutes(app: RouteApp, s: Services): void {
     return { id: record.id, revision: record.revision };
   });
 
-  /** The author settled a conflict: his text now builds on what is on `main`. */
+  /**
+   * The person settled a conflict: their text now builds on the saved version they compared
+   * (`theirsBlob`), or is refused when someone saved another one meanwhile (stage 27d).
+   */
   app.post("/api/drafts/:id/resolve", async (request) => {
     const { id } = IdParam.parse(request.params);
-    const { text } = DraftTextRequest.parse(request.body);
-    const draft = s.drafts.get(id);
-    if (!draft) throw new ApiError("not_found", "There is no such draft.");
+    const { text, theirsBlob } = DraftResolveRequest.parse(request.body);
+    if (!s.drafts.get(id)) throw new ApiError("not_found", "There is no such draft.");
     onlyNotes(id);
-    const blob = (await s.git.blobHash(draft.path)) ?? "";
-    const record = await s.drafts.rebase(id, text.replace(/\r\n/g, "\n"), blob, true);
+    const record = await s.publisher.resolve(id, text.replace(/\r\n/g, "\n"), theirsBlob);
     return { id: record.id, revision: record.revision };
   });
 
@@ -313,11 +315,12 @@ export function draftRoutes(app: RouteApp, s: Services): void {
    */
   app.get("/api/drafts/:id/compare", async (request): Promise<DraftCompareResponse> => {
     const { id } = IdParam.parse(request.params);
-    const { outcome, c, draft } = await s.publisher.compare(id);
+    const { outcome, c, draft, theirsBlob } = await s.publisher.compare(id);
     return {
       draftId: draft.id,
       path: draft.path,
       outcome,
+      theirsBlob,
       ...(c?.conflict ? { conflict: c.conflict } : {}),
       ...(c?.merge ? { merge: c.merge } : {}),
     };

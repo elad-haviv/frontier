@@ -217,6 +217,22 @@ export class Publisher {
     return { by, at: last.at };
   }
 
+  /**
+   * The latest saved version of the draft's file, after the one the draft was made from, that a
+   * different person made (resolved to an account of this project), with who and when; null when
+   * every version since was by this person, by someone Git alone knows, or there is none.
+   */
+  private async savedByOther(draft: DraftRecord): Promise<{ by: AuthorRef; at: string } | null> {
+    if (!this.d.authors) return null;
+    const me = this.d.drafts.personId();
+    const since = await this.d.git.changesAfter(draft.path, draft.baseBlob).catch(() => []);
+    for (const version of since) {
+      const by = await this.d.authors.resolve(version.author);
+      if (by.id !== null && by.id !== me) return { by, at: version.at };
+    }
+    return null;
+  }
+
   private async classify(draft: DraftRecord): Promise<Classified | null> {
     const { git } = this.d;
     /** Who saved `main`'s version, asked at most once and only when there is a clash to explain. */
@@ -243,6 +259,7 @@ export class Publisher {
           mine: "",
           theirs: null,
           base: null,
+          theirsBlob: await git.blobHash(draft.path),
           ...(await who()),
         },
       };
@@ -254,6 +271,7 @@ export class Publisher {
     const conflict = async (
       reason: Conflict["reason"],
       base: string | null,
+      extra: Partial<Conflict> = {},
     ): Promise<Classified> => ({
       draft,
       text,
@@ -266,7 +284,9 @@ export class Publisher {
         mine: text,
         theirs: mainText,
         base,
+        theirsBlob: mainBlob,
         ...(await who()),
+        ...extra,
       },
     });
     const baseText = async () => {
@@ -291,14 +311,20 @@ export class Publisher {
     if (mainBlob === draft.baseBlob) return { draft, text, outcome: "ready", mainBlob };
 
     const base = await baseText();
-    // Decision C: when someone else in the project saved the version this entry was changed from,
-    // this change is not folded into theirs behind their back, clean or not: both are shown to the
-    // person saving second, to compare. (A version from outside, or by this person on another
-    // device, is merged as before.)
+    // Decision C: when someone else in the project saved any version of this entry after the one this
+    // change was made from, not only the last, this change is not folded into theirs behind their
+    // back, clean or not: both are shown to the person saving second, to compare. (A version from
+    // outside, or by this person on another device, is merged as before.) A clean merge is worked out
+    // too and sent with the conflict, for the compare screen to offer as a merged choice.
     if (isNote(draft.path)) {
-      const saver = (await who()).theirsBy;
-      if (saver?.id && saver.id !== this.d.drafts.personId()) {
-        return conflict("saved_by_other", base);
+      const other = await this.savedByOther(draft);
+      if (other) {
+        const merged = base === null ? null : await git.mergeFile(text, base, mainText);
+        return conflict("saved_by_other", base, {
+          theirsBy: other.by,
+          theirsAt: other.at,
+          ...(merged?.clean ? { mergedText: merged.text } : {}),
+        });
       }
     }
     if (base === null) return conflict("overlap", null);
@@ -321,6 +347,7 @@ export class Publisher {
         mergedText: merged.text,
         mainText,
         baseText: base,
+        theirsBlob: mainBlob,
         ...(await who()),
       },
     };
@@ -525,6 +552,8 @@ export class Publisher {
     outcome: "ready" | "merge" | "conflict" | "none";
     c: Classified | null;
     draft: DraftRecord;
+    /** The blob of the saved version at the path now; null when there is no file. */
+    theirsBlob: string | null;
   }> {
     return this.serial(async () => {
       const draft = this.d.drafts.get(draftId);
@@ -532,9 +561,49 @@ export class Publisher {
       await this.d.sync();
       // A draft cleared by the fetch is on `main` already: nothing differs.
       const now = this.d.drafts.get(draftId);
-      if (!now) return { outcome: "none" as const, c: null, draft };
+      if (!now) return { outcome: "none" as const, c: null, draft, theirsBlob: null };
       const c = await this.classify(now);
-      return { outcome: c === null ? ("none" as const) : c.outcome, c, draft: now };
+      this.noteCompared(c);
+      return {
+        outcome: c === null ? ("none" as const) : c.outcome,
+        c,
+        draft: now,
+        theirsBlob: await this.d.git.blobHash(now.path),
+      };
+    });
+  }
+
+  /** Remembers which saved version a change was last compared with, for `resolve`. */
+  private noteCompared(c: Classified | null): void {
+    if (c && c.outcome !== "ready") this.d.drafts.noteCompared(c.draft.id, c.mainBlob);
+  }
+
+  /**
+   * The person settled a conflict: their text now builds on the saved version they compared. That
+   * version is `theirsBlob`; when the file holds another one by now (someone saved while they were
+   * comparing), nothing is written and they compare again, so that version is never overwritten
+   * unseen. Without `theirsBlob` (the web app before 27d) the version is the one the server last
+   * compared for this change, and a change never compared is refused. One turn with plans and saves.
+   */
+  resolve(draftId: string, text: string, theirsBlob?: string | null): Promise<DraftRecord> {
+    return this.serial(async () => {
+      if (!this.d.drafts.get(draftId)) throw new ApiError("not_found", "There is no such draft.");
+      await this.d.sync();
+      const draft = this.d.drafts.get(draftId);
+      if (!draft) throw new ApiError("not_found", "There is no such draft.");
+      const expected = theirsBlob !== undefined ? theirsBlob : this.d.drafts.comparedBlob(draftId);
+      if (expected === undefined) {
+        throw new ApiError("invalid", "Compare this change with the saved version first.");
+      }
+      const current = await this.d.git.blobHash(draft.path);
+      if (current !== expected) {
+        const { by } = await this.savedBy(draft.path);
+        throw new ApiError(
+          "saved_by_other",
+          `${by?.name ?? "Someone"} saved a newer version of "${draft.path}" while you were comparing. Nothing was changed: compare again and choose again.`,
+        );
+      }
+      return this.d.drafts.rebase(draftId, text, current ?? "", true);
     });
   }
 
@@ -561,7 +630,10 @@ export class Publisher {
       }
       const c = await this.classify(draft);
       if (c === null) await this.d.drafts.discard(id);
-      else classified.set(id, c);
+      else {
+        classified.set(id, c);
+        this.noteCompared(c);
+      }
     }
 
     const intents = renameIds
@@ -714,10 +786,17 @@ export class Publisher {
     const usable = (c: Classified) =>
       c.outcome === "ready" || (c.outcome === "merge" && confirmed.has(c.merge!.id));
     // A draft may have been edited or discarded since the plan was made; such drafts are left out.
-    let current = [...stored.classified.values()].filter((c) => {
+    // Entries that are on `main` already, as the plan meant them (the fetch cleared the draft, or a
+    // second look finds it so): done, and no reason to hold anything back.
+    const settled = new Set<string>();
+    let current: Classified[] = [];
+    for (const c of stored.classified.values()) {
       const now = this.d.drafts.get(c.draft.id);
-      return now !== undefined && now.revision === c.draft.revision;
-    });
+      if (now === undefined) {
+        // Gone: cleared because it reached `main`, or discarded by the person, who then wants it held.
+        if (await this.onMainAlready(c)) settled.add(c.draft.id);
+      } else if (now.revision === c.draft.revision) current.push(c);
+    }
     // Entries whose saved version is no longer the one the plan looked at are refused and reported.
     const refused: Conflict[] = [];
     if (moved) {
@@ -730,7 +809,10 @@ export class Publisher {
         }
         const again = await this.classify(c.draft);
         // Nothing differs any more: it is on `main` already, and goes away with the next sync.
-        if (again === null) continue;
+        if (again === null) {
+          settled.add(c.draft.id);
+          continue;
+        }
         /* c8 ignore start */
         // Still fine on a second look (the file went back to what the plan saw): it goes in.
         if (again.outcome === "ready") {
@@ -745,7 +827,7 @@ export class Publisher {
     }
     const held = new Set<string>([
       ...[...stored.classified.values()]
-        .filter((c) => !current.includes(c) || !usable(c))
+        .filter((c) => !settled.has(c.draft.id) && (!current.includes(c) || !usable(c)))
         .map((c) => c.draft.id),
       ...refused.map((r) => r.draftId),
       ...stored.plan.conflicts.filter((c) => c.reason === "rename_blocked").map((c) => c.draftId),
@@ -783,12 +865,17 @@ export class Publisher {
       const first = refused[0];
       if (first) {
         this.plans.delete(planId);
+        this.noteLeftOver(stored, refused);
         /* c8 ignore next */
         const who = first.theirsBy?.name ?? "Someone";
         throw new ApiError(
           "saved_by_other",
           `${who} saved a newer version of "${first.path}"${refused.length > 1 ? ` and ${refused.length - 1} more` : ""} while you were looking. Nothing was saved: compare and save again.`,
         );
+      }
+      // Everything that could go is on `main` already (a second look found it so).
+      if (settled.size > 0) {
+        throw new ApiError("invalid", "Everything in this plan is already published.");
       }
       throw new ApiError("invalid", "Nothing in this plan can be published yet.");
     }
@@ -844,6 +931,7 @@ export class Publisher {
     this.d.status.pushed(new Date(this.now()));
     this.plans.delete(planId);
     await this.d.sync();
+    this.noteLeftOver(stored, refused);
     onPublished?.(
       publishing
         .filter((p) => !p.draft.binary && p.draft.kind !== "delete")
@@ -854,6 +942,34 @@ export class Publisher {
     return { commit, conflicts: refused };
   }
 
+  /** Whether `main` holds what a planned change meant to put there, so a cleared draft is done, not dropped. */
+  private async onMainAlready(c: Classified): Promise<boolean> {
+    const { draft } = c;
+    if (draft.binary) return false;
+    const blob = await this.d.git.blobHash(draft.path);
+    if (draft.kind === "delete") return blob === null;
+    if (blob === null) return false;
+    const bytes = await this.d.git.readFile(draft.path);
+    return (
+      bytes !== null &&
+      normaliseLineEndings(bytes.toString("utf8")) === (c.merge?.mergedText ?? c.text)
+    );
+  }
+
+  /**
+   * After a save, the person's count of changes that still need choosing: the plan's conflicts that
+   * are still unsaved changes, and the entries this save refused. (Writing a draft clears the count,
+   * so it is set again here, last.)
+   */
+  private noteLeftOver(stored: StoredPlan, refused: Conflict[]): void {
+    const open = stored.plan.conflicts.filter(
+      (c) => this.d.drafts.get(c.draftId) !== undefined || this.d.drafts.getRename(c.draftId),
+    ).length;
+    const n = open + refused.length;
+    this.d.drafts.noteConflicts(n);
+    this.d.status.drafts(this.d.drafts.count(), n);
+  }
+
   /** Whether every save since `from` was made by this server: `main` moved by us and nobody else. */
   private async movedByUs(from: string): Promise<boolean> {
     const between = await this.d.git.commitsBetween(from, "HEAD").catch(() => null);
@@ -861,17 +977,24 @@ export class Publisher {
   }
 }
 
-/** A plan's classification of one draft as the conflict shape the person is shown. */
+/**
+ * A plan's classification of one draft as the conflict shape the person is shown, for an entry that
+ * changed between the plan and the save. A clean merge is no overlap: it is refused because someone
+ * saved a newer version since the plan, which is what `saved_by_other` says, and the merged text is
+ * sent along as the pre-filled choice.
+ */
 function refusal(c: Classified): Conflict {
   if (c.conflict) return c.conflict;
   const m = c.merge!;
   return {
     draftId: m.draftId,
     path: m.path,
-    reason: "overlap",
+    reason: "saved_by_other",
     mine: c.text,
     theirs: m.mainText,
     base: m.baseText,
+    mergedText: m.mergedText,
+    theirsBlob: m.theirsBlob ?? null,
     ...(m.theirsBy !== undefined ? { theirsBy: m.theirsBy } : {}),
     ...(m.theirsAt !== undefined ? { theirsAt: m.theirsAt } : {}),
   };

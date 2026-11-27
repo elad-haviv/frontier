@@ -170,6 +170,12 @@ export class DraftStore {
   private conflictCounts = new Map<string, number>();
   /** How many times the server changed a draft of each person itself (a proposal accepted into it). */
   private serverChangeCounts = new Map<string, number>();
+  /**
+   * The blob of the saved version each unsaved change was last compared with (a plan or a compare
+   * found it needs choosing, or merging), by draft id; null when there was no file. In memory: what
+   * the web app before 27d relies on when it resolves without saying which version it compared.
+   */
+  private compared = new Map<string, string | null>();
   /** When each person who is no longer in the project was seen leaving it, by person id. */
   private away: Record<string, string> = {};
 
@@ -226,6 +232,16 @@ export class DraftStore {
   noteConflicts(n: number): void {
     if (n > 0) this.conflictCounts.set(this.me(), n);
     else this.conflictCounts.delete(this.me());
+  }
+
+  /** Notes the saved version an unsaved change of the person was just compared with. */
+  noteCompared(id: string, blob: string | null): void {
+    if (this.owned(id)) this.compared.set(id, blob);
+  }
+
+  /** The saved version the change was last compared with: its blob, null for none, undefined if never. */
+  comparedBlob(id: string): string | null | undefined {
+    return this.owned(id) ? this.compared.get(id) : undefined;
   }
 
   /** Notes that the server itself changed a draft of the person being served. */
@@ -830,6 +846,7 @@ export class DraftStore {
       updatedAt: now.toISOString(),
     };
     await this.put(next, text);
+    this.compared.delete(id);
     return next;
   }
 
@@ -846,6 +863,7 @@ export class DraftStore {
   async discard(id: string): Promise<void> {
     this.require(id);
     this.records.delete(id);
+    this.compared.delete(id);
     this.bump();
     this.kept.delete(id);
     this.serverKept.delete(id);
@@ -1045,6 +1063,7 @@ export class DraftStore {
     for (const [id, r] of [...this.records]) {
       if (this.ownerOf(r) !== personId) continue;
       this.records.delete(id);
+      this.compared.delete(id);
       this.kept.delete(id);
       this.serverKept.delete(id);
       await this.files.remove(this.folder(id));
