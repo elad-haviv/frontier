@@ -1,6 +1,6 @@
 import { Fingerprint } from "lucide-react";
 import { type FormEvent, useEffect, useState } from "react";
-import { useLocation, useNavigate } from "../nav.tsx";
+import { Link, useLocation, useNavigate } from "../nav.tsx";
 import { api, ApiFailure, googleStartUrl } from "../api.ts";
 import { Icon } from "../components/ui/Icon.tsx";
 import { googleProblem } from "./joinModel.ts";
@@ -29,6 +29,7 @@ export function Login({ onLoggedIn }: { onLoggedIn: () => void }) {
     password: true,
     emailless: false,
     google: false,
+    mail: false,
   });
 
   useEffect(() => {
@@ -39,6 +40,7 @@ export function Login({ onLoggedIn }: { onLoggedIn: () => void }) {
           password: s.password,
           emailless: s.emailless,
           google: s.google,
+          mail: s.mail,
         }),
       () => undefined,
     );
@@ -126,6 +128,11 @@ export function Login({ onLoggedIn }: { onLoggedIn: () => void }) {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
             />
+            {ways.mail && (
+              <p className="login-forgot">
+                <Link to="/forgot-password">Forgot password?</Link>
+              </p>
+            )}
             {problem}
             <button
               type="submit"

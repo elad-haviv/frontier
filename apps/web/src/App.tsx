@@ -37,6 +37,9 @@ import { ChroniclesPage } from "./pages/Chronicles.tsx";
 import { MapsPage } from "./pages/Maps.tsx";
 import { Login } from "./pages/Login.tsx";
 import { JoinPage } from "./pages/Join.tsx";
+import { ConfirmPage } from "./email/ConfirmPage.tsx";
+import { ForgotPage } from "./email/ForgotPage.tsx";
+import { ResetPage } from "./email/ResetPage.tsx";
 const SettingsPage = lazy(() =>
   import("./pages/settings/SettingsPage.tsx").then((m) => ({ default: m.SettingsPage })),
 );
@@ -96,6 +99,16 @@ const VersionsPage = lazy(() =>
 function JoinRoute() {
   const { code = "" } = useParams();
   return <JoinPage key={code} code={code} />;
+}
+
+/** `/confirm/<code>` and `/reset/<code>`: the pages the links in emails open (stage 28), logged in or not. */
+function ConfirmRoute({ loggedIn }: { loggedIn: boolean }) {
+  const { code = "" } = useParams();
+  return <ConfirmPage key={code} code={code} loggedIn={loggedIn} />;
+}
+function ResetRoute({ loggedIn }: { loggedIn: boolean }) {
+  const { code = "" } = useParams();
+  return <ResetPage key={code} code={code} loggedIn={loggedIn} />;
 }
 
 /** A different map gets a fresh page: its own view, drawing surface and history. */
@@ -349,6 +362,9 @@ export function App() {
       <Routes>
         <Route path="/login" element={<Login onLoggedIn={enter} />} />
         <Route path="/join/:code" element={<JoinRoute />} />
+        <Route path="/confirm/:code" element={<ConfirmRoute loggedIn={false} />} />
+        <Route path="/reset/:code" element={<ResetRoute loggedIn={false} />} />
+        <Route path="/forgot-password" element={<ForgotPage />} />
         <Route
           path="*"
           element={
@@ -369,6 +385,9 @@ export function App() {
     <>
       <Routes>
         <Route path="/join/:code" element={<JoinRoute />} />
+        <Route path="/confirm/:code" element={<ConfirmRoute loggedIn />} />
+        <Route path="/reset/:code" element={<ResetRoute loggedIn />} />
+        <Route path="/forgot-password" element={<ForgotPage />} />
         <Route
           path="/projects"
           element={

@@ -1,5 +1,6 @@
 import { Keyboard, LogOut, Settings, Layers } from "lucide-react";
 import { type ReactNode, useState } from "react";
+import { ConfirmBanner } from "../email/ConfirmBanner.tsx";
 import { useKeyListener, useShortcut } from "../keys.ts";
 import { useMe } from "../me.ts";
 import { Link, useNavigate } from "../nav.tsx";
@@ -70,6 +71,7 @@ export function OutsideShell({ children }: { children: ReactNode }) {
         </Menu>
       </header>
       <UpdateBar />
+      <ConfirmBanner />
       <main className="outside-main">{children}</main>
       {sheet && <KeySheet onClose={() => setSheet(false)} />}
     </div>
