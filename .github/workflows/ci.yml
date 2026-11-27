@@ -47,6 +47,8 @@ jobs:
         with:
           node-version: 22
           cache: npm
+      # The export test downloads a real Word file, which the server makes with pandoc.
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends pandoc
       - run: npm ci
       - run: npm run build
       # Chromium is kept between runs, keyed by the Playwright version; its system libraries are
