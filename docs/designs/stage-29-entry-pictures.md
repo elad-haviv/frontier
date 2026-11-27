@@ -89,3 +89,20 @@ generating from the reading page.
 - **Tests.** `apps/server/test/pictures.test.ts`, the adapter cases in `providers.test.ts`,
   `pictureBrief.test.ts`, the `insertEmbedsAfter` case in `editCommands.test.ts`, and CUJ 29 in
   `apps/web/e2e/pictures.spec.ts` (desktop).
+
+## Under people and projects (added when merged with stage 31)
+
+- **Who may.** Making a picture, listing and fetching the tries, and inserting one are writers'. The
+  dialog is in the editor, which readers do not have.
+- **Keys and cost.** There is no server-wide key and no monthly cap any more: each picture is made
+  with the key of the person pressing Generate (from their device, with the request), and paid to
+  their own provider. No key on the device, or none for the picture model's provider, is said in the
+  dialog before anything is asked ("Add one under AI keys") and answers `ai_key_missing`; a key the
+  provider turns away answers `ai_key_rejected`. The line under the button gives the price of a
+  picture (from the person's own last five) and no longer what is left of a cap. The call is logged
+  with the person. The providers are the ones this branch supports (OpenRouter, OpenAI, Gemini and
+  the others with a key per person); the shapes go to them as before. There is no custom
+  OpenAI-compatible endpoint any more, so none is needed.
+- **Per person, per project.** Tries are each person's own (`PicturesResponse.tries` holds only the
+  caller's; fetching or inserting another person's is `not_found`) and live in the project's own
+  `assets/generated/entries/`. An inserted picture is an unsaved change of the person who inserted it.

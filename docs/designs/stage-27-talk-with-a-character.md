@@ -68,3 +68,20 @@ kept".
   unsaved changes page, as before. The steps "1 Profile, 2 Conversation" beside the title were
   left out. The conversations of an entry that is later deleted stay in the folder, out of sight.
   Not in any export of the library; the author exports a conversation himself.
+
+## Under people and projects (added when merged with stage 31)
+
+- **Who may.** A reader may talk to a character with a profile (with their own AI key): `say`, the
+  list of their talks, opening and deleting one, the year check. Making the profile (`propose`,
+  `approve`) and adding a line to the entry (`line`) change the library and are writers'. A reader
+  of a character with no profile is told there is no one to talk with, and sees no button to draft
+  one. Talking in a reader's request reads the saved text only (the saved view), so a writer's
+  unsaved lines are never in what the character is given.
+- **Per person.** Conversations are kept in `state/talks/<person id>/`, one file each, like lore
+  conversations. Nobody lists, opens, continues, marks or deletes another person's; an id of
+  someone else's is `not_found`. A `talks/<id>.json` from before people belongs to the project's
+  first owner and moves into their folder when it is saved again.
+- **Keys.** The AI call uses the key of the person asking, sent with the request; no key means
+  `ai_key_missing`, a key the provider turns away `ai_key_rejected`; the call is logged with the person.
+- Tests: `apps/server/test/talksPicturesTrees.test.ts`, `apps/web/src/pages/Talk.test.ts`, and the
+  reader spec in `apps/web/e2e/readerrole.spec.ts`.
