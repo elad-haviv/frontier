@@ -505,8 +505,7 @@ export class DraftStore {
    */
   hasDeviceCopies(id: string): boolean {
     return (
-      this.owned(id) !== undefined &&
-      (this.kept.get(id) ?? 0) > (this.serverKept.has(id) ? 1 : 0)
+      this.owned(id) !== undefined && (this.kept.get(id) ?? 0) > (this.serverKept.has(id) ? 1 : 0)
     );
   }
 

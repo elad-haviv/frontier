@@ -417,7 +417,9 @@ export async function buildServices(
   let sweep: NodeJS.Timeout | null = null;
   const isMember = (personId: string) => roleOf(personId) !== null;
   const tidyAway = () =>
-    drafts.tidyAway(isMember).catch((err: unknown) => console.error("Sweep of unsaved changes failed", err));
+    drafts
+      .tidyAway(isMember)
+      .catch((err: unknown) => console.error("Sweep of unsaved changes failed", err));
   const services: Services = {
     config,
     git,

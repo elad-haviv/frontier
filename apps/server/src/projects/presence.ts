@@ -107,7 +107,8 @@ export class Presence {
       if (c.person === viewer || this.o.roleOf(c.person) === null) continue;
       const key = `${c.person}\u0000${c.path}`;
       const known = rows.get(key);
-      if (!known || c.since < known.since) rows.set(key, { person: c.person, path: c.path, since: c.since });
+      if (!known || c.since < known.since)
+        rows.set(key, { person: c.person, path: c.path, since: c.since });
     }
     return [...rows.values()]
       .sort((a, b) => a.since - b.since || a.path.localeCompare(b.path))

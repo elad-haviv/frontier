@@ -20,6 +20,11 @@ import type { ProjectRole } from "@frontier/schema";
  * help that drafts into the library (an addition to an entry) and what AI has proposed but nobody
  * has kept (a map's discoveries) are writers', for the same reason.
  *
+ * Unsaved changes are each person's own (stage 27d, `state/drafts.ts`): the draft routes act on the
+ * caller's drafts only, and answer `not_found` for anyone else's. A reader announces the entry they
+ * have open (`PUT /presence`) so writers can see who is reading, and is told nothing of other people's
+ * work in progress or of who is reading.
+ *
  * Comments are writer-only until stage 27e: until then they are one person's private notes ("for
  * me", "for the AI"), which a reader must not read or add to.
  */

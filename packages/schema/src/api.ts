@@ -193,7 +193,10 @@ export const EntryResponse = z.object({
    */
   othersUnsaved: z.array(OtherUnsaved).optional(),
   /** Who made the entry's last saved version, and when; absent for an entry with none. */
-  lastVersion: z.object({ commit: z.string(), at: z.string(), by: AuthorRef }).nullable().optional(),
+  lastVersion: z
+    .object({ commit: z.string(), at: z.string(), by: AuthorRef })
+    .nullable()
+    .optional(),
 });
 export type EntryResponse = z.infer<typeof EntryResponse>;
 

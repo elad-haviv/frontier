@@ -631,7 +631,9 @@ export class GitGateway {
       });
       if (r.code !== 0) return null;
       const [commit, at, name, email] = r.stdout.toString("utf8").trim().split("\u0002");
-      return commit ? { commit, at: at ?? "", author: { name: name ?? "", email: email ?? "" } } : null;
+      return commit
+        ? { commit, at: at ?? "", author: { name: name ?? "", email: email ?? "" } }
+        : null;
     });
   }
 

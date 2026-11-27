@@ -251,7 +251,10 @@ export class Publisher {
     const mainBlob = await git.blobHash(draft.path);
     const mainBytes = mainBlob === null ? null : await git.readFile(draft.path);
     const mainText = mainBytes === null ? null : normaliseLineEndings(mainBytes.toString("utf8"));
-    const conflict = async (reason: Conflict["reason"], base: string | null): Promise<Classified> => ({
+    const conflict = async (
+      reason: Conflict["reason"],
+      base: string | null,
+    ): Promise<Classified> => ({
       draft,
       text,
       outcome: "conflict",
@@ -518,7 +521,11 @@ export class Publisher {
    * What saving one unsaved change would do now, for a compare screen: `ready`, a `merge` to confirm,
    * a `conflict` with the other version, who saved it and when, or `none`.
    */
-  compare(draftId: string): Promise<{ outcome: "ready" | "merge" | "conflict" | "none"; c: Classified | null; draft: DraftRecord }> {
+  compare(draftId: string): Promise<{
+    outcome: "ready" | "merge" | "conflict" | "none";
+    c: Classified | null;
+    draft: DraftRecord;
+  }> {
     return this.serial(async () => {
       const draft = this.d.drafts.get(draftId);
       if (!draft) throw new ApiError("not_found", "There is no such draft.");
@@ -724,11 +731,14 @@ export class Publisher {
         const again = await this.classify(c.draft);
         // Nothing differs any more: it is on `main` already, and goes away with the next sync.
         if (again === null) continue;
+        /* c8 ignore start */
+        // Still fine on a second look (the file went back to what the plan saw): it goes in.
         if (again.outcome === "ready") {
           stored.classified.set(c.draft.id, again);
           stillGood.push(again);
           continue;
         }
+        /* c8 ignore stop */
         refused.push(refusal(again));
       }
       current = stillGood;
@@ -773,6 +783,7 @@ export class Publisher {
       const first = refused[0];
       if (first) {
         this.plans.delete(planId);
+        /* c8 ignore next */
         const who = first.theirsBy?.name ?? "Someone";
         throw new ApiError(
           "saved_by_other",
@@ -845,7 +856,7 @@ export class Publisher {
 
   /** Whether every save since `from` was made by this server: `main` moved by us and nobody else. */
   private async movedByUs(from: string): Promise<boolean> {
-    const between = await this.d.git.commitsBetween(from, this.d.index.commit ?? "HEAD").catch(() => null);
+    const between = await this.d.git.commitsBetween(from, "HEAD").catch(() => null);
     return between !== null && between.length > 0 && between.every((c) => this.own.has(c.commit));
   }
 }

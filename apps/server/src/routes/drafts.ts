@@ -351,11 +351,11 @@ export function draftRoutes(app: RouteApp, s: Services): void {
       .pendingDecisions()
       .filter((d) => !d.draftId || !s.drafts.existsAny(d.draftId) || s.drafts.get(d.draftId))
       .map((d) => ({
-      id: d.id,
-      path: d.path,
-      decision: d.decision,
-      ...(d.draftId ? { draftId: d.draftId } : {}),
-    }));
+        id: d.id,
+        path: d.path,
+        decision: d.decision,
+        ...(d.draftId ? { draftId: d.draftId } : {}),
+      }));
     return { drafts, renames, decisions };
   });
 

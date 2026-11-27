@@ -268,7 +268,11 @@ export class Quarantine {
     const record = this.pending.find((p) => p.id === id);
     if (!record) throw new ApiError("not_found", "This decision is not waiting to be published.");
     // A revert's unsaved text is the person's who decided it (stage 27d): nobody else withdraws it.
-    if (record.draftId && this.d.drafts.existsAny(record.draftId) && !this.d.drafts.get(record.draftId)) {
+    if (
+      record.draftId &&
+      this.d.drafts.existsAny(record.draftId) &&
+      !this.d.drafts.get(record.draftId)
+    ) {
       throw new ApiError("not_found", "This decision is not waiting to be published.");
     }
     if (record.draftId && this.d.drafts.get(record.draftId)) {

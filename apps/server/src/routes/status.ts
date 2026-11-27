@@ -97,7 +97,10 @@ export function presenceRoutes(app: RouteApp, s: Services): void {
   /** For a closing tab (`navigator.sendBeacon` posts): the device has left. */
   app.post("/api/presence/leave", async (request) => {
     const body = (request.body ?? {}) as { client?: unknown };
-    const client = typeof body.client === "string" && /^[A-Za-z0-9_-]{1,64}$/.test(body.client) ? body.client : undefined;
+    const client =
+      typeof body.client === "string" && /^[A-Za-z0-9_-]{1,64}$/.test(body.client)
+        ? body.client
+        : undefined;
     s.presence.leave(personOf(request).id, client);
     return { ok: true as const };
   });
