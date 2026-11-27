@@ -45,6 +45,18 @@ export const ERROR_STATUS = {
   // The first project's files are the server's old layout and cannot be deleted from the app, and
   // a server's last project cannot be deleted.
   project_not_deletable: 409,
+  // Stage 27c: a project always keeps one owner.
+  last_owner: 409,
+  // Invite links. `unknown` is a link that never existed (or is not shaped like one); the others
+  // say why a link that did exist no longer works, and the page names the person to ask.
+  invite_unknown: 404,
+  invite_used: 410,
+  invite_cancelled: 410,
+  invite_expired: 410,
+  // The person is already in the project the link is for. The link is not used up.
+  already_member: 409,
+  // The email belongs to an account already: the page says to log in and join with it.
+  account_exists: 409,
   // An image could not be taken from a web address; the server log says why.
   image_fetch_failed: 422,
 } as const;
@@ -63,6 +75,10 @@ export const ErrorBody = z.object({
     href: z.string().optional(),
     /** With `ai_key_missing`: the provider kind whose key this device lacks. */
     provider: z.string().optional(),
+    /** With `invite_used`, `invite_cancelled` and `invite_expired`: the name of the person who made the link, to ask for a new one. */
+    inviter: z.string().optional(),
+    /** With `already_member`: the address (slug) of the project the person is already in. */
+    project: z.string().optional(),
   }),
 });
 export type ErrorBody = z.infer<typeof ErrorBody>;

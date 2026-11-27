@@ -13,7 +13,8 @@ import {
   type DeviceKeys,
   decodeDeviceKeys,
 } from "@frontier/schema";
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyRequest } from "fastify";
+import { outsideSavedView } from "../projects/view.js";
 
 /**
  * What a request holds: the keys it carried, and who asked. The holder is emptied when the
@@ -47,6 +48,15 @@ export function requestPerson(): string | null {
   return current.getStore()?.person ?? null;
 }
 
+/**
+ * Whether the code running now is serving this request (not another one, and not a timer or task
+ * that left the request). Lets a change that cuts a person's open requests spare the one making it.
+ */
+export function isThisRequest(request: FastifyRequest): boolean {
+  const here = current.getStore();
+  return here !== undefined && here === request.keysHolder;
+}
+
 /** Runs `work` with these keys as the request's own. For routes that try a typed key, and tests. */
 export function withDeviceKeys<T>(
   keys: DeviceKeys,
@@ -61,7 +71,8 @@ export function withDeviceKeys<T>(
  * request's keys. Use it where a request arms something that outlives it (the backup's timer).
  */
 export function outsideRequest<T>(work: () => T): T {
-  return current.exit(work);
+  // Also out of the saved view a reader's request runs in: a timer started here serves everyone.
+  return outsideSavedView(() => current.exit(work));
 }
 
 /**

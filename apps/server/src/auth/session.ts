@@ -11,7 +11,7 @@ declare module "fastify" {
 }
 
 /** How a person proved who they are, kept in the session for the rules that depend on it. */
-export type Method = "password" | "passkey";
+export type Method = "password" | "passkey" | "google";
 
 /** How recent a login must be for what could take an account over: a first password, a passkey. */
 export const RECENT_LOGIN_MS = 5 * 60 * 1000;

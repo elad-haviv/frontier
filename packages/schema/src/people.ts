@@ -10,11 +10,13 @@ import { Passkey } from "./state.js";
  * person id, so neither needs a new field here.
  */
 
-/** A sign-in through another service, such as Google. Not used before stage 27c. */
+/** A sign-in through another service, such as Google. Google, from stage 27c. */
 export const Identity = z.object({
   provider: z.string().min(1),
   /** The service's own, stable id for the person. */
   subject: z.string().min(1),
+  /** The email the service gave when it was linked, for Settings to show; never used to find an account. */
+  email: z.string().optional(),
   addedAt: z.string().datetime(),
 });
 export type Identity = z.infer<typeof Identity>;

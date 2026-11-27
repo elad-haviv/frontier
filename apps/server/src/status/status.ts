@@ -1,5 +1,6 @@
 import type { Health, StatusSnapshot } from "@frontier/schema";
 import type { VaultIndex } from "../index/build.js";
+import { outsideSavedView } from "../projects/view.js";
 
 type Listener = (snapshot: StatusSnapshot) => void;
 
@@ -89,7 +90,9 @@ export class StatusService {
 
   private changed(): void {
     if (this.listeners.size === 0) return;
-    const snapshot = this.snapshot();
+    // The snapshot is shared by every listener, so it is never computed as a reader sees it, even
+    // when a reader's request is what made the change.
+    const snapshot = outsideSavedView(() => this.snapshot());
     for (const l of this.listeners) l(snapshot);
   }
 

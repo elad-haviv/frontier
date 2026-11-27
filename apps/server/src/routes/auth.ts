@@ -27,8 +27,15 @@ const WRONG = "Wrong email or password.";
 /** Whether the account can log in with its password right now. */
 export const passwordWorks = (p: Person): boolean => p.passwordHash !== "" && !p.passwordOff;
 
-/** The ways an account has to log in: each passkey, and the password when it works. */
-export const waysIn = (p: Person): number => p.passkeys.length + (passwordWorks(p) ? 1 : 0);
+/** The Google account linked to an account, if any. */
+export const googleOf = (p: Person) => p.identities.find((i) => i.provider === "google") ?? null;
+
+/**
+ * The ways an account has to log in: each passkey, the password when it works, and Google, which
+ * counts only while the server offers it (a linked identity is no way in on a server without it).
+ */
+export const waysIn = (p: Person, googleOn: boolean): number =>
+  p.passkeys.length + (passwordWorks(p) ? 1 : 0) + (googleOn ? p.identities.length : 0);
 
 /**
  * The commit author's email as a suggestion for an account that has none. Not a stand-in address
@@ -43,10 +50,12 @@ export function suggestEmail(p: Person, authorEmail: string): string {
 
 export function me(
   p: Person,
-  method: "password" | "passkey",
+  method: "password" | "passkey" | "google",
   authorEmail = "",
   lastProject: string | null = null,
+  googleAvailable = false,
 ): MeResponse {
+  const google = googleOf(p);
   return {
     suggestedEmail: suggestEmail(p, authorEmail),
     id: p.id,
@@ -58,6 +67,12 @@ export function me(
     passwordSet: p.passwordHash !== "",
     passwordOff: p.passwordOff,
     method,
+    signingIn: {
+      password: { set: p.passwordHash !== "", off: p.passwordOff },
+      passkeys: p.passkeys.map(({ id, name, addedAt }) => ({ id, name, addedAt })),
+      google: google ? { email: google.email ?? "", addedAt: google.addedAt } : null,
+      googleAvailable,
+    },
     lastProject,
   };
 }
@@ -117,8 +132,12 @@ export function authRoutes(app: FastifyInstance, s: Server): void {
       person: person && { id: person.id, name: person.name, email: person.email },
       // The project the person used last, as its address; null until they have used one (stage 27b).
       lastProject: person ? await lastProjectSlug(s, person) : null,
-      emailless: people.length === 1 && emailKey(people[0]!.email) === "",
+      // Exactly one account has no email: a blank email at login means that account. (Every new
+      // account is given one, so this is only an owner from before emails were asked for.)
+      emailless: people.filter((p) => emailKey(p.email) === "").length === 1,
       passkeys: people.some((p) => p.passkeys.length > 0),
+      // Whether the server offers "Continue with Google"; the app hides the buttons when not.
+      google: s.google !== null,
       // Before any account exists the form is shown, so the page says what is missing on use.
       password: people.length === 0 || people.some((p) => !p.passwordOff),
     };
@@ -130,6 +149,7 @@ export function authRoutes(app: FastifyInstance, s: Server): void {
       request.session.get("method") ?? "password",
       s.config.commitAuthor.email,
       await lastProjectSlug(s, personOf(request)),
+      s.google !== null,
     ),
   );
 
@@ -145,7 +165,34 @@ export function authRoutes(app: FastifyInstance, s: Server): void {
       request.session.get("method") ?? "password",
       s.config.commitAuthor.email,
       await lastProjectSlug(s, person),
+      s.google !== null,
     );
+  });
+
+  // Unlinks Google. Like any change to how the account is logged into, it ends the other
+  // sessions, and the last way to sign in cannot be removed (checked on the account as it is when
+  // the change is made).
+  app.delete("/api/me/google", async (request) => {
+    const now = await s.people.update(personOf(request).id, (person) => {
+      if (!googleOf(person)) throw new ApiError("not_found", "No Google account is linked.");
+      const rest = {
+        ...person,
+        identities: person.identities.filter((i) => i.provider !== "google"),
+      };
+      // Taking away a link that cannot be used here anyway loses nothing.
+      if (s.google !== null && waysIn(rest, true) < 1) {
+        throw new ApiError(
+          "not_allowed",
+          "This is your only way to log in. Set a password or add a passkey first.",
+        );
+      }
+      return endOtherSessions({
+        ...person,
+        identities: rest.identities,
+      });
+    });
+    followEpoch(request, now);
+    return { ok: true as const };
   });
 
   // Changes the password, or sets one for an account that has none. The one asked for is the

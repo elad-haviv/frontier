@@ -11,10 +11,27 @@ export const HEARTBEAT_MS = 20_000;
 
 export function statusRoutes(app: RouteApp, s: Services): void {
   /** The notice about keys the server deleted is for the server's owner, who can revoke them. */
-  const forPersonOf = (request: FastifyRequest) => (snapshot: StatusSnapshot) =>
-    request.person?.admin
+  const forPersonOf = (request: FastifyRequest) => (snapshot: StatusSnapshot) => {
+    const shown = request.person?.admin
       ? snapshot
       : { ...snapshot, notices: { ...snapshot.notices, keysRemoved: null } };
+    // A reader sees the saved library: none of the writers' unsaved changes, conflicts, inbox or
+    // kept copies (stage 27c). The role is read live, so a demotion shows on the next event.
+    const live = request.project
+      ? s.server.projects.roleOfSync(request.project.record.id, request.person?.id)
+      : null;
+    return (live ?? request.project?.role) === "reader"
+      ? {
+          ...shown,
+          unpublished: 0,
+          conflicts: 0,
+          drafts: 0,
+          serverDraftChanges: 0,
+          inbox: { branches: 0, operations: 0, quarantined: 0 },
+          attention: { ...shown.attention, keptCopies: 0 },
+        }
+      : shown;
+  };
 
   app.get("/api/status", async (request) => forPersonOf(request)(s.status.snapshot()));
 

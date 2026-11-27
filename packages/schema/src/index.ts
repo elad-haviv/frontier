@@ -17,3 +17,4 @@ export * from "./ai.js";
 export * from "./keepGoing.js";
 export * from "./people.js";
 export * from "./projects.js";
+export * from "./members.js";

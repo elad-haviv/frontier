@@ -3,8 +3,12 @@ import type { Config } from "./config.js";
 import { AiLog } from "./ai/log.js";
 import { ModelCatalogue } from "./ai/models.js";
 import { AiProvider } from "./ai/provider.js";
+import { GoogleSignOn } from "./auth/google.js";
 import { LoginLimiter } from "./auth/limit.js";
+import { InviteStore } from "./members/invites.js";
+import { Turn } from "./members/join.js";
 import { ImageFetcher, type FetchLimits, type Resolve } from "./images/fromUrl.js";
+import { LiveRequests } from "./projects/live.js";
 import { ProjectStore } from "./projects/store.js";
 import { StateFiles } from "./state/files.js";
 import { PeopleStore } from "./state/people.js";
@@ -26,6 +30,16 @@ export interface Server {
   loginLimit: LoginLimiter;
   /** Every project and its members (stage 27b). */
   projects: ProjectStore;
+  /** Sign-on with Google; null when it is not configured (the buttons are then hidden). */
+  google: GoogleSignOn | null;
+  /** Invitation links, kept as hashes (stage 27c). */
+  invites: InviteStore;
+  /** Joins one after another: an invitation is used by one person even when two arrive together. */
+  joins: Turn;
+  /** The allowance of the public join and Google routes, counted by address, apart from logging in. */
+  joinLimit: LoginLimiter;
+  /** The requests each member has open in each project, cut when they are removed (stage 27c). */
+  live: LiveRequests;
   /** Per-person AI choices and the rules for Keep going. */
   settings: SettingsStore;
   ai: AiProvider;
@@ -78,6 +92,11 @@ export function makeServer(config: Config, options: ServerOptions = {}): Server 
     people,
     loginLimit: new LoginLimiter(config.loginAttempts),
     projects: new ProjectStore(stateDir, files),
+    google: config.google ? new GoogleSignOn(config.google, config.publicUrl) : null,
+    invites: new InviteStore(stateDir, files),
+    joins: new Turn(),
+    joinLimit: new LoginLimiter(config.loginAttempts * 6),
+    live: new LiveRequests(),
     settings,
     ai,
     aiLog,

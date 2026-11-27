@@ -38,7 +38,11 @@ export class StateFiles {
     for (const l of this.listeners) l();
   }
 
-  async write(path: string, data: Buffer | string): Promise<void> {
+  /**
+   * Writes a file. A `quiet` write does not tell the listeners (so does not arm the backup): for a
+   * note that costs nothing if it waits for the next backup, such as when someone was last active.
+   */
+  async write(path: string, data: Buffer | string, quiet = false): Promise<void> {
     if (this.closed) throw new ApiError("no_project", "This project has been deleted.");
     await mkdir(dirname(path), { recursive: true });
     const temp = `${path}.${randomBytes(6).toString("hex")}.tmp`;
@@ -49,11 +53,11 @@ export class StateFiles {
       await rm(temp, { force: true });
       throw err;
     }
-    this.changed();
+    if (!quiet) this.changed();
   }
 
-  async writeJson(path: string, value: unknown): Promise<void> {
-    await this.write(path, JSON.stringify(value, null, 2) + "\n");
+  async writeJson(path: string, value: unknown, quiet = false): Promise<void> {
+    await this.write(path, JSON.stringify(value, null, 2) + "\n", quiet);
   }
 
   /** Reads and checks a JSON file. Returns null when the file does not exist. */

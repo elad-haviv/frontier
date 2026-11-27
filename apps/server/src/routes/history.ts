@@ -19,6 +19,11 @@ export function historyRoutes(app: RouteApp, s: Services): void {
   /** A note as it was at one version, and as it was just before, to show what that version did. */
   app.get("/api/history/version", async (request) => {
     const { path, commit } = VersionQuery.parse(request.query);
+    // Only a version of the published library: a commit of a branch nobody has kept yet is not
+    // readable by its id, and so is not shown to a reader (or anyone).
+    if (!(await s.git.isPublished(commit))) {
+      throw new ApiError("not_found", "This file is not part of that version.");
+    }
     const read = async (at: string) => {
       const bytes = await s.git.readFile(path, at).catch(() => null);
       return bytes ? normaliseLineEndings(bytes.toString("utf8")) : null;

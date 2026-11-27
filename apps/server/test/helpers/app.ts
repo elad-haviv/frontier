@@ -225,3 +225,10 @@ export async function addMember(
     ],
   }));
 }
+
+/** The session cookie of a response, as a request header value; the old one when it sets none. */
+export function cookieOf(res: LightMyRequestResponse, before = ""): string {
+  const set = res.headers["set-cookie"];
+  const first = Array.isArray(set) ? set[0] : set;
+  return first?.startsWith("frontier_session=") ? first.split(";")[0]! : before;
+}

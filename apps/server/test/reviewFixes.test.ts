@@ -75,6 +75,14 @@ describe("openness is declared by the route, not read from the address", () => {
       .map((r) => `${r.method} ${r.url}`);
     expect(open.sort()).toEqual(
       [
+        // Stage 27c: joining by invitation and Google sign-on. Each counts against the per-address
+        // allowance (`server.joinLimit`); invitations.test.ts asks each for its 429.
+        "GET /api/auth/google/callback",
+        "GET /api/auth/google/start",
+        "GET /api/join/:code",
+        "POST /api/join/:code",
+        "POST /api/join/:code/passkey/options",
+        "POST /api/join/:code/passkey/verify",
         "GET /api/session",
         "GET /health",
         "POST /api/github/webhook",

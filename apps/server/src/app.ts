@@ -13,6 +13,7 @@ import type { Config } from "./config.js";
 import { ApiError, settingsLink } from "./errors.js";
 import { GitError } from "./git/gateway.js";
 import type { FetchLimits, Resolve } from "./images/fromUrl.js";
+import { tidyInvites } from "./members/tidy.js";
 import { guardProjects } from "./projects/guard.js";
 import { projectApp, RouteBook, type ProjectRoute } from "./projects/facade.js";
 import { scopedServices } from "./projects/context.js";
@@ -36,6 +37,9 @@ import { importRoutes } from "./routes/import.js";
 import { inboxRoutes } from "./routes/inbox.js";
 import { keepGoingRoutes } from "./routes/keepGoing.js";
 import { libraryFileRoutes } from "./routes/libraryFiles.js";
+import { memberRoutes } from "./routes/members.js";
+import { googleRoutes } from "./routes/google.js";
+import { joinRoutes } from "./routes/join.js";
 import { loreRoutes } from "./routes/lore.js";
 import { mapRoutes } from "./routes/maps.js";
 import { passkeyRoutes } from "./routes/passkeys.js";
@@ -60,13 +64,32 @@ declare module "@fastify/secure-session" {
     /** The id of the person logged in. Sessions from before accounts said "author"; see `auth/session.ts`. */
     user: string;
     /** How the person logged in. */
-    method: "password" | "passkey";
+    method: "password" | "passkey" | "google";
     /** The person's `sessionEpoch` when the session started or last followed a change; see `currentPerson`. */
     epoch: number;
     /** When the person logged in (milliseconds), for what asks for a recent login. */
     loginAt: number;
     /** The challenge of a passkey ceremony in progress, and when it ends. */
     challenge: { value: string; until: number };
+    /**
+     * A passkey registration made to join through an invitation, bound to that invitation and to
+     * the name given, so the second step cannot be used for anything else.
+     */
+    joinChallenge: { value: string; until: number; invite: string; name: string; email: string };
+    /**
+     * A Google sign-in in progress: the state, nonce and PKCE verifier of this browser's request,
+     * and what it is for. The cookie is encrypted and signed, so it is the "signed state".
+     */
+    google: {
+      state: string;
+      nonce: string;
+      verifier: string;
+      until: number;
+      invite: string | null;
+      returnTo: string | null;
+      /** The person who asked to link Google from Settings; null for a login or a join. */
+      link: string | null;
+    };
   }
 }
 
@@ -88,6 +111,13 @@ export interface RegisteredRoute {
   url: string;
   /** Declared open with `config: PUBLIC`. */
   public: boolean;
+}
+
+/** An address as it may be logged: no invitation code, no OAuth code or state. */
+export function redactAddress(url: string | undefined): string {
+  return (url ?? "")
+    .replace(/(\/(?:(?:api|%61pi)\/)?join\/)[^/?#]+/i, "$1:code")
+    .replace(/([?&](?:invite|code|state|returnTo)=)[^&#]*/gi, "$1:redacted");
 }
 
 const THIRTY_DAYS = 30 * 24 * 60 * 60;
@@ -149,6 +179,9 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
   server.keysRemoved = keysRemoved ?? (await server.settings.read())?.ai.keysRemoved ?? null;
 
   const first = await ensureFirstProject(server);
+  // Links whose maker stopped being an owner, and uses cut off half way, are dealt with before the
+  // first request.
+  await tidyInvites(server);
   const services = await server.registry.adopt(first);
 
   // Coolify's proxy sits in front, so the client address and protocol come from its headers.
@@ -165,8 +198,37 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
             `req.headers["${AI_KEYS_HEADER}"]`,
             "req.body.key",
           ],
+          // An invitation code is a secret until it is used: it is not written to the log, in the
+          // address of the join page, nor in the query of the Google sign-in routes.
+          serializers: {
+            req: (req) => ({
+              method: req.method,
+              url: redactAddress(req.url),
+              host: req.host,
+              remoteAddress: req.ip,
+              ...(req.socket?.remotePort !== undefined
+                ? { remotePort: req.socket.remotePort }
+                : {}),
+            }),
+          },
         }
       : false,
+  });
+  // A person removed from a project (or given another role) loses what they have open there (but
+  // the request making the change is answered), and a person who is no longer an owner has no
+  // invitation links waiting.
+  server.projects.watchMembers(async (projectId, personId) => {
+    server.live.cut(projectId, personId);
+    if (server.projects.roleOfSync(projectId, personId) === "owner") return;
+    try {
+      await server.invites.cancelBy(projectId, personId);
+    } catch (err) {
+      // The link is also refused when it is used, because its maker is no longer an owner.
+      app.log.error(
+        { err },
+        "Could not cancel the invitations of a person who is no longer an owner",
+      );
+    }
   });
   readKeysHeader(app);
   // A failed AI call is written to the server's log too, or production shows only a bare 502.
@@ -199,7 +261,11 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
   // One image per upload, up to 25 MB.
   await app.register(multipart, { limits: { fileSize: 25 * 1024 * 1024, files: 1 } });
 
-  app.addHook("onClose", async () => server.registry.closeAll());
+  app.addHook("onClose", async () => {
+    // A member's last-active note is written without the request waiting; let it land first.
+    await server.projects.settled();
+    await server.registry.closeAll();
+  });
 
   app.decorateRequest("person", null);
   // Every route is recorded as it is registered, so the tests can check each one.
@@ -207,6 +273,21 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
   app.addHook("onRoute", (route) => {
     for (const method of [route.method].flat())
       registered.push({ method, url: route.url, public: route.config?.public === true });
+  });
+  // A request that changes something, sent by a browser from another site (a page that makes the
+  // browser post to this server with the person's cookie), is refused. The browser says where a
+  // request comes from in `Sec-Fetch-Site`: `cross-site` is never ours, and `same-site` (another
+  // address of the same domain) only when its Origin is the app's own. Without the header (tests,
+  // scripts, GitHub's webhook) nothing is known, and the request goes on as it always did.
+  const ownOrigin = new URL(config.publicUrl).origin;
+  app.addHook("onRequest", async (request) => {
+    if (request.method === "GET" || request.method === "HEAD" || request.method === "OPTIONS")
+      return;
+    if (!isApiRequest(request)) return;
+    const site = request.headers["sec-fetch-site"];
+    if (site === undefined || site === "same-origin" || site === "none") return;
+    if (site === "same-site" && request.headers.origin === ownOrigin) return;
+    throw new ApiError("not_allowed", "This request came from another site, so it was refused.");
   });
   // The login check decides from the route the router matched, never from the raw address (which
   // may be percent-encoded): the API is closed unless the route says `config: PUBLIC`, and so is
@@ -330,10 +411,13 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
   statusRoutes(forProject, s);
   // The project's own routes have no alias: `DELETE /api/project` must not exist.
   projectRoutes(projectApp(app, book, { aliases: false }), s);
+  memberRoutes(projectApp(app, book, { aliases: false }), s);
 
   // What belongs to the whole server, or to the person.
   authRoutes(app, server);
   passkeyRoutes(app, server);
+  joinRoutes(app, server);
+  googleRoutes(app, server);
   settingsRoutes(app, server);
   projectsApi(app, server);
   healthRoute(app, server);

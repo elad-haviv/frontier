@@ -95,7 +95,9 @@ export function entryRoutes(app: RouteApp, s: Services): void {
    * entry keeps its old path as its link until a version is saved), and the folder file's lines:
    * empty folders, icons, colours, order and type.
    */
-  app.get("/api/tree", async (): Promise<TreeResponse> => {
+  app.get("/api/tree", async (request): Promise<TreeResponse> => {
+    // What waits in quarantine is the writers' business; a reader sees published entries only.
+    const reader = request.project?.role === "reader";
     const root: TreeFolder = { path: "", folders: [], notes: [] };
     const folders = new Map<string, TreeFolder>([["", root]]);
     const folder = (path: string): TreeFolder => {
@@ -123,7 +125,7 @@ export function entryRoutes(app: RouteApp, s: Services): void {
         words: factsOf(note).words,
         state: s.drafts.byPath(note.path)
           ? "unpublished"
-          : s.quarantine.waiting(note.path)
+          : !reader && s.quarantine.waiting(note.path)
             ? "quarantined"
             : "published",
       });
@@ -215,7 +217,8 @@ export function entryRoutes(app: RouteApp, s: Services): void {
       };
     }
 
-    const waiting = s.quarantine.waiting(note!.path);
+    const waiting =
+      request.project?.role === "reader" ? undefined : s.quarantine.waiting(note!.path);
     return {
       path: note!.path,
       text: note!.text,
