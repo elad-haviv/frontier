@@ -515,6 +515,27 @@ export const api = {
       type?: string;
     },
   ) => post<{ draftId?: string }>(`/api/proposals/${id}/operations/${op}`, body),
+  /** Accepts relations of one entry's proposal in one change (stage 31). */
+  acceptRelations: (
+    id: string,
+    accept: {
+      op: string;
+      edits?: {
+        what?: string;
+        who?: string;
+        with?: string | null;
+        how?: string | null;
+        when?: string | null;
+        saveOn?: string;
+      };
+    }[],
+  ) =>
+    post<{ draftId?: string; saved: { path: string; item: { what: string; who: string } }[] }>(
+      `/api/proposals/${id}/relations`,
+      { accept },
+    ),
+  /** Takes back the last Accept of relations, if the entry has not changed since. */
+  undoRelations: () => post<{ undone: boolean }>("/api/proposals/undo", {}),
   settings: () => call<SettingsResponse>("/api/settings"),
   conversations: () =>
     call<{

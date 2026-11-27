@@ -35,6 +35,7 @@ export const SCOPES = [
   "graph",
   "trees",
   "tree",
+  "inbox",
   "editor",
   "table",
   "dialog",
@@ -50,6 +51,7 @@ export const SCOPE_NAMES: Record<Scope, string> = {
   graph: "Graph",
   trees: "List of trees",
   tree: "Tree",
+  inbox: "Inbox",
   editor: "Editor",
   table: "In a table",
   dialog: "Dialogs and menus",
@@ -819,6 +821,13 @@ keys.register(
     label: "Stop comparing, close",
     handledBy: "the tree drawing",
   },
+
+  // The inbox (stage 31)
+  { id: "inbox.next", keys: ["j"], scope: "inbox", label: "Next proposal" },
+  { id: "inbox.previous", keys: ["k"], scope: "inbox", label: "Previous proposal" },
+  { id: "inbox.accept", keys: ["a"], scope: "inbox", label: "Accept the proposal" },
+  { id: "inbox.reject", keys: ["r"], scope: "inbox", label: "Reject the proposal" },
+  { id: "inbox.edit", keys: ["e"], scope: "inbox", label: "Edit the proposal" },
 
   // The chronicle
   { id: "chronicle.undo", keys: ["Mod-z"], scope: "chronicle", label: "Undo" },

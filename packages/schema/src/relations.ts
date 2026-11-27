@@ -268,6 +268,9 @@ export const RelationsResponse = z.object({
         /** The entry it would be saved on, and the word written there. */
         path: VaultPath,
         word: z.string(),
+        /** The other one as the text names them, and the entry they were matched to. */
+        who: z.string(),
+        whoPath: VaultPath.nullable(),
         quote: z.string(),
         words: z.string(),
         stated: z.boolean(),

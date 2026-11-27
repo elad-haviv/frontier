@@ -1,0 +1,202 @@
+/* A relation the AI proposed (stage 31): the inbox, a tree's panel, the phone's sheet and the
+   Relations tab. Proposals use one blue throughout, apart from the accent and the warning. */
+:root {
+  --proposed: #2f5d8a;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --proposed: #8fb4dc;
+  }
+}
+
+.rp {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+.rp.is-current {
+  margin-left: -0.8rem;
+  padding-left: 0.65rem;
+  border-left: 3px solid var(--accent);
+}
+.rp-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+  margin: 0;
+}
+.rp-tag {
+  border-color: var(--proposed);
+  color: var(--proposed);
+}
+.rp-who {
+  font-family: var(--serif);
+  font-weight: 700;
+}
+.rp-who.is-name {
+  border-bottom: 1px dashed var(--ink-faint);
+  font-style: italic;
+  font-weight: 400;
+}
+.rp-match {
+  padding: 0 0.45rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ink) 6%, transparent);
+  color: var(--ink-soft);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+.rp-match.is-none {
+  border: 1px dashed var(--ink-faint);
+  background: none;
+}
+.rp-mini {
+  min-height: 1.6rem;
+  padding: 0 0.55rem !important;
+  font-size: 0.76rem !important;
+}
+.rp-extra {
+  color: var(--ink-faint);
+  font-size: 0.82rem;
+}
+.rp-quote mark {
+  border-radius: 2px;
+  background: var(--accent-soft);
+  color: inherit;
+}
+.rp-src {
+  color: var(--ink-faint);
+  font-family: var(--sans);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+.rp-flag {
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 0.84rem;
+}
+.rp-flag::before {
+  content: "◐ ";
+  color: var(--proposed);
+}
+.rp-flag.is-warn {
+  color: var(--warn);
+}
+.rp-flag.is-warn::before {
+  content: "";
+}
+.rp-edit {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+  gap: 0.5rem;
+}
+.rp-edit label,
+.rp-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  color: var(--ink-faint);
+  font-size: 0.76rem;
+  font-weight: 600;
+}
+.rp-edit input,
+.rp-edit select,
+.rp-save select {
+  padding: 0.3rem 0.45rem;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  background: var(--paper-raised);
+  color: var(--ink);
+  font-size: 0.88rem;
+}
+.rp-field small {
+  font-weight: 400;
+}
+.rp-save {
+  margin: 0;
+  color: var(--ink-faint);
+  font-size: 0.82rem;
+}
+.rp-saved {
+  font-size: 0.82rem;
+}
+.rp.is-compact .change-actions {
+  flex-wrap: wrap;
+}
+
+/* The inbox's tools for many proposals */
+.inbox-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0.4rem 0 0.8rem;
+}
+.inbox-tools select {
+  min-height: 1.9rem;
+  padding: 0.15rem 0.5rem;
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  background: var(--paper-raised);
+  color: var(--ink-soft);
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+.inbox-chip {
+  min-height: 1.9rem;
+  padding: 0.15rem 0.7rem;
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  background: var(--paper-raised);
+  color: var(--ink-soft);
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+.inbox-chip[aria-pressed="true"] {
+  border-color: transparent;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.inbox-progress {
+  display: flex;
+  max-width: 26rem;
+  align-items: center;
+  gap: 0.6rem;
+  margin: 0.25rem 0;
+  color: var(--ink-faint);
+  font-size: 0.82rem;
+}
+.inbox-progress .bar {
+  height: 6px;
+  flex: 1;
+  overflow: hidden;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--ink) 8%, transparent);
+}
+.inbox-progress .bar i {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+}
+.inbox-keys {
+  margin: 0;
+  color: var(--ink-faint);
+  font-size: 0.78rem;
+}
+.inbox-keys kbd {
+  padding: 0 0.25rem;
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  font-family: var(--mono);
+  font-size: 0.72rem;
+}
+.proposal-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.5rem 0.8rem;
+}
+.proposal-head .spacer {
+  flex: 1;
+}

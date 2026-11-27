@@ -110,6 +110,8 @@ export function relationRoutes(app: FastifyInstance, s: Services): void {
         op: op.id,
         path: op.path,
         word: op.what,
+        who: op.who,
+        whoPath: op.whoPath,
         quote: op.quote,
         words: op.words,
         stated: op.stated,
