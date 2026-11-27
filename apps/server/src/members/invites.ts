@@ -20,6 +20,13 @@ const KEEP_DEAD_DAYS = 30;
 /** A new code: 192 random bits as 32 URL-safe characters. Shown once, never stored. */
 export const newInviteCode = (): string => randomBytes(24).toString("base64url");
 
+/**
+ * An emailed invitation also has a proof: a second random value that is put only in the emailed
+ * link (`?m=`), kept as a hash, and never in any answer to the owner. Whoever joins with it, and
+ * with the address the mail went to, has shown that they read that mail.
+ */
+export const newInviteProof = (): string => randomBytes(24).toString("base64url");
+
 /** What is stored in place of a code. A fast hash is enough: the code is random, not chosen. */
 const hashOf = (code: string): Buffer => createHash("sha256").update(code, "utf8").digest();
 
@@ -83,6 +90,16 @@ export class InviteStore {
     return found;
   }
 
+  /**
+   * Whether `proof` is the one in the link that was emailed for this invitation. Compared in
+   * constant time; an invitation with no proof (not emailed) never matches.
+   */
+  proofMatches(invite: InviteRecord, proof: string | undefined): boolean {
+    const given = hashOf(proof !== undefined && INVITE_CODE_PATTERN.test(proof) ? proof : "");
+    const stored = invite.proofHash ? Buffer.from(invite.proofHash, "hex") : Buffer.alloc(32);
+    return timingSafeEqual(stored, given) && !!invite.proofHash && proof !== undefined;
+  }
+
   /** The invitations of a project that can still be used, soonest to run out first. */
   async waiting(projectId: string): Promise<InviteRecord[]> {
     const at = this.now();
@@ -91,15 +108,19 @@ export class InviteStore {
       .sort((a, b) => a.expiresAt.localeCompare(b.expiresAt));
   }
 
-  /** Makes an invitation and returns it with the code, which this is the only time anyone has. */
+  /**
+   * Makes an invitation and returns it with the code, which this is the only time anyone has. An
+   * emailed one (`email`) also gets a proof, returned here for the email and kept as a hash.
+   */
   create(input: {
     projectId: string;
     role: ProjectRole;
     createdBy: string;
     /** Stage 28: the address the link is going to be emailed to. */
     email?: string;
-  }): Promise<{ invite: InviteRecord; code: string }> {
+  }): Promise<{ invite: InviteRecord; code: string; proof: string | null }> {
     const code = newInviteCode();
+    const proof = input.email ? newInviteProof() : null;
     return this.change(async (invites) => {
       const at = this.now();
       const invite: InviteRecord = {
@@ -111,19 +132,39 @@ export class InviteStore {
         createdAt: at.toISOString(),
         expiresAt: new Date(at.getTime() + INVITE_DAYS * 86_400_000).toISOString(),
         ...(input.email ? { email: input.email } : {}),
+        ...(proof ? { proofHash: hashOf(proof).toString("hex") } : {}),
       };
       // Old dead links are dropped as new ones are made, so the file does not grow for ever.
       const cutoff = at.getTime() - KEEP_DEAD_DAYS * 86_400_000;
       const kept = invites.filter(
         (i) => stateOf(i, at) === "waiting" || Date.parse(i.expiresAt) > cutoff,
       );
-      return { invites: [...kept, invite], result: { invite, code } };
+      return { invites: [...kept, invite], result: { invite, code, proof } };
     });
   }
 
   /** One invitation of the project, whatever its state; null when it is not this project's. */
   async find(projectId: string, id: string): Promise<InviteRecord | null> {
     return (await this.all()).find((i) => i.id === id && i.projectId === projectId) ?? null;
+  }
+
+  /**
+   * The invitation a resend would replace, or the error that says why it cannot be: not this
+   * project's, no longer waiting, or not emailed. Checked before a resend takes anything from an
+   * allowance, and again inside the change that makes the new link.
+   */
+  resendable(invites: InviteRecord[], projectId: string, id: string): InviteRecord {
+    const old = invites.find((i) => i.id === id && i.projectId === projectId);
+    if (!old) throw new ApiError("not_found", "There is no such invitation.");
+    const state = stateOf(old, this.now());
+    if (state !== "waiting") throw new ApiError(`invite_${state}` as "invite_used", "Not valid.");
+    if (!old.email) throw new ApiError("invalid", "This invitation was not sent to an address.");
+    return old;
+  }
+
+  /** `resendable`, on the invitations as they are now. */
+  async checkResendable(projectId: string, id: string): Promise<InviteRecord> {
+    return this.resendable(await this.all(), projectId, id);
   }
 
   /**
@@ -135,15 +176,12 @@ export class InviteStore {
     projectId: string,
     id: string,
     createdBy: string,
-  ): Promise<{ invite: InviteRecord; code: string }> {
+  ): Promise<{ invite: InviteRecord; code: string; proof: string }> {
     const code = newInviteCode();
+    const proof = newInviteProof();
     return this.change(async (invites) => {
-      const old = invites.find((i) => i.id === id && i.projectId === projectId);
+      const old = this.resendable(invites, projectId, id);
       const at = this.now();
-      if (!old) throw new ApiError("not_found", "There is no such invitation.");
-      const state = stateOf(old, at);
-      if (state !== "waiting") throw new ApiError(`invite_${state}` as "invite_used", "Not valid.");
-      if (!old.email) throw new ApiError("invalid", "This invitation was not sent to an address.");
       const invite: InviteRecord = {
         id: randomUUID(),
         projectId,
@@ -153,13 +191,14 @@ export class InviteStore {
         createdAt: at.toISOString(),
         expiresAt: new Date(at.getTime() + INVITE_DAYS * 86_400_000).toISOString(),
         email: old.email,
+        proofHash: hashOf(proof).toString("hex"),
       };
       return {
         invites: [
           ...invites.map((i) => (i.id === id ? { ...i, cancelledAt: at.toISOString() } : i)),
           invite,
         ],
-        result: { invite, code },
+        result: { invite, code, proof },
       };
     });
   }

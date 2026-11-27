@@ -118,7 +118,7 @@ export interface RegisteredRoute {
 export function redactAddress(url: string | undefined): string {
   return (url ?? "")
     .replace(/(\/(?:(?:api|%61pi)\/)?(?:join|confirm|reset)\/)[^/?#]+/i, "$1:code")
-    .replace(/([?&](?:invite|code|state|returnTo)=)[^&#]*/gi, "$1:redacted");
+    .replace(/([?&](?:invite|code|state|returnTo|m)=)[^&#]*/gi, "$1:redacted");
 }
 
 const THIRTY_DAYS = 30 * 24 * 60 * 60;

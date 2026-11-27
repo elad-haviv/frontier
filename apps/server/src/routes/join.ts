@@ -32,6 +32,11 @@ import { displayName } from "../members/names.js";
 import type { Server } from "../server.js";
 
 const CodeParam = z.object({ code: z.string().max(200) });
+/**
+ * The proof from an emailed invitation link (`/join/<code>?m=<proof>`), which the page sends along
+ * as `?m=` on every request about that invitation. Anything else in the query is ignored.
+ */
+const ProofQuery = z.object({ m: z.string().max(200).optional() });
 const FIVE_MINUTES = 5 * 60 * 1000;
 const b64 = (bytes: Uint8Array) => Buffer.from(bytes).toString("base64url");
 const PasskeyVerify = z.object({
@@ -46,6 +51,10 @@ export function joinRoutes(app: FastifyInstance, s: Server): void {
   const origin = new URL(s.config.publicUrl).origin;
   const rpID = new URL(s.config.publicUrl).hostname;
   const codeOf = (request: FastifyRequest) => CodeParam.parse(request.params).code;
+  const proofOf = (request: FastifyRequest): string | undefined => {
+    const parsed = ProofQuery.safeParse(request.query);
+    return parsed.success ? parsed.data.m : undefined;
+  };
   const answer = (joined: Joined): JoinedResponse => ({
     ok: true,
     project: joined.project.slug,
@@ -81,7 +90,9 @@ export function joinRoutes(app: FastifyInstance, s: Server): void {
       role: invite.role,
       google: s.google !== null,
       alreadyMember: person !== null && project.members.some((m) => m.personId === person.id),
-      email: invite.email ?? null,
+      // Only to whoever has the emailed link: the owner who made the invitation has the code but
+      // not the proof, so the address is not given to them (or to anyone else with the code).
+      email: s.invites.proofMatches(invite, proofOf(request)) ? (invite.email ?? null) : null,
     };
   });
 
@@ -94,7 +105,12 @@ export function joinRoutes(app: FastifyInstance, s: Server): void {
     await liveInvite(s, code);
     if (await s.people.byEmail(email)) throw accountExists();
     const passwordHash = await hashPassword(password);
-    const joined = await joinAsNewPerson(s, code, { name, email, passwordHash });
+    const joined = await joinAsNewPerson(
+      s,
+      code,
+      { name, email, passwordHash },
+      { proof: proofOf(request) },
+    );
     startSession(request, joined.person, "password");
     confirmAfterJoin(s, joined.person);
     return answer(joined);
@@ -160,20 +176,25 @@ export function joinRoutes(app: FastifyInstance, s: Server): void {
       if (await s.people.byPasskey(credential.id)) {
         throw new ApiError("invalid", "The passkey could not be checked. Try again.");
       }
-      const joined = await joinAsNewPerson(s, code, {
-        name: stored.name,
-        email: stored.email,
-        passkeys: [
-          {
-            id: credential.id,
-            publicKey: b64(credential.publicKey),
-            counter: credential.counter,
-            transports: (credential.transports ?? []) as Transport[],
-            name: passkeyName,
-            addedAt: new Date().toISOString(),
-          },
-        ],
-      });
+      const joined = await joinAsNewPerson(
+        s,
+        code,
+        {
+          name: stored.name,
+          email: stored.email,
+          passkeys: [
+            {
+              id: credential.id,
+              publicKey: b64(credential.publicKey),
+              counter: credential.counter,
+              transports: (credential.transports ?? []) as Transport[],
+              name: passkeyName,
+              addedAt: new Date().toISOString(),
+            },
+          ],
+        },
+        { proof: proofOf(request) },
+      );
       startSession(request, joined.person, "passkey");
       confirmAfterJoin(s, joined.person);
       return answer(joined);
@@ -186,7 +207,12 @@ export function joinRoutes(app: FastifyInstance, s: Server): void {
    */
   app.post("/api/join/:code/accept", async (request): Promise<JoinedResponse> => {
     s.joinLimit.attempt(request.ip);
-    const joined = await joinAsExistingPerson(s, codeOf(request), personOf(request));
+    const joined = await joinAsExistingPerson(
+      s,
+      codeOf(request),
+      personOf(request),
+      proofOf(request),
+    );
     return answer(joined);
   });
 }

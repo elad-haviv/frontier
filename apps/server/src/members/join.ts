@@ -7,6 +7,7 @@ import {
 } from "@frontier/schema";
 import { ApiError } from "../errors.js";
 import { canDisplace, sendConfirm } from "../mail/accounts.js";
+import { confirmedOf } from "../state/people.js";
 import type { NewPerson } from "../state/people.js";
 import type { Server } from "../server.js";
 import { stateOf } from "./invites.js";
@@ -92,16 +93,18 @@ async function claim(server: Server, code: string, invite: InviteRecord): Promis
  * checked before the link is touched, so a refused email leaves the link as it was.
  *
  * Stage 28: an address counts as confirmed when Google verified it (`google`), or when the
- * invitation was emailed to exactly this address. A Google-verified person whose address is an
- * UNCONFIRMED account's takes it: that account is left with no address and asked to add another
- * (only where it can still log in without one, see `mayDisplace`); a confirmed address, or an
- * account that cannot be displaced, is still `account_exists`.
+ * invitation was emailed to exactly this address AND the join carries the proof that is only in
+ * the emailed link (`proof`, constant-time); the owner who made the invitation has the link, not
+ * the proof, and a join without it gets a confirm link like any other address. A Google-verified
+ * person whose address is an UNCONFIRMED account's takes it, but only when that account's confirm
+ * link was sent and ran out unopened and it can still log in without an address (see
+ * `mayDisplace`); any other account with the address is still `account_exists`.
  */
 export function joinAsNewPerson(
   server: Server,
   code: string,
   account: NewPerson,
-  options: { google?: boolean } = {},
+  options: { google?: boolean; proof?: string | undefined } = {},
 ): Promise<Joined> {
   return server.joins.run(async () => {
     const { invite, project } = await liveInvite(server, code);
@@ -110,7 +113,10 @@ export function joinAsNewPerson(
     if (existing && !displace) throw accountExists();
     const now = new Date().toISOString();
     const emailed =
-      !!invite.email && !!account.email && emailKey(invite.email) === emailKey(account.email);
+      !!invite.email &&
+      !!account.email &&
+      emailKey(invite.email) === emailKey(account.email) &&
+      server.invites.proofMatches(invite, options.proof);
     const confirmed = options.google
       ? ({ emailConfirmedAt: now, emailConfirmedBy: "google" } as const)
       : emailed
@@ -151,7 +157,7 @@ export function joinAsNewPerson(
  * confirm link. It goes on after the answer, and never fails the join.
  */
 export function confirmAfterJoin(server: Server, person: Person): void {
-  if (!server.mail.enabled || person.email.trim() === "" || person.emailConfirmedAt) return;
+  if (!server.mail.enabled || person.email.trim() === "" || confirmedOf(person)) return;
   server.mail.background(() =>
     sendConfirm(server, person.id, person.email, { pending: false, quiet: true }),
   );
@@ -165,6 +171,7 @@ export function joinAsExistingPerson(
   server: Server,
   code: string,
   person: Person,
+  proof?: string,
 ): Promise<Joined> {
   return server.joins.run(async () => {
     const { invite, project } = await liveInvite(server, code);
@@ -181,8 +188,29 @@ export function joinAsExistingPerson(
       throw err;
     }
     await server.invites.settle(invite.id, person.id);
+    // The invitation was emailed to this very address and this request has the proof from that
+    // email: the address is the person's, so an unconfirmed one is confirmed.
+    let joined = person;
+    if (
+      invite.email &&
+      server.invites.proofMatches(invite, proof) &&
+      emailKey(invite.email) === emailKey(person.email) &&
+      confirmedOf(person) === null
+    ) {
+      joined = await server.people
+        .update(person.id, (p) =>
+          emailKey(p.email) === emailKey(invite.email ?? "") && confirmedOf(p) === null
+            ? {
+                ...p,
+                emailConfirmedAt: new Date().toISOString(),
+                emailConfirmedBy: "invite" as const,
+              }
+            : p,
+        )
+        .catch(() => person);
+    }
     return {
-      person,
+      person: joined,
       project: (await server.projects.get(project.id)) ?? project,
       role: invite.role,
     };
