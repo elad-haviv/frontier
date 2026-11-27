@@ -1,5 +1,5 @@
 /**
- * Joining a project through an invitation link (stage 27c). The code in the address is the only
+ * Joining a project through an invitation link (stage 31c). The code in the address is the only
  * thing that says which project and which role: no body field can choose either, or "admin".
  * Someone new makes an account with an email and a password, or a passkey on this device, or
  * Google (`routes/google.ts`); someone who has an account logs in and accepts. Every public route

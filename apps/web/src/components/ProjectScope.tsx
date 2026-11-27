@@ -50,7 +50,7 @@ interface Answer {
 }
 
 /**
- * A project's pages (stage 27b), at `/p/<slug>/...`. It finds out which project the address names
+ * A project's pages (stage 31b), at `/p/<slug>/...`. It finds out which project the address names
  * (from the person's list, or by asking the server, which also knows an address the project had
  * before it was renamed), opens it for the app (`setCurrentProject`), and draws the shell around
  * the pages. Another project is a whole new tree under a new key, so nothing of the last one
@@ -93,7 +93,7 @@ export function ProjectScope({ children }: { children: ReactNode }) {
   const error = heard?.error ?? null;
 
   // The project's record is read again, quietly, when the server may have changed what the person
-  // may do here (stage 27c): its status stream ends when a role changes or someone is removed,
+  // may do here (stage 31c): its status stream ends when a role changes or someone is removed,
   // and a request refused for want of a role says so too. A failure to reach the server leaves
   // what is known as it is. Kept for one address: an answer that comes after the person went to
   // another project is let go, and does not touch that project's record.
@@ -244,7 +244,7 @@ export function ProjectScope({ children }: { children: ReactNode }) {
     void api.setLastProject(address).catch(() => undefined);
   }, [opened]);
   // Proposals a save left waiting in this project go on, with this person's keys: only for a
-  // writer, since a reader's requests for them would be refused (stage 27c).
+  // writer, since a reader's requests for them would be refused (stage 31c).
   const mayWrite = role === "writer" || role === "owner";
   useEffect(() => {
     if (opened === null || !mayWrite) return;

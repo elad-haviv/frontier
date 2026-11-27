@@ -214,7 +214,7 @@ export async function addPerson(
   };
 }
 
-/** Puts a person in a project with a role, as the store would hold it after an invitation (stage 27c). */
+/** Puts a person in a project with a role, as the store would hold it after an invitation (stage 31c). */
 export async function addMember(
   t: Pick<App, "server">,
   projectId: string,

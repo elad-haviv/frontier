@@ -102,7 +102,7 @@ const NeedsConnection = ({ what }: { what: string }) => (
 function PickUp() {
   const { recents } = useRecents();
   const offline = useNeedsConnection();
-  // Unsaved changes are a writer's: a reader's Home never asks for them (stage 27c).
+  // Unsaved changes are a writer's: a reader's Home never asks for them (stage 31c).
   const canWrite = useCanWrite();
   const drafts = useAsync(
     () =>

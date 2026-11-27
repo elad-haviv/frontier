@@ -382,20 +382,20 @@ describe("errors", () => {
     expect(statusOf("has_images")).toBe(409);
     expect(statusOf("image_fetch_failed")).toBe(422);
     expect(statusOf("ai_stopped")).toBe(409);
-    // Stage 27a added email_taken.
+    // Stage 31a added email_taken.
     expect(statusOf("email_taken")).toBe(409);
     expect(statusOf("ai_key_missing")).toBe(409);
     expect(statusOf("ai_key_rejected")).toBe(409);
     // The web app asks the person to log in again for this one.
     expect(statusOf("recent_login_needed")).toBe(403);
-    // 30 before stage 27c, which added seven (below), 27d one more, and stage 28 four.
+    // 30 before stage 31c, which added seven (below), 31d one more, and stage 32 four.
     expect(Object.keys(ERROR_STATUS)).toHaveLength(42);
-    // Stage 27b: a project that is not there for the person, a role too low, an address taken.
+    // Stage 31b: a project that is not there for the person, a role too low, an address taken.
     expect(statusOf("no_project")).toBe(403);
     expect(statusOf("role_too_low")).toBe(403);
     expect(statusOf("slug_taken")).toBe(409);
     expect(statusOf("project_not_deletable")).toBe(409);
-    // Stage 27c: the last owner, and the typed answers about an invitation link.
+    // Stage 31c: the last owner, and the typed answers about an invitation link.
     expect(statusOf("last_owner")).toBe(409);
     expect(statusOf("invite_unknown")).toBe(404);
     for (const code of ["invite_used", "invite_cancelled", "invite_expired"] as const) {
@@ -403,7 +403,7 @@ describe("errors", () => {
     }
     expect(statusOf("already_member")).toBe(409);
     expect(statusOf("account_exists")).toBe(409);
-    // Stage 27d: an entry in a save was saved by someone else since the plan.
+    // Stage 31d: an entry in a save was saved by someone else since the plan.
     expect(statusOf("saved_by_other")).toBe(409);
   });
 
@@ -436,7 +436,7 @@ describe("accounts", () => {
       admin: false,
       sessionEpoch: 0,
       lastProject: null,
-      // Stage 28: an account from before it is unconfirmed, with nothing waiting.
+      // Stage 32: an account from before it is unconfirmed, with nothing waiting.
       emailConfirmedAt: null,
       emailConfirmedBy: null,
       emailCode: null,
@@ -520,7 +520,7 @@ describe("folders and library files", () => {
   });
 });
 
-describe("stage 27d: people's unsaved changes, authors and who is reading", () => {
+describe("stage 31d: people's unsaved changes, authors and who is reading", () => {
   it("lets an older record (no owner) and a new one (an owner and a start) parse", () => {
     const old = {
       id: "aaaaaaaaaaaa",

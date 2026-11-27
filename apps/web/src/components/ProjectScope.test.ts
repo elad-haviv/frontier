@@ -116,7 +116,7 @@ afterEach(async () => {
   setKeysOwner(null);
 });
 
-describe("a project's page (stage 27c)", () => {
+describe("a project's page (stage 31c)", () => {
   it("shows the page that says there is no such project for one the person is not in, after being in another", async () => {
     serve({ alpha: () => answer(record(ALPHA, "Alpha", "writer")) });
     const m = await open("/p/alpha");

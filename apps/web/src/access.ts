@@ -1,5 +1,5 @@
 /**
- * Losing access to a project while the app is open (stage 27c): a person taken out of it (or who
+ * Losing access to a project while the app is open (stage 31c): a person taken out of it (or who
  * left it on another device) is moved to All projects and told so in plain words there. The words
  * are kept here, outside the page that is being left, so the page they land on can show them.
  */
@@ -98,7 +98,7 @@ export interface MadeInvite {
   id: string;
   url: string;
   role: "reader" | "writer" | "owner";
-  /** Stage 28: where it was emailed and whether the mail went; absent or null for a link made without an address. */
+  /** Stage 32: where it was emailed and whether the mail went; absent or null for a link made without an address. */
   sentTo?: string | null;
   mail?: "sent" | "failed" | null;
 }

@@ -1,5 +1,5 @@
 /**
- * Links and navigation inside the app (stage 27b). The router's own `Link`, `NavLink`, `Navigate`,
+ * Links and navigation inside the app (stage 31b). The router's own `Link`, `NavLink`, `Navigate`,
  * `useNavigate` and `useLocation` are used only through here, so a page writes an address as if
  * there were one library (`/e/Notes.md`, `/maps`, `/unpublished`) and these put the open project in
  * front of it (`inProject`, `project.ts`), and take it off the location the page reads.

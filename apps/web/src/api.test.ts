@@ -121,7 +121,7 @@ describe("api", () => {
   });
 });
 
-describe("the email calls (stage 28)", () => {
+describe("the email calls (stage 32)", () => {
   it("never open the login dialog when the server says no session, and never count against the connection", async () => {
     const unauthorised = vi.spyOn(connection, "unauthorised").mockImplementation(() => undefined);
     const reached = vi.spyOn(connection, "reached").mockImplementation(() => undefined);

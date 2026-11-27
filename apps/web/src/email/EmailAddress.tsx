@@ -24,7 +24,7 @@ export function unconfirmedWords(state: MailState): string {
 }
 
 /**
- * Settings → You → Signing in → Email address (stage 28): the address, whether it is confirmed
+ * Settings → You → Signing in → Email address (stage 32): the address, whether it is confirmed
  * (and by what), Resend, Change address, and a change that waits for its link. With mail off it is
  * the plain address and a Change address that applies at once.
  */

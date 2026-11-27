@@ -1,6 +1,6 @@
 /**
  * The AI providers Frontier can call, and the shapes the server and the web app share about them.
- * Keys are kept only in the browser, on each device (stage 27f). They travel to the server in one
+ * Keys are kept only in the browser, on each device (stage 31f). They travel to the server in one
  * request header, `AI_KEYS_HEADER`, and never come back in any shape here.
  */
 import { z } from "zod";

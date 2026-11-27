@@ -24,7 +24,7 @@ describe("checking the profile before it is sent", () => {
   });
 });
 
-describe("checking the profile with the email set elsewhere (stage 28)", () => {
+describe("checking the profile with the email set elsewhere (stage 32)", () => {
   it("leaves the email alone when the server sends mail", () => {
     expect(checkProfile("Olive", "", true)).toEqual({});
     expect(checkProfile("", "", true)).toEqual({ name: "Give a name." });

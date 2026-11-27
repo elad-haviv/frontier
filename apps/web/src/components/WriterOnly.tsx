@@ -11,7 +11,7 @@ import "./ProjectScope.css";
 /**
  * A page that changes the project (the editor, unsaved changes, the inbox, import, two texts to
  * compare): opened by a reader, by an address typed or kept, it says what the role allows and
- * where to read instead, in place of a page that could only fail (stage 27c). While the role is
+ * where to read instead, in place of a page that could only fail (stage 31c). While the role is
  * not known yet it shows neither the page nor the notice.
  */
 export function WriterOnly({ what, children }: { what: string; children: ReactNode }) {

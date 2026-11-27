@@ -43,7 +43,7 @@ function VersionRow({
   const [texts, setTexts] = useState<{ text: string; before: string | null } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  // Restoring a version writes to the project: writers' (stage 27c).
+  // Restoring a version writes to the project: writers' (stage 31c).
   const canWrite = useCanWrite();
 
   function load(open: boolean) {

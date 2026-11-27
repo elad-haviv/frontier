@@ -13,12 +13,12 @@
  *                                       last seen leaving, by person id, for the 30 days their
  *                                       unsaved changes are kept
  *
- * Whose they are (stage 27d): every draft's `record.json` and every rename intent carries the id of
+ * Whose they are (stage 31d): every draft's `record.json` and every rename intent carries the id of
  * the person it belongs to (`person`). Each person has their own: this store answers for the person
  * set by `asPerson` (`projects/view.ts`) and for nobody else, so a person cannot read, change or
  * discard another's draft by its id, by its path or by listing. A record with no `person` (made
- * before 27d, by the only author there was) belongs to the project's first owner; the first start
- * with 27d writes that into each file, one at a time (`stampOwners`), so a start cut off halfway is
+ * before 31d, by the only author there was) belongs to the project's first owner; the first start
+ * with 31d writes that into each file, one at a time (`stampOwners`), so a start cut off halfway is
  * finished by the next, and the files read the same way before they are stamped.
  *
  * Before kept copies there was one spare slot, `content.v2` with `record.v2.json`. One still
@@ -173,7 +173,7 @@ export class DraftStore {
   /**
    * The blob of the saved version each unsaved change was last compared with (a plan or a compare
    * found it needs choosing, or merging), by draft id; null when there was no file. In memory: what
-   * the web app before 27d relies on when it resolves without saying which version it compared.
+   * the web app before 31d relies on when it resolves without saying which version it compared.
    */
   private compared = new Map<string, string | null>();
   /**

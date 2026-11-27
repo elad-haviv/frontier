@@ -1,4 +1,7 @@
-# Stage 28: Email
+# Stage 32: Email
+
+> Numbered 28 while it was being built; renumbered 32 when it was merged with `main`, which had
+> meanwhile used stages 27 to 30. Old commit messages that say "Stage 28" mean this document.
 
 Approved by Elad on 2026-11-27, with all four recommended decisions (section "Decisions") and the
 "Smaller points I assumed". Mockup: https://claude.ai/artifact/B7Mb9TUNWMr9NErdQXYqMp (eight screens,
@@ -113,7 +116,7 @@ like `/join/<code>`.
   out so opening it again says "already confirmed"), `emailLinkSentUntil` (when the latest confirm
   link that was **successfully sent** to the current address runs or ran out; null when none was
   ever sent, cleared when the address changes) and `emailSetBySelf` (the account itself set its
-  current address after stage 28, through Change address or the profile form, rather than giving it
+  current address after stage 32, through Change address or the profile form, rather than giving it
   when it joined). Only SHA-256 hashes of codes are kept. Every confirm and reset use runs inside the people store's serialized change
   (`PeopleStore.mutate`), so a code is used by exactly one request and what it changes is written
   with it.
@@ -172,10 +175,10 @@ A Google join is confirmed by Google.
 
 `POST /api/confirm/:code`, `GET /api/reset/:code` and `POST /api/reset/:code` draw on the join
 allowance (30 per 15 minutes per network address). `POST /api/forgot-password` does not: it has its
-own two allowances (above). The CSRF check of stage 27c applies to every new POST/DELETE.
+own two allowances (above). The CSRF check of stage 31c applies to every new POST/DELETE.
 
 **Forgot password and an address the account set itself.** A reset link (or the explanatory email)
-goes to an account's address unless **the account set that address itself after stage 28 and nobody
+goes to an account's address unless **the account set that address itself after stage 32 and nobody
 confirmed it** (`emailSetBySelf` and not confirmed): then nothing is sent, as for an unknown address,
 until its confirm link is opened. Addresses given when joining, and every address from before stage
 28, still get reset links while unconfirmed (decision 2). So the chain "session cookie only, set an
@@ -187,7 +190,7 @@ and even then no reset link goes to an address that was never confirmed.
 `confirmedAt`; `sent` (`{ at, ok }` for the latest confirm mail of the current address, `ok` null while
 it is on its way, or null if none was made; a mail still "on its way" after a minute reads `ok:
 false`); `pending` (`{ address, requestedAt, sent }` or null); `needsAddress`. An account from
-before stage 28 that has a Google identity whose email is the account's address (by `emailKey`)
+before stage 32 that has a Google identity whose email is the account's address (by `emailKey`)
 reads as `confirmed`, `confirmedBy: "google"`, at the identity's `addedAt`, at once; the next Google
 login of that account writes it to the file.
 
@@ -221,14 +224,14 @@ password is switched off) and never contains a reset link.
   address is unconfirmed; AND a confirm link was successfully sent to that address by Frontier and
   ran out unopened, so the holder had 24 hours to prove it and did not (`emailLinkSentUntil` is in
   the past and no newer live link is out; a link whose mail failed does not count). An account that
-  was never sent a confirm link, which is every account from before stage 28 until it presses "Send
+  was never sent a confirm link, which is every account from before stage 32 until it presses "Send
   a link", is never displaced: the answer is `account_exists`, as it is for every other account.
   When it does happen, the other account's address is cleared in the same write that makes the new
   account, its confirm, change and reset links die, `emailDisplaced` is set (`emailInfo.needsAddress`,
   `status: "none"`, `needsProfile: true`), and it keeps its sessions and passkeys. A joining that
   fails after the swap puts back **only the address and its confirmation fields** onto the other
   account as it is by then, not an old copy of the whole account. A displaced account is not "the
-  account with no email" of stage 27c's blank-email login, so that rule is not broken or stolen; it
+  account with no email" of stage 31c's blank-email login, so that rule is not broken or stolen; it
   is not offered `emailless`.
 - **`PUT /api/me` cannot set or swap an address with mail on** (`use_change_address`), the first
   address of an account that has none included, or the confirmation could be skipped, or a stolen
@@ -369,7 +372,7 @@ that the invite box says the server cannot send email and Signing in shows the a
 
 ### Departures from the mockup
 
-- The invite box stays inline on Members (as built in 27c), not a dialog or bottom sheet, so Escape
+- The invite box stays inline on Members (as built in 31c), not a dialog or bottom sheet, so Escape
   rules for the dialog do not apply; Enter in the address field sends. With mail off the button keeps
   its old name "Make an invite link"; with mail on it reads "Make the link" / "Send the invite".
 - The "from noreply@haviv.pro" in the mockup is not written in the app: the sender is configuration.

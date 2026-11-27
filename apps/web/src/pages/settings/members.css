@@ -1,4 +1,4 @@
-/* Settings → Members (stage 27c). */
+/* Settings → Members (stage 31c). */
 .members .people {
   list-style: none;
   margin: var(--space-3) 0 0;
@@ -167,7 +167,7 @@ textarea.linkbox {
   color: var(--ink);
 }
 
-/* Stage 28: the optional address of an emailed invitation, and what became of the mail. */
+/* Stage 32: the optional address of an emailed invitation, and what became of the mail. */
 .invite-form {
   display: grid;
   gap: var(--space-3);

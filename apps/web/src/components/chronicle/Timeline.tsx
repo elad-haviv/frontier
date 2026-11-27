@@ -79,7 +79,7 @@ interface Props {
   onGroupMenu: (lane: string) => ReactNode;
   onRenameGroup: (lane: string, name: string) => void;
   /**
-   * A reader looks and selects but changes nothing (stage 27c): nothing is dragged, drawn, typed
+   * A reader looks and selects but changes nothing (stage 31c): nothing is dragged, drawn, typed
    * or added, and no group menu or add button is drawn.
    */
   readOnly?: boolean;

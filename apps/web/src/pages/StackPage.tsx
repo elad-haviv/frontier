@@ -58,7 +58,7 @@ export function StackPage() {
   const [params, setParams] = useSearchParams();
   const stack = useMapStack(id);
   const { order, maps, names } = stack;
-  // Editing is for writers: a reader opening `?edit=1` simply reads (stage 27c).
+  // Editing is for writers: a reader opening `?edit=1` simply reads (stage 31c).
   const canWrite = useCanWrite();
   const [wantsEdit, setEditing] = useState(params.get("edit") === "1");
   const editing = wantsEdit && canWrite;

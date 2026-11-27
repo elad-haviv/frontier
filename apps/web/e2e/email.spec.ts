@@ -2,7 +2,7 @@ import { expect, type Browser, type BrowserContext, type Page, test } from "./te
 import { api, EMAIL, noSidewaysScroll, PASSWORD, tidyPeople } from "./helpers.ts";
 
 /**
- * Stage 28: email. These run against the second e2e server (`E2E_MAIL=1`, see
+ * Stage 32: email. These run against the second e2e server (`E2E_MAIL=1`, see
  * `playwright.config.ts`), which keeps the mail it sends in memory and shows it at
  * `/api/test/mail`. Nobody is logged in at the start: each test logs in or joins as a person would.
  * People made here stay accounts on the server, so every address is new, and the owner's project

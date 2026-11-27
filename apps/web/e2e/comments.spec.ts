@@ -2,7 +2,7 @@ import { expect, type Browser, type BrowserContext, type Page, test } from "./te
 import { api, entry, rightPanel, tidyPeople } from "./helpers.ts";
 
 /**
- * Stage 27e: comments between people. A reader comments on an entry, a writer sees it at once,
+ * Stage 31e: comments between people. A reader comments on an entry, a writer sees it at once,
  * replies and resolves, the reader sees that at once, and the reader cannot edit or delete what
  * the writer wrote. Comments made here are deleted at the end; the people by `tidyPeople`.
  */

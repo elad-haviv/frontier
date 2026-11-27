@@ -3,7 +3,7 @@ import yazl from "yazl";
 import { proj, openLibrary, openSideBar, PROJECT } from "./helpers.ts";
 
 /**
- * Stage 27b: projects. The e2e server's first project is "Sample" (its address is `sample`). The
+ * Stage 31b: projects. The e2e server's first project is "Sample" (its address is `sample`). The
  * tests make others, and each one is taken away again (and the first made the one used last) so
  * the specs after this one find the library as they left it.
  */

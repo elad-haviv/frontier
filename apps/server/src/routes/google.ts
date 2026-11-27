@@ -1,5 +1,5 @@
 /**
- * Sign-on with Google (stage 27c), the two public routes of the authorization code flow.
+ * Sign-on with Google (stage 31c), the two public routes of the authorization code flow.
  *
  * Google only says who someone is. What that means for an account is decided here, in this order,
  * and never by matching an email:
@@ -215,7 +215,7 @@ export function googleRoutes(app: FastifyInstance, s: Server): void {
 
     // 1: an account that already has this Google identity.
     if (linked) {
-      // An account from before stage 28 whose address is the one Google verifies is confirmed by
+      // An account from before stage 32 whose address is the one Google verifies is confirmed by
       // Google; `confirmedOf` already reads it so, and this login writes it down.
       if (
         linked.emailConfirmedAt === null &&

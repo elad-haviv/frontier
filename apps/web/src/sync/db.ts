@@ -51,7 +51,7 @@ export interface QueueRecord {
   /** Why the last send failed, in words. */
   error?: string;
   /**
-   * The server refused it because the person's role no longer allows changes (stage 27c). It is
+   * The server refused it because the person's role no longer allows changes (stage 31c). It is
    * not sent again; it is offered to copy out or discard, as a change in a project that is gone.
    */
   refused?: "role_too_low";

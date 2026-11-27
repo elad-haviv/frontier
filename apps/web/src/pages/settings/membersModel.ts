@@ -1,5 +1,5 @@
 /**
- * The words of Settings → Members (stage 27c), kept apart from the page so they can be tested:
+ * The words of Settings → Members (stage 31c), kept apart from the page so they can be tested:
  * how long an invite link has left, when a person was last here, what a role may do, and what
  * the server's refusals mean for the person reading them.
  */
@@ -65,7 +65,7 @@ export function peopleLine(count: number, project: string, owner: boolean): stri
   return `${count} people can open ${project}.`;
 }
 
-// ---- Invitations that are emailed (stage 28) -------------------------------------------------
+// ---- Invitations that are emailed (stage 32) -------------------------------------------------
 
 /** The sentence under a link just made: who it is for and how it works. */
 export function inviteNote(role: ProjectRole, mailOn: boolean | null): string {

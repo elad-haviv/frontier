@@ -1,5 +1,5 @@
 /**
- * The fixes after the review of stage 27c (members, invitations, joining, Google, the reader's saved
+ * The fixes after the review of stage 31c (members, invitations, joining, Google, the reader's saved
  * view). Each test here would have failed before its fix.
  */
 import { execFileSync } from "node:child_process";
@@ -99,7 +99,7 @@ describe("a change a person makes to themselves is answered over a real connecti
     await reading.read();
     const left = await send(writer, "POST", `${base}/members/leave`);
     expect(left.status).toBe(200);
-    // Stage 27d: leaving also says how many unsaved changes stay behind, kept for 30 days.
+    // Stage 31d: leaving also says how many unsaved changes stay behind, kept for 30 days.
     expect(await left.json()).toEqual({ ok: true, unsavedKept: 0, keptDays: 30 });
     const ended = await Promise.race([
       reading.read().then(
@@ -666,7 +666,7 @@ describe("the history of a library", () => {
 });
 
 describe("what a reader is told of comments", () => {
-  // Stage 27e: comments are shared, so the open count is told to a reader as to anyone.
+  // Stage 31e: comments are shared, so the open count is told to a reader as to anyone.
   it("is the open count: the work queue and from-here count them for a reader too", async () => {
     const t = await app();
     await t.login();

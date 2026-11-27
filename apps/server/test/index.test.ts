@@ -291,7 +291,7 @@ describe("status", () => {
       const read = async () => new TextDecoder().decode((await reader.read()).value);
       const first = await read();
       expect(first.startsWith("event: status\ndata: {")).toBe(true);
-      // Stage 27d: the count in the stream is the person's own, read from their drafts, so the
+      // Stage 31d: the count in the stream is the person's own, read from their drafts, so the
       // change is a real unsaved change rather than a number put into the status.
       await t.put("/api/drafts", {
         id: "streamdraft1",

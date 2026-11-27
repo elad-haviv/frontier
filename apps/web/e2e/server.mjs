@@ -8,7 +8,7 @@ import { clearTimeout, setTimeout } from "node:timers";
 import { fileURLToPath } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
-// A second server for the mail specs (stage 28) keeps its own folder, so the two never share a vault.
+// A second server for the mail specs (stage 32) keeps its own folder, so the two never share a vault.
 const dataDir = join(here, "..", "..", "..", process.env.E2E_DATA ?? ".e2e-data");
 rmSync(dataDir, { recursive: true, force: true });
 
@@ -29,7 +29,7 @@ Object.assign(process.env, {
   LOGIN_ATTEMPTS: "100",
 });
 
-// Mail is off, as on a server with no relay, unless E2E_MAIL=1 (stage 28): then the messages are
+// Mail is off, as on a server with no relay, unless E2E_MAIL=1 (stage 32): then the messages are
 // kept in memory and the specs read them at GET /api/test/mail (DELETE clears them). That route
 // exists only with this transport, which the server refuses in production.
 if (process.env.E2E_MAIL === "1") process.env.MAIL_TEST_TRANSPORT = "memory";

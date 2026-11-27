@@ -321,7 +321,7 @@ describe("the save queue", () => {
   });
 });
 
-describe("entry text is never dropped by a refusal (stage 27d)", () => {
+describe("entry text is never dropped by a refusal (stage 31d)", () => {
   const typed = { kind: "edit" as const, draftId: "draft0000001", revision: 1, baseBlob: "b0" };
 
   it("keeps the text of a save answered 404, for Retry or Discard, and does not send it again by itself", async () => {
@@ -412,7 +412,7 @@ describe("entry text is never dropped by a refusal (stage 27d)", () => {
   });
 });
 
-describe("a save refused for want of a role (stage 27c)", () => {
+describe("a save refused for want of a role (stage 31c)", () => {
   it("is not sent again, and is marked as refused for the role", async () => {
     const api = fakeApi();
     api.saveDraft = vi.fn(async () => {
@@ -440,7 +440,7 @@ describe("a save refused for want of a role (stage 27c)", () => {
   });
 });
 
-describe("a refused save, once the role is back (stage 27c review)", () => {
+describe("a refused save, once the role is back (stage 31c review)", () => {
   /** A queue whose save is refused while `roleLow` is true. */
   async function refusedQueue() {
     const api = fakeApi();

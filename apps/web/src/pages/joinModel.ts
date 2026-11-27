@@ -1,5 +1,5 @@
 /**
- * The words of the join page and of the Google problems (stage 27c), as plain functions so they
+ * The words of the join page and of the Google problems (stage 31c), as plain functions so they
  * can be tested: what a dead link says, who to ask, what each `problem` of a Google trip means.
  */
 import type { ProjectRole } from "@frontier/schema";
@@ -134,7 +134,7 @@ export function joinAddress(code: string, m: string | null): string {
 const same = (a: string, b: string): boolean => a.trim().toLowerCase() === b.trim().toLowerCase();
 
 /**
- * The line under the email field of the join page (stage 28). Only while the server sends mail:
+ * The line under the email field of the join page (stage 32). Only while the server sends mail:
  * with it off the page looks as it did. `emailed` is the address the invitation was emailed to, which
  * the server gives only for the emailed link itself.
  */

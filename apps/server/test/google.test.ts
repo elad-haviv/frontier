@@ -1,5 +1,5 @@
 /**
- * Google sign-on (stage 27c) against a stand-in OpenID Connect provider: the authorization code
+ * Google sign-on (stage 31c) against a stand-in OpenID Connect provider: the authorization code
  * flow with PKCE, state and nonce, and every refusal.
  */
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";

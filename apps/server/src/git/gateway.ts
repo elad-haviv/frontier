@@ -719,7 +719,7 @@ export class GitGateway {
    * As `lastChange`, for a path at a commit the caller already knows is the working copy's (the
    * index's commit). Answered from one map of every path's last version, built by one pass over the
    * log and, for each new commit after that, by reading only the commits since; a read of an entry
-   * costs no Git command once the map is there, instead of a `git log` for each (stage 27d).
+   * costs no Git command once the map is there, instead of a `git log` for each (stage 31d).
    */
   async lastChangeAt(path: string, commit: string): Promise<SavedChange | null> {
     const held =

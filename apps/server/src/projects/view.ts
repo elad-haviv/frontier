@@ -25,7 +25,7 @@ export const savedViewOnly = (): boolean => saved.getStore() === true;
 export const outsideSavedView = <T>(work: () => T): T => saved.exit(work);
 
 /**
- * Whose unsaved changes a request works with (stage 27d). Each person has their own: the draft
+ * Whose unsaved changes a request works with (stage 31d). Each person has their own: the draft
  * store answers for the person set here and nobody else, so a route written as if there were one
  * author cannot reach another person's draft by id, by path or by listing. `facade.ts` runs every
  * handler inside `asPerson` with the session's person.

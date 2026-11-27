@@ -1,5 +1,5 @@
 /**
- * The asks for a key that wait for the dialog (stage 27f), kept apart from the dialog so the rules
+ * The asks for a key that wait for the dialog (stage 31f), kept apart from the dialog so the rules
  * can be tested: one dialog at a time, for the oldest ask; an ask is answered only by a key for the
  * provider it names (a key for another provider does not do), and asks queue per provider so two
  * requests that race each get the key they need.

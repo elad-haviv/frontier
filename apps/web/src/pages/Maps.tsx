@@ -75,7 +75,7 @@ export function MapsPage() {
     if (!search.current) return false;
     search.current.focus();
   });
-  // Making, editing, renaming and deleting maps are writers' (stage 27c).
+  // Making, editing, renaming and deleting maps are writers' (stage 31c).
   const canWrite = useCanWrite();
   useShortcut("maps.new", () => (canWrite ? setMaking("flat") : false));
 

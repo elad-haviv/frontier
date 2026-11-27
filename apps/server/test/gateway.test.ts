@@ -405,7 +405,7 @@ describe("the log of changes (stage 25)", () => {
   });
 });
 
-describe("who made a version (stage 27d)", () => {
+describe("who made a version (stage 31d)", () => {
   const WREN = { name: "Wren Writer", email: "wren@example.com" };
 
   it("gives the author of each saved version in the history", async () => {

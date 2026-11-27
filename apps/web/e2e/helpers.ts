@@ -112,7 +112,7 @@ export const lastBody = () => git(REMOTE, "log", "-1", "--format=%B", "main");
 
 /**
  * The e2e server's first project: it is named from the sample, so its address is `sample`. Every
- * page of the app is under `/p/<slug>/` (stage 27b); the specs write addresses as the app's pages
+ * page of the app is under `/p/<slug>/` (stage 31b); the specs write addresses as the app's pages
  * know them (`/maps`, `/e/...`) and put them through `proj`.
  */
 export const PROJECT = "sample";
@@ -425,7 +425,7 @@ export async function answerDialog(page: Page, button: string, value?: string): 
 export const DEVICE_KEY = "sk-or-browser-test-key";
 
 /**
- * Puts AI keys on this browser's device storage, as adding them in Settings does (stage 27f).
+ * Puts AI keys on this browser's device storage, as adding them in Settings does (stage 31f).
  * The seeding runs once per tab, before the app starts, so a key the test then removes stays
  * removed through reloads. `page.evaluate` does the same at once when the app is open already.
  */
@@ -444,7 +444,7 @@ export async function giveDeviceKeys(
 
 /**
  * Starts a spec from a clean slate for the signed-in person: no AI model chosen and "propose on
- * publish" off (the choices are the person's own, since stage 27a, and another spec may have left
+ * publish" off (the choices are the person's own, since stage 31a, and another spec may have left
  * them), and no draft of the given entries left over. Through the API, so the spec does not
  * depend on the order the specs ran in.
  */

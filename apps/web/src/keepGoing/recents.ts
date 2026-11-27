@@ -141,7 +141,7 @@ export interface RecentsDeps {
   now?: () => number;
   /** Stands in for the timer that delays writing positions, in tests. */
   later?: (run: () => void, ms: number) => unknown;
-  /** The storage key of the open library's recents; each project has its own (stage 27b). */
+  /** The storage key of the open library's recents; each project has its own (stage 31b). */
   key?: () => string;
 }
 

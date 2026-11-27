@@ -43,7 +43,7 @@ type Load =
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 /**
- * The page an invite link opens (`/join/<code>`, stage 27c): outside every project, and open to
+ * The page an invite link opens (`/join/<code>`, stage 31c): outside every project, and open to
  * someone who is not logged in. It says who invited you, to what and as what, and lets you join:
  * with a passkey on this device, with Google, or with an email and a password. A person who is
  * logged in joins with the account they have; one whose email already has an account is asked to
@@ -68,7 +68,7 @@ export function JoinPage({
   const location = useLocation();
   // The reason a Google trip came back is said once, and taken off the address.
   const [problem] = useState(() => new URLSearchParams(location.search).get("problem"));
-  // The proof from an emailed link (`?m=`, stage 28) goes with every call about this invitation.
+  // The proof from an emailed link (`?m=`, stage 32) goes with every call about this invitation.
   // It stays in the address, so a reload keeps it; taking the problem off keeps it too.
   const [m] = useState(() => proofOf(location.search));
   useEffect(() => {
@@ -220,7 +220,7 @@ function Invitation({
   code: string;
   info: JoinInfo;
   person: { id: string; name: string; email: string } | null;
-  /** Whether the server sends mail (stage 28). */
+  /** Whether the server sends mail (stage 32). */
   mail: boolean;
   /** The proof from an emailed link, carried on every call about the invitation. */
   m: string | null;
@@ -247,7 +247,7 @@ function Invitation({
   const [busy, setBusy] = useState<null | "passkey" | "password" | "accept" | "login" | "google">(
     null,
   );
-  // The Google profile waiting for a click (stage 27c): shown until it is joined with or dropped.
+  // The Google profile waiting for a click (stage 31c): shown until it is joined with or dropped.
   const [waiting, setWaiting] = useState(info.pendingGoogle);
   const [error, setError] = useState<string | null>(googleProblem(problem));
   // Why the page turned into a login form, when it did by itself.

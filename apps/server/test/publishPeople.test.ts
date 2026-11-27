@@ -1,5 +1,5 @@
 /**
- * Stage 27d, the parts of the publisher and the author lookup that a person-to-person test does not
+ * Stage 31d, the parts of the publisher and the author lookup that a person-to-person test does not
  * reach by itself: the bounds, the fallbacks, and the answers for a change that is already gone.
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";

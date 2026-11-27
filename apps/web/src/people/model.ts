@@ -1,5 +1,5 @@
 /**
- * The words and the small rules of "who did what" (stage 27d): authors on versions, the notice
+ * The words and the small rules of "who did what" (stage 31d): authors on versions, the notice
  * that someone else has unsaved changes to an entry, and who is reading. No React in here.
  */
 import type { OtherUnsaved, Reading } from "@frontier/schema";

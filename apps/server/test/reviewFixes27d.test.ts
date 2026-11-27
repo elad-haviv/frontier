@@ -1,5 +1,5 @@
 /**
- * The fixes after the review of stage 27d (unsaved changes per person, saved versions by several
+ * The fixes after the review of stage 31d (unsaved changes per person, saved versions by several
  * people, presence). Each test here would have failed before its fix.
  */
 import { execFileSync } from "node:child_process";
@@ -30,7 +30,7 @@ import {
 const MIRA = "02 People/Mira.md";
 const SHADE = "02 People/Shade.md";
 
-describe("the stage 27d review: saved versions and who made them", () => {
+describe("the stage 31d review: saved versions and who made them", () => {
   let t: TestApp;
   let base: string;
   let projectId: string;
@@ -180,7 +180,7 @@ describe("the stage 27d review: saved versions and who made them", () => {
       const w = await edit(wren, MIRA, WREN);
       const r = await edit(rex, MIRA, REX1);
       await confirm(rex, (await plan(rex, [r])).planId);
-      // The web app before 27d: a plan shows the conflict, then it resolves with the text alone.
+      // The web app before 31d: a plan shows the conflict, then it resolves with the text alone.
       expect((await plan(wren, [w])).conflicts).toHaveLength(1);
       const r2 = await edit(rex, MIRA, REX2, newId());
       await confirm(rex, (await plan(rex, [r2])).planId);
@@ -418,7 +418,7 @@ describe("the stage 27d review: saved versions and who made them", () => {
       expect((await entry(wren, SHADE)).text).toBe("# Shade\n\nWren's text.\n");
     });
 
-    it("finds the pre-27d draft a person's own device still knows by its old id", async () => {
+    it("finds the pre-31d draft a person's own device still knows by its old id", async () => {
       // A draft from before people belongs to the first owner (the admin), whatever device made it.
       const legacy = "legacyidxxxx";
       await t.services.drafts.saveFrom({
@@ -811,7 +811,7 @@ describe("the stage 27d review: saved versions and who made them", () => {
 
 // ---- Items 10, 12, 13: presence and the status stream -------------------------------------------
 
-describe("the stage 27d review: presence and the status stream", () => {
+describe("the stage 31d review: presence and the status stream", () => {
   let t: TestApp;
   let base: string;
   let wren: Client;
@@ -1049,7 +1049,7 @@ describe("the stage 27d review: presence and the status stream", () => {
 
 // ---- Items 15 and 16: what is worked out once --------------------------------------------------
 
-describe("the stage 27d review: the library index and the status are worked out once", () => {
+describe("the stage 31d review: the library index and the status are worked out once", () => {
   it("answers hasFile from a set, and follows `files` when it is replaced", () => {
     const index = new VaultIndex("/nowhere");
     index.files = ["a.md", "b/c.md"];

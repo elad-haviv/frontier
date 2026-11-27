@@ -21,13 +21,13 @@ import {
   statusOf,
 } from "../src/index.js";
 
-describe("stage 28: email", () => {
+describe("stage 32: email", () => {
   it("links last 24 hours (confirm) and 30 minutes (reset)", () => {
     expect(CONFIRM_LINK_HOURS).toBe(24);
     expect(RESET_LINK_MINUTES).toBe(30);
   });
 
-  it("an account from before stage 28 reads as unconfirmed, with nothing waiting", () => {
+  it("an account from before stage 32 reads as unconfirmed, with nothing waiting", () => {
     const p = Person.parse({ id: "p", createdAt: "2026-11-01T00:00:00.000Z" });
     expect(p).toMatchObject({
       emailConfirmedAt: null,

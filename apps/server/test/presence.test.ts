@@ -1,5 +1,5 @@
 /**
- * Stage 27d: who is reading which entry. In memory only, per project, told to writers and owners
+ * Stage 31d: who is reading which entry. In memory only, per project, told to writers and owners
  * through the status stream, cleared on leave, on timeout and when the person's stream ends.
  */
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";

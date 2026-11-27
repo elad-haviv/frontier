@@ -14,7 +14,7 @@ const AGAIN_MS = 30_000;
 
 /**
  * "Confirm your email: we sent a link to ..." above every page, with Resend and Change address
- * (stage 28). It has no close button and goes by itself once the address is confirmed, which it
+ * (stage 32). It has no close button and goes by itself once the address is confirmed, which it
  * learns by asking again when the person comes back to the tab, when the connection says things
  * may have changed, and (while a link was sent or is on its way) every half minute. It is never drawn with mail off.
  */

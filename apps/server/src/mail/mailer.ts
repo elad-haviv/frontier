@@ -1,6 +1,6 @@
 /**
- * Sending mail (stage 28). Mail is on only when the server is configured for it; with no relay
- * every feature that would send a message does what it did before stage 28.
+ * Sending mail (stage 32). Mail is on only when the server is configured for it; with no relay
+ * every feature that would send a message does what it did before stage 32.
  *
  * Nothing here logs a message, its links or its codes. A failure is reported by kind and error
  * code only (an SMTP error text can quote the recipient).

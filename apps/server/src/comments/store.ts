@@ -4,22 +4,22 @@
  * of the text on each side, not a position, so it stays with the passage while the text changes;
  * the editor finds it again.
  *
- * Stage 27e: comments are between people. Each comment and each reply has an author (a person id,
+ * Stage 31e: comments are between people. Each comment and each reply has an author (a person id,
  * with the name as it was when it was written, for the day the account is gone) and times; a
  * thread can be resolved and reopened. This store only keeps and changes them: who may do what is
  * decided by the routes (`routes/comments.ts`) from `rules.ts`.
  *
  * A comment from before people has no author. It is read as the project's first owner's, and the
  * first load that can name one writes that into the file, so a project that had no owner yet when
- * 27e arrived is finished later; running it again changes nothing.
+ * 31e arrived is finished later; running it again changes nothing.
  *
- * Such a comment is also marked `legacy`: before 27e only the writers and the owner could read
+ * Such a comment is also marked `legacy`: before 31e only the writers and the owner could read
  * comments, so a legacy comment stays for writers and owners only until its author or an owner
- * shares it with everyone (`share`). The first 27e build gave these comments to the first owner
+ * shares it with everyone (`share`). The first 31e build gave these comments to the first owner
  * without a mark, so a file that does not carry `version: 2` is corrected once, on the first start
  * of this build: every comment in it that has no author, or whose author is the first owner (or
  * when no owner can be named yet), is marked legacy. That can only hide more than was shared
- * (a comment the first owner really wrote under 27e is hidden from readers until they share it),
+ * (a comment the first owner really wrote under 31e is hidden from readers until they share it),
  * never show more than before. The file is then written with `version: 2` and this runs no more.
  */
 import { randomBytes } from "node:crypto";

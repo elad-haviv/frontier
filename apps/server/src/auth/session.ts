@@ -30,7 +30,7 @@ export function startSession(request: FastifyRequest, person: Person, method: Me
 /**
  * Ends every other session of the account, for a change to how it is logged into. Use it inside
  * the people store's change, so the new epoch is written with the change itself. A change of
- * address that was waiting for its link is dropped with them (stage 28): whoever asked for it may
+ * address that was waiting for its link is dropped with them (stage 32): whoever asked for it may
  * be exactly who was just logged out.
  */
 export const endOtherSessions = (p: Person): Person => ({
@@ -95,7 +95,7 @@ export function personOf(request: FastifyRequest): Person {
 export { STAND_IN_DOMAIN };
 
 /**
- * Who a saved version is by (stage 27d: every one made through the app, in both modes of library):
+ * Who a saved version is by (stage 31d: every one made through the app, in both modes of library):
  * the person's own name and email. For what they have not given, a name from the part of the email
  * before the "@" (or "Someone" with no email either), and an email that stands in for it
  * (`<id>@people.frontier.invalid`, which can be traced back to the person and receives nothing).

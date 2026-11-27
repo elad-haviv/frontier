@@ -1,5 +1,5 @@
 /**
- * What mail does to accounts (stage 28): confirm links, a change of address, reset links, and the
+ * What mail does to accounts (stage 32): confirm links, a change of address, reset links, and the
  * explanatory email for an account with no password.
  *
  * Every code is 192 random bits, kept only as a SHA-256 on the account, looked up in constant time
@@ -320,7 +320,7 @@ export function noteAddressChanged(
 export async function handleForgot(server: Server, address: string): Promise<void> {
   const person = await server.people.byEmail(address);
   if (!person) return;
-  // An address the account itself set after stage 28 and nobody confirmed gets no reset link:
+  // An address the account itself set after stage 32 and nobody confirmed gets no reset link:
   // whoever set it need not own the mailbox. (An address given at joining, or from before stage
   // 28, still gets one, and opening it confirms the address.)
   if (!mayReceiveReset(person)) return;

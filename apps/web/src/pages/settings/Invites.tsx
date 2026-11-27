@@ -26,7 +26,7 @@ import "../../email/email.css";
 import "./members.css";
 
 /**
- * Invite links: make one, copy it, and the ones still waiting. Owners only. With mail on (stage 28)
+ * Invite links: make one, copy it, and the ones still waiting. Owners only. With mail on (stage 32)
  * the link can also be emailed: an optional address beside the role, "Send the invite" instead of
  * "Make the link", and a waiting invitation that was emailed says where, and can be sent again
  * (which makes a new link, since the server keeps only a fingerprint of each one). The link is

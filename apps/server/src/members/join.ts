@@ -92,7 +92,7 @@ async function claim(server: Server, code: string, invite: InviteRecord): Promis
  * uses the invitation up: all or nothing, one after another with every other join. The email is
  * checked before the link is touched, so a refused email leaves the link as it was.
  *
- * Stage 28: an address counts as confirmed when Google verified it (`google`), or when the
+ * Stage 32: an address counts as confirmed when Google verified it (`google`), or when the
  * invitation was emailed to exactly this address AND the join carries the proof that is only in
  * the emailed link (`proof`, constant-time); the owner who made the invitation has the link, not
  * the proof, and a join without it gets a confirm link like any other address. A Google-verified

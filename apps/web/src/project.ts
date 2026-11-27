@@ -1,5 +1,5 @@
 /**
- * Which project the app has open, and every address that depends on it (stage 27b).
+ * Which project the app has open, and every address that depends on it (stage 31b).
  *
  * A project's pages live under `/p/<slug>/...`, and its server calls under `/api/p/<slug>/...`.
  * Nothing else in the app writes either prefix: pages write addresses as if there were one

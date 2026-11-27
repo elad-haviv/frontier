@@ -9,7 +9,7 @@ import {
 import { api, edit, entry, onMain, openLibrary, proj, saved, tidyPeople } from "./helpers.ts";
 
 /**
- * Stage 27d: two people in one project. Each has their own unsaved changes; the others are told who
+ * Stage 31d: two people in one project. Each has their own unsaved changes; the others are told who
  * has some (never what); who is reading shows; whoever saves second compares the two texts and
  * chooses; every saved version says who saved it.
  *

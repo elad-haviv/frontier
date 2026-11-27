@@ -116,7 +116,7 @@ export class InviteStore {
     projectId: string;
     role: ProjectRole;
     createdBy: string;
-    /** Stage 28: the address the link is going to be emailed to. */
+    /** Stage 32: the address the link is going to be emailed to. */
     email?: string;
   }): Promise<{ invite: InviteRecord; code: string; proof: string | null }> {
     const code = newInviteCode();

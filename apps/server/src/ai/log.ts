@@ -22,7 +22,7 @@ export const AiCall = z.object({
    * (then `costUsd` is 0). Absent in older lines, whose cost OpenRouter reported.
    */
   costKind: CostKind.optional(),
-  /** Who made the call (their id). Absent in lines written before stage 27f: the admin's. */
+  /** Who made the call (their id). Absent in lines written before stage 31f: the admin's. */
   person: z.string().optional(),
   /** The entry the call was about, when there is one. */
   entry: z.string().nullable(),

@@ -49,7 +49,7 @@ function make(fetch: typeof globalThis.fetch) {
   return { c, events };
 }
 
-describe("the status stream names its tab (stage 27d)", () => {
+describe("the status stream names its tab (stage 31d)", () => {
   it("opens the stream with ?client=, the name the announcements of who is reading carry", () => {
     FakeSource.made = [];
     slug = "avalymia";
@@ -102,7 +102,7 @@ describe("the connection service", () => {
     c.stop();
   });
 
-  it("says the person's access may have changed when the stream ends and the server still answers (27c)", async () => {
+  it("says the person's access may have changed when the stream ends and the server still answers (31c)", async () => {
     // The server closes a person's streams when their role changes or they are taken out.
     const fetch = vi.fn(() => answer(200, { unpublished: 0 }));
     const { c } = make(fetch as unknown as typeof globalThis.fetch);
@@ -122,7 +122,7 @@ describe("the connection service", () => {
     c.stop();
   });
 
-  it("does not say it when the stream ended because the server cannot be reached (27c)", async () => {
+  it("does not say it when the stream ended because the server cannot be reached (31c)", async () => {
     const fetch = vi.fn(() => Promise.reject(new TypeError("down")));
     const { c } = make(fetch as unknown as typeof globalThis.fetch);
     const heard = vi.fn();

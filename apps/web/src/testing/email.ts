@@ -1,4 +1,4 @@
-/** People and addresses as the server describes them, for the tests of the email screens (stage 28). */
+/** People and addresses as the server describes them, for the tests of the email screens (stage 32). */
 import type { EmailInfo, MeResponse } from "@frontier/schema";
 
 const AT = "2026-11-27T10:00:00.000Z";

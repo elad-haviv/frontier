@@ -149,7 +149,7 @@ export function EntryPage() {
   // an entry that is only a draft, and then the foot of the page is quiet about it.
   const fromHere = useAsync(() => api.fromHere(path), `from-here:${path}@${key}`);
   const here = fromHere.state === "ready" && fromHere.value.path === path ? fromHere.value : null;
-  // Comments are between people (stage 27e): every role reads and adds them. They are read again
+  // Comments are between people (stage 31e): every role reads and adds them. They are read again
   // when the stream says an entry's comments changed.
   const canWrite = useCanWrite();
   const commentsOf = useComments(path);

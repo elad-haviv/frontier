@@ -2,7 +2,7 @@ import { expect, test } from "./test.ts";
 import { EMAIL, noSidewaysScroll, proj } from "./helpers.ts";
 
 /**
- * Stage 28 with the mail switched off (the main e2e server has no relay): nothing about email
+ * Stage 32 with the mail switched off (the main e2e server has no relay): nothing about email
  * shows, except that the invite box says the server cannot send it, and Signing in shows the
  * address plainly. The specs of the mail itself are in `email.spec.ts`, against a second server.
  */

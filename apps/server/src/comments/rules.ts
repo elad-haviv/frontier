@@ -1,5 +1,5 @@
 /**
- * Who may do what with a comment (stage 27e). One place, so the routes and the tests say the same.
+ * Who may do what with a comment (stage 31e). One place, so the routes and the tests say the same.
  *
  *   read            everyone in the project reads the comments of saved entries; a comment for the
  *                   AI is its author's alone

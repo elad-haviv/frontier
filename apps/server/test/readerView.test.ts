@@ -1,5 +1,5 @@
 /**
- * What a reader sees (stage 27c): the last saved version of everything, never anyone's unsaved
+ * What a reader sees (stage 31c): the last saved version of everything, never anyone's unsaved
  * changes, whichever route they ask.
  */
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -108,7 +108,7 @@ describe("a reader gets the last saved version only", () => {
       ["PUT", `${base}/drafts`],
       ["POST", `${base}/import`],
       ["POST", `${base}/publish/plan`],
-      // Stage 27e: comments are read by every role, so `GET /comments` is no longer closed here.
+      // Stage 31e: comments are read by every role, so `GET /comments` is no longer closed here.
       ["POST", `${base}/comments/aaaaaaaaaaaa/work`],
     ] as const) {
       const res = await t.app.inject({

@@ -1,5 +1,5 @@
 /**
- * The small rules of comments between people (stage 27e), with no React in them: which threads are
+ * The small rules of comments between people (stage 31e), with no React in them: which threads are
  * open, how a selection on the page becomes a passage of the entry's Markdown, and the words.
  */
 import type { CommentPerson, PassageComment } from "../../api.ts";

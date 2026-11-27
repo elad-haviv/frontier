@@ -57,7 +57,7 @@ export function Profile() {
 
   if (!me) return <NoMe />;
 
-  // With mail on the address is not typed here (stage 28): it is changed under Signing in, where
+  // With mail on the address is not typed here (stage 32): it is changed under Signing in, where
   // the new one is confirmed before it replaces this one.
   const mailOn = me.emailInfo?.mailOn === true;
   const changed = name.trim() !== me.name || (!mailOn && email.trim() !== me.email);

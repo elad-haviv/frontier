@@ -5,7 +5,7 @@ import { outsideSavedView } from "../projects/view.js";
 type Listener = (snapshot: StatusSnapshot) => void;
 
 /**
- * What the snapshot says about one person (stage 27d): their own unsaved changes, and what they
+ * What the snapshot says about one person (stage 31d): their own unsaved changes, and what they
  * may know of other people's work in progress. A snapshot is the project's; each person's stream
  * lays this over it.
  */
@@ -46,7 +46,7 @@ export class StatusService {
       keptCopies?: () => number;
       /** The draft store's count of draft writes and discards. */
       draftChanges?: () => number;
-      /** What the snapshot says of one person's own work, and of other people's (stage 27d). */
+      /** What the snapshot says of one person's own work, and of other people's (stage 31d). */
       person?: (personId: string) => PersonalStatus;
       /** Who else is reading what, as this person is told. Asked for each time: it changes with every announcement. */
       presence?: (personId: string) => NonNullable<StatusSnapshot["presence"]>;

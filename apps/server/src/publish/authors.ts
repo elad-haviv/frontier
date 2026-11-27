@@ -6,7 +6,7 @@ import type { PeopleStore } from "../state/people.js";
 const STAND_IN = new RegExp(`^(.+)@${STAND_IN_DOMAIN.replace(/\./g, "\\.")}$`, "i");
 
 /**
- * Who a saved version is by, from the name and email Git recorded (stage 27d). A version the app
+ * Who a saved version is by, from the name and email Git recorded (stage 31d). A version the app
  * made carries the person's email, or a stand-in made from their id (`authorOf`), so it is traced
  * to an account here: then the person's name as it is now is shown, and their id given. A version
  * Git alone has anything to say about (made before people, by a bot, pushed from outside) shows the

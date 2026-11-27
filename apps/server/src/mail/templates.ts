@@ -1,5 +1,5 @@
 /**
- * The five emails of stage 28: invite, confirm address, reset password, reset with no password,
+ * The five emails of stage 32: invite, confirm address, reset password, reset with no password,
  * and address changed. Plain text first, then simple HTML with one button and the same link as
  * text. No images, no tracking. Everything a person typed (names, project names, addresses) is
  * escaped in the HTML, and a subject is one line.

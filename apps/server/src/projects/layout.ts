@@ -2,7 +2,7 @@
  * Where a project's files are, and which files in the data folder belong to the whole server and
  * which to one project.
  *
- * A project made after stage 27b lives under `DATA_DIR/projects/<id>/`:
+ * A project made after stage 31b lives under `DATA_DIR/projects/<id>/`:
  *
  *   library.git/   its repository (an own library)
  *   vault/         the working copy of `main`
@@ -53,7 +53,7 @@ export interface ProjectPaths {
   assets: string;
 }
 
-/** The folder of a project made after stage 27b. */
+/** The folder of a project made after stage 31b. */
 export const projectFolder = (dataDir: string, id: string): string => join(dataDir, "projects", id);
 
 export function pathsOf(

@@ -17,7 +17,7 @@ const short = (s: string, n: number) => (s.length > n ? `${s.slice(0, n)} …` :
 export type Adding = Anchor & { from?: number; to?: number };
 
 /**
- * The comments on an entry, between the people of the project (stage 27e): each thread has its
+ * The comments on an entry, between the people of the project (stage 31e): each thread has its
  * writer's name and the time, replies under it, a reply box, and resolve or reopen. The words of a
  * comment can be edited and deleted by their writer (an owner may delete anyone's). Everyone, a
  * reader too, reads and adds; a comment for the AI (a writer's own, never shown to anyone else)

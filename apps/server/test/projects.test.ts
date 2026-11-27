@@ -431,7 +431,7 @@ describe("two projects and two people kept apart", () => {
     ).toBe(404);
     // The unsaved entry is the second project's draft only.
     expect(t.services.drafts.list()).toEqual([]);
-    // (Stage 27d: unsaved changes are each person's own, so it is read as the person who made it.)
+    // (Stage 31d: unsaved changes are each person's own, so it is read as the person who made it.)
     expect(opened!.drafts.as(other.id, () => opened!.drafts.list().map((d) => d.id))).toEqual([
       "northdraft01",
     ]);

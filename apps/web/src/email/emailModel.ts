@@ -1,5 +1,5 @@
 /**
- * The words and rules of the email screens (stage 28), kept apart from the pages so they can be
+ * The words and rules of the email screens (stage 32), kept apart from the pages so they can be
  * tested: what the banner says for each state of an address, how each new refusal is worded, the
  * count under a new password, and the one address a reset can send a person back to.
  */

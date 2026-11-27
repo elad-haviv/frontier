@@ -17,7 +17,7 @@ export const HEARTBEAT_MS = 20_000;
 export function statusRoutes(app: RouteApp, s: Services): void {
   /**
    * The snapshot as this person gets it. The project's facts are everyone's; the unsaved changes,
-   * conflicts and kept copies are the person's own (stage 27d), and what other people have in
+   * conflicts and kept copies are the person's own (stage 31d), and what other people have in
    * progress and who is reading is for writers and owners. The notice about keys the server deleted
    * is for the server's owner, who can revoke them.
    */
@@ -27,7 +27,7 @@ export function statusRoutes(app: RouteApp, s: Services): void {
       ? snapshot
       : { ...snapshot, notices: { ...snapshot.notices, keysRemoved: null } };
     // A reader sees the saved library: none of the writers' unsaved changes, conflicts, inbox or
-    // kept copies (stage 27c), nor who is working on what or reading (27d). The role is read live,
+    // kept copies (stage 31c), nor who is working on what or reading (31d). The role is read live,
     // so a demotion shows on the next event.
     const live = request.project
       ? s.server.projects.roleOfSync(request.project.record.id, request.person?.id)
@@ -67,7 +67,7 @@ export function statusRoutes(app: RouteApp, s: Services): void {
     });
     const status = s.status;
     // What this stream sent last: an event that would say the same again is not sent, so a reader's
-    // stream shows nothing of a writer's saves that change nothing it may know (stage 27d).
+    // stream shows nothing of a writer's saves that change nothing it may know (stage 31d).
     let last = "";
     const send = () => {
       const data = JSON.stringify(snapshotFor(request, status));
@@ -97,7 +97,7 @@ export function statusRoutes(app: RouteApp, s: Services): void {
 }
 
 /**
- * Who is reading what (stage 27d). The web app announces the entry it has open, and repeats it every
+ * Who is reading what (stage 31d). The web app announces the entry it has open, and repeats it every
  * 25 seconds; the answer is delivered to writers and owners with the status. Nothing is stored, and
  * the project is the one in the address: presence never crosses projects.
  */

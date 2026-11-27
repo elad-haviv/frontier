@@ -1,5 +1,5 @@
 /**
- * What the person may do in a project, and how sure the app is (stage 27b).
+ * What the person may do in a project, and how sure the app is (stage 31b).
  *
  * The role is known from the project's own record, else from the list of projects, else from what
  * this device remembered the last time it knew. Until one of those has arrived the role is

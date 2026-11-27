@@ -1,5 +1,5 @@
 /**
- * AI keys live on the device (stage 27f). The server gets one with a request that needs it, uses
+ * AI keys live on the device (stage 31f). The server gets one with a request that needs it, uses
  * it for that request, and keeps nothing: not on disk, not in a backup, not in the AI call log,
  * not in the server's own log, not in an error that is sent back.
  */
@@ -269,7 +269,7 @@ describe("one person's key checks, spending and notice", () => {
       email: SECOND.email,
       name: SECOND.name,
     });
-    // The second person is in the project too (stage 27b), as a writer: the status is the project's.
+    // The second person is in the project too (stage 31b), as a writer: the status is the project's.
     await addMember(t, (await t.server.projects.all())[0]!.id, second.id, "writer");
     t.keys = { openrouter: SECRET };
     await t.put("/api/settings/ai", { models: { extraction: "test/model" } });

@@ -58,7 +58,7 @@ export function UnpublishedPage() {
   const [nudge, setNudge] = useState<{ n: number; steps: AfterPublishStep[] } | null>(null);
   /**
    * A save that went in for some entries and left others to compare, because someone else saved a
-   * newer version of them first (stage 27d): which went in, and which wait.
+   * newer version of them first (stage 31d): which went in, and which wait.
    */
   const [partial, setPartial] = useState<{
     saved: string[];

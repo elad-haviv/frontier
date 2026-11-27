@@ -112,7 +112,7 @@ export class SettingsStore {
   }
 
   /**
-   * Deletes the AI keys an earlier version stored in the settings file (stage 27f: keys now live
+   * Deletes the AI keys an earlier version stored in the settings file (stage 31f: keys now live
    * only in each person's browser), together with the provider entries and the monthly cap that
    * went with them, and leaves a one-time notice for the web app to show. Models chosen from an
    * endpoint that no longer exists are switched off. Runs at every start and does nothing once

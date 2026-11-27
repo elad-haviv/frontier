@@ -1,5 +1,5 @@
 /**
- * The first time someone without a key reaches an AI feature (stage 27f): the explanation and the
+ * The first time someone without a key reaches an AI feature (stage 31f): the explanation and the
  * field to add a key, in place, then the feature carries on with what they asked. `api.ts` opens
  * it when the server answers "no key on this device" or "the provider turned your key away", and
  * sends the same request again once the key the request needs is kept. A key for another

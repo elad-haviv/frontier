@@ -2,7 +2,7 @@ import { expect, type Browser, test } from "./test.ts";
 import { api, proj, tidyPeople } from "./helpers.ts";
 
 /**
- * Stage 27c: the web half of Google sign-on. The e2e server has no Google, and no provider to
+ * Stage 31c: the web half of Google sign-on. The e2e server has no Google, and no provider to
  * visit, so these tests stand in for the server's answers inside the browser: the session says
  * Google is offered, and the server's redirect after a trip that did not work is made by hand.
  * The server's side of the trip is covered by its own tests against a stand-in provider.

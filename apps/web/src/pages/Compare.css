@@ -1,4 +1,4 @@
-/* The compare screen (stage 27d, decision C): their text and mine side by side, three choices. */
+/* The compare screen (stage 31d, decision C): their text and mine side by side, three choices. */
 .compare-panes {
   display: grid;
   grid-template-columns: 1fr;

@@ -1,7 +1,7 @@
 /**
  * Draws a component for a test, inside what the app puts around its pages (a router, the dialogs,
  * toasts and tooltips, and the open project), and gives back what is needed to look at it and to
- * press things. Used by the tests of pages (stage 27c).
+ * press things. Used by the tests of pages (stage 31c).
  */
 import { act, createElement, type ReactElement } from "react";
 import { MemoryRouter } from "react-router-dom";

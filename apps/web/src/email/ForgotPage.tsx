@@ -13,7 +13,7 @@ import {
 import "./email.css";
 
 /**
- * `/forgot-password`: one field, then the same answer for every address (stage 28). A person with
+ * `/forgot-password`: one field, then the same answer for every address (stage 32). A person with
  * only a passkey or Google, and a stranger's address, read exactly what a person with a password
  * reads: the difference is in the inbox. Coming from an invitation's login form, the invitation's
  * address is remembered for an hour, so the link in the email can bring the person back to it.

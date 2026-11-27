@@ -27,7 +27,7 @@ export interface PresenceOptions {
 }
 
 /**
- * Who is reading which entry of one project, now (stage 27d). A light signal and nothing more:
+ * Who is reading which entry of one project, now (stage 31d). A light signal and nothing more:
  * kept in memory only, never written to disk or to a log, per project (a person reading in two
  * projects is two separate facts, each in its own project's `Presence`), gone when the server
  * restarts. Fed by the web app announcing the entry it has open (`PUT /presence`); cleared when the

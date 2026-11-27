@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 /**
- * Stage 27b: projects. A project is a library with its own members. `/data/state/projects.json`
+ * Stage 31b: projects. A project is a library with its own members. `/data/state/projects.json`
  * keeps the list (the "project store"); each record says who the members are and where the
  * project's files are. A project is addressed by its slug: `/api/p/<slug>/...` on the server,
  * `/p/<slug>/...` in the app.
@@ -87,7 +87,7 @@ export const ProjectMember = z.object({
   role: ProjectRole,
   addedAt: z.string().datetime(),
   /**
-   * When the person last used the project (stage 27c). Written at most once every few minutes, so
+   * When the person last used the project (stage 31c). Written at most once every few minutes, so
    * it is a rough "last seen", never an audit trail. Absent until they next use the project.
    */
   lastActiveAt: z.string().datetime().optional(),
@@ -121,7 +121,7 @@ export const ProjectRecord = z.object({
   iconFolder: z.string().nullable().default(null),
   members: z.array(ProjectMember).default([]),
   /**
-   * The ids of people who were members and are not now (stage 27d). Saved versions they made are
+   * The ids of people who were members and are not now (stage 31d). Saved versions they made are
    * still shown under their name; a person who was never a member is not looked up for a version.
    */
   formerMembers: z.array(z.string()).default([]),

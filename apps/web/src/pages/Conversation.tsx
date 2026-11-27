@@ -143,7 +143,7 @@ function Answer(p: {
   onChange: (c: LoreConversation) => void;
 }) {
   const { answer } = p.turn;
-  // Drafting text into an entry is for writers (stage 27c); a reader asks and reads.
+  // Drafting text into an entry is for writers (stage 31c); a reader asks and reads.
   const canWrite = useCanWrite();
   const [drafting, setDrafting] = useState(false);
   const [error, setError] = useState<string | null>(null);

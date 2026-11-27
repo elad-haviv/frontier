@@ -1,5 +1,5 @@
 /**
- * This device › AI keys (stage 27f): the providers and what this browser holds for each. A key is
+ * This device › AI keys (stage 31f): the providers and what this browser holds for each. A key is
  * kept only here, in this browser; the server never saves one. Test is a real check through the
  * server with the key in that one request. Everything but Test works with no connection, since
  * the keys are device state.

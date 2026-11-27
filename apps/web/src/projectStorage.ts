@@ -1,5 +1,5 @@
 /**
- * What this device remembers in the browser's own storage about one library (stage 27b): the
+ * What this device remembers in the browser's own storage about one library (stage 31b): the
  * entries read lately, where reading stopped, the maps opened lately, a chronicle's folded
  * spans… Each is filed under the signed-in person and the project's id, so it neither shows in
  * another project nor in another person's session on a shared browser, and is not lost when the

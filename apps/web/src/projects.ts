@@ -1,5 +1,5 @@
 /**
- * The projects the signed-in person is in (stage 27b): the list the switcher and All projects
+ * The projects the signed-in person is in (stage 31b): the list the switcher and All projects
  * show, read from the server and kept on the device so the app can still say what the person's
  * projects are with no connection. It is forgotten at log out, like the person (`me.ts`).
  *

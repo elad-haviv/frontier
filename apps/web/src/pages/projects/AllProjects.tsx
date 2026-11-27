@@ -147,7 +147,7 @@ function StrandedChanges() {
 }
 
 /**
- * All projects (stage 27b): a card for each project the person is in, and, for someone who may
+ * All projects (stage 31b): a card for each project the person is in, and, for someone who may
  * make one, a dashed card for a new project. Outside any project, so there is no side bar.
  */
 export function AllProjects() {

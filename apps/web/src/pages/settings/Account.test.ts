@@ -196,7 +196,7 @@ describe("Settings → Signing in, and Google", () => {
   });
 });
 
-describe("Settings → Signing in: the email address (stage 28)", () => {
+describe("Settings → Signing in: the email address (stage 32)", () => {
   it("puts the Email address block first, with the state of the address, when the server sends mail", async () => {
     const m = await show(
       me({

@@ -18,7 +18,7 @@ function makeHub(projects: () => KnownProject[]) {
   const state = { current: "offline" as ConnectionState };
   /** Projects the server now says are gone. */
   const gone = new Set<string>();
-  /** Projects where the person's role no longer allows a change (stage 27c). */
+  /** Projects where the person's role no longer allows a change (stage 31c). */
   const denied = new Set<string>();
   const told: string[] = [];
   const listeners = new Set<() => void>();
@@ -257,7 +257,7 @@ describe("changes in a project that turns out to be gone", () => {
   });
 });
 
-describe("changes refused for want of a role (stage 27c)", () => {
+describe("changes refused for want of a role (stage 31c)", () => {
   it("are listed with the project, which stays open to read, and thrown away one by one", async () => {
     const { hub, go, denied, sent } = makeHub(() => [A, B]);
     hub.setPerson("first");

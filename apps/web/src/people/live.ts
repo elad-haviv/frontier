@@ -1,5 +1,5 @@
 /**
- * The live decorations of stage 27d: who else has unsaved changes to an entry, and who is reading
+ * The live decorations of stage 31d: who else has unsaved changes to an entry, and who is reading
  * it. They come from the status stream and mean nothing without it, so none of them is shown while
  * the connection is down or for an answer the device copy gave, and a reader never sees them.
  */

@@ -1,5 +1,5 @@
 /**
- * Telling the project which entry this tab is reading (stage 27d). The server keeps it in memory
+ * Telling the project which entry this tab is reading (stage 31d). The server keeps it in memory
  * only and lets it lapse after 60 seconds, so an open entry is announced again every 25 seconds.
  *
  * - `set(path)` announces the published entry that is open; `set(null)` says there is none. An

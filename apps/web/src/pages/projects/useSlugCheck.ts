@@ -16,7 +16,7 @@ type Checked =
   | { slug: string; failed: true };
 
 /**
- * Checks an address as it is typed (stage 27b): its shape at once, and with the server (a moment
+ * Checks an address as it is typed (stage 31b): its shape at once, and with the server (a moment
  * after the last key, only the last answer counting) whether it is free or reserved. `own` is the
  * address a project already has, which needs no check. When the server cannot be asked the state
  * is "unknown", not "checking" for ever: the form may still be sent, since the server refuses a

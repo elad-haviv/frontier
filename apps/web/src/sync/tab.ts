@@ -1,5 +1,5 @@
 /**
- * A name for this browser tab, made once when the page loads (stage 27d). The status stream
+ * A name for this browser tab, made once when the page loads (stage 31d). The status stream
  * (`?client=`) and the "who is reading" announcements both carry it, so the server knows which
  * announcement a closing stream took with it, and two tabs of one person are told apart. It is
  * letters and digits only, as the server accepts, and says nothing about the person.

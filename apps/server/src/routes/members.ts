@@ -21,7 +21,7 @@ const PersonParam = z.object({ id: z.string().min(1).max(100) });
 const InviteParam = z.object({ id: z.string().min(1).max(100) });
 
 /**
- * Members and invitation links of the project (stage 27c). Anyone in the project reads the list
+ * Members and invitation links of the project (stage 31c). Anyone in the project reads the list
  * (names and roles; emails go to owners only); owners change roles, remove people and make
  * invitations; any member may leave. The rule that a project keeps an owner is the store's, checked
  * inside its serialized change. These routes have no alias at an old address.

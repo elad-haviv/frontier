@@ -41,7 +41,7 @@ function chosen(root: HTMLElement, source: string): Chosen | null {
 }
 
 /**
- * A small Comment button beside the words selected in the entry's page (stage 27e), for every role:
+ * A small Comment button beside the words selected in the entry's page (stage 31e), for every role:
  * it opens the Comments panel on a form for that passage. Without a selection nothing is drawn.
  */
 export function SelectionComment(p: {

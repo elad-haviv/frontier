@@ -1,4 +1,4 @@
-/* The email screens (stage 28): the confirm banner, the address block, the pages of a link in an email. */
+/* The email screens (stage 32): the confirm banner, the address block, the pages of a link in an email. */
 :root {
   /* A confirmed address: green on the paper, 5:1 or more. */
   --mail-ok: #2f6b4f;

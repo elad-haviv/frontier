@@ -33,7 +33,7 @@ const said = (err: unknown): string =>
   err instanceof ApiFailure && err.code === "last_owner" ? LAST_OWNER : message(err);
 
 /**
- * Settings → This project → Members (stage 27c). Everyone in the project reads the list; owners
+ * Settings → This project → Members (stage 31c). Everyone in the project reads the list; owners
  * change roles, remove people and make invite links, and see each person's email. Anyone may leave.
  */
 export function Members() {

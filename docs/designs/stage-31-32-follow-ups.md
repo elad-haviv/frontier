@@ -1,6 +1,10 @@
-# Stages 27 and 28: follow-ups
+# Stages 31 and 32: follow-ups
 
-Things the reviews of stages 27 (people and projects) and 28 (email) found and that were left on
+> Numbered "stages 27 and 28" while the work was being built; renumbered 31 and 32 when it was merged
+> with `main`, which had meanwhile used stages 27 to 30. Old commit messages that say "Stage 27" or
+> "Stage 28" followed by a letter or a word like email or people mean these documents.
+
+Things the reviews of stages 31 (people and projects) and 32 (email) found and that were left on
 purpose, and things to do when the server is deployed. Nothing here blocks use. The high and medium
 findings of every review were fixed; these are the low ones and the accepted risks.
 
@@ -30,7 +34,7 @@ findings of every review were fixed; these are the low ones and the accepted ris
 - A push stopped by the 90-second timeout may still have reached the remote; the next fetch shows it.
 - The open-comments badge counts open threads. There is no per-person "unread" count.
 - Comments cannot be written or read offline.
-- A device still running the app from before stage 27c opens `/join/<code>` as a not-found page until
+- A device still running the app from before stage 31c opens `/join/<code>` as a not-found page until
   it takes the update.
 
 ## Low findings left for later

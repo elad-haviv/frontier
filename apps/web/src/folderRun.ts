@@ -1,5 +1,5 @@
 /**
- * A run of field proposals over a folder (stage 27f), driven from the browser: the server lists the
+ * A run of field proposals over a folder (stage 31f), driven from the browser: the server lists the
  * entries, and the browser asks for the proposals one entry at a time with the key of this device.
  * Nothing goes on after the page is left, so no key has to outlive a request. What was left is
  * kept on this device, per person, and can be continued.

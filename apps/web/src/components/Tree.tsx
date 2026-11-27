@@ -198,7 +198,7 @@ export function Tree({
   const dialogs = useDialogs();
   const offline = useNeedsConnection();
   const touch = useTouch();
-  // A reader browses the folders: nothing in the tree changes them (stage 27c).
+  // A reader browses the folders: nothing in the tree changes them (stage 31c).
   const canWrite = useCanWrite();
   const folders = useLibraryFile(FOLDERS);
   const file = folders.value;
@@ -666,7 +666,7 @@ export function Tree({
     requestAnimationFrame(show);
   }, [reveal, revealDone, recount]);
 
-  // Someone else's unsaved changes to an entry (stage 27d): a dot, from the stream, never text.
+  // Someone else's unsaved changes to an entry (stage 31d): a dot, from the stream, never text.
   const othersLookup = useOthersLookup();
   /** How each row is drawn now; rows read it through a context, so they are never remounted. */
   const draw = (props: NodeRendererProps<Row>) => {

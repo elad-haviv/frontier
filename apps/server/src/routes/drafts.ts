@@ -298,7 +298,7 @@ export function draftRoutes(app: RouteApp, s: Services): void {
 
   /**
    * The person settled a conflict: their text now builds on the saved version they compared
-   * (`theirsBlob`), or is refused when someone saved another one meanwhile (stage 27d).
+   * (`theirsBlob`), or is refused when someone saved another one meanwhile (stage 31d).
    */
   app.post("/api/drafts/:id/resolve", async (request) => {
     const { id } = IdParam.parse(request.params);
@@ -310,7 +310,7 @@ export function draftRoutes(app: RouteApp, s: Services): void {
   });
 
   /**
-   * What a compare screen shows for one unsaved change (stage 27d): the person's text, the saved
+   * What a compare screen shows for one unsaved change (stage 31d): the person's text, the saved
    * text, the text it started from, and who saved the saved version and when. Without making a plan;
    * the answer is what saving it now would do.
    */

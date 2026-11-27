@@ -1,4 +1,4 @@
-/** Invite links and joining (stage 27c): one project, one role, one use, seven days. */
+/** Invite links and joining (stage 31c): one project, one role, one use, seven days. */
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";

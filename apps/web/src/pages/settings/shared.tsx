@@ -28,7 +28,7 @@ export interface Section {
 }
 
 /**
- * Settings, regrouped (stage 27b). What belongs to the project (its name and address, its types
+ * Settings, regrouped (stage 31b). What belongs to the project (its name and address, its types
  * and dates, its backups) is under "This project", which only shows inside a project; what is
  * yours (the profile, how you sign in, which models you use, what you spent) is under "You";
  * and what only this device holds (the keys, the offline copy) is under "This device". "You" and
@@ -64,9 +64,9 @@ export function movedSection(rest: string): string | null {
   if (rest === "ai/spending") return "you/ai-spending";
   if (rest === "ai/folder-run") return "you/folder-run";
   if (rest === "device") return "device/offline";
-  // The server's own address for this section, where its Google trips come back (stage 27c).
+  // The server's own address for this section, where its Google trips come back (stage 31c).
   if (rest === "you/signing-in") return "account";
-  // The library's sections became the project's, and Keep going is yours (stage 27b).
+  // The library's sections became the project's, and Keep going is yours (stage 31b).
   if (rest === "library/types") return "types";
   if (rest === "library/backups") return "backups";
   if (rest === "library/keep-going") return "you/keep-going";

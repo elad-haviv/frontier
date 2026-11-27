@@ -58,15 +58,15 @@ export const DraftRecord = z.object({
   /** The `op` of the last save the server accepted, so a retry of it writes nothing. */
   lastOp: z.string().optional(),
   /**
-   * The id of the person whose unsaved change this is (stage 27d). A record from before people
+   * The id of the person whose unsaved change this is (stage 31d). A record from before people
    * has none, and belongs to the project's first owner (see `state/drafts.ts`, "the move").
    */
   person: z.string().optional(),
-  /** When the person's unsaved change to this file began; absent from a record made before 27d. */
+  /** When the person's unsaved change to this file began; absent from a record made before 31d. */
   startedAt: z.string().datetime().optional(),
   /**
    * The id the person's device made for this draft, when it was another person's draft id already
-   * and the draft got a new id of its own (stage 27d): the device goes on using its id, which names
+   * and the draft got a new id of its own (stage 31d): the device goes on using its id, which names
    * this draft for that person.
    */
   clientId: Id.optional(),
@@ -109,7 +109,7 @@ export const RenameIntent = z.object({
   from: VaultPath,
   to: VaultPath,
   createdAt: z.string().datetime(),
-  /** The person whose rename it is (stage 27d); absent from one made before, which is the first owner's. */
+  /** The person whose rename it is (stage 31d); absent from one made before, which is the first owner's. */
   person: z.string().optional(),
 });
 export type RenameIntent = z.infer<typeof RenameIntent>;
@@ -145,7 +145,7 @@ export const AiSettings = z.object({
   proposeOnPublish: z.boolean().default(false),
   /**
    * Set once at start when the settings file still held AI keys from before they moved to each
-   * device (stage 27f): the keys were deleted, and the web app says so once.
+   * device (stage 31f): the keys were deleted, and the web app says so once.
    */
   keysRemoved: z
     .object({
@@ -181,7 +181,7 @@ export type Passkey = z.infer<typeof Passkey>;
 export const Settings = z.object({
   /**
    * The password, passkeys and switch below belong to the one account that existed before stage
-   * 27a. At the first start after it they are copied into the people store (`people.json`) and
+   * 31a. At the first start after it they are copied into the people store (`people.json`) and
    * are no longer read; the file keeps them as they were.
    */
   passwordHash: z.string(),
@@ -199,7 +199,7 @@ export const Settings = z.object({
 });
 export type Settings = z.infer<typeof Settings>;
 /**
- * What belongs to one person (stage 27b review): the models they chose, the prices they entered,
+ * What belongs to one person (stage 31b review): the models they chose, the prices they entered,
  * the look of their concept art, whether Publish proposes fields, and their Keep going rules.
  * Kept in `/data/state/person-settings.json` by person id. A person with no entry has the
  * defaults, but for the admin, whose entry is what `settings.json` held before there were people.

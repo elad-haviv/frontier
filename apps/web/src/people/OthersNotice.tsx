@@ -4,7 +4,7 @@ import { othersNotice, SAVE_SECOND_COMPARES } from "./model.ts";
 import "./People.css";
 
 /**
- * "Wren has unsaved changes to this entry": a quiet line for writers and owners (stage 27d). It
+ * "Wren has unsaved changes to this entry": a quiet line for writers and owners (stage 31d). It
  * names people and says since when; it never shows what they wrote. In the editor it also says
  * what happens when both save: whoever saves second compares the two texts.
  */

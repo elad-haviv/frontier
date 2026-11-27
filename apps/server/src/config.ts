@@ -41,7 +41,7 @@ export interface MailSender {
 }
 
 /**
- * Mail (stage 28). Absent when `SMTP_HOST` and `MAIL_FROM` are not both given, which turns every
+ * Mail (stage 32). Absent when `SMTP_HOST` and `MAIL_FROM` are not both given, which turns every
  * email feature off. `memory` keeps the messages in the process, for tests only (`MAIL_TEST_TRANSPORT`;
  * refused in production).
  */
@@ -76,7 +76,7 @@ export interface Config {
    * others write to as well, or in the made-up sample.
    */
   library: "own" | "github" | "sample";
-  /** What the first project is called, made from the library the server already had (stage 27b). */
+  /** What the first project is called, made from the library the server already had (stage 31b). */
   projectName: string;
   /** The vault folder new images are put in. */
   uploadFolder: string;
@@ -87,7 +87,7 @@ export interface Config {
   /**
    * The addresses the environment gives for the providers (OPENROUTER_BASE_URL and the others'
    * *_BASE_URL); tests point them at stand-in servers. AI keys are not read from the environment:
-   * each person's key stays in their own browser (stage 27f).
+   * each person's key stays in their own browser (stage 31f).
    */
   providerUrls: Partial<Record<AiProviderKind, string>>;
   /**
@@ -107,12 +107,12 @@ export interface Config {
    */
   loginAttempts: number;
   /**
-   * Google sign-on (stage 27c): present when `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` are
+   * Google sign-on (stage 31c): present when `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` are
    * both given; absent turns the feature off. `issuer` is Google's own except in tests, which
    * point it at a stand-in provider (`GOOGLE_ISSUER`; refused in production).
    */
   google: { clientId: string; clientSecret: string; issuer: string } | null;
-  /** Where mail goes through, or null when the server sends none (stage 28). */
+  /** Where mail goes through, or null when the server sends none (stage 32). */
   mail: MailConfig | null;
   /**
    * False when `FRONTIER_SERVICE_WORKER=off`: `/sw.js` then answers the kill worker, which removes

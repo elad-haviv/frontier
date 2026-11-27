@@ -70,7 +70,7 @@ export class ProjectRegistry {
 
   /**
    * The services of a project that is already open and brought up, or null. Never opens, never
-   * waits: the project list uses it to show live numbers without waking a project (stage 27b).
+   * waits: the project list uses it to show live numbers without waking a project (stage 31b).
    */
   loaded(id: string): Services | null {
     return this.ready_.get(id) ?? null;

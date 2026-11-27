@@ -140,7 +140,7 @@ export function authRoutes(app: FastifyInstance, s: Server): void {
         email: person.email,
         emailInfo: emailInfo(s, person),
       },
-      // The project the person used last, as its address; null until they have used one (stage 27b).
+      // The project the person used last, as its address; null until they have used one (stage 31b).
       lastProject: person ? await lastProjectSlug(s, person) : null,
       // Exactly one account has no email: a blank email at login means that account. (Every new
       // account is given one, so this is only an owner from before emails were asked for.)
@@ -148,7 +148,7 @@ export function authRoutes(app: FastifyInstance, s: Server): void {
       passkeys: people.some((p) => p.passkeys.length > 0),
       // Whether the server offers "Continue with Google"; the app hides the buttons when not.
       google: s.google !== null,
-      // Whether this server sends mail (stage 28): "Forgot password", the banner, the invite field.
+      // Whether this server sends mail (stage 32): "Forgot password", the banner, the invite field.
       mail: s.mail.enabled,
       // Before any account exists the form is shown, so the page says what is missing on use.
       password: people.length === 0 || people.some((p) => !p.passwordOff),

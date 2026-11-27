@@ -87,7 +87,7 @@ export function SystemMapPage() {
   const { id = "" } = useParams();
   const [params, setParams] = useSearchParams();
   const [notice, setNotice] = useState<string | null>(null);
-  // Editing is for writers: a reader opening `?edit=1` simply reads (stage 27c).
+  // Editing is for writers: a reader opening `?edit=1` simply reads (stage 31c).
   const canWrite = useCanWrite();
   const [wantsEdit, setEditing] = useState(params.get("edit") === "1");
   const editing = wantsEdit && canWrite;

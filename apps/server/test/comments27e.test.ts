@@ -1,5 +1,5 @@
 /**
- * Stage 27e: comments between people. Each role against each action (own and other people's),
+ * Stage 31e: comments between people. Each role against each action (own and other people's),
  * the move from private notes to the first owner (and running it again), nothing of anyone's
  * unsaved changes reaching a reader, names (never an email to a non-owner), the members who left,
  * the status stream's word that comments changed, and the counts in the keep-going queue.
@@ -680,7 +680,7 @@ describe("legacy comments (from before sharing) stay for writers and owners", ()
     await t.get(`${base}/comments?path=${path}`);
   });
 
-  // The state of an install that already ran the first 27e build: the old notes carry the first
+  // The state of an install that already ran the first 31e build: the old notes carry the first
   // owner as author, with nothing to tell them from the owner's own comments, and no version.
   const firstBuild = (extra: Record<string, unknown>[] = []) =>
     writeFileSync(
@@ -692,7 +692,7 @@ describe("legacy comments (from before sharing) stay for writers and owners", ()
           old({ id: "abcdefghij03", text: "No author at all" }),
           old({
             id: "abcdefghij04",
-            text: "Wren, under 27e",
+            text: "Wren, under 31e",
             person: wren.id,
             name: "Wren Writer",
           }),
@@ -712,13 +712,13 @@ describe("legacy comments (from before sharing) stay for writers and owners", ()
       .map((c) => c.text)
       .sort();
     expect(marked).toEqual(["An old note", "No author at all", "Old AI note"]);
-    // Readers see only the comment written under 27e by someone else; writers and owners all.
-    expect(await texts(rhea)).toEqual(["Wren, under 27e"]);
+    // Readers see only the comment written under 31e by someone else; writers and owners all.
+    expect(await texts(rhea)).toEqual(["Wren, under 31e"]);
     expect(await texts(wes)).toEqual([
       "An old note",
       "No author at all",
       "Old AI note",
-      "Wren, under 27e",
+      "Wren, under 31e",
     ]);
     expect(await texts(owner())).toEqual(await texts(wes));
     // An old comment for the AI stays usable by writers, not private to the first owner.
@@ -801,7 +801,7 @@ describe("legacy comments (from before sharing) stay for writers and owners", ()
     // The old AI note is the first owner's to hand over: "Share it" runs the same check.
     const shared = await patch(owner(), `${base}/comments/abcdefghij02`, { for: "me" });
     expect(shared.statusCode, shared.body).toBe(200);
-    expect(await texts(rhea)).toEqual(["An old note", "Old AI note", "Wren, under 27e"]);
+    expect(await texts(rhea)).toEqual(["An old note", "Old AI note", "Wren, under 31e"]);
   });
 });
 

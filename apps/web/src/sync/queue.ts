@@ -120,7 +120,7 @@ export interface QueueDeps {
   migrate?: (queue: Pick<Queue, "get" | "put">) => Promise<unknown>;
   /**
    * The storage that holds this device's id and name, when it is not `open`'s own: every
-   * project's queue has the same device (stage 27b).
+   * project's queue has the same device (stage 31b).
    */
   identity?: () => Promise<Store>;
   /** The Web Lock and the broadcast channel this queue uses; each project has its own. */
@@ -1026,7 +1026,7 @@ export class Queue {
   }
 }
 
-// ---- One queue for each person and project (stage 27b) ------------------------------------------
+// ---- One queue for each person and project (stage 31b) ------------------------------------------
 
 /** The name of the database an earlier build gave a project's queue and device copy. */
 export const projectDatabase = (id: string): string => `frontier-p-${id}`;
@@ -1366,7 +1366,7 @@ export class QueueHub {
       if (records.length > 0)
         out.push({ id, name: names[id] ?? "A project that is gone", records });
     }
-    // Changes the server refused for want of a role (stage 27c): in a project the person is still
+    // Changes the server refused for want of a role (stage 31c): in a project the person is still
     // in, which they may read but no longer change.
     const databases = await this.ownDatabases(s);
     for (const ref of this.d.known()) {

@@ -1,5 +1,5 @@
 /**
- * The field that puts an AI key on this device (stage 27f): a provider, the key, and "Test and
+ * The field that puts an AI key on this device (stage 31f): a provider, the key, and "Test and
  * keep on this device". It is used in two places, so people meet the same words both times: in
  * Settings › AI keys, and in place in the dialog that opens when a feature needs a key.
  *

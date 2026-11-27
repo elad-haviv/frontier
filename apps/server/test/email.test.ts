@@ -1,5 +1,5 @@
 /**
- * Email (stage 28), mail on: emailed invitations, confirming an address, changing it, forgotten
+ * Email (stage 32), mail on: emailed invitations, confirming an address, changing it, forgotten
  * passwords, and the safeguards around every link.
  */
 import { readFileSync } from "node:fs";

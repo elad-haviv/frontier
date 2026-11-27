@@ -46,7 +46,7 @@ function TextPane({ title, label, text }: { title: string; label: string; text: 
 }
 
 /**
- * Two texts of one entry for the person to settle (stage 27d, decision C).
+ * Two texts of one entry for the person to settle (stage 31d, decision C).
  *
  * When someone else saved a newer version first (`saved_by_other`) it is the compare screen: their
  * text with who and when, the person's own text, and three choices, Keep mine, Keep theirs and the

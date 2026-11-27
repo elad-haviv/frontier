@@ -20,7 +20,7 @@ describe("what the service worker answers", () => {
   });
 
   it("answers an invite link's page with the app, like the login page, and never the server's own redirects", () => {
-    // The join page is an app route (stage 27c): with no connection it opens, and says it needs one.
+    // The join page is an app route (stage 31c): with no connection it opens, and says it needs one.
     expect(page("/join/abcdefghijklmnopqrstuvwx")).toBe("shell");
     expect(page("/join/abcdefghijklmnopqrstuvwx?problem=google_denied")).toBe("shell");
     // The Google trip, the join calls and the callback are the server's: never answered stale, and
@@ -38,7 +38,7 @@ describe("what the service worker answers", () => {
   });
 
   it("answers the pages of the links in emails with the app, and never stores or answers one stale", () => {
-    // `/confirm/<code>` and `/reset/<code>` are app routes like `/login` (stage 28): the page
+    // `/confirm/<code>` and `/reset/<code>` are app routes like `/login` (stage 32): the page
     // opens with the app, and the code is read from the address by the page alone.
     for (const path of [
       "/confirm/Zr3h8WqNabcdefghijklmnopqrstuvw",

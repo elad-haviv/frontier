@@ -1,5 +1,5 @@
 /**
- * The providers the person making this request can use: those they sent a key for (stage 27f).
+ * The providers the person making this request can use: those they sent a key for (stage 31f).
  * The server keeps no key of its own, in settings or in its environment; the key comes from the
  * request's header (see `keyring.ts`). Only the addresses can be set on the server, with the
  * `*_BASE_URL` variables, which tests point at stand-in servers.

@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 /**
- * Stage 28: email. Confirming an address, emailing an invitation, changing an address, and
+ * Stage 32: email. Confirming an address, emailing an invitation, changing an address, and
  * forgotten passwords. Nothing here is sent unless the server has a mail relay configured
  * (`mail` in `GET /api/session` says so), and every shape degrades to today's when it has not.
  */

@@ -240,7 +240,7 @@ const MADE = (id: string) => ({
 const setClipboard = (clipboard: unknown) =>
   Object.defineProperty(navigator, "clipboard", { value: clipboard, configurable: true });
 
-describe("Settings → Members, after the review (stage 27c)", () => {
+describe("Settings → Members, after the review (stage 31c)", () => {
   /** A server with the owners' list and a set of invitations the test can change. */
   function serve(state: { invites: unknown[]; role?: Response }) {
     return stubServer((url, method) => {

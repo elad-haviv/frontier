@@ -265,7 +265,7 @@ describe("the device keeper", () => {
     keeper.stop();
   });
 
-  it("does not read or write again for who reads or who has unsaved changes (stage 27d)", async () => {
+  it("does not read or write again for who reads or who has unsaved changes (stage 31d)", async () => {
     const snapshot = { indexCommit: "c1", unpublished: 2, drafts: 7 } as StatusSnapshot;
     connection.snapshot = snapshot;
     const graphRead = vi.fn(async () => graph);

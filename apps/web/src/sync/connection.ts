@@ -24,13 +24,13 @@ export interface ConnectionDeps {
   /** The address of the project the app has open, or null outside any project. */
   project: () => string | null;
   /**
-   * A name for this tab (stage 27d): sent as `?client=` so the server knows which "who is
+   * A name for this tab (stage 31d): sent as `?client=` so the server knows which "who is
    * reading" announcement a closing stream took away. Left out, the stream names no tab.
    */
   client?: string;
 }
 
-/** The status and its stream are a project's (stage 27b); outside one, `/api/me` says who is in. */
+/** The status and its stream are a project's (stage 31b); outside one, `/api/me` says who is in. */
 const streamOf = (slug: string, client?: string) =>
   `/api/p/${encodeURIComponent(slug)}/status/events${client ? `?client=${encodeURIComponent(client)}` : ""}`;
 const statusOf = (slug: string | null) =>

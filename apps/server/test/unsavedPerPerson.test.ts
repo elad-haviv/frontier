@@ -1,5 +1,5 @@
 /**
- * Stage 27d: each person's unsaved changes are their own. Isolation by id, path, rename and kept
+ * Stage 31d: each person's unsaved changes are their own. Isolation by id, path, rename and kept
  * copy; counts on the status snapshot and the stream; what other people may know of someone's work
  * in progress (never the text); readers see none of it; the move from one author; people who leave
  * or are demoted.
@@ -146,7 +146,7 @@ describe("each person's unsaved changes are their own", () => {
   it("answers not_found when another person's draft is reached by its id", async () => {
     const w = await edit(wren, MIRA, "# Mira\n\nWren's text.\n");
     const intruder = (suffix: string) => `${base}/drafts/${w}${suffix}`;
-    // Saving with the id of another's draft is answered as for an id nobody has (stage 27d review):
+    // Saving with the id of another's draft is answered as for an id nobody has (stage 31d review):
     // nothing tells it from a free one, and nothing of Wren's is reached.
     for (const path of [MIRA, SHADE]) {
       const body = { path, kind: "edit", text: "Rex was here.", revision: 1 };
@@ -617,7 +617,7 @@ describe("the move from one author to unsaved changes per person", () => {
   });
 
   it("works from a real library: the first account sees what the one author left, nobody else does", async () => {
-    // A server's data folder from before 27d: a draft folder with no owner.
+    // A server's data folder from before 31d: a draft folder with no owner.
     const state = t.services.paths.state;
     const folder = join(state, "drafts", "oldauthor001");
     mkdirSync(folder, { recursive: true });

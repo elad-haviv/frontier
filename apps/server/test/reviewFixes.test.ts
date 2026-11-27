@@ -1,4 +1,4 @@
-/** The four defects of the stage 27b review: each test here failed before its fix. */
+/** The four defects of the stage 31b review: each test here failed before its fix. */
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -75,7 +75,7 @@ describe("openness is declared by the route, not read from the address", () => {
       .map((r) => `${r.method} ${r.url}`);
     expect(open.sort()).toEqual(
       [
-        // Stage 27c: joining by invitation and Google sign-on. Each counts against the per-address
+        // Stage 31c: joining by invitation and Google sign-on. Each counts against the per-address
         // allowance (`server.joinLimit`); invitations.test.ts asks each for its 429.
         "GET /api/auth/google/callback",
         "GET /api/auth/google/start",
@@ -85,7 +85,7 @@ describe("openness is declared by the route, not read from the address", () => {
         "DELETE /api/join/:code/google",
         "POST /api/join/:code/passkey/options",
         "POST /api/join/:code/passkey/verify",
-        // Stage 28: opening a confirm link, forgot password, and the reset link's two routes.
+        // Stage 32: opening a confirm link, forgot password, and the reset link's two routes.
         "POST /api/confirm/:code",
         "POST /api/forgot-password",
         "GET /api/reset/:code",

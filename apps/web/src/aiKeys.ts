@@ -1,5 +1,5 @@
 /**
- * The AI keys this device holds (stage 27f). Each person brings their own key and it stays in
+ * The AI keys this device holds (stage 31f). Each person brings their own key and it stays in
  * this browser: in `localStorage`, like the other device settings, so the page can read it and
  * the service worker's caches never hold it. The server never saves one; `api.ts` sends the keys
  * in a header with each request that can lead to an AI call.

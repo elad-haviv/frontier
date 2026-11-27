@@ -40,7 +40,7 @@ type Load =
 
 /**
  * `/confirm/<code>`: the page the link in the confirm email opens, for someone logged in or not
- * (stage 28). It uses the link when it loads, and says one thing with one button. It never starts
+ * (stage 32). It uses the link when it loads, and says one thing with one button. It never starts
  * or changes a session. The code stays in the address and nowhere else.
  */
 export function ConfirmPage({

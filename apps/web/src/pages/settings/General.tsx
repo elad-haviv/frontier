@@ -18,7 +18,7 @@ export const FIRST_PROJECT_REASON =
 export const LAST_PROJECT_REASON = "The last project cannot be deleted.";
 
 /**
- * Settings → This project → General (stage 27b): the project's name, address and description,
+ * Settings → This project → General (stage 31b): the project's name, address and description,
  * the people in it, and deleting it. An owner changes these; anyone else reads them. Changing the
  * address leaves the old one working for 90 days, which the page says before it is saved.
  */

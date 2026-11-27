@@ -609,7 +609,7 @@ test.describe("the question of the day (AI)", () => {
     await expect(page).toHaveURL(/\/edit\//);
   });
 
-  test("with no key on this device, the first ask explains and then carries on (stage 27f)", async ({
+  test("with no key on this device, the first ask explains and then carries on (stage 31f)", async ({
     page,
   }, info) => {
     test.skip(

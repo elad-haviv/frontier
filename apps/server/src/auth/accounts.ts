@@ -30,7 +30,7 @@ const given = (env: Starting["env"], name: string) => env[name]?.trim() || "";
  * people file that went missing is never answered with an account made from the old password or
  * from the environment. The server refuses to start instead, and the file is restored.
  *
- * - From before stage 27a: the settings hold a password and/or passkeys that belonged to the one
+ * - From before stage 31a: the settings hold a password and/or passkeys that belonged to the one
  *   "author". They become the first account, and the settings file is left as it was beside it.
  *   The name and email are the commit author's, which is the same person.
  * - A new server: `FRONTIER_INITIAL_PASSWORD`, with `FRONTIER_INITIAL_EMAIL` and

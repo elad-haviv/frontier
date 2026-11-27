@@ -49,7 +49,7 @@ function ProjectButton({
 }
 
 /**
- * The project switcher (stage 27b): the open project's letter and name at the head of the left
+ * The project switcher (stage 31b): the open project's letter and name at the head of the left
  * bar, which opens the list of the person's projects, then All projects and New project. It is an
  * ordinary menu, so arrows, Enter, Escape and typing a name's first letters all work. In the
  * folded rail it is the letter alone, with the name as its tooltip; on the phone it is this same

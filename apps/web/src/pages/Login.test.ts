@@ -107,7 +107,7 @@ describe("the login page", () => {
   });
 });
 
-describe("the login page and forgot password (stage 28)", () => {
+describe("the login page and forgot password (stage 32)", () => {
   it("offers Forgot password only when the server sends mail and passwords are in use", async () => {
     const on = await login({ mail: true });
     const link = on.withText<HTMLAnchorElement>("a", "Forgot password?");

@@ -5,7 +5,7 @@ import { Icon } from "../components/ui/Icon.tsx";
 import "./email.css";
 
 /**
- * The card the pages of a link in an email share (stage 28): outside the shell, centred, one
+ * The card the pages of a link in an email share (stage 32): outside the shell, centred, one
  * short message and one button, the same on a phone and on a desktop. The heading takes the focus
  * when the answer is in, so a screen reader reads it.
  */

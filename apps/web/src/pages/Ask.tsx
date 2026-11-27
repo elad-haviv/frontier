@@ -27,7 +27,7 @@ export function AskPage() {
   const [drafting, setDrafting] = useState<Drafting | null>(null);
   const drafted = useRef<AbortController | null>(null);
   const voice = useDictation(setQuestion);
-  // Drafting an entry from what was said writes to the project: writers' (stage 27c).
+  // Drafting an entry from what was said writes to the project: writers' (stage 31c).
   const canWrite = useCanWrite();
   const {
     live,

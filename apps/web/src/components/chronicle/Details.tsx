@@ -503,7 +503,7 @@ export function Details(props: Props) {
 }
 
 /**
- * The same event as `Details`, to read: what a reader sees (stage 27c). No field, rule or button
+ * The same event as `Details`, to read: what a reader sees (stage 31c). No field, rule or button
  * changes anything; the entry and the maps are links.
  */
 export function ReadDetails(props: Omit<Props, "change" | "onLink" | "onUnlink" | "focus">) {

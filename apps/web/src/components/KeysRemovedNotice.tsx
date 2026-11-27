@@ -1,7 +1,7 @@
 /**
  * Said to the server's owner (the first account, the only one who can revoke the keys) when they
  * open Frontier after the server deleted the AI keys it used to keep, or when provider keys are
- * still set in its environment (stage 27f). The keys were in the settings file and in backups for
+ * still set in its environment (stage 31f). The keys were in the settings file and in backups for
  * up to 14 days: they must be revoked with each provider, and new ones made for each device.
  * Only acting on it clears it for good; "Later" and closing leave it for the next time.
  */

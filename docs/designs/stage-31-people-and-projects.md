@@ -1,4 +1,8 @@
-# Stage 27: people and projects
+# Stage 31: people and projects
+
+> Numbered 27 (parts 27a to 27f) while it was being built; renumbered 31 (31a to 31f) when it was
+> merged with `main`, which had meanwhile used stages 27 to 30. Old commit messages that say "Stage 27x"
+> mean this document.
 
 Approved by Elad on 2026-11-26, with his own answers to the seven decisions (section 3). Mockup:
 https://claude.ai/artifact/Kn5Cb4nFvL8Z5AzU8qS6n5 (five screens, desktop and phone; the first three
@@ -181,14 +185,14 @@ Each part is released on its own and leaves the app working for one person.
 
 | Part | What | Main places |
 | --- | --- | --- |
-| 27a | Accounts: a people store, sessions that carry a person, email and password, passkeys per person, the move from "author" | `apps/server/src/auth`, `routes/{auth,passkeys}.ts`, `state/settings.ts`, `pages/Login.tsx`, `settings/Account.tsx` |
-| 27b | Projects: a project store, one set of services per project under `/data/projects/<id>/`, `/p/<project>/` addresses and `/api/p/<project>/`, redirects, the switcher, All projects, New project, backup and offline copy per project | `app.ts`, `main.ts`, `config.ts`, every route file, `App.tsx`, `api.ts`, `components/shell`, `offline/` |
-| 27c | Members, roles and invite links; role checks on every route; the reader's shell; `/join/<code>`; Google sign-on | new `members/`, `routes/`, `settings/Members.tsx`, `pages/Join.tsx` |
-| 27d | Authors on versions; unsaved changes per person; the "has unsaved changes" notice and who is reading; the compare screen in an own library | `state/drafts.ts`, `publish/`, `git/gateway.ts`, `pages/{Entry,History,Versions,Unpublished,Conflict}.tsx` |
-| 27e | Comments between people, on the entry page, with replies | `comments/`, `components/CommentsPanel.tsx`, `pages/Entry.tsx` |
-| 27f | AI keys on the device: the key sent with each request, no key storage or environment keys on the server, models and spending per person, the three notices, AI work done only with someone present | `ai/`, `state/secrets.ts`, `routes/settings.ts`, `settings/{Providers,Models,Spending}.tsx`, `keepGoing/` |
+| 31a | Accounts: a people store, sessions that carry a person, email and password, passkeys per person, the move from "author" | `apps/server/src/auth`, `routes/{auth,passkeys}.ts`, `state/settings.ts`, `pages/Login.tsx`, `settings/Account.tsx` |
+| 31b | Projects: a project store, one set of services per project under `/data/projects/<id>/`, `/p/<project>/` addresses and `/api/p/<project>/`, redirects, the switcher, All projects, New project, backup and offline copy per project | `app.ts`, `main.ts`, `config.ts`, every route file, `App.tsx`, `api.ts`, `components/shell`, `offline/` |
+| 31c | Members, roles and invite links; role checks on every route; the reader's shell; `/join/<code>`; Google sign-on | new `members/`, `routes/`, `settings/Members.tsx`, `pages/Join.tsx` |
+| 31d | Authors on versions; unsaved changes per person; the "has unsaved changes" notice and who is reading; the compare screen in an own library | `state/drafts.ts`, `publish/`, `git/gateway.ts`, `pages/{Entry,History,Versions,Unpublished,Conflict}.tsx` |
+| 31e | Comments between people, on the entry page, with replies | `comments/`, `components/CommentsPanel.tsx`, `pages/Entry.tsx` |
+| 31f | AI keys on the device: the key sent with each request, no key storage or environment keys on the server, models and spending per person, the three notices, AI work done only with someone present | `ai/`, `state/secrets.ts`, `routes/settings.ts`, `settings/{Providers,Models,Spending}.tsx`, `keepGoing/` |
 
-27f does not depend on the others and can be built first if wanted.
+31f does not depend on the others and can be built first if wanted.
 
 ## 5. Risks
 
@@ -210,7 +214,7 @@ Each part is released on its own and leaves the app working for one person.
   project; invite, join and change a role; the reader's shell; comment and reply; add a key on one
   device and see it absent on another; the first-use notice on Ask.
 
-## 7. How it was built: 27b server
+## 7. How it was built: 31b server
 
 For the web half. Built on 2026-11-27; the web app was not changed, and still works through the
 old unprefixed addresses (see "The legacy alias").
@@ -251,7 +255,7 @@ old unprefixed addresses (see "The legacy alias").
   the first account's until they change their pins), lore conversations (`conversations/<person>/`),
   the question of the day (`question/<person>.json`). What a server from before projects had in
   `conversations/*.json` and `question.json` belongs to the first account and is read from there; no
-  file is moved at start. **Per project, not per person yet**: drafts (27d), comments (27e), consults
+  file is moved at start. **Per project, not per person yet**: drafts (31d), comments (31e), consults
   and field proposals. **Server-wide**: chosen AI models and prices, Keep going rules, spending log,
   the last-used project (`Person.lastProject`).
 - **Backup.** The first project keeps the old keys (`latest/state`, `latest/library`,
@@ -353,19 +357,19 @@ folder again), and only then the folder moves to `trash/`. A request in flight i
 
 - `GET /images?branch=` (an inbox branch's image, not yet published) needs a writer; without
   `branch` it is reader-level.
-- Routes that a reader may not call answer 403 `role_too_low`; until 27c every reachable account in
+- Routes that a reader may not call answer 403 `role_too_low`; until 31c every reachable account in
   a project is an owner, but the first account can already be given a different role by editing the
   store (tests do).
-- Comments are writer-only until 27e, and `GET /unpublished`, the draft routes and the inbox are
+- Comments are writer-only until 31e, and `GET /unpublished`, the draft routes and the inbox are
   writer-only: a reader's shell must not call them. `GET /entries` still returns the project's
-  unsaved text of an entry to a reader; 27d makes unsaved changes per person.
+  unsaved text of an entry to a reader; 31d makes unsaved changes per person.
 - Pins are no longer part of the library: they are not an unsaved change and are not in
   `/library-files/pins` (that file is kept, and is only the old pins of a server from before
   projects).
 - A person who is in no project gets 403 `no_project` from every project route and an empty list
   from `GET /api/projects`.
 
-## 8. How it was built: 27b web
+## 8. How it was built: 31b web
 
 Built on 2026-11-27, after the server half. Every page of a project is under `/p/<slug>/...`, every
 call for a project under `/api/p/<slug>/...`, and what the device keeps for a library is kept per
@@ -485,7 +489,7 @@ project.
   `.../backups`, `.../keep-going`) go to where the sections are now.
 - **General**: name, address and description, changed by owners and read by everyone else; a
   changed address says the old one works for 90 days before it is saved; the people of the project
-  (name and role, read-only: Members is part 27c). Delete this project asks for the project's name
+  (name and role, read-only: Members is part 31c). Delete this project asks for the project's name
   typed; it is disabled, with the server's words, for the first project (whose files are the old
   layout) and for the last one.
 - **Offline copy** lists each project that holds a copy on this device, with the space it takes
@@ -493,7 +497,7 @@ project.
 
 ### Not done, and decisions
 
-- No Members section (27c). Roles are read from the project's record and shown; nothing yet hides
+- No Members section (31c). Roles are read from the project's record and shown; nothing yet hides
   a control from a writer or a reader beyond General's.
 - Reading a project that was never opened on this device with no connection says so on a page of
   its own, with All projects and the projects that are on this device. A project is "on this device"
@@ -502,7 +506,7 @@ project.
   server in the page (`fetch("/api/maps")`) still use the unprefixed aliases, which reach the
   project used last. `projects.spec.ts` makes the first project the one used last again after each test.
 
-### Review fixes (after the first review of 27b)
+### Review fixes (after the first review of 31b)
 
 - **The old database has one owner.** `ProjectSummary.legacy` marks the project whose files are the
   server's old layout. Only that project may take the device's own `frontier` database and the
@@ -529,7 +533,7 @@ project.
 - **The role** is `null` until the record, the list or the device's memory has said; `useRole()`
   gives `known`, `canWrite` and `isOwner`.
 
-## 9. How it was built: 27c server
+## 9. How it was built: 31c server
 
 For the web half. Built on 2026-11-27; `apps/web/src` was not changed. Everything that existed keeps
 its shape. New: members, roles that now matter, invitation links, joining, Google sign-on, and what
@@ -537,7 +541,7 @@ its shape. New: members, roles that now matter, invitation links, joining, Googl
 
 ### Roles, as they are now
 
-`projects/roles.ts` is still the one table. Changes against 27b:
+`projects/roles.ts` is still the one table. Changes against 31b:
 
 - **Readers get the saved view.** A reader's request runs inside `asSavedView` (`projects/view.ts`,
   set by the facade for every handler): the draft store answers "no drafts, no renames, nothing
@@ -555,7 +559,7 @@ its shape. New: members, roles that now matter, invitation links, joining, Googl
   and `.../addition/preview` (drafting text into an entry), `GET /maps/:id/discoveries` and
   `GET /maps/:id/discoveries/:d/art` (what AI proposed and nobody has kept). Ask, characters, pins,
   Keep going's question, search, export and every read stay reader.
-- **Comments stay writer-only until 27e.** Project creation stays admin-only.
+- **Comments stay writer-only until 31e.** Project creation stays admin-only.
 - **New routes** (owner unless said): `GET /members` reader, `PUT /members/:id`, `DELETE /members/:id`,
   `POST /members/leave` reader, `GET /invites`, `POST /invites`, `DELETE /invites/:id`. None has an
   old unprefixed alias.
@@ -725,7 +729,7 @@ first account who leaves is not made an owner again (that only happens to a proj
 - Last-active notes are written without arming the backup (they wait for the next backup).
 - Known and left: emails on password and passkey joins are not verified; a removed writer's request
   that was already running may finish its own write.
-- Not done in 27c server: unlinking another provider (there is none), an email to the invited person
+- Not done in 31c server: unlinking another provider (there is none), an email to the invited person
   (decision A: Frontier sends no mail), and a list of someone's other sessions.
 
 ### Notes for the web half
@@ -742,7 +746,7 @@ first account who leaves is not made an owner again (that only happens to a proj
   blank-email login hint only then.
 - A reader gets no open-comment reasons in Home's queue, and an empty `versions` in `/attention`.
 
-## 10. How it was built: 27c web
+## 10. How it was built: 31c web
 
 Built on 2026-11-27, on top of the server half (section 9). Members, invite links, the join page,
 Google sign-on, and the roles in the shell. The server was not changed.
@@ -820,7 +824,7 @@ Google sign-on, and the roles in the shell. The server was not changed.
 
 ### Roles in the shell
 
-- `useRole()` (27b) gives `known`, `canWrite`, `isOwner`; new `useCanWrite()`, `useCanWriteOrNot()`
+- `useRole()` (31b) gives `known`, `canWrite`, `isOwner`; new `useCanWrite()`, `useCanWriteOrNot()`
   and `useIsReader()`. While the role is unknown nothing that edits is drawn and no reader notice is
   shown. The role comes from the project's record, else the list, else what the device last knew.
 - A reader's left bar has no New entry, no unsaved changes, inbox or compare, no tree buttons or
@@ -881,7 +885,7 @@ logged out does not open the login dialog over the page. `routes.test.ts` and an
 ### Departures from the mockup and the brief
 
 - The invite box is inline on Members, as in the mockup, not a dialog; the mockup's "Reader can
-  comment" is not in the key since comments are writers' until 27e (section 9), and the reader's
+  comment" is not in the key since comments are writers' until 31e (section 9), and the reader's
   line says "read and ask".
 - Where the mockup and section 9 differ: the mockup's pending invitation in All projects ("An
   invitation you have not answered") is not built, as there is no server list of invitations for a
@@ -910,14 +914,14 @@ checks its own account (`/api/me`, and that its password login is refused once s
 
 ### Not done, or only noted
 
-- A device still running the pre-27c shell and opening `/join/<code>` meets that old shell's own
+- A device still running the pre-31c shell and opening `/join/<code>` meets that old shell's own
   old-address handling, which turns the path into `/p/<project>/join/<code>`: the old code cannot be
   changed from here. The new shell answers `/join/<code>` before its catch-all, so it is only the
   update that is missing.
 - After a login on the join page whose accepting then failed for a reason other than a dead link,
   the page is loaded again and the reason is not carried across; the button to accept is there again.
 
-## 11. How it was built: 27d server
+## 11. How it was built: 31d server
 
 For the web half. Built on 2026-11-27 and changed by the review that followed (the "Review fixes"
 section below says what moved); `apps/web/src` was not changed and still works against this
@@ -956,7 +960,7 @@ whether the id is taken. The save goes to a draft of the caller's own, which get
 own, and the id the device sent is written into that record as `clientId`; from then on, for that
 person, the device's id names their draft everywhere an id is taken (save, discard, versions, merge,
 compare, resolve, plan), and a save answers with the id the device uses. Nothing of the other
-person's is reached; an unsent save from a browser profile shared before 27d lands as the caller's
+person's is reached; an unsent save from a browser profile shared before 31d lands as the caller's
 own draft or, when they have a draft at that path already, as a kept copy of it with
 `stale_revision {id}`, the way a save from another device is, and the web already handles both.
 Text is never dropped for this.
@@ -1265,7 +1269,7 @@ What the review of the first build changed, in the order of its list:
   someone, show `unsavedKept` ("3 unsaved changes are kept for 30 days"). A demoted person is a reader
   at once (their unsaved changes are hidden, not lost): say so in the reader's one line.
 
-## 12. How it was built: 27d web
+## 12. How it was built: 31d web
 
 Built on 2026-11-27 against the server of section 11, which it did not change. Nothing in
 `apps/server` or `packages/schema` moved: every field the web reads was already in the schema.
@@ -1340,7 +1344,7 @@ screen's choices, resolve bodies, the 409 and compare again, the older screen), 
 (`?client=`) and `offline/keeper.test.ts` (no thrash). Playwright: `e2e/people.spec.ts`, with two or
 three people in separate browser contexts.
 
-## 13. How it was built: 27e comments
+## 13. How it was built: 31e comments
 
 Comments are now between people, on the entry page, for all three roles. Server in
 `apps/server/src/comments/{store,rules}.ts` and `routes/comments.ts`; web in
@@ -1415,11 +1419,11 @@ comment and ask".
   everyone: `POST /comments/:id/share` (or "Share it" on an old note for the AI), which runs the
   saved-entry, quote and context checks below, so a comment whose passage is not in the saved entry
   cannot be shared and the answer says why. Replies written on it meanwhile become visible with it.
-  `comments.json` now carries `version: 2`. A file without it (written by the first 27e build, which
+  `comments.json` now carries `version: 2`. A file without it (written by the first 31e build, which
   stamped old notes with the first owner and no mark) is corrected once on the first start: every
   comment that has no author, or whose author is the first owner (or any comment when no owner can be
   named yet) becomes legacy, then the file is written with `version: 2`. No marker of the first
-  migration exists, so this rule can hide a comment the first owner wrote under 27e (they share it
+  migration exists, so this rule can hide a comment the first owner wrote under 31e (they share it
   again in one click); it can never show more than before. Comments by anyone else are not touched.
 
 ### Saved text, sharing and limits (review fixes)

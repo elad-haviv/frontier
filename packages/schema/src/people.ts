@@ -3,7 +3,7 @@ import { ConfirmedBy, EmailCode, EmailPending, EmailUsed, ResetCode } from "./em
 import { Passkey } from "./state.js";
 
 /**
- * `/data/state/people.json`: everyone who has an account. Stage 27a holds the one account that
+ * `/data/state/people.json`: everyone who has an account. Stage 31a holds the one account that
  * the single "author" used to be; later parts add more people beside it.
  *
  * The shape leaves room without changing: a way of signing in that is not a password or a
@@ -11,7 +11,7 @@ import { Passkey } from "./state.js";
  * person id, so neither needs a new field here.
  */
 
-/** A sign-in through another service, such as Google. Google, from stage 27c. */
+/** A sign-in through another service, such as Google. Google, from stage 31c. */
 export const Identity = z.object({
   provider: z.string().min(1),
   /** The service's own, stable id for the person. */
@@ -43,12 +43,12 @@ export const Person = z.object({
   sessionEpoch: z.number().int().default(0),
   /** The server's first account. Only it may do what only the server's owner may. */
   admin: z.boolean().default(false),
-  /** The id of the project the person used last (stage 27b), so the app opens it after a login. */
+  /** The id of the project the person used last (stage 31b), so the app opens it after a login. */
   lastProject: z.string().nullable().default(null),
   /**
-   * Stage 28. When the address was confirmed (a link opened, Google's own check, or an emailed
+   * Stage 32. When the address was confirmed (a link opened, Google's own check, or an emailed
    * invitation joined with that address). Null for an address nobody has checked, which is every
-   * account from before stage 28 and every address typed on a server without mail.
+   * account from before stage 32 and every address typed on a server without mail.
    */
   emailConfirmedAt: z.string().datetime().nullable().default(null),
   emailConfirmedBy: ConfirmedBy.nullable().default(null),
@@ -64,7 +64,7 @@ export const Person = z.object({
    */
   emailDisplaced: z.boolean().default(false),
   /**
-   * The account itself set its current address after stage 28 (Change address, or the profile
+   * The account itself set its current address after stage 32 (Change address, or the profile
    * form), as against giving it when it joined. Until such an address is confirmed no reset link
    * is sent to it.
    */
@@ -94,7 +94,7 @@ export const emailKey = (email: string): string => email.normalize("NFKC").trim(
 
 /**
  * The domain a saved version is authored under for a person who has no email of their own (stage
- * 27d): `<person id>@people.frontier.invalid`. It receives nothing and names a person only for the
+ * 31d): `<person id>@people.frontier.invalid`. It receives nothing and names a person only for the
  * author lookup, so no account may ever have an address on it.
  */
 export const STAND_IN_DOMAIN = "people.frontier.invalid";
@@ -109,7 +109,7 @@ export function isStandInAddress(email: string): boolean {
   return domain === STAND_IN_DOMAIN || domain.endsWith(`.${STAND_IN_DOMAIN}`);
 }
 
-/** The email of an account: an address, never one on the stand-in domain (stage 27d). */
+/** The email of an account: an address, never one on the stand-in domain (stage 31d). */
 export const AccountEmail = z
   .string()
   .trim()

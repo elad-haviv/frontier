@@ -1,4 +1,4 @@
-/** Email (stage 28) on a server with no mail relay: everything is as it was before. */
+/** Email (stage 32) on a server with no mail relay: everything is as it was before. */
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { CreateInviteResponse } from "@frontier/schema";
 import {

@@ -104,7 +104,7 @@ export interface PublisherDeps {
   onRenamed?: (from: string, to: string) => Promise<void>;
   /** What a library item file reads as while it exists neither as a draft nor in the library. */
   libraryFiles?: { missing(name: string): unknown };
-  /** Tells who made a saved version, for the compare screen (stage 27d). */
+  /** Tells who made a saved version, for the compare screen (stage 31d). */
   authors?: Authors;
 }
 
@@ -148,7 +148,7 @@ export class Publisher {
    */
   async clearPublished(): Promise<void> {
     // Renames first: once a rename is on `main`, a draft of a file it moved belongs at the new path.
-    // This is for everyone's work, not one person's (stage 27d): a rename one person saved moves the
+    // This is for everyone's work, not one person's (stage 31d): a rename one person saved moves the
     // drafts other people have of the file, so what they wrote follows it and is never lost.
     const has = (p: string) => this.d.index.files.some((f) => f === p || f.startsWith(p + "/"));
     const applied: { intent: RenameIntent; owner: string }[] = [];
@@ -624,7 +624,7 @@ export class Publisher {
    * The person settled a conflict: their text now builds on the saved version they compared. That
    * version is `theirsBlob`; when the file holds another one by now (someone saved while they were
    * comparing), nothing is written and they compare again, so that version is never overwritten
-   * unseen. Without `theirsBlob` (the web app before 27d) the version is the one the server last
+   * unseen. Without `theirsBlob` (the web app before 31d) the version is the one the server last
    * compared for this change, and a change never compared is refused. One turn with plans and saves.
    */
   resolve(
@@ -795,7 +795,7 @@ export class Publisher {
     author?: { name: string; email: string },
     /**
      * Told the notes whose own draft was just published. The caller passes it to the browser,
-     * which asks for field proposals with its own AI key: the server has none (stage 27f).
+     * which asks for field proposals with its own AI key: the server has none (stage 31f).
      */
     onPublished?: (paths: string[]) => void,
   ): Promise<{ commit: string; conflicts: Conflict[] }> {

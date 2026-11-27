@@ -240,7 +240,7 @@ function Chronicle({ id }: { id: string }) {
   const worked = useMemo(() => (chronicle ? work(chronicle) : null), [chronicle]);
   // Every change runs through the ties, so what is tied follows what it is tied to.
   const fileChange = file.change;
-  // A chronicle is read by everyone and changed by writers (stage 27c): for a reader nothing
+  // A chronicle is read by everyone and changed by writers (stage 31c): for a reader nothing
   // changes it, and nothing is queued for the server, which would refuse it.
   const canWrite = useCanWrite();
   const change = useCallback<Change>(

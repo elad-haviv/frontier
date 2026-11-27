@@ -1,4 +1,4 @@
-/** A person in no project (stage 27c): they still have an account, and every path copes. */
+/** A person in no project (stage 31c): they still have an account, and every path copes. */
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { addMember, addPerson, type Client, makeTestApp, type TestApp } from "./helpers/app.js";
 

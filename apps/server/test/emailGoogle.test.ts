@@ -1,5 +1,5 @@
 /**
- * Google and addresses nobody confirmed (stage 28): a Google-verified person wins an address that
+ * Google and addresses nobody confirmed (stage 32): a Google-verified person wins an address that
  * an account only typed, when that account can still log in without it; a confirmed address, an
  * account that could be shut out, and the server's first account are never touched.
  */
@@ -117,7 +117,7 @@ async function trip(app: TestApp, query: string, grant: Grant, cookie = "") {
 
 /**
  * What an account has once a confirm link was sent to its address and ran out unopened: the only
- * state in which a Google-verified person may take the address (stage 28 review, D1).
+ * state in which a Google-verified person may take the address (stage 32 review, D1).
  */
 const lapsed = () => ({ emailLinkSentUntil: new Date(Date.now() - 3_600_000).toISOString() });
 
@@ -234,7 +234,7 @@ describe("a Google-verified person and an address someone else only typed", () =
     });
   });
 
-  it("is account_exists for a passkey account from before stage 28: no confirm link was ever sent to it", async () => {
+  it("is account_exists for a passkey account from before stage 32: no confirm link was ever sent to it", async () => {
     const email = "pre28.one@example.org";
     const old = await typed(t, email, { passkeys: [key()] });
     const link = await invite(t, owner);
@@ -392,7 +392,7 @@ describe("a Google-verified person and an address someone else only typed", () =
   });
 
   it("does not break the blank-email login of an account from before emails were asked for", async () => {
-    // The first account has no address yet: a blank email at login means it (stage 27c).
+    // The first account has no address yet: a blank email at login means it (stage 31c).
     const { hashPassword } = await import("../src/auth/password.js");
     const only = await makeTestApp(env({ MAIL_TEST_TRANSPORT: "memory" }));
     try {
@@ -579,7 +579,7 @@ describe("Google verifies an address", () => {
   });
 });
 
-describe("Google accounts from before stage 28", () => {
+describe("Google accounts from before stage 32", () => {
   const google = (email: string, sub: string) => ({
     provider: "google",
     subject: sub,

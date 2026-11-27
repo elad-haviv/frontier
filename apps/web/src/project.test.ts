@@ -38,7 +38,7 @@ describe("addresses in a project", () => {
     expect(inProject("/projects?new=1", avalymia)).toBe("/projects?new=1");
     expect(inProject("/login", avalymia)).toBe("/login");
     expect(inProject("/join/abc", avalymia)).toBe("/join/abc");
-    // The pages of the links in emails (stage 28) are no project's either.
+    // The pages of the links in emails (stage 32) are no project's either.
     for (const to of ["/confirm/abc", "/reset/abc", "/forgot-password"]) {
       expect(inProject(to, avalymia), to).toBe(to);
     }

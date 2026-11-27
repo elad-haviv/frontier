@@ -26,16 +26,16 @@ export interface Server {
   config: Config;
   /** The files of `/data/state` that are the server's (see `projects/layout.ts`). */
   files: StateFiles;
-  /** Everyone who has an account (stage 27a). */
+  /** Everyone who has an account (stage 31a). */
   people: PeopleStore;
   loginLimit: LoginLimiter;
-  /** Every project and its members (stage 27b). */
+  /** Every project and its members (stage 31b). */
   projects: ProjectStore;
   /** Sign-on with Google; null when it is not configured (the buttons are then hidden). */
   google: GoogleSignOn | null;
-  /** Invitation links, kept as hashes (stage 27c). */
+  /** Invitation links, kept as hashes (stage 31c). */
   invites: InviteStore;
-  /** Sending mail; `mail.enabled` is false when no relay is configured (stage 28). */
+  /** Sending mail; `mail.enabled` is false when no relay is configured (stage 32). */
   mail: Mail;
   /** Mails per recipient address (confirm, invite, resend): a few an hour. */
   mailLimit: LoginLimiter;
@@ -50,7 +50,7 @@ export interface Server {
   joins: Turn;
   /** The allowance of the public join and Google routes, counted by address, apart from logging in. */
   joinLimit: LoginLimiter;
-  /** The requests each member has open in each project, cut when they are removed (stage 27c). */
+  /** The requests each member has open in each project, cut when they are removed (stage 31c). */
   live: LiveRequests;
   /** Per-person AI choices and the rules for Keep going. */
   settings: SettingsStore;

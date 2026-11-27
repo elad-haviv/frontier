@@ -100,7 +100,7 @@ const markOf = (s: StatusSnapshot | null | undefined) =>
 
 /**
  * The snapshot as the device keeps it for an offline start: without who has unsaved changes and
- * who is reading (stage 27d). Those are true only while the stream says so, so a stored one would
+ * who is reading (stage 31d). Those are true only while the stream says so, so a stored one would
  * show as current when the app opens with no connection, and storing them on every change of
  * who reads would write to the device for nothing.
  */

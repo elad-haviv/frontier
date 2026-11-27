@@ -77,7 +77,7 @@ export class KeepGoing {
     return (await this.d.settings.current()).keepGoing.needsLove;
   }
 
-  /** Open shared comments per entry: everyone in the project may know their number (stage 27e). */
+  /** Open shared comments per entry: everyone in the project may know their number (stage 31e). */
   private commentCounts(): Promise<ReadonlyMap<string, number>> {
     return this.d.comments.counts();
   }

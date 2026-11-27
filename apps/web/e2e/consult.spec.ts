@@ -12,7 +12,7 @@ async function conversationModel(page: Page, model: string | null) {
     data: { models: { conversation: model } },
   });
   expect(res.ok(), await res.text()).toBe(true);
-  // The key is the device's own (stage 27f): the stand-in's goes on this browser.
+  // The key is the device's own (stage 31f): the stand-in's goes on this browser.
   if (model) await giveDeviceKeys(page);
 }
 

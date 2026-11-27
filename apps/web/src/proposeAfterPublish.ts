@@ -1,5 +1,5 @@
 /**
- * Field proposals after a publish (stage 27f). The server used to make them by itself once a
+ * Field proposals after a publish (stage 31f). The server used to make them by itself once a
  * publish was through; it has no AI key of its own now, so the browser that published asks for
  * them, with its key, right after. Nothing here nags: with the setting off, no model chosen, or no
  * key on this device for that model's provider, it quietly does nothing (the key dialog is never

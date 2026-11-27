@@ -343,7 +343,7 @@ test("comments on a passage: one for the author, one the AI works on", async ({ 
   await expect(page.locator(".cm-content")).toContainText("A rewritten passage (Do what");
   await expect(page.locator(".cm-comment")).toHaveCount(0);
 
-  // A note on text that is not saved yet cannot be shared (stage 27e), so it is for the AI, which
+  // A note on text that is not saved yet cannot be shared (stage 31e), so it is for the AI, which
   // is the writer's alone; it stays, and the entry's page counts it.
   await page.locator(".cm-content").getByText("A rewritten passage").click();
   await pressTool(page, "Comment");

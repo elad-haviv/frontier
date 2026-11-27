@@ -30,7 +30,7 @@ export const StatusSnapshot = z.object({
   }),
   /** One-time notices the web app shows and then clears. */
   notices: z.object({
-    /** AI keys that were stored on the server were deleted at start (stage 27f). */
+    /** AI keys that were stored on the server were deleted at start (stage 31f). */
     keysRemoved: z
       .object({
         at: z.string(),
@@ -42,7 +42,7 @@ export const StatusSnapshot = z.object({
   /** Rises each time the server itself changes a draft, so an open editor can reload it. */
   serverDraftChanges: z.number().int().min(0),
   /**
-   * Stage 27e. Rises each time an entry's shared comments change (a comment, a reply, an edit, a
+   * Stage 31e. Rises each time an entry's shared comments change (a comment, a reply, an edit, a
    * resolve, a delete), and names the entry, so an open page reads that entry's comments again.
    * No text, no author: comments are read from their own routes, by the role that may.
    */
@@ -66,7 +66,7 @@ export const StatusSnapshot = z.object({
     keptCopies: z.number().int().min(0),
   }),
   /**
-   * Stage 27d. `unpublished`, `conflicts`, `drafts`, `serverDraftChanges` and `attention.keptCopies`
+   * Stage 31d. `unpublished`, `conflicts`, `drafts`, `serverDraftChanges` and `attention.keptCopies`
    * above are the caller's own. These two are about other people, and only writers and owners get
    * them: for a reader both are empty.
    *

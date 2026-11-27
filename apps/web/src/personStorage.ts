@@ -1,6 +1,6 @@
 /**
  * Small things this device remembers for the signed-in person, such as proposals still to make
- * (stage 27f). They are filed under the person's id and the project's, so the next login on a shared browser neither
+ * (stage 31f). They are filed under the person's id and the project's, so the next login on a shared browser neither
  * reads nor continues them. Where storage is blocked they are simply not remembered.
  */
 import { keysOwner } from "./aiKeys.ts";

@@ -35,7 +35,7 @@ export function useDiscovery(
     year: number | null;
     setNotice: (notice: string | null) => void;
     /**
-     * Whether the person may see what the AI proposed and nobody kept: writers (stage 27c). A
+     * Whether the person may see what the AI proposed and nobody kept: writers (stage 31c). A
      * reader's map never asks for discoveries, which the server refuses to them.
      */
     enabled?: boolean;

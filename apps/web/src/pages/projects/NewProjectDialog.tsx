@@ -27,7 +27,7 @@ interface Half {
 }
 
 /**
- * Makes a project (stage 27b): its name, its address (filled in from the name until it is
+ * Makes a project (stage 31b): its name, its address (filled in from the name until it is
  * edited, and checked as it is typed) and what it starts with. A zip is sent to the new project
  * after it exists, with its progress shown; if that fails the project is still there, and the
  * dialog says so and offers to try again.

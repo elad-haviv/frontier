@@ -1,5 +1,5 @@
 /**
- * The compare screen's data and words (stage 27d, decision C). Two people changed one entry; the
+ * The compare screen's data and words (stage 31d, decision C). Two people changed one entry; the
  * second to save compares the two texts and chooses. These are the pure parts: turning what the
  * server sends into one shape, what each choice sends, and the sentences.
  */

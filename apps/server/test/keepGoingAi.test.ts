@@ -43,7 +43,7 @@ async function start(answers: object[], model: string | null = MODEL) {
   const p = provider(answers);
   t = await makeTestApp({}, { fetch: p.fake, settleMs: 0 });
   await t.login();
-  // The key is this device's own: it goes with each request (stage 27f).
+  // The key is this device's own: it goes with each request (stage 31f).
   t.keys = { openrouter: "sk-or-test-key-1234" };
   t.repo.pushFromOutside(NOTES);
   await t.services.sync();

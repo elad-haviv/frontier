@@ -1,5 +1,5 @@
 /**
- * Email (stage 28): confirming an address, changing it, and forgotten passwords.
+ * Email (stage 32): confirming an address, changing it, and forgotten passwords.
  *
  * Public routes (`confirm`, `forgot-password`, `reset`) answer alike for every link that does not
  * work and for every address, count against the per-address allowance of the other public routes,

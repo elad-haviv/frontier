@@ -91,7 +91,7 @@ export function MapBar({
 }) {
   // Deleting the map goes straight to the server, so it waits for a connection.
   const offline = useNeedsConnection();
-  // Editing, deleting and exploring (asking the AI) are writers' (stage 27c).
+  // Editing, deleting and exploring (asking the AI) are writers' (stage 31c).
   const canWrite = useCanWrite();
   const sphere = map.space.kind === "sphere";
   return (

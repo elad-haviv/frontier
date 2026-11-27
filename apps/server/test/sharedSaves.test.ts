@@ -1,5 +1,5 @@
 /**
- * Stage 27d: saved versions that several people make. Who made each version, what a person sees
+ * Stage 31d: saved versions that several people make. Who made each version, what a person sees
  * when someone else saved an entry first (decision C), two people saving at once, and renames and
  * deletes that meet another person's unsaved changes. Each is run on an own library and on a
  * library kept on GitHub (a local bare repository stands in for it).

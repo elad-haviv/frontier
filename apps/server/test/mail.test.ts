@@ -1,4 +1,4 @@
-/** Sending mail (stage 28): the configuration, the relay, the five emails, and what is never logged. */
+/** Sending mail (stage 32): the configuration, the relay, the five emails, and what is never logged. */
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ConfigError, loadConfig, parseSender } from "../src/config.js";
 import {

@@ -317,7 +317,7 @@ describe("the join page", () => {
   });
 });
 
-describe("the join page, after the review (stage 27c)", () => {
+describe("the join page, after the review (stage 31c)", () => {
   const typeAll = async (m: Mounted, password = "") => {
     await m.change(m.one<HTMLInputElement>('input[autocomplete="name"]'), "Yael Stern");
     await m.change(m.one<HTMLInputElement>('input[type="email"]'), "yael@example.org");

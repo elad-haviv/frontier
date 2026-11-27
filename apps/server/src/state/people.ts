@@ -13,7 +13,7 @@ import type { StateFiles } from "./files.js";
 
 /**
  * How an address came to count as confirmed, as far as is known now. An account from before
- * stage 28 that has a Google identity whose email is the account's address is confirmed by
+ * stage 32 that has a Google identity whose email is the account's address is confirmed by
  * Google (the next Google login writes it down; until then it is read from the identity).
  */
 export function confirmedOf(p: Person): { at: string; by: ConfirmedBy } | null {
@@ -30,7 +30,7 @@ export function confirmedOf(p: Person): { at: string; by: ConfirmedBy } | null {
  * Whether a confirm link was successfully sent to the account's address by Frontier and has run
  * out unopened: the holder had its whole time to prove the address and did not. A link still
  * live (even a newer one that never went) keeps the address safe, and an account that was never
- * sent one (every account from before stage 28, until "Send a link") has not lapsed.
+ * sent one (every account from before stage 32, until "Send a link") has not lapsed.
  */
 export function linkLapsed(p: Person, now = Date.now()): boolean {
   if (p.emailLinkSentUntil === null || Date.parse(p.emailLinkSentUntil) > now) return false;

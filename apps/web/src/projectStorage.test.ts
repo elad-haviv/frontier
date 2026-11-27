@@ -84,7 +84,7 @@ describe("what the device remembers for a library", () => {
     expect(s.getItem("frontier.pendingProposals:person2")).toBe("[2]");
   });
 
-  it("files what the first stage-27b build kept under a project alone under its person", () => {
+  it("files what the first stage-31b build kept under a project alone under its person", () => {
     const s = storage({ "frontier.maps.recent:avalymia01": "[3]" });
     fileUnfiled("person1", "avalymia01", s);
     expect(s.getItem("frontier.maps.recent:person1:avalymia01")).toBe("[3]");

@@ -11,7 +11,7 @@ import {
 } from "./helpers.ts";
 
 /**
- * Stage 27c: people in a project. The owner makes invite links; people join by them, are listed in
+ * Stage 31c: people in a project. The owner makes invite links; people join by them, are listed in
  * Members, have their role changed and are taken out; the join page says why a link is dead. Each
  * test leaves the project as it found it: the owner alone, with no link waiting.
  *

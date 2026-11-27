@@ -15,7 +15,7 @@ type Load =
   | { state: "failed"; message: string };
 
 /**
- * `/reset/<code>`: the page the link in the reset email opens (stage 28). It checks the link when
+ * `/reset/<code>`: the page the link in the reset email opens (stage 32). It checks the link when
  * it loads (a GET, which uses nothing up), takes a new password of 12 or more characters with a
  * live count, and says that other devices were logged out. Nobody is logged in by it. The code
  * stays in the address and nowhere else.

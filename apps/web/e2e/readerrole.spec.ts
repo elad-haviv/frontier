@@ -10,7 +10,7 @@ import {
 } from "./helpers.ts";
 
 /**
- * Stage 27c: a reader's shell. A reader reads everything saved, asks the lore and talks with
+ * Stage 31c: a reader's shell. A reader reads everything saved, asks the lore and talks with
  * characters, and sees no control that changes anything; the calls only a writer may make are not
  * made; an address that edits says what the role allows. A writer sees everything but the owner's
  * settings.

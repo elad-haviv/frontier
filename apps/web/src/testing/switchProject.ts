@@ -1,6 +1,6 @@
 /**
  * Helpers for tests of work that finishes after the person has gone to another project (stage
- * 27b). `switchWhileAsking` stands in for the server and, while one chosen call is being
+ * 31b). `switchWhileAsking` stands in for the server and, while one chosen call is being
  * answered, opens another project: the second half of a multi-step action then runs with the
  * wrong project open unless the action took its project when it began.
  */

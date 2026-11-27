@@ -16,7 +16,7 @@ export const nextColour = async (server: Server): Promise<number> =>
   (await server.projects.all()).length % PROJECT_COLOURS;
 
 /**
- * The library the server already has becomes the first project (stage 27b). Its files do not move:
+ * The library the server already has becomes the first project (stage 31b). Its files do not move:
  * the record says `legacy`, which is `library.git`, `vault`, `state` and `assets` straight under
  * the data folder. Made once, when the project store is empty: named from `FRONTIER_PROJECT_NAME`,
  * with the first account as its owner and every other account that exists as well, to be safe.
