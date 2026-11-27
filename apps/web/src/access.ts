@@ -33,6 +33,7 @@ export function clearAccessNotice(): void {
 /** Forgets the notice and every project marked as leaving; at logout, so the next person sees none. */
 export function resetAccess(): void {
   leaving.clear();
+  inviteLinks.clear();
   clearAccessNotice();
 }
 
@@ -89,3 +90,24 @@ export function takeJoined(): string | null {
     return null;
   }
 }
+
+// ---- The invite link just made ---------------------------------------------------------------
+
+/** A link made on Members, which the server never shows again. */
+export interface MadeInvite {
+  id: string;
+  url: string;
+  role: "reader" | "writer" | "owner";
+}
+/** In memory only, never in storage: a link is a key, and it stays in this tab until logout. */
+const inviteLinks = new Map<string, MadeInvite>();
+
+/** Keeps the link just made for a project while the person moves about Settings. */
+export function rememberInviteLink(project: string, link: MadeInvite | null): void {
+  if (link) inviteLinks.set(project, link);
+  else inviteLinks.delete(project);
+}
+
+/** The link made for a project in this session, if it was not taken away. */
+export const recalledInviteLink = (project: string): MadeInvite | null =>
+  inviteLinks.get(project) ?? null;

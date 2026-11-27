@@ -7,10 +7,13 @@ import "./Problem.css";
 export function Problem({
   reason,
   onRetry,
+  retryLabel = "Retry",
   href,
 }: {
   reason: string;
   onRetry?: () => void;
+  /** The words of the button that tries again. */
+  retryLabel?: string;
   /** Where the problem is put right, such as a section of Settings. */
   href?: string | undefined;
 }) {
@@ -28,7 +31,7 @@ export function Problem({
       </p>
       {onRetry && (
         <button type="button" className="quiet" onClick={onRetry}>
-          Retry
+          {retryLabel}
         </button>
       )}
     </div>

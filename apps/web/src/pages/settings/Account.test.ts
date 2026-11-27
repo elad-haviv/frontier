@@ -172,4 +172,26 @@ describe("Settings → Signing in, and Google", () => {
     expect(sessionStorage.getItem("frontier.linkGoogleTrip")).toBeNull();
     expect(m.withText("button", "Log in again and link Google")).toBeNull();
   });
+
+  it("hints that a passkey or Google login is needed before the password goes off, unless that is how they logged in", async () => {
+    stubServer(() => answer({}));
+    const key = { id: "k1", name: "Phone", addedAt: "2026-11-20T10:00:00.000Z" };
+    for (const [method, hint] of [
+      ["password", true],
+      [undefined, true],
+      ["passkey", false],
+      ["google", false],
+    ] as const) {
+      const m = await show(
+        me({ google: false, passwordSet: true, passkeys: [key], method: method as never }),
+      );
+      expect(
+        m.host.textContent?.includes("log in with a passkey or Google first"),
+        String(method),
+      ).toBe(hint);
+      await m.unmount();
+      mounted = null;
+      clearMe();
+    }
+  });
 });

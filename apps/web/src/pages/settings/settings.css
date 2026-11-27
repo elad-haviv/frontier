@@ -578,8 +578,8 @@ div.field-ok p {
   color: var(--warn);
 }
 .general-danger .danger-solid {
-  border-color: #8a2c14;
-  background: #8a2c14;
+  border-color: var(--danger-solid);
+  background: var(--danger-solid);
   color: #fff;
 }
 .general-danger .danger-solid:disabled {

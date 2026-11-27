@@ -49,6 +49,10 @@ function takeLinkTrip(): boolean {
   }
 }
 
+/** Whether this session was made with a passkey or Google, which the password may be switched off from. */
+const viaPasskeyOrGoogle = (method: string | undefined): boolean =>
+  method === "passkey" || method === "google";
+
 /** Passkeys, Google, the password, the switch that turns it off, and Log out. */
 export function Account() {
   const me = useMe();
@@ -385,7 +389,7 @@ export function Account() {
           />
           <span>
             Switch the password off
-            {me.method === "password" && !me.passwordOff && (
+            {!viaPasskeyOrGoogle(me.method) && !me.passwordOff && (
               <em className="muted"> (log in with a passkey or Google first)</em>
             )}
           </span>

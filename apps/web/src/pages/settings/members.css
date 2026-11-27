@@ -15,6 +15,7 @@
 .member-who {
   flex: 1;
   min-width: 0;
+  overflow-wrap: anywhere;
   display: grid;
   gap: 0.1rem;
 }
@@ -24,6 +25,7 @@
   overflow-wrap: anywhere;
 }
 .member-name {
+  overflow-wrap: anywhere;
   display: flex;
   align-items: center;
   flex-wrap: wrap;
@@ -148,6 +150,19 @@
   }
 }
 .member-ask .danger-solid {
-  border-color: #8a2c14;
-  background: #8a2c14;
+  border-color: var(--danger-solid);
+  background: var(--danger-solid);
+}
+
+.member-name b {
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+.member-saving {
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+textarea.linkbox {
+  resize: none;
+  color: var(--ink);
 }

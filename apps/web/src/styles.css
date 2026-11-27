@@ -10,6 +10,8 @@
   --accent: #9a3b1c;
   --accent-soft: #f0ddd2;
   --warn: #a12a22;
+  /* The fill of a button that does something that cannot be undone: white text on it passes AA. */
+  --danger-solid: #8a2c14;
   --shadow: 0 12px 40px rgba(35, 32, 27, 0.18);
   --serif: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif;
   --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
@@ -70,6 +72,7 @@
     --accent: #e08a5f;
     --accent-soft: #3a261d;
     --warn: #f08c82;
+    --danger-solid: #b5402e;
     --shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
     --map-select: #fb923c;
     /* Still mid-tones, so white text keeps 4.5:1 or more on the dark paper. */
@@ -2520,8 +2523,9 @@ input.map-title {
   padding: 0.5rem 1rem;
 }
 .dialog-actions .danger-solid {
-  border-color: #8a2c14;
-  background: #8a2c14;
+  border-color: var(--danger-solid);
+  background: var(--danger-solid);
+  color: #fff;
 }
 
 /* ---- Chronicles ---------------------------------------------------------------------------- */
