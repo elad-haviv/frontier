@@ -19,6 +19,7 @@ import type { RouteApp } from "../projects/facade.js";
 import { nextColour } from "../projects/first.js";
 import { pathsOf, projectFolder } from "../projects/layout.js";
 import type { Services } from "../projects/services.js";
+import { countsOf, readSummary, UNKNOWN } from "../projects/summary.js";
 import { newProjectId } from "../projects/store.js";
 import { ensureOwnLibrary, ensureSampleRemote } from "../sample.js";
 import type { Server } from "../server.js";
@@ -143,18 +144,12 @@ export function projectsApi(app: FastifyInstance, server: Server): void {
     const projects = await Promise.all(
       mine.map(async (record): Promise<ProjectSummary> => {
         const role = record.members.find((m) => m.personId === person.id)!.role;
-        let entries: number | null = null;
-        let maps: number | null = null;
-        let lastVersion: ProjectSummary["lastVersion"] = null;
-        try {
-          const open = await server.registry.open(record);
-          entries = open.index.allNotes().length;
-          maps = (await open.maps.list()).length;
-          lastVersion = await open.git.lastVersion();
-        } catch (err) {
-          // A project whose library cannot be opened is still listed, without its numbers.
-          request.log.error({ err, project: record.slug }, "Could not open a project for the list");
-        }
+        // Never opens the project: an open one is counted live, any other from the small file it
+        // saved when its index last changed; unknown (null) when it has not been opened yet.
+        const open = server.registry.loaded(record.id);
+        const counts = await (open && open.index.commit !== null
+          ? countsOf(open).catch(() => UNKNOWN)
+          : readSummary(pathsOf(server.config.dataDir, record).state));
         return {
           id: record.id,
           slug: record.slug,
@@ -163,15 +158,14 @@ export function projectsApi(app: FastifyInstance, server: Server): void {
           colour: record.colour,
           kind: record.kind,
           role,
-          entries,
-          maps,
+          legacy: record.layout === "legacy",
+          ...counts,
           members: await Promise.all(
             record.members.map(async (m) => ({
               id: m.personId,
               name: await nameOf(server, m.personId),
             })),
           ),
-          lastVersion,
         };
       }),
     );

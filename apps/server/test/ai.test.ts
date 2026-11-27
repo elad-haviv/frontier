@@ -1,6 +1,8 @@
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { request } from "node:http";
+import type { AddressInfo } from "node:net";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   EntryResponse,
   InboxResponse,
@@ -271,6 +273,50 @@ describe("calling the provider", () => {
     const log = (await t.get("/api/ai/log")).json();
     expect(log.totalUsd).toBe(0.002);
     expect(log.calls).toHaveLength(1);
+  });
+
+  it("still logs a call under its person when the client leaves before the answer comes", async () => {
+    // The request's holder is emptied when the client goes; the call, already on its way, is
+    // still that person's and is priced by their settings.
+    const p = provider([GOOD]);
+    let reached!: () => void;
+    let release!: () => void;
+    const inCall = new Promise<void>((r) => (reached = r));
+    const gate = new Promise<void>((r) => (release = r));
+    const slow: typeof fetch = async (input, init) => {
+      const path = new URL(String(input)).pathname;
+      if (!path.endsWith("/key") && !path.endsWith("/models")) {
+        reached();
+        await gate;
+      }
+      return p.fake(input, init);
+    };
+    t = await makeTestApp({}, { fetch: slow, settleMs: 0 });
+    await t.login();
+    t.repo.pushFromOutside({ [VEL]: BODY });
+    await t.services.sync();
+    expect((await t.put("/api/settings/ai", { models: { extraction: MODEL } })).statusCode).toBe(
+      200,
+    );
+    t.keys = { openrouter: KEY };
+    await t.app.listen({ port: 0, host: "127.0.0.1" });
+    const port = (t.app.server.address() as AddressInfo).port;
+    const req = request({
+      port,
+      host: "127.0.0.1",
+      method: "POST",
+      path: "/api/proposals/fields",
+      headers: { ...t.base(), "content-type": "application/json" },
+    });
+    req.on("error", () => undefined);
+    req.end(JSON.stringify({ path: VEL }));
+    await inCall;
+    req.destroy();
+    await new Promise((r) => setTimeout(r, 300));
+    release();
+    await vi.waitFor(() => expect(logLines()).toHaveLength(1));
+    const me = (await t.services.server.people.all())[0]!;
+    expect(logLines()[0]).toMatchObject({ task: "extraction", person: me.id });
   });
 
   it("has no spending cap: calls go on however much has been spent", async () => {

@@ -143,10 +143,16 @@ export const ProjectSummary = z.object({
   kind: ProjectKind,
   /** The person's own role here. */
   role: ProjectRole,
-  /** Notes in the library as last saved; null while its library is not opened yet and has never been counted. */
+  /** Notes in the library as last saved; null while its library has never been opened (the list never opens one). */
   entries: z.number().int().nullable(),
   maps: z.number().int().nullable(),
   members: z.array(ProjectPerson),
+  /**
+   * True for the one project whose files are the server's old layout, the library a device kept
+   * its pre-projects copy of: only this project may take over that copy. Absent from a list a
+   * device kept before the flag existed.
+   */
+  legacy: z.boolean().optional(),
   /** The last saved version of the library: when, and by whom (the author's name). */
   lastVersion: z.object({ at: z.string(), by: z.string() }).nullable(),
 });

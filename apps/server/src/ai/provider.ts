@@ -121,6 +121,13 @@ interface Target {
   provider: ResolvedProvider;
   model: string;
   adapter: ProviderAdapter;
+  /**
+   * Who the call is for and the prices they entered, taken when the call starts. The request's
+   * holder is emptied when the client disconnects, which can be before the call is recorded; the
+   * record still belongs to this person and is priced with their settings.
+   */
+  person: string | null;
+  prices: Record<string, ModelPrice>;
 }
 
 /**
@@ -238,12 +245,22 @@ export class AiProvider {
         { href: `/settings/you/ai-models/${task}` },
       );
     }
-    return { id: `${id}:${model}`, provider, model, adapter: this.connections.adapter(provider) };
+    return {
+      id: `${id}:${model}`,
+      provider,
+      model,
+      adapter: this.connections.adapter(provider),
+      person: requestPerson(),
+      prices: (await this.d.settings.current()).ai.modelPrices,
+    };
   }
 
   /** Prices to estimate a cost with: the author's, else the provider's list. */
-  private async priceOf(id: string): Promise<ModelPrice | null> {
-    const own = (await this.d.settings.current()).ai.modelPrices[id];
+  private async priceOf(
+    id: string,
+    prices?: Record<string, ModelPrice>,
+  ): Promise<ModelPrice | null> {
+    const own = (prices ?? (await this.d.settings.current()).ai.modelPrices)[id];
     if (own) return own;
     const listed = await this.catalog?.find(id);
     return listed && listed.promptPrice !== null && listed.completionPrice !== null
@@ -263,14 +280,14 @@ export class AiProvider {
     const reached = usage !== undefined;
     const used = u.promptTokens > 0 || u.completionTokens > 0;
     const { costUsd, costKind } = reached
-      ? costOf(u, u.costUsd === null && used ? await this.priceOf(t.id) : null)
+      ? costOf(u, u.costUsd === null && used ? await this.priceOf(t.id, t.prices) : null)
       : { costUsd: 0, costKind: "reported" as const };
     await this.d.log.append({
       at: this.now().toISOString(),
       task,
       model: t.id,
       provider: t.provider.id,
-      ...(requestPerson() ? { person: requestPerson()! } : {}),
+      ...(t.person ? { person: t.person } : {}),
       promptTokens: u.promptTokens,
       completionTokens: u.completionTokens,
       costUsd,

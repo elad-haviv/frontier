@@ -12,6 +12,8 @@ const goneError = () => new ApiError("no_project", "This project has been delete
 
 export class ProjectRegistry {
   private readonly open_ = new Map<string, Promise<Services>>();
+  /** The services that are made and brought up, for a caller that must not wait for an opening. */
+  private readonly ready_ = new Map<string, Services>();
   /** Projects that were deleted: never opened again, whatever record a request still holds. */
   private readonly gone = new Set<string>();
 
@@ -27,6 +29,7 @@ export class ProjectRegistry {
     if (!made) {
       made = this.build(record).then(async (services) => {
         await services.bringUp();
+        if (this.open_.get(record.id) === made) this.ready_.set(record.id, services);
         return services;
       });
       // A failed opening is not kept, so the next request tries again.
@@ -44,6 +47,12 @@ export class ProjectRegistry {
     const made = this.build(record);
     this.open_.set(record.id, made);
     made.catch(() => this.open_.delete(record.id));
+    void made.then(
+      (services) => {
+        if (this.open_.get(record.id) === made) this.ready_.set(record.id, services);
+      },
+      () => undefined,
+    );
     return made;
   }
 
@@ -60,6 +69,14 @@ export class ProjectRegistry {
   }
 
   /**
+   * The services of a project that is already open and brought up, or null. Never opens, never
+   * waits: the project list uses it to show live numbers without waking a project (stage 27b).
+   */
+  loaded(id: string): Services | null {
+    return this.ready_.get(id) ?? null;
+  }
+
+  /**
    * Marks a project as deleted and closes its services. From the first line on `open` refuses the
    * id, so a request that already has the project's record cannot bring its services (and its
    * folders) back. Delete the project from the store before this, and move the folder after.
@@ -72,6 +89,7 @@ export class ProjectRegistry {
   async close(id: string): Promise<void> {
     const made = this.open_.get(id);
     this.open_.delete(id);
+    this.ready_.delete(id);
     if (made) await (await made.catch(() => null))?.close();
   }
 

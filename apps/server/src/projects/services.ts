@@ -52,6 +52,7 @@ import { DraftStore } from "../state/drafts.js";
 import { VaultIndex } from "../index/build.js";
 import { SearchIndex } from "../index/search.js";
 import { StatusService } from "../status/status.js";
+import { SummaryWriter } from "./summary.js";
 
 export interface Services {
   config: Config;
@@ -375,6 +376,7 @@ export async function buildServices(
   });
   await quarantine.load();
 
+  const summary = new SummaryWriter(stateDir);
   let brought: Promise<void> | undefined;
   let stopPolling: () => void = () => undefined;
   const services: Services = {
@@ -439,6 +441,7 @@ export async function buildServices(
       backup.retire();
       stopPolling();
       unwatchServer();
+      summary.close();
     },
     async sync() {
       const result = await git.fetch();
@@ -460,6 +463,8 @@ export async function buildServices(
       await proposals.prune();
       status.inbox(await services.branches.count());
       status.indexed();
+      // The project list counts from this small file, so it never has to open the project.
+      await summary.noteIndexed(services);
     },
   };
   services.branches = new BranchInbox({

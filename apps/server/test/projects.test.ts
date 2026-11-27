@@ -1,6 +1,6 @@
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { buildApp } from "../src/app.js";
 import { loadConfig } from "../src/config.js";
 import { StateFiles } from "../src/state/files.js";
@@ -568,3 +568,40 @@ function ProjectsResponseCheck(body: unknown) {
     }[];
   };
 }
+
+describe("the project list", () => {
+  it("marks the legacy project and never opens a project to count it", async () => {
+    const made = await make("northwind", "Northwind");
+    // Opened once, so it saves its numbers; closed again, it is not open.
+    expect((await admin.get("/api/p/northwind/tree")).statusCode).toBe(200);
+    await vi.waitFor(() =>
+      expect(
+        existsSync(join(t.services.config.dataDir, "projects", made.id, "state", "summary.json")),
+      ).toBe(true),
+    );
+    await t.server.registry.close(made.id);
+    expect(t.server.registry.loaded(made.id)).toBeNull();
+    const opened: string[] = [];
+    const open = t.server.registry.open.bind(t.server.registry);
+    t.server.registry.open = (record) => {
+      opened.push(record.slug);
+      return open(record);
+    };
+
+    const list = (await admin.get("/api/projects")).json();
+    const north = list.projects.find((p: { slug: string }) => p.slug === "northwind");
+    expect(opened).toEqual([]);
+    expect(north).toMatchObject({ legacy: false, entries: 1, maps: 0 });
+    expect(list.projects.find((p: { slug: string }) => p.slug === "avalymia").legacy).toBe(true);
+
+    // With no saved numbers a project is unknown, not zero, and still not opened.
+    rmSync(join(t.services.config.dataDir, "projects", made.id, "state", "summary.json"));
+    const again = (await admin.get("/api/projects")).json();
+    expect(opened).toEqual([]);
+    expect(again.projects.find((p: { slug: string }) => p.slug === "northwind")).toMatchObject({
+      entries: null,
+      maps: null,
+      lastVersion: null,
+    });
+  });
+});
