@@ -1244,3 +1244,78 @@ What the review of the first build changed, in the order of its list:
   say that their unsaved changes are kept 30 days and come back if they rejoin. When the owner removes
   someone, show `unsavedKept` ("3 unsaved changes are kept for 30 days"). A demoted person is a reader
   at once (their unsaved changes are hidden, not lost): say so in the reader's one line.
+
+## 12. How it was built: 27d web
+
+Built on 2026-11-27 against the server of section 11, which it did not change. Nothing in
+`apps/server` or `packages/schema` moved: every field the web reads was already in the schema.
+
+### What was built
+
+| Item | Where | What it does |
+| --- | --- | --- |
+| Authors | `people/model.ts`, `pages/Entry.tsx`, `pages/History.tsx`, `components/entry/HistoryPanel.tsx`, `pages/Conflict.tsx` | "Last version by <name>, <when>" under the title, from `lastVersion`; "by <name>" on every row of an entry's History, of the library's Versions and of the History tab; the compare screen names who saved the other version. An author with no name shows no "by" (and "Last version, 2 hours ago"), never a blank one. A removed person's name is whatever the server sends. |
+| Your own unsaved changes | `Shell.tsx` (`useWords`), `shell/LeftBar.tsx`, `pages/Unpublished.tsx`, `pages/Status.tsx` | "Your unsaved changes" (own library) or "Your unpublished changes" (GitHub) in the left bar, the page and the phone's top line; the status page's count is "Your ..." too; the page says only the person sees them. Counts are the per-person status the server already sends. |
+| Others' work in progress | `people/live.ts`, `people/OthersNotice.tsx`, `components/Tree.tsx`, `pages/Entry.tsx`, `pages/Edit.tsx` | A quiet notice, "Wren has unsaved changes to this entry, since 2 hours ago." (two: "Wren and Rex have ..., the first since ..."; four or more: "Wren, Rex and 2 more"). In the editor it adds "You can still edit. Whoever saves second compares the two texts before anything is kept." A small dot on the tree row with the role `img` and the label "Wren has unsaved changes to this entry". Never text. It comes from the status stream (`othersUnsaved`), so it follows live; the entry's own list is used only until the stream has spoken. |
+| Who is reading | `people/presence.ts`, `people/ReadingNow.tsx`, `sync/tab.ts`, `sync/connection.ts` | Each tab has a name (`TAB_CLIENT`) used for both the stream (`?client=`) and `PUT /presence`. The open published entry is announced when it opens, every 25 s, and cleared when the page moves on. A hidden or closing tab sends a JSON Blob beacon to `/presence/leave` and announces again when shown. An entry that is only the person's own unsaved new one is announced as `null`. Writers and owners see "Wren is also here" with initials (the words are there for the phone). Readers announce and see nothing. |
+| The compare screen | `people/compare.ts`, `pages/Conflict.tsx`, `pages/Compare.css`, `pages/Unpublished.tsx` | See below. |
+| Deleted by someone else | `people/compare.ts` (`reasonOf`) | "Wren deleted this entry (14:02) while you were working on it. Your text is kept here." The existing Resolve screen keeps the text and saving adds the entry back. A rename or move by someone else makes the person's draft follow it silently (the server does this), so there is nothing to name; a rename that cannot be carried out says why, as before. |
+| Queue | `sync/queue.ts` (audited, unchanged) | Entry text is dropped only by the person's own Discard and by a save the server accepted or answered with `stale_revision` (its text is a kept copy on the server). A 404, a `saved_by_other`, a 400, an unknown refusal: the record stays in "needs attention" with its text, for Retry or Discard. Tests pin each. A `stale_revision { id }` for an id the server re-homed carries on with that id. |
+| Members | `pages/settings/Members.tsx` | Removing says "Their 3 unsaved changes are kept for 30 days, and come back if they rejoin in that time." Leaving says the same of the person's own. |
+| Offline | `offline/keeper.ts`, `offline/device.ts`, `people/live.ts` | `othersUnsaved`, `presence` and `lastVersion` are live decorations. The notice, the dot and who reads are hidden while offline and for any answer the device copy gave. The device keeps the status without them (`snapshotForDevice`), writes it only when something it keeps changed, and its freshness mark never read them, so who reads cannot make it fetch again. "Last version" from the device copy says "(as of this copy)". |
+| Reader shell | all of the above | A reader sees authors (entry, History, Versions) and no notice, dot, reading line, unsaved changes or presence controls; the server sends them nothing and the hooks return nothing for a reader or an unknown role. |
+
+### The compare screen (decision C, in both library modes)
+
+`ConflictPage` is the one screen. For `saved_by_other` (and for a clean merge opened from the server)
+it is the compare screen; for every other clash it is the editor it always was, so the review's
+"Resolve" link and "Save as resolved" button are unchanged.
+
+- **Opened** from the review's "Compare" link (with the conflict in the link's state) or from
+  `/conflict/<id>` alone, which asks `GET /drafts/:id/compare`. Nothing differing any more, or a
+  change that is gone (404), says so in a line with a link back.
+- **Shown:** "Compare two versions of <name>"; their text titled "Wren saved this at 14:02", then
+  "Mine, not saved yet", side by side on a desktop and stacked on a phone, each in a box that scrolls
+  and can be reached by keyboard; "Show what is different" (a diff) below.
+- **Chosen:** a group of three radios, none chosen to begin with. **Keep mine** resolves with the
+  person's own text. **Keep theirs** asks first ("What you wrote in this entry is thrown away"),
+  then resolves with their text. **Use the merged text** is pre-filled from `mergedText` and
+  editable; when the two changes touch the same lines there is no merge, so it is called "Combine
+  them by hand" and starts from the person's own text.
+- **Sent:** every resolve carries the `theirsBlob` of what was shown (`null` for "there was no file").
+- **After:** the person goes back to the review, which plans again at once with the line they had
+  typed, so the save carries on instead of starting over. "Keep theirs" says what was kept.
+- **They saved again:** a 409 `saved_by_other` on the resolve changes nothing; the screen says
+  "Rex saved again while you were comparing. Nothing was changed.", takes the focus, compares again
+  (`GET /drafts/:id/compare`), shows their new text, clears the choice, and keeps whatever the
+  person had typed in the merged box (only an untouched merge is replaced by the new one).
+- **A partial save:** `POST /publish/confirm` may answer with `conflicts`. The page says plainly
+  "2 entries saved (Harbor, Mira). 1 entry needs comparing, because someone saved a newer version
+  first: Rope." with a "Compare" link for each. A confirm refused as `saved_by_other` (nothing could
+  go in) plans again at once and shows the compare links.
+
+### Where it departs from the mockup and the brief
+
+- The approved mockup (`frontier-people-projects.html`) draws the entry's byline, the notice and the
+  avatars but **not** the compare screen or the words "Keep mine", "Keep theirs" and "Use the merged
+  text"; those come from the brief and section 11, and the layout is Frontier's existing Resolve
+  page extended. The mockup's byline puts the History link beside the author; the History button is
+  there for writers and readers alike.
+- The mockup's notice says "Whoever saves second sees both texts side by side before anything is
+  kept" on the entry page. The brief says the entry page's notice is quiet and the editor's says what
+  will happen, so the entry page has only the first sentence.
+- Section 11 says an entry's "second look" may come from an entry page that knows the saved version
+  moved on. The entry page does not know that (it holds no base), so there is no such button; the
+  compare screen opens from the review and by its address.
+- The e2e server keeps its library through a remote (the status says `sample`), which the app words
+  as GitHub. The browser tests therefore ran the compare screen in that mode; the own library's words
+  ("Save a version", "Your unsaved changes") are covered by unit tests, and its saving by the server's
+  own tests for both modes.
+
+### Tests
+
+Vitest: `people/{model,compare,presence,live}.test.ts`, `pages/Conflict.test.ts` (the compare
+screen's choices, resolve bodies, the 409 and compare again, the older screen), and additions to
+`sync/queue.test.ts` (text kept on a 404 and other refusals, re-homed ids), `sync/connection.test.ts`
+(`?client=`) and `offline/keeper.test.ts` (no thrash). Playwright: `e2e/people.spec.ts`, with two or
+three people in separate browser contexts.

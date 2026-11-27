@@ -49,6 +49,14 @@ talk with characters with their own AI key; a writer has everything but the owne
 pages for this are `/p/<project>/settings/members`, `/join/<code>` (open to someone not logged in),
 and `/settings/account` (Signing in), where Google is linked and unlinked.
 
+Two people in one project (stage 27d, web): each has their own unsaved changes, and the app says so
+("Your unsaved changes"). An entry shows "Last version by <name>", and every saved version in its
+history carries its author. A writer sees a quiet notice, and a dot in the tree, when someone else
+has unsaved changes to an entry (never what they wrote), and who else is reading it. Whoever saves
+second sees the compare screen, in an own library and on GitHub alike: the other person's version
+with who and when, their own, and Keep mine, Keep theirs or the merged text. If someone saves again
+while a person is comparing, they are told and compare again; text is never dropped.
+
 "Continue with Google" is off unless the server has a client id and secret. To set it up:
 
 1. In the Google Cloud console, under APIs & Services, make an OAuth client of type "Web
