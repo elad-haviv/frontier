@@ -67,6 +67,9 @@ Tests:
   machine load and passes alone.
 - `keepgoing.spec.ts` "after Publish … goes away after ten seconds" and `reader.spec.ts` "outline"
   have each failed once under load and passed alone.
+- `keepgoing.spec.ts` "p twice quickly makes one change" failed once in the last full run (478 passed).
+  It passes when run one at a time (9 of 9) and fails now and then when the phone and desktop
+  copies run together: both act as the same person on the same pin.
 - Running one email spec several times in parallel collides on member names; a single run is fine.
 
 ## Choices made while building that the owner may want to change
