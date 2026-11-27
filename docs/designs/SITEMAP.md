@@ -14,6 +14,7 @@
 | [Stage 15: offline](stage-15-offline.md) | 2026-11-23 | Elad Haviv | Installable app and service worker; device copy of the index and the last 30 entries, 5 maps, 5 chronicles; offline reads and writes; item kept copies | 15a, 15b, 15c. Approved after a Goldfish review. |
 | [Stage 17: the chronicle as a timeline](stage-17-chronicles-timeline.md) | 2026-11-24 | Elad Haviv | One Gantt-like timeline per chronicle; typed dates; ties; details panel; List view; the map year line | Replaces stage 5's Order, Scale, Does not fit and Lanes tabs. Approved with all the designer's recommendations. |
 | [Stage 30: Trees](stage-30-trees.md) | 2026-11-27 | Elad Haviv | `relations` in entry frontmatter; kinds of relation; `/api/relations`; the trees file; the Trees page, a tree, the entry's Relations tab | Family trees, descent, pantheons and hierarchies from one model. Approved from a mockup after an independent design review. |
+| [Stage 31: relations from the prose](stage-31-relations-from-prose.md) | 2026-11-27 | Elad Haviv | `add_relation` proposals; checks, matching and merging; the inbox for many; proposals in trees and the Relations tab; Find relations | Propose fields reads relations too. Approved from a mockup after an independent design review. |
 
 Status: Approved on 2026-11-20 after a five-stage review. The review reports are in this repository's Git
 history (removed from the working tree in the commit that approved the design).

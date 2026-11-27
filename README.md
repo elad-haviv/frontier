@@ -29,6 +29,7 @@ Stage 1 of nine is in progress. What exists so far:
 | Stages 26 and 28: the library as a menu item and full-drawer panel on the phone, and as a pane beside the sidebar on desktop                 | Built; covered by tests                                                      |
 | Stage 29: generating pictures for entries from the image dialog, in the art style from Settings                                              | Built; covered by tests                                                      |
 | Stage 30: Trees: relations on entries; family trees, descent, pantheons and hierarchies; an entry's Relations tab                            | Built; covered by tests                                                      |
+| Stage 31: the AI proposes relations from the prose, decided in the inbox, in trees and in an entry's Relations tab                           | Built; covered by tests                                                      |
 
 The app writes to its vault: drafts are saved on the server and Publish makes one commit.
 
