@@ -693,10 +693,10 @@ function LoginToJoin({
           disabled={busy}
           onClick={() =>
             window.location.assign(
-              // An emailed link's proof cannot come back through a trip that joins (the server
-              // returns to the bare invite page), but one that only logs in returns to this
-              // address as it is: so a person logging in to their account keeps it.
-              googleStartUrl(m ? { returnTo: joinAddress(code, m) } : { invite: code }),
+              // The invitation always goes with the trip, so a person who logs in with Google
+              // still gets to join: the proof only saved one confirm email, which the server
+              // does without it.
+              googleStartUrl({ invite: code }),
             )
           }
         >

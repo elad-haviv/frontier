@@ -5,7 +5,7 @@ import { Link, useLocation } from "../nav.tsx";
 import { MailPage } from "./MailPage.tsx";
 import {
   BAD_ADDRESS,
-  isJoinPath,
+  isJoinLink,
   looksLikeEmail,
   mailFailure,
   rememberInvitation,
@@ -27,7 +27,7 @@ export function ForgotPage() {
   const [busy, setBusy] = useState(false);
   const field = useRef<HTMLInputElement>(null);
   const id = useId();
-  const back = isJoinPath(from.from) ? from.from : undefined;
+  const back = isJoinLink(from.from) ? from.from : undefined;
 
   // Without mail there is nothing to send: the page says so instead of asking.
   useEffect(() => {

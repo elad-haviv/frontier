@@ -226,3 +226,10 @@ textarea.linkbox {
   flex: none;
   margin-top: 0.15rem;
 }
+
+/* A resend whose mail failed, with its new link in its own row. */
+.invite-rowlink {
+  flex: 1 1 100%;
+  display: grid;
+  gap: var(--space-2);
+}

@@ -11,7 +11,7 @@ const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 export const looksLikeEmail = (address: string): boolean => EMAIL.test(address.trim());
 
 export const BAD_ADDRESS = "That doesn't look like an email address.";
-export const TRY_LATER = "Try again in a few minutes.";
+export const TRY_LATER = "Too many requests. Try again later.";
 export const NEED_PASSWORD = "Enter your password to change it.";
 export const SENT_AGAIN = "Sent again. Check your inbox and spam.";
 export const NOT_SENT = "We could not send it. Try again in a minute.";
@@ -112,22 +112,33 @@ export function bannerLead(view: Extract<BannerView, { kind: "confirm" }>): stri
 /** Where a person who asked for a new password from an invitation goes once it is set. */
 const AFTER_RESET = "frontier.afterReset";
 const HOUR = 60 * 60 * 1000;
-/** Only an invite page of this app, never an address from elsewhere. */
-const JOIN_PATH = /^\/join\/[A-Za-z0-9_-]{1,64}(\?m=[A-Za-z0-9_-]{1,64})?$/;
+/** Only an invite page of this app, never an address from elsewhere, and never a query. */
+const JOIN_PATH = /^\/join\/[A-Za-z0-9_-]{1,64}$/;
+/** The same, as a login form holds it: with the emailed link's proof when it came with one. */
+const JOIN_LINK = /^\/join\/[A-Za-z0-9_-]{1,64}(\?m=[A-Za-z0-9_-]{1,64})?$/;
 
-/** Whether `path` is an invite page this app may send a person back to. */
+/** Whether `path` is the bare invite page of this app, which a reset may send a person back to. */
 export const isJoinPath = (path: unknown): path is string =>
   typeof path === "string" && JOIN_PATH.test(path);
+
+/** Whether `path` is an invite page of this app, with or without the emailed link's proof. */
+export const isJoinLink = (path: unknown): path is string =>
+  typeof path === "string" && JOIN_LINK.test(path);
+
+/** The bare invite page of an invite address (its proof taken off), or undefined for any other. */
+export const joinPageOf = (path: unknown): string | undefined =>
+  isJoinLink(path) ? path.split("?")[0] : undefined;
 
 /**
  * Remembers the invite page a person came from to ask for a new password, for an hour, so the
  * email's link (which opens in another tab or app) can bring them back to it. Only the invite
- * page's own address is kept, never a confirm or reset link.
+ * page's own address is kept: never a confirm or reset link, and never the emailed link's proof
+ * (it is a secret that does not belong in storage, and it saved one confirm email at most).
  */
 export function rememberInvitation(path: string | undefined, now = Date.now()): void {
   try {
-    if (isJoinPath(path))
-      localStorage.setItem(AFTER_RESET, JSON.stringify({ path, until: now + HOUR }));
+    const page = joinPageOf(path);
+    if (page) localStorage.setItem(AFTER_RESET, JSON.stringify({ path: page, until: now + HOUR }));
   } catch {
     /* without storage the person logs in and opens the invitation again */
   }

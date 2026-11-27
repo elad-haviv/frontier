@@ -89,7 +89,7 @@ describe("the confirm banner", () => {
     reply = () => failure(429, "rate_limited", "Too many requests. Try again later.") as never;
     await m.click(m.withText("button", "Resend")!);
     await m.settle();
-    expect(m.one('[role="status"]').textContent).toBe("Try again in a few minutes.");
+    expect(m.one('[role="status"]').textContent).toBe("Too many requests. Try again later.");
     reply = () =>
       failure(409, "already_confirmed", "Your email address is already confirmed.") as never;
     await m.click(m.withText("button", "Resend")!);
@@ -212,5 +212,44 @@ describe("the confirm banner", () => {
     await act(async () => void window.dispatchEvent(new Event("focus")));
     await m.settle();
     expect(m.host.querySelector("aside")).toBeNull();
+  });
+});
+
+describe("the banner's half-minute poll", () => {
+  afterEach(() => vi.useRealTimers());
+
+  /** Mounts the banner, then lets 65 seconds pass and counts the reads of the person. */
+  async function reads(who: ReturnType<typeof person>): Promise<number> {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+    const { calls } = await banner(who);
+    calls.length = 0;
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(65_000);
+    });
+    return calls.filter((c) => c.url === "/api/me" && c.method === "GET").length;
+  }
+
+  it("runs while a link was sent or is on its way", async () => {
+    expect(await reads(person())).toBeGreaterThan(0);
+    await mounted?.unmount();
+    expect(
+      await reads(person({ emailInfo: emailInfo({ sent: { at: "t", ok: null } }) })),
+    ).toBeGreaterThan(0);
+  });
+
+  it("does not run when no link was sent, when it failed, or when an address is to be added", async () => {
+    expect(await reads(person({ emailInfo: emailInfo({ sent: null }) }))).toBe(0);
+    await mounted?.unmount();
+    expect(await reads(person({ emailInfo: emailInfo({ sent: { at: "t", ok: false } }) }))).toBe(0);
+    await mounted?.unmount();
+    expect(await reads(person({ emailInfo: emailInfo({ needsAddress: true }) }))).toBe(0);
+  });
+
+  it("still reads again on focus when it does not poll", async () => {
+    const { calls } = await banner(person({ emailInfo: emailInfo({ sent: null }) }));
+    calls.length = 0;
+    await act(async () => void window.dispatchEvent(new Event("focus")));
+    await mounted!.settle();
+    expect(calls.filter((c) => c.url === "/api/me" && c.method === "GET").length).toBe(1);
   });
 });

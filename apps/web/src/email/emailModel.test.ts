@@ -4,7 +4,9 @@ import { emailInfo } from "../testing/email.ts";
 import {
   bannerLead,
   bannerView,
+  isJoinLink,
   isJoinPath,
+  joinPageOf,
   looksLikeEmail,
   mailFailure,
   mailState,
@@ -67,10 +69,8 @@ describe("the banner's view of an address", () => {
 });
 
 describe("the words of the new refusals", () => {
-  it("says try again in a few minutes for the rate limit, the same for every address", () => {
-    expect(mailFailure("rate_limited", "Too many requests. Try again later.")).toBe(
-      "Try again in a few minutes.",
-    );
+  it("says too many requests for the rate limit (limits are per hour), the same for every address", () => {
+    expect(mailFailure("rate_limited", "x")).toBe("Too many requests. Try again later.");
   });
 
   it("words each code in the plain voice and keeps the server's message for the rest", () => {
@@ -110,7 +110,7 @@ describe("addresses and passwords", () => {
 describe("the invitation a reset comes back to", () => {
   it("accepts only an invite page of this app", () => {
     expect(isJoinPath("/join/abc_DEF-1")).toBe(true);
-    expect(isJoinPath("/join/abc?m=Zr3_h-8")).toBe(true);
+    expect(isJoinPath("/join/abc?m=Zr3_h-8")).toBe(false);
     for (const bad of [
       "https://evil.example/join/a",
       "//evil.example",
@@ -123,9 +123,17 @@ describe("the invitation a reset comes back to", () => {
       expect(isJoinPath(bad)).toBe(false);
   });
 
+  it("tells an invite address with its proof from any other, and takes the proof off", () => {
+    expect(isJoinLink("/join/abc?m=Zr3_h-8")).toBe(true);
+    expect(isJoinLink("/join/abc?x=1")).toBe(false);
+    expect(joinPageOf("/join/abc?m=Zr3_h-8")).toBe("/join/abc");
+    expect(joinPageOf("/join/abc")).toBe("/join/abc");
+    expect(joinPageOf("https://evil.example/join/a")).toBeUndefined();
+  });
+
   it("is kept for an hour, read once, and never anything but an invite page", () => {
     rememberInvitation("/join/abc?m=xyz", 1000);
-    expect(takeInvitation(1000 + 60_000)).toBe("/join/abc?m=xyz");
+    expect(takeInvitation(1000 + 60_000)).toBe("/join/abc");
     // Read once: forgotten as it was read.
     expect(takeInvitation(1000 + 60_000)).toBeNull();
     rememberInvitation("/join/abc", 1000);
@@ -135,6 +143,12 @@ describe("the invitation a reset comes back to", () => {
     localStorage.setItem(
       "frontier.afterReset",
       JSON.stringify({ path: "//evil.example", until: 9e15 }),
+    );
+    expect(takeInvitation()).toBeNull();
+    // A value an earlier build kept, proof and all, is refused.
+    localStorage.setItem(
+      "frontier.afterReset",
+      JSON.stringify({ path: "/join/abc?m=xyz", until: 9e15 }),
     );
     expect(takeInvitation()).toBeNull();
     localStorage.setItem("frontier.afterReset", "not json");

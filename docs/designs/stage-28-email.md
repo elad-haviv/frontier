@@ -341,8 +341,8 @@ that the invite box says the server cannot send email and Signing in shows the a
 
 - **Banner.** Shown for `status: "unconfirmed"` (about the pending address while a change waits) and for
   `needsAddress`; never for a confirmed address or with mail off. No close button. It reads the person
-  again on focus, on tab visibility, when the connection says access may have changed, and every 30 s
-  while shown. Its status line is `aria-live="polite"`.
+  again on focus, on tab visibility and when the connection says access may have changed (in every
+  state), and every 30 s only while a link was sent or is on its way. Its status line is `aria-live="polite"`.
 - **Change address asks for the current password** (or opens the recent-login dialog when the account
   has no working password), in the banner too, because the server requires it. The mockup's banner form
   had only the address.
@@ -352,12 +352,16 @@ that the invite box says the server cannot send email and Signing in shows the a
 - **Reset page** checks the link with a GET, takes 12+ characters with a live count, and logs nobody in.
 - **Proof.** `?m=` is read once into state, kept in the address (a reload keeps it) and sent on every
   join call. A Google trip that joins returns to the bare invite page (the server ignores `returnTo`
-  with an invitation), so the proof cannot survive it; the login form's Google button on a page that has
-  a proof therefore does a plain login with `returnTo` set to the invite page with its proof.
+  with an invitation), so the proof cannot survive it; the login form's Google button therefore always
+  passes `invite: <code>` (never `returnTo`), proof or not, so the invitation is never dropped.
 - **Forgot password from an invitation.** The invite page's address is remembered in `localStorage`
-  (`frontier.afterReset`, only a `/join/<code>[?m=<proof>]` path, one hour, read once) so the reset
+  (`frontier.afterReset`, only a bare `/join/<code>` path, never the `?m=` proof, one hour, read once) so the reset
   link, which opens in another tab or app, can lead back to it through the login page. No confirm or
-  reset code is ever stored.
+  reset code or proof is ever stored. After a reset that ended this browser's own session, the login
+  dialog is not opened over the reset page (the Done page has its own Log in).
+- **Refusals and resends.** Every rate limit reads "Too many requests. Try again later." (limits are per
+  hour). A resend whose mail failed shows its new link in its own row when another link is on screen,
+  and never replaces that one without asking.
 - **Service worker and `api.ts`.** `/confirm/*`, `/reset/*`, `/forgot-password` are page routes like
   `/login` (the worker answers every navigation with the app). `/api/confirm/`, `/api/reset/` and
   `/api/forgot-password` are "open" in `api.ts` (a 401 never opens the login dialog) and are never

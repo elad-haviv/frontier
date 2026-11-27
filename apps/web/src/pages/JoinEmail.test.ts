@@ -245,7 +245,7 @@ describe("the join page and an emailed link", () => {
     });
   });
 
-  it("goes to Google for an existing account with the emailed address as where to return", async () => {
+  it("goes to Google for an existing account with the invitation, proof or not", async () => {
     const assign = vi.fn();
     vi.stubGlobal("location", { ...window.location, assign });
     stubServer((url, method) =>
@@ -262,9 +262,7 @@ describe("the join page and an emailed link", () => {
     await m.click(m.withText("button", "Join Avalymia")!);
     await m.settle();
     await m.click(m.withText("button", "Continue with Google")!);
-    expect(assign).toHaveBeenCalledWith(
-      `/api/auth/google/start?returnTo=${encodeURIComponent(`/join/${CODE}?m=${M}`)}`,
-    );
+    expect(assign).toHaveBeenCalledWith(`/api/auth/google/start?invite=${CODE}`);
   });
 
   it("keeps the proof when it takes a Google problem off the address", async () => {

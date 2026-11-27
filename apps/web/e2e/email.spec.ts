@@ -484,16 +484,17 @@ test("a join with an address that has an account offers Forgot password, and the
   await reset.getByLabel("New password").fill(fresh);
   await reset.getByLabel("New password").press("Enter");
   await expect(reset.getByRole("heading", { name: "Your password is changed" })).toBeVisible();
-  // Log in leads to the login page, which goes on to the invitation, with its proof.
+  // Log in leads to the login page, which goes on to the invitation: the bare page, since the
+  // proof is never kept through a reset.
   await reset.getByRole("button", { name: "Log in" }).click();
   await reset.fill("#email", address);
   await reset.fill("#password", fresh);
   await reset.click("button[type=submit]");
-  await expect(reset).toHaveURL(new RegExp(`/join/.*\\?m=`));
+  await expect(reset).toHaveURL(/\/join\/[A-Za-z0-9_-]+$/);
   await reset.getByRole("button", { name: /^Join as / }).click();
   await expect(reset).toHaveURL(/\/p\/sample$/);
   await expect(reset.locator(".home h1")).toBeVisible();
-  // The proof went with the accept, kept through the login and the reset.
+  // The proof did not survive the reset (it is never stored), so the accept carries none.
   expect(accepted).toHaveLength(1);
-  expect(accepted[0]).toMatch(/\/accept\?m=/);
+  expect(accepted[0]).not.toContain("?m=");
 });

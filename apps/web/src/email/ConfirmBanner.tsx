@@ -16,7 +16,7 @@ const AGAIN_MS = 30_000;
  * "Confirm your email: we sent a link to ..." above every page, with Resend and Change address
  * (stage 28). It has no close button and goes by itself once the address is confirmed, which it
  * learns by asking again when the person comes back to the tab, when the connection says things
- * may have changed, and every half minute. It is never drawn with mail off.
+ * may have changed, and (while a link was sent or is on its way) every half minute. It is never drawn with mail off.
  */
 export function ConfirmBanner() {
   const me = useMe();
@@ -39,14 +39,24 @@ export function ConfirmBanner() {
     const stop = connection.onAccessMayHaveChanged(again);
     window.addEventListener("focus", again);
     document.addEventListener("visibilitychange", again);
-    const timer = window.setInterval(again, AGAIN_MS);
     return () => {
       stop();
       window.removeEventListener("focus", again);
       document.removeEventListener("visibilitychange", again);
-      window.clearInterval(timer);
     };
   }, [shown]);
+
+  // The half-minute poll is for a link that is on its way or was sent, which another device may
+  // open. Nothing is waiting to be opened when no link was sent, when it failed, or when an
+  // address is to be added, so those states do not poll.
+  const polls = view?.kind === "confirm" && (view.state === "sent" || view.state === "sending");
+  useEffect(() => {
+    if (!polls) return;
+    const timer = window.setInterval(() => {
+      if (document.visibilityState !== "hidden") void loadMe();
+    }, AGAIN_MS);
+    return () => window.clearInterval(timer);
+  }, [polls]);
 
   // Closing the form puts the focus back on the button that opened it.
   useEffect(() => {

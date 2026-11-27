@@ -115,9 +115,7 @@ describe("the reset page", () => {
     await m.click(m.withText("button", "Log in")!);
     // The login page the router went to carries where to go on from.
     expect(where()).toBe("/login");
-    expect(mounted!.host.querySelector("[data-from]")?.getAttribute("data-from")).toBe(
-      "/join/abc?m=Zz9",
-    );
+    expect(mounted!.host.querySelector("[data-from]")?.getAttribute("data-from")).toBe("/join/abc");
     expect(localStorage.getItem("frontier.afterReset")).toBeNull();
   });
 

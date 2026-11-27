@@ -48,6 +48,9 @@ export function Invites({ projectName }: { projectName: string }) {
     rememberInviteLink(project.id, next);
     setLinkNow(next);
   };
+  // The new link of a resend whose mail failed, kept with its own row: the link shown above is
+  // another invitation's and is not replaced without asking.
+  const [rowLinks, setRowLinks] = useState<Record<string, string>>({});
   const [waiting, setWaiting] = useState<{ list: InviteSummary[]; at: number } | null>(null);
   const [listError, setListError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -194,17 +197,22 @@ export function Invites({ projectName }: { projectName: string }) {
     try {
       const made = await api.resendInvite(invite.id);
       const to = made.sentTo ?? invite.sentTo ?? "";
-      // The new link is shown when it was not emailed (so it can be copied), when no link is on
-      // screen, and when the one on screen was this invitation's (which just stopped working).
-      if (made.mail === "failed" || link === null || link.id === invite.id) {
+      const url = made.url || `${window.location.origin}${made.path}`;
+      // The new link is shown above when no link is on screen, and when the one on screen was
+      // this invitation's (which just stopped working). When the mail failed and the link above
+      // is another invitation's, it is shown in the new invitation's own row, so nothing the
+      // person may still need to copy is replaced without asking.
+      if (link === null || link.id === invite.id) {
         setLink({
           id: made.id,
-          url: made.url || `${window.location.origin}${made.path}`,
+          url,
           role: made.role,
           sentTo: made.sentTo,
           mail: made.mail,
         });
         setByHand(false);
+      } else if (made.mail === "failed") {
+        setRowLinks((was) => ({ ...was, [made.id]: url }));
       }
       setSaid(resentWords(to, made.mail));
     } catch (err) {
@@ -406,6 +414,20 @@ export function Invites({ projectName }: { projectName: string }) {
                     >
                       {cancelling === w.id ? "Cancelling…" : "Cancel it"}
                     </ActionButton>
+                    {rowLinks[w.id] && (
+                      <div className="invite-rowlink" role="group" aria-label="The new invite link">
+                        <p className="invite-failed" role="status">
+                          <Icon icon={Mail} size="sm" />
+                          <span>
+                            <b>We made a new link but could not send the email to {w.sentTo}.</b>{" "}
+                            Copy it and send it yourself.
+                          </span>
+                        </p>
+                        <span className="linkbox" data-testid="invite-row-link">
+                          {rowLinks[w.id]}
+                        </span>
+                      </div>
+                    )}
                   </li>
                 );
               })}

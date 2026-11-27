@@ -97,7 +97,7 @@ describe("the forgot password page", () => {
     expect(document.activeElement).toBe(m.one('input[type="email"]'));
   });
 
-  it("says try again in a few minutes for the rate limit, whatever the address", async () => {
+  it("says too many requests for the rate limit, whatever the address", async () => {
     const { m } = await ask((url) =>
       url === "/api/forgot-password"
         ? failure(429, "rate_limited", "Too many requests. Try again later.")
@@ -106,7 +106,7 @@ describe("the forgot password page", () => {
     await m.change(m.one('input[type="email"]'), "a@example.org");
     await submit(m);
     await m.settle();
-    expect(m.one('[role="alert"]').textContent).toBe("Try again in a few minutes.");
+    expect(m.one('[role="alert"]').textContent).toBe("Too many requests. Try again later.");
     // Still the form: nothing was sent, and the person can try again.
     expect(m.host.querySelector("form")).not.toBeNull();
   });
@@ -116,7 +116,9 @@ describe("the forgot password page", () => {
     expect(m.one<HTMLInputElement>('input[type="email"]').value).toBe("yael@example.org");
     await submit(m);
     await m.settle();
-    expect(takeInvitation()).toBe("/join/abc?m=Zz9");
+    // Only the invite page is kept: the emailed link's proof stays out of storage.
+    expect(takeInvitation()).toBe("/join/abc");
+    expect(localStorage.getItem("frontier.afterReset")).toBeNull();
   });
 
   it("remembers nothing that is not an invite page of the app", async () => {

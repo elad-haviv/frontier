@@ -302,6 +302,42 @@ describe("Members: the invite box with mail on", () => {
     expect(m.host.textContent).toContain("We made a new link but could not send the email");
   });
 
+  it("shows the new link in its own row when a resend could not be emailed and another link is on the screen", async () => {
+    const own = made({ id: "i2" });
+    const fresh = made({
+      id: "i9",
+      url: "http://localhost/join/fresh",
+      sentTo: "yael@example.org",
+      mail: "failed",
+    });
+    let resent = false;
+    const { m } = await owners(
+      true,
+      [invite({ id: "a", sentTo: "yael@example.org", mail: "sent" })],
+      (url, method) =>
+        url.endsWith("/resend") && method === "POST"
+          ? ((resent = true), answer(fresh, 201))
+          : url.endsWith("/invites") && method === "POST"
+            ? answer(own, 201)
+            : url.endsWith("/invites") && method === "GET" && resent
+              ? answer({
+                  invites: [invite({ id: "i9", sentTo: "yael@example.org", mail: "failed" })],
+                })
+              : undefined,
+    );
+    await submit(m);
+    await m.settle();
+    await m.click(m.withText("button", "Resend")!);
+    await m.settle();
+    // Nothing was asked and nothing replaced: the link made by hand is still the one above...
+    expect(document.querySelector('[role="dialog"], [role="alertdialog"]')).toBeNull();
+    expect(m.one("[data-testid=invite-link]").textContent).toBe(own.url);
+    // ...and the new one, which could not be emailed, is with the invitation it belongs to.
+    const rowLink = m.one(".invite-row [data-testid=invite-row-link]");
+    expect(rowLink.textContent).toBe(fresh.url);
+    expect(rowLink.closest(".invite-row")!.textContent).toContain("could not send the email");
+  });
+
   it("says try again later when a resend meets the limit", async () => {
     const { m } = await owners(
       true,
