@@ -122,7 +122,6 @@ function Details({
   m,
   task,
   typical,
-  capUsd,
   onUse,
   onPrice,
   inUse,
@@ -130,7 +129,6 @@ function Details({
   m: CatalogModel;
   task: AiTaskName;
   typical: ModelsResponse["typical"];
-  capUsd: number;
   onUse: () => void;
   onPrice: (p: Price) => Promise<void>;
   inUse: boolean;
@@ -227,10 +225,8 @@ function Details({
           {task === "conversation" ? "A typical lore question" : "Proposing fields for an entry"}{" "}
           here sends about {t.promptTokens.toLocaleString()} tokens and gets{" "}
           {t.completionTokens.toLocaleString()} back: about{" "}
-          {each < 0.01 ? `${(each * 100).toFixed(2)}¢` : `$${each.toFixed(2)}`} each.
-          {each > 0 &&
-            capUsd > 0 &&
-            ` Your cap of $${capUsd.toFixed(0)} covers about ${Math.floor(capUsd / each).toLocaleString()}.`}
+          {each < 0.01 ? `${(each * 100).toFixed(2)}¢` : `$${each.toFixed(2)}`} each, which your
+          provider charges you.
         </p>
       )}
       {m.recommendedFor.includes(task) && (
@@ -247,8 +243,8 @@ function Details({
           }}
         >
           <p>
-            No price is known for this model, so its cost could not count against your cap. Type its
-            price to choose it.
+            No price is known for this model, so what its calls cost can&apos;t be worked out. Type
+            its price to have your spending count it, or use it without.
           </p>
           <div className="mp-price-row">
             <label>
@@ -265,9 +261,14 @@ function Details({
             </label>
           </div>
           {error && <p className="field-error">{error}</p>}
-          <button type="submit" className="primary">
-            Save the price and use it
-          </button>
+          <p className="mp-price-actions">
+            <button type="submit" className="primary">
+              Save the price and use it
+            </button>
+            <button type="button" className="quiet" onClick={onUse} disabled={inUse}>
+              {inUse ? "In use" : "Use it without a price"}
+            </button>
+          </p>
         </form>
       ) : (
         <button type="button" className="primary" onClick={onUse} disabled={inUse}>
@@ -288,7 +289,6 @@ export function ModelPicker({
   error,
   onRetry,
   current,
-  capUsd,
   sheet,
   onChoose,
   onPrice,
@@ -303,7 +303,6 @@ export function ModelPicker({
   error: string | null;
   onRetry: () => void;
   current: string | null;
-  capUsd: number;
   /** Drawn as a full-height sheet (a phone) rather than a panel. */
   sheet: boolean;
   onChoose: (m: CatalogModel) => void;
@@ -564,7 +563,7 @@ export function ModelPicker({
                       {!m.costReported && m.promptPrice !== null && (
                         <span className="tag">cost estimated</span>
                       )}
-                      {needsPrice(m) && !why && <span className="tag need">needs a price</span>}
+                      {needsPrice(m) && !why && <span className="tag need">no price</span>}
                       {!m.checked && <span className="tag">not checked</span>}
                       {why && <span className="mp-why">{why}</span>}
                     </span>
@@ -625,9 +624,10 @@ export function ModelPicker({
             m={detailsFor}
             task={task}
             typical={catalog.typical}
-            capUsd={capUsd}
             inUse={detailsFor.id === current}
-            onUse={() => pick(detailsFor)}
+            onUse={() => {
+              if (!whyNot(task, detailsFor)) onChoose(detailsFor);
+            }}
             onPrice={(p) => onPrice(detailsFor, p)}
           />
         )}
@@ -647,9 +647,10 @@ export function ModelPicker({
             m={detailsFor}
             task={task}
             typical={catalog.typical}
-            capUsd={capUsd}
             inUse={detailsFor.id === current}
-            onUse={() => pick(detailsFor)}
+            onUse={() => {
+              if (!whyNot(task, detailsFor)) onChoose(detailsFor);
+            }}
             onPrice={(p) => onPrice(detailsFor, p)}
           />
         </div>

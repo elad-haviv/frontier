@@ -13,7 +13,8 @@ import { makeTestApp, type TestApp } from "./helpers/app.js";
 let t: TestApp;
 afterEach(() => t.close());
 
-const SECRETS = { SECRETS_KEY: Buffer.alloc(32, 3).toString("base64") };
+/** The key this test's "device" holds. It reaches the server only in the keys header. */
+const KEY = "sk-or-test-key-1234";
 const MODEL = "test/model";
 /** The model as stored since stage 18: OpenRouter's, qualified. */
 const QMODEL = `openrouter:${MODEL}`;
@@ -67,19 +68,17 @@ function provider(answers: (object | "network" | number)[], cost = 0.002) {
 
 async function start(
   answers: (object | "network" | number)[],
-  opts: { env?: Record<string, string>; cost?: number; setUp?: boolean } = {},
+  opts: { env?: Record<string, string>; cost?: number; setUp?: boolean; keys?: boolean } = {},
 ) {
   const p = provider(answers, opts.cost);
-  t = await makeTestApp({ ...SECRETS, ...opts.env }, { fetch: p.fake, settleMs: 0 });
+  t = await makeTestApp({ ...opts.env }, { fetch: p.fake, settleMs: 0 });
   await t.login();
   t.repo.pushFromOutside({ [VEL]: BODY });
   await t.services.sync();
   if (opts.setUp !== false) {
-    const res = await t.put("/api/settings/ai", {
-      key: "sk-or-test-key-1234",
-      models: { extraction: MODEL },
-    });
+    const res = await t.put("/api/settings/ai", { models: { extraction: MODEL } });
     expect(res.statusCode, res.body).toBe(200);
+    if (opts.keys !== false) t.keys = { openrouter: KEY };
   }
   return p;
 }
@@ -117,50 +116,75 @@ const GOOD = {
   ],
 };
 
-describe("settings and the provider key", () => {
-  it("stores the key encrypted, never sends it back, and removes it on request", async () => {
+describe("settings and the device's key", () => {
+  it("never stores a key, never sends one back, and keeps the choices", async () => {
     await start([{ reply: "ok" }], { setUp: false });
-    expect(await settings()).toMatchObject({
-      keySet: false,
-      keyFrom: "none",
-      canStoreKey: true,
-      monthlyCapUsd: 10,
-      proposeOnPublish: false,
-      spentUsd: 0,
-    });
-    await t.put("/api/settings/ai", { key: "sk-or-test-key-1234", models: { extraction: MODEL } });
+    expect(await settings()).toMatchObject({ proposeOnPublish: false, spentUsd: 0 });
+    // A key in a request is used for it and forgotten: settings hold only the choices.
+    t.keys = { openrouter: KEY };
+    await t.put("/api/settings/ai", { models: { extraction: MODEL }, artStyle: "Charcoal." });
     const body = (await t.get("/api/settings")).body;
     expect(body).not.toContain("sk-or-test-key");
-    expect(await settings()).toMatchObject({ keySet: true, keyFrom: "settings", keyLast4: "1234" });
+    for (const gone of [
+      "keySet",
+      "keyFrom",
+      "keyLast4",
+      "providers",
+      "canStoreKey",
+      "monthlyCap",
+    ]) {
+      expect(body).not.toContain(gone);
+    }
     const stored = readFileSync(join(t.services.config.dataDir, "state", "settings.json"), "utf8");
     expect(stored).not.toContain("sk-or-test-key");
     // Passwords are the people store's, never the settings file's.
     expect(JSON.parse(stored).passwordHash).toBe("");
-
-    await t.put("/api/settings/ai", { key: null, monthlyCapUsd: 3 });
-    expect(await settings()).toMatchObject({ keySet: false, monthlyCapUsd: 3 });
     expect((await settings()).models.extraction).toBe(QMODEL);
   });
 
-  it("refuses to store a key without SECRETS_KEY and uses the one from the environment", async () => {
+  it("does not read keys from the server's environment", async () => {
     const p = provider([{ reply: "ok" }]);
     t = await makeTestApp(
-      { OPENROUTER_API_KEY: "sk-or-from-env-9876" },
+      {
+        OPENROUTER_API_KEY: "sk-or-from-env-9876",
+        ANTHROPIC_API_KEY: "sk-ant-from-env-9876",
+        SECRETS_KEY: Buffer.alloc(32, 3).toString("base64"),
+      },
       { fetch: p.fake, settleMs: 0 },
     );
     await t.login();
-    const res = await t.put("/api/settings/ai", { key: "sk-or-test-key-1234" });
-    expect(res.statusCode).toBe(409);
-    expect(res.json().error.code).toBe("secrets_key_missing");
-    expect(await settings()).toMatchObject({
-      keyFrom: "environment",
-      keyLast4: "9876",
-      canStoreKey: false,
-    });
     await t.put("/api/settings/ai", { models: { extraction: MODEL } });
-    const test = (await t.post("/api/settings/ai/test")).json();
-    expect(test).toMatchObject({ ok: true, costUsd: 0.002 });
-    expect(p.calls[0]!.auth).toBe("Bearer sk-or-from-env-9876");
+    const test = await t.post("/api/settings/ai/test");
+    expect(test.statusCode).toBe(409);
+    expect(test.json().error).toMatchObject({ code: "ai_key_missing", provider: "openrouter" });
+    expect(p.calls).toHaveLength(0);
+    // With the key in the request it works, and the call carries that key.
+    t.keys = { openrouter: KEY };
+    expect((await t.post("/api/settings/ai/test")).json()).toMatchObject({
+      ok: true,
+      costUsd: 0.002,
+    });
+    expect(p.calls[0]!.auth).toBe(`Bearer ${KEY}`);
+  });
+
+  it("checks the key a request carries, and stores nothing whatever the answer", async () => {
+    await start([{ reply: "ok" }], { setUp: false });
+    const before = readFileSync(join(t.services.config.dataDir, "state", "settings.json"), "utf8");
+    // No key in the request: the answer is the typed error the web app asks for a key with.
+    const none = await t.post("/api/ai/keys/openrouter/check");
+    expect(none.statusCode).toBe(409);
+    expect(none.json().error).toMatchObject({ code: "ai_key_missing", provider: "openrouter" });
+    expect((await t.post("/api/ai/keys/nobody/check")).statusCode).toBe(404);
+    t.keys = { openrouter: KEY };
+    expect((await t.post("/api/ai/keys/openrouter/check")).json()).toEqual({
+      ok: true,
+      refused: false,
+      message: "The key works: 2 models listed.",
+      models: 2,
+    });
+    expect(readFileSync(join(t.services.config.dataDir, "state", "settings.json"), "utf8")).toBe(
+      before,
+    );
   });
 
   it("lists the models with prices per million tokens and what each task can use", async () => {
@@ -196,11 +220,29 @@ describe("settings and the provider key", () => {
 });
 
 describe("calling the provider", () => {
-  it("is off without a key or a model", async () => {
-    await start([GOOD], { setUp: false });
-    const res = await propose();
+  it("asks for a key first when the device has none, then for a model", async () => {
+    const p = await start([GOOD], { setUp: false });
+    // No key and no model: the key comes first, since a model cannot be tried without one.
+    let res = await propose();
     expect(res.statusCode).toBe(409);
-    expect(res.json().error.code).toBe("ai_off");
+    expect(res.json().error).toMatchObject({
+      code: "ai_key_missing",
+      provider: "openrouter",
+      message: "No key on this device for OpenRouter. Add one under AI keys.",
+      href: "/settings/device/ai-keys",
+    });
+    // A key but no model: the model is what is missing.
+    t.keys = { openrouter: KEY };
+    res = await propose();
+    expect(res.json().error).toMatchObject({
+      code: "ai_off",
+      href: "/settings/you/ai-models/extraction",
+    });
+    // A model from a provider this device has no key for.
+    await t.put("/api/settings/ai", { models: { extraction: "anthropic:claude-x" } });
+    res = await propose();
+    expect(res.json().error).toMatchObject({ code: "ai_key_missing", provider: "anthropic" });
+    expect(p.calls).toHaveLength(0);
     expect(logLines()).toEqual([]);
   });
 
@@ -230,23 +272,17 @@ describe("calling the provider", () => {
     const log = (await t.get("/api/ai/log")).json();
     expect(log.totalUsd).toBe(0.002);
     expect(log.calls).toHaveLength(1);
-    expect((await t.get("/api/status")).json().ai).toEqual({
-      on: true,
-      conversation: false,
-      lastError: null,
-    });
   });
 
-  it("stops at the monthly cap with a message that says how much and where to change it", async () => {
-    const p = await start([GOOD], { cost: 0.6 });
-    await t.put("/api/settings/ai", { monthlyCapUsd: 0.5 });
+  it("has no spending cap: calls go on however much has been spent", async () => {
+    const p = await start([GOOD], { cost: 6 });
     expect((await propose()).statusCode).toBe(200);
     t.repo.pushFromOutside({ "01 Places/Second.md": "# Second\n\nFounded in the dry year.\n" });
     await t.services.sync();
-    const res = await propose("01 Places/Second.md");
-    expect(res.statusCode).toBe(402);
-    expect(res.json().error.message).toMatch(/\$0\.60.*cap is \$0\.50.*settings page/);
-    expect(p.calls).toHaveLength(1);
+    expect((await propose("01 Places/Second.md")).statusCode).toBe(200);
+    expect(p.calls).toHaveLength(2);
+    expect((await settings()).spentUsd).toBe(12);
+    expect((await t.get("/api/ai/log")).json()).not.toHaveProperty("capUsd");
   });
 
   it("tries once more after a network error or a 5xx answer, and logs both attempts", async () => {
@@ -265,7 +301,6 @@ describe("calling the provider", () => {
     expect(res.json().error.code).toBe("ai_failed");
     expect(res.json().error.message).toContain("upstream trouble");
     expect(q.calls).toHaveLength(2);
-    expect((await t.get("/api/status")).json().ai.lastError).toContain("upstream trouble");
     expect(warned).toHaveLength(2);
     expect(warned[0]).toMatchObject({
       task: "extraction",
@@ -533,7 +568,7 @@ describe("field proposals", () => {
     expect(await inbox()).toEqual([]);
   });
 
-  it("proposes after a publish when that is switched on, for the published notes only", async () => {
+  it("makes no proposals by itself after a publish: it names the notes for the browser to ask about", async () => {
     const p = await start([GOOD]);
     await t.put("/api/settings/ai", { proposeOnPublish: true });
     await t.put("/api/drafts", {
@@ -546,12 +581,18 @@ describe("field proposals", () => {
     const plan = (
       await t.post("/api/publish/plan", { draftIds: ["publishdraft"], renameIds: [] })
     ).json();
-    await t.post("/api/publish/confirm", {
+    const done = await t.post("/api/publish/confirm", {
       planId: plan.planId,
       confirmedMergeIds: [],
       message: "Edit",
     });
-    await expect.poll(async () => (await inbox()).length).toBe(1);
+    expect(done.json().published).toEqual([VEL]);
+    // The server has no key of its own, so it asks nothing of the provider on its own.
+    await new Promise((r) => setTimeout(r, 100));
+    expect(p.calls).toHaveLength(0);
+    expect(await inbox()).toEqual([]);
+    // The follow-up request from the browser that published carries the key and does the work.
+    expect((await propose()).json()).toEqual({ made: 3 });
     expect(p.calls).toHaveLength(1);
   });
 });
@@ -583,17 +624,22 @@ describe("a run over a folder", () => {
     expect(state.made).toBeGreaterThan(0);
   });
 
-  it("stops at the cap and can be cancelled", async () => {
-    await start([GOOD], { cost: 5 });
-    await t.put("/api/settings/ai", { monthlyCapUsd: 4 });
+  it("uses the key of the request that started it, and refuses to start without one", async () => {
+    const p = await start([GOOD], { keys: false });
+    const refused = await t.post("/api/proposals/job", { folder: "", confirm: true });
+    expect(refused.statusCode).toBe(409);
+    expect(refused.json().error.code).toBe("ai_key_missing");
+    t.keys = { openrouter: KEY };
     await t.post("/api/proposals/job", { folder: "", confirm: true });
+    // The request is over, but the run goes on with the key it was started with, in memory only.
+    t.keys = {};
     await t.services.fieldJob.finished();
-    const state = FieldJobState.parse((await t.get("/api/proposals/job")).json());
-    expect(state.state).toBe("stopped");
-    expect(state.stoppedBy).toMatch(/cap/);
-    expect(state.done).toBe(1);
+    expect(p.calls.length).toBeGreaterThan(0);
+    expect(p.calls.every((c) => c.auth === `Bearer ${KEY}`)).toBe(true);
+  });
 
-    await t.put("/api/settings/ai", { monthlyCapUsd: 1000 });
+  it("can be cancelled", async () => {
+    await start([GOOD]);
     await t.post("/api/proposals/job", { folder: "", confirm: true });
     await t.del("/api/proposals/job");
     await t.services.fieldJob.finished();

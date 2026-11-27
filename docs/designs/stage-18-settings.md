@@ -1,5 +1,11 @@
 # Settings: review and proposal
 
+> **Changed by stage 27f.** AI keys are no longer kept on the server: each person keeps their own in
+> their browser, and sends it with each AI request. Settings › Providers, the keys kept encrypted
+> under `SECRETS_KEY`, keys from the environment and the monthly cap described below are gone. The
+> sections moved: AI keys (This device), AI models and Your AI spending (You). Old addresses
+> redirect. See `stage-27-people-and-projects.md`, "Your own AI keys".
+
 For the owner's four asks: a side menu, several AI providers with their own keys, a model picker
 with search and details, and a UX review to approve. Read on 2026-11-24 from
 `apps/web/src/pages/Settings.tsx`, `components/OnThisDevice.tsx`, `apps/server/src/routes/settings.ts`,

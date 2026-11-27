@@ -135,14 +135,7 @@ export class FieldProposer {
     const body = splitFrontmatter(note.text).body;
     if (body.trim() === "") return 0;
 
-    const settings = await this.d.settings.read();
-    const model = settings?.ai.models.extraction;
-    if (!model) {
-      throw new ApiError(
-        "ai_off",
-        "No model is chosen for proposing fields. Choose one on the settings page.",
-      );
-    }
+    const model = await this.d.provider.chosenModel("extraction", "proposing fields");
     const schema = this.d.index.schema;
     const types = Object.keys(schema.types);
     const what = Object.keys(schema.what);

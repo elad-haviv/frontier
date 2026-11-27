@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { DraftKind, Id, Origin, ProposalOperation, VaultPath } from "./state.js";
-import { AiProviderView, ModelPrice } from "./ai.js";
+import { ModelPrice } from "./ai.js";
 import { KeepGoingSettings } from "./keepGoingSettings.js";
 
 const Ok = z.object({ ok: z.literal(true) });
@@ -329,7 +329,14 @@ export const PublishConfirmRequest = z.object({
   confirmedMergeIds: z.array(z.string()),
   message: z.string().trim().min(1).max(2000),
 });
-export const PublishConfirmResponse = z.object({ commit: z.string() });
+export const PublishConfirmResponse = z.object({
+  commit: z.string(),
+  /**
+   * The notes whose own text was just published. The browser that published asks for field
+   * proposals for them with its own AI key, when the settings ask for it (stage 27f).
+   */
+  published: z.array(VaultPath).default([]),
+});
 
 // ---- Renames -------------------------------------------------------------------------------
 
@@ -632,24 +639,14 @@ export type PasswordRequest = z.infer<typeof PasswordRequest>;
 /** `GET /api/settings`. No secret is ever part of it. */
 export const SettingsResponse = z.object({
   ai: z.object({
-    /** `keySet`, `keyFrom` and `keyLast4` are about the OpenRouter key, as before stage 18. */
-    keySet: z.boolean(),
-    /** Where the key in use comes from. */
-    keyFrom: z.enum(["settings", "environment", "none"]),
-    keyLast4: z.string().nullable(),
-    /** Every connected provider, stored or given in the server's environment. */
-    providers: z.array(AiProviderView),
     /** Prices the author entered, by provider-qualified model id. */
     modelPrices: z.record(z.string(), ModelPrice),
-    /** False when SECRETS_KEY is not set, so a key cannot be stored here. */
-    canStoreKey: z.boolean(),
     models: z.object({
       extraction: z.string().nullable(),
       conversation: z.string().nullable(),
       art: z.string().nullable(),
     }),
     artStyle: z.string(),
-    monthlyCapUsd: z.number(),
     proposeOnPublish: z.boolean(),
     spentUsd: z.number(),
   }),
@@ -658,9 +655,8 @@ export const SettingsResponse = z.object({
 });
 export type SettingsResponse = z.infer<typeof SettingsResponse>;
 
-/** `PUT /api/settings/ai`. `key: null` removes the stored key. */
+/** `PUT /api/settings/ai`. */
 export const AiSettingsRequest = z.object({
-  key: z.string().min(8).nullable().optional(),
   models: z
     .object({
       extraction: z.string().min(1).nullable().optional(),
@@ -669,7 +665,6 @@ export const AiSettingsRequest = z.object({
     })
     .optional(),
   artStyle: z.string().trim().min(1).max(600).optional(),
-  monthlyCapUsd: z.number().min(0).max(10_000).optional(),
   proposeOnPublish: z.boolean().optional(),
 });
 

@@ -94,7 +94,7 @@ export function AskPage() {
       {list.state === "ready" && !list.value.ready && (
         <p className="banner">
           No model is chosen for lore conversations.{" "}
-          <Link to="/settings/ai/models/conversation">Choose one in Settings</Link>.
+          <Link to="/settings/you/ai-models/conversation">Choose one in Settings</Link>.
         </p>
       )}
 

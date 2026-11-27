@@ -344,7 +344,18 @@ export function draftRoutes(app: FastifyInstance, s: Services): void {
   app.post("/api/publish/confirm", async (request) => {
     const { planId, confirmedMergeIds, message } = PublishConfirmRequest.parse(request.body);
     const author = authorOf(personOf(request), s.config.commitAuthor);
-    return { commit: await s.publisher.confirm(planId, confirmedMergeIds, message, author) };
+    let published: string[] = [];
+    const commit = await s.publisher.confirm(
+      planId,
+      confirmedMergeIds,
+      message,
+      author,
+      (paths) => {
+        published = paths;
+      },
+    );
+    // `published` lists the notes whose own text went out, for the browser to propose fields for.
+    return { commit, published };
   });
 
   /**

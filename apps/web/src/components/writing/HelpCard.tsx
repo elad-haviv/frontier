@@ -276,7 +276,7 @@ export function HelpCard(p: {
           Writing help needs an AI model. Choose one once in Settings and it works in every entry.
         </p>
         <p className="help-card-actions">
-          <Link className="help-card-settings" to="/settings/ai/models/conversation">
+          <Link className="help-card-settings" to="/settings/you/ai-models/conversation">
             Open Settings
           </Link>
         </p>

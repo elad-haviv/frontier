@@ -53,8 +53,8 @@ export class FieldJob {
       } catch (err) {
         const code = err instanceof ApiError ? err.code : null;
         const message = err instanceof Error ? err.message : "Something went wrong.";
-        // Without a key, a model or money left, no later entry can do better.
-        if (code === "ai_off" || code === "ai_cap_reached") {
+        // Without a key or a model, no later entry can do better.
+        if (code === "ai_off" || code === "ai_key_missing") {
           this.current.state = "stopped";
           this.current.stoppedBy = message;
           return;

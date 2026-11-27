@@ -1,12 +1,15 @@
 /**
- * AI › Models: one model per task, chosen through the model picker. A choice saves as it is made,
- * with "✓ Saved" and Undo. `/settings/ai/models/:task` opens that task's picker.
+ * You › AI models: one model per task, chosen through the model picker. A choice saves as it is
+ * made, with "✓ Saved" and Undo. `/settings/you/ai-models/:task` opens that task's picker. The
+ * choice is kept on the server and holds no secret; the models listed are those of the providers
+ * this device has a key for.
  */
-import type { AiTaskName, CatalogModel, ModelsResponse } from "@frontier/schema";
+import type { AiProviderKind, AiTaskName, CatalogModel, ModelsResponse } from "@frontier/schema";
 import { splitModelId } from "@frontier/schema";
 import { useCallback, useEffect, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { api } from "../../api.ts";
+import { useDeviceKeys } from "../../aiKeys.ts";
 import { ModelPicker, needsPrice, type Price } from "../../components/ModelPicker.tsx";
 import { useDialogs } from "../../components/Dialogs.tsx";
 import { useRefresh } from "../../components/Shell.tsx";
@@ -14,6 +17,7 @@ import { ActionButton } from "../../components/ui/ActionButton.tsx";
 import { useToast } from "../../components/ui/Toast.tsx";
 import {
   message,
+  kindLabel,
   perMillion,
   ProviderMark,
   Saved,
@@ -85,13 +89,15 @@ function TaskRow({
   const ai = settings.ai;
   const id = ai.models[task];
   const chosen = id ? catalog?.models.find((m) => m.id === id) : undefined;
-  const providerOf = id ? ai.providers.find((p) => p.id === splitModelId(id).provider) : undefined;
-  const listed = catalog?.providers.find((p) => p.id === providerOf?.id);
+  const { keys } = useDeviceKeys();
+  const providerId = id ? splitModelId(id).provider : null;
+  const listed = catalog?.providers.find((p) => p.id === providerId);
+  const lacksKey = providerId !== null && !(providerId in keys);
   const gone = id && catalog && listed?.ok && !chosen;
   const recommended = catalog?.models.find(
     (m) => m.recommendedFor.includes(task) && !needsPrice(m),
   );
-  const connected = ai.providers.some((p) => p.keySet && p.enabled);
+  const anyKey = Object.keys(keys).length > 0;
 
   async function choose(next: string | null, undo = true) {
     const before = id;
@@ -151,9 +157,9 @@ function TaskRow({
           >
             <Chip id={id} m={chosen} />
           </button>
-        ) : !connected ? (
+        ) : !anyKey ? (
           <p className="muted">
-            <Link to="/settings/ai/providers">Connect a provider first.</Link>
+            <Link to="/settings/device/ai-keys">Add an AI key to this device first.</Link>
           </p>
         ) : (
           <div className="task-off">
@@ -175,20 +181,20 @@ function TaskRow({
         )}
         {gone && (
           <p className="field-warn">
-            Not listed by {providerOf?.name ?? "its provider"} any more; calls may fail. Choose
-            another model.
+            Not listed by {listed?.name ?? "its provider"} any more; calls may fail. Choose another
+            model.
           </p>
         )}
-        {id && providerOf && (providerOf.check?.ok === false || !providerOf.enabled) && (
+        {id && lacksKey && (
           <p className="field-warn">
-            {providerOf.name} {providerOf.enabled ? "refused its key" : "is switched off"}:{" "}
-            <Link to="/settings/ai/providers">fix it in Providers</Link>.
+            There is no key on this device for {kindLabel(providerId as AiProviderKind)}.{" "}
+            <Link to="/settings/device/ai-keys">Add one</Link> or choose another model.
           </p>
         )}
-        {id && !providerOf && (
+        {id && !lacksKey && listed && !listed.ok && (
           <p className="field-warn">
-            Its provider is not connected. <Link to="/settings/ai/providers">Connect it</Link> or
-            choose another model.
+            {listed.name} did not answer with the key on this device:{" "}
+            <Link to="/settings/device/ai-keys">check it in AI keys</Link>.
           </p>
         )}
         {saving.error && <p className="field-error">{saving.error}</p>}
@@ -282,7 +288,6 @@ function TaskRow({
             error={catalogState.error}
             onRetry={catalogState.retry}
             current={id}
-            capUsd={ai.monthlyCapUsd}
             sheet={!wide}
             onChoose={(m) => void choose(m.id)}
             onPrice={async (m: CatalogModel, p: Price) => {
@@ -317,7 +322,7 @@ export function Models() {
   const { settings } = useSettingsData();
   const { pathname } = useLocation();
   const navigate = useNavigate();
-  const asked = /\/settings\/ai\/models\/(extraction|conversation|art)$/.exec(pathname)?.[1] as
+  const asked = /\/settings\/you\/ai-models\/(extraction|conversation|art)$/.exec(pathname)?.[1] as
     AiTaskName | undefined;
   const [catalog, setCatalog] = useState<ModelsResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -334,9 +339,10 @@ export function Models() {
       setLoading(false);
     }
   }, []);
-  const providersKey =
-    settings?.ai.providers.map((p) => `${p.id}${p.keyHint}${p.enabled}`).join() ?? "";
-  useEffect(() => void load(tick > 0), [load, tick, providersKey]);
+  // The lists are of the providers this device has keys for: read again when the keys change.
+  const { keys } = useDeviceKeys();
+  const keysSeen = JSON.stringify(keys);
+  useEffect(() => void load(tick > 0), [load, tick, keysSeen]);
 
   // A deep link to a task scrolls to it with its picker open.
   useEffect(() => {
@@ -348,7 +354,8 @@ export function Models() {
   return (
     <section className="settings-block">
       <p className="muted">
-        Each task uses one model, from any connected provider. A choice is saved as you make it.
+        Each task uses one model, from any provider you have a key for on this device. A choice is
+        saved as you make it.
       </p>
       {failing.map((p) => (
         <p key={p.id} className="field-warn">
@@ -367,9 +374,9 @@ export function Models() {
             catalogState={{ loading, error, retry: () => setTick((n) => n + 1) }}
             open={asked === t.task}
             onOpen={() =>
-              navigate(`/settings/ai/models/${t.task}`, { replace: asked !== undefined })
+              navigate(`/settings/you/ai-models/${t.task}`, { replace: asked !== undefined })
             }
-            onClose={() => navigate("/settings/ai/models", { replace: true })}
+            onClose={() => navigate("/settings/you/ai-models", { replace: true })}
           />
         ))}
       </ul>

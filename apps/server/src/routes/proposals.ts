@@ -11,11 +11,7 @@ const OperationParams = z.object({ id: Id, op: Id });
 export function proposalRoutes(app: FastifyInstance, s: Services): void {
   app.post("/api/proposals/fields", async (request) => {
     const { path } = FieldsRequest.parse(request.body);
-    try {
-      return { made: await s.fields.propose(path) };
-    } finally {
-      s.status.ai(await s.ai.ready("extraction"), s.ai.lastError, await s.ai.ready("conversation"));
-    }
+    return { made: await s.fields.propose(path) };
   });
 
   app.post("/api/proposals/job", async (request) => {
@@ -25,9 +21,8 @@ export function proposalRoutes(app: FastifyInstance, s: Services): void {
       throw new ApiError("invalid", "Not a folder of the vault.");
     const paths = s.fields.candidates(clean);
     if (!confirm) return { entries: paths.length, estimateUsd: await s.fields.estimate(paths) };
-    if (!(await s.ai.ready("extraction"))) {
-      throw new ApiError("ai_off", "Set a provider key and a model on the settings page first.");
-    }
+    // Says now, before a run starts, if there is no model or no key on this device.
+    await s.ai.assertCanRun("extraction", "proposing fields");
     s.fieldJob.start(clean);
     return { started: true as const };
   });

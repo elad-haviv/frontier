@@ -12,6 +12,8 @@ import {
   newMapInForm,
   pickEntry,
   setUpAi,
+  DEVICE_KEY,
+  giveDeviceKeys,
 } from "./helpers.ts";
 
 // One test at a time changes the AI settings, which are shared by the whole server.
@@ -24,24 +26,43 @@ test("CUJ 5: sets up the AI, asks for fields, corrects one and accepts it into a
   const note = "02 People/Shade.md";
   const before = commitCount();
 
-  // Nothing about AI is offered before a key and a model are set.
+  // No key on this device yet: Propose fields explains, takes a key in place, then carries on.
   await page.goto(entry(note));
   await expect(page.locator("h1")).toHaveText("Shade");
-  await expect(page.getByRole("button", { name: "Propose fields" })).toHaveCount(0);
+  await page.getByRole("button", { name: "Propose fields" }).click();
+  const explain = page.getByRole("dialog", { name: "Proposing fields runs on your own AI key" });
+  await expect(explain).toContainText("Frontier doesn't come with an AI account.");
+  await expect(explain).toContainText(
+    "Add a key from OpenRouter, Anthropic, OpenAI or Google and you pay them directly.",
+  );
+  await expect(explain).toContainText("The key is kept on this device only.");
+  await expect(explain).toContainText("Frontier's server never saves it");
+  // A key the provider refuses is said in the dialog and not kept.
+  await explain.getByLabel("Provider").selectOption("anthropic");
+  await explain.getByLabel("Key", { exact: true }).fill("sk-ant-wrong-key-0001");
+  await explain.getByRole("button", { name: "Test and keep on this device" }).click();
+  await expect(explain.getByRole("alert")).toContainText("(401)");
+  await explain.getByLabel("Provider").selectOption("openrouter");
+  await explain.getByLabel("Key", { exact: true }).fill(DEVICE_KEY);
+  await explain.getByRole("button", { name: "Test and keep on this device" }).click();
+  await expect(explain).toHaveCount(0);
+  // It carried on with what was asked. No model is chosen yet, so it says so.
+  await expect(page.locator(".propose .error")).toContainText("No model is chosen");
 
-  // Settings › Providers: the key is checked with the provider, then stored.
-  await page.goto("/settings/ai/providers");
-  await page.getByRole("button", { name: /^OpenRouter/ }).click();
-  await page.getByLabel("Key for OpenRouter").fill("sk-or-browser-test-key");
-  await page.getByRole("button", { name: "Check and save" }).click();
+  // Settings › AI keys: the key is on this device, tested for real, and shown only masked.
+  await page.goto("/settings/device/ai-keys");
+  await expect(page.getByRole("note")).toContainText("Your keys stay in this browser.");
   const row = page.locator(".provider-row", { hasText: "OpenRouter" });
-  await expect(row).toContainText("Connected");
+  await expect(row).toContainText("Working");
   await expect(row).toContainText("sk-…-key");
-  // The key itself never comes back to the browser.
-  expect(await page.content()).not.toContain("sk-or-browser-test-key");
+  await row.getByRole("button", { name: "Test" }).click();
+  await expect(row).toContainText("Working");
+  // The key itself never comes back to the page, and the server never has it.
+  expect(await page.content()).not.toContain(DEVICE_KEY);
+  expect(await (await page.request.get("/api/settings")).text()).not.toContain(DEVICE_KEY);
 
-  // Settings › Models: the picker, as a sheet on the phone.
-  await page.goto("/settings/ai/models/extraction");
+  // Settings › AI models: the picker, as a sheet on the phone.
+  await page.goto("/settings/you/ai-models/extraction");
   const sheet = page.getByRole("dialog", { name: "Model for Proposing fields" });
   await sheet.getByRole("combobox", { name: /Find a model/ }).fill("reader");
   await sheet.getByRole("option", { name: /Sample reader/ }).click();
@@ -51,11 +72,11 @@ test("CUJ 5: sets up the AI, asks for fields, corrects one and accepts it into a
   await task.getByRole("button", { name: "Try it" }).click();
   await expect(task.locator(".field-ok")).toContainText('The model answered "ok"');
 
-  // Settings › Spending: the cap saves on Enter.
-  await page.goto("/settings/ai/spending");
-  await page.getByLabel("Monthly cap in US dollars").fill("5");
-  await page.getByLabel("Monthly cap in US dollars").press("Enter");
-  await expect(page.locator(".saved-mark").first()).toContainText("Saved");
+  // Settings › Your AI spending: what was spent, and no cap.
+  await page.goto("/settings/you/ai-spending");
+  await expect(page.locator(".spend-line")).toContainText("spent this month");
+  await expect(page.getByLabel("Monthly cap in US dollars")).toHaveCount(0);
+  await expect(page.getByText(/\bcap\b/i)).toHaveCount(0);
 
   await page.goto(entry(note));
   await page.getByRole("button", { name: "Propose fields" }).click();
@@ -79,13 +100,15 @@ test("CUJ 5: sets up the AI, asks for fields, corrects one and accepts it into a
   expect(onMain(note)).toContain('when: "in the year of the long tide"');
   expect(lastBody()).toContain("Frontier-Model: openrouter:sample/reader");
 
-  await page.goto("/settings/ai/spending");
+  await page.goto("/settings/you/ai-spending");
   await expect(page.locator(".call-log")).toContainText("sample/reader");
   await expect(page.locator(".call-log")).toContainText("Proposed fields");
 });
 
 test("a rejected proposal is not made again", async ({ page }, info) => {
   test.skip(info.project.name !== "phone", "The AI settings are one per server.");
+  // The model was chosen above, on the server; the key is this browser's own.
+  await giveDeviceKeys(page);
   const note = "03 Things/Lantern.md";
   await page.goto(entry(note));
   await page.getByRole("button", { name: "Propose fields" }).click();
@@ -418,4 +441,36 @@ test("CUJ 13: explores a map, makes concept art when asked, and keeps a discover
     const un = await (await fetch("/api/unpublished")).json();
     for (const d of un.drafts) await fetch(`/api/drafts/${d.id}`, { method: "DELETE" });
   });
+});
+
+test("the first time someone without a key asks, the explanation opens in place and the question goes on", async ({
+  page,
+}, info) => {
+  test.skip(info.project.name !== "phone", "The AI settings are one per server.");
+  await setUpAi(page, { conversation: "sample/reader" }, { key: false });
+  await page.goto("/ask");
+  await page.getByLabel("A question").fill("Who is Shade?");
+  await page.getByRole("button", { name: "Ask" }).click();
+
+  const explain = page.getByRole("dialog", { name: "Ask runs on your own AI key" });
+  await expect(explain).toContainText("Frontier doesn't come with an AI account.");
+  await expect(explain).toContainText("The key is kept on this device only.");
+  // Not now leaves the question unasked.
+  await explain.getByRole("button", { name: "Not now" }).click();
+  await expect(explain).toHaveCount(0);
+  await expect(page).toHaveURL(/\/ask$/);
+
+  await page.getByRole("button", { name: "Ask" }).click();
+  await expect(explain).toBeVisible();
+  await explain.getByLabel("Key", { exact: true }).fill(DEVICE_KEY);
+  await explain.getByRole("button", { name: "Test and keep on this device" }).click();
+  // The key is kept, and the question carries on to its answer.
+  await expect(page).toHaveURL(/\/ask\/[a-z0-9]{12}$/);
+  await expect(page.locator(".turn").first().locator(".turn-question")).toHaveText("Who is Shade?");
+  // Asked again, it does not explain again.
+  await page.goto("/ask");
+  await page.getByLabel("A question").fill("Who is Shade?");
+  await page.getByRole("button", { name: "Ask" }).click();
+  await expect(page).toHaveURL(/\/ask\/[a-z0-9]{12}$/);
+  await expect(page.getByRole("dialog")).toHaveCount(0);
 });

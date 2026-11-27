@@ -6,6 +6,7 @@ import { chronicleIdOf, type LibraryFileName, libraryFileOf, mapIdOf } from "@fr
 import { queue } from "../sync/queue.ts";
 import { libraryFileClient } from "../sync/libraryFile.ts";
 import { api, ApiFailure, chronicleUrl, editUrl, entryUrl, imageUrl, mapUrl } from "../api.ts";
+import { proposeAfterPublish } from "../proposeAfterPublish.ts";
 import { Diff } from "../components/Diff.tsx";
 import { useRefresh, useWords } from "../components/Shell.tsx";
 import { useDialogs } from "../components/Dialogs.tsx";
@@ -135,11 +136,13 @@ export function UnpublishedPage() {
         ...plan.merges.filter((m) => confirmed.has(m.id)).map((m) => m.path),
         ...plan.renames.map((r) => r.to),
       ]).filter((p) => !deleted.includes(p));
-      const { commit } = await api.confirm(plan.planId, [...confirmed], message.trim());
+      const { commit, published } = await api.confirm(plan.planId, [...confirmed], message.trim());
       // The entries read lately follow what was moved and forget what was deleted.
       followPublish(recents, { renames: plan.renames, deleted });
       // Renames and deletions rewrite the pins on the server.
       void loadPins(true);
+      // The server has no AI key of its own: this browser asks for the field proposals, with its.
+      void proposeAfterPublish(published).then((made) => made > 0 && refresh());
       setPlan(null);
       setMessage("");
       const steps = await nextSteps(written);

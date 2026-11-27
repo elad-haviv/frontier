@@ -1,6 +1,6 @@
 /**
  * The record of every call to the AI provider, one line per attempt, a file per month. The
- * month's spending is summed from it and held against the author's cap.
+ * month's spending is summed from it, for the spending page.
  */
 import { appendFile, mkdir, readFile } from "node:fs/promises";
 import { join } from "node:path";

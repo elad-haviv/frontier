@@ -1,5 +1,6 @@
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
+import { AI_KEYS_HEADER, type DeviceKeys, encodeDeviceKeys } from "@frontier/schema";
 import type { LightMyRequestResponse } from "fastify";
 import { type App, buildApp } from "../../src/app.js";
 import { hashPassword } from "../../src/auth/password.js";
@@ -16,6 +17,10 @@ export interface TestApp extends App {
   gitCommands: string[][];
   /** The session cookie after a successful login. */
   cookie: string;
+  /** The AI keys this "device" holds: sent in the keys header with every request, as the browser does. */
+  keys: DeviceKeys;
+  /** The headers of a request: the session cookie, and the keys when the device has any. */
+  base(extra?: Record<string, string>): Record<string, string>;
   login(password?: string, email?: string): Promise<LightMyRequestResponse>;
   get(url: string): Promise<LightMyRequestResponse>;
   put(url: string, body: unknown): Promise<LightMyRequestResponse>;
@@ -66,7 +71,12 @@ export async function seedAccount(
 /** A server on a fresh copy of the fixture vault, cloned and indexed, with a password set. */
 export async function makeTestApp(
   extraEnv: Record<string, string> = {},
-  options: { fetch?: typeof fetch; settleMs?: number } = {},
+  options: {
+    fetch?: typeof fetch;
+    settleMs?: number;
+    logger?: boolean;
+    logStream?: { write(line: string): void };
+  } = {},
 ): Promise<TestApp> {
   const repo = makeTestRepo();
   const config = loadConfig(testEnv(repo, extraEnv));
@@ -85,6 +95,12 @@ export async function makeTestApp(
     repo,
     gitCommands,
     cookie: "",
+    keys: {},
+    base: (extra = {}) => ({
+      ...(t.cookie ? { cookie: t.cookie } : {}),
+      ...(Object.keys(t.keys).length > 0 ? { [AI_KEYS_HEADER]: encodeDeviceKeys(t.keys) } : {}),
+      ...extra,
+    }),
     async login(password = PASSWORD, email = EMAIL) {
       const res = await built.app.inject({
         method: "POST",
@@ -96,23 +112,22 @@ export async function makeTestApp(
       if (res.statusCode === 200 && first) t.cookie = first.split(";")[0]!;
       return res;
     },
-    get: (url) =>
-      built.app.inject({ method: "GET", url, headers: t.cookie ? { cookie: t.cookie } : {} }),
+    get: (url) => built.app.inject({ method: "GET", url, headers: t.base() }),
     post: (url, body, headers = {}) =>
       built.app.inject({
         method: "POST",
         url,
-        headers: { ...(t.cookie ? { cookie: t.cookie } : {}), ...headers },
+        headers: t.base(headers),
         ...(body === undefined ? {} : { payload: body as object }),
       }),
     put: (url, body) =>
       built.app.inject({
         method: "PUT",
         url,
-        headers: { cookie: t.cookie },
+        headers: t.base(),
         payload: body as object,
       }),
-    del: (url) => built.app.inject({ method: "DELETE", url, headers: { cookie: t.cookie } }),
+    del: (url) => built.app.inject({ method: "DELETE", url, headers: t.base() }),
     async close() {
       await built.app.close();
       repo.cleanup();

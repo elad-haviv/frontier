@@ -370,16 +370,38 @@ export async function answerDialog(page: Page, button: string, value?: string): 
   await expect(dialog).toHaveCount(0);
 }
 
+/** The key the OpenRouter stand-in accepts. It lives on the device only, never on the server. */
+export const DEVICE_KEY = "sk-or-browser-test-key";
+
 /**
- * Connects the OpenRouter stand-in and chooses models, through the same request the settings
- * page sends. Bare ids are OpenRouter's.
+ * Puts AI keys on this browser's device storage, as adding them in Settings does (stage 27f).
+ * The seeding runs once per tab, before the app starts, so a key the test then removes stays
+ * removed through reloads. `page.evaluate` does the same at once when the app is open already.
+ */
+export async function giveDeviceKeys(
+  page: Page,
+  keys: Record<string, string> = { openrouter: DEVICE_KEY },
+): Promise<void> {
+  const seed = (held: Record<string, string>) => {
+    if (sessionStorage.getItem("e2e-keys-seeded")) return;
+    localStorage.setItem("frontier.aiKeys", JSON.stringify(held));
+    sessionStorage.setItem("e2e-keys-seeded", "1");
+  };
+  await page.addInitScript(seed, keys);
+  if (page.url().startsWith("http")) await page.evaluate(seed, keys);
+}
+
+/**
+ * Chooses models, through the same request the settings page sends, and puts the OpenRouter
+ * stand-in's key on this device (unless `key` is false, to meet the first-use explanation). Bare
+ * ids are OpenRouter's.
  */
 export async function setUpAi(
   page: Page,
   models: { extraction?: string; conversation?: string; art?: string },
+  options: { key?: boolean } = {},
 ): Promise<void> {
-  const res = await page.request.put("/api/settings/ai", {
-    data: { key: "sk-or-browser-test-key", models },
-  });
+  const res = await page.request.put("/api/settings/ai", { data: { models } });
   expect(res.ok(), await res.text()).toBe(true);
+  if (options.key !== false) await giveDeviceKeys(page);
 }

@@ -17,7 +17,6 @@ import { Link, useNavigate } from "react-router-dom";
 import { api, ApiFailure, editUrl, entryUrl } from "../api.ts";
 import { NewEntry } from "../components/NewEntry.tsx";
 import { useRevealInTree } from "../components/shell/panels.tsx";
-import { useStatus } from "../components/Shell.tsx";
 import { ActionButton } from "../components/ui/ActionButton.tsx";
 import { Icon } from "../components/ui/Icon.tsx";
 import { Problem } from "../components/ui/Problem.tsx";
@@ -651,8 +650,10 @@ function Folders({ queue }: { queue: QueueResponse }) {
 
 export function Home() {
   const navigate = useNavigate();
-  const status = useStatus();
   const offline = useNeedsConnection();
+  // A model for conversations is chosen (the key is on this device, asked for when it is needed).
+  const lore = useAsync(() => api.conversations(), `home-ai:${!!offline}`);
+  const aiReady = lore.state === "ready" && lore.value.ready;
   const { recents } = useRecents();
   const pins = usePins();
   const tree = useAsync(() => api.tree(), "home-tree");
@@ -697,7 +698,7 @@ export function Home() {
           <div className="home-stack">
             <PickUp />
             <Queue queue={queue} onWrite={(name, folder) => setWriting({ name, folder })} />
-            {status?.ai?.conversation && <Question />}
+            {aiReady && <Question />}
           </div>
           <div className="home-stack">
             <DiceCard dice={dice} lastFolder={lastFolder} />
