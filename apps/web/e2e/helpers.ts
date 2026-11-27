@@ -121,6 +121,9 @@ export const PROJECT = "sample";
 export const proj = (path: string, project = PROJECT): string =>
   path === "/" ? `/p/${project}` : `/p/${project}${path}`;
 
+/** The address of a call to a project: `api("/maps")` is `/api/p/sample/maps`. */
+export const api = (path: string, project = PROJECT): string => `/api/p/${project}${path}`;
+
 /** The same page without its project, as the app's own patterns see it. */
 export const withoutProject = (url: string): string =>
   url.replace(/^(https?:\/\/[^/]+)?\/p\/[^/?#]+/, "$1") || "/";
@@ -429,6 +432,28 @@ export async function giveDeviceKeys(
   };
   await page.addInitScript(seed, keys);
   if (page.url().startsWith("http")) await page.evaluate(seed, keys);
+}
+
+/**
+ * Starts a spec from a clean slate for the signed-in person: no AI model chosen and "propose on
+ * publish" off (the choices are the person's own, since stage 27a, and another spec may have left
+ * them), and no draft of the given entries left over. Through the API, so the spec does not
+ * depend on the order the specs ran in.
+ */
+export async function resetPerson(page: Page, entries: string[] = []): Promise<void> {
+  const res = await page.request.put("/api/settings/ai", {
+    data: { models: { extraction: null, conversation: null, art: null }, proposeOnPublish: false },
+  });
+  expect(res.ok(), await res.text()).toBe(true);
+  const un = await page.request.get(api("/unpublished"));
+  expect(un.ok(), await un.text()).toBe(true);
+  const { drafts } = (await un.json()) as { drafts: { id: string; path: string }[] };
+  for (const d of drafts.filter((x) => entries.includes(x.path))) {
+    expect((await page.request.delete(api(`/drafts/${d.id}`))).ok()).toBe(true);
+  }
+  for (const path of entries) {
+    await page.request.delete(api(`/write/reviews?path=${encodeURIComponent(path)}`));
+  }
 }
 
 /**

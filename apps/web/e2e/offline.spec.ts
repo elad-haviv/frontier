@@ -5,19 +5,20 @@ import {
   expect,
   type Page,
   test,
-} from "@playwright/test";
+} from "./test.ts";
 import {
+  api,
   AUTH_FILE,
   discardDraft,
   edit,
   entry,
   giveDeviceKeys,
+  keyOf,
   newEntry,
   newMapInForm,
   openMenu,
   openSideBar,
   proj,
-  keyOf,
 } from "./helpers.ts";
 
 /**
@@ -123,7 +124,7 @@ test("Home with no connection: pins and recents from the device, the queue needs
   page,
   context,
 }) => {
-  const pin = await page.request.post("/api/pins", { data: { path: MIRA } });
+  const pin = await page.request.post(api("/pins"), { data: { path: MIRA } });
   expect(pin.ok(), await pin.text()).toBe(true);
   try {
     await install(page);
@@ -161,7 +162,7 @@ test("Home with no connection: pins and recents from the device, the queue needs
     );
   } finally {
     await context.setOffline(false);
-    await page.request.delete(`/api/pins?path=${encodeURIComponent(MIRA)}`);
+    await page.request.delete(api(`/pins?path=${encodeURIComponent(MIRA)}`));
   }
 });
 
@@ -361,11 +362,11 @@ test("a map on the device opens with its image, and a marker added offline is se
 
   await context.setOffline(false);
   await allSent(page);
-  const map = (await (await page.request.get(`/api/maps/${id}`)).json()) as {
+  const map = (await (await page.request.get(api(`/maps/${id}`))).json()) as {
     map: { features: unknown[] };
   };
   expect(map.map.features).toHaveLength(1);
-  await page.request.delete(`/api/maps/${id}`);
+  await page.request.delete(api(`/maps/${id}`));
 });
 
 test("CUJ 8: the graph offline, drawn from the compact index", async ({ page }) => {
@@ -399,10 +400,10 @@ const draftId = () =>
 
 /** Saves the given drafts as a version, from a device's requests. */
 async function saveVersion(request: APIRequestContext, draftIds: string[]): Promise<void> {
-  const plan = await request.post("/api/publish/plan", { data: { draftIds, renameIds: [] } });
+  const plan = await request.post(api("/publish/plan"), { data: { draftIds, renameIds: [] } });
   expect(plan.ok(), await plan.text()).toBe(true);
   const { planId, merges } = (await plan.json()) as { planId: string; merges: { id: string }[] };
-  const done = await request.post("/api/publish/confirm", {
+  const done = await request.post(api("/publish/confirm"), {
     data: { planId, confirmedMergeIds: merges.map((m) => m.id), message: "From the laptop" },
   });
   expect(done.ok(), await done.text()).toBe(true);
@@ -410,7 +411,7 @@ async function saveVersion(request: APIRequestContext, draftIds: string[]): Prom
 
 /** The number of drafts with kept copies, as the attention count has it. */
 const keptCopies = async (request: APIRequestContext) =>
-  ((await (await request.get("/api/status")).json()) as { attention: { keptCopies: number } })
+  ((await (await request.get(api("/status"))).json()) as { attention: { keptCopies: number } })
     .attention.keptCopies;
 
 test("CUJ 3: a new entry made offline, its path taken meanwhile, ends as two texts to compare", async ({
@@ -444,7 +445,7 @@ test("CUJ 3: a new entry made offline, its path taken meanwhile, ends as two tex
   // Meanwhile the laptop makes the same entry and saves a version.
   const laptop = await laptopOf(browser);
   const theirs = draftId();
-  const made = await laptop.put("/api/drafts", {
+  const made = await laptop.put(api("/drafts"), {
     data: {
       id: theirs,
       path,
@@ -469,10 +470,10 @@ test("CUJ 3: a new entry made offline, its path taken meanwhile, ends as two tex
 
   // Clean up: the draft goes, and the entry is taken out of the library again.
   const id = new URL(page.url()).pathname.split("/").pop()!;
-  await laptop.delete(`/api/drafts/${id}`);
+  await laptop.delete(api(`/drafts/${id}`));
   const opened = (await (await laptop.get(entryAnswer(path))).json()) as { blob: string };
   const gone = draftId();
-  await laptop.put("/api/drafts", {
+  await laptop.put(api("/drafts"), {
     data: { id: gone, path, kind: "delete", text: "", revision: 0, baseBlob: opened.blob },
   });
   await saveVersion(laptop, [gone]);
@@ -487,13 +488,13 @@ test("CUJ 4: a map changed on the train and at home keeps the other side, compar
   // A flat map with one marker, Lighthouse, in the middle of its image.
   const id = await page.evaluate(async (title) => {
     const json = { "content-type": "application/json" };
-    const made = await fetch("/api/maps", {
+    const made = await fetch(`${API}/maps`, {
       method: "POST",
       headers: json,
       body: JSON.stringify({ title, kind: "flat", image: "99 Appendices/Images/map one.png" }),
     });
     const { id } = (await made.json()) as { id: string };
-    const loaded = await (await fetch(`/api/maps/${id}`)).json();
+    const loaded = await (await fetch(`${API}/maps/${id}`)).json();
     const map = loaded.map;
     map.features = [
       {
@@ -507,7 +508,7 @@ test("CUJ 4: a map changed on the train and at home keeps the other side, compar
         child: null,
       },
     ];
-    await fetch(`/api/maps/${id}`, {
+    await fetch(`${API}/maps/${id}`, {
       method: "PUT",
       headers: json,
       body: JSON.stringify({ map, revision: loaded.revision, baseBlob: loaded.blob }),
@@ -556,13 +557,13 @@ test("CUJ 4: a map changed on the train and at home keeps the other side, compar
 
   // At home: the laptop renames it, and its save is sent first.
   const laptop = await laptopOf(browser);
-  const home = (await (await laptop.get(`/api/maps/${id}`)).json()) as {
+  const home = (await (await laptop.get(api(`/maps/${id}`))).json()) as {
     map: { features: { label: string }[] };
     revision: number;
     blob: string;
   };
   home.map.features[0]!.label = "Old Light";
-  const renamed = await laptop.put(`/api/maps/${id}`, {
+  const renamed = await laptop.put(api(`/maps/${id}`), {
     data: { map: home.map, revision: home.revision, baseBlob: home.blob },
   });
   expect(renamed.ok(), await renamed.text()).toBe(true);
@@ -587,7 +588,7 @@ test("CUJ 4: a map changed on the train and at home keeps the other side, compar
   await compare.getByRole("button", { name: "Dismiss" }).click();
   await expect(page).toHaveURL(new RegExp(`/map/${id}`));
   await expect.poll(() => keptCopies(laptop)).toBe(before);
-  await laptop.delete(`/api/maps/${id}`);
+  await laptop.delete(api(`/maps/${id}`));
 });
 
 /**
@@ -716,7 +717,7 @@ test("the server's answer for an entry read from the device keeps the reader's p
       `## Section ${i + 1}\n\n` +
       Array.from({ length: 6 }, () => "Salt and brine and the grey tide. ".repeat(20)).join("\n\n"),
   ).join("\n\n");
-  const made = await page.request.put("/api/drafts", {
+  const made = await page.request.put(api("/drafts"), {
     data: { id, path, kind: "create", text: `# Keep Going Reread\n\n${sections}\n`, revision: 0 },
   });
   expect(made.ok(), await made.text()).toBe(true);
@@ -746,6 +747,6 @@ test("the server's answer for an entry read from the device keeps the reader's p
     expect(stored).toBeGreaterThan(1500);
   } finally {
     await context.setOffline(false);
-    await page.request.delete(`/api/drafts/${id}`);
+    await page.request.delete(api(`/drafts/${id}`));
   }
 });

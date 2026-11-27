@@ -1,13 +1,14 @@
-import { expect, type Locator, type Page, test } from "@playwright/test";
+import { expect, type Locator, type Page, test } from "./test.ts";
 import {
+  api,
   DEVICE_KEY,
   entry,
+  keyOf,
   noSidewaysScroll,
   openLibrary,
   openSideBar,
-  setUpAi,
   proj,
-  keyOf,
+  setUpAi,
 } from "./helpers.ts";
 
 // Home and the rest of "keep going" in the shell (stage 25). Pins and the settings are one per
@@ -69,9 +70,9 @@ async function filter(page: Page, name: RegExp): Promise<Locator> {
 }
 
 async function unpinAll(page: Page): Promise<void> {
-  const res = await page.request.get("/api/pins");
+  const res = await page.request.get(api("/pins"));
   const { pins } = (await res.json()) as { pins: { path: string }[] };
-  for (const p of pins) await page.request.delete(`/api/pins?path=${encodeURIComponent(p.path)}`);
+  for (const p of pins) await page.request.delete(api(`/pins?path=${encodeURIComponent(p.path)}`));
 }
 
 test.beforeEach(async ({ page }) => {
@@ -136,10 +137,10 @@ test('"Write it" opens New entry with the name and the folder filled in', async 
   await dialog.getByRole("button", { name: "Start writing", exact: true }).click();
   await expect(page).toHaveURL(/\/edit\/.*The%20Sunken%20Gate\.md\?new=1/);
   // Nothing of it is kept if it was not written.
-  const res = await page.request.get("/api/unpublished");
+  const res = await page.request.get(api("/unpublished"));
   const { drafts } = (await res.json()) as { drafts: { id: string; path: string }[] };
   for (const d of drafts.filter((x) => x.path.includes("The Sunken Gate"))) {
-    await page.request.delete(`/api/drafts/${d.id}`);
+    await page.request.delete(api(`/drafts/${d.id}`));
   }
 });
 
@@ -252,9 +253,9 @@ test("the newest unpublished draft is offered to continue", async ({ page }) => 
   await seedRecents(page);
   const id = "kgcontinue01";
   const base = await (
-    await page.request.get(`/api/entries?path=${encodeURIComponent(MIRA)}`)
+    await page.request.get(api(`/entries?path=${encodeURIComponent(MIRA)}`))
   ).json();
-  const saved = await page.request.put("/api/drafts", {
+  const saved = await page.request.put(api("/drafts"), {
     data: {
       id,
       path: MIRA,
@@ -273,7 +274,7 @@ test("the newest unpublished draft is offered to continue", async ({ page }) => 
     await pick.getByRole("link", { name: "Continue editing" }).click();
     await expect(page).toHaveURL(/\/edit\/02%20People\/Mira\.md/);
   } finally {
-    await page.request.delete(`/api/drafts/${id}`);
+    await page.request.delete(api(`/drafts/${id}`));
   }
 });
 
@@ -283,7 +284,7 @@ test("pins: Working on, on Home and in the left bar, with Unpin", async ({ page 
   await expect(pins).toContainText("Pin an entry from its page");
   try {
     for (const path of [HARBOR, MIRA]) {
-      const res = await page.request.post("/api/pins", { data: { path } });
+      const res = await page.request.post(api("/pins"), { data: { path } });
       expect(res.ok(), await res.text()).toBe(true);
     }
     await page.reload();
@@ -485,7 +486,7 @@ test("Settings › Keep going: the six rules switch off and on, and Home follows
 test("empty states: a new library, and a library with nothing that needs love", async ({
   page,
 }) => {
-  const real = await (await page.request.get("/api/keep-going/queue")).json();
+  const real = await (await page.request.get(api("/keep-going/queue"))).json();
   const none = { total: 0, rows: [] };
 
   await page.route("**/api/p/*/keep-going/queue", (route) =>
@@ -569,7 +570,10 @@ test.describe("the question of the day (AI)", () => {
   test("hidden with no model, a button when today has none, then a question to answer", async ({
     page,
   }, info) => {
-    test.skip(info.project.name !== "desktop", "The AI settings are one per server.");
+    test.skip(
+      info.project.name !== "desktop",
+      "These change the person's AI settings: run at one size only.",
+    );
     const off = await page.request.put("/api/settings/ai", {
       data: { models: { conversation: null } },
     });
@@ -605,7 +609,10 @@ test.describe("the question of the day (AI)", () => {
   test("with no key on this device, the first ask explains and then carries on (stage 27f)", async ({
     page,
   }, info) => {
-    test.skip(info.project.name !== "desktop", "The AI settings are one per server.");
+    test.skip(
+      info.project.name !== "desktop",
+      "These change the person's AI settings: run at one size only.",
+    );
     await setUpAi(page, { conversation: "sample/reader" }, { key: false });
     await page.goto(proj("/"));
     const q = card(page, "A question to answer");

@@ -1,10 +1,10 @@
-import { expect, type Page, test } from "@playwright/test";
+import { expect, type Page, test } from "./test.ts";
 import { chooseKind, openNewMap, rightPanel, proj } from "./helpers.ts";
 
 /** Throws the open map away, so the next test finds nothing unpublished. */
 async function discardMap(page: Page) {
   await page.evaluate(async () => {
-    await fetch(`/api/maps/${location.pathname.split("/").pop()}`, { method: "DELETE" });
+    await fetch(`${API}/maps/${location.pathname.split("/").pop()}`, { method: "DELETE" });
   });
 }
 

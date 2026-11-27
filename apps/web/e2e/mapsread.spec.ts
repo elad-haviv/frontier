@@ -1,4 +1,4 @@
-import { type CDPSession, expect, type Page, test } from "@playwright/test";
+import { type CDPSession, expect, type Page, test } from "./test.ts";
 import { proj, withoutProject } from "./helpers.ts";
 
 /**
@@ -18,13 +18,13 @@ const makeMap = (page: Page, title: string) =>
   page.evaluate(
     async ({ title, image, harbor }) => {
       const json = { "content-type": "application/json" };
-      const made = await fetch("/api/maps", {
+      const made = await fetch(`${API}/maps`, {
         method: "POST",
         headers: json,
         body: JSON.stringify({ title, kind: "sphere", image }),
       });
       const { id } = (await made.json()) as { id: string };
-      const loaded = await (await fetch(`/api/maps/${id}`)).json();
+      const loaded = await (await fetch(`${API}/maps/${id}`)).json();
       const map = loaded.map;
       const layer = map.layers[0].id;
       const plain = { layer, entry: null, label: null, child: null };
@@ -54,7 +54,7 @@ const makeMap = (page: Page, title: string) =>
         },
         { id: "harbor01", kind: "marker", ...plain, at: [0, 10], icon: null },
       ];
-      await fetch(`/api/maps/${id}`, {
+      await fetch(`${API}/maps/${id}`, {
         method: "PUT",
         headers: json,
         body: JSON.stringify({
@@ -72,15 +72,15 @@ const makeMap = (page: Page, title: string) =>
 /** Throws the map away, so the next test finds nothing unpublished. */
 const cleanUp = (page: Page, id: string) =>
   page.evaluate(async (id) => {
-    await fetch(`/api/maps/${id}`, { method: "DELETE" });
-    const un = await (await fetch("/api/unpublished")).json();
-    for (const d of un.drafts) await fetch(`/api/drafts/${d.id}`, { method: "DELETE" });
+    await fetch(`${API}/maps/${id}`, { method: "DELETE" });
+    const un = await (await fetch(`${API}/unpublished`)).json();
+    for (const d of un.drafts) await fetch(`${API}/drafts/${d.id}`, { method: "DELETE" });
   }, id);
 
 const stored = (page: Page) =>
   page.evaluate(async () => {
     const id = location.pathname.split("/").pop();
-    return ((await (await fetch(`/api/maps/${id}`)).json()) as { map: Stored }).map;
+    return ((await (await fetch(`${API}/maps/${id}`)).json()) as { map: Stored }).map;
   });
 
 const viewOf = (page: Page) =>

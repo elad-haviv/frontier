@@ -1,13 +1,14 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./test.ts";
 import {
-  EMAIL,
+  api,
   edit,
+  EMAIL,
   entry,
   noSidewaysScroll,
   openLibrary,
   openMenu,
-  pushToMain,
   proj,
+  pushToMain,
 } from "./helpers.ts";
 
 test("refuses a wrong password, in words that do not say which part was wrong", async ({
@@ -104,7 +105,7 @@ test("CUJ 1: says where the reader is in a long entry, and goes to a heading fro
   await page.goto(proj("/inbox"));
   await expect
     .poll(async () =>
-      (await page.request.get(`/api/entries?path=${encodeURIComponent(path)}`)).status(),
+      (await page.request.get(api(`/entries?path=${encodeURIComponent(path)}`))).status(),
     )
     .toBe(200);
   await page.goto(entry(path));

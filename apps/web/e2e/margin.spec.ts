@@ -1,15 +1,15 @@
-import { expect, type Page, test } from "@playwright/test";
-import { edit, entry } from "./helpers.ts";
+import { expect, type Page, test } from "./test.ts";
+import { api, edit, entry } from "./helpers.ts";
 
 const PATH = "01 Places/Harbor/Harbor.md";
 
 /** Keeps a comment on a passage of the entry, as the editor's Comment does, and gives its id. */
 async function comment(page: Page, quote: string, text: string): Promise<string> {
-  const res = await page.request.get(`/api/entries?path=${encodeURIComponent(PATH)}`);
+  const res = await page.request.get(api(`/entries?path=${encodeURIComponent(PATH)}`));
   const body = ((await res.json()) as { text: string }).text;
   const at = body.indexOf(quote);
   expect(at).toBeGreaterThan(-1);
-  const made = await page.request.post("/api/comments", {
+  const made = await page.request.post(api("/comments"), {
     data: {
       path: PATH,
       quote,
@@ -104,6 +104,6 @@ test("comments show as bubbles in the margin, level with their passages", async 
     await expect(bubbles).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Comments (2)" })).toBeVisible();
   } finally {
-    for (const id of ids) await page.request.delete(`/api/comments/${id}`);
+    for (const id of ids) await page.request.delete(api(`/comments/${id}`));
   }
 });

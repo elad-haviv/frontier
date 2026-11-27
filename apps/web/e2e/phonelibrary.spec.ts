@@ -1,5 +1,5 @@
-import { expect, type Page, test } from "@playwright/test";
-import { entry, noSidewaysScroll, openSideBar, proj } from "./helpers.ts";
+import { expect, type Page, test } from "./test.ts";
+import { api, entry, noSidewaysScroll, openSideBar, proj } from "./helpers.ts";
 
 // Stage 26: on a phone the library is a row in the drawer's menu and opens as a panel over it.
 
@@ -9,7 +9,7 @@ type Folder = { notes: { path: string }[]; folders: Folder[] };
 
 /** The paths of every entry of the library, from the server's tree. */
 async function allEntries(page: Page): Promise<string[]> {
-  const tree = (await (await page.request.get("/api/tree")).json()) as Folder;
+  const tree = (await (await page.request.get(api("/tree"))).json()) as Folder;
   const walk = (f: Folder): string[] => [...f.notes.map((n) => n.path), ...f.folders.flatMap(walk)];
   return walk(tree);
 }

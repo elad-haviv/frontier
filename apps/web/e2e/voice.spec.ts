@@ -1,5 +1,5 @@
-import { expect, test } from "@playwright/test";
-import { setUpAi, proj } from "./helpers.ts";
+import { expect, test } from "./test.ts";
+import { api, proj, setUpAi } from "./helpers.ts";
 
 // One test at a time changes the AI settings, which are shared by the whole server.
 test.describe.configure({ mode: "serial" });
@@ -39,14 +39,14 @@ interface Unpublished {
 }
 /** The drafts this test keeps, found by the entry's name. */
 async function ours(page: import("@playwright/test").Page): Promise<Unpublished[]> {
-  const res = await page.request.get("/api/unpublished");
+  const res = await page.request.get(api("/unpublished"));
   const drafts = (await res.json()).drafts as Unpublished[];
   return drafts.filter((d) => d.path.endsWith("/Harbor Warden.md"));
 }
 /** Leaves the server as it was found, whatever the test did. */
 async function removeOurs(page: import("@playwright/test").Page): Promise<void> {
   for (const d of await ours(page)) {
-    const gone = await page.request.delete(`/api/drafts/${d.id}`);
+    const gone = await page.request.delete(api(`/drafts/${d.id}`));
     expect(gone.ok(), await gone.text()).toBe(true);
   }
 }

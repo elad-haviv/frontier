@@ -1,13 +1,14 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./test.ts";
 import {
+  api,
   commitCount,
   entry,
   entryAction,
   noSidewaysScroll,
   onMain,
   openMenu,
-  publish,
   proj,
+  publish,
 } from "./helpers.ts";
 
 test("jumps to an entry by name or alias with the switcher", async ({ page }) => {
@@ -91,7 +92,7 @@ test("CUJ 2: renames and moves an entry in place, as one pending rename, with Un
   const from = "01 Places/Harbor/Old Quay.md";
   const renames = async () =>
     (
-      (await (await page.request.get("/api/unpublished")).json()) as {
+      (await (await page.request.get(api("/unpublished"))).json()) as {
         renames: { from: string; to: string }[];
       }
     ).renames.filter((r) => r.from === from);

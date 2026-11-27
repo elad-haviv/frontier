@@ -1,12 +1,13 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./test.ts";
 import sharp from "sharp";
 import {
+  api,
   discardDraft,
   noSidewaysScroll,
   openEditor,
   openImageDialog,
-  saved,
   proj,
+  saved,
 } from "./helpers.ts";
 
 /** The test server's stand-in for a site on the web, at its port plus 100 (e2e/server.mjs). */
@@ -121,10 +122,10 @@ test("CUJ 4: adds an image three ways: from the library, by upload, by paste and
   await page.getByRole("button", { name: "Live preview" }).click();
   await discardDraft(page);
   // The images go too, so later tests start from the library as it was.
-  const { drafts } = (await (await page.request.get("/api/unpublished")).json()) as {
+  const { drafts } = (await (await page.request.get(api("/unpublished"))).json()) as {
     drafts: { id: string; path: string }[];
   };
   for (const d of drafts.filter((d) => d.path.includes(tag) && /\.png$/.test(d.path))) {
-    expect((await page.request.delete(`/api/drafts/${d.id}`)).ok()).toBe(true);
+    expect((await page.request.delete(api(`/drafts/${d.id}`))).ok()).toBe(true);
   }
 });

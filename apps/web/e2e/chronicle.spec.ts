@@ -1,4 +1,4 @@
-import { expect, type Page, test } from "@playwright/test";
+import { expect, type Page, test } from "./test.ts";
 import { noSidewaysScroll, proj } from "./helpers.ts";
 
 const SHOTS = process.env.CH_SHOTS;
@@ -9,13 +9,13 @@ async function makeExample(page: Page, title: string) {
   const id = await page.evaluate(async (title) => {
     const json = { "content-type": "application/json" };
     const made = await (
-      await fetch("/api/chronicles", {
+      await fetch(`${API}/chronicles`, {
         method: "POST",
         headers: json,
         body: JSON.stringify({ title }),
       })
     ).json();
-    const { chronicle, revision } = await (await fetch(`/api/chronicles/${made.id}`)).json();
+    const { chronicle, revision } = await (await fetch(`${API}/chronicles/${made.id}`)).json();
     const humans = chronicle.lanes[0].id;
     chronicle.lanes[0].name = "Humans";
     chronicle.lanes.push({ id: "nirani01", name: "Nirani", color: "#2f6f73", clock: "ezob" });
@@ -56,7 +56,7 @@ async function makeExample(page: Page, title: string) {
       { id: "rel00001", a: "fading01", kind: "starts_with", b: "landing1" },
       { id: "rel00002", a: "war00001", kind: "during", b: "kingdom1" },
     ];
-    await fetch(`/api/chronicles/${made.id}`, {
+    await fetch(`${API}/chronicles/${made.id}`, {
       method: "PUT",
       headers: json,
       body: JSON.stringify({ chronicle, revision }),
@@ -72,10 +72,10 @@ async function makeExample(page: Page, title: string) {
 const cleanUp = (page: Page, chronicles: string[], maps: string[] = []) =>
   page.evaluate(
     async ({ chronicles, maps }) => {
-      for (const id of maps) await fetch(`/api/maps/${id}`, { method: "DELETE" });
-      for (const id of chronicles) await fetch(`/api/chronicles/${id}`, { method: "DELETE" });
-      const un = await (await fetch("/api/unpublished")).json();
-      for (const d of un.drafts) await fetch(`/api/drafts/${d.id}`, { method: "DELETE" });
+      for (const id of maps) await fetch(`${API}/maps/${id}`, { method: "DELETE" });
+      for (const id of chronicles) await fetch(`${API}/chronicles/${id}`, { method: "DELETE" });
+      const un = await (await fetch(`${API}/unpublished`)).json();
+      for (const d of un.drafts) await fetch(`${API}/drafts/${d.id}`, { method: "DELETE" });
     },
     { chronicles, maps },
   );
@@ -86,7 +86,7 @@ const here = (page: Page) => page.url().split("/chronicle/")[1]!.split("?")[0]!;
 async function stored(page: Page) {
   await expect(page.locator(".ch-saving")).toHaveText("Saved as a draft");
   return page.evaluate(async (id) => {
-    const r = await (await fetch(`/api/chronicles/${id}`)).json();
+    const r = await (await fetch(`${API}/chronicles/${id}`)).json();
     return r.chronicle as {
       origin: string | null;
       spans: {
@@ -427,13 +427,13 @@ test("the map and the timeline open each other at the same year", async ({ page 
   const id = await makeExample(page, `Bridge ${info.project.name}`);
   const map = await page.evaluate(async (title) => {
     const json = { "content-type": "application/json" };
-    const made = await fetch("/api/maps", {
+    const made = await fetch(`${API}/maps`, {
       method: "POST",
       headers: json,
       body: JSON.stringify({ title, kind: "flat", image: "99 Appendices/Images/map one.png" }),
     });
     const { id } = (await made.json()) as { id: string };
-    const loaded = await (await fetch(`/api/maps/${id}`)).json();
+    const loaded = await (await fetch(`${API}/maps/${id}`)).json();
     const m = loaded.map;
     m.features = [
       {
@@ -448,7 +448,7 @@ test("the map and the timeline open each other at the same year", async ({ page 
         icon: null,
       },
     ];
-    await fetch(`/api/maps/${id}`, {
+    await fetch(`${API}/maps/${id}`, {
       method: "PUT",
       headers: json,
       body: JSON.stringify({ map: m, revision: loaded.revision, baseBlob: loaded.blob }),

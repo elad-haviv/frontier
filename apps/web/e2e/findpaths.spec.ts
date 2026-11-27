@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./test.ts";
 import {
   type Feature,
   RIVER_STYLE,
@@ -217,7 +217,7 @@ test("on a globe the tool is off, with the reason", async ({ page }, info) => {
   await page.goto(proj("/maps"));
   const image = await upload(page, "find-areas-globe.png");
   const id = await page.evaluate(async (image) => {
-    const made = await fetch("/api/maps", {
+    const made = await fetch(`${API}/maps`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ title: "A globe without paths", kind: "sphere", image }),

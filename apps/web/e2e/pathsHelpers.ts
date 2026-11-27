@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { expect, type Page } from "@playwright/test";
+import { expect, type Page } from "./test.ts";
 import { proj } from "./helpers.ts";
 
 /**
@@ -64,7 +64,7 @@ export async function upload(page: Page, picture: string): Promise<string> {
       const data = Uint8Array.from(atob(bytes), (c) => c.charCodeAt(0));
       const form = new FormData();
       form.append("file", new Blob([data], { type: "image/png" }), picture);
-      const sent = await fetch("/api/images", { method: "POST", body: form });
+      const sent = await fetch(`${API}/images`, { method: "POST", body: form });
       return ((await sent.json()) as { path: string }).path;
     },
     { picture, bytes },
@@ -99,8 +99,8 @@ export async function makeMap(
     async ({ title, image, heights, features, styles, scale, terrain }) => {
       const json = { "content-type": "application/json" };
       if (styles.length > 0) {
-        const lib = await (await fetch("/api/library-files/map-styles")).json();
-        const put = await fetch("/api/library-files/map-styles", {
+        const lib = await (await fetch(`${API}/library-files/map-styles`)).json();
+        const put = await fetch(`${API}/library-files/map-styles`, {
           method: "PUT",
           headers: json,
           body: JSON.stringify({
@@ -111,13 +111,13 @@ export async function makeMap(
         });
         if (!put.ok) throw new Error(await put.text());
       }
-      const made = await fetch("/api/maps", {
+      const made = await fetch(`${API}/maps`, {
         method: "POST",
         headers: json,
         body: JSON.stringify({ title, kind: "flat", image }),
       });
       const { id } = (await made.json()) as { id: string };
-      const loaded = await (await fetch(`/api/maps/${id}`)).json();
+      const loaded = await (await fetch(`${API}/maps/${id}`)).json();
       const map = loaded.map;
       map.space = { ...map.space, scale, unit: "km" };
       if (heights) {
@@ -130,7 +130,7 @@ export async function makeMap(
         child: null,
         ...f,
       }));
-      const saved = await fetch(`/api/maps/${id}`, {
+      const saved = await fetch(`${API}/maps/${id}`, {
         method: "PUT",
         headers: json,
         body: JSON.stringify({ map, revision: loaded.revision, baseBlob: loaded.blob }),
@@ -152,15 +152,15 @@ export async function makeMap(
 
 export const cleanUp = (page: Page, maps: string[]) =>
   page.evaluate(async (maps) => {
-    for (const id of maps) await fetch(`/api/maps/${id}`, { method: "DELETE" });
-    const un = await (await fetch("/api/unpublished")).json();
-    for (const d of un.drafts) await fetch(`/api/drafts/${d.id}`, { method: "DELETE" });
+    for (const id of maps) await fetch(`${API}/maps/${id}`, { method: "DELETE" });
+    const un = await (await fetch(`${API}/unpublished`)).json();
+    for (const d of un.drafts) await fetch(`${API}/drafts/${d.id}`, { method: "DELETE" });
   }, maps);
 
 export const stored = (page: Page) =>
   page.evaluate(async () => {
     const id = location.pathname.split("/").pop();
-    return ((await (await fetch(`/api/maps/${id}`)).json()) as { map: Stored }).map;
+    return ((await (await fetch(`${API}/maps/${id}`)).json()) as { map: Stored }).map;
   });
 export const paths = async (page: Page) =>
   (await stored(page)).features.filter((f) => f.kind === "path");

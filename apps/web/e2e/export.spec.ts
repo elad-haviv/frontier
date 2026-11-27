@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./test.ts";
 import sharp from "sharp";
 import { openMenu, rightPanel, proj } from "./helpers.ts";
 
@@ -55,7 +55,7 @@ test("exports a folder as web pages, and an entry as a Word document", async ({ 
 test("saves a picture of a map at twice the size of the screen", async ({ page }, info) => {
   await page.goto(proj("/maps"));
   const id = await page.evaluate(async () => {
-    const res = await fetch("/api/maps", {
+    const res = await fetch(`${API}/maps`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
@@ -97,8 +97,8 @@ test("saves a picture of a map at twice the size of the screen", async ({ page }
   expect(data[2]! - data[0]!).toBeGreaterThan(30);
 
   await page.evaluate(async (id) => {
-    await fetch(`/api/maps/${id}`, { method: "DELETE" });
-    const un = await (await fetch("/api/unpublished")).json();
-    for (const d of un.drafts) await fetch(`/api/drafts/${d.id}`, { method: "DELETE" });
+    await fetch(`${API}/maps/${id}`, { method: "DELETE" });
+    const un = await (await fetch(`${API}/unpublished`)).json();
+    for (const d of un.drafts) await fetch(`${API}/drafts/${d.id}`, { method: "DELETE" });
   }, id);
 });

@@ -1,4 +1,4 @@
-import { expect, type Page, test } from "@playwright/test";
+import { expect, type Page, test } from "./test.ts";
 import {
   EMAIL,
   entry,
@@ -10,7 +10,7 @@ import {
   proj,
 } from "./helpers.ts";
 
-// The account is one per server: these tests take turns and put back what they change.
+// The e2e server has one account: these tests take turns and put back what they change.
 test.describe.configure({ mode: "serial" });
 
 const isPhone = (name: string) => name === "phone";

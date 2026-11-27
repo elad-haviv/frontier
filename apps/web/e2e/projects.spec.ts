@@ -1,4 +1,4 @@
-import { expect, type Page, test } from "@playwright/test";
+import { expect, type Page, test } from "./test.ts";
 import yazl from "yazl";
 import { proj, openLibrary, openSideBar, PROJECT } from "./helpers.ts";
 

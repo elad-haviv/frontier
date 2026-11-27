@@ -1,11 +1,14 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./test.ts";
 import { answerDialog, EMAIL, keepSession, PASSWORD, proj } from "./helpers.ts";
 
 test("adds a passkey, logs in with it, and switches the password off and on again", async ({
   page,
   context,
 }, info) => {
-  test.skip(info.project.name !== "phone", "Sign-in settings are one per server.");
+  test.skip(
+    info.project.name !== "phone",
+    "Sign-in settings are the account's: run at one size only.",
+  );
   // A passkey device built into the browser, which confirms the user every time.
   const cdp = await context.newCDPSession(page);
   await cdp.send("WebAuthn.enable");

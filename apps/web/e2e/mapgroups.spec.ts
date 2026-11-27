@@ -1,4 +1,4 @@
-import { expect, type Page, test } from "@playwright/test";
+import { expect, type Page, test } from "./test.ts";
 import { rightPanel, proj } from "./helpers.ts";
 
 /**
@@ -16,7 +16,7 @@ type Stored = { features: Feature[]; groups?: { id: string; label: string | null
 const makeMap = (page: Page, title: string) =>
   page.evaluate(
     async ({ title, image }) => {
-      const res = await fetch("/api/maps", {
+      const res = await fetch(`${API}/maps`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ title, kind: "flat", image }),
@@ -29,15 +29,15 @@ const makeMap = (page: Page, title: string) =>
 const stored = (page: Page) =>
   page.evaluate(async () => {
     const id = location.pathname.split("/").pop();
-    return ((await (await fetch(`/api/maps/${id}`)).json()) as { map: Stored }).map;
+    return ((await (await fetch(`${API}/maps/${id}`)).json()) as { map: Stored }).map;
   });
 const zones = async (page: Page) => (await stored(page)).features.filter((f) => f.kind === "zone");
 
 const cleanUp = (page: Page, id: string) =>
   page.evaluate(async (id) => {
-    await fetch(`/api/maps/${id}`, { method: "DELETE" });
-    const un = await (await fetch("/api/unpublished")).json();
-    for (const d of un.drafts) await fetch(`/api/drafts/${d.id}`, { method: "DELETE" });
+    await fetch(`${API}/maps/${id}`, { method: "DELETE" });
+    const un = await (await fetch(`${API}/unpublished`)).json();
+    for (const d of un.drafts) await fetch(`${API}/drafts/${d.id}`, { method: "DELETE" });
   }, id);
 
 async function openMap(page: Page, title: string) {

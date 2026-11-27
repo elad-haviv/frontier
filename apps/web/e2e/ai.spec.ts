@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./test.ts";
 import {
   commitCount,
   discardDraft,
@@ -23,7 +23,10 @@ test.describe.configure({ mode: "serial" });
 test("CUJ 5: sets up the AI, asks for fields, corrects one and accepts it into a draft", async ({
   page,
 }, info) => {
-  test.skip(info.project.name !== "phone", "The AI settings are one per server.");
+  test.skip(
+    info.project.name !== "phone",
+    "These change the person's AI settings: run at one size only.",
+  );
   const note = "02 People/Shade.md";
   const before = commitCount();
 
@@ -107,7 +110,10 @@ test("CUJ 5: sets up the AI, asks for fields, corrects one and accepts it into a
 });
 
 test("a rejected proposal is not made again", async ({ page }, info) => {
-  test.skip(info.project.name !== "phone", "The AI settings are one per server.");
+  test.skip(
+    info.project.name !== "phone",
+    "These change the person's AI settings: run at one size only.",
+  );
   // The model was chosen above, on the server; the key is this browser's own.
   await giveDeviceKeys(page);
   const note = "03 Things/Lantern.md";
@@ -132,7 +138,10 @@ test("a rejected proposal is not made again", async ({ page }, info) => {
 test("CUJ 11: asks the lore, reads cited answers, and keeps a drafted addition as a draft", async ({
   page,
 }, info) => {
-  test.skip(info.project.name !== "phone", "The AI settings are one per server.");
+  test.skip(
+    info.project.name !== "phone",
+    "These change the person's AI settings: run at one size only.",
+  );
   await page.setViewportSize({ width: 375, height: 740 });
   await setUpAi(page, { conversation: "sample/reader" });
 
@@ -193,7 +202,10 @@ test("CUJ 11: asks the lore, reads cited answers, and keeps a drafted addition a
 test("shows the work while the lore is answered, step by step, and can stop it", async ({
   page,
 }, info) => {
-  test.skip(info.project.name !== "phone", "The AI settings are one per server.");
+  test.skip(
+    info.project.name !== "phone",
+    "These change the person's AI settings: run at one size only.",
+  );
   await page.setViewportSize({ width: 375, height: 740 });
   await setUpAi(page, { conversation: "sample/reader" });
 
@@ -262,7 +274,10 @@ test("shows the work while the lore is answered, step by step, and can stop it",
 test("writing help on a phone: a card under the passage, and asking the lore about it", async ({
   page,
 }, info) => {
-  test.skip(info.project.name !== "phone", "The AI settings are one per server.");
+  test.skip(
+    info.project.name !== "phone",
+    "These change the person's AI settings: run at one size only.",
+  );
   await page.setViewportSize({ width: 375, height: 740 });
   await setUpAi(page, { conversation: "sample/reader" });
 
@@ -296,7 +311,10 @@ test("writing help on a phone: a card under the passage, and asking the lore abo
 });
 
 test("comments on a passage: one for the author, one the AI works on", async ({ page }, info) => {
-  test.skip(info.project.name !== "phone", "The AI settings are one per server.");
+  test.skip(
+    info.project.name !== "phone",
+    "These change the person's AI settings: run at one size only.",
+  );
   await page.setViewportSize({ width: 375, height: 740 });
   await setUpAi(page, { conversation: "sample/reader" });
 
@@ -345,7 +363,10 @@ test("comments on a passage: one for the author, one the AI works on", async ({ 
 test("CUJ 12: drafts a character's profile, approves it, talks, and adds a line to the entry", async ({
   page,
 }, info) => {
-  test.skip(info.project.name !== "phone", "The AI settings are one per server.");
+  test.skip(
+    info.project.name !== "phone",
+    "These change the person's AI settings: run at one size only.",
+  );
   await page.setViewportSize({ width: 375, height: 740 });
   await setUpAi(page, { conversation: "sample/reader" });
 
@@ -387,15 +408,18 @@ test("CUJ 12: drafts a character's profile, approves it, talks, and adds a line 
       .filter({ has: page.locator(".change-path", { hasText: /^02 People\/Shade\.md$/ }) }),
   ).toContainText("Holds an addition the AI drafted");
   await page.evaluate(async () => {
-    const un = await (await fetch("/api/unpublished")).json();
-    for (const d of un.drafts) await fetch(`/api/drafts/${d.id}`, { method: "DELETE" });
+    const un = await (await fetch(`${API}/unpublished`)).json();
+    for (const d of un.drafts) await fetch(`${API}/drafts/${d.id}`, { method: "DELETE" });
   });
 });
 
 test("CUJ 13: explores a map, makes concept art when asked, and keeps a discovery", async ({
   page,
 }, info) => {
-  test.skip(info.project.name !== "phone", "The AI settings are one per server.");
+  test.skip(
+    info.project.name !== "phone",
+    "These change the person's AI settings: run at one size only.",
+  );
   await page.setViewportSize({ width: 375, height: 740 });
   await setUpAi(page, { conversation: "sample/reader", art: "sample/painter" });
 
@@ -436,18 +460,21 @@ test("CUJ 13: explores a map, makes concept art when asked, and keeps a discover
   await expect(changes).toContainText("Test Hollow.png");
 
   await page.evaluate(async () => {
-    const maps = await (await fetch("/api/maps")).json();
+    const maps = await (await fetch(`${API}/maps`)).json();
     for (const m of maps.maps)
-      if (m.title === "Explored coast") await fetch(`/api/maps/${m.id}`, { method: "DELETE" });
-    const un = await (await fetch("/api/unpublished")).json();
-    for (const d of un.drafts) await fetch(`/api/drafts/${d.id}`, { method: "DELETE" });
+      if (m.title === "Explored coast") await fetch(`${API}/maps/${m.id}`, { method: "DELETE" });
+    const un = await (await fetch(`${API}/unpublished`)).json();
+    for (const d of un.drafts) await fetch(`${API}/drafts/${d.id}`, { method: "DELETE" });
   });
 });
 
 test("the first time someone without a key asks, the explanation opens in place and the question goes on", async ({
   page,
 }, info) => {
-  test.skip(info.project.name !== "phone", "The AI settings are one per server.");
+  test.skip(
+    info.project.name !== "phone",
+    "These change the person's AI settings: run at one size only.",
+  );
   await setUpAi(page, { conversation: "sample/reader" }, { key: false });
   await page.goto(proj("/ask"));
   await page.getByLabel("A question").fill("Who is Shade?");

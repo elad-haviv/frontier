@@ -1,4 +1,4 @@
-import { expect, type Page, test } from "@playwright/test";
+import { expect, type Page, test } from "./test.ts";
 import { setUpAi, proj } from "./helpers.ts";
 import {
   cleanUp,

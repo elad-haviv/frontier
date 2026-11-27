@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./test.ts";
 import { commitCount, entry, onMain, publish, pushToMain, review, proj } from "./helpers.ts";
 
 test("a note pushed straight to the vault waits for the author, who reverts it", async ({

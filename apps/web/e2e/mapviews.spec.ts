@@ -1,4 +1,4 @@
-import { expect, type Page, test } from "@playwright/test";
+import { expect, type Page, test } from "./test.ts";
 import sharp from "sharp";
 import { newMapInForm, proj } from "./helpers.ts";
 
@@ -7,7 +7,7 @@ const IMAGE = "99 Appendices/Images/map one.png";
 const makeMap = (page: Page, title: string, kind: "sphere" | "flat") =>
   page.evaluate(
     async ({ title, kind, image }) => {
-      const res = await fetch("/api/maps", {
+      const res = await fetch(`${API}/maps`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ title, kind, image }),
@@ -20,10 +20,10 @@ const makeMap = (page: Page, title: string, kind: "sphere" | "flat") =>
 const cleanUp = (page: Page, maps: string[], chronicles: string[] = []) =>
   page.evaluate(
     async ({ maps, chronicles }) => {
-      for (const id of maps) await fetch(`/api/maps/${id}`, { method: "DELETE" });
-      for (const id of chronicles) await fetch(`/api/chronicles/${id}`, { method: "DELETE" });
-      const un = await (await fetch("/api/unpublished")).json();
-      for (const d of un.drafts) await fetch(`/api/drafts/${d.id}`, { method: "DELETE" });
+      for (const id of maps) await fetch(`${API}/maps/${id}`, { method: "DELETE" });
+      for (const id of chronicles) await fetch(`${API}/chronicles/${id}`, { method: "DELETE" });
+      const un = await (await fetch(`${API}/unpublished`)).json();
+      for (const d of un.drafts) await fetch(`${API}/drafts/${d.id}`, { method: "DELETE" });
     },
     { maps, chronicles },
   );
@@ -115,13 +115,13 @@ test("CUJ 19: a world on a schematic map revolves as the years move, and there i
   const chronicle = await page.evaluate(async (title) => {
     const json = { "content-type": "application/json" };
     const made = await (
-      await fetch("/api/chronicles", {
+      await fetch(`${API}/chronicles`, {
         method: "POST",
         headers: json,
         body: JSON.stringify({ title }),
       })
     ).json();
-    const { chronicle, revision } = await (await fetch(`/api/chronicles/${made.id}`)).json();
+    const { chronicle, revision } = await (await fetch(`${API}/chronicles/${made.id}`)).json();
     const at = (low: number) => ({ words: "", low, high: low });
     const span = (id: string, start: number) => ({
       id,
@@ -136,12 +136,12 @@ test("CUJ 19: a world on a schematic map revolves as the years move, and there i
     });
     chronicle.origin = "begin001";
     chronicle.spans = [span("begin001", 0), span("later001", 1000)];
-    await fetch(`/api/chronicles/${made.id}`, {
+    await fetch(`${API}/chronicles/${made.id}`, {
       method: "PUT",
       headers: json,
       body: JSON.stringify({ chronicle, revision }),
     });
-    await fetch(`/api/chronicles/${made.id}/main`, { method: "POST", headers: json, body: "{}" });
+    await fetch(`${API}/chronicles/${made.id}/main`, { method: "POST", headers: json, body: "{}" });
     return made.id as string;
   }, `Heavens years ${info.project.name}`);
 

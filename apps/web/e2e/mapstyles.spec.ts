@@ -1,4 +1,4 @@
-import { expect, type Locator, type Page, test } from "@playwright/test";
+import { expect, type Locator, type Page, test } from "./test.ts";
 import { proj } from "./helpers.ts";
 
 /**
@@ -39,13 +39,13 @@ const makeMap = (page: Page, title: string) =>
   page.evaluate(
     async ({ title, image }) => {
       const json = { "content-type": "application/json" };
-      const made = await fetch("/api/maps", {
+      const made = await fetch(`${API}/maps`, {
         method: "POST",
         headers: json,
         body: JSON.stringify({ title, kind: "flat", image }),
       });
       const { id } = (await made.json()) as { id: string };
-      const loaded = await (await fetch(`/api/maps/${id}`)).json();
+      const loaded = await (await fetch(`${API}/maps/${id}`)).json();
       const map = loaded.map;
       const { width, height } = map.space;
       const at = (x: number, y: number) => [x * width, y * height];
@@ -72,7 +72,7 @@ const makeMap = (page: Page, title: string) =>
           [0.8, 0.7],
         ]),
       ];
-      await fetch(`/api/maps/${id}`, {
+      await fetch(`${API}/maps/${id}`, {
         method: "PUT",
         headers: json,
         body: JSON.stringify({ map, revision: loaded.revision, baseBlob: loaded.blob }),
@@ -85,21 +85,21 @@ const makeMap = (page: Page, title: string) =>
 /** Throws the maps and every draft away, the styles file's too, so the next test starts clean. */
 const cleanUp = (page: Page, maps: string[]) =>
   page.evaluate(async (maps) => {
-    for (const id of maps) await fetch(`/api/maps/${id}`, { method: "DELETE" });
-    const un = await (await fetch("/api/unpublished")).json();
-    for (const d of un.drafts) await fetch(`/api/drafts/${d.id}`, { method: "DELETE" });
+    for (const id of maps) await fetch(`${API}/maps/${id}`, { method: "DELETE" });
+    const un = await (await fetch(`${API}/unpublished`)).json();
+    for (const d of un.drafts) await fetch(`${API}/drafts/${d.id}`, { method: "DELETE" });
   }, maps);
 
 const storedMap = (page: Page, id: string) =>
   page.evaluate(
-    async (id) => ((await (await fetch(`/api/maps/${id}`)).json()) as { map: Stored }).map,
+    async (id) => ((await (await fetch(`${API}/maps/${id}`)).json()) as { map: Stored }).map,
     id,
   );
 const storedStyles = (page: Page) =>
   page.evaluate(
     async () =>
       (
-        (await (await fetch("/api/library-files/map-styles")).json()) as {
+        (await (await fetch(`${API}/library-files/map-styles`)).json()) as {
           file: { styles: Style[] };
         }
       ).file.styles,
@@ -287,9 +287,9 @@ test("CUJ 5: gives rivers and borders their own look on two maps, and a deleted 
 
   // The styles file and both maps wait to be saved together with the next version.
   const unpublished = await page.evaluate(async () =>
-    ((await (await fetch("/api/unpublished")).json()) as { drafts: { path: string }[] }).drafts.map(
-      (d) => d.path,
-    ),
+    (
+      (await (await fetch(`${API}/unpublished`)).json()) as { drafts: { path: string }[] }
+    ).drafts.map((d) => d.path),
   );
   expect(unpublished).toEqual(
     expect.arrayContaining([
@@ -308,8 +308,8 @@ test("two devices editing different styles are merged", async ({ page, browser }
   await page.goto(proj("/maps"));
   const id = await makeMap(page, `Merged rivers ${Date.now().toString(36)}`);
   await page.evaluate(async () => {
-    const loaded = await (await fetch("/api/library-files/map-styles")).json();
-    await fetch("/api/library-files/map-styles", {
+    const loaded = await (await fetch(`${API}/library-files/map-styles`)).json();
+    await fetch(`${API}/library-files/map-styles`, {
       method: "PUT",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({

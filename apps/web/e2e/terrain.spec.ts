@@ -1,4 +1,4 @@
-import { expect, type Page, test } from "@playwright/test";
+import { expect, type Page, test } from "./test.ts";
 import { bar, cleanUp, findPaths, makeMap, open, upload } from "./pathsHelpers.ts";
 
 /**
@@ -17,7 +17,7 @@ type Terrain = {
 const terrainOf = (page: Page) =>
   page.evaluate(async () => {
     const id = location.pathname.split("/").pop();
-    const loaded = (await (await fetch(`/api/maps/${id}`)).json()) as {
+    const loaded = (await (await fetch(`${API}/maps/${id}`)).json()) as {
       map: { terrain?: Terrain };
     };
     return loaded.map.terrain ?? null;

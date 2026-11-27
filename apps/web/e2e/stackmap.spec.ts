@@ -1,17 +1,17 @@
-import { expect, type Page, test } from "@playwright/test";
+import { expect, type Page, test } from "./test.ts";
 import { rightPanel, proj } from "./helpers.ts";
 
 /** Three globes that lie one under the other, with places straight above one another and passages. */
 async function seed(page: Page, tag: string) {
   return page.evaluate(async (tag) => {
     const make = async (title: string, under: string | null) => {
-      const res = await fetch("/api/maps", {
+      const res = await fetch(`${API}/maps`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ title, kind: "sphere", image: "99 Appendices/Images/map one.png" }),
       });
       const { id } = (await res.json()) as { id: string };
-      const got = (await (await fetch(`/api/maps/${id}`)).json()) as {
+      const got = (await (await fetch(`${API}/maps/${id}`)).json()) as {
         map: Record<string, unknown>;
         revision: number;
       };
@@ -37,7 +37,7 @@ async function seed(page: Page, tag: string) {
     });
     const save = async (o: Awaited<ReturnType<typeof make>>, features: unknown[]) => {
       o.got.map.features = features;
-      const res = await fetch(`/api/maps/${o.id}`, {
+      const res = await fetch(`${API}/maps/${o.id}`, {
         method: "PUT",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ map: o.got.map, revision: o.got.revision }),
@@ -68,13 +68,13 @@ async function seed(page: Page, tag: string) {
 
 async function discard(page: Page, ids: string[]) {
   await page.evaluate(async (ids) => {
-    for (const id of ids) await fetch(`/api/maps/${id}`, { method: "DELETE" });
+    for (const id of ids) await fetch(`${API}/maps/${id}`, { method: "DELETE" });
   }, ids);
 }
 
 const labelsOf = (page: Page, id: string) =>
   page.evaluate(async (id) => {
-    const got = (await (await fetch(`/api/maps/${id}`)).json()) as {
+    const got = (await (await fetch(`${API}/maps/${id}`)).json()) as {
       map: { features: { label: string | null; passages?: unknown[] }[] };
     };
     return got.map.features.map((f) => [f.label, f.passages?.length ?? 0]);

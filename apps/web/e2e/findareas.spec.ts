@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { expect, type Page, test } from "@playwright/test";
+import { expect, type Page, test } from "./test.ts";
 import type { Position } from "@frontier/geo";
 import { proj } from "./helpers.ts";
 
@@ -32,11 +32,11 @@ async function makeMap(page: Page, title: string, picture: string, kind: "flat" 
       const form = new FormData();
       form.append("file", new Blob([data], { type: "image/png" }), picture);
       const { path } = (await (
-        await fetch("/api/images", { method: "POST", body: form })
+        await fetch(`${API}/images`, { method: "POST", body: form })
       ).json()) as {
         path: string;
       };
-      const made = await fetch("/api/maps", {
+      const made = await fetch(`${API}/maps`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ title, kind, image: path }),
@@ -49,15 +49,15 @@ async function makeMap(page: Page, title: string, picture: string, kind: "flat" 
 
 const cleanUp = (page: Page, maps: string[]) =>
   page.evaluate(async (maps) => {
-    for (const id of maps) await fetch(`/api/maps/${id}`, { method: "DELETE" });
-    const un = await (await fetch("/api/unpublished")).json();
-    for (const d of un.drafts) await fetch(`/api/drafts/${d.id}`, { method: "DELETE" });
+    for (const id of maps) await fetch(`${API}/maps/${id}`, { method: "DELETE" });
+    const un = await (await fetch(`${API}/unpublished`)).json();
+    for (const d of un.drafts) await fetch(`${API}/drafts/${d.id}`, { method: "DELETE" });
   }, maps);
 
 const stored = (page: Page) =>
   page.evaluate(async () => {
     const id = location.pathname.split("/").pop();
-    return ((await (await fetch(`/api/maps/${id}`)).json()) as { map: Stored }).map;
+    return ((await (await fetch(`${API}/maps/${id}`)).json()) as { map: Stored }).map;
   });
 const zones = async (page: Page) => (await stored(page)).features.filter((f) => f.kind === "zone");
 const saved = (page: Page) => expect(page.locator(".save-saved")).toBeVisible();

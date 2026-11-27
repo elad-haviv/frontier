@@ -1,4 +1,4 @@
-import { expect, type Page, test } from "@playwright/test";
+import { expect, type Page, test } from "./test.ts";
 import { discardDraft, entry, noSidewaysScroll, openEditor, saved, proj } from "./helpers.ts";
 
 const side = (page: Page) => page.locator(".side");

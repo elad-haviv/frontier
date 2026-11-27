@@ -1,7 +1,7 @@
-import { expect, type Page, test } from "@playwright/test";
+import { expect, type Page, test } from "./test.ts";
 import { answerDialog, AUTH_FILE, noSidewaysScroll, setUpAi, proj } from "./helpers.ts";
 
-// The AI settings are one per server: these tests take turns and put back what they change.
+// The AI settings are the signed-in person's (one account here): these tests take turns and put back what they change.
 test.describe.configure({ mode: "serial" });
 
 const isPhone = (name: string) => name === "phone";

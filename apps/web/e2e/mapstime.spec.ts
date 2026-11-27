@@ -1,4 +1,4 @@
-import { expect, type Page, test } from "@playwright/test";
+import { expect, type Page, test } from "./test.ts";
 import { newMapInForm, pickEntry, proj } from "./helpers.ts";
 
 const IMAGE = "map one.png";
@@ -10,13 +10,13 @@ async function makeChronicle(page: Page, title: string, entryPath: string) {
     async ({ title, entryPath }) => {
       const json = { "content-type": "application/json" };
       const made = await (
-        await fetch("/api/chronicles", {
+        await fetch(`${API}/chronicles`, {
           method: "POST",
           headers: json,
           body: JSON.stringify({ title }),
         })
       ).json();
-      const { chronicle, revision } = await (await fetch(`/api/chronicles/${made.id}`)).json();
+      const { chronicle, revision } = await (await fetch(`${API}/chronicles/${made.id}`)).json();
       const lane = chronicle.lanes[0].id;
       const at = (low: number, high = low) => ({ words: "", low, high });
       const span = (id: string, name: string, extra: object) => ({
@@ -37,7 +37,7 @@ async function makeChronicle(page: Page, title: string, entryPath: string) {
         span("thewar01", "The war", { start: at(270, 290), end: at(300) }),
         span("treaty01", "The treaty", { point: true, start: at(300) }),
       ];
-      await fetch(`/api/chronicles/${made.id}`, {
+      await fetch(`${API}/chronicles/${made.id}`, {
         method: "PUT",
         headers: json,
         body: JSON.stringify({
@@ -46,7 +46,11 @@ async function makeChronicle(page: Page, title: string, entryPath: string) {
           link: [{ span: "thewar01", path: entryPath }],
         }),
       });
-      await fetch(`/api/chronicles/${made.id}/main`, { method: "POST", headers: json, body: "{}" });
+      await fetch(`${API}/chronicles/${made.id}/main`, {
+        method: "POST",
+        headers: json,
+        body: "{}",
+      });
       return made.id as string;
     },
     { title, entryPath },
@@ -73,7 +77,7 @@ async function centre(page: Page) {
 const stored = (page: Page) =>
   page.evaluate(async () => {
     const id = location.pathname.split("/").pop();
-    const res = await fetch(`/api/maps/${id}`);
+    const res = await fetch(`${API}/maps/${id}`);
     return (
       (await res.json()) as {
         map: {
@@ -251,9 +255,9 @@ test("CUJ 16: a fort appears and goes, and a border changes shape, as the years 
   await expect(page).not.toHaveURL(/t=/);
 
   await page.evaluate(async (chronicle) => {
-    await fetch(`/api/maps/${location.pathname.split("/").pop()}`, { method: "DELETE" });
-    await fetch(`/api/chronicles/${chronicle}`, { method: "DELETE" });
-    const un = await (await fetch("/api/unpublished")).json();
-    for (const d of un.drafts) await fetch(`/api/drafts/${d.id}`, { method: "DELETE" });
+    await fetch(`${API}/maps/${location.pathname.split("/").pop()}`, { method: "DELETE" });
+    await fetch(`${API}/chronicles/${chronicle}`, { method: "DELETE" });
+    const un = await (await fetch(`${API}/unpublished`)).json();
+    for (const d of un.drafts) await fetch(`${API}/drafts/${d.id}`, { method: "DELETE" });
   }, chronicle);
 });

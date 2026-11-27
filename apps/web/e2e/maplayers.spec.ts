@@ -1,4 +1,4 @@
-import { expect, type Locator, type Page, test } from "@playwright/test";
+import { expect, type Locator, type Page, test } from "./test.ts";
 import { drawn, rightPanel, proj } from "./helpers.ts";
 
 /**
@@ -19,13 +19,13 @@ const makeMap = (page: Page, title: string, sublayer = false) =>
   page.evaluate(
     async ({ title, image, sublayer }) => {
       const json = { "content-type": "application/json" };
-      const made = await fetch("/api/maps", {
+      const made = await fetch(`${API}/maps`, {
         method: "POST",
         headers: json,
         body: JSON.stringify({ title, kind: "flat", image }),
       });
       const { id } = (await made.json()) as { id: string };
-      const loaded = await (await fetch(`/api/maps/${id}`)).json();
+      const loaded = await (await fetch(`${API}/maps/${id}`)).json();
       const map = loaded.map;
       const top = map.layers[0].id as string;
       if (sublayer) {
@@ -49,7 +49,7 @@ const makeMap = (page: Page, title: string, sublayer = false) =>
           child: null,
         },
       ];
-      await fetch(`/api/maps/${id}`, {
+      await fetch(`${API}/maps/${id}`, {
         method: "PUT",
         headers: json,
         body: JSON.stringify({ map, revision: loaded.revision, baseBlob: loaded.blob }),
@@ -62,12 +62,12 @@ const makeMap = (page: Page, title: string, sublayer = false) =>
 const stored = (page: Page) =>
   page.evaluate(async () => {
     const id = location.pathname.split("/").pop();
-    return ((await (await fetch(`/api/maps/${id}`)).json()) as { map: Stored }).map;
+    return ((await (await fetch(`${API}/maps/${id}`)).json()) as { map: Stored }).map;
   });
 
 const cleanUp = (page: Page, id: string) =>
   page.evaluate(async (id) => {
-    await fetch(`/api/maps/${id}`, { method: "DELETE" });
+    await fetch(`${API}/maps/${id}`, { method: "DELETE" });
   }, id);
 
 async function openMap(page: Page, title: string, sublayer = false) {

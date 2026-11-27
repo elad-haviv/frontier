@@ -1,8 +1,9 @@
-import { expect, type Page, test } from "@playwright/test";
-import { discardDraft, edit, giveDeviceKeys } from "./helpers.ts";
+import { expect, type Page, test } from "./test.ts";
+import { discardDraft, edit, giveDeviceKeys, resetPerson } from "./helpers.ts";
 
 // Writing help in the editor at desktop size (stage 17): a card under the passage. The AI
-// settings are one per server, so these take turns and put the model back as they found it.
+// settings are the signed-in person's (one account here), so these take turns, and each starts
+// from a clean slate.
 test.describe.configure({ mode: "serial" });
 
 const NOTE = "02 People/Twin.md";
@@ -28,6 +29,11 @@ test.beforeAll(async ({ browser }, info) => {
     .conversation;
   await page.close();
 });
+// A spec before this one may have chosen another model, or left a draft of the entry.
+test.beforeEach(async ({ page }, info) => {
+  if (info.project.name !== "desktop") return;
+  await resetPerson(page, [NOTE]);
+});
 test.afterAll(async ({ browser }, info) => {
   if (info.project.name !== "desktop") return;
   const page = await browser.newPage({
@@ -44,7 +50,10 @@ async function cursorIn(page: Page, words: string) {
 }
 
 test("with no model chosen, Help says how to turn it on", async ({ page }, info) => {
-  test.skip(info.project.name !== "desktop", "The AI settings are one per server.");
+  test.skip(
+    info.project.name !== "desktop",
+    "These change the person's AI settings: run at one size only.",
+  );
   await conversationModel(page, null);
   await page.goto(edit(NOTE));
   await cursorIn(page, "The person.");
@@ -61,7 +70,10 @@ test("with no model chosen, Help says how to turn it on", async ({ page }, info)
 test("Help from the keyboard: a ready-made request, Keep and Undo, Try again, Discard", async ({
   page,
 }, info) => {
-  test.skip(info.project.name !== "desktop", "The AI settings are one per server.");
+  test.skip(
+    info.project.name !== "desktop",
+    "These change the person's AI settings: run at one size only.",
+  );
   await conversationModel(page, "sample/reader");
   await page.goto(edit(NOTE));
   await cursorIn(page, "The person.");
@@ -115,7 +127,10 @@ test("Help from the keyboard: a ready-made request, Keep and Undo, Try again, Di
 });
 
 test("own words, Stop, and the passage changing while the card is open", async ({ page }, info) => {
-  test.skip(info.project.name !== "desktop", "The AI settings are one per server.");
+  test.skip(
+    info.project.name !== "desktop",
+    "These change the person's AI settings: run at one size only.",
+  );
   await conversationModel(page, "sample/reader");
   await page.goto(edit(NOTE));
   await cursorIn(page, "The person.");

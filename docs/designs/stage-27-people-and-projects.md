@@ -437,8 +437,8 @@ project.
   project is open. Removing a project's copy removes only its images from the shared Cache
   Storage cache. The device marks a project as on this device (`frontier.onDevice`) when its compact
   index is first kept.
-- **Which project owns what an earlier build kept**: the first project in the list, decided once
-  and kept in the device's `meta` (`legacyProject`). The `frontier` database, its queue and its
+- **Which project owns what an earlier build kept**: see "Review fixes" below; it is the server's
+  legacy project, and only for the first person who signs in and is in it. The `frontier` database, its queue and its
   copy are that project's; the keys the browser's own storage held unfiled (`frontier.keepGoing.v1`,
   `frontier.maps.recent`, `frontier.discovery.ready`, `frontier.explore.*`, `frontier.chronicle.*`,
   and the per-person `pendingProposals` and `folderRun`) are moved to `<key>:<project id>` once
@@ -501,3 +501,30 @@ project.
 - The e2e specs open pages through one helper (`at`, `helpers.ts`); their direct calls to the
   server in the page (`fetch("/api/maps")`) still use the unprefixed aliases, which reach the
   project used last. `projects.spec.ts` makes the first project the one used last again after each test.
+
+### Review fixes (after the first review of 27b)
+
+- **The old database has one owner.** `ProjectSummary.legacy` marks the project whose files are the
+  server's old layout. Only that project may take the device's own `frontier` database and the
+  un-filed browser keys, and only for the first person who signs in and is in it (the device's
+  `meta` keeps `legacyOwner` and `legacyProject`). A person who is not in the legacy project leaves
+  that data untouched and unread; no fallback project takes it. Nothing is guessed from a list that
+  does not carry the flag: the app waits for a list that does.
+- **Device data is per person.** Queues and device copies are named for the person
+  (`frontier-u-<person>-p-<project id>`; the owner of the old data keeps the old names), the lock and
+  channel names carry the person, and `frontier.projects`, `frontier.onDevice`,
+  `frontier.projects.filed` and every key of `projectKey` are filed `<name>:<person>:<project>`.
+  Another person's session never opens the last one's databases, so it neither shows nor sends what
+  they left unsent; the logout warning counts only the signed-in person's changes.
+- **Work keeps its project.** `projectWork()` (and `useProjectWork()` in a page) fixes the open project
+  before an action's first wait, and gives that project's `api` and save queue for the rest.
+  `proposeAfterPublish` and `followPublish` take the project. A fill of a cache that a switch cleared
+  (`linkComplete`, `HoverPreview`) is dropped when its project is no longer open.
+  `src/testing/switchProject.ts` switches project between two awaits in unit tests.
+- **The project list never opens a project.** The switcher reads the list when its menu opens.
+- **Changes in a project that is gone** (a queued save refused with `no_project`, or a project no
+  longer in the person's list) are listed on All projects with "Copy the text" and "Discard", and
+  counted in the logout warning. Deleting a project says how many unsent changes this device holds
+  for it, then drops its queue, copy and database.
+- **The role** is `null` until the record, the list or the device's memory has said; `useRole()`
+  gives `known`, `canWrite` and `isOwner`.
