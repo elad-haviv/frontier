@@ -58,7 +58,7 @@ function compose(
     `<div style="max-width:520px;margin:0 auto;background:#ffffff;border:1px solid #deded8;border-radius:10px;padding:24px;font-size:15px;line-height:1.5">` +
     `<div style="font-weight:600;letter-spacing:.02em;margin-bottom:16px">Frontier</div>` +
     parts.map((p) => p.html).join("") +
-    `<p><a href="${url}" style="display:inline-block;background:#2f5d50;color:#ffffff;text-decoration:none;padding:10px 18px;border-radius:8px">${escapeHtml(button.label)}</a></p>` +
+    `<p><a href="${url}" style="display:inline-block;background:#9a3b1c;color:#ffffff;text-decoration:none;padding:10px 18px;border-radius:8px">${escapeHtml(button.label)}</a></p>` +
     `<p style="font-size:13px;color:#555">Or paste this link into your browser:<br>${url}</p>` +
     after.map((p) => p.html).join("") +
     `<hr style="border:none;border-top:1px solid #deded8;margin:20px 0">` +
