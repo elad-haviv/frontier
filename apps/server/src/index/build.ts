@@ -25,6 +25,7 @@ import {
   normaliseLineEndings,
   parseSchema,
   readFields,
+  readRelations,
   type Resolution,
   type Resolver,
   type Schema,
@@ -119,6 +120,8 @@ export class VaultIndex {
         resolution: resolver.resolve(link, path),
       }));
       const fields = readFields(text);
+      // Relations that cannot be read are listed with the other fields that cannot be (stage 30).
+      fields.problems.push(...readRelations(text).problems);
       notes.set(path, {
         path,
         title,

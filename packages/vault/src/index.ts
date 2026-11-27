@@ -12,3 +12,4 @@ export * from "./fields.js";
 export * from "./rank.js";
 export * from "./underline.js";
 export * from "./words.js";
+export * from "./relations.js";

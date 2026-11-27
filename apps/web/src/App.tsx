@@ -14,6 +14,7 @@ import { EntryPage } from "./pages/Entry.tsx";
 import { UnpublishedPage } from "./pages/Unpublished.tsx";
 import { Home } from "./pages/Home.tsx";
 import { ChroniclesPage } from "./pages/Chronicles.tsx";
+import { TreesPage } from "./pages/Trees.tsx";
 import { MapsPage } from "./pages/Maps.tsx";
 import { Login } from "./pages/Login.tsx";
 const SettingsPage = lazy(() =>
@@ -34,6 +35,7 @@ const SystemMapPage = lazy(() =>
 const StackPage = lazy(() =>
   import("./pages/StackPage.tsx").then((m) => ({ default: m.StackPage })),
 );
+const TreePage = lazy(() => import("./pages/TreePage.tsx").then((m) => ({ default: m.TreePage })));
 const ChroniclePage = lazy(() =>
   import("./pages/ChroniclePage.tsx").then((m) => ({ default: m.ChroniclePage })),
 );
@@ -179,6 +181,15 @@ export function App() {
           <Route path="/export" element={<ExportPage />} />
           <Route path="/gallery" element={<GalleryPage />} />
           <Route path="/chronicles" element={<ChroniclesPage />} />
+          <Route path="/trees" element={<TreesPage />} />
+          <Route
+            path="/tree/:id"
+            element={
+              <Suspense fallback={<Progress />}>
+                <TreePage />
+              </Suspense>
+            }
+          />
           <Route
             path="/chronicle/:id"
             element={

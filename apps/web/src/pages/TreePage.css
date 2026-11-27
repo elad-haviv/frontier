@@ -1,0 +1,1016 @@
+/* Trees (stage 30): the list of trees, one tree as a drawing with its details panel, the
+   One at a time view, the add picker and the entry's Relations tab. */
+
+.tr-muted {
+  margin: 0;
+  color: var(--ink-faint);
+  font-size: 0.85rem;
+}
+.tr-spacer {
+  flex: 1;
+}
+.tr-error {
+  margin: 0;
+  color: var(--warn);
+  font-size: 0.85rem;
+}
+.tr-page kbd,
+.tr-list-page kbd,
+.tr-actions kbd {
+  margin-left: 0.3rem;
+  padding: 0 0.3rem;
+  border: 1px solid currentColor;
+  border-radius: 4px;
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  opacity: 0.75;
+}
+.tr-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  min-height: 1.8rem;
+  padding: 0.1rem 0.7rem;
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  background: var(--paper-raised);
+  color: var(--ink-soft);
+  font-size: 0.8rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.tr-pill b {
+  color: var(--ink);
+  font-weight: 600;
+}
+.tr-pill.is-red {
+  border-color: transparent;
+  background: color-mix(in srgb, var(--warn) 15%, var(--paper-raised));
+  color: var(--warn);
+}
+.tr-seg {
+  display: inline-flex;
+  overflow: hidden;
+  border: 1px solid var(--rule);
+  border-radius: 7px;
+  background: var(--paper-raised);
+}
+.tr-seg button {
+  min-height: 2rem;
+  padding: 0.2rem 0.7rem;
+  border: 0;
+  border-right: 1px solid var(--rule);
+  border-radius: 0;
+  background: none;
+  color: var(--ink-soft);
+  font-size: 0.82rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.tr-seg button:last-child {
+  border-right: 0;
+}
+.tr-seg button[aria-pressed="true"] {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.tr-chip-btn {
+  min-height: 1.9rem;
+  padding: 0.15rem 0.7rem;
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  background: var(--paper-raised);
+  color: var(--ink-soft);
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+.tr-chip-btn[aria-pressed="true"] {
+  border-color: transparent;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+/* Secondary buttons look like the app's quiet ones. */
+.tr-actions button,
+.tr-tools > button:not(.primary),
+.tr-empty button:not(.primary),
+.tr-new .dialog-actions button:not(.primary) {
+  min-height: 2rem;
+  padding: 0.35rem 0.8rem;
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  background: none;
+  color: var(--ink-soft);
+  font-size: 0.88rem;
+  font-weight: 600;
+}
+.tr-tools > button.primary {
+  min-height: 2rem;
+  padding: 0.35rem 0.8rem;
+}
+
+/* ---------- One tree ---------- */
+.tr-page {
+  position: relative;
+  display: flex;
+  height: 100%;
+  min-height: 0;
+  flex-direction: column;
+}
+.tr-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem 0.6rem;
+  padding: 0.6rem 1rem 0.3rem;
+}
+.tr-head h1 {
+  margin: 0;
+  font-family: var(--serif);
+  font-size: 1.3rem;
+  white-space: nowrap;
+}
+.tr-back {
+  display: inline-grid;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  color: var(--ink-soft);
+}
+.tr-tools {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding: 0.3rem 1rem 0.6rem;
+  border-bottom: 1px solid var(--rule);
+}
+.tr-find input {
+  width: 12rem;
+  min-height: 2rem;
+  padding: 0.2rem 0.6rem;
+  border: 1px solid var(--rule);
+  border-radius: 7px;
+  background: var(--paper-raised);
+  color: var(--ink);
+  font-size: 0.85rem;
+}
+.tr-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+.tr-canvas {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--ink) 3%, var(--paper));
+}
+.tr-panel {
+  width: 300px;
+  flex: none;
+  overflow-y: auto;
+  padding: 1rem;
+  border-left: 1px solid var(--rule);
+  background: var(--paper-raised);
+}
+.tr-foot {
+  margin: 0;
+  padding: 0.35rem 1rem;
+  border-top: 1px solid var(--rule);
+  color: var(--ink-faint);
+  font-size: 0.75rem;
+}
+.tr-page-message {
+  display: grid;
+  justify-items: center;
+  gap: 0.5rem;
+  padding: 3rem 1rem;
+}
+
+/* The drawing */
+.tr-svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+.tr-svg:focus:not(:focus-visible) {
+  outline: none;
+}
+.tr-svg:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.tr-line {
+  fill: none;
+  stroke: color-mix(in srgb, var(--ink-soft) 70%, var(--paper));
+  stroke-width: 1.7;
+  stroke-linecap: round;
+}
+.tr-line.is-dashed {
+  stroke-dasharray: 4 4;
+}
+.tr-couple .tr-line {
+  stroke: var(--ink-soft);
+  stroke-width: 1.8;
+}
+.tr-dot {
+  fill: var(--paper-raised);
+  stroke: color-mix(in srgb, var(--ink-soft) 70%, var(--paper));
+  stroke-width: 1.5;
+}
+.tr-ring {
+  fill: var(--paper);
+  stroke: var(--ink-soft);
+  stroke-width: 1.3;
+}
+.tr-ring.is-open {
+  fill: none;
+}
+.tr-ended {
+  fill: var(--ink-faint);
+  font-size: 10px;
+  font-style: italic;
+}
+.tr-over path {
+  fill: none;
+  stroke: var(--warn);
+  stroke-dasharray: 6 5;
+  stroke-width: 1.4;
+}
+.tr-over text {
+  fill: var(--warn);
+  font-size: 10.5px;
+  font-weight: 600;
+}
+.tr-box {
+  fill: var(--paper-raised);
+  stroke: var(--rule);
+}
+.tr-card {
+  cursor: pointer;
+}
+.tr-card:hover .tr-box {
+  stroke: var(--ink-faint);
+}
+.tr-card.is-selected .tr-box,
+.tr-card.is-path .tr-box {
+  stroke: var(--accent);
+  stroke-width: 2;
+}
+.tr-card.is-match .tr-box {
+  fill: var(--accent-soft);
+}
+.tr-card.is-stub .tr-box {
+  fill: var(--paper);
+  stroke: var(--ink-faint);
+  stroke-dasharray: 5 4;
+}
+.tr-avatar {
+  fill: var(--accent-soft);
+}
+.tr-initials {
+  fill: var(--accent);
+  font-size: 11px;
+  font-weight: 700;
+}
+.tr-name {
+  fill: var(--ink);
+  font-family: var(--serif);
+  font-size: 14px;
+  font-weight: 700;
+}
+.tr-card.is-stub .tr-name {
+  fill: var(--ink-soft);
+  font-style: italic;
+  font-weight: 400;
+}
+.tr-sub {
+  fill: var(--ink-faint);
+  font-size: 11.5px;
+}
+.tr-tag {
+  fill: var(--ink-faint);
+  font-size: 8.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+}
+.tr-warn {
+  fill: var(--warn);
+  font-size: 13px;
+  font-weight: 700;
+}
+.tr-chip rect,
+.tr-fold rect {
+  fill: var(--paper-raised);
+  stroke: var(--rule);
+}
+.tr-chip text,
+.tr-fold text {
+  fill: var(--ink-soft);
+  font-size: 10.5px;
+  font-weight: 700;
+}
+.tr-fold {
+  cursor: pointer;
+}
+.tr-fold:hover rect {
+  stroke: var(--accent);
+}
+.tr-tools g circle {
+  fill: var(--accent);
+}
+.tr-tools g text {
+  fill: var(--paper-raised);
+  font-size: 15px;
+  font-weight: 700;
+  pointer-events: none;
+}
+.tr-card .tr-tools {
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+.tr-card .tr-tools > g {
+  cursor: pointer;
+}
+.tr-card:hover .tr-tools,
+.tr-card.is-selected .tr-tools {
+  opacity: 1;
+}
+.tr-svg.is-comparing .tr-card:not(.is-path),
+.tr-svg.is-comparing .tr-down:not(.is-path),
+.tr-svg.is-comparing .tr-couple:not(.is-path) {
+  opacity: 0.3;
+}
+.tr-down.is-path .tr-line,
+.tr-down.is-path .tr-dot,
+.tr-couple.is-path .tr-line {
+  stroke: var(--accent);
+}
+@media (prefers-reduced-motion: reduce) {
+  .tr-card .tr-tools {
+    transition: none;
+  }
+}
+
+.tr-banner {
+  position: absolute;
+  top: 0.75rem;
+  left: 50%;
+  z-index: var(--layer-sticky);
+  display: flex;
+  max-width: calc(100% - 2rem);
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 0.6rem 0.5rem 0.9rem;
+  transform: translateX(-50%);
+  border: 1px solid var(--rule);
+  border-radius: 9px;
+  background: var(--paper-raised);
+  box-shadow: var(--shadow);
+}
+.tr-banner strong {
+  font-family: var(--serif);
+}
+.tr-hint-card {
+  position: absolute;
+  bottom: 1.5rem;
+  left: 50%;
+  max-width: 22rem;
+  margin: 0;
+  padding: 0.7rem 0.9rem;
+  transform: translateX(-50%);
+  border: 1px solid var(--rule);
+  border-radius: 9px;
+  background: var(--paper-raised);
+  color: var(--ink-soft);
+  font-size: 0.85rem;
+  line-height: 1.45;
+}
+.tr-zoom {
+  position: absolute;
+  right: 0.75rem;
+  bottom: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--rule);
+  border-radius: 7px;
+  background: var(--paper-raised);
+}
+.tr-zoom button {
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ink-soft);
+  font-size: 1rem;
+}
+
+/* The details of the selected card */
+.tr-person {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+.tr-person.is-compact {
+  gap: 0.6rem;
+}
+.tr-person-head {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+.tr-person-head h2 {
+  margin: 0;
+  font-family: var(--serif);
+  font-size: 1.2rem;
+}
+.tr-person-head p {
+  margin: 0.1rem 0 0;
+  color: var(--ink-faint);
+  font-size: 0.82rem;
+}
+.tr-av {
+  display: grid;
+  width: 2.8rem;
+  height: 2.8rem;
+  flex: none;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 700;
+}
+.tr-warnbox {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  padding: 0.5rem 0.7rem;
+  border: 1px solid color-mix(in srgb, var(--warn) 40%, var(--rule));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--warn) 8%, var(--paper-raised));
+  color: var(--warn);
+  font-size: 0.85rem;
+}
+.tr-sec h3 {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 0 0 0.35rem;
+  color: var(--ink-faint);
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.tr-worked {
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+}
+.tr-sec ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.tr-add-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: none;
+}
+.tr-rel {
+  display: flex;
+  width: calc(100% + 0.8rem);
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0 -0.4rem;
+  padding: 0.25rem 0.4rem;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--ink);
+  font-size: 0.9rem;
+  text-align: left;
+}
+.tr-rel:hover {
+  background: color-mix(in srgb, var(--ink) 5%, var(--paper-raised));
+}
+.tr-rel.is-worked {
+  color: var(--ink-soft);
+  font-style: italic;
+}
+.tr-tag-pill {
+  margin-left: auto;
+  padding: 0 0.4rem;
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  color: var(--ink-faint);
+  font-size: 0.72rem;
+  font-style: normal;
+}
+.tr-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+.tr-actions button {
+  justify-content: flex-start;
+  text-align: left;
+}
+
+/* Phone: the sheet over the drawing, and One at a time */
+.tr-sheet {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: var(--layer-sticky);
+  max-height: 55%;
+  overflow-y: auto;
+  padding: 0.9rem 1rem calc(1rem + env(safe-area-inset-bottom, 0px));
+  border-top: 1px solid var(--rule);
+  border-radius: 16px 16px 0 0;
+  background: var(--paper-raised);
+  box-shadow: var(--shadow);
+}
+.tr-sheet .tr-actions {
+  flex-direction: row;
+  flex-wrap: wrap;
+}
+.tr-sheet-close {
+  position: absolute;
+  top: 0.4rem;
+  right: 0.5rem;
+  font-size: 1.3rem;
+}
+.tr-one-scroll {
+  flex: 1;
+  overflow-y: auto;
+}
+.tr-one-actions {
+  padding: 0 1rem 2rem;
+}
+.tr-one-actions .tr-actions {
+  flex-direction: row;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+.tr-one {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 1rem 0.6rem 1.25rem;
+}
+.tr-one-lab {
+  color: var(--ink-faint);
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.tr-one-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+}
+.tr-one-row.is-top {
+  align-items: flex-start;
+  gap: 0.9rem;
+}
+.tr-one-line {
+  width: 1px;
+  height: 0.8rem;
+  background: var(--rule);
+}
+.tr-one-ring {
+  color: var(--ink-faint);
+}
+.tr-one-pair {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.tr-one-grp {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.35rem;
+}
+.tr-one-grp > small {
+  color: var(--ink-faint);
+  font-size: 0.72rem;
+}
+.tr-one-sibs {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.35rem;
+}
+.tr-one-sibs button {
+  min-height: 2.25rem;
+  padding: 0.15rem 0.7rem;
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  background: none;
+  font-size: 0.82rem;
+}
+.tr-pc {
+  display: flex;
+  min-width: 6.5rem;
+  min-height: 2.75rem;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 0.35rem 0.7rem;
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  background: var(--paper-raised);
+  text-align: left;
+}
+.tr-pc b {
+  font-family: var(--serif);
+  font-size: 0.92rem;
+}
+.tr-pc small {
+  color: var(--ink-faint);
+  font-size: 0.72rem;
+}
+.tr-pc.is-me {
+  padding: 0.55rem 0.9rem;
+  border: 2px solid var(--accent);
+}
+.tr-pc.is-me b {
+  font-size: 1.1rem;
+}
+.tr-pc.is-stub {
+  border-style: dashed;
+  background: none;
+}
+.tr-pc.is-stub b {
+  font-style: italic;
+  font-weight: 400;
+}
+.tr-pc.is-add {
+  min-width: 0;
+  align-items: center;
+  border-style: dashed;
+  background: none;
+  color: var(--accent);
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+/* The add picker */
+.tr-pop {
+  position: fixed;
+  z-index: var(--layer-popover);
+  display: flex;
+  width: 20rem;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  border: 1px solid var(--rule);
+  border-radius: 10px;
+  background: var(--paper-raised);
+  box-shadow: var(--shadow);
+}
+.tr-pop.is-sheet {
+  right: 0;
+  bottom: 0;
+  left: 0;
+  width: auto;
+  padding-bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
+  border-radius: 16px 16px 0 0;
+}
+.tr-pop:not(.is-sheet):not([style]) {
+  top: 20%;
+  left: 50%;
+  transform: translateX(-50%);
+}
+.tr-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: var(--layer-popover);
+  background: rgba(20, 18, 15, 0.35);
+}
+.tr-pop h3 {
+  margin: 0;
+  font-family: var(--serif);
+  font-size: 0.95rem;
+}
+.tr-with {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+  color: var(--ink-faint);
+  font-size: 0.78rem;
+}
+.tr-pop input {
+  width: 100%;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--rule);
+  border-radius: 7px;
+  background: var(--paper);
+  color: var(--ink);
+  font-size: 0.92rem;
+}
+.tr-options {
+  max-height: 14rem;
+  margin: 0;
+  overflow-y: auto;
+  padding: 0;
+  list-style: none;
+}
+.tr-options li {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  min-height: 2.25rem;
+  padding: 0.4rem 0.5rem;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.88rem;
+}
+.tr-options li small {
+  margin-left: auto;
+  color: var(--ink-faint);
+  font-size: 0.75rem;
+}
+.tr-options li.is-active {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.tr-options li.is-first-new {
+  margin-top: 0.25rem;
+  border-top: 1px solid var(--rule);
+  border-radius: 0;
+}
+.tr-options .tr-none {
+  color: var(--ink-faint);
+  cursor: default;
+}
+.tr-hint {
+  margin: 0;
+  color: var(--ink-faint);
+  font-size: 0.74rem;
+}
+
+/* ---------- The list of trees ---------- */
+.tr-list-page {
+  max-width: 72rem;
+  margin: 0 auto;
+  padding: 1.25rem 1.25rem 4rem;
+}
+.tr-list-head {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+.tr-list-head h1 {
+  margin: 0;
+  font-family: var(--serif);
+}
+.tr-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+  gap: 0.9rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.tr-card-link {
+  display: flex;
+  height: 100%;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--rule);
+  border-radius: 10px;
+  background: var(--paper-raised);
+  color: inherit;
+  text-decoration: none;
+}
+.tr-card-link:hover {
+  border-color: var(--ink-faint);
+}
+.tr-pic {
+  display: block;
+  height: 8rem;
+  padding: 0.5rem;
+  border-bottom: 1px solid var(--rule);
+  background: color-mix(in srgb, var(--ink) 3%, var(--paper));
+}
+.tr-shape {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.tr-shape path {
+  fill: none;
+  stroke: var(--ink-faint);
+  stroke-width: 5;
+}
+.tr-shape rect {
+  fill: var(--paper-raised);
+  stroke: var(--ink-faint);
+  stroke-width: 5;
+}
+.tr-card-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  padding: 0.6rem 0.75rem 0.75rem;
+}
+.tr-card-title {
+  font-family: var(--serif);
+  font-size: 1.05rem;
+  font-weight: 700;
+}
+.tr-badge {
+  margin-right: 0.35rem;
+  padding: 0 0.3rem;
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  color: var(--ink-soft);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.tr-new-tile {
+  width: 100%;
+  height: 100%;
+  min-height: 12rem;
+  border: 1.5px dashed var(--rule);
+  border-radius: 10px;
+  background: none;
+  color: var(--ink-soft);
+  font-weight: 600;
+}
+.tr-empty {
+  display: flex;
+  max-width: 30rem;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+  margin: 3rem auto;
+  color: var(--ink-faint);
+  text-align: center;
+}
+.tr-empty h2 {
+  margin: 0;
+  color: var(--ink);
+  font-family: var(--serif);
+}
+.tr-empty p {
+  margin: 0;
+  color: var(--ink-soft);
+  line-height: 1.55;
+}
+.tr-fab {
+  position: fixed;
+  right: 1rem;
+  bottom: calc(1.1rem + env(safe-area-inset-bottom, 0px));
+  z-index: var(--layer-sticky);
+  display: grid;
+  width: 3.25rem;
+  height: 3.25rem;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: var(--shadow);
+  color: var(--paper-raised);
+}
+.tr-looks {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.tr-looks legend {
+  margin-bottom: 0.35rem;
+  padding: 0;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+.tr-look {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  padding: 0.6rem;
+  border: 1px solid var(--rule);
+  border-radius: 9px;
+  background: var(--paper);
+  text-align: left;
+}
+.tr-look[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.tr-look svg {
+  width: 2.75rem;
+  height: 2.1rem;
+  flex: none;
+}
+.tr-look svg path {
+  fill: none;
+  stroke: var(--ink-soft);
+  stroke-width: 1.5;
+}
+.tr-look b {
+  display: block;
+  font-size: 0.9rem;
+}
+.tr-look span span {
+  color: var(--ink-faint);
+  font-size: 0.76rem;
+}
+
+/* ---------- The entry's Relations tab ---------- */
+.tr-rel-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 0 0.25rem 1rem;
+}
+.tr-written li {
+  display: grid;
+  grid-template-columns: 6rem 1fr auto;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.25rem 0;
+  border-bottom: 1px solid var(--rule);
+  font-size: 0.85rem;
+}
+.tr-written-word {
+  color: var(--ink-faint);
+}
+.tr-written-word.is-unknown {
+  text-decoration: underline dotted var(--warn);
+}
+.tr-add-row select {
+  min-height: 2.25rem;
+  padding: 0.3rem 0.5rem;
+  border: 1px solid var(--rule);
+  border-radius: 7px;
+  background: var(--paper-raised);
+  color: var(--ink);
+  font-size: 0.88rem;
+}
+.tr-add-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0.5rem 0;
+}
+
+@media (max-width: 640px) {
+  .tr-head {
+    flex-wrap: nowrap;
+    padding: 0.5rem 0.75rem 0.25rem;
+  }
+  .tr-head h1,
+  .tr-head .tr-pill:not(.is-red),
+  .tr-head .tr-spacer {
+    display: none;
+  }
+  .tr-head .tr-seg {
+    min-width: 0;
+    flex: 1;
+    overflow-x: auto;
+  }
+  .tr-tools .tr-seg {
+    flex: none;
+  }
+  .tr-tools {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    padding: 0.3rem 0.75rem 0.5rem;
+  }
+  .tr-find input {
+    width: 9rem;
+  }
+  .tr-looks {
+    grid-template-columns: 1fr;
+  }
+}

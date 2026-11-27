@@ -390,6 +390,10 @@ export function Shell({ children }: { children: ReactNode }) {
     if (overlayOpen()) return false;
     void navigate("/");
   });
+  useShortcut("app.trees", () => {
+    if (overlayOpen()) return false;
+    void navigate("/trees");
+  });
   useShortcut(
     "app.library",
     () => {

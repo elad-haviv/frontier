@@ -284,6 +284,8 @@ export const ConflictReason = z.enum([
   "biomes_changed_on_both",
   /** The pins file changed here and in the library on the same pins. */
   "pins_changed_on_both",
+  /** The trees file changed here and in the library on the same trees. */
+  "trees_changed_on_both",
 ]);
 
 export const PlannedConflict = z.object({

@@ -43,6 +43,7 @@ import {
   History,
   MessageSquare,
   TableOfContents,
+  Network,
   Waypoints,
 } from "lucide-react";
 import { Problem } from "../components/ui/Problem.tsx";
@@ -86,6 +87,9 @@ import { useWide } from "../width.ts";
 
 // The graph's code loads only when an entry's Graph tab is opened.
 const LocalGraphPanel = lazy(() => import("../graph/LocalGraphPanel.tsx"));
+const RelationsPanel = lazy(() =>
+  import("../components/trees/RelationsPanel.tsx").then((m) => ({ default: m.RelationsPanel })),
+);
 
 /** Below this width the shell is a phone's, and a panel chosen covers half the page. */
 const PHONE = "(max-width: 47.99rem)";
@@ -420,6 +424,27 @@ export function EntryPage() {
     !e
       ? null
       : {
+          id: "relations",
+          title: "Relations",
+          icon: Network,
+          render: () => (
+            <Suspense fallback={<Progress label="Loading the relations" />}>
+              <RelationsPanel
+                key={e.path}
+                path={e.path}
+                text={e.text}
+                editable={editable}
+                onChanged={() => entry.retry()}
+              />
+            </Suspense>
+          ),
+        },
+  );
+
+  usePanel(
+    !e
+      ? null
+      : {
           id: "graph",
           title: "Graph",
           icon: Waypoints,
@@ -512,6 +537,8 @@ export function EntryPage() {
     outlineOpen: bar.open === "outline",
     onGraph: toggle("graph"),
     graphOpen: bar.open === "graph",
+    onRelations: toggle("relations"),
+    relationsOpen: bar.open === "relations",
     pin: pinnable
       ? { pinned, onToggle: () => void pinOrUnpin(), blocked: offlineReason }
       : undefined,

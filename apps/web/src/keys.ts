@@ -33,6 +33,8 @@ export const SCOPES = [
   "map",
   "maps",
   "graph",
+  "trees",
+  "tree",
   "editor",
   "table",
   "dialog",
@@ -46,6 +48,8 @@ export const SCOPE_NAMES: Record<Scope, string> = {
   map: "Map",
   maps: "List of maps",
   graph: "Graph",
+  trees: "List of trees",
+  tree: "Tree",
   editor: "Editor",
   table: "In a table",
   dialog: "Dialogs and menus",
@@ -382,6 +386,7 @@ keys.register(
   // Two presses in a row (stage 25). Where a page uses the first key by itself, the page wins.
   { id: "app.home", keys: ["g h"], scope: "app", label: "Go to Home" },
   { id: "app.random", keys: ["g r"], scope: "app", label: "Open a random entry" },
+  { id: "app.trees", keys: ["g t"], scope: "app", label: "Go to Trees" },
   // Stage 28: the library pane on a desktop (on a phone the Library is a panel in the drawer).
   {
     id: "app.library",
@@ -779,6 +784,41 @@ keys.register(
   { id: "graph.fit", keys: ["0"], scope: "graph", label: "Fit the graph" },
   { id: "graph.zoomIn", keys: ["="], scope: "graph", label: "Zoom in" },
   { id: "graph.zoomOut", keys: ["-"], scope: "graph", label: "Zoom out" },
+
+  // Trees (stage 30). The drawing takes its own arrow keys while it has the focus.
+  { id: "trees.new", keys: ["n"], scope: "trees", label: "New tree" },
+  { id: "tree.find", keys: ["/"], scope: "tree", label: "Find someone in the tree" },
+  { id: "tree.add", keys: ["a"], scope: "tree", label: "Add to the selected card" },
+  {
+    id: "tree.compare",
+    keys: ["c"],
+    scope: "tree",
+    label: "How are they related? Then pick the second",
+  },
+  { id: "tree.fit", keys: ["f"], scope: "tree", label: "Show the whole tree" },
+  { id: "tree.zoomIn", keys: ["=", "+"], scope: "tree", label: "Zoom in" },
+  { id: "tree.zoomOut", keys: ["-"], scope: "tree", label: "Zoom out" },
+  {
+    id: "tree.move",
+    keys: ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"],
+    scope: "tree",
+    label: "Move to a parent, a child, or along the row",
+    handledBy: "the tree drawing",
+  },
+  {
+    id: "tree.open",
+    keys: ["Enter"],
+    scope: "tree",
+    label: "Open the entry",
+    handledBy: "the tree drawing",
+  },
+  {
+    id: "tree.clear",
+    keys: ["Escape"],
+    scope: "tree",
+    label: "Stop comparing, close",
+    handledBy: "the tree drawing",
+  },
 
   // The chronicle
   { id: "chronicle.undo", keys: ["Mod-z"], scope: "chronicle", label: "Undo" },
