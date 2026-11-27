@@ -166,18 +166,27 @@ function loadMail(
     throw new ConfigError("MAIL_FROM must look like: Frontier <noreply@example.com>");
   }
   if (/[\s/]/.test(host)) throw new ConfigError("SMTP_HOST must be a host name, such as smtp.");
-  const port = Number(optional("SMTP_PORT") ?? 587);
-  if (!Number.isInteger(port) || port < 1 || port > 65535) {
-    throw new ConfigError("SMTP_PORT must be a port number.");
-  }
-  const security = (optional("SMTP_SECURE") ?? "starttls").toLowerCase();
-  if (!["starttls", "required", "tls", "none"].includes(security)) {
-    throw new ConfigError("SMTP_SECURE must be starttls, required, tls or none.");
-  }
   const user = optional("SMTP_USER");
   const password = optional("SMTP_PASSWORD");
   if ((user === null) !== (password === null)) {
     throw new ConfigError("SMTP_USER and SMTP_PASSWORD go together: give both or neither.");
+  }
+  const secure = optional("SMTP_SECURE")?.toLowerCase() ?? null;
+  // A login is never sent over a connection that may be unencrypted or whose certificate is not
+  // checked: with credentials the default is `required`, and the two weaker settings are refused.
+  const security = secure ?? (user !== null ? "required" : "starttls");
+  if (!["starttls", "required", "tls", "none"].includes(security)) {
+    throw new ConfigError("SMTP_SECURE must be starttls, required, tls or none.");
+  }
+  if (user !== null && (security === "starttls" || security === "none")) {
+    throw new ConfigError(
+      `SMTP_USER is set, so SMTP_SECURE must be required or tls, not ${security}: the login would be sent over a connection that may be unencrypted or unchecked.`,
+    );
+  }
+  // Implicit TLS is port 465 unless a port is given.
+  const port = Number(optional("SMTP_PORT") ?? (security === "tls" ? 465 : 587));
+  if (!Number.isInteger(port) || port < 1 || port > 65535) {
+    throw new ConfigError("SMTP_PORT must be a port number.");
   }
   return { kind: "smtp", host, port, security: security as SmtpSecurity, user, password, from };
 }
