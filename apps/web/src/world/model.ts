@@ -41,7 +41,9 @@ export interface WorldSettings {
   sea: number;
   mountains: number;
   rough: number;
-  /** Degrees warmer or colder than the model's own. */
+  /** Degrees warmer or colder than Earth, from where the world lies by its star. */
+  sun: number;
+  /** Degrees warmer or colder than that, by the author's choice. */
   warm: number;
   wet: number;
 }
@@ -58,6 +60,7 @@ export const DEFAULT_SETTINGS: WorldSettings = {
   sea: 0,
   mountains: 1,
   rough: 1,
+  sun: 0,
   warm: 0,
   wet: 1,
 };
@@ -508,7 +511,7 @@ export function windAt(world: World, y: number): 1 | -1 {
 export function buildClimate(world: World): void {
   const { s, elev, temp, rain } = world;
   const detail = field(s.seed + 4, 5, 3);
-  const equator = 27 + s.warm;
+  const equator = 27 + s.sun + s.warm;
   const fall = 46 * (1 - s.tilt / 150);
   const carried = new Float32Array(N);
   for (let y = 0; y < H; y++) {

@@ -320,3 +320,67 @@
     background: var(--paper);
   }
 }
+
+/* The star system (release 2). */
+.ww-system {
+  display: block;
+  width: min(100%, 30rem);
+  height: auto;
+}
+.ww-planets {
+  display: grid;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.ww-planets li {
+  display: grid;
+  grid-template-columns: auto auto 1fr auto;
+  gap: 0.25rem 0.5rem;
+  align-items: center;
+  padding: 0.45rem 0;
+  border-bottom: 1px solid var(--rule);
+  font-size: 0.86rem;
+}
+.ww-planets .ww-slider {
+  grid-column: 1 / -1;
+}
+.ww-planets select {
+  padding: 0.15rem 0.3rem;
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  background: var(--paper-raised);
+  color: var(--ink);
+  font-size: 0.84rem;
+}
+.ww-dot {
+  width: 0.8rem;
+  height: 0.8rem;
+  border-radius: 50%;
+}
+.ww-home {
+  color: var(--ink-soft);
+}
+.ww-remove {
+  display: grid;
+  place-items: center;
+  width: 1.9rem;
+  height: 1.9rem;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: var(--ink-faint);
+}
+.ww-remove:hover {
+  background: var(--accent-soft);
+  color: var(--ink);
+}
+.ww-warn {
+  color: var(--warn);
+}
+.ww-canvas[hidden],
+.ww-corner[hidden] {
+  display: none;
+}

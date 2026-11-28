@@ -50,12 +50,24 @@ import {
   restore,
   saveWorld,
 } from "../../world/store.ts";
+import { type River, riversOf } from "../../world/rivers.ts";
+import {
+  DEFAULT_SYSTEM,
+  rollSystem,
+  sunWarmth,
+  STARS,
+  type SystemSettings,
+  tidy,
+  yearDays,
+} from "../../world/system.ts";
 import { worldZones, zoneCounts } from "../../world/zones.ts";
+import { SystemPanel, SystemView } from "./SystemPart.tsx";
 import { type Turn, WorldCanvas } from "./WorldCanvas.tsx";
 import "./WorldWizard.css";
 
 /** What a part needs built before it can be shown. */
 const NEEDS: Record<Part, Stage> = {
+  system: "land",
   basics: "land",
   land: "land",
   plates: "sim",
@@ -162,6 +174,7 @@ export function WorldWizardPage() {
   const [title, setTitle] = useState("");
   const [part, setPart] = useState<Part>("basics");
   const [made, setMade] = useState<string | undefined>(undefined);
+  const [system, setSystem] = useState<SystemSettings>(DEFAULT_SYSTEM);
   const [globe, setGlobe] = useState(true);
   const [dragTurns, setDragTurns] = useState(false);
   const [brush, setBrush] = useState(4);
@@ -190,13 +203,18 @@ export function WorldWizardPage() {
       if (gone) return;
       const back = kept ? restore(kept) : null;
       if (kept && back) {
+        const sys = tidy(kept.system ?? DEFAULT_SYSTEM);
+        back.s.sun = sunWarmth(sys);
+        setSystem(sys);
         setTitle(kept.title);
         setPart(PARTS.includes(kept.part) ? kept.part : "basics");
         setMade(kept.made);
         setWorld(back);
       } else {
         setTitle(project.name);
-        setWorld(newWorld({ ...DEFAULT_SETTINGS, seed: 1000 + Math.floor(Math.random() * 9000) }));
+        setSystem(DEFAULT_SYSTEM);
+        setPart("system");
+        setWorld(fresh(DEFAULT_SYSTEM));
       }
     });
     return () => {
@@ -205,20 +223,25 @@ export function WorldWizardPage() {
   }, [projectId, project.name]);
 
   // Kept a moment after each change, and when the page is left.
-  const latest = useRef({ world, title, part, made });
-  latest.current = { world, title, part, made };
+  const latest = useRef({ world, title, part, made, system });
+  latest.current = { world, title, part, made, system };
   useEffect(() => {
     if (!world) return;
     const timer = window.setTimeout(
-      () => void saveWorld(projectId, keep(world, title, part, made)),
+      () => void saveWorld(projectId, keep(world, title, part, { made, system })),
       700,
     );
     return () => window.clearTimeout(timer);
-  }, [world, version, title, part, made, projectId]);
+  }, [world, version, title, part, made, system, projectId]);
   useEffect(
     () => () => {
       const now = latest.current;
-      if (now.world) void saveWorld(projectId, keep(now.world, now.title, now.part, now.made));
+      if (now.world) {
+        void saveWorld(
+          projectId,
+          keep(now.world, now.title, now.part, { made: now.made, system: now.system }),
+        );
+      }
     },
     [projectId],
   );
@@ -254,6 +277,13 @@ export function WorldWizardPage() {
   useShortcut("world.smaller", () => (paints ? setBrush((b) => Math.max(1, b - 1)) : false));
   useShortcut("world.larger", () => (paints ? setBrush((b) => Math.min(12, b + 1)) : false));
 
+  // The rivers follow the heights and the rain: drawn once there is a climate to read.
+  const showsRivers = part === "climate" || part === "biomes" || part === "make";
+  const rivers = useMemo<River[]>(
+    () => (world && showsRivers ? riversOf(world) : []),
+    [world, version, showsRivers],
+  );
+
   if (!world) return <Progress label="Opening the wizard" />;
   ensure(world, NEEDS[part]);
   const s = world.s;
@@ -273,6 +303,16 @@ export function WorldWizardPage() {
     (world.s as unknown as Record<string, number | boolean>)[key] = value;
     const from = READ_BY[key];
     if (from) dirty(world, from);
+    bump();
+  };
+  /** The star system changed: the world's warmth follows its place by the star. */
+  const changeSystem = (next: SystemSettings) => {
+    setSystem(next);
+    const sun = sunWarmth(next);
+    if (sun !== world.s.sun) {
+      world.s.sun = sun;
+      dirty(world, "climate");
+    }
     bump();
   };
   /** Rolls the land again from the settings: asks first when that loses drawing or drift. */
@@ -334,9 +374,13 @@ export function WorldWizardPage() {
       if (!ok) return;
     }
     const r = Math.random;
+    const seed = 1000 + Math.floor(r() * 9000);
+    const rolled = rollSystem(seed);
+    setSystem(rolled);
     const next = newWorld({
       ...DEFAULT_SETTINGS,
-      seed: 1000 + Math.floor(r() * 9000),
+      seed,
+      sun: sunWarmth(rolled),
       landPct: 22 + Math.floor(r() * 30),
       few: r() < 0.6,
       plates: 6 + Math.floor(r() * 7),
@@ -358,8 +402,9 @@ export function WorldWizardPage() {
     if (busy) return;
     setProblem(null);
     try {
-      const id = await makeWorld(work, world, title.trim() || project.name, {
+      const { map: id } = await makeWorld(work, world, title.trim() || project.name, {
         say: setBusy,
+        system,
         styles,
         addStyles: (add) =>
           void changeStyles((f) => ({
@@ -367,7 +412,7 @@ export function WorldWizardPage() {
             styles: [...f.styles, ...add.filter((a) => !f.styles.some((x) => x.id === a.id))],
           })),
       });
-      await saveWorld(projectId, keep(world, title, part, id));
+      await saveWorld(projectId, keep(world, title, part, { made: id, system }));
       setMade(id);
       if (!work.open()) return;
       refresh();
@@ -399,8 +444,9 @@ export function WorldWizardPage() {
     setMade(undefined);
     setPlaying(false);
     setBiomeInk(null);
-    setWorld(newWorld({ ...DEFAULT_SETTINGS, seed: 1000 + Math.floor(Math.random() * 9000) }));
-    go("basics");
+    setSystem(DEFAULT_SYSTEM);
+    setWorld(fresh(DEFAULT_SYSTEM));
+    go("system");
   };
 
   const layer: Layer =
@@ -447,7 +493,17 @@ export function WorldWizardPage() {
   );
 
   let panel: ReactNode = null;
-  if (part === "basics") {
+  if (part === "system") {
+    panel = (
+      <SystemPanel
+        system={system}
+        day={s.day}
+        size={s.size}
+        onChange={changeSystem}
+        onRoll={() => changeSystem(rollSystem(Math.floor(Math.random() * 1e6)))}
+      />
+    );
+  } else if (part === "basics") {
     panel = (
       <>
         <p className="ww-sub">
@@ -496,7 +552,8 @@ export function WorldWizardPage() {
             <b>{times(s.size)}</b> Earth&apos;s, if it is made of the same stuff.
           </span>
           <span>
-            It is <b>{Math.round(40030 * s.size).toLocaleString()} km</b> round.
+            It is <b>{Math.round(40030 * s.size).toLocaleString()} km</b> round. A year is{" "}
+            <b>{yearDays(system, s.day).toLocaleString()}</b> days.
           </span>
         </div>
       </>
@@ -788,6 +845,11 @@ export function WorldWizardPage() {
             From Basics: a tilt of {s.tilt}°, spinning{" "}
             {s.spin > 0 ? "west to east" : "east to west"}.
           </span>
+          {s.sun !== 0 && (
+            <span>
+              From the star: about {Math.abs(s.sun)}° {s.sun > 0 ? "warmer" : "colder"} than Earth.
+            </span>
+          )}
         </div>
       </>
     );
@@ -837,7 +899,16 @@ export function WorldWizardPage() {
       </>
     );
   } else {
-    panel = <MakePanel world={world} version={version} title={title} setTitle={setTitle} />;
+    panel = (
+      <MakePanel
+        world={world}
+        version={version}
+        title={title}
+        setTitle={setTitle}
+        system={system}
+        rivers={rivers.length}
+      />
+    );
   }
 
   return (
@@ -870,7 +941,10 @@ export function WorldWizardPage() {
       </nav>
       <div className="ww-body">
         <div className="ww-view">
+          {part === "system" && <SystemView system={system} />}
           <WorldCanvas
+            hidden={part === "system"}
+            rivers={rivers}
             world={world}
             layer={layer}
             globe={globe}
@@ -884,7 +958,7 @@ export function WorldWizardPage() {
             tilt={part === "basics" ? s.tilt : 0}
             spinning={part === "basics" ? (s.spin * 24) / s.day : 0}
           />
-          <div className="ww-corner">
+          <div className="ww-corner" hidden={part === "system"}>
             <div className="ww-seg" role="group" aria-label="View">
               <button
                 type="button"
@@ -958,16 +1032,29 @@ export function WorldWizardPage() {
   );
 }
 
+/** A new world, warmed by its place in the system. */
+function fresh(system: SystemSettings): World {
+  return newWorld({
+    ...DEFAULT_SETTINGS,
+    seed: 1000 + Math.floor(Math.random() * 9000),
+    sun: sunWarmth(system),
+  });
+}
+
 function MakePanel({
   world,
   version,
   title,
   setTitle,
+  system,
+  rivers,
 }: {
   world: World;
   version: number;
   title: string;
   setTitle: (t: string) => void;
+  system: SystemSettings;
+  rivers: number;
 }) {
   // Outlining the zones takes a moment, so only when the world has changed.
   const zones = useMemo(() => worldZones(world), [world, version]);
@@ -1011,6 +1098,36 @@ function MakePanel({
             {kinds.length === 0
               ? "This world is all sea."
               : kinds.map((k) => `${BIOMES[k.kind].name} (${k.count})`).join(", ")}
+          </span>
+        </li>
+        <li>
+          <b>
+            {rivers} {rivers === 1 ? "river" : "rivers"}
+          </b>
+          <span>
+            {rivers === 0
+              ? "Too little rain gathers on this world for one."
+              : "Where the rain runs to the sea, as paths in a Rivers layer."}
+          </span>
+        </li>
+        <li>
+          <b>A system model</b>
+          <span>
+            {STARS[system.star].name} star{system.twin ? " and its companion" : ""},{" "}
+            {system.planets.length} {system.planets.length === 1 ? "planet" : "planets"},{" "}
+            {system.moons === 0
+              ? "no moon"
+              : system.moons === 1
+                ? "one moon"
+                : `${system.moons} moons`}
+            . The world on it opens this map.
+          </span>
+        </li>
+        <li>
+          <b>An entry: the sky and the calendar</b>
+          <span>
+            A year of {yearDays(system, world.s.day).toLocaleString()} days, the months and the
+            seasons, for you to name.
           </span>
         </li>
       </ul>

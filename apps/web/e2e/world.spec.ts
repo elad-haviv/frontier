@@ -23,7 +23,7 @@ async function slide(page: Page, label: string, value: number): Promise<void> {
 async function openWizard(page: Page): Promise<void> {
   await page.goto(proj("/world"));
   await expect(page.getByRole("heading", { name: "World Wizard" })).toBeVisible();
-  await expect(page.getByRole("img", { name: "The world being built" })).toBeVisible();
+  await expect(page.getByRole("navigation", { name: "Parts of the wizard" })).toBeVisible();
 }
 
 test("New project offers the World Wizard, makes the project and opens the wizard in it", async ({
@@ -39,8 +39,8 @@ test("New project offers the World Wizard, makes the project and opens the wizar
   await dialog.getByRole("button", { name: "Make it and start the wizard" }).click();
   await expect(page).toHaveURL(new RegExp(`/p/wizard-${info.project.name}/world$`));
   await expect(page.getByRole("heading", { name: "World Wizard" })).toBeVisible();
-  // It begins at Basics, and the world is named after the project.
-  await expect(part(page, "Basics")).toHaveAttribute("aria-current", "step");
+  // It begins at the star system, and the world is named after the project.
+  await expect(part(page, "Star system")).toHaveAttribute("aria-current", "step");
   await part(page, "Make it").click();
   await expect(page.getByLabel("Name of the world")).toHaveValue(name);
 });
@@ -59,7 +59,27 @@ test("each part shows its controls, the plates drift when played, and nothing sc
   await page.getByRole("button", { name: "Start over" }).click();
   await page.getByRole("dialog").getByRole("button", { name: "Start again" }).click();
 
+  // The star system: the world's place by its star says whether water stays liquid.
+  await expect(page.getByRole("heading", { name: "Star system" })).toBeVisible();
+  await expect(page.getByRole("img", { name: "The star system seen from above" })).toBeVisible();
+  const said = page.locator(".ww-facts");
+  await expect(said).toContainText("in the band where water stays liquid");
+  await expect(said).toContainText(/A year is \d+ of its days/);
+  await slide(page, "Distance of planet 2", 90);
+  await expect(said).toContainText("Too far: the seas would freeze");
+  await page.getByRole("button", { name: "Ignore that" }).click();
+  await expect(said).toContainText("The rule is off");
+  await page.getByRole("button", { name: "Keep it able to hold life" }).click();
+  await page.getByRole("button", { name: "Roll a system" }).click();
+  await expect(said).toContainText("in the band where water stays liquid");
+  await page.getByRole("button", { name: "None" }).click();
+  await expect(said).toContainText("No moon, so no months");
+  await page.getByRole("button", { name: "Two", exact: true }).click();
+  await expect(said).toContainText(/A month is \d+ days, by the nearest moon/);
+
+  await part(page, "Basics").click();
   await expect(page.getByRole("heading", { name: "Basics" })).toBeVisible();
+  await expect(page.locator(".ww-facts")).toContainText(/A year is [\d,]+ days/);
   await slide(page, "Tilt of the axis", 45);
   await expect(page.locator(".ww-panel")).toContainText("45° · hard seasons");
   await page.getByRole("button", { name: "East to west" }).click();
@@ -111,6 +131,7 @@ test("the world is kept on the device: leaving and coming back finds it where it
   await openWizard(page);
   await page.getByRole("button", { name: "Start over" }).click();
   await page.getByRole("dialog").getByRole("button", { name: "Start again" }).click();
+  await part(page, "Basics").click();
   await slide(page, "Tilt of the axis", 37);
   await part(page, "Climate").click();
   await expect(page.getByRole("heading", { name: "Climate" })).toBeVisible();
@@ -138,6 +159,8 @@ test("Make the world makes a globe map with its terrain and biome zones, as unsa
   await part(page, "Make it").click();
   await page.getByLabel("Name of the world").fill("Test Globe");
   await expect(page.locator(".ww-makes")).toContainText(/\d+ biome zones/);
+  await expect(page.locator(".ww-makes")).toContainText("A system model");
+  await expect(page.locator(".ww-makes")).toContainText("An entry: the sky and the calendar");
   await page.getByRole("button", { name: "Make the world" }).click();
   await expect(page).toHaveURL(/\/map\/[a-z0-9]{8}/, { timeout: 60_000 });
   const id = /\/map\/([a-z0-9]{8})/.exec(page.url())![1]!;
@@ -154,6 +177,33 @@ test("Make the world makes a globe map with its terrain and biome zones, as unsa
   expect(zones.every((z: { biome?: string }) => !!z.biome)).toBe(true);
   expect(made.map.layers.some((l: { name: string }) => l.name === "Biomes")).toBe(true);
   expect(made.state).not.toBe("published");
+  // Rivers, where enough rain gathers, are paths in their own layer.
+  const rivers = made.map.features.filter((f: { kind: string }) => f.kind === "path");
+  if (rivers.length > 0) {
+    expect(made.map.layers.some((l: { name: string }) => l.name === "Rivers")).toBe(true);
+  }
+
+  // The system model: its star, its planets, and the world as home, which opens the globe map.
+  // (The phone and the desktop run share a server, so there may be two of that name.)
+  const maps = await (await page.request.get(api("/maps"))).json();
+  const rows = maps.maps.filter((m: { title: string }) => m.title === "Test Globe system");
+  expect(rows.length).toBeGreaterThan(0);
+  let home: { label?: string; child?: string } | undefined;
+  for (const row of rows) {
+    const system = await (await page.request.get(api(`/maps/${row.id}`))).json();
+    const bodies = system.map.features.filter((f: { body?: unknown }) => f.body);
+    expect(bodies.some((f: { body: { type: string } }) => f.body.type === "star")).toBe(true);
+    const found = bodies.find((f: { body: { home?: boolean } }) => f.body.home);
+    if (found?.child === id) home = found;
+  }
+  expect(home).toMatchObject({ label: "Test Globe", child: id });
+
+  // The calendar is an entry not yet saved as a version.
+  const calendar = await page.request.get(
+    api(`/entries?path=${encodeURIComponent("The sky and the calendar of Test Globe.md")}`),
+  );
+  expect(calendar.ok()).toBe(true);
+  expect(JSON.stringify(await calendar.json())).toContain("A year is");
 
   // The wizard remembers the map it made, and Home no longer says a world is waiting.
   await page.goto(proj("/world"));

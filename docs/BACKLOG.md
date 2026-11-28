@@ -93,7 +93,8 @@ One place for what is being built, what is waiting, and ideas. The design in
 - [x] Release 1: the world in six parts (basics, land and sea, plates and their drift, heights,
       climate, biomes) on a globe or flat, and Make it: a globe map with its height map and biome
       zones. From New project ("Start with") and from Maps ("New world…").
-- [ ] Release 2: the star system, the calendar from the orbit and the moons, rivers and lakes
+- [x] Release 2: the star system as the first part (it sets the year, the months and the warmth),
+      rivers, and Make it also makes a system model and an entry on the sky and the calendar
 - [ ] Release 3: life and lore (suggested places, species and life as entries with markers), the
       World brief
 - Known: plates slide along the grid, so drift near the poles is distorted; a world in progress is

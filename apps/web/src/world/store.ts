@@ -16,12 +16,22 @@ import {
   type World,
   type WorldSettings,
 } from "./model.ts";
+import type { SystemSettings } from "./system.ts";
 
 const DB = "frontier-world";
 const STORE = "worlds";
 
 /** The parts of the world step, in order, then the last step. */
-export const PARTS = ["basics", "land", "plates", "heights", "climate", "biomes", "make"] as const;
+export const PARTS = [
+  "system",
+  "basics",
+  "land",
+  "plates",
+  "heights",
+  "climate",
+  "biomes",
+  "make",
+] as const;
 export type Part = (typeof PARTS)[number];
 
 /** A world in progress, as kept. */
@@ -32,6 +42,8 @@ export interface KeptWorld {
   savedAt: string;
   /** The map made from it, once one was: the wizard is then no longer waiting to be finished. */
   made?: string;
+  /** The star system; a world kept before there was one has the usual system. */
+  system?: SystemSettings;
   settings: WorldSettings;
   drift: Drift[];
   my: number;
@@ -45,12 +57,18 @@ export interface KeptWorld {
 }
 
 /** What is kept of a world. Heights, climate and biomes are built again from it. */
-export function keep(world: World, title: string, part: Part, made?: string): KeptWorld {
+export function keep(
+  world: World,
+  title: string,
+  part: Part,
+  more: { made?: string | undefined; system?: SystemSettings } = {},
+): KeptWorld {
   return {
     v: 1,
     title,
     part,
-    ...(made ? { made } : {}),
+    ...(more.made ? { made: more.made } : {}),
+    ...(more.system ? { system: more.system } : {}),
     savedAt: new Date().toISOString(),
     settings: { ...world.s },
     drift: world.drift.map((d) => ({ ...d })),
@@ -126,6 +144,7 @@ export async function forgetWorld(project: string): Promise<void> {
 }
 
 export const PART_NAMES: Record<Part, string> = {
+  system: "Star system",
   basics: "Basics",
   land: "Land and sea",
   plates: "Plates",

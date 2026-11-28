@@ -16,6 +16,7 @@ import {
   type World,
 } from "../../world/model.ts";
 import { type Layer, paintLayer } from "../../world/picture.ts";
+import type { River } from "../../world/rivers.ts";
 
 const FLAT = { w: 1080, h: 540 };
 const GLOBE = 480;
@@ -40,6 +41,8 @@ export function WorldCanvas({
   winds,
   tilt,
   spinning,
+  rivers,
+  hidden,
 }: {
   world: World;
   layer: Layer;
@@ -58,6 +61,10 @@ export function WorldCanvas({
   winds?: boolean;
   /** Draws the globe leaning by this many degrees, for the Basics part. */
   tilt?: number;
+  /** Drawn over the climate and the biomes. */
+  rivers?: readonly River[];
+  /** Not shown, while another view (the star system) takes its place. */
+  hidden?: boolean;
   /** Turns the globe slowly: 1 west to east, -1 the other way, 0 not at all. */
   spinning?: number;
 }) {
@@ -146,6 +153,25 @@ export function WorldCanvas({
       ctx.lineTo(tip[0] - 9 * Math.cos(a + 0.5), tip[1] - 9 * Math.sin(a + 0.5));
       ctx.fill();
     };
+    if (rivers && (layer === "rain" || layer === "temp" || layer === "biome")) {
+      ctx.strokeStyle = layer === "biome" ? "#1f5f8f" : "rgba(255,255,255,.85)";
+      ctx.lineCap = "round";
+      for (const river of rivers) {
+        ctx.lineWidth = Math.max(1, Math.min(3.5, Math.sqrt(river.flow) * 0.35));
+        ctx.beginPath();
+        let before: [number, number] | null = null;
+        for (const cell of river.cells) {
+          const [la, lo] = cellDegrees(cell);
+          const at = place(la, lo);
+          // A course is cut where it leaves the near side of the globe or crosses the flat view's edge.
+          if (!at || !before || Math.abs(at[0] - before[0]) > w / 4) {
+            if (at) ctx.moveTo(at[0], at[1]);
+          } else ctx.lineTo(at[0], at[1]);
+          before = at;
+        }
+        ctx.stroke();
+      }
+    }
     if (layer === "plates") {
       plateMiddles(world).forEach((cell, p) => {
         if (cell < 0) return;
@@ -170,7 +196,7 @@ export function WorldCanvas({
         }
       }
     }
-  }, [world, layer, globe, turn, selectedPlate, winds]);
+  }, [world, layer, globe, turn, selectedPlate, winds, rivers]);
 
   useEffect(draw, [draw, version]);
 
@@ -209,6 +235,7 @@ export function WorldCanvas({
   return (
     <canvas
       ref={canvas}
+      hidden={hidden}
       className={`ww-canvas${globe ? " is-globe" : ""}${painting ? " is-painting" : ""}`}
       style={globe && tilt ? { transform: `rotate(${tilt}deg)` } : undefined}
       width={FLAT.w}

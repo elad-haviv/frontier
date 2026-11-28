@@ -11,12 +11,25 @@ import {
   type MapFile,
   type MapStyle,
   orderFeature,
+  orderLayer,
+  STARTER_STYLES,
 } from "@frontier/schema";
+import { newDraftId } from "../api.ts";
 import { asBiomeZones } from "../map/biomes.ts";
+import { addBody, bodyFeatures } from "../map/systemMap.ts";
 import { newItemId } from "../map/viewUrl.ts";
 import type { ProjectWork } from "../projectWork.ts";
 import { METRES, type World } from "./model.ts";
 import { HEIGHT_LOW, HEIGHT_SEA, paintWorld } from "./picture.ts";
+import { type River, riverLines, riversOf } from "./rivers.ts";
+import {
+  calendarEntry,
+  homeOf,
+  MOON_DISTANCES,
+  STARS,
+  type SystemSettings,
+  TWIN,
+} from "./system.ts";
 import { worldZones, type WorldZone } from "./zones.ts";
 
 /** The size the map's picture and its height picture are painted at. */
@@ -30,6 +43,7 @@ export function worldMap(
   zones: readonly WorldZone[],
   heights: string,
   styles: readonly MapStyle[],
+  rivers: readonly River[] = [],
 ): { map: MapFile; add: MapStyle[] } {
   let map: MapFile = {
     ...made,
@@ -72,7 +86,129 @@ export function worldMap(
     if (done.add) add.push(done.add);
     map = done.map;
   }
-  return { map, add };
+  return withRivers(map, rivers, [...styles, ...add], add);
+}
+
+/** The name of the layer the wizard's rivers go to. */
+export const RIVERS_LAYER = "Rivers";
+
+/** The map with the rivers as paths in a Rivers layer, drawn over the biomes, in the River style. */
+function withRivers(
+  map: MapFile,
+  rivers: readonly River[],
+  styles: readonly MapStyle[],
+  add: MapStyle[],
+): { map: MapFile; add: MapStyle[] } {
+  const lines = rivers.flatMap(riverLines);
+  if (lines.length === 0) return { map, add };
+  const river = STARTER_STYLES.find((s) => s.counts === "river" && s.for === "path")!;
+  if (!styles.some((s) => s.id === river.id)) add.push(river);
+  const layer = orderLayer({
+    id: newItemId(),
+    name: RIVERS_LAYER,
+    visible: true,
+    color: river.color ?? "#2f6f9f",
+  });
+  const paths = lines.map((points) =>
+    orderFeature({
+      id: newItemId(),
+      kind: "path",
+      layer: layer.id,
+      points,
+      curve: "smooth",
+      style: river.id,
+      entry: null,
+      label: null,
+      child: null,
+    } as MapFeature),
+  );
+  return {
+    map: { ...map, layers: [layer, ...map.layers], features: [...map.features, ...paths] },
+    add,
+  };
+}
+
+/**
+ * The system model the server made (a star at its middle) given the wizard's system: the star's
+ * mass and name, a second star, the planets in order with the world marked as home and pointing
+ * at its globe map, and the world's moons.
+ */
+export function systemMap(
+  made: MapFile,
+  sys: SystemSettings,
+  worldTitle: string,
+  globe: string | null,
+): MapFile {
+  const layer = made.layers[0]!.id;
+  const first = bodyFeatures(made).find((f) => f.body.type === "star");
+  if (!first) return made;
+  const star = STARS[sys.star];
+  const label =
+    (id: string, name: string, more: Record<string, unknown> = {}) =>
+    (f: MapFeature) =>
+      f.id === id ? ({ ...f, label: name, ...more } as MapFeature) : f;
+  let map: MapFile = {
+    ...made,
+    features: made.features.map((f) =>
+      f.id === first.id
+        ? ({
+            ...f,
+            label: `${star.name} star`,
+            body: { ...first.body, mass: star.mass },
+          } as MapFeature)
+        : f,
+    ),
+  };
+  if (sys.twin) {
+    const twin = addBody(map, layer, "companion", null, TWIN.apart, 0, 0);
+    map = {
+      ...twin.map,
+      features: twin.map.features.map((f) =>
+        f.id === twin.id && f.kind === "marker" && f.body
+          ? ({
+              ...f,
+              label: "Companion star",
+              body: { ...f.body, mass: TWIN.mass, a: TWIN.apart },
+            } as MapFeature)
+          : f,
+      ),
+    };
+  }
+  const home = homeOf(sys);
+  // Each kind is numbered by itself: "Rocky planet 1", "Gas giant 1".
+  const counted: Record<string, number> = {};
+  sys.planets.forEach((planet, n) => {
+    const isHome = planet === home;
+    // Spread round the star, so the planets do not start in a line.
+    const added = addBody(map, layer, planet.kind, first.id, planet.a, n * 2.1 + 0.6, 0);
+    const name = isHome
+      ? worldTitle
+      : `${planet.kind === "rocky" ? "Rocky planet" : planet.kind === "gas" ? "Gas giant" : "Ice giant"} ${(counted[planet.kind] = (counted[planet.kind] ?? 0) + 1)}`;
+    map = {
+      ...added.map,
+      features: added.map.features.map((f) =>
+        f.id === added.id && f.kind === "marker" && f.body
+          ? ({
+              ...f,
+              label: name,
+              ...(isHome ? { child: globe, body: { ...f.body, home: true } } : {}),
+            } as MapFeature)
+          : f,
+      ),
+    };
+    if (isHome) {
+      MOON_DISTANCES.slice(0, sys.moons).forEach((distance, m) => {
+        const moon = addBody(map, layer, "moon", added.id, distance, m * 2.3 + 1, 0);
+        map = {
+          ...moon.map,
+          features: moon.map.features.map(
+            label(moon.id, sys.moons === 1 ? "The moon" : `Moon ${m + 1}`),
+          ),
+        };
+      });
+    }
+  });
+  return map;
 }
 
 /** RGBA pixels as a PNG file. */
@@ -100,23 +236,53 @@ export const fileName = (title: string): string =>
 export interface MakeSteps {
   /** Told what is being done, for the page to show. */
   say: (words: string) => void;
+  /** The star system: a system model and the calendar entry are made from it. */
+  system: SystemSettings;
   styles: readonly MapStyle[];
   addStyles: (styles: MapStyle[]) => void;
 }
 
-/** Makes the world's map in the project and answers its id. */
+/** What Make it made. */
+export interface Made {
+  /** The globe map. */
+  map: string;
+  /** The system model. */
+  system: string;
+  /** The path of the calendar entry. */
+  calendar: string;
+}
+
+/** Sends a map the server just made, changed, through the save queue. */
+async function send(
+  work: ProjectWork,
+  id: string,
+  made: { map: MapFile; revision: number; blob?: string | null | undefined },
+  map: MapFile,
+): Promise<void> {
+  await work.queue.put(`map:${id}`, map, {
+    draftId: "",
+    revision: made.revision,
+    baseBlob: made.blob ?? "",
+    base: made.map,
+    delay: 0,
+  });
+  await work.queue.sendNow(`map:${id}`);
+}
+
+/** Makes the world's maps and its calendar entry in the project and answers what they are. */
 export async function makeWorld(
   work: ProjectWork,
   world: World,
   title: string,
   steps: MakeSteps,
-): Promise<string> {
+): Promise<Made> {
   const name = fileName(title);
   steps.say("Painting the map…");
   // Let the page show the words before the painting holds the thread.
   await new Promise((r) => setTimeout(r, 30));
   const painted = paintWorld(world, PICTURE.w, PICTURE.h);
   const zones = worldZones(world);
+  const rivers = riversOf(world);
   steps.say("Sending the pictures…");
   const picture = await work.api.upload(
     await pngOf(painted.picture, painted.w, painted.h, `${name} map.png`),
@@ -127,15 +293,28 @@ export async function makeWorld(
   steps.say("Making the map…");
   const { id } = await work.api.createMap(title, "sphere", picture.path);
   const made = await work.api.map(id);
-  const { map, add } = worldMap(made.map, world, zones, heights.path, steps.styles);
+  const { map, add } = worldMap(made.map, world, zones, heights.path, steps.styles, rivers);
   if (add.length) steps.addStyles(add);
-  await work.queue.put(`map:${id}`, map, {
-    draftId: "",
-    revision: made.revision,
-    baseBlob: made.blob,
-    base: made.map,
-    delay: 0,
-  });
-  await work.queue.sendNow(`map:${id}`);
-  return id;
+  await send(work, id, made, map);
+
+  steps.say("Making the star system…");
+  const system = await work.api.createMap(`${title} system`, "system");
+  const model = await work.api.map(system.id);
+  await send(work, system.id, model, systemMap(model.map, steps.system, title, id));
+
+  steps.say("Writing the calendar…");
+  const calendar = `The sky and the calendar of ${name}.md`;
+  const known = await work.api.names(`The sky and the calendar of ${name}`).catch(() => null);
+  // An entry of that name from a world made before is left as it is.
+  if (!known?.results.some((r) => r.path === calendar)) {
+    const key = `entry:${calendar}` as const;
+    await work.queue.put(key, calendarEntry(title, steps.system, world.s), {
+      kind: "create",
+      draftId: newDraftId(),
+      revision: 0,
+      baseBlob: "",
+    });
+    await work.queue.sendNow(key);
+  }
+  return { map: id, system: system.id, calendar };
 }

@@ -6,8 +6,9 @@
   simulated "for as long as the user wants", a height map, precipitation, biomes) on a globe or
   flat; then suggested entries about life, sapient species and locations. "Of course it would then
   create maps as well."
-- **Status:** approved by the owner (2026-11-27) with all four recommendations. **Release 1 is
-  built** (the world and its map); releases 2 and 3 are designed here and not built.
+- **Status:** approved by the owner (2026-11-27) with all four recommendations. **Releases 1 and 2
+  are built** (the world and its map; the star system, the calendar and rivers); release 3 (life
+  and lore) is designed here and not built.
 - **Mockup:** the working mockup the design was approved from was shared in the session (star
   system, the six parts of the world, life and lore, and what gets made, on desktop and phone). Its
   simulation was a simplified stand-in; this file is its written form.
@@ -28,8 +29,8 @@ A wizard that builds a world from the star down, then makes the things Frontier 
 | Land, plates, heights | A globe map with a painted picture and its height map, sea level set | Globe maps, Terrain (stage 20) | 1 |
 | Biomes | Biome zones on that map | Biome zones (stage 21) | 1 |
 | Star system | A system model with the star, planets and moons | System model (stage 22) | 2 |
-| Orbit, day length, moons | A calendar: days in a year, months, seasons | Chronicle calendars (stage 5) | 2 |
-| Heights and rain | Rivers and lakes as paths | Find paths (stage 20) | 2 |
+| Orbit, day length, moons | An entry on the sky and the calendar: days in a year, months, seasons | Entries | 2 |
+| Heights and rain | Rivers as paths | Paths, the River style | 2 |
 | Life and lore | Entries, each place with a marker; species with a home range | Entries, markers, zones | 3 |
 | All of it | A World brief entry the AI reads later | New | 3 |
 
@@ -144,6 +145,7 @@ again only when something before it changed.
 - **Layout by the page's own width**, so it stacks when the library pane is open beside it.
 - **No "bring a picture"** in Land and sea, and no raising or lowering heights by hand: both wait.
 - The year, the star's warmth and the calendar are release 2; rivers too.
+- From release 2 the wizard begins at the star system, not at Basics.
 
 ### Known limits
 
@@ -165,8 +167,52 @@ again only when something before it changed.
   the made map is one Frontier accepts, the two pictures agree on the sea), `e2e/world.spec.ts`
   (both ways in, every part, kept on the device, Make it), on phone and desktop.
 
+## Release 2, as built (2026-11-28)
+
+The star system, the calendar and rivers. Again no server change.
+
+- **Star system** is the first part of the wizard (`pages/world/SystemPart.tsx`,
+  `world/system.ts`): the star's kind, a second star, planets (kind, distance on a slider that
+  multiplies, which one is the world, remove, add), the world's moons, and "Keep it able to hold
+  life / Ignore that". The system is drawn from above with the band where water stays liquid.
+  **Roll a system** puts the world on the warm side of the band, where Earth is.
+- **What it sets.** The year (Kepler's third law, in the world's own days), the months (each
+  moon's time round, the nearest first), and the warmth the climate starts from: by the world's
+  place in the band, 0 where Earth is, warmer nearer the star and colder further out. Basics and
+  Climate say so. With the rule ignored the climate starts from Earth's own warmth.
+- **Rivers** (`world/rivers.ts`): every cell of land drains to its lowest way out, hollows filled
+  first as lakes fill; the rain is added up down each way and the ways that carry most are rivers,
+  each ending at the sea or on the larger river it joins. A drier world has fewer. They are drawn
+  over the Climate and Biomes views.
+- **Make it now also makes**: the rivers as smooth paths in a Rivers layer of the globe map, in
+  the library's River style (added when missing); a **system model** named "<name> system", with
+  the star, a companion, the planets and the moons, the world marked as home and opening the globe
+  map; and an entry, **"The sky and the calendar of <name>"**, with the day, the year, the months
+  and the seasons, as an unsaved new entry. An entry of that name from an earlier world is left
+  alone.
+
+### Differences from the design
+
+- **The calendar is an entry, not a calendar object.** The proposal said the calendar would
+  become one of the chronicle's calendars. Chronicles as built count years on named clocks and
+  hold no days or months, so there is nothing of that kind to fill. The numbers are written as an
+  entry the author can name and change.
+- **Rivers, not lakes.** Hollows are filled so rivers run through them, but no lake is drawn.
+- **Rivers are the wizard's own**, not Find paths': that tool reads a map's picture on a flat
+  grid, and the wizard already has the heights and the rain on the globe.
+- A river follows the grid's eight directions before it is smoothed, so long straight reaches
+  show at one degree a cell.
+
+### Tests added
+
+`world/system.test.ts` (Earth's year, month and warmth from an Earth-like system; too near and too
+far; the band by the star's light; one rocky world; rolled worlds lie in the band; the calendar
+entry; all land drains to the sea; rivers end at the sea or on a river; a drier world has fewer;
+a course is cut at 180°), `world/zones.test.ts` (rivers in their layer and style; the system model
+is one Frontier accepts, with the world as home), and `e2e/world.spec.ts` (the star system part;
+the system model and the calendar entry are made).
+
 ## Left for later
 
-Release 2 (star system, calendar, rivers), release 3 (life and lore, the World brief, markers);
-then other shapes (a disc, a cylinder like Derdama), ocean currents, resources, naming languages,
+Release 3 (life and lore, the World brief, markers); lakes; then other shapes (a disc, a cylinder like Derdama), ocean currents, resources, naming languages,
 history played forward on time-aware maps, and plates that turn about a point.
