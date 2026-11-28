@@ -6,6 +6,9 @@
  */
 import { ensure, H, LAT, N, W, type World } from "./model.ts";
 
+/** The warmth, in °C through the year, at or under which water does not run or stand open. */
+export const FROZEN = -4;
+
 export interface River {
   /** Its course from its source to the sea, or to the river it joins, as cells. */
   cells: number[];
@@ -137,8 +140,9 @@ export function riversOf(
   drainage = drainageOf(world),
 ): River[] {
   const { to, flow } = drainage;
-  const { elev } = world;
-  const isRiver = (i: number) => elev[i]! > 0 && flow[i]! >= least;
+  const { elev, temp } = world;
+  // Where it is frozen the year round, water lies as ice and no river runs.
+  const isRiver = (i: number) => elev[i]! > 0 && flow[i]! >= least && temp[i]! > FROZEN;
   // A source is a river cell that no river cell drains into.
   const fed = new Uint8Array(N);
   for (let i = 0; i < N; i++) if (isRiver(i) && to[i]! >= 0 && isRiver(to[i]!)) fed[to[i]!] = 1;
@@ -146,7 +150,11 @@ export function riversOf(
   for (let i = 0; i < N; i++) {
     if (!isRiver(i) || fed[i]) continue;
     const cells = [i];
-    for (let at = to[i]!; at >= 0 && elev[at]! > 0; at = to[at]!) cells.push(at);
+    // Down to the sea, or to where it meets ground frozen the year round and ends in the ice.
+    for (let at = to[i]!; at >= 0 && elev[at]! > 0; at = to[at]!) {
+      cells.push(at);
+      if (temp[at]! <= FROZEN) break;
+    }
     whole.push(cells);
   }
   // The longest course is the river; a shorter one that reaches it is a branch that ends there.
@@ -209,7 +217,7 @@ export function lakesOf(world: World, least = 2, most = 40, drainage = drainageO
   const { elev } = world;
   const wet = new Uint8Array(N);
   for (let i = 0; i < N; i++) {
-    if (elev[i]! > 0 && level[i]! - elev[i]! >= LAKE_DEPTH) wet[i] = 1;
+    if (elev[i]! > 0 && level[i]! - elev[i]! >= LAKE_DEPTH && world.temp[i]! > FROZEN) wet[i] = 1;
   }
   const seen = new Uint8Array(N);
   const lakes: Lake[] = [];

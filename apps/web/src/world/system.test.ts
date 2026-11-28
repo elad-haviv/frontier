@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_SETTINGS, ensure, newWorld, N, W } from "./model.ts";
+import * as riversModule from "./rivers.ts";
 import { drainageOf, lakeMask, lakesOf, riverLines, riversOf } from "./rivers.ts";
 import { lakeRings } from "./zones.ts";
 import {
@@ -112,16 +113,30 @@ describe("rivers", () => {
     const rivers = riversOf(world);
     expect(rivers.length).toBeGreaterThan(3);
     expect(rivers.map((r) => r.flow)).toEqual([...rivers.map((r) => r.flow)].sort((a, b) => b - a));
-    const used = new Set(rivers.flatMap((r) => r.cells));
     const { to } = drainageOf(world);
     for (const r of rivers) {
       expect(r.cells.length).toBeGreaterThanOrEqual(4);
       expect(r.cells.every((c) => world.elev[c]! > 0)).toBe(true);
       const end = r.cells[r.cells.length - 1]!;
       const next = to[end]!;
-      // It ends at the shore, or on a cell of another river.
-      expect(world.elev[next]! <= 0 || used.has(end)).toBe(true);
+      // It ends at the shore, on a cell of another river, or where the ground is frozen.
+      const joins = rivers.some((other) => other !== r && other.cells.includes(end));
+      expect(world.elev[next]! <= 0 || joins || world.temp[end]! <= riversModule.FROZEN).toBe(true);
     }
+  });
+
+  it("runs no river and keeps no lake where it is frozen the year round", () => {
+    const { FROZEN } = riversModule;
+    for (const r of riversOf(world, 6, 1000)) {
+      // A course may end on the first frozen cell it meets, and runs on none before it.
+      for (const c of r.cells.slice(0, -1)) expect(world.temp[c]!).toBeGreaterThan(FROZEN);
+    }
+    for (const lake of lakesOf(world)) {
+      for (const c of lake.cells) expect(world.temp[c]!).toBeGreaterThan(FROZEN);
+    }
+    const cold = newWorld({ ...DEFAULT_SETTINGS, seed: 2024, warm: -20, sun: -40 });
+    ensure(cold, "climate");
+    expect(riversOf(cold, 6, 1000).length).toBeLessThan(riversOf(world, 6, 1000).length);
   });
 
   it("makes fewer rivers on a drier world", () => {

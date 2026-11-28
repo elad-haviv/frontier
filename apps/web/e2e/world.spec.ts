@@ -20,8 +20,22 @@ async function slide(page: Page, label: string, value: number): Promise<void> {
   }, value);
 }
 
-async function openWizard(page: Page): Promise<void> {
-  await page.goto(proj("/world"));
+/**
+ * A project of its own for a test that makes maps, styles and entries, so the sample library the
+ * other specs read is left as it was. One for the phone run and one for the desktop run, which
+ * share a server.
+ */
+async function ownProject(page: Page, name: string, run: string): Promise<string> {
+  const slug = `${name}-${run}`.toLowerCase();
+  const res = await page.request.post("/api/projects", {
+    data: { name: `${name} ${run}`, slug, start: "empty" },
+  });
+  expect(res.ok(), await res.text()).toBe(true);
+  return slug;
+}
+
+async function openWizard(page: Page, project?: string): Promise<void> {
+  await page.goto(proj("/world", project));
   await expect(page.getByRole("heading", { name: "World Wizard" })).toBeVisible();
   await expect(page.getByRole("navigation", { name: "Parts of the wizard" })).toBeVisible();
 }
@@ -147,8 +161,9 @@ test("the world is kept on the device: leaving and coming back finds it where it
 
 test("Make the world makes a globe map with its terrain and biome zones, as unsaved changes", async ({
   page,
-}) => {
-  await openWizard(page);
+}, info) => {
+  const own = await ownProject(page, "wizmake", info.project.name);
+  await openWizard(page, own);
   await page.getByRole("button", { name: "Surprise me" }).click();
   // A world already built is asked about first; a new one is rolled at once.
   const ask = page.getByRole("dialog");
@@ -165,7 +180,7 @@ test("Make the world makes a globe map with its terrain and biome zones, as unsa
   await expect(page).toHaveURL(/\/map\/[a-z0-9]{8}/, { timeout: 60_000 });
   const id = /\/map\/([a-z0-9]{8})/.exec(page.url())![1]!;
 
-  const made = await (await page.request.get(api(`/maps/${id}`))).json();
+  const made = await (await page.request.get(api(`/maps/${id}`, own))).json();
   expect(made.map.title).toBe("Test Globe");
   expect(made.map.space).toMatchObject({ kind: "sphere", unit: "km" });
   expect(made.map.space.radius).toBeGreaterThan(3000);
@@ -174,7 +189,11 @@ test("Make the world makes a globe map with its terrain and biome zones, as unsa
   expect(made.map.terrain.rangeUnit).toBe("m");
   const zones = made.map.features.filter((f: { kind: string }) => f.kind === "zone");
   expect(zones.length).toBeGreaterThan(3);
-  expect(zones.every((z: { biome?: string }) => !!z.biome)).toBe(true);
+  // Every zone is a biome's, or a lake in the Water style.
+  expect(
+    zones.every((z: { biome?: string; style?: string }) => !!z.biome || z.style === "strwater"),
+  ).toBe(true);
+  expect(zones.some((z: { biome?: string }) => !!z.biome)).toBe(true);
   expect(made.map.layers.some((l: { name: string }) => l.name === "Biomes")).toBe(true);
   expect(made.state).not.toBe("published");
   // Rivers, where enough rain gathers, are paths in their own layer.
@@ -184,32 +203,27 @@ test("Make the world makes a globe map with its terrain and biome zones, as unsa
   }
 
   // The system model: its star, its planets, and the world as home, which opens the globe map.
-  // (The phone and the desktop run share a server, so there may be two of that name.)
-  const maps = await (await page.request.get(api("/maps"))).json();
-  const rows = maps.maps.filter((m: { title: string }) => m.title === "Test Globe system");
-  expect(rows.length).toBeGreaterThan(0);
-  let home: { label?: string; child?: string } | undefined;
-  for (const row of rows) {
-    const system = await (await page.request.get(api(`/maps/${row.id}`))).json();
-    const bodies = system.map.features.filter((f: { body?: unknown }) => f.body);
-    expect(bodies.some((f: { body: { type: string } }) => f.body.type === "star")).toBe(true);
-    const found = bodies.find((f: { body: { home?: boolean } }) => f.body.home);
-    if (found?.child === id) home = found;
-  }
+  const maps = await (await page.request.get(api("/maps", own))).json();
+  const row = maps.maps.find((m: { title: string }) => m.title === "Test Globe system");
+  expect(row).toBeTruthy();
+  const system = await (await page.request.get(api(`/maps/${row.id}`, own))).json();
+  const bodies = system.map.features.filter((f: { body?: unknown }) => f.body);
+  expect(bodies.some((f: { body: { type: string } }) => f.body.type === "star")).toBe(true);
+  const home = bodies.find((f: { body: { home?: boolean } }) => f.body.home);
   expect(home).toMatchObject({ label: "Test Globe", child: id });
 
   // The calendar is an entry not yet saved as a version.
   const calendar = await page.request.get(
-    api(`/entries?path=${encodeURIComponent("The sky and the calendar of Test Globe.md")}`),
+    api(`/entries?path=${encodeURIComponent("The sky and the calendar of Test Globe.md")}`, own),
   );
   expect(calendar.ok()).toBe(true);
   expect(JSON.stringify(await calendar.json())).toContain("A year is");
 
   // The wizard remembers the map it made, and Home no longer says a world is waiting.
-  await page.goto(proj("/world"));
+  await page.goto(proj("/world", own));
   await part(page, "Make it").click();
   await expect(page.getByRole("link", { name: "Open the map" })).toBeVisible();
-  await page.goto(proj("/"));
+  await page.goto(proj("/", own));
   await expect(page.locator(".home h1")).toBeVisible();
   await expect(page.getByRole("region", { name: "World Wizard" })).toHaveCount(0);
 });
@@ -222,7 +236,8 @@ test("Life and lore finds places, the AI names them and suggests species and lif
   // The key is kept on the device, so the app is opened before it is given one.
   await page.goto(proj("/"));
   await setUpAi(page, { conversation: "sample/reader" });
-  await openWizard(page);
+  const own = await ownProject(page, "wizlore", mine);
+  await openWizard(page, own);
   await page.getByRole("button", { name: "Surprise me" }).click();
   const ask = page.getByRole("dialog");
   if (await ask.isVisible().catch(() => false)) {
@@ -258,7 +273,7 @@ test("Life and lore finds places, the AI names them and suggests species and lif
   const id = /\/map\/([a-z0-9]{8})/.exec(page.url())![1]!;
 
   // The place is a marker on the map, tied to its entry.
-  const made = await (await page.request.get(api(`/maps/${id}`))).json();
+  const made = await (await page.request.get(api(`/maps/${id}`, own))).json();
   const marker = made.map.features.find(
     (f: { kind: string; label?: string }) =>
       f.kind === "marker" && f.label === `Peak of the ${mine}`,
@@ -268,7 +283,7 @@ test("Life and lore finds places, the AI names them and suggests species and lif
   expect(made.entries[marker.entry].path).toBe(`Places/Peak of the ${mine}.md`);
 
   const read = async (path: string) =>
-    page.request.get(api(`/entries?path=${encodeURIComponent(path)}`));
+    page.request.get(api(`/entries?path=${encodeURIComponent(path)}`, own));
   const place = await read(`Places/Peak of the ${mine}.md`);
   expect(place.ok()).toBe(true);
   expect(JSON.stringify(await place.json())).toContain("The peak of the test world.");
@@ -282,7 +297,7 @@ test("Life and lore finds places, the AI names them and suggests species and lif
   expect((await read("Life/Test reed deer.md")).ok()).toBe(false);
 
   // Made again under the same name: what is already there is left alone, and the wizard says so.
-  await page.goto(proj("/world"));
+  await page.goto(proj("/world", own));
   await part(page, "Make it").click();
   await page.getByRole("button", { name: "Make it again, as another map" }).click();
   await expect(page).toHaveURL(/\/map\/[a-z0-9]{8}/, { timeout: 60_000 });
