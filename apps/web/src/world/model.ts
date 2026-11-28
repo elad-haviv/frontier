@@ -323,7 +323,7 @@ export function rollPlates(world: World): void {
     const t = r() * 2 * Math.PI;
     const q = Math.sqrt(1 - z * z);
     points.push([q * Math.cos(t), z, q * Math.sin(t)]);
-    world.drift.push({ dir: Math.floor(r() * 8), speed: 2 + Math.round(r() * 6) });
+    world.drift.push({ dir: Math.floor(r() * 8), speed: 1 + Math.round(r() * 4) });
   }
   world.carry = new Float32Array(s.plates * 2);
   for (let i = 0; i < N; i++) {
@@ -347,7 +347,8 @@ export function resetDrift(world: World): void {
   const shape = shapeOf(world.s);
   for (let i = 0; i < N; i++) {
     world.crust[i] = world.land[i]!;
-    world.h[i] = world.land[i] ? 0.12 + 0.12 * shape[i]! : -0.5;
+    // Land begins as lowland, a few hundred metres up; the drift raises the rest.
+    world.h[i] = world.land[i] ? 0.015 + 0.05 * shape[i]! : -0.5;
   }
   world.my = 0;
   world.carry.fill(0);
@@ -404,15 +405,18 @@ export function driftStep(world: World): void {
     } else if (nc[j] && crust[i]) {
       // Folded ranges grow more slowly the higher they are.
       const top = Math.max(nh[j]!, h[i]!);
-      nh[j] = top + 0.045 * Math.max(0, 1 - top / 0.8);
+      nh[j] = top + 0.04 * Math.max(0, 1 - top / 0.65);
     } else if (nc[j] || crust[i]) {
       const land = nc[j] ? nh[j]! : h[i]!;
       if (!nc[j]) np[j] = p;
       nc[j] = 1;
       // A coastal range grows more slowly the higher it is, and stops short of the highest.
-      nh[j] = land + 0.03 * Math.max(0, 1 - land / 0.55);
+      nh[j] = land + 0.025 * Math.max(0, 1 - land / 0.4);
     } else {
-      nh[j] = Math.min(0.1, Math.max(nh[j]!, h[i]!) + 0.045);
+      // An island arc: islands here and there along the line, sea mounts between them, so the
+      // arc is a string of islands and not a wall.
+      const island = hash(j % W, Math.floor(j / W), 5, world.s.seed) < 0.3;
+      nh[j] = Math.min(island ? 0.1 : -0.03, Math.max(nh[j]!, h[i]!) + 0.045);
       if (nh[j]! > 0.03) nc[j] = 1;
     }
   }
@@ -482,15 +486,24 @@ export function buildHeights(world: World): void {
     }
   }
   blur(lift, 6);
-  const base = blur(Float32Array.from(h), 2);
+  // Land and sea floor are softened apart, so the shore stays where the crust says it is: land
+  // drawn by hand is land, whatever lies beside it. Only the sea level moves the shore.
+  const floor = blur(Float32Array.from(h), 2);
+  const ground = blur(
+    Float32Array.from(h, (v) => Math.max(0, v)),
+    2,
+  );
   for (let i = 0; i < N; i++) {
-    const high = base[i]! > -0.08;
-    const e =
-      base[i]! +
-      lift[i]! * s.mountains * (high ? 0.9 : 0.25) +
-      (detail[i]! - 0.47) * s.rough * (high ? 0.3 : 0.1) -
-      s.sea;
-    elev[i] = Math.max(-1, Math.min(1, e));
+    const grain = (detail[i]! - 0.47) * s.rough;
+    let e: number;
+    if (h[i]! > 0) {
+      const raised = (h[i]! + ground[i]!) / 2 + Math.max(0, lift[i]!) * s.mountains * 0.5;
+      // Rougher the higher it is: lowland stays low, ranges are broken.
+      e = Math.max(0.004, raised * (1 + grain * 1.6) + Math.min(0, lift[i]!) * 0.1);
+    } else {
+      e = Math.min(-0.01, floor[i]! + lift[i]! * s.mountains * 0.25 + grain * 0.1);
+    }
+    elev[i] = Math.max(-1, Math.min(1, e - s.sea));
   }
 }
 
@@ -570,7 +583,7 @@ export function classify(e: number, t: number, p: number): number {
   if (e > 0.5 && t < 6) return ALPINE;
   if (t < 0) return TUNDRA;
   if (t < 7) return p > 0.22 ? TAIGA : TUNDRA;
-  if (e < 0.05 && p > 0.5) return WETLAND;
+  if (e < 0.02 && p > 0.5) return WETLAND;
   if (t < 20) return p < 0.1 ? ROCK : p < 0.17 ? SCRUB : p < 0.3 ? GRASSLAND : FOREST;
   return p < 0.09 ? SAND : p < 0.17 ? SCRUB : p < 0.36 ? SAVANNA : JUNGLE;
 }

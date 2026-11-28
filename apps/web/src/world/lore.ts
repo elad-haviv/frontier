@@ -35,14 +35,26 @@ export function whereWords(cell: number): string {
   return `${ns}, ${Math.round(Math.abs(lon))}° ${lon >= 0 ? "east" : "west"}`;
 }
 
-const rainWords = (r: number) =>
-  r < 0.1 ? "almost no rain" : r < 0.2 ? "little rain" : r < 0.4 ? "steady rain" : "heavy rain";
+/** How much falls, as rain or, where it is freezing, as snow. */
+const rainWords = (r: number, t: number) => {
+  const what = t < 0 ? "snow" : "rain";
+  return r < 0.1
+    ? `almost no ${what}`
+    : r < 0.2
+      ? `little ${what}`
+      : r < 0.4
+        ? `steady ${what}`
+        : `heavy ${what}`;
+};
 
 /** A place's climate and height in a line, for the AI and for the entry written without it. */
-export function placeFacts(world: World, cell: number): string {
+export function placeFacts(world: World, cell: number, byTheSea = false): string {
   const biome = BIOMES[BIOME_KINDS[world.biome[cell]!]!].name.toLowerCase();
   const high = Math.round((Math.max(0, world.elev[cell]!) * METRES) / 100) * 100;
-  return `At ${whereWords(cell)}: ${biome}, about ${high.toLocaleString("en")} m up, ${Math.round(world.temp[cell]!)} °C through the year, ${rainWords(world.rain[cell]!)}.`;
+  // A cell is about a hundred kilometres across: by the sea its height is the country behind the
+  // shore, not the shore's own, so it is not given.
+  const up = byTheSea ? "low ground by the sea" : `about ${high.toLocaleString("en")} m up`;
+  return `At ${whereWords(cell)}: ${biome}, ${up}, ${Math.round(world.temp[cell]!)} °C through the year, ${rainWords(world.rain[cell]!, world.temp[cell]!)}.`;
 }
 
 /** How far apart two cells are, in degrees round the globe. */
@@ -83,8 +95,10 @@ export function findPlaces(world: World, rivers: readonly River[] = []): Place[]
       elev[y * W + ((x + W - 1) % W)]! <= 0 ||
       (y > 0 && elev[i - W]! <= 0) ||
       (y < H - 1 && elev[i + W]! <= 0);
-    if (shore && b !== ICE && deg > 12 && deg < 55)
-      offer("bay", i, rain[i]! + (temp[i]! > 8 ? 0.2 : 0));
+    // Low ground by the sea: a cliff coast under a range is no haven.
+    if (shore && b !== ICE && deg > 12 && deg < 55 && elev[i]! < 0.08) {
+      offer("bay", i, rain[i]! + (temp[i]! > 8 ? 0.2 : 0) - elev[i]! * 3);
+    }
   }
   const greatest = rivers[0];
   if (greatest) best["river"] = { cell: greatest.cells[greatest.cells.length - 1]!, score: 1 };
@@ -100,7 +114,12 @@ export function findPlaces(world: World, rivers: readonly River[] = []): Place[]
   for (const [key, what] of WHAT) {
     const found = best[key];
     if (!found || places.some((p) => apart(p.cell, found.cell) < 8)) continue;
-    places.push({ key, cell: found.cell, what, facts: placeFacts(world, found.cell) });
+    places.push({
+      key,
+      cell: found.cell,
+      what,
+      facts: placeFacts(world, found.cell, key === "river" || key === "bay"),
+    });
   }
   return places;
 }
@@ -294,6 +313,19 @@ export function entryOf(item: LoreItem): { path: string; text: string } | null {
   };
 }
 
+const MAGIC_RULES: Record<LoreState["magic"], string> = {
+  None: "There is no magic in this world.",
+  Rare: "Magic is rare in this world, and costly.",
+  Everywhere: "Magic is part of everyday life in this world.",
+};
+const AGE_RULES: Record<LoreState["age"], string> = {
+  Stone: "The present age is one of stone tools: no metal, no writing.",
+  Iron: "The present age is one of iron: no gunpowder, no engines.",
+  Sail: "The present age is one of sail and early gunpowder: no engines.",
+  Engines: "The present age is one of engines and industry.",
+  Stars: "The present age is one of travel between the stars.",
+};
+
 /**
  * The World brief: the numbers and the choices the world was built from, and what the author
  * said he knows, as one entry. Written by the wizard, not by the AI.
@@ -308,6 +340,11 @@ export function worldBrief(
   const list = (group: LoreGroup) =>
     kept.filter((i) => i.group === group).map((i) => `- [[${cleanTitle(i.title)}]]`);
   const lines = [
+    // By its type the AI finds the brief; by `world` it names the world (the server's worldVoice).
+    "---",
+    "type: world-brief",
+    `world: ${JSON.stringify(title)}`,
+    "---",
     `# ${title}: world brief`,
     "",
     `What ${title} was built from in the World Wizard. Change it as the world changes: it is the short account of the world for anyone, or any AI, beginning to write in it.`,
@@ -317,10 +354,12 @@ export function worldBrief(
     ...worldFacts(world, system).map((f) => `- ${f}`),
     `- Built from seed ${world.s.seed}.`,
     "",
-    "## The setting",
+    "## Rules",
     "",
-    `- Magic: ${lore.magic.toLowerCase()}.`,
-    `- The present age: ${lore.age.toLowerCase()}.`,
+    "Each line here is told to the AI whenever it writes for this world. Add your own, one to a line.",
+    "",
+    `- ${MAGIC_RULES[lore.magic]}`,
+    `- ${AGE_RULES[lore.age]}`,
   ];
   if (lore.know.trim() !== "") lines.push("", "## What is already known", "", lore.know.trim());
   for (const group of ["place", "species", "life"] as const) {

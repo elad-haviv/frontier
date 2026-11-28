@@ -53,11 +53,8 @@ export const LIMITS = {
   question: 600,
 };
 
-/** The one rule of the world the model is most likely to break; a later version reads them from the library. */
-export const WORLD_RULES = [
-  "- The Nirani have no visual culture, no visual language and no light traditions; their",
-  "  timekeeping is not visual.",
-].join("\n");
+/** Where the world's own rules go: filled in for the project (`ai/worldVoice.ts`). */
+export const WORLD_RULES = "{{WORLD_RULES}}";
 
 const Finding = z.object({
   id: z.string(),
@@ -175,7 +172,7 @@ const REPLY: AnswerSchema<z.infer<typeof Reply>> = {
 
 const INSTRUCTIONS = [
   "You give an honest second opinion on an entry an author is editing, in his fictional world,",
-  "Avalymia. You advise; you never change anything.",
+  "{{WORLD}}. You advise; you never change anything.",
   "",
   "Rules:",
   "- Saying there is nothing to report is a correct, valued answer. Report only what you would stand",

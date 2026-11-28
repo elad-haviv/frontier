@@ -98,8 +98,10 @@ One place for what is being built, what is waiting, and ideas. The design in
 - [x] Release 3: life and lore (places found on the world; with the AI, names and first entries
       for them, the sapient species and the life; entries with markers and homelands), and the
       World brief
-- [ ] The AI prompts for lore, writing help and characters still name Avalymia; they should read
-      a project's World brief instead
+- [x] Every AI feature is told whose world it writes about: the name and the rules come from the
+      project's World brief (an entry of type `world-brief`), not from the code
+- [ ] Give Avalymia a World brief of its own, with its rules under a Rules heading; until then it
+      keeps the one rule about the Nirani that the code has always carried
 - Known: plates slide along the grid, so drift near the poles is distorted; a world in progress is
   kept on the device only.
 

@@ -337,7 +337,7 @@ const ANSWER: AnswerSchema<ModelAnswer> = {
 };
 
 const INSTRUCTIONS = [
-  "You answer questions about an author's fictional world, Avalymia, from the entries you are given.",
+  "You answer questions about an author's fictional world, {{WORLD}}, from the entries you are given.",
   "",
   "Rules:",
   "- Answer only from the entries. Never invent lore, names, dates or reasons, and never fill a gap",
@@ -353,14 +353,12 @@ const INSTRUCTIONS = [
   `  answering: up to ${LIMITS.askedSearches} searches of a few words in "more.searches", and up to ${LIMITS.askedEntries} entries`,
   '  you saw linked or named, by path or title, in "more.entries"; leave "paragraphs" empty then.',
   "  Ask only for what the question needs. When you answer, leave both lists empty.",
-  // One of the vault's own rules, the one a model is most likely to break. A later version reads
-  // such rules from the library instead of keeping them here.
-  "- The world's rules matter: the Nirani have no visual culture, no visual language and no light",
-  "  traditions; their timekeeping is not visual.",
+  // The world's own rules, filled in for the project (`ai/worldVoice.ts`).
+  "{{WORLD_RULES}}",
 ].join("\n");
 
 const ADDITION_INSTRUCTIONS = [
-  "You draft an addition to an author's fictional world, Avalymia, to fill a gap he found.",
+  "You draft an addition to an author's fictional world, {{WORLD}}, to fill a gap he found.",
   "",
   "Rules:",
   "- Write only what fills the gap, in the style of the entries you are given: plain Markdown, the",

@@ -248,8 +248,6 @@ Life and lore, the second to last part of the wizard, and the World brief.
 - **One AI call, not an outline and then a writing step.** Names and prose come together, and the
   author ticks afterwards. It is cheaper and there is nothing to keep a tab open for.
 - **A homeland is a plain ring** round the place a species arose at, not the outline of its biome.
-- **The AI prompts elsewhere still name Avalymia.** The World brief exists for them to read, but
-  moving the lore, writing and character prompts onto it is its own piece of work, not done here.
 - "Suggest more" is "Suggest again": it replaces what was suggested, keeping the ticks on places.
 
 ### Tests added
@@ -261,7 +259,56 @@ answer; the request; entries by folder; the World brief; the homeland ring), and
 `e2e/world.spec.ts` (places without the AI, suggestions with it, a name typed over, an item left
 out, and Make it writing the entry, its marker and the brief).
 
+## After the three releases (2026-11-28)
+
+### The AI is told whose world it writes about
+
+Every AI feature's instructions said "his fictional world, Avalymia" and carried Avalymia's rule
+about the Nirani, in every project. Now the instructions name the world and its rules through two
+marks, filled in for the project of the request (`apps/server/src/ai/worldVoice.ts`):
+
+- A project says what its world is in its **World brief**: an entry whose `type` is
+  `world-brief`. Its `world` field is the world's name; each bullet under its **Rules** heading
+  is told to the AI whenever it writes for the project ("The world's rules matter: …"), up to
+  twelve. The wizard's brief now has both: its Rules begin with the magic and the present age
+  chosen in Life and lore, and the author adds his own, one to a line.
+- Only the saved brief is read, never one in quarantine. A mark typed into a rule is taken out.
+- With no brief the world goes by the project's name and has no rules. The one exception is a
+  project named Avalymia, which keeps the rule it has always been given until it has a brief of
+  its own; with a brief, the brief's rules are the rules.
+- It is done where a project gets its AI provider (`projects/services.ts`), so lore, writing
+  help, Consult, drafting, characters, discovery and keep-going all follow without each knowing.
+
+### The height model, reworked
+
+Printing what the wizard sends the AI showed coasts at 800 m and peaks pinned at 9,000 m. Now:
+
+- Land begins as lowland (a few hundred metres); the drift raises the rest. Half the land of a
+  rolled world lies under about 400 m, and peaks come out between 3,000 and 7,700 m.
+- Land and sea floor are softened apart, so the shore stays where the crust says it is: land
+  drawn by hand is land, and the share of land asked for is the share there is. Only the sea
+  level moves the shore.
+- Ground is rougher the higher it is. Ranges grow more slowly and stop lower. Plates roll at 1 to
+  5 cm a year, so less land is lost to collisions (32% falls to between 19% and 31% over 60
+  million years, by seed).
+- A place by the sea is described to the AI as "low ground by the sea", not by its cell's height;
+  where it freezes, what falls is called snow; the sheltered coast is looked for on low ground.
+
+### The lore instructions, after a real model
+
+The instructions were tried twice on a small model with a made-up world. The first answer was
+usable in form but borrowed names from myths and real languages, named Earth's animals and
+plants, put dunes in a rock desert, praised everything and ignored what the author said he knew.
+The instructions (version 2) now ask for invented names that belong together, the world's own
+life, plain gazetteer prose, no fact contradicted, each thing the author knows worked into the
+entry it fits, and a different cradle for each species. The second answer followed most of that;
+it still repeated some numbers. A stronger model than the one tried should do better.
+
+### Smaller things
+
+- Make it says which entries it left alone because the library already had one of that name.
+
 ## Left for later
 
-Lakes; the AI prompts reading the World brief; then other shapes (a disc, a cylinder like Derdama), ocean currents, resources, naming languages,
+Lakes; then other shapes (a disc, a cylinder like Derdama), ocean currents, resources, naming languages,
 history played forward on time-aware maps, and plates that turn about a point.

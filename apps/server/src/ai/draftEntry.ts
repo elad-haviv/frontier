@@ -21,9 +21,8 @@ export const DRAFT_LIMITS = {
   folders: 5,
 };
 
-/** The one rule of the world the model is most likely to break; a later version reads them from the library. */
-const WORLD_RULE =
-  "- The Nirani have no visual culture, no visual language and no light traditions; their timekeeping is not visual.";
+/** Where the world's own rules go: filled in for the project (`ai/worldVoice.ts`). */
+const WORLD_RULE = "{{WORLD_RULES}}";
 
 const CONFLICT_RULES = [
   '- "conflicts" lists each sentence that contradicts a given entry: the paragraph it is in',
@@ -34,7 +33,7 @@ const CONFLICT_RULES = [
 ];
 
 const PROPOSE_INSTRUCTIONS = [
-  "You turn an author's spoken notes about his fictional world, Avalymia, into a draft entry.",
+  "You turn an author's spoken notes about his fictional world, {{WORLD}}, into a draft entry.",
   "",
   "Rules:",
   "- Keep to what he said. Use his facts and names. Never invent facts, names, dates or reasons.",
@@ -51,7 +50,7 @@ const PROPOSE_INSTRUCTIONS = [
 ].join("\n");
 
 const CHECK_INSTRUCTIONS = [
-  "You check one paragraph of an author's draft entry about his fictional world, Avalymia, against",
+  "You check one paragraph of an author's draft entry about his fictional world, {{WORLD}}, against",
   "the entries you are given.",
   "",
   "Rules:",

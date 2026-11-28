@@ -203,7 +203,7 @@ export function askText(count: number): string {
 }
 
 const INSTRUCTIONS = [
-  "You help an author discover what lies at places on a map of his fictional world, Avalymia.",
+  "You help an author discover what lies at places on a map of his fictional world, {{WORLD}}.",
   "",
   "You are given three kinds of context. Entries are the author's lore: you may quote them.",
   "Names on the map are only what is written on the map near the places, such as labels and the",
@@ -227,7 +227,7 @@ const INSTRUCTIONS = [
 ].join("\n");
 
 const GENERATE_INSTRUCTIONS = [
-  "You help an author fill in a map of his fictional world, Avalymia: you name and describe",
+  "You help an author fill in a map of his fictional world, {{WORLD}}: you name and describe",
   "features he places on it.",
   "",
   "You are given two kinds of context. Entries are the author's lore: you may quote them.",

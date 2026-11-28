@@ -33,6 +33,7 @@ import { Talks } from "../ai/talks.js";
 import { EntryPictures } from "../ai/pictures.js";
 import { EntryDrafter } from "../ai/draftEntry.js";
 import { WorldLore } from "../ai/worldLore.js";
+import { forWorld, worldVoice } from "../ai/worldVoice.js";
 import { LoreAsker } from "../ai/lore.js";
 import { KeepGoingAi } from "../ai/keepGoing.js";
 import { KeepGoingHistory } from "../keepGoing/history.js";
@@ -267,7 +268,11 @@ export async function buildServices(
   });
   const presence = new Presence({ roleOf, nameOf, onChange: () => status.presenceChanged() });
   const files = new StateFiles();
-  const { settings, ai, aiLog, models, imageFetcher } = server;
+  const { settings, aiLog, models, imageFetcher } = server;
+  // The AI as this project uses it: told whose world it writes about (stage 34).
+  const ai = forWorld(server.ai, () =>
+    worldVoice(index.allNotes(), (path) => quarantine.aiMayRead(path) === null, record.name),
+  );
   const images = new ImageServer(vaultDir, paths.root);
   // The accounts and the project's members are read before anything asks who the first owner is (see
   // `firstOwner`): an empty list of members that is only not read yet must never name anyone.

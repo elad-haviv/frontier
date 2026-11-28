@@ -324,6 +324,8 @@ export interface Made {
   calendar: string;
   /** How many entries were made, the calendar and the World brief among them. */
   entries: number;
+  /** The entries not written because the library has one of that name already, by title. */
+  skipped: string[];
 }
 
 /** Sends a map the server just made, changed, through the save queue. */
@@ -393,6 +395,7 @@ export async function makeWorld(
 
   // The entries first, so the map's markers have something to point at.
   let entries = 0;
+  const skipped: string[] = [];
   const kept: LoreItem[] = [];
   const lore = steps.lore.items.filter((i) => i.on);
   if (lore.length) steps.say("Writing the entries…");
@@ -402,7 +405,7 @@ export async function makeWorld(
     if (await newEntry(work, entry.path, entry.text)) {
       entries++;
       kept.push(item);
-    }
+    } else skipped.push(cleanTitle(item.title));
   }
   const placed = withLore(map, kept);
   await send(work, id, made, placed.map, placed.link);
@@ -415,7 +418,9 @@ export async function makeWorld(
   steps.say("Writing the calendar and the brief…");
   const calendar = `The sky and the calendar of ${name}.md`;
   if (await newEntry(work, calendar, calendarEntry(title, steps.system, world.s))) entries++;
+  else skipped.push(`The sky and the calendar of ${name}`);
   const brief = worldBrief(title, world, steps.system, { ...steps.lore, items: kept });
   if (await newEntry(work, `${name} world brief.md`, brief)) entries++;
-  return { map: id, system: system.id, calendar, entries };
+  else skipped.push(`${name} world brief`);
+  return { map: id, system: system.id, calendar, entries, skipped };
 }

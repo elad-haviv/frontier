@@ -36,7 +36,7 @@ export const KEEP_GOING_LIMITS = {
 };
 
 const MISSING_INSTRUCTIONS = [
-  "You help an author grow an entry about his fictional world, Avalymia. You read one entry and the",
+  "You help an author grow an entry about his fictional world, {{WORLD}}. You read one entry and the",
   "entries it is linked with, and say what the entry implies that the library does not have yet.",
   "",
   "Rules:",
@@ -51,7 +51,7 @@ const MISSING_INSTRUCTIONS = [
 ].join("\n");
 
 const QUESTION_INSTRUCTIONS = [
-  "You help an author keep writing about his fictional world, Avalymia. You are given a thin entry",
+  "You help an author keep writing about his fictional world, {{WORLD}}. You are given a thin entry",
   "and some entries near it, and ask him one question.",
   "",
   "Rules:",

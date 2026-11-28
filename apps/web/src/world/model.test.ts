@@ -142,7 +142,7 @@ describe("biomes", () => {
     expect(classify(0.2, 12, 0.5)).toBe(k("forest"));
     expect(classify(0.2, 3, 0.4)).toBe(k("taiga"));
     expect(classify(0.7, 2, 0.4)).toBe(k("alpine"));
-    expect(classify(0.02, 15, 0.7)).toBe(k("wetland"));
+    expect(classify(0.01, 15, 0.7)).toBe(k("wetland"));
   });
 
   it("keeps a painted biome where it still fits the ground, and not where it does not", () => {

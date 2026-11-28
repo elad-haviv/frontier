@@ -122,9 +122,15 @@ describe("what is suggested and kept", () => {
       know: "Salt is money.",
       items,
     });
-    expect(brief).toContain("# Salt Coast: world brief");
+    expect(
+      brief.startsWith(
+        '---\ntype: world-brief\nworld: "Salt Coast"\n---\n# Salt Coast: world brief',
+      ),
+    ).toBe(true);
     expect(brief).toContain("- Built from seed 2024.");
-    expect(brief).toContain("- Magic: rare.");
+    expect(brief).toContain("## Rules");
+    expect(brief).toContain("- Magic is rare in this world, and costly.");
+    expect(brief).toContain("- The present age is one of iron: no gunpowder, no engines.");
     expect(brief).toContain("## What is already known\n\nSalt is money.");
     expect(brief).toContain("- [[The Elluneth Range]]");
     expect(brief).toContain("- [[The Minik]]");

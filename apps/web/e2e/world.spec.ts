@@ -280,4 +280,11 @@ test("Life and lore finds places, the AI names them and suggests species and lif
   expect(text).toContain("Built from seed");
   // What was left out was not written.
   expect((await read("Life/Test reed deer.md")).ok()).toBe(false);
+
+  // Made again under the same name: what is already there is left alone, and the wizard says so.
+  await page.goto(proj("/world"));
+  await part(page, "Make it").click();
+  await page.getByRole("button", { name: "Make it again, as another map" }).click();
+  await expect(page).toHaveURL(/\/map\/[a-z0-9]{8}/, { timeout: 60_000 });
+  await expect(page.getByText(/already in the library and (was|were) left as/)).toBeVisible();
 });

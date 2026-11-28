@@ -38,7 +38,7 @@ const REWRITE: AnswerSchema<z.infer<typeof Rewrite>> = {
 };
 
 const INSTRUCTIONS = [
-  "You help an author edit a passage of an entry about his fictional world, Avalymia.",
+  "You help an author edit a passage of an entry about his fictional world, {{WORLD}}.",
   "",
   "Rules:",
   "- Rewrite only the passage, as asked. Return the passage alone, ready to put in its place.",

@@ -120,7 +120,7 @@ const LINES_SCHEMA: AnswerSchema<z.infer<typeof Lines>> = {
 };
 
 const PROFILE_INSTRUCTIONS = [
-  "You read the entries about one character of an author's fictional world, Avalymia, and draft",
+  "You read the entries about one character of an author's fictional world, {{WORLD}}, and draft",
   "a profile for playing the character in conversation.",
   "",
   "Rules:",
@@ -133,7 +133,7 @@ const PROFILE_INSTRUCTIONS = [
 ].join("\n");
 
 const CHAT_INSTRUCTIONS = [
-  "You play one character of an author's fictional world, Avalymia, in conversation with the author.",
+  "You play one character of an author's fictional world, {{WORLD}}, in conversation with the author.",
   "",
   "Rules:",
   "- Speak as the character, in their voice, from the moment given, knowing only what they would",

@@ -12,6 +12,7 @@ import { useDialogs } from "../../components/Dialogs.tsx";
 import { useProject } from "../../components/projectContext.ts";
 import { useRefresh } from "../../components/Shell.tsx";
 import { Progress } from "../../components/ui/Progress.tsx";
+import { useToast } from "../../components/ui/Toast.tsx";
 import { shortcutText, useScope, useShortcut } from "../../keys.ts";
 import { useMapStyles } from "../../map/useMapStyles.ts";
 import { Link, useNavigate } from "../../nav.tsx";
@@ -169,6 +170,7 @@ export function WorldWizardPage() {
   const navigate = useNavigate();
   const refresh = useRefresh();
   const dialogs = useDialogs();
+  const toast = useToast();
   const offline = useNeedsConnection();
   const { styles, change: changeStyles } = useMapStyles();
 
@@ -413,7 +415,7 @@ export function WorldWizardPage() {
     if (busy) return;
     setProblem(null);
     try {
-      const { map: id } = await makeWorld(work, world, title.trim() || project.name, {
+      const { map: id, skipped } = await makeWorld(work, world, title.trim() || project.name, {
         say: setBusy,
         system,
         lore,
@@ -429,6 +431,15 @@ export function WorldWizardPage() {
       if (!work.open()) return;
       refresh();
       navigate(mapUrl(id));
+      // An entry the library already had under that name was left as it is, and said so.
+      if (skipped.length > 0) {
+        toast({
+          message:
+            skipped.length === 1
+              ? `"${skipped[0]}" was already in the library and was left as it is.`
+              : `${skipped.length} entries were already in the library and were left as they are: ${skipped.slice(0, 4).join(", ")}${skipped.length > 4 ? "…" : ""}.`,
+        });
+      }
     } catch (err) {
       setProblem(
         err instanceof ApiFailure || err instanceof Error
