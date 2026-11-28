@@ -16,6 +16,7 @@ import {
   type World,
   type WorldSettings,
 } from "./model.ts";
+import type { LoreState } from "./lore.ts";
 import type { SystemSettings } from "./system.ts";
 
 const DB = "frontier-world";
@@ -30,6 +31,7 @@ export const PARTS = [
   "heights",
   "climate",
   "biomes",
+  "lore",
   "make",
 ] as const;
 export type Part = (typeof PARTS)[number];
@@ -44,6 +46,8 @@ export interface KeptWorld {
   made?: string;
   /** The star system; a world kept before there was one has the usual system. */
   system?: SystemSettings;
+  /** The life and lore: the choices and what was suggested. */
+  lore?: LoreState;
   settings: WorldSettings;
   drift: Drift[];
   my: number;
@@ -61,7 +65,7 @@ export function keep(
   world: World,
   title: string,
   part: Part,
-  more: { made?: string | undefined; system?: SystemSettings } = {},
+  more: { made?: string | undefined; system?: SystemSettings; lore?: LoreState } = {},
 ): KeptWorld {
   return {
     v: 1,
@@ -69,6 +73,7 @@ export function keep(
     part,
     ...(more.made ? { made: more.made } : {}),
     ...(more.system ? { system: more.system } : {}),
+    ...(more.lore ? { lore: more.lore } : {}),
     savedAt: new Date().toISOString(),
     settings: { ...world.s },
     drift: world.drift.map((d) => ({ ...d })),
@@ -151,5 +156,6 @@ export const PART_NAMES: Record<Part, string> = {
   heights: "Heights",
   climate: "Climate",
   biomes: "Biomes",
+  lore: "Life and lore",
   make: "Make it",
 };

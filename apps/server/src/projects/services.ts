@@ -32,6 +32,7 @@ import { Conversations } from "../ai/conversations.js";
 import { Talks } from "../ai/talks.js";
 import { EntryPictures } from "../ai/pictures.js";
 import { EntryDrafter } from "../ai/draftEntry.js";
+import { WorldLore } from "../ai/worldLore.js";
 import { LoreAsker } from "../ai/lore.js";
 import { KeepGoingAi } from "../ai/keepGoing.js";
 import { KeepGoingHistory } from "../keepGoing/history.js";
@@ -98,6 +99,7 @@ export interface Services {
   folders: FolderStore;
   lore: LoreAsker;
   drafter: EntryDrafter;
+  worldLore: WorldLore;
   /** Stage 25: the work queue, "From here", Link it, random entry and the steps after Publish. */
   keepGoing: KeepGoing;
   keepGoingHistory: KeepGoingHistory;
@@ -468,6 +470,7 @@ export async function buildServices(
     settings,
     mayRead: (path) => quarantine.aiMayRead(path) === null,
   });
+  const worldLore = new WorldLore({ provider: ai });
   const keepGoingHistory = new KeepGoingHistory({ git, index });
   const keepGoing = new KeepGoing({
     index,
@@ -569,6 +572,7 @@ export async function buildServices(
     folders,
     lore,
     drafter,
+    worldLore,
     keepGoing,
     keepGoingHistory,
     keepGoingAi,

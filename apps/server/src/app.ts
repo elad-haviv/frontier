@@ -28,6 +28,7 @@ import { emailRoutes } from "./routes/email.js";
 import { discoverRoutes } from "./routes/discover.js";
 import { draftRoutes } from "./routes/drafts.js";
 import { entryDraftRoutes } from "./routes/entryDraft.js";
+import { worldLoreRoutes } from "./routes/worldLore.js";
 import { entryRoutes } from "./routes/entries.js";
 import { exportRoutes } from "./routes/export.js";
 import { folderRoutes } from "./routes/folders.js";
@@ -430,6 +431,7 @@ export async function buildApp(config: Config, options: BuildOptions = {}): Prom
   folderRoutes(forProject, s);
   loreRoutes(forProject, s);
   entryDraftRoutes(forProject, s);
+  worldLoreRoutes(forProject, s);
   keepGoingRoutes(forProject, s);
   writingRoutes(forProject, s);
   commentRoutes(forProject, s);

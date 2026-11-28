@@ -68,6 +68,7 @@ describe("which requests carry the keys", () => {
       "/api/write/review",
       "/api/keep-going/whats-missing",
       "/api/keep-going/question?tz=60",
+      "/api/world/lore",
     ]) {
       expect(needsAiKeys(url), url).toBe(true);
     }

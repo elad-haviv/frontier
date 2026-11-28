@@ -140,7 +140,7 @@ const OPEN =
  * needs no key, which is nearly everything, sends none.
  */
 const AI_REQUEST =
-  /^\/api\/(lore|write|characters|pictures|keep-going\/(?:whats-missing|question)|ai\/models|settings\/ai\/test|proposals\/(fields|job)|maps\/[^/?]+\/(discover|generate|discoveries\/[^/?]+\/art)|comments\/[^/?]+\/work)(?:[/?]|$)/;
+  /^\/api\/(lore|world\/lore|write|characters|pictures|keep-going\/(?:whats-missing|question)|ai\/models|settings\/ai\/test|proposals\/(fields|job)|maps\/[^/?]+\/(discover|generate|discoveries\/[^/?]+\/art)|comments\/[^/?]+\/work)(?:[/?]|$)/;
 
 export const needsAiKeys = (url: string): boolean => AI_REQUEST.test(bareUrl(url));
 
@@ -1008,6 +1008,15 @@ function projectCalls(slugOf: () => string) {
         signal,
       ),
     /** A new entry drafted from what the author said; nothing is saved. `signal` stops it. */
+    /** The World Wizard's life and lore (stage 34): names and first entries; nothing is saved. */
+    worldLore: (body: unknown, signal?: AbortSignal) =>
+      post<{
+        lore: {
+          places: { key: string; name: string; text: string }[];
+          species: { cradle: string | null; name: string; text: string }[];
+          life: { name: string; text: string }[];
+        };
+      }>("/world/lore", body, signal),
     draftEntry: (said: string, signal?: AbortSignal) =>
       post<{ draft: EntryProposal }>("/lore/draft", { said }, signal),
     /** One changed paragraph of a draft entry, checked against the lore again. */

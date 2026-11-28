@@ -1,5 +1,5 @@
 import { expect, type Page, test } from "@playwright/test";
-import { api, noSidewaysScroll, proj } from "./helpers.ts";
+import { api, noSidewaysScroll, proj, setUpAi } from "./helpers.ts";
 
 /**
  * The World Wizard (stage 34, release 1): a world built in parts and made into a globe map with
@@ -212,4 +212,72 @@ test("Make the world makes a globe map with its terrain and biome zones, as unsa
   await page.goto(proj("/"));
   await expect(page.locator(".home h1")).toBeVisible();
   await expect(page.getByRole("region", { name: "World Wizard" })).toHaveCount(0);
+});
+
+test("Life and lore finds places, the AI names them and suggests species and life, and Make it writes them", async ({
+  page,
+}, info) => {
+  // The phone and the desktop run share a server: each names its own world and its own place.
+  const mine = info.project.name;
+  // The key is kept on the device, so the app is opened before it is given one.
+  await page.goto(proj("/"));
+  await setUpAi(page, { conversation: "sample/reader" });
+  await openWizard(page);
+  await page.getByRole("button", { name: "Surprise me" }).click();
+  const ask = page.getByRole("dialog");
+  if (await ask.isVisible().catch(() => false)) {
+    await ask.getByRole("button", { name: "Roll it" }).click();
+  }
+  await expect(page.getByRole("heading", { name: "Biomes" })).toBeVisible();
+  await part(page, "Life and lore").click();
+
+  // Without the AI: the places found on the world, named for what they are.
+  const places = page.getByRole("region", { name: "Places", exact: true });
+  await expect(places.getByLabel("Name").first()).toHaveValue("The highest range");
+  await expect(places).toContainText(/°C through the year/);
+  await expect(page.getByRole("region", { name: "Sapient species" })).toHaveCount(0);
+
+  await page.getByRole("button", { name: "One", exact: true }).click();
+  await page.getByRole("button", { name: "Suggest names and entries" }).click();
+  await expect(places.getByLabel("Name").first()).toHaveValue("Test peak");
+  const species = page.getByRole("region", { name: "Sapient species" });
+  await expect(species.getByLabel("Name")).toHaveValue("Testfolk 1");
+  await expect(species).toContainText("They count in tides.");
+  const life = page.getByRole("region", { name: "Life", exact: true });
+  await expect(life.getByLabel("Name")).toHaveValue("Test reed deer");
+  // A name is the author's to change, and an item his to leave out.
+  await places.getByLabel("Name").first().fill(`Peak of the ${mine}`);
+  await life.getByRole("checkbox").uncheck();
+  await noSidewaysScroll(page);
+
+  await part(page, "Make it").click();
+  await page.getByLabel("Name of the world").fill(`Lore ${mine}`);
+  await expect(page.locator(".ww-makes")).toContainText("The World brief");
+  await page.getByRole("button", { name: /^Make (the world|it again)/ }).click();
+  await expect(page).toHaveURL(/\/map\/[a-z0-9]{8}/, { timeout: 60_000 });
+  const id = /\/map\/([a-z0-9]{8})/.exec(page.url())![1]!;
+
+  // The place is a marker on the map, tied to its entry.
+  const made = await (await page.request.get(api(`/maps/${id}`))).json();
+  const marker = made.map.features.find(
+    (f: { kind: string; label?: string }) =>
+      f.kind === "marker" && f.label === `Peak of the ${mine}`,
+  );
+  expect(marker).toBeTruthy();
+  expect(marker.entry).toBeTruthy();
+  expect(made.entries[marker.entry].path).toBe(`Places/Peak of the ${mine}.md`);
+
+  const read = async (path: string) =>
+    page.request.get(api(`/entries?path=${encodeURIComponent(path)}`));
+  const place = await read(`Places/Peak of the ${mine}.md`);
+  expect(place.ok()).toBe(true);
+  expect(JSON.stringify(await place.json())).toContain("The peak of the test world.");
+  // The World brief is written by the wizard, and lists what was kept.
+  const brief = await read(`Lore ${mine} world brief.md`);
+  expect(brief.ok()).toBe(true);
+  const text = JSON.stringify(await brief.json());
+  expect(text).toContain(`Peak of the ${mine}`);
+  expect(text).toContain("Built from seed");
+  // What was left out was not written.
+  expect((await read("Life/Test reed deer.md")).ok()).toBe(false);
 });

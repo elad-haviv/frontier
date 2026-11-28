@@ -161,6 +161,7 @@ export const ROUTE_ROLES: Record<string, ProjectRole> = {
   "DELETE /write/reviews/:id": "writer",
   "DELETE /write/reviews": "writer",
   "POST /write/review/ask": "writer",
+  "POST /world/lore": "writer",
   "POST /lore/draft": "writer",
   "POST /lore/draft/check": "writer",
   "POST /lore/draft/keep": "writer",

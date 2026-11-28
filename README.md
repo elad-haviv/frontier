@@ -30,7 +30,7 @@ Stage 1 of nine is in progress. What exists so far:
 | Stage 29: generating pictures for entries from the image dialog, in the art style from Settings                                              | Built; covered by tests                                                          |
 | Stage 30: Trees: relations on entries; family trees, descent, pantheons and hierarchies; an entry's Relations tab                            | Built; covered by tests                                                          |
 | Stage 33: the AI proposes relations from the prose, decided in the inbox, in trees and in an entry's Relations tab                           | Built; covered by tests                                                          |
-| Stage 34: the World Wizard: a world built in parts (land, plates, heights, climate, biomes) and made into a globe map                        | Releases 1 and 2 built and tested (with the star system); the lore is to come    |
+| Stage 34: the World Wizard: a world built from its star down, made into maps and first entries                                               | Built; covered by tests                                                          |
 
 The app writes to its vault: drafts are saved on the server and Publish makes one commit.
 

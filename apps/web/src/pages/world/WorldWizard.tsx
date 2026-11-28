@@ -61,6 +61,8 @@ import {
   yearDays,
 } from "../../world/system.ts";
 import { worldZones, zoneCounts } from "../../world/zones.ts";
+import { type LoreState, NO_LORE } from "../../world/lore.ts";
+import { LorePanel, pinsOf } from "./LorePart.tsx";
 import { SystemPanel, SystemView } from "./SystemPart.tsx";
 import { type Turn, WorldCanvas } from "./WorldCanvas.tsx";
 import "./WorldWizard.css";
@@ -74,6 +76,7 @@ const NEEDS: Record<Part, Stage> = {
   heights: "height",
   climate: "climate",
   biomes: "biome",
+  lore: "biome",
   make: "biome",
 };
 /** Which stage a setting is read by first: changing it builds from there again. */
@@ -175,6 +178,7 @@ export function WorldWizardPage() {
   const [part, setPart] = useState<Part>("basics");
   const [made, setMade] = useState<string | undefined>(undefined);
   const [system, setSystem] = useState<SystemSettings>(DEFAULT_SYSTEM);
+  const [lore, setLore] = useState<LoreState>(NO_LORE);
   const [globe, setGlobe] = useState(true);
   const [dragTurns, setDragTurns] = useState(false);
   const [brush, setBrush] = useState(4);
@@ -206,6 +210,7 @@ export function WorldWizardPage() {
         const sys = tidy(kept.system ?? DEFAULT_SYSTEM);
         back.s.sun = sunWarmth(sys);
         setSystem(sys);
+        setLore({ ...NO_LORE, ...kept.lore });
         setTitle(kept.title);
         setPart(PARTS.includes(kept.part) ? kept.part : "basics");
         setMade(kept.made);
@@ -213,6 +218,7 @@ export function WorldWizardPage() {
       } else {
         setTitle(project.name);
         setSystem(DEFAULT_SYSTEM);
+        setLore(NO_LORE);
         setPart("system");
         setWorld(fresh(DEFAULT_SYSTEM));
       }
@@ -223,23 +229,27 @@ export function WorldWizardPage() {
   }, [projectId, project.name]);
 
   // Kept a moment after each change, and when the page is left.
-  const latest = useRef({ world, title, part, made, system });
-  latest.current = { world, title, part, made, system };
+  const latest = useRef({ world, title, part, made, system, lore });
+  latest.current = { world, title, part, made, system, lore };
   useEffect(() => {
     if (!world) return;
     const timer = window.setTimeout(
-      () => void saveWorld(projectId, keep(world, title, part, { made, system })),
+      () => void saveWorld(projectId, keep(world, title, part, { made, system, lore })),
       700,
     );
     return () => window.clearTimeout(timer);
-  }, [world, version, title, part, made, system, projectId]);
+  }, [world, version, title, part, made, system, lore, projectId]);
   useEffect(
     () => () => {
       const now = latest.current;
       if (now.world) {
         void saveWorld(
           projectId,
-          keep(now.world, now.title, now.part, { made: now.made, system: now.system }),
+          keep(now.world, now.title, now.part, {
+            made: now.made,
+            system: now.system,
+            lore: now.lore,
+          }),
         );
       }
     },
@@ -278,7 +288,7 @@ export function WorldWizardPage() {
   useShortcut("world.larger", () => (paints ? setBrush((b) => Math.min(12, b + 1)) : false));
 
   // The rivers follow the heights and the rain: drawn once there is a climate to read.
-  const showsRivers = part === "climate" || part === "biomes" || part === "make";
+  const showsRivers = part === "climate" || part === "biomes" || part === "lore" || part === "make";
   const rivers = useMemo<River[]>(
     () => (world && showsRivers ? riversOf(world) : []),
     [world, version, showsRivers],
@@ -377,6 +387,7 @@ export function WorldWizardPage() {
     const seed = 1000 + Math.floor(r() * 9000);
     const rolled = rollSystem(seed);
     setSystem(rolled);
+    setLore((l) => ({ ...NO_LORE, know: l.know, species: l.species, magic: l.magic, age: l.age }));
     const next = newWorld({
       ...DEFAULT_SETTINGS,
       seed,
@@ -405,6 +416,7 @@ export function WorldWizardPage() {
       const { map: id } = await makeWorld(work, world, title.trim() || project.name, {
         say: setBusy,
         system,
+        lore,
         styles,
         addStyles: (add) =>
           void changeStyles((f) => ({
@@ -412,7 +424,7 @@ export function WorldWizardPage() {
             styles: [...f.styles, ...add.filter((a) => !f.styles.some((x) => x.id === a.id))],
           })),
       });
-      await saveWorld(projectId, keep(world, title, part, { made: id, system }));
+      await saveWorld(projectId, keep(world, title, part, { made: id, system, lore }));
       setMade(id);
       if (!work.open()) return;
       refresh();
@@ -445,6 +457,7 @@ export function WorldWizardPage() {
     setPlaying(false);
     setBiomeInk(null);
     setSystem(DEFAULT_SYSTEM);
+    setLore(NO_LORE);
     setWorld(fresh(DEFAULT_SYSTEM));
     go("system");
   };
@@ -898,6 +911,18 @@ export function WorldWizardPage() {
         </div>
       </>
     );
+  } else if (part === "lore") {
+    panel = (
+      <LorePanel
+        world={world}
+        version={version}
+        name={title.trim() || project.name}
+        system={system}
+        rivers={rivers}
+        lore={lore}
+        onChange={setLore}
+      />
+    );
   } else {
     panel = (
       <MakePanel
@@ -907,6 +932,7 @@ export function WorldWizardPage() {
         setTitle={setTitle}
         system={system}
         rivers={rivers.length}
+        entries={lore.items.filter((i) => i.on && i.title.trim() !== "").length}
       />
     );
   }
@@ -945,6 +971,7 @@ export function WorldWizardPage() {
           <WorldCanvas
             hidden={part === "system"}
             rivers={rivers}
+            pins={part === "lore" || part === "make" ? pinsOf(lore.items) : undefined}
             world={world}
             layer={layer}
             globe={globe}
@@ -1048,6 +1075,7 @@ function MakePanel({
   setTitle,
   system,
   rivers,
+  entries,
 }: {
   world: World;
   version: number;
@@ -1055,6 +1083,8 @@ function MakePanel({
   setTitle: (t: string) => void;
   system: SystemSettings;
   rivers: number;
+  /** How many of the life and lore's items are ticked. */
+  entries: number;
 }) {
   // Outlining the zones takes a moment, so only when the world has changed.
   const zones = useMemo(() => worldZones(world), [world, version]);
@@ -1128,6 +1158,17 @@ function MakePanel({
           <span>
             A year of {yearDays(system, world.s.day).toLocaleString()} days, the months and the
             seasons, for you to name.
+          </span>
+        </li>
+        <li>
+          <b>
+            {entries + 1} more {entries + 1 === 1 ? "entry" : "entries"}
+          </b>
+          <span>
+            The World brief (the numbers and choices the world was built from)
+            {entries > 0
+              ? `, and the ${entries} you ticked in Life and lore: places with a marker on the map, species with a homeland.`
+              : ". Nothing is ticked in Life and lore."}
           </span>
         </li>
       </ul>

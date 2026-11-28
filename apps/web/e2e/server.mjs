@@ -139,6 +139,26 @@ function character(user) {
   };
 }
 
+// The World Wizard's life and lore: a name and a line for each place it was given, by its key;
+// as many species as asked for, the first arising at the first place; and one entry about life.
+function worldLore(user) {
+  const keys = [...user.matchAll(/^- key "([a-z]+)": /gm)].map((m) => m[1]);
+  const species = Number(/^=== Sapient species to propose: (\d+)/m.exec(user)?.[1] ?? 1);
+  return {
+    places: keys.map((key) => ({
+      key,
+      name: `Test ${key}`,
+      text: `The ${key} of the test world.`,
+    })),
+    species: Array.from({ length: species }, (_, n) => ({
+      cradle: n === 0 ? (keys[0] ?? "") : "",
+      name: `Testfolk ${n + 1}`,
+      text: "They count in tides.",
+    })),
+    life: [{ name: "Test reed deer", text: "It grazes at low tide." }],
+  };
+}
+
 function lore(user) {
   if (user.includes("\nWhat the author said:\n")) {
     // Drafting an entry from speech: a title from his first words, a line that contradicts the
@@ -441,9 +461,11 @@ const ai = createServer((req, res) => {
               : user.startsWith("A thin entry:")
                 ? // The question of the day, named for the thin entry.
                   { question: `What does ${/^A thin entry: (.*)$/m.exec(user)?.[1]} smell like?` }
-                : user.startsWith("Entries:")
-                  ? lore(user)
-                  : { reply: "ok" };
+                : user.startsWith("=== The world: ")
+                  ? worldLore(user)
+                  : user.startsWith("Entries:")
+                    ? lore(user)
+                    : { reply: "ok" };
     if (asked.stream) {
       void streamAnswer(req, res, JSON.stringify(answer), user);
       return;

@@ -384,3 +384,72 @@
 .ww-corner[hidden] {
   display: none;
 }
+
+/* Life and lore (release 3). */
+.ww-know {
+  width: 100%;
+  min-height: 4.5rem;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  background: var(--paper-raised);
+  color: var(--ink);
+  font: inherit;
+  resize: vertical;
+}
+.ww-lore h3 {
+  margin: 0.2rem 0 0.1rem;
+  font-family: var(--serif);
+  font-size: 1rem;
+}
+.ww-lore-item {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr);
+  gap: 0.15rem 0.5rem;
+  align-items: center;
+  padding: 0.45rem 0;
+  border-bottom: 1px solid var(--rule);
+}
+.ww-lore-item input[type="checkbox"] {
+  accent-color: var(--accent);
+}
+.ww-lore-item p {
+  grid-column: 3;
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 0.86rem;
+  white-space: pre-line;
+}
+.ww-lore-item.is-off p,
+.ww-lore-item.is-off .ww-lore-title {
+  color: var(--ink-faint);
+}
+.ww-lore-title {
+  width: 100%;
+  padding: 0.15rem 0.3rem;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  font-weight: 600;
+}
+.ww-lore-title:hover,
+.ww-lore-title:focus {
+  border-color: var(--rule);
+  background: var(--paper-raised);
+}
+.ww-pin {
+  display: grid;
+  place-items: center;
+  width: 1.3rem;
+  height: 1.3rem;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--paper-raised);
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+.ww-pin.is-none {
+  background: none;
+}

@@ -6,9 +6,9 @@
   simulated "for as long as the user wants", a height map, precipitation, biomes) on a globe or
   flat; then suggested entries about life, sapient species and locations. "Of course it would then
   create maps as well."
-- **Status:** approved by the owner (2026-11-27) with all four recommendations. **Releases 1 and 2
-  are built** (the world and its map; the star system, the calendar and rivers); release 3 (life
-  and lore) is designed here and not built.
+- **Status:** approved by the owner (2026-11-27) with all four recommendations. **All three
+  releases are built**: the world and its map; the star system, the calendar and rivers; life and
+  lore.
 - **Mockup:** the working mockup the design was approved from was shared in the session (star
   system, the six parts of the world, life and lore, and what gets made, on desktop and phone). Its
   simulation was a simplified stand-in; this file is its written form.
@@ -212,7 +212,56 @@ a course is cut at 180°), `world/zones.test.ts` (rivers in their layer and styl
 is one Frontier accepts, with the world as home), and `e2e/world.spec.ts` (the star system part;
 the system model and the calendar entry are made).
 
+## Release 3, as built (2026-11-28)
+
+Life and lore, the second to last part of the wizard, and the World brief.
+
+- **Places are found without the AI** (`world/lore.ts`): the highest ground, the mouth of the
+  greatest river, a sheltered well-watered coast, the wettest forest, the driest basin, cold open
+  country by the ice. Fewer on a world that lacks them, none within eight degrees of another. Each
+  is a numbered pin on the view and is named for what it is ("The highest range") with a line of
+  its climate, until the AI names it.
+- **Suggest names and entries** asks the AI once (`POST /api/world/lore`, writers and owners,
+  the model chosen for lore conversations, the person's own key). It is told the world in plain
+  lines (star, year, moons, tilt, size, land, biomes), the places by key with their climate, how
+  many sapient species, how much magic, the present age, and what the author says he already
+  knows. It answers a name and one to three paragraphs for each place, each species (with the
+  place it arose at) and three to five entries about other life.
+- **The answer is checked** (`ai/worldLore.ts`): a place only for a key that was sent, once; no
+  more species than asked for; a cradle that is no place is dropped; names are made fit for a
+  file name, distinct, and never one to avoid; prose loses headings, links, pictures and tags.
+  Nothing is saved by the call.
+- **Everything is the author's to change**: each item has a tick and a name that can be typed
+  over. When the world changes after suggestions were made, the page says so and offers **Find
+  the places again**; places the AI has not written about are found again by themselves.
+- **Make it now also makes**: an entry for each ticked item, in `Places/`, `Peoples/` or `Life/`,
+  with its type; a marker on the globe map for each place and a homeland (a ring nine degrees
+  wide, in a Peoples layer) for each species that arose at a place, each tied to its entry; and
+  the **World brief**, "<name> world brief": the world's numbers, the seed, the magic and the age,
+  what the author said he knows, and links to the entries kept. The brief is written by the
+  wizard, not the AI.
+- An entry that already exists at a path is never written over; its item is then left off the map
+  too.
+
+### Differences from the design
+
+- **One AI call, not an outline and then a writing step.** Names and prose come together, and the
+  author ticks afterwards. It is cheaper and there is nothing to keep a tab open for.
+- **A homeland is a plain ring** round the place a species arose at, not the outline of its biome.
+- **The AI prompts elsewhere still name Avalymia.** The World brief exists for them to read, but
+  moving the lore, writing and character prompts onto it is its own piece of work, not done here.
+- "Suggest more" is "Suggest again": it replaces what was suggested, keeping the ticks on places.
+
+### Tests added
+
+`apps/server/test/worldLore.test.ts` (what is kept and dropped of an answer; the route asks once
+and saves nothing; a bad request and an empty answer are refused), `world/lore.test.ts` (places
+found on land and apart; none on a world of sea; the stamp that marks a world; items after an
+answer; the request; entries by folder; the World brief; the homeland ring), and
+`e2e/world.spec.ts` (places without the AI, suggestions with it, a name typed over, an item left
+out, and Make it writing the entry, its marker and the brief).
+
 ## Left for later
 
-Release 3 (life and lore, the World brief, markers); lakes; then other shapes (a disc, a cylinder like Derdama), ocean currents, resources, naming languages,
+Lakes; the AI prompts reading the World brief; then other shapes (a disc, a cylinder like Derdama), ocean currents, resources, naming languages,
 history played forward on time-aware maps, and plates that turn about a point.

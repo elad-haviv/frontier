@@ -95,8 +95,11 @@ One place for what is being built, what is waiting, and ideas. The design in
       zones. From New project ("Start with") and from Maps ("New world…").
 - [x] Release 2: the star system as the first part (it sets the year, the months and the warmth),
       rivers, and Make it also makes a system model and an entry on the sky and the calendar
-- [ ] Release 3: life and lore (suggested places, species and life as entries with markers), the
+- [x] Release 3: life and lore (places found on the world; with the AI, names and first entries
+      for them, the sapient species and the life; entries with markers and homelands), and the
       World brief
+- [ ] The AI prompts for lore, writing help and characters still name Avalymia; they should read
+      a project's World brief instead
 - Known: plates slide along the grid, so drift near the poles is distorted; a world in progress is
   kept on the device only.
 

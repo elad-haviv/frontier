@@ -42,6 +42,7 @@ export function WorldCanvas({
   tilt,
   spinning,
   rivers,
+  pins,
   hidden,
 }: {
   world: World;
@@ -63,6 +64,8 @@ export function WorldCanvas({
   tilt?: number;
   /** Drawn over the climate and the biomes. */
   rivers?: readonly River[];
+  /** Numbered places, drawn over the biomes. */
+  pins?: readonly { cell: number; n: number }[] | undefined;
   /** Not shown, while another view (the star system) takes its place. */
   hidden?: boolean;
   /** Turns the globe slowly: 1 west to east, -1 the other way, 0 not at all. */
@@ -172,6 +175,23 @@ export function WorldCanvas({
         ctx.stroke();
       }
     }
+    for (const pin of pins ?? []) {
+      const [la, lo] = cellDegrees(pin.cell);
+      const at = place(la, lo);
+      if (!at) continue;
+      ctx.fillStyle = "#9a3b1c";
+      ctx.strokeStyle = "#ffffff";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(at[0], at[1], 11, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillStyle = "#ffffff";
+      ctx.font = "bold 13px system-ui, sans-serif";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(String(pin.n), at[0], at[1] + 0.5);
+    }
     if (layer === "plates") {
       plateMiddles(world).forEach((cell, p) => {
         if (cell < 0) return;
@@ -196,7 +216,7 @@ export function WorldCanvas({
         }
       }
     }
-  }, [world, layer, globe, turn, selectedPlate, winds, rivers]);
+  }, [world, layer, globe, turn, selectedPlate, winds, rivers, pins]);
 
   useEffect(draw, [draw, version]);
 

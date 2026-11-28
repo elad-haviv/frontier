@@ -21,6 +21,15 @@ import { newItemId } from "../map/viewUrl.ts";
 import type { ProjectWork } from "../projectWork.ts";
 import { METRES, type World } from "./model.ts";
 import { HEIGHT_LOW, HEIGHT_SEA, paintWorld } from "./picture.ts";
+import {
+  cleanTitle,
+  entryOf,
+  type LoreItem,
+  type LoreState,
+  ringAround,
+  worldBrief,
+} from "./lore.ts";
+import { cellDegrees } from "./model.ts";
 import { type River, riverLines, riversOf } from "./rivers.ts";
 import {
   calendarEntry,
@@ -126,6 +135,67 @@ function withRivers(
     map: { ...map, layers: [layer, ...map.layers], features: [...map.features, ...paths] },
     add,
   };
+}
+
+/** The name of the layer the species' homelands go to. */
+export const PEOPLES_LAYER = "Peoples";
+/** How far a homeland reaches from the place its species arose at, in degrees. */
+const HOMELAND = 9;
+
+/**
+ * The map with the lore on it: a marker for each place kept, and a homeland (a ring round the
+ * place it arose at) for each species that has one. `link` ties each to its entry by path, for
+ * the save that follows the entries'.
+ */
+export function withLore(
+  map: MapFile,
+  items: readonly LoreItem[],
+): { map: MapFile; link: { id: string; path: string }[] } {
+  const link: { id: string; path: string }[] = [];
+  const features: MapFeature[] = [];
+  const places = map.layers.find((l) => l.name === "Places") ?? map.layers[map.layers.length - 1]!;
+  let layers = map.layers;
+  let peoples: string | null = null;
+  for (const item of items) {
+    const entry = item.on ? entryOf(item) : null;
+    if (!entry || item.cell === undefined) continue;
+    const id = newItemId();
+    const base = { id, entry: null, label: cleanTitle(item.title), child: null };
+    if (item.group === "place") {
+      const [lat, lon] = cellDegrees(item.cell);
+      features.push(
+        orderFeature({
+          ...base,
+          kind: "marker",
+          layer: places.id,
+          at: [Math.round(lon * 100) / 100, Math.round(lat * 100) / 100],
+          icon: null,
+        } as MapFeature),
+      );
+    } else if (item.group === "species") {
+      if (!peoples) {
+        const layer = orderLayer({
+          id: newItemId(),
+          name: PEOPLES_LAYER,
+          visible: true,
+          color: "#7b4a8c",
+        });
+        layers = [layer, ...layers];
+        peoples = layer.id;
+      }
+      features.push(
+        orderFeature({
+          ...base,
+          kind: "zone",
+          layer: peoples,
+          points: ringAround(item.cell, HOMELAND),
+          curve: "smooth",
+        } as MapFeature),
+      );
+    } else continue;
+    link.push({ id, path: entry.path });
+  }
+  return { map: { ...map, layers, features: [...map.features, ...features] }, link };
 }
 
 /**
@@ -238,6 +308,8 @@ export interface MakeSteps {
   say: (words: string) => void;
   /** The star system: a system model and the calendar entry are made from it. */
   system: SystemSettings;
+  /** The life and lore: the ticked items become entries, places markers, species homelands. */
+  lore: LoreState;
   styles: readonly MapStyle[];
   addStyles: (styles: MapStyle[]) => void;
 }
@@ -250,6 +322,8 @@ export interface Made {
   system: string;
   /** The path of the calendar entry. */
   calendar: string;
+  /** How many entries were made, the calendar and the World brief among them. */
+  entries: number;
 }
 
 /** Sends a map the server just made, changed, through the save queue. */
@@ -258,6 +332,7 @@ async function send(
   id: string,
   made: { map: MapFile; revision: number; blob?: string | null | undefined },
   map: MapFile,
+  link: { id: string; path: string }[] = [],
 ): Promise<void> {
   await work.queue.put(`map:${id}`, map, {
     draftId: "",
@@ -265,8 +340,28 @@ async function send(
     baseBlob: made.blob ?? "",
     base: made.map,
     delay: 0,
+    ...(link.length ? { link } : {}),
   });
   await work.queue.sendNow(`map:${id}`);
+}
+
+/**
+ * Makes a new entry, as an unsaved change, unless the library has one at that path already:
+ * an entry from an earlier world, or the author's own, is never written over. Says whether it did.
+ */
+async function newEntry(work: ProjectWork, path: string, text: string): Promise<boolean> {
+  const title = path.slice(path.lastIndexOf("/") + 1).replace(/\.md$/, "");
+  const known = await work.api.names(title).catch(() => null);
+  if (known?.results.some((r) => r.path === path)) return false;
+  const key = `entry:${path}` as const;
+  await work.queue.put(key, text, {
+    kind: "create",
+    draftId: newDraftId(),
+    revision: 0,
+    baseBlob: "",
+  });
+  await work.queue.sendNow(key);
+  return true;
 }
 
 /** Makes the world's maps and its calendar entry in the project and answers what they are. */
@@ -295,26 +390,32 @@ export async function makeWorld(
   const made = await work.api.map(id);
   const { map, add } = worldMap(made.map, world, zones, heights.path, steps.styles, rivers);
   if (add.length) steps.addStyles(add);
-  await send(work, id, made, map);
+
+  // The entries first, so the map's markers have something to point at.
+  let entries = 0;
+  const kept: LoreItem[] = [];
+  const lore = steps.lore.items.filter((i) => i.on);
+  if (lore.length) steps.say("Writing the entries…");
+  for (const item of lore) {
+    const entry = entryOf(item);
+    if (!entry) continue;
+    if (await newEntry(work, entry.path, entry.text)) {
+      entries++;
+      kept.push(item);
+    }
+  }
+  const placed = withLore(map, kept);
+  await send(work, id, made, placed.map, placed.link);
 
   steps.say("Making the star system…");
   const system = await work.api.createMap(`${title} system`, "system");
   const model = await work.api.map(system.id);
   await send(work, system.id, model, systemMap(model.map, steps.system, title, id));
 
-  steps.say("Writing the calendar…");
+  steps.say("Writing the calendar and the brief…");
   const calendar = `The sky and the calendar of ${name}.md`;
-  const known = await work.api.names(`The sky and the calendar of ${name}`).catch(() => null);
-  // An entry of that name from a world made before is left as it is.
-  if (!known?.results.some((r) => r.path === calendar)) {
-    const key = `entry:${calendar}` as const;
-    await work.queue.put(key, calendarEntry(title, steps.system, world.s), {
-      kind: "create",
-      draftId: newDraftId(),
-      revision: 0,
-      baseBlob: "",
-    });
-    await work.queue.sendNow(key);
-  }
-  return { map: id, system: system.id, calendar };
+  if (await newEntry(work, calendar, calendarEntry(title, steps.system, world.s))) entries++;
+  const brief = worldBrief(title, world, steps.system, { ...steps.lore, items: kept });
+  if (await newEntry(work, `${name} world brief.md`, brief)) entries++;
+  return { map: id, system: system.id, calendar, entries };
 }
