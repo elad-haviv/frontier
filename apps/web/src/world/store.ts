@@ -9,6 +9,7 @@ import { openDB } from "idb";
 import {
   DEFAULT_SETTINGS,
   type Drift,
+  type Frames,
   N,
   newWorld,
   type Stage,
@@ -58,6 +59,8 @@ export interface KeptWorld {
   painted: Uint8Array;
   h: Float32Array;
   carry: Float32Array;
+  /** The crust as each plate carries it, once the drift has run. */
+  frames?: Frames | null;
 }
 
 /** What is kept of a world. Heights, climate and biomes are built again from it. */
@@ -85,6 +88,14 @@ export function keep(
     painted: world.painted.slice(),
     h: world.h.slice(),
     carry: world.carry.slice(),
+    frames: world.frames
+      ? {
+          own: world.frames.own.slice(),
+          h: world.frames.h.slice(),
+          turned: world.frames.turned.slice(),
+          start: world.frames.start.slice(),
+        }
+      : null,
   };
 }
 
@@ -104,6 +115,24 @@ export function restore(kept: KeptWorld): World | null {
   world.carry = kept.carry.slice();
   world.drift = kept.drift.map((d) => ({ ...d }));
   world.my = kept.my;
+  // The plates' own crust, when it was kept whole; a world kept before plates carried their
+  // own goes on from the crust as it lies now.
+  const f = kept.frames;
+  const count = kept.drift.length;
+  if (
+    f &&
+    f.own?.length === count * N &&
+    f.h?.length === count * N &&
+    f.turned?.length === count * 9 &&
+    f.start?.length === N
+  ) {
+    world.frames = {
+      own: f.own.slice(),
+      h: f.h.slice(),
+      turned: f.turned.slice(),
+      start: f.start.slice(),
+    };
+  }
   for (const stage of STAGES) world.ok[stage] = kept.ok[stage] === true;
   world.ok.height = world.ok.climate = world.ok.biome = false;
   return world;

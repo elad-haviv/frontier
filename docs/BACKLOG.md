@@ -102,8 +102,9 @@ One place for what is being built, what is waiting, and ideas. The design in
       project's World brief (an entry of type `world-brief`), not from the code
 - [ ] Give Avalymia a World brief of its own, with its rules under a Rules heading; until then it
       keeps the one rule about the Nirani that the code has always carried
-- Known: plates slide along the grid, so drift near the poles is distorted; a world in progress is
-  kept on the device only.
+- [x] Plates turn about a point on the globe and carry their own crust, so drift is whole at the
+      poles
+- Known: a world in progress is kept on the device only; no lakes.
 
 ## Now: stages 11 to 15, the interface and offline work
 

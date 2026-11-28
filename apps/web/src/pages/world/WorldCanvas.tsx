@@ -10,7 +10,7 @@ import {
   H,
   LAT,
   plateMiddles,
-  velocity,
+  velocityAt,
   W,
   windAt,
   type World,
@@ -197,7 +197,7 @@ export function WorldCanvas({
         if (cell < 0) return;
         const [la, lo] = cellDegrees(cell);
         const at = place(la, lo);
-        const v = velocity(world, p);
+        const v = velocityAt(world, p, cell);
         if (!at || (v[0] === 0 && v[1] === 0)) return;
         arrow(
           at,

@@ -149,9 +149,8 @@ again only when something before it changed.
 
 ### Known limits
 
-- Plates slide along the grid, not round a point on the globe, so drift near the poles is
-  distorted: a plate can smear along the top or bottom edge of the flat view. It reads better on
-  the globe.
+- (Plates slid along the grid at first, which smeared them near the poles. They now turn about
+  a point on the globe: see "Drift on the globe" below.)
 - The height picture is 8-bit: steps of about 60 m, which the tools smooth as they read.
 - One world waits per project on a device.
 
@@ -304,6 +303,29 @@ life, plain gazetteer prose, no fact contradicted, each thing the author knows w
 entry it fits, and a different cradle for each species. The second answer followed most of that;
 it still repeated some numbers. A stronger model than the one tried should do better.
 
+### Drift on the globe
+
+Plates used to slide along the grid by whole cells, east-west and north-south. Near a pole,
+where a row of cells is a few kilometres long, that smeared a plate along the edge of the flat
+view. Now:
+
+- **Each plate turns about its own point on the globe**, so it follows a great circle. The point
+  is the one that sends the plate's middle the way its compass direction says, found when the
+  drift is set and found again when the direction is changed.
+- **Each plate carries its own crust**, on a grid of its own that never changes, and is shown
+  turned by all it has turned so far. The first attempt redrew the crust onto the world's grid at
+  every step, and any movement smaller than a cell was rounded away: the part of a plate near its
+  turning point never moved and the plate tore. Carried whole, a land that goes past the pole
+  arrives on the far side with every cell it began with.
+- **Where plates meet**, the crust that goes under is taken off its own plate. Of two lands the
+  same plate always rides over the other, so the one under is used up from its edge inward.
+  (Deciding cell by cell, by height, left both lands combed with slits.)
+- **Back to the start** puts the plates back where they lay, not only the land.
+- **Painting a plate's area** is done on the plates as they lie at the start; after a drift the
+  wizard asks before it starts the drift again.
+- A step takes about 40 ms. The plates' own crust is kept with a world in progress (a few
+  megabytes on the device).
+
 ### Smaller things
 
 - Make it says which entries it left alone because the library already had one of that name.
@@ -311,4 +333,4 @@ it still repeated some numbers. A stronger model than the one tried should do be
 ## Left for later
 
 Lakes; then other shapes (a disc, a cylinder like Derdama), ocean currents, resources, naming languages,
-history played forward on time-aware maps, and plates that turn about a point.
+history played forward on time-aware maps.

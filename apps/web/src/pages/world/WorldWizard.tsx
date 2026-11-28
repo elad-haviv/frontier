@@ -365,6 +365,16 @@ export function WorldWizardPage() {
       drawn.current = true;
       dirty(world, "sim");
     } else if (part === "plates") {
+      // Plates are drawn as they lie at the start: after a drift, that is asked first.
+      if (first && world.my > 0) {
+        if (!agreed.current) {
+          void mayRestartDrift();
+          return false;
+        }
+        setPlaying(false);
+        dirty(world, "sim");
+        ensure(world, "sim");
+      }
       for (const j of brushCells(cell, brush)) world.plate[j] = plate;
       dirty(world, "height");
     } else if (part === "biomes" && biomeInk !== null) {
@@ -699,6 +709,8 @@ export function WorldWizardPage() {
                   aria-label={`Drift ${DIRECTION_NAMES[dir]}`}
                   onClick={() => {
                     d.dir = dir;
+                    // It heads that way from where it is now: the point it turns about is found again.
+                    delete d.axis;
                     dirty(world, "height");
                     bump();
                   }}

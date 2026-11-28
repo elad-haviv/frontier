@@ -88,10 +88,27 @@ export const DIRECTION_NAMES = [
 ] as const;
 
 export interface Drift {
-  /** An index into `DIRECTIONS`. */
+  /** An index into `DIRECTIONS`: which way the plate's middle heads when the drift is set. */
   dir: number;
-  /** In cm a year. */
+  /** In cm a year, at the plate's fastest. */
   speed: number;
+  /**
+   * The point on the globe the plate turns about, as a unit vector: worked out from `dir` at the
+   * plate's middle the first time it is needed, and again after `dir` changes (it is taken away
+   * then). A plate keeps turning about it, so it follows a great circle and not the grid.
+   */
+  axis?: [number, number, number];
+}
+
+export interface Frames {
+  /** For each plate, then each cell of its own grid: 0 nothing, 1 sea floor, 2 land. */
+  own: Uint8Array;
+  /** The height of that crust. */
+  h: Float32Array;
+  /** For each plate, how it has turned since the start: nine numbers, a rotation, row by row. */
+  turned: Float64Array;
+  /** The plates as they lay at the start, to go back to. */
+  start: Uint8Array;
 }
 
 /** No biome painted here. */
@@ -104,8 +121,14 @@ export interface World {
   /** The plate each cell is on, now. */
   plate: Uint8Array;
   drift: Drift[];
-  /** How far each plate has drifted since it last moved a whole cell: x then y for each. */
+  /** Not used by the drift any longer; kept so worlds saved before still open. */
   carry: Float32Array;
+  /**
+   * The crust as each plate carries it, once the drift has run; null before. A plate's crust
+   * never moves on its own grid: the plate is shown turned by all it has turned so far, so a
+   * hundred small turns lose nothing to the grid.
+   */
+  frames: Frames | null;
   /** 1: continental crust; 0: sea floor. */
   crust: Uint8Array;
   /** The crust's own height, before sea level and detail. */
@@ -264,6 +287,7 @@ export function newWorld(settings: WorldSettings = DEFAULT_SETTINGS): World {
     plate: new Uint8Array(N),
     drift: [],
     carry: new Float32Array(0),
+    frames: null,
     crust: new Uint8Array(N),
     h: new Float32Array(N),
     my: 0,
@@ -326,6 +350,7 @@ export function rollPlates(world: World): void {
     world.drift.push({ dir: Math.floor(r() * 8), speed: 1 + Math.round(r() * 4) });
   }
   world.carry = new Float32Array(s.plates * 2);
+  world.frames = null;
   for (let i = 0; i < N; i++) {
     const w = (warp[i]! - 0.5) * 0.9;
     let best = -9;
@@ -352,72 +377,201 @@ export function resetDrift(world: World): void {
   }
   world.my = 0;
   world.carry.fill(0);
+  // The plates lie again where they lay before the drift.
+  if (world.frames) world.plate.set(world.frames.start);
+  world.frames = null;
 }
 
-/** A plate's drift in cells a step: x east, y south. */
-export function velocity(world: World, plate: number): [number, number] {
-  const d = world.drift[plate];
-  if (!d) return [0, 0];
-  const dir = DIRECTIONS[d.dir] ?? DIRECTIONS[0]!;
-  const cells = d.speed * CELLS_PER_CM;
-  return [dir[0]! * cells, dir[1]! * cells];
+/** How far a plate turns in one step, in radians. A degree is one cell at its fastest. */
+const turnOf = (d: Drift): number => (d.speed * CELLS_PER_CM * Math.PI) / 180;
+
+/** East and north at a cell, as unit vectors. */
+function compass(cell: number): { east: Vec; north: Vec } {
+  const lat = LAT[Math.floor(cell / W)]!;
+  const lon = (((cell % W) + 0.5) / W - 0.5) * 2 * Math.PI;
+  return {
+    east: [Math.cos(lon), 0, -Math.sin(lon)],
+    north: [-Math.sin(lat) * Math.sin(lon), Math.cos(lat), -Math.sin(lat) * Math.cos(lon)],
+  };
+}
+
+type Vec = [number, number, number];
+const cross = (a: Vec, b: Vec): Vec => [
+  a[1] * b[2] - a[2] * b[1],
+  a[2] * b[0] - a[0] * b[2],
+  a[0] * b[1] - a[1] * b[0],
+];
+const dot = (a: Vec, b: Vec): number => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+const at = (cell: number): Vec => [CX[cell]!, CY[cell]!, CZ[cell]!];
+
+/**
+ * The point each plate turns about. A plate whose drift has none yet is given one: the point
+ * that sends the plate's middle the way its `dir` says. Kept on the drift from then on.
+ */
+export function axesOf(world: World): Vec[] {
+  let middles: number[] | null = null;
+  return world.drift.map((d, p) => {
+    if (d.axis) return d.axis;
+    middles ??= plateMiddles(world);
+    const cell = middles[p]! >= 0 ? middles[p]! : cellAt(0, 0);
+    const { east, north } = compass(cell);
+    const dir = DIRECTIONS[d.dir] ?? DIRECTIONS[0]!;
+    // Screen south is the grid's +y, so north is its negative.
+    const heading: Vec = [
+      dir[0]! * east[0] - dir[1]! * north[0],
+      dir[0]! * east[1] - dir[1]! * north[1],
+      dir[0]! * east[2] - dir[1]! * north[2],
+    ];
+    const k = cross(at(cell), heading);
+    const n = Math.hypot(k[0], k[1], k[2]) || 1;
+    d.axis = [k[0] / n, k[1] / n, k[2] / n];
+    return d.axis;
+  });
 }
 
 /**
- * One step of drift. Each plate moves by whole cells once its drift has added up to one. Where
- * two pieces of crust land on the same cell they have met: land on land folds into mountains,
- * sea floor under land raises a coastal range, sea floor on sea floor raises an island arc. Where
- * no crust lands, the plates have parted and new sea floor opens, high at first (a ridge) and
- * sinking as it ages.
+ * How fast a plate's crust moves at a cell, in cells a step: x east, y south. Fastest a quarter
+ * of the way round from the point it turns about, and still at that point.
+ */
+export function velocityAt(
+  world: World,
+  plate: number,
+  cell: number,
+  axes = axesOf(world),
+): [number, number] {
+  const d = world.drift[plate];
+  const k = axes[plate];
+  if (!d || !k) return [0, 0];
+  const v = cross(k, at(cell));
+  const { east, north } = compass(cell);
+  const cells = d.speed * CELLS_PER_CM;
+  return [dot(v, east) * cells, -dot(v, north) * cells];
+}
+
+/** Each plate given its own copy of the crust it holds now, not yet turned. */
+function framesOf(world: World): Frames {
+  const count = world.drift.length;
+  const own = new Uint8Array(count * N);
+  const h = new Float32Array(count * N);
+  for (let i = 0; i < N; i++) {
+    const p = Math.min(count - 1, world.plate[i]!);
+    own[p * N + i] = world.crust[i] ? 2 : 1;
+    h[p * N + i] = world.h[i]!;
+  }
+  const turned = new Float64Array(count * 9);
+  for (let p = 0; p < count; p++) turned[p * 9] = turned[p * 9 + 4] = turned[p * 9 + 8] = 1;
+  return { own, h, turned, start: world.plate.slice() };
+}
+
+/**
+ * One step of drift. Each plate turns a little further about its own point on the globe, and
+ * the world is put together again from where every plate's crust now lies. Where two plates
+ * bring crust to the same place they have met: land on land folds into mountains and the lower
+ * land is used up, sea floor goes under land and raises a coastal range, sea floor meeting sea
+ * floor raises an island arc. Where no plate brings any, the plates have parted and new sea floor
+ * opens, high at first (a ridge) and sinking as it ages.
  */
 export function driftStep(world: World): void {
-  const { plate, crust, h, carry } = world;
+  const { plate, crust, h } = world;
   const count = world.drift.length;
-  const shift: [number, number][] = [];
+  const axes = axesOf(world);
+  const frames = (world.frames ??= framesOf(world));
+  const { own, turned } = frames;
+  const fh = frames.h;
+  // Each plate turns further: the new turn after all it has turned before.
   for (let p = 0; p < count; p++) {
-    const v = velocity(world, p);
-    carry[p * 2] = carry[p * 2]! + v[0];
-    carry[p * 2 + 1] = carry[p * 2 + 1]! + v[1];
-    const sx = Math.trunc(carry[p * 2]!);
-    const sy = Math.trunc(carry[p * 2 + 1]!);
-    carry[p * 2] = carry[p * 2]! - sx;
-    carry[p * 2 + 1] = carry[p * 2 + 1]! - sy;
-    shift.push([sx, sy]);
+    const t = turnOf(world.drift[p]!);
+    if (t === 0) continue;
+    const [x, y, z] = axes[p]!;
+    const c = Math.cos(t);
+    const s = Math.sin(t);
+    const v = 1 - c;
+    const r = [
+      c + x * x * v,
+      x * y * v - z * s,
+      x * z * v + y * s,
+      y * x * v + z * s,
+      c + y * y * v,
+      y * z * v - x * s,
+      z * x * v - y * s,
+      z * y * v + x * s,
+      c + z * z * v,
+    ];
+    const m = turned.subarray(p * 9, p * 9 + 9);
+    const was = Array.from(m);
+    for (let a = 0; a < 3; a++) {
+      for (let b = 0; b < 3; b++) {
+        m[a * 3 + b] =
+          r[a * 3]! * was[b]! + r[a * 3 + 1]! * was[3 + b]! + r[a * 3 + 2]! * was[6 + b]!;
+      }
+    }
   }
   const NONE = 255;
   const np = new Uint8Array(N).fill(NONE);
   const nc = new Uint8Array(N);
   const nh = new Float32Array(N);
-  for (let i = 0; i < N; i++) {
-    const p = plate[i]!;
-    const s = shift[p] ?? [0, 0];
-    const y = Math.floor(i / W) + s[1];
-    if (y < 0 || y >= H) continue;
-    const j = y * W + (((i % W) + s[0] + W * 4) % W);
-    if (np[j] === NONE) {
-      np[j] = p;
-      nc[j] = crust[i]!;
-      nh[j] = h[i]!;
-    } else if (np[j] === p) {
-      // The same plate folded on itself at a pole: nothing met.
-      if (h[i]! > nh[j]!) nh[j] = h[i]!;
-      nc[j] = nc[j]! | crust[i]!;
-    } else if (nc[j] && crust[i]) {
-      // Folded ranges grow more slowly the higher they are.
-      const top = Math.max(nh[j]!, h[i]!);
-      nh[j] = top + 0.04 * Math.max(0, 1 - top / 0.65);
-    } else if (nc[j] || crust[i]) {
-      const land = nc[j] ? nh[j]! : h[i]!;
-      if (!nc[j]) np[j] = p;
-      nc[j] = 1;
-      // A coastal range grows more slowly the higher it is, and stops short of the highest.
-      nh[j] = land + 0.025 * Math.max(0, 1 - land / 0.4);
-    } else {
-      // An island arc: islands here and there along the line, sea mounts between them, so the
-      // arc is a string of islands and not a wall.
-      const island = hash(j % W, Math.floor(j / W), 5, world.s.seed) < 0.3;
-      nh[j] = Math.min(island ? 0.1 : -0.03, Math.max(nh[j]!, h[i]!) + 0.045);
-      if (nh[j]! > 0.03) nc[j] = 1;
+  /** Where on its own plate's grid the crust shown at each place is. */
+  const from = new Int32Array(N);
+  /** The cell of plate `p`'s own grid that lies at the place of cell `j` now. */
+  const source = (p: number, j: number): number => {
+    const m = p * 9;
+    const x = CX[j]!;
+    const y = CY[j]!;
+    const z = CZ[j]!;
+    // Turned back: the inverse of a rotation is its transpose.
+    const sx = turned[m]! * x + turned[m + 3]! * y + turned[m + 6]! * z;
+    const sy = turned[m + 1]! * x + turned[m + 4]! * y + turned[m + 7]! * z;
+    const sz = turned[m + 2]! * x + turned[m + 5]! * y + turned[m + 8]! * z;
+    return cellAt(Math.asin(Math.max(-1, Math.min(1, sy))), Math.atan2(sx, sz));
+  };
+  for (let j = 0; j < N; j++) {
+    for (let p = 0; p < count; p++) {
+      const i = source(p, j);
+      const kind = own[p * N + i]!;
+      if (kind === 0) continue;
+      const height = fh[p * N + i]!;
+      if (np[j] === NONE) {
+        np[j] = p;
+        nc[j] = kind === 2 ? 1 : 0;
+        nh[j] = height;
+        from[j] = i;
+        continue;
+      }
+      // Two plates meet here: `q` was found first, `p` arrives.
+      const q = np[j]!;
+      const qi = q * N + from[j]!;
+      const pi = p * N + i;
+      const landHere = nc[j] === 1;
+      const landComing = kind === 2;
+      /** The crust of plate `w` stays, at this height; the other's is used up. */
+      const keep = (w: number, wi: number, lost: number, to: number, land: boolean) => {
+        own[lost] = 0;
+        fh[wi] = to;
+        if (land) own[wi] = 2;
+        np[j] = w;
+        nc[j] = land ? 1 : 0;
+        nh[j] = to;
+        from[j] = wi - w * N;
+      };
+      if (landHere && landComing) {
+        // Folded ranges grow more slowly the higher they are. Of two lands the same plate
+        // always rides over the other, so the one under is used up from its edge inward and
+        // neither is left full of holes.
+        const top = Math.max(nh[j]!, height);
+        keep(q, qi, pi, top + 0.04 * Math.max(0, 1 - top / 0.65), true);
+      } else if (landHere || landComing) {
+        // The sea floor goes under. A coastal range grows more slowly the higher it is.
+        const land = landHere ? nh[j]! : height;
+        const to = land + 0.025 * Math.max(0, 1 - land / 0.4);
+        if (landHere) keep(q, qi, pi, to, true);
+        else keep(p, pi, qi, to, true);
+      } else {
+        // An island arc: islands here and there along the line, sea mounts between them, so the
+        // arc is a string of islands and not a wall.
+        const island = hash(j % W, Math.floor(j / W), 5, world.s.seed) < 0.3;
+        const to = Math.min(island ? 0.1 : -0.03, Math.max(nh[j]!, height) + 0.045);
+        keep(q, qi, pi, to, to > 0.03);
+      }
     }
   }
   // New sea floor where nothing landed, joined to the plate beside it.
@@ -434,25 +588,32 @@ export function driftStep(world: World): void {
         y < H - 1 ? j + W : j,
       ];
       let found = NONE;
-      for (const k of near) {
-        if (np[k] !== NONE) {
-          found = np[k]!;
+      for (const n of near) {
+        if (np[n] !== NONE) {
+          found = np[n]!;
           break;
         }
       }
       if (found === NONE) holes++;
       else {
+        const i = source(found, j);
+        own[found * N + i] = 1;
+        fh[found * N + i] = -0.28;
         np[j] = found;
         nc[j] = 0;
         nh[j] = -0.28;
+        from[j] = i;
       }
     }
   }
+  // Sea floor sinks as it ages; high mountains wear down. On the plates' own grids, where it lasts.
+  for (let n = 0; n < own.length; n++) {
+    if (own[n] === 1) fh[n] = fh[n]! + (-0.55 - fh[n]!) * 0.03;
+    else if (own[n] === 2 && fh[n]! > 0.3) fh[n] = fh[n]! * 0.996;
+  }
   for (let j = 0; j < N; j++) {
     if (np[j] === NONE) np[j] = 0;
-    // Sea floor sinks as it ages; high mountains wear down.
-    if (!nc[j]) nh[j] = nh[j]! + (-0.55 - nh[j]!) * 0.03;
-    else if (nh[j]! > 0.3) nh[j] = nh[j]! * 0.996;
+    else nh[j] = fh[np[j]! * N + from[j]!]!;
   }
   plate.set(np);
   crust.set(nc);
@@ -469,11 +630,13 @@ export function buildHeights(world: World): void {
   const { s, plate, h, elev } = world;
   const detail = field(s.seed + 2, 6, 4);
   const lift = new Float32Array(N);
+  const axes = axesOf(world);
   const meet = (i: number, j: number, along: 0 | 1) => {
     const p = plate[i]!;
     const q = plate[j]!;
     if (p === q) return;
-    let closing = velocity(world, p)[along] - velocity(world, q)[along];
+    // How fast the two plates close on each other here, across the edge between the cells.
+    let closing = velocityAt(world, p, i, axes)[along] - velocityAt(world, q, i, axes)[along];
     if (closing < 0) closing *= 0.35;
     lift[i] = lift[i]! + closing;
     lift[j] = lift[j]! + closing;

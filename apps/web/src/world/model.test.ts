@@ -1,12 +1,14 @@
 import { BIOME_KINDS } from "@frontier/schema";
 import { describe, expect, it } from "vitest";
 import {
+  axesOf,
   brushCells,
   buildBiomes,
   buildClimate,
   cellAt,
   classify,
   DEFAULT_SETTINGS,
+  DIRECTIONS,
   dirty,
   driftStep,
   ensure,
@@ -14,9 +16,12 @@ import {
   fits,
   H,
   ICE,
+  LAT,
   N,
   newWorld,
   OCEAN,
+  plateMiddles,
+  velocityAt,
   W,
 } from "./model.ts";
 
@@ -96,6 +101,86 @@ describe("drifting plates", () => {
     // Lands that only moved apart were not raised. (Round the back of the globe the two plates meet.)
     const near = w.h.filter((_, i) => i % W > 60 && i % W < 300);
     expect(near.reduce((m, v) => Math.max(m, v), -1)).toBeLessThan(0.3);
+  });
+});
+
+describe("drift on a globe", () => {
+  /** The land's area, by cell, as a share of the globe: rows near a pole count for little. */
+  const area = (w: ReturnType<typeof newWorld>) => {
+    let land = 0;
+    let all = 0;
+    for (let i = 0; i < N; i++) {
+      const size = Math.cos(LAT[Math.floor(i / W)]!);
+      all += size;
+      if (w.crust[i]) land += size;
+    }
+    return land / all;
+  };
+
+  it("carries a land past the pole and up the far side, keeping its size", () => {
+    // One plate, so nothing meets anything: the whole crust turns as one piece.
+    const w = newWorld({ ...DEFAULT_SETTINGS, plates: 1 });
+    ensure(w, "plates");
+    w.plate.fill(0);
+    for (let i = 0; i < N; i++) {
+      const x = i % W;
+      const y = Math.floor(i / W);
+      w.land[i] = y >= 40 && y < 60 && x >= 170 && x < 190 ? 1 : 0; // 30° to 50° north, at 0° east
+    }
+    // Its middle is put where the land is, so "north" is north there.
+    w.drift = [{ dir: 0, speed: 8, axis: [1, 0, 0] }];
+    w.ok.land = w.ok.plates = true;
+    ensure(w, "sim");
+    const before = area(w);
+    // 8 cm a year is about 1.44° in a step of two million years: 125 steps is half a turn.
+    for (let n = 0; n < 125; n++) driftStep(w);
+    // It began at 40° north, 0° east, and went south, under the pole and up the far side: half a
+    // turn about that point puts it at 40° south, 180°.
+    const far = cellAt((-40 * Math.PI) / 180, Math.PI - 0.01);
+    expect(w.crust[far]).toBe(1);
+    expect(w.crust[cellAt((40 * Math.PI) / 180, 0)]).toBe(0);
+    expect(Math.abs(area(w) - before) / before).toBeLessThan(0.15);
+  });
+
+  it("gives each plate a point to turn about that sends its middle the way it was told", () => {
+    const w = newWorld({ ...DEFAULT_SETTINGS, plates: 6 });
+    ensure(w, "sim");
+    const middles = plateMiddles(w);
+    axesOf(w).forEach((axis, p) => {
+      expect(Math.hypot(...axis)).toBeCloseTo(1, 5);
+      const dir = DIRECTIONS[w.drift[p]!.dir]!;
+      const v = velocityAt(w, p, middles[p]!);
+      // The same way on the grid as its compass says, at its fastest.
+      const len = Math.hypot(v[0], v[1]);
+      expect(
+        (v[0] * dir[0]! + v[1] * dir[1]!) / (len * Math.hypot(dir[0]!, dir[1]!)),
+      ).toBeGreaterThan(0.99);
+    });
+  });
+});
+
+describe("going back to the start", () => {
+  it("puts the plates and the land back where they lay before the drift", async () => {
+    const w = newWorld({ ...DEFAULT_SETTINGS, seed: 77 });
+    ensure(w, "sim");
+    const plates = w.plate.slice();
+    const land = w.crust.slice();
+    for (let n = 0; n < 30; n++) driftStep(w);
+    expect(Array.from(w.plate)).not.toEqual(Array.from(plates));
+    dirty(w, "sim");
+    ensure(w, "sim");
+    expect(w.my).toBe(0);
+    expect(Array.from(w.plate)).toEqual(Array.from(plates));
+    expect(Array.from(w.crust)).toEqual(Array.from(land));
+    // A world kept in the middle of a drift goes on exactly as it would have.
+    const { keep, restore } = await import("./store.ts");
+    for (let n = 0; n < 10; n++) driftStep(w);
+    const back = restore(keep(w, "W", "plates"))!;
+    driftStep(w);
+    driftStep(back);
+    expect(back.my).toBe(w.my);
+    expect(Array.from(back.crust)).toEqual(Array.from(w.crust));
+    expect(Array.from(back.plate)).toEqual(Array.from(w.plate));
   });
 });
 
