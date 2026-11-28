@@ -30,7 +30,15 @@ import {
   worldBrief,
 } from "./lore.ts";
 import { cellDegrees } from "./model.ts";
-import { type River, riverLines, riversOf } from "./rivers.ts";
+import {
+  drainageOf,
+  type Lake,
+  lakeMask,
+  lakesOf,
+  type River,
+  riverLines,
+  riversOf,
+} from "./rivers.ts";
 import {
   calendarEntry,
   homeOf,
@@ -39,7 +47,7 @@ import {
   type SystemSettings,
   TWIN,
 } from "./system.ts";
-import { worldZones, type WorldZone } from "./zones.ts";
+import { lakeRings, worldZones, type WorldZone } from "./zones.ts";
 
 /** The size the map's picture and its height picture are painted at. */
 export const PICTURE = { w: 2048, h: 1024 };
@@ -53,6 +61,7 @@ export function worldMap(
   heights: string,
   styles: readonly MapStyle[],
   rivers: readonly River[] = [],
+  lakes: readonly Lake[] = [],
 ): { map: MapFile; add: MapStyle[] } {
   let map: MapFile = {
     ...made,
@@ -95,23 +104,30 @@ export function worldMap(
     if (done.add) add.push(done.add);
     map = done.map;
   }
-  return withRivers(map, rivers, [...styles, ...add], add);
+  return withRivers(map, rivers, lakes, [...styles, ...add], add);
 }
 
 /** The name of the layer the wizard's rivers go to. */
-export const RIVERS_LAYER = "Rivers";
+export const RIVERS_LAYER = "Rivers and lakes";
 
-/** The map with the rivers as paths in a Rivers layer, drawn over the biomes, in the River style. */
+/**
+ * The map with its water in a layer of its own, drawn over the biomes: the lakes as zones in the
+ * Water style and the rivers as paths in the River style.
+ */
 function withRivers(
   map: MapFile,
   rivers: readonly River[],
+  lakes: readonly Lake[],
   styles: readonly MapStyle[],
   add: MapStyle[],
 ): { map: MapFile; add: MapStyle[] } {
   const lines = rivers.flatMap(riverLines);
-  if (lines.length === 0) return { map, add };
+  const shores = lakeRings(lakeMask(lakes));
+  if (lines.length === 0 && shores.length === 0) return { map, add };
+  const water = STARTER_STYLES.find((s) => s.counts === "water" && s.for === "zone")!;
+  if (shores.length > 0 && !styles.some((s) => s.id === water.id)) add.push(water);
   const river = STARTER_STYLES.find((s) => s.counts === "river" && s.for === "path")!;
-  if (!styles.some((s) => s.id === river.id)) add.push(river);
+  if (lines.length > 0 && !styles.some((s) => s.id === river.id)) add.push(river);
   const layer = orderLayer({
     id: newItemId(),
     name: RIVERS_LAYER,
@@ -131,8 +147,25 @@ function withRivers(
       child: null,
     } as MapFeature),
   );
+  // The lakes first, so the rivers that run through them are drawn over them.
+  const zones = shores.map((points) =>
+    orderFeature({
+      id: newItemId(),
+      kind: "zone",
+      layer: layer.id,
+      points,
+      style: water.id,
+      entry: null,
+      label: null,
+      child: null,
+    } as MapFeature),
+  );
   return {
-    map: { ...map, layers: [layer, ...map.layers], features: [...map.features, ...paths] },
+    map: {
+      ...map,
+      layers: [layer, ...map.layers],
+      features: [...map.features, ...zones, ...paths],
+    },
     add,
   };
 }
@@ -377,9 +410,11 @@ export async function makeWorld(
   steps.say("Painting the map…");
   // Let the page show the words before the painting holds the thread.
   await new Promise((r) => setTimeout(r, 30));
-  const painted = paintWorld(world, PICTURE.w, PICTURE.h);
+  const painted = paintWorld(world, PICTURE.w, PICTURE.h, lakeMask(lakesOf(world)));
   const zones = worldZones(world);
-  const rivers = riversOf(world);
+  const drainage = drainageOf(world);
+  const rivers = riversOf(world, 6, 60, drainage);
+  const lakes = lakesOf(world, 2, 40, drainage);
   steps.say("Sending the pictures…");
   const picture = await work.api.upload(
     await pngOf(painted.picture, painted.w, painted.h, `${name} map.png`),
@@ -390,7 +425,7 @@ export async function makeWorld(
   steps.say("Making the map…");
   const { id } = await work.api.createMap(title, "sphere", picture.path);
   const made = await work.api.map(id);
-  const { map, add } = worldMap(made.map, world, zones, heights.path, steps.styles, rivers);
+  const { map, add } = worldMap(made.map, world, zones, heights.path, steps.styles, rivers, lakes);
   if (add.length) steps.addStyles(add);
 
   // The entries first, so the map's markers have something to point at.

@@ -196,7 +196,7 @@ The star system, the calendar and rivers. Again no server change.
   become one of the chronicle's calendars. Chronicles as built count years on named clocks and
   hold no days or months, so there is nothing of that kind to fill. The numbers are written as an
   entry the author can name and change.
-- **Rivers, not lakes.** Hollows are filled so rivers run through them, but no lake is drawn.
+- Lakes came later: see "Lakes" below.
 - **Rivers are the wizard's own**, not Find paths': that tool reads a map's picture on a flat
   grid, and the wizard already has the heights and the rain on the globe.
 - A river follows the grid's eight directions before it is smoothed, so long straight reaches
@@ -326,11 +326,24 @@ view. Now:
 - A step takes about 40 ms. The plates' own crust is kept with a world in progress (a few
   megabytes on the device).
 
+### Lakes
+
+Hollows were already filled so that rivers could run through them; now the ones that stay full
+are lakes (`world/rivers.ts`). A hollow is a lake where the water would stand about 30 m deep or
+more, over three cells or more, and enough water reaches it: a hollow in dry country stays dry.
+A rolled world has from about ten to twenty-five, covering one to four percent of its land.
+
+- They are drawn in the Climate, Biomes, Life and lore and Make it views, and painted on the
+  map's picture.
+- Make it adds them to the map as zones in the library's Water style (added when missing), in the
+  same layer as the rivers, now named **Rivers and lakes**, under the rivers that run through
+  them. Outlined as the biomes are; one that crosses 180° becomes two that meet there.
+
 ### Smaller things
 
 - Make it says which entries it left alone because the library already had one of that name.
 
 ## Left for later
 
-Lakes; then other shapes (a disc, a cylinder like Derdama), ocean currents, resources, naming languages,
+Other shapes (a disc, a cylinder like Derdama), ocean currents, resources, naming languages,
 history played forward on time-aware maps.

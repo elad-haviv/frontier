@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { RIVERS_LAYER, systemMap, worldMap } from "./make.ts";
 import { DEFAULT_SETTINGS, driftStep, ensure, isWater, METRES, newWorld } from "./model.ts";
 import { HEIGHT_LOW, HEIGHT_SEA, paintWorld } from "./picture.ts";
-import { riversOf } from "./rivers.ts";
+import { lakesOf, riversOf } from "./rivers.ts";
 import { DEFAULT_SYSTEM } from "./system.ts";
 import { MAX_STEP, worldZones, zoneCounts } from "./zones.ts";
 
@@ -86,6 +86,15 @@ describe("the world's biome zones", () => {
       paths.every((f) => f.layer === layer.id && f.kind === "path" && f.style === "strriver"),
     ).toBe(true);
     expect(wet.add.filter((s) => s.id === "strriver")).toHaveLength(1);
+    // And lakes: zones in the same layer, in the Water style, under the rivers.
+    const lakes = lakesOf(world);
+    const both = worldMap(made, world, zones, "h.png", [], rivers, lakes);
+    const readBoth = MapFile.parse(both.map);
+    const waterLayer = readBoth.layers.find((l) => l.name === RIVERS_LAYER)!;
+    const shores = readBoth.features.filter((f) => f.kind === "zone" && f.style === "strwater");
+    expect(shores.length).toBeGreaterThan(0);
+    expect(shores.every((f) => f.layer === waterLayer.id)).toBe(true);
+    expect(both.add.filter((s) => s.id === "strwater")).toHaveLength(1);
   });
 
   it("fills the system model: the star, a companion, the planets, the world as home with its moons", () => {

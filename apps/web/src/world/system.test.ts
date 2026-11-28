@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_SETTINGS, ensure, newWorld, N, W } from "./model.ts";
-import { drainageOf, riverLines, riversOf } from "./rivers.ts";
+import { drainageOf, lakeMask, lakesOf, riverLines, riversOf } from "./rivers.ts";
+import { lakeRings } from "./zones.ts";
 import {
   calendarEntry,
   DEFAULT_SYSTEM,
@@ -128,6 +129,30 @@ describe("rivers", () => {
     ensure(dry, "climate");
     const wet = riversOf(world, 6, 1000).length;
     expect(riversOf(dry, 6, 1000).length).toBeLessThan(wet);
+  });
+
+  it("finds lakes in hollows that water reaches, on land, and none on a world too dry to fill them", () => {
+    const lakes = lakesOf(world);
+    expect(lakes.length).toBeGreaterThan(0);
+    expect(lakes.map((l) => l.cells.length)).toEqual(
+      [...lakes.map((l) => l.cells.length)].sort((a, b) => b - a),
+    );
+    const { level } = drainageOf(world);
+    for (const lake of lakes) {
+      expect(lake.cells.length).toBeGreaterThanOrEqual(3);
+      // Every cell is land that lies under the water's level.
+      for (const c of lake.cells) {
+        expect(world.elev[c]!).toBeGreaterThan(0);
+        expect(level[c]!).toBeGreaterThan(world.elev[c]!);
+      }
+    }
+    const mask = lakeMask(lakes);
+    expect(mask.reduce((n, v) => n + v, 0)).toBe(lakes.reduce((n, l) => n + l.cells.length, 0));
+    expect(lakeRings(mask).length).toBeGreaterThan(0);
+    for (const ring of lakeRings(mask)) expect(ring.length).toBeGreaterThanOrEqual(3);
+    // Asked for more water than any hollow gets: no lake.
+    expect(lakesOf(world, 1e9)).toEqual([]);
+    expect(lakeRings(new Uint8Array(mask.length))).toEqual([]);
   });
 
   it("cuts a course where it crosses the edge of the picture", () => {

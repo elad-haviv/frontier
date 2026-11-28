@@ -51,7 +51,7 @@ import {
   restore,
   saveWorld,
 } from "../../world/store.ts";
-import { type River, riversOf } from "../../world/rivers.ts";
+import { drainageOf, lakeMask, lakesOf, riversOf } from "../../world/rivers.ts";
 import {
   DEFAULT_SYSTEM,
   rollSystem,
@@ -291,10 +291,13 @@ export function WorldWizardPage() {
 
   // The rivers follow the heights and the rain: drawn once there is a climate to read.
   const showsRivers = part === "climate" || part === "biomes" || part === "lore" || part === "make";
-  const rivers = useMemo<River[]>(
-    () => (world && showsRivers ? riversOf(world) : []),
-    [world, version, showsRivers],
-  );
+  const water = useMemo(() => {
+    if (!world || !showsRivers) return { rivers: [], lakes: [], mask: null };
+    const drainage = drainageOf(world);
+    const lakes = lakesOf(world, 2, 40, drainage);
+    return { rivers: riversOf(world, 6, 60, drainage), lakes, mask: lakeMask(lakes) };
+  }, [world, version, showsRivers]);
+  const rivers = water.rivers;
 
   if (!world) return <Progress label="Opening the wizard" />;
   ensure(world, NEEDS[part]);
@@ -955,6 +958,7 @@ export function WorldWizardPage() {
         setTitle={setTitle}
         system={system}
         rivers={rivers.length}
+        lakes={water.lakes.length}
         entries={lore.items.filter((i) => i.on && i.title.trim() !== "").length}
       />
     );
@@ -994,6 +998,7 @@ export function WorldWizardPage() {
           <WorldCanvas
             hidden={part === "system"}
             rivers={rivers}
+            lakes={water.mask}
             pins={part === "lore" || part === "make" ? pinsOf(lore.items) : undefined}
             world={world}
             layer={layer}
@@ -1098,6 +1103,7 @@ function MakePanel({
   setTitle,
   system,
   rivers,
+  lakes,
   entries,
 }: {
   world: World;
@@ -1106,6 +1112,7 @@ function MakePanel({
   setTitle: (t: string) => void;
   system: SystemSettings;
   rivers: number;
+  lakes: number;
   /** How many of the life and lore's items are ticked. */
   entries: number;
 }) {
@@ -1156,11 +1163,12 @@ function MakePanel({
         <li>
           <b>
             {rivers} {rivers === 1 ? "river" : "rivers"}
+            {lakes > 0 ? ` and ${lakes} ${lakes === 1 ? "lake" : "lakes"}` : ""}
           </b>
           <span>
             {rivers === 0
               ? "Too little rain gathers on this world for one."
-              : "Where the rain runs to the sea, as paths in a Rivers layer."}
+              : "Where the rain runs to the sea and where it gathers, in a layer of their own."}
           </span>
         </li>
         <li>

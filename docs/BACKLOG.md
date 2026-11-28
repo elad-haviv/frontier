@@ -104,7 +104,8 @@ One place for what is being built, what is waiting, and ideas. The design in
       keeps the one rule about the Nirani that the code has always carried
 - [x] Plates turn about a point on the globe and carry their own crust, so drift is whole at the
       poles
-- Known: a world in progress is kept on the device only; no lakes.
+- [x] Lakes, where hollows stay full: on the views, the map's picture and the map
+- Known: a world in progress is kept on the device only.
 
 ## Now: stages 11 to 15, the interface and offline work
 

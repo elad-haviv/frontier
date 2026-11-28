@@ -42,6 +42,7 @@ export function WorldCanvas({
   tilt,
   spinning,
   rivers,
+  lakes,
   pins,
   hidden,
 }: {
@@ -64,6 +65,8 @@ export function WorldCanvas({
   tilt?: number;
   /** Drawn over the climate and the biomes. */
   rivers?: readonly River[];
+  /** Which cells lie under a lake, drawn over the land. */
+  lakes?: Uint8Array | null;
   /** Numbered places, drawn over the biomes. */
   pins?: readonly { cell: number; n: number }[] | undefined;
   /** Not shown, while another view (the star system) takes its place. */
@@ -86,7 +89,7 @@ export function WorldCanvas({
       grid.current = { canvas: g, image: new ImageData(W, H) };
     }
     const { canvas: g, image } = grid.current;
-    paintLayer(world, layer, image.data);
+    paintLayer(world, layer, image.data, lakes);
     const w = globe ? GLOBE : FLAT.w;
     const h = globe ? GLOBE : FLAT.h;
     if (cv.width !== w || cv.height !== h) {
@@ -216,7 +219,7 @@ export function WorldCanvas({
         }
       }
     }
-  }, [world, layer, globe, turn, selectedPlate, winds, rivers, pins]);
+  }, [world, layer, globe, turn, selectedPlate, winds, rivers, lakes, pins]);
 
   useEffect(draw, [draw, version]);
 

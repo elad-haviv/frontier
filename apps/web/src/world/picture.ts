@@ -82,6 +82,9 @@ export const RAIN_RAMP: Rgb[] = [
   [24, 60, 120],
 ];
 
+/** The colour of a lake. */
+const LAKE: Rgb = [66, 118, 158];
+
 const blend = (a: Rgb, b: Rgb, t: number): Rgb => [
   a[0] + (b[0] - a[0]) * t,
   a[1] + (b[1] - a[1]) * t,
@@ -100,7 +103,12 @@ const heightColour = (e: number): Rgb =>
   e <= 0 ? ramp(SEA_RAMP, 1 + e / 0.6) : ramp(LAND_RAMP, e / 0.75);
 
 /** Paints a layer of the world onto its grid: `out` is RGBA, `W` by `H`. */
-export function paintLayer(world: World, layer: Layer, out: Uint8ClampedArray): void {
+export function paintLayer(
+  world: World,
+  layer: Layer,
+  out: Uint8ClampedArray,
+  lakes?: Uint8Array | null,
+): void {
   const { land, plate, crust, h, elev, temp, rain, biome } = world;
   for (let i = 0; i < N; i++) {
     let c: Rgb;
@@ -131,6 +139,8 @@ export function paintLayer(world: World, layer: Layer, out: Uint8ClampedArray): 
     } else if (layer === "temp") c = ramp(TEMP_RAMP, (temp[i]! + 30) / 65);
     else if (layer === "rain") c = elev[i]! <= 0 ? [30, 48, 72] : ramp(RAIN_RAMP, rain[i]! / 0.7);
     else c = BIOME_RGB[biome[i]!]!;
+    // A lake is drawn over the land it lies on, where the view is of the finished surface.
+    if (lakes?.[i] && (layer === "biome" || layer === "rain" || layer === "height")) c = LAKE;
     out[i * 4] = c[0];
     out[i * 4 + 1] = c[1];
     out[i * 4 + 2] = c[2];
@@ -158,7 +168,7 @@ export interface Painted {
  * the biome of each pixel is worked out again from them, and a biome painted by hand is kept where
  * it fits. The land is shaded by its slope, lit from the north-west.
  */
-export function paintWorld(world: World, w: number, h: number): Painted {
+export function paintWorld(world: World, w: number, h: number, lakes?: Uint8Array | null): Painted {
   const { elev, temp, rain, painted, s } = world;
   const e = new Float32Array(w * h);
   const picture = new Uint8ClampedArray(w * h * 4);
@@ -205,7 +215,11 @@ export function paintWorld(world: World, w: number, h: number): Painted {
       const here = e[i]!;
       const kind = kinds[i]!;
       let c: Rgb;
+      const cell =
+        Math.min(H - 1, Math.floor(((py + 0.5) / h) * H)) * W +
+        Math.min(W - 1, Math.floor(((px + 0.5) / w) * W));
       if (kind === ICE) c = here > 0 ? [240, 243, 245] : [226, 234, 240];
+      else if (lakes?.[cell] && here > 0) c = LAKE;
       else if (isWater(kind)) c = heightColour(here);
       else c = blend(BIOME_RGB[kind]!, heightColour(here), 0.22);
       if (here > 0) {

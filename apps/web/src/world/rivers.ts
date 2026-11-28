@@ -74,6 +74,8 @@ export interface Drainage {
   to: Int32Array;
   /** The rain gathered at each cell from all that drains through it, by area. */
   flow: Float32Array;
+  /** How high water stands at each cell once every hollow is full: above the ground in a lake. */
+  level: Float32Array;
 }
 
 /** Which way every cell of land drains, and how much water passes through it. */
@@ -120,7 +122,7 @@ export function drainageOf(world: World): Drainage {
     const down = to[i]!;
     if (down >= 0 && elev[down]! > 0) flow[down] = flow[down]! + flow[i]!;
   }
-  return { to, flow };
+  return { to, flow, level };
 }
 
 /**
@@ -128,8 +130,13 @@ export function drainageOf(world: World): Drainage {
  * of them. Each runs from its source to the sea or to the larger river it joins, whose cell it
  * ends on. Courses of fewer than four cells are left out.
  */
-export function riversOf(world: World, least = 6, most = 60): River[] {
-  const { to, flow } = drainageOf(world);
+export function riversOf(
+  world: World,
+  least = 6,
+  most = 60,
+  drainage = drainageOf(world),
+): River[] {
+  const { to, flow } = drainage;
   const { elev } = world;
   const isRiver = (i: number) => elev[i]! > 0 && flow[i]! >= least;
   // A source is a river cell that no river cell drains into.
@@ -181,4 +188,61 @@ export function riverLines(river: River): [number, number][][] {
   }
   if (line.length >= 2) lines.push(line);
   return lines;
+}
+
+export interface Lake {
+  cells: number[];
+  /** The deepest it is, as a height. */
+  depth: number;
+}
+
+/** A hollow is a lake when it would stand at least this deep: about 30 m. */
+const LAKE_DEPTH = 0.0035;
+
+/**
+ * The lakes: hollows in the land that the water passing through keeps full, the largest first,
+ * at most `most` of them. A hollow that little water reaches stays dry; one of fewer than three
+ * cells is left out.
+ */
+export function lakesOf(world: World, least = 2, most = 40, drainage = drainageOf(world)): Lake[] {
+  const { flow, level } = drainage;
+  const { elev } = world;
+  const wet = new Uint8Array(N);
+  for (let i = 0; i < N; i++) {
+    if (elev[i]! > 0 && level[i]! - elev[i]! >= LAKE_DEPTH) wet[i] = 1;
+  }
+  const seen = new Uint8Array(N);
+  const lakes: Lake[] = [];
+  const near: number[] = new Array<number>(8);
+  for (let start = 0; start < N; start++) {
+    if (!wet[start] || seen[start]) continue;
+    const cells: number[] = [];
+    const stack = [start];
+    seen[start] = 1;
+    let depth = 0;
+    let water = 0;
+    while (stack.length > 0) {
+      const i = stack.pop()!;
+      cells.push(i);
+      depth = Math.max(depth, level[i]! - elev[i]!);
+      water = Math.max(water, flow[i]!);
+      const n = around(i, near);
+      for (let k = 0; k < n; k++) {
+        const j = near[k]!;
+        if (wet[j] && !seen[j]) {
+          seen[j] = 1;
+          stack.push(j);
+        }
+      }
+    }
+    if (cells.length >= 3 && water >= least) lakes.push({ cells, depth });
+  }
+  return lakes.sort((a, b) => b.cells.length - a.cells.length).slice(0, most);
+}
+
+/** Which cells are under a lake: 1 where one is. */
+export function lakeMask(lakes: readonly Lake[]): Uint8Array {
+  const mask = new Uint8Array(N);
+  for (const lake of lakes) for (const c of lake.cells) mask[c] = 1;
+  return mask;
 }

@@ -24,6 +24,30 @@ const POLE = 89.5;
 
 const round = (v: number) => Math.round(v * 100) / 100;
 
+/** An outline in cells as `[longitude, latitude]`, with points between where an edge runs far. */
+function ringPoints(cells: readonly (readonly [number, number])[]): [number, number][] {
+  const ring = cells.map(([x, y]): [number, number] => [
+    Math.max(-180, Math.min(180, (x / W) * 360 - 180)),
+    Math.max(-POLE, Math.min(POLE, 90 - (y / H) * 180)),
+  ]);
+  const points: [number, number][] = [];
+  for (let n = 0; n < ring.length; n++) {
+    const a = ring[n]!;
+    const b = ring[(n + 1) % ring.length]!;
+    points.push([round(a[0]), round(a[1])]);
+    const steps = Math.ceil(Math.abs(b[0] - a[0]) / MAX_STEP);
+    for (let k = 1; k < steps; k++) {
+      const t = k / steps;
+      points.push([round(a[0] + (b[0] - a[0]) * t), round(a[1] + (b[1] - a[1]) * t)]);
+    }
+  }
+  const distinct = points.filter((p, n) => {
+    const before = points[(n + points.length - 1) % points.length]!;
+    return p[0] !== before[0] || p[1] !== before[1];
+  });
+  return distinct;
+}
+
 /**
  * The zones of the world's biomes, the largest first. Patches of fewer than `smallest` cells join
  * a neighbour. On a globe a zone's edge is the shortest way between two points, which is not along
@@ -35,25 +59,7 @@ export function worldZones(world: World, smallest = 24): WorldZone[] {
   for (let i = 0; i < N; i++) label[i] = isWater(world.biome[i]!) ? SEA : world.biome[i]!;
   const zones: WorldZone[] = [];
   for (const region of regionsOf(label, W, H, null, smallest)) {
-    const ring = region.ring.map(([x, y]): [number, number] => [
-      Math.max(-180, Math.min(180, (x / W) * 360 - 180)),
-      Math.max(-POLE, Math.min(POLE, 90 - (y / H) * 180)),
-    ]);
-    const points: [number, number][] = [];
-    for (let n = 0; n < ring.length; n++) {
-      const a = ring[n]!;
-      const b = ring[(n + 1) % ring.length]!;
-      points.push([round(a[0]), round(a[1])]);
-      const steps = Math.ceil(Math.abs(b[0] - a[0]) / MAX_STEP);
-      for (let k = 1; k < steps; k++) {
-        const t = k / steps;
-        points.push([round(a[0] + (b[0] - a[0]) * t), round(a[1] + (b[1] - a[1]) * t)]);
-      }
-    }
-    const distinct = points.filter((p, n) => {
-      const before = points[(n + points.length - 1) % points.length]!;
-      return p[0] !== before[0] || p[1] !== before[1];
-    });
+    const distinct = ringPoints(region.ring);
     if (distinct.length < 3) continue;
     zones.push({ kind: region.kind, points: distinct, cells: region.cells });
   }
@@ -66,4 +72,23 @@ export function zoneCounts(zones: readonly WorldZone[]): { kind: BiomeKind; coun
     kind,
     count: zones.filter((z) => z.kind === kind).length,
   })).filter((c) => c.count > 0);
+}
+
+/**
+ * The outlines of the lakes, as `[longitude, latitude]`, the largest first. Outlined as the
+ * biomes are, so a lake that crosses 180° becomes two that meet there.
+ */
+export function lakeRings(mask: Uint8Array): [number, number][][] {
+  const label = new Uint8Array(N).fill(SEA);
+  let any = false;
+  for (let i = 0; i < N; i++) {
+    if (mask[i]) {
+      label[i] = 0;
+      any = true;
+    }
+  }
+  if (!any) return [];
+  return regionsOf(label, W, H, null, 3)
+    .map((region) => ringPoints(region.ring))
+    .filter((points) => points.length >= 3);
 }

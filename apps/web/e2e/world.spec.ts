@@ -180,7 +180,7 @@ test("Make the world makes a globe map with its terrain and biome zones, as unsa
   // Rivers, where enough rain gathers, are paths in their own layer.
   const rivers = made.map.features.filter((f: { kind: string }) => f.kind === "path");
   if (rivers.length > 0) {
-    expect(made.map.layers.some((l: { name: string }) => l.name === "Rivers")).toBe(true);
+    expect(made.map.layers.some((l: { name: string }) => l.name === "Rivers and lakes")).toBe(true);
   }
 
   // The system model: its star, its planets, and the world as home, which opens the globe map.
